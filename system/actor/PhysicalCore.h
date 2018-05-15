@@ -41,6 +41,7 @@ namespace cube {
         using SPSCBuffer = lockfree::ringbuffer<CacheLine, MaxEvents>;
         using EventBuffer = std::array<CacheLine, MaxEvents>;
     private:
+        friend _ParentHandler;
         //////// Event Manager
 
         class Pipe : public nocopy {
@@ -171,14 +172,22 @@ namespace cube {
         std::thread _thread;
         //////// !Members
 
-    public:
-        constexpr static const std::size_t _index = _CoreIndex;
+        void removeActor(ActorId const &id) {
+            _parent->removeActor(id);
+        }
 
-        PhysicalCoreHandler() = delete;
+        // Start Sequence Usage
+        void __alloc__event() {
+            _event_manager = new EventManager(*this);
+        }
 
-        PhysicalCoreHandler(PhysicalCoreHandler const &rhs) : _parent(rhs._parent) {}
+        void __start() {
+            _thread = std::thread(__start__physical_thread, std::ref(*this));
+        }
 
-        PhysicalCoreHandler(_ParentHandler *parent) : _parent(parent) {}
+        void __join() {
+            _thread.join();
+        }
 
         bool init() {
             bool ret(true);
@@ -210,6 +219,16 @@ namespace cube {
             return true;
         }
 
+        void receive(CacheLine const *data, uint32_t const size) {
+            _event_manager->_spsc_buffer.enqueue(data, size);
+        }
+
+    public:
+        constexpr static const std::size_t _index = _CoreIndex;
+
+        PhysicalCoreHandler() = delete;
+        PhysicalCoreHandler(PhysicalCoreHandler const &rhs) : _parent(rhs._parent) {}
+        PhysicalCoreHandler(_ParentHandler *parent) : _parent(parent) {}
         ~PhysicalCoreHandler() {
             for (auto &it : _shared_core_actor) {
                 delete it.second._this;
@@ -246,10 +265,6 @@ namespace cube {
             return ActorId::NotFound;
         }
 
-        void removeActor(ActorId const &id) {
-            _parent->removeActor(id);
-        }
-
     public:
 
         template<typename T>
@@ -268,19 +283,8 @@ namespace cube {
 //        }
 
 
-        void receive(CacheLine const *data, uint32_t const size) {
-            _event_manager->_spsc_buffer.enqueue(data, size);
-        }
 
-        // Start Sequence Usage
-        void start() {
-            _event_manager = new EventManager(*this);
-            _thread = std::thread(__start__physical_thread, std::ref(*this));
-        }
 
-        void join() {
-            _thread.join();
-        }
     };
 
     template<typename _ParentHandler, std::size_t _CoreIndex>
@@ -291,10 +295,33 @@ namespace cube {
 
     template<typename _ParentHandler, typename ..._Core>
     class LinkedCoreHandler
-            : public TComposition<typename _Core::template type<LinkedCoreHandler<_ParentHandler, _Core...>>...> {
-        _ParentHandler *_parent;
+            : public TComposition<typename _Core::template type<LinkedCoreHandler<_ParentHandler, _Core...>>...>
+    {
         using base_t = TComposition<typename _Core::template type<LinkedCoreHandler>...>;
+        friend _ParentHandler;
+        // Start Sequence Usage
+        void __alloc__event() {
+            this->each([](auto &item) -> bool {
+                item.__alloc__event();
+                return true;
+            });
+        }
 
+        void __start() {
+            this->each([](auto &item) -> bool {
+                item.__start();
+                return true;
+            });
+        }
+
+        void __join() {
+            this->each([](auto &item) -> bool {
+                item.__join();
+                return true;
+            });
+        }
+
+        _ParentHandler *_parent;
     public:
         LinkedCoreHandler() = delete;
 
@@ -354,21 +381,6 @@ namespace cube {
             });
         }
 
-        // Start Sequence Usage
-        void start() {
-            this->each([](auto &item) -> bool {
-                item.start();
-                return true;
-            });
-        }
-
-        void join() {
-            this->each([](auto &item) -> bool {
-                item.join();
-                return true;
-            });
-        }
-
     };
 
     template<typename ..._Core>
@@ -408,14 +420,18 @@ namespace cube {
 
         void start() {
             this->each([](auto &item) -> bool {
-                item.start();
+                item.__alloc__event();
+                return true;
+            });
+            this->each([](auto &item) -> bool {
+                item.__start();
                 return true;
             });
         }
 
         void join() {
             this->each([](auto &item) -> bool {
-                item.join();
+                item.__join();
                 return true;
             });
         }
