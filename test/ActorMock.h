@@ -40,7 +40,7 @@ public:
     }
 
     int main() {
-        this-> template addRefActor<ActorMock>();
+        //this-> template addRefActor<ActorMock>();
         if (actor_to_send && !flag) {
             flag = true;
             this->template push<EventMock>(actor_to_send, 0);
