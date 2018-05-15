@@ -1,0 +1,3 @@
+[submodule "cube-linq"]
+	path = cube-linq
+	url = https://github.com/isnDev/cube-linq.git
