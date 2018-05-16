@@ -1,3 +1,6 @@
 [submodule "cube-linq"]
 	path = cube-linq
 	url = https://github.com/isnDev/cube-linq.git
+[submodule "NanoLog"]
+	path = NanoLog
+	url = https://github.com/Iyengar111/NanoLog.git

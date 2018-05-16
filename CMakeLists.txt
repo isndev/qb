@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 
 include_directories(./)
 include_directories(cube-linq/include)
+include_directories(NanoLog)
 
 if (WIN32)
 	if (MSVC)
@@ -17,4 +18,4 @@ endif()
 
 
 add_executable(actor-mock
-        test/main.cpp system/Actor.cpp)
+        test/main.cpp system/debug.cpp NanoLog/NanoLog.cpp)

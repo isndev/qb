@@ -39,6 +39,10 @@ namespace cube {
 
         friend _Handler;
 
+        inline void __set_id(ActorId const &id) {
+            static_cast<ActorId &>(*this) = id;
+        }
+
     protected:
         Actor() : _handler(nullptr) {}
 

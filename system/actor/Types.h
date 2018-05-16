@@ -1,43 +1,83 @@
 
 #ifndef CUBE_TYPES_H
 # define CUBE_TYPES_H
+
 # include <iostream>
 # include <sstream>
 # include <mutex>
+# include <utility>
 # include <type_traits>
 
-namespace cube {
-    struct io {
-        static std::mutex io_lock;
+#ifndef NOLOG
 
-#ifndef NDEBUG
-        class cout : std::lock_guard<std::mutex> {
-            std::stringstream ss;
-        public:
-            cout() : std::lock_guard<std::mutex>(io_lock) {}
-			~cout() { std::cout << ss.str() << std::flush; }
+# include "NanoLog.hpp"
 
-            template<typename T>
-            std::ostream &operator<<(T const &data) {
-                ss << data;
-               return ss;
-            }
-        };
-    };
 #else
-		class cout  {
-			std::stringstream ss;
-		public:
-			cout() {}
-			~cout() {}
+# define LOG_INFO cube::io::cout()
+# define LOG_WARN cube::io::cout()
+# define LOG_CRIT cube::io::cout()
+#endif
 
-			template<typename T>
-			std::ostream &operator<<(T const &data) {
-				return ss;
-			}
-		};
-	};
-#endif // DEBUG
+namespace cube {
+#ifdef NODEBUG
+    constexpr static bool debug = false;
+#else
+    constexpr static bool debug = true;
+#endif
+
+    struct io {
+
+#ifndef NOLOG
+        using stream = nanolog::NanoLogLine;
+#else
+#ifdef NOCOUT
+        struct stream : public std::basic_ostream<char, std::char_traits<char>> {
+        public:
+        stream() : std::basic_ostream<char, std::char_traits<char>>(0) {}
+        };
+
+        class cout  {
+        stream ss;
+        public:
+        cout() {}
+        cout(cout const &) = delete;
+        cout(cout &&) = default;
+        ~cout() {}
+
+        template<typename T>
+        inline stream &operator<<(T const &) {
+        return ss;
+        }
+
+        };
+
+#else
+
+        static std::mutex io_lock;
+        using stream = std::stringstream;
+
+        class cout : std::lock_guard<std::mutex> {
+        std::stringstream ss;
+        public:
+        cout() : std::lock_guard<std::mutex>(io_lock) {}
+        cout(cout const &) = delete;
+        cout(cout &&) = default;
+        ~cout() {
+        std::cout << ss.str() << std::endl << std::flush;
+        }
+
+
+        template<typename T>
+        inline stream &operator<<(T const &data)  {
+        ss << data;
+        return ss;
+        }
+        };
+
+#endif //NOCOUT
+#endif //NOLOG
+
+    };
 }
 
 #endif //CUBE_TYPES_H

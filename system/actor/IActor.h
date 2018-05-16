@@ -3,37 +3,26 @@
 # define CUBE_IACTOR_H
 # include <iostream>
 # include <utility>
-# include <chrono>
 
 # include "utils/prefix.h"
+# include "Types.h"
 
 namespace cube {
-    using namespace std::chrono;
     struct ActorId {
-    private:
-        ActorId(uint32_t, uint32_t) : _id{}, _index(0) {}
+        using NotFound = ActorId;
 
-    public:
-        static const ActorId NotFound;
-    public:
         uint32_t _id;
         uint32_t _index;
     public:
-        ActorId() : _id(static_cast<uint32_t >(duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count())) {
-        }
-
-        ActorId(uint64_t const id) {
-            *reinterpret_cast<uint64_t *>(this) = id;
-        }
-
+        ActorId() : _id(0), _index(0) {}
+        ActorId(uint32_t const id, uint32_t const index) : _id(id), _index(index) {}
         ActorId(ActorId const &) = default;
+        ActorId(uint64_t const id) {
+        *reinterpret_cast<uint64_t *>(this) = id;
+        }
 
         inline operator const uint64_t &() const {
             return *reinterpret_cast<uint64_t const *>(this);
-        }
-
-        inline operator bool() const {
-            return static_cast<uint64_t >(*this) != static_cast<uint64_t >(NotFound);
         }
 
         inline bool operator!=(ActorId const &rhs) const {
@@ -92,7 +81,5 @@ namespace cube {
         {}
     };
 }
-
-std::ostream &operator<<(std::ostream &os, cube::ActorId const &id);
 
 #endif //CUBE_IACTOR_H
