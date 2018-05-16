@@ -2,9 +2,11 @@
 #include "ActorMock.h"
 
 int main() {
+    nanolog::initialize(nanolog::GuaranteedLogger(), "./", "cube.log", 1024);
+    nanolog::set_log_level(nanolog::LogLevel::WARN);
     for (int i = 0; i < 100; ++i) {
         test("PingPong Core0-1", []() {
-            cube::Main < LinkedCore < PhysicalCore < 0 > , PhysicalCore < 1 >> > main;
+			cube::Main < LinkedCore < PhysicalCore < 0 >, PhysicalCore < 1 >> > main;
             for (int i = 0; i < 100; ++i) {
                 main.template addActor<1, ActorMock>(main.template addActor<0, ActorMock>());
             }

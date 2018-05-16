@@ -18,6 +18,7 @@
 # include <unordered_map>
 # include <thread>
 # include <limits>
+# include <chrono>
 
 # include "utils/TComposition.h"
 # include "system/lockfree/spsc_queue.h"
@@ -25,6 +26,7 @@
 # include "IActor.h"
 
 namespace cube {
+    using namespace std::chrono;
 
     template<typename _Handler>
     class Actor;
@@ -44,6 +46,11 @@ namespace cube {
         friend _ParentHandler;
         //////// Event Manager
 
+        inline ActorId __generate_id() const {
+            static std::size_t pid = 0;
+            return ActorId(static_cast<uint32_t >(duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count() + pid++), _CoreIndex);
+        }
+
         class Pipe : public nocopy {
             friend class PhysicalCoreHandler::EventManager;
 
@@ -56,14 +63,14 @@ namespace cube {
             inline void reset() {
                 _index = 0;
                 _last_context_size = nullptr;
-                _last_actor = ActorId::NotFound;
+                _last_actor = ActorId::NotFound{};
             }
 
 //            Pipe(Pipe const &) = delete;
 //            Pipe(Pipe&&) = default;
 
         public:
-            Pipe() : _index(0), _last_context_size(nullptr), _last_actor(ActorId::NotFound) {}
+            Pipe() : _index(0), _last_context_size(nullptr), _last_actor(ActorId::NotFound{}) {}
 
             ~Pipe() = default;
 
@@ -119,7 +126,8 @@ namespace cube {
                     if (likely(actor != std::end(_core._shared_core_actor))) {
                         actor->second._this->hasEvent(event);
                     } else {
-                        cube::io::cout() << "ACTOR NOT FOUND" << std::endl;
+                        LOG_WARN << "Failed Event" << _core << " [Source](" << event->source <<
+                                 ") [Dest](" << event->dest << ") NOT FOUND" << _core._shared_core_actor.size();
                         //assert(true);
                     }
                     //assert(i + nb_buckets > nb_events);
@@ -134,7 +142,7 @@ namespace cube {
         static void __start__physical_thread(PhysicalCoreHandler &core) {
             if (core.init()) {
                 std::vector<ActorProxy> _actor_to_remove;
-                cube::io::cout() << "Init " << core << std::endl;
+                LOG_INFO << "StartSequence" << core << " Init Success";
                 while (likely(true)) {
                     //! not sure to implement this maybe it has overhead
                     for (auto &actor: core._shared_core_actor) {
@@ -160,7 +168,7 @@ namespace cube {
                     core._event_manager->receive();
                 }
             } else {
-                cube::io::cout() << "Failed Init" << core << std::endl;
+                LOG_CRIT << "StartSequence" << core << " Init Success";
             }
         }
 
@@ -240,7 +248,7 @@ namespace cube {
         template<typename _Actor, typename ..._Init>
         _Actor *addReferencedActor(_Init const &...init) {
             auto actor = new _Actor(init...);
-            actor->_index = _index;
+            actor->__set_id(__generate_id());
             actor->_handler = this;
 
             if (unlikely(actor->init())) {
@@ -256,13 +264,13 @@ namespace cube {
         ActorId addActor(_Init const &...init) {
             if constexpr (_CoreIndex_ == _index) {
                 auto actor = new _Actor<PhysicalCoreHandler>(init...);
-                actor->_index = _index;
+                actor->__set_id(__generate_id());
                 actor->_handler = this;
                 _shared_core_actor.insert({actor->id(), actor->proxy()});
                 _parent->addActor(actor->proxy());
                 return actor->id();
             }
-            return ActorId::NotFound;
+            return ActorId::NotFound{};
         }
 
     public:
@@ -288,8 +296,10 @@ namespace cube {
     };
 
     template<typename _ParentHandler, std::size_t _CoreIndex>
-    std::ostream &operator<<(std::ostream &os, PhysicalCoreHandler<_ParentHandler, _CoreIndex> const &core) {
-        os << "PhysicalCore(" << core._index << ").id(" << std::this_thread::get_id() << ")";
+    cube::io::stream &operator<<(cube::io::stream &os, PhysicalCoreHandler<_ParentHandler, _CoreIndex> const &core) {
+        std::stringstream ss;
+        ss << "PhysicalCore(" << core._index << ").id(" << std::this_thread::get_id() << ")";
+        os << ss.str();
         return os;
     };
 
@@ -341,7 +351,7 @@ namespace cube {
 
         template<std::size_t _CoreIndex, template<typename _Handler> typename _Actor, typename ..._Init>
         ActorId addActor(_Init const &...init) {
-            ActorId id = ActorId::NotFound;
+            ActorId id = ActorId::NotFound{};
             this->each([this, &id, &init...](auto &item) -> int {
                 id = item.template addActor<_CoreIndex, _Actor, _Init...>(init...);
                 if (id)
@@ -390,7 +400,6 @@ namespace cube {
 
     public:
         Main() : base_t(typename _Core::template type<Main>(this)...) {
-            cube::io::cout() << "Main Handler THIS(" << this << ")" << std::endl;
         }
 
         //Todo : no thread safe need a lock or lockfree list
@@ -408,7 +417,7 @@ namespace cube {
 
         template<std::size_t _CoreIndex, template<typename _Handler> typename _Actor, typename ..._Init>
         ActorId addActor(_Init const &...init) {
-            ActorId id = ActorId::NotFound;
+            ActorId id = ActorId::NotFound{};
             this->each([this, &id, &init...](auto &item) -> int {
                 id = item.template addActor<_CoreIndex, _Actor>(init...);
                 if (id)
