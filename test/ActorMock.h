@@ -12,51 +12,111 @@
 #include "system/actor/PhysicalCore.h"
 #include "system/actor/Actor.h"
 
-
-struct EventMock : cube::Event {
-    uint32_t x;
-
-    EventMock(uint32_t x) : x(x) {}
+struct TinyEvent : cube::Event {
+    uint64_t x;
+    TinyEvent(uint64_t x) : x(x) {}
 };
 
+struct BigEvent : cube::Event {
+    uint64_t x;
+    uint64_t padding[127];
+    BigEvent(uint64_t x) : x(x) {}
+};
+
+struct DynamicEvent : cube::Event {
+    uint64_t x;
+	std::vector<int> vec;
+    DynamicEvent(uint64_t x) : x(x), vec(512, 8) {}
+};
+
+struct SharedData {
+    std::vector<int> _shared_vec;
+
+    SharedData() : _shared_vec(512, 128){}
+};
+
+
 // TODO: NEED ABSOLUTELY TO AVOID THIS TEMPLATE PARAMETER WITH A PROXY
-template<typename Handler>
-class ActorMock : public cube::Actor<Handler> {
+template<typename Handler = void>
+class ActorMock_Tiny : public cube::Actor<Handler> {
     const cube::ActorId actor_to_send;
-    bool flag = false;
     int alive = 0;
 public:
-    ActorMock(cube::ActorId const &id = cube::ActorId::NotFound{})
+	ActorMock_Tiny(cube::ActorId const &id = cube::ActorId::NotFound{})
             : actor_to_send(id) {}
 
-    virtual ~ActorMock() {
-        LOG_INFO << "Actor." << this->id() << " destroyed";
-    }
-
     int init() {
-        this->template registerEvent<EventMock>(*this);
-        LOG_INFO << "Actor." << this->id() << " init";
+        this->template registerEvent<TinyEvent>(*this);
+		if (actor_to_send)
+			this->template push<TinyEvent>(actor_to_send, 0);
         return 0;
     }
 
     int main() {
-        //this-> template addRefActor<ActorMock>();
-        if (actor_to_send && !flag) {
-            flag = true;
-            this->template push<EventMock>(actor_to_send, 0);
-            LOG_INFO << "Actor." << this->id() << " send " << 0 << " to " << actor_to_send;
-        }
         return alive;
     }
 
-    void onEvent(EventMock const &event) {
-        // reply
-        if (event.x >= 3000)
-            alive = 1;
-        LOG_INFO << "Actor." << this->id() << " Received event" << " reply " << event.x + 1 << " to " << event.source;
-        this->template push<EventMock>(event.source, event.x + 1);
+    void onEvent(TinyEvent const &event) {
+        if (event.x >= 3000) alive = 1;
+        auto &rep = this->template reply<TinyEvent>(event);
+        ++rep.x;
     }
 
 };
+
+template<typename Handler = void>
+class ActorMock_Big : public cube::Actor<Handler> {
+	const cube::ActorId actor_to_send;
+	int alive = 0;
+public:
+	ActorMock_Big(cube::ActorId const &id = cube::ActorId::NotFound{})
+		: actor_to_send(id) {}
+
+	int init() {
+		this->template registerEvent<BigEvent>(*this);
+		if (actor_to_send)
+			this->template push<BigEvent>(actor_to_send, 0);
+		return 0;
+	}
+
+	int main() {
+		return alive;
+	}
+
+	void onEvent(BigEvent const &event) {
+		if (event.x >= 3000) alive = 1;
+		auto &rep = this->template reply<BigEvent>(event);
+		++rep.x;
+	}
+
+};
+
+template<typename Handler = void>
+class ActorMock_Dynamic : public cube::Actor<Handler> {
+	const cube::ActorId actor_to_send;
+	int alive = 0;
+public:
+	ActorMock_Dynamic(cube::ActorId const &id = cube::ActorId::NotFound{})
+		: actor_to_send(id) {}
+
+	int init() {
+		this->template registerEvent<DynamicEvent>(*this);
+		if (actor_to_send)
+			this->template push<DynamicEvent>(actor_to_send, 0);
+		return 0;
+	}
+
+	int main() {
+		return alive;
+	}
+
+	void onEvent(DynamicEvent const &event) {
+		if (event.x >= 3000) alive = 1;
+		auto &rep = this->template reply<DynamicEvent>(event);
+		++rep.x;
+	}
+
+};
+
 
 #endif //CUBE_TEST_ACTORMOCK_H

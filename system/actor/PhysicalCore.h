@@ -14,6 +14,7 @@
     #include            <process.h>
 #endif
 
+# include <cstring>
 # include <iostream>
 # include <unordered_map>
 # include <thread>
@@ -39,7 +40,7 @@ namespace cube {
     class PhysicalCoreHandler {
     public:
         //////// Types
-        constexpr static std::uint64_t MaxEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / sizeof(CacheLine);
+        constexpr static std::uint64_t MaxEvents = ((std::numeric_limits<uint16_t>::max)());
         using SPSCBuffer = lockfree::ringbuffer<CacheLine, MaxEvents>;
         using EventBuffer = std::array<CacheLine, MaxEvents>;
     private:
@@ -74,22 +75,35 @@ namespace cube {
 
             ~Pipe() = default;
 
+			template<typename T, typename ..._Init>
+			T &allocate(_Init const &...init) {
+				T &ret = *(new (reinterpret_cast<T *>(_buffer.data() + _index)) T(init...));
+				ret.bucket_size = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES + sizeof(T) % CUBE_LOCKFREE_CACHELINE_BYTES);
+				return ret;
+			}
+
+			template<typename T>
+            T &recycle(T const &data) {
+                T &ret = *reinterpret_cast<T *>(_buffer.data() + _index);
+                std::memcpy(&ret, &data, sizeof(T));
+                std::swap(ret.dest, ret.source);
+                const_cast<T &>(data).alive = true;
+                return push(ret);
+            }
+
             template<typename T>
-            T &push(T const &event) {
-                const auto index = _index;
+            T &push(T &event) {
                 _index += event.bucket_size;
 //                if (unlikely(_index >= MaxEvents))
 //                    throw std::runtime_error();
-                auto &ret = *reinterpret_cast<T *>(_buffer.data() + index);
-                memcpy(&ret, &event, event.bucket_size * sizeof(CacheLine));
                 if (event.dest != _last_actor) {
-                    ret.context_size = event.bucket_size;
+                    event.context_size = event.bucket_size;
                     _last_actor = event.dest;
-                    _last_context_size = &(ret.context_size);
+                    _last_context_size = &(event.context_size);
                 } else {
                     *_last_context_size += event.bucket_size;
                 }
-                return ret;
+                return event;
             }
         };
 
@@ -275,22 +289,28 @@ namespace cube {
 
     public:
 
-        template<typename T>
-        T &push(T const &event) {
-            return _event_manager->getPipe(event.dest._index).template push<T>(event);
+        template<typename T, typename ..._Init>
+        T &push(ActorId const &dest, ActorId const &source, _Init const &...init) {
+			auto &pipe = _event_manager->getPipe(dest._index);
+            auto &ret = pipe.template allocate<T, _Init...>(init...);
+			ret.id = type_id<T>();
+			ret.dest = dest;
+			ret.source = source;
+			return pipe.template push<T>(ret);
         }
+        template<typename T>
+        T &reply(T const &event) {
+            return _event_manager->getPipe(event.source._index).template recycle<T>(event);
+        }
+
 
         void send(CacheLine const *data, uint32_t const index, uint32_t const size) {
             _parent->send(data, index, size);
         }
 
-
-//        template<typename _Data, typename ..._Init>
-//        void send(ActorId const &dest, ActorId const &source, _Init ...init) {
-//            _parent->template send<_Data, _Init...>(dest, source, std::forward<_Init>(init)...);
-//        }
-
-
+        auto sharedData() {
+            return _parent->sharedData();
+        }
 
 
     };
@@ -303,9 +323,9 @@ namespace cube {
         return os;
     };
 
-    template<typename _ParentHandler, typename ..._Core>
+    template<typename _ParentHandler, typename _SharedData, typename ..._Core>
     class LinkedCoreHandler
-            : public TComposition<typename _Core::template type<LinkedCoreHandler<_ParentHandler, _Core...>>...>
+            : public TComposition<typename _Core::template type<LinkedCoreHandler<_ParentHandler, _SharedData, _Core...>>...>
     {
         using base_t = TComposition<typename _Core::template type<LinkedCoreHandler>...>;
         friend _ParentHandler;
@@ -332,11 +352,16 @@ namespace cube {
         }
 
         _ParentHandler *_parent;
+        _SharedData *_shared_data = nullptr;
     public:
         LinkedCoreHandler() = delete;
 
         LinkedCoreHandler(LinkedCoreHandler const &rhs)
-                : base_t(typename _Core::template type<LinkedCoreHandler>(this)...), _parent(rhs._parent) {}
+                : base_t(typename _Core::template type<LinkedCoreHandler>(this)...), _parent(rhs._parent) {
+            if constexpr (!std::is_void<_SharedData>::value) {
+                _shared_data = new _SharedData();
+            }
+        }
 
         LinkedCoreHandler(_ParentHandler *parent)
                 : base_t(typename _Core::template type<LinkedCoreHandler>(this)...), _parent(parent) {}
@@ -361,26 +386,6 @@ namespace cube {
             return id;
         }
 
-//        template<typename _Data, typename ..._Init>
-//        void send(ActorId const &dest, ActorId const &source, _Init ...init) {
-//            using event_t = TEvent<_Data, _Init...>;
-//
-//            auto event = event_t(init...);
-//            event.size = sizeof(event_t) / CUBE_LOCKFREE_CACHELINE_BYTES;
-//            event.id = type_id<_Data>();
-//            event.dest = dest;
-//            event.source = source;
-//
-//            this->each([&event, &dest](auto &item) -> bool {
-//                if (item._index == dest._index) {
-//                    item.receive(event);
-//                    return false;
-//                }
-//                return true;
-//            });
-//        }
-//
-
         void send(CacheLine const *data, uint32_t const index, uint32_t const size) {
             this->each([&data, index, size](auto &item) -> bool {
                 if (item._index == index) {
@@ -389,6 +394,10 @@ namespace cube {
                 }
                 return true;
             });
+        }
+
+        _SharedData *sharedData() {
+            return _shared_data;
         }
 
     };
@@ -451,7 +460,13 @@ namespace cube {
 template<typename ..._Builder>
 struct LinkedCore {
     template<typename _Parent>
-    using type = cube::LinkedCoreHandler<_Parent, _Builder...>;
+    using type = cube::LinkedCoreHandler<_Parent, void, _Builder...>;
+};
+
+template<typename _SharedData, typename ..._Builder>
+struct LinkedCoreData {
+    template<typename _Parent>
+    using type = cube::LinkedCoreHandler<_Parent, _SharedData, _Builder...>;
 };
 
 template<std::size_t _CoreIndex>

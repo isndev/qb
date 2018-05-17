@@ -18,4 +18,4 @@ endif()
 
 
 add_executable(actor-mock
-        test/main.cpp system/debug.cpp NanoLog/NanoLog.cpp)
+        test/main.cpp system/debug.cpp NanoLog/nanolog.cpp)

@@ -10,7 +10,7 @@
 
 #ifndef NOLOG
 
-# include "NanoLog.hpp"
+# include "nanolog.h"
 
 #else
 # define LOG_INFO cube::io::cout()
