@@ -1,0 +1,21 @@
+
+#ifndef CUBE_START_SEQUENCE_H
+# define CUBE_START_SEQUENCE_H
+# include "handler/PhysicalCore.h"
+# include "handler/LinkedCore.h"
+# include "handler/Main.h"
+
+template<typename ..._Builder>
+struct CoreLink {
+    template<typename _Parent>
+    using type = cube::LinkedCoreHandler<_Parent, _Builder...>;
+};
+
+template<std::size_t _CoreIndex, typename _SharedData = void>
+struct PhysicalCore {
+    template<typename _Parent>
+    using type = cube::PhysicalCoreHandler<_Parent, _CoreIndex, _SharedData>;
+
+};
+
+#endif //CUBE_START_SEQUENCE_H

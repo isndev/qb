@@ -1,11 +1,9 @@
 
 #ifndef CUBE_ACTOR_H
 # define CUBE_ACTOR_H
-# include <iostream>
 # include <unordered_map>
 
-# include "Types.h"
-# include "IActor.h"
+# include "ActorProxy.h"
 
 namespace cube {
 
@@ -16,8 +14,7 @@ namespace cube {
         class IRegisterEvent {
         public:
             virtual ~IRegisterEvent() {}
-
-            virtual void call(Event const *data) const = 0;
+            virtual void invoke(Event const *data) const = 0;
         };
 
         template<typename _Data, typename _Actor>
@@ -27,9 +24,7 @@ namespace cube {
             RegisterEvent(_Actor &actor)
                     : _actor(actor) {}
 
-            //virtual ~RegisterEvent(){}
-
-            virtual void call(Event const *data) const override final {
+            virtual void invoke(Event const *data) const override final {
                 auto &event = *reinterpret_cast<_Data const *>(data);
                 _actor.onEvent(event);
                 if (!event.alive)
@@ -82,7 +77,7 @@ namespace cube {
             return _handler->template reply<_Data>(event);
         }
 
-        auto sharedData() {
+        auto &sharedData() {
             return _handler->sharedData();
         }
 
@@ -90,13 +85,11 @@ namespace cube {
 
         virtual int main() { return 0; }
 
-//        virtual /*int64_t*/void onDestroy() {}
-
         virtual void hasEvent(Event const *event) override final {
             const auto nb_buckets = event->context_size;
             for (std::size_t i = 0; i < nb_buckets;) {
                 // TODO: secure this if event not registred
-                _event_map[event->id]->call(event);
+                _event_map[event->id]->invoke(event);
                 i += event->bucket_size;
                 event += event->bucket_size;
             }

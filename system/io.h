@@ -32,23 +32,21 @@ namespace cube {
 #else
 #ifdef NOCOUT
         struct stream : public std::basic_ostream<char, std::char_traits<char>> {
-        public:
-        stream() : std::basic_ostream<char, std::char_traits<char>>(0) {}
+            public:
+            stream() : std::basic_ostream<char, std::char_traits<char>>(0) {}
         };
 
         class cout  {
-        stream ss;
-        public:
-        cout() {}
-        cout(cout const &) = delete;
-        cout(cout &&) = default;
-        ~cout() {}
+            stream ss;
+            public:
+            cout() {}
+            cout(cout const &) = delete;
+            ~cout() {}
 
-        template<typename T>
-        inline stream &operator<<(T const &) {
-        return ss;
-        }
-
+            template<typename T>
+            inline stream &operator<<(T const &) {
+                return ss;
+            }
         };
 
 #else
@@ -57,21 +55,20 @@ namespace cube {
         using stream = std::stringstream;
 
         class cout : std::lock_guard<std::mutex> {
-        std::stringstream ss;
-        public:
-        cout() : std::lock_guard<std::mutex>(io_lock) {}
-        cout(cout const &) = delete;
-        cout(cout &&) = default;
-        ~cout() {
-        std::cout << ss.str() << std::endl << std::flush;
-        }
+            stream ss;
+            public:
+            cout() : std::lock_guard<std::mutex>(io_lock) {}
+            cout(cout const &) = delete;
+            ~cout() {
+                std::cout << ss.str() << std::endl << std::flush;
+            }
 
 
-        template<typename T>
-        inline stream &operator<<(T const &data)  {
-        ss << data;
-        return ss;
-        }
+            template<typename T>
+            inline stream &operator<<(T const &data)  {
+                ss << data;
+                return ss;
+            }
         };
 
 #endif //NOCOUT
