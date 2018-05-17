@@ -37,6 +37,7 @@ namespace cube {
         uint64_t id;
         ActorId dest;
         ActorId source;
+        bool alive;
 
         Event() = default;
 
@@ -76,6 +77,7 @@ namespace cube {
     struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT TEvent : public _Data
     {
         TEvent() = delete;
+		TEvent(TEvent &&) = default;
         TEvent(_Init ...init)
                 : _Data(std::forward<_Init>(init)...)
         {}

@@ -30,7 +30,10 @@ namespace cube {
             //virtual ~RegisterEvent(){}
 
             virtual void call(Event const *data) const override final {
-                _actor.onEvent(*reinterpret_cast<_Data const *>(data));
+                auto &event = *reinterpret_cast<_Data const *>(data);
+                _actor.onEvent(event);
+                if (!event.alive)
+                    event.~_Data();
             }
         };
 
@@ -71,19 +74,17 @@ namespace cube {
 
         template<typename _Data, typename ..._Init>
         _Data &push(ActorId const &dest, _Init const &...init) {
-            using event_t = TEvent<_Data, _Init...>;
-            auto event = event_t(init...);
-            event.bucket_size = sizeof(event_t) / CUBE_LOCKFREE_CACHELINE_BYTES;
-            event.id = type_id<_Data>();
-            event.dest = dest;
-            event.source = id();
-            return _handler->template push<event_t>(event);
+            return _handler->template push<_Data>(dest, id(), init...);
         }
 
-//        template<typename _Data, typename ..._Init>
-//        void send(ActorId const &dest, _Init const &...init) {
-//            _handler->template send<_Data, _Init...>(dest, id(), init...);
-//        }
+        template<typename _Data, typename ..._Init>
+        _Data &reply(_Data const &event) {
+            return _handler->template reply<_Data>(event);
+        }
+
+        auto sharedData() {
+            return _handler->sharedData();
+        }
 
         virtual int init() { return 0; }
 
