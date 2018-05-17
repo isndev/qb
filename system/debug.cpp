@@ -1,5 +1,4 @@
-#include "system/actor/IActor.h"
-#include "system/actor/Types.h"
+#include "io.h"
 
 #ifdef NOLOG
 #ifndef NOCOUT
