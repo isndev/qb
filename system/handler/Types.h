@@ -23,7 +23,7 @@
 # include <thread>
 
 # include "utils/TComposition.h"
-# include "system/lockfree/spsc_queue.h"
+# include "system/lockfree/spsc.h"
 # include "system/actor/ActorProxy.h"
 # include "system/io.h"
 
