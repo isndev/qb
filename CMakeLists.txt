@@ -25,6 +25,5 @@ add_executable(test-linked-core
 		test/benchmark/linked_core.cpp system/debug.cpp NanoLog/nanolog.cpp)
 add_executable(test-shared-data
 		test/benchmark/shared_data.cpp system/debug.cpp NanoLog/nanolog.cpp)
-#utils test
 add_executable(test-timestamp
 		test/utils/timstamp.cpp)

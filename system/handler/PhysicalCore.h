@@ -7,13 +7,16 @@ namespace cube {
     using namespace std::chrono;
 
     template<typename _ParentHandler, std::size_t _CoreIndex, typename _SharedData>
-    class PhysicalCoreHandler {
+    class PhysicalCoreHandler
+		: public nocopy 
+	{
     public:
         //////// Types
         constexpr static std::uint64_t MaxEvents = ((std::numeric_limits<uint16_t>::max)());
-        using SPSCBuffer = lockfree::ringbuffer<CacheLine, MaxEvents>;
+        using SPSCBuffer = lockfree::spsc::ringbuffer<CacheLine, MaxEvents>;
         using EventBuffer = std::array<CacheLine, MaxEvents>;
     private:
+		using parent_ptr_t = _ParentHandler*;
         friend _ParentHandler;
         //////// Event Manager
 
@@ -223,14 +226,16 @@ namespace cube {
         constexpr static const std::size_t _index = _CoreIndex;
 
         PhysicalCoreHandler() = delete;
-        PhysicalCoreHandler(PhysicalCoreHandler const &rhs) : _parent(rhs._parent) {}
-        PhysicalCoreHandler(_ParentHandler *parent) : _parent(parent) {}
+        PhysicalCoreHandler(_ParentHandler *parent)
+			: _parent(parent) {}
+
         ~PhysicalCoreHandler() {
             for (auto &it : _shared_core_actor) {
                 delete it.second._this;
             }
 
-            delete _eventManager;
+			if (_eventManager)
+	            delete _eventManager;
             if constexpr (!std::is_void<_SharedData>::value)
                 delete _sharedData;
         }

@@ -6,13 +6,17 @@
 namespace cube {
 
     template<typename ..._Core>
-    class Main : TComposition<typename _Core::template type<Main<_Core...>>...> {
+    class Main : public nocopy
+			   , public TComposition<typename _Core::template type<Main<_Core...>>...> {
         using base_t = TComposition<typename _Core::template type<Main>...>;
         std::unordered_map<uint64_t, ActorProxy> _all_actor;
 
     public:
-        Main() : base_t(typename _Core::template type<Main>(this)...) {
-        }
+
+		Main()
+			: base_t((typename type_resolver<typename _Core::template type<Main>>::type::parent_ptr_t)(this)...)
+		{
+		}
 
         //Todo : no thread safe need a lock or lockfree list
         // should be not accessible to users

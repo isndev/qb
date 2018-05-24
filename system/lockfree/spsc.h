@@ -198,6 +198,14 @@ namespace cube {
                 inline size_t dequeue(T *ret, size_t size) noexcept {
                     return internal::ringbuffer<T>::dequeue(ret, size, array_.data(), max_size);
                 }
+
+                template <typename Func>
+                inline size_t dequeue(Func const &func, T *ret, size_t size) noexcept {
+                    const size_t nb_consume = internal::ringbuffer<T>::dequeue(ret, size, array_.data(), max_size);
+                    if (nb_consume)
+                        func(ret, nb_consume);
+                    return nb_consume;
+                }
             };
 
             template<typename T>
@@ -226,6 +234,14 @@ namespace cube {
 
                 inline size_t dequeue(T *ret, size_t size) noexcept {
                     return internal::ringbuffer<T>::dequeue(ret, size, array_.get(), max_size_);
+                }
+
+                template <typename Func>
+                inline size_t dequeue(Func const &func, T *ret, size_t size) noexcept {
+                    const size_t nb_consume = internal::ringbuffer<T>::dequeue(ret, size, array_.get(), max_size_);
+                    if (nb_consume)
+                        func(ret, nb_consume);
+                    return nb_consume;
                 }
             };
 

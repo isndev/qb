@@ -33,6 +33,11 @@ namespace cube {
         uint64_t __padding__[CUBE_LOCKFREE_CACHELINE_BYTES / sizeof(uint64_t)];
     };
 
+    template <typename T>
+    struct type_resolver {
+        typedef T type;
+    };
+
 }
 
 #endif //CUBE_HANDLER_H

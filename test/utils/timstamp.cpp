@@ -1,6 +1,6 @@
 #include <iostream>
 #include <thread>
-#include "system/timestamp.h"
+#include "utils/timestamp.h"
 
 int main() {
     cube::NanoTimestamp ts;
@@ -17,9 +17,6 @@ int main() {
     std::cout << "milliseconds[" << ts.milliseconds() << "]" << std::endl;
     std::cout << "microseconds[" << ts.microseconds() << "]" << std::endl;
     std::cout << "nanoseconds[" << ts.nanoseconds() << "]" << std::endl;
-
-
-    std::cout << std::thread::hardware_concurrency() << std::endl;
 
     return 0;
 }
