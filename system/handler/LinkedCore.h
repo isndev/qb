@@ -7,8 +7,10 @@ namespace cube {
 
     template<typename _ParentHandler, typename ..._Core>
     class LinkedCoreHandler
-            : public TComposition<typename _Core::template type<LinkedCoreHandler<_ParentHandler, _Core...>>...> {
+            : public nocopy
+		    , public TComposition<typename _Core::template type<LinkedCoreHandler<_ParentHandler, _Core...>>...> {
         using base_t = TComposition<typename _Core::template type<LinkedCoreHandler>...>;
+		using parent_ptr_t = _ParentHandler *;
         friend _ParentHandler;
 
         // Start Sequence Usage
@@ -35,14 +37,11 @@ namespace cube {
 
         _ParentHandler *_parent;
     public:
+
         LinkedCoreHandler() = delete;
-
-        LinkedCoreHandler(LinkedCoreHandler const &rhs)
-                : base_t(typename _Core::template type<LinkedCoreHandler>(this)...), _parent(rhs._parent) {
-        }
-
-        LinkedCoreHandler(_ParentHandler *parent)
-                : base_t(typename _Core::template type<LinkedCoreHandler>(this)...), _parent(parent) {}
+		LinkedCoreHandler(_ParentHandler *parent)
+			: base_t((typename type_resolver<typename _Core::template type<LinkedCoreHandler>>::type::parent_ptr_t)(this)...)
+			, _parent(parent) {}
 
         void addActor(ActorProxy const &actor) {
             _parent->addActor(actor);

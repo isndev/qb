@@ -1,9 +1,9 @@
 
 #ifndef CUBE_MPSC_H
 #define CUBE_MPSC_H
+# include <mutex>
 # include "spsc.h"
 # include "spinlock.h"
-# include <mutex>
 
 namespace cube {
     namespace lockfree {
@@ -36,58 +36,75 @@ namespace cube {
             template<typename T, size_t nb_producer, size_t max_size, typename _Size = uint64_t>
             class ringbuffer
                     : public nocopy {
+                typedef _Size size_t;
                 struct Producer
                 {
                     constexpr static const int padding_size = CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
                     SpinLock lock;
                     char padding1[padding_size];
-                    spsc::ringbuffer<T, max_size, _Size> _ringbuffer;
+                    spsc::ringbuffer<T, max_size, size_t> _ringbuffer;
                 };
 
                 std::array<Producer, nb_producer> _producers;
-
-//                size_t _capacity;
-//                size_t _concurrency;
-//                std::vector<std::shared_ptr<Producer>> _producers;
-//                size_t _consumer;
 
             public:
                 template <size_t _Index>
                 bool enqueue(T const &t) {
                     const size_t index = _Index % nb_producer;
-                    std::lock_guard<SpinLock> lock(_producers[index]->lock);
+                    std::lock_guard<SpinLock> lock(_producers[index].lock);
                     return _producers[index]._ringbuffer.enqueue(t);
-                }
-
-                bool enqueue(size_t const _index, T const &t) {
-                    const size_t index = _index % nb_producer;
-                    std::lock_guard<SpinLock> lock(_producers[index]->lock);
-                    return _producers[index].enqueue(t);
                 }
 
                 template <size_t _Index>
                 size_t enqueue(T const *t, size_t const size) {
                     const size_t index = _Index % nb_producer;
-                    std::lock_guard<SpinLock> lock(_producers[index]->lock);
+                    std::lock_guard<SpinLock> lock(_producers[index].lock);
                     return _producers[index]._ringbuffer.enqueue(t, size);
+                }
+
+                bool enqueue(size_t const _index, T const &t) {
+                    const size_t index = _index % nb_producer;
+                    std::lock_guard<SpinLock> lock(_producers[index].lock);
+                    return _producers[index].enqueue(t);
                 }
 
                 size_t enqueue(size_t const _index, T const *t, size_t const size) {
                     const size_t index = _index % nb_producer;
-                    std::lock_guard<SpinLock> lock(_producers[index]->lock);
+                    std::lock_guard<SpinLock> lock(_producers[index].lock);
+                    return _producers[index]._ringbuffer.enqueue(t, size);
+                }
+
+                size_t enqueue(T const &t) {
+                    const size_t index = Timestamp::rdts() % nb_producer;
+                    std::lock_guard<SpinLock> lock(_producers[index].lock);
+                    return _producers[index]._ringbuffer.enqueue(t);
+                }
+
+                size_t enqueue(T const *t, size_t const size) {
+                    const size_t index = Timestamp::rdts() % nb_producer;
+                    std::lock_guard<SpinLock> lock(_producers[index].lock);
                     return _producers[index]._ringbuffer.enqueue(t, size);
                 }
 
                 size_t dequeue(T *ret, size_t size) {
-                    size_t tmp_size = size;
+                    const size_t save_size = size;
                     for (auto &producer : _producers) {
-
-                        if (size)
-
+                        size -= producer._ringbuffer.dequeue(ret, size);
+                        if (!size)
+                            break;
                     }
-
-                    return tmp_size;
+                    return save_size - size;
                 }
+
+                template <typename Func>
+                size_t dequeue(Func const &func, T *ret, size_t const size) {
+                    size_t nb_consume = 0;
+                    for (auto &producer : _producers) {
+                        nb_consume += producer._ringbuffer.dequeue(func, ret, size);
+                    }
+                    return nb_consume;
+                }
+
             };
 
 //            template<typename T>
@@ -122,67 +139,5 @@ namespace cube {
         } /* namespace mpsc */
     } /* namespace lockfree */
 } /* namespace cube */
-
-class mpsc_ringbuffer
-{
-public:
-
-    explicit mpsc_ringbuffer(size_t capacity, size_t concurrency = std::thread::hardware_concurrency())
-            : _capacity(capacity - 1), _concurrency(concurrency), _consumer(0)
-    {
-        // Initialize producers' ring buffer
-        for (size_t i = 0; i < concurrency; ++i)
-            _producers.push_back(std::make_shared<Producer>(capacity));
-    }
-    mpsc_ringbuffer(const mpsc_ringbuffer&) = delete;
-    mpsc_ringbuffer(mpsc_ringbuffer&&) noexcept = default;
-    ~mpsc_ringbuffer() = default;
-
-    mpsc_ringbuffer& operator=(const mpsc_ringbuffer&) = delete;
-    mpsc_ringbuffer& operator=(mpsc_ringbuffer&&) noexcept = default;
-
-    bool empty() const noexcept { return (size() == 0); }
-    size_t capacity() const noexcept { return _capacity; }
-    size_t concurrency() const noexcept { return _concurrency; }
-    size_t size() const noexcept
-    {
-        size_t size = 0;
-        for (auto& producer : _producers)
-            size += producer->buffer.size();
-        return size;
-    }
-
-
-    bool produce(const void* chunk, size_t size){
-        // Get producer index for the current thread based on RDTS value
-        size_t index = Timestamp::rdts() % _concurrency;
-
-        // Lock the chosen producer using its spin-lock
-        std::lock_guard<SpinLock> lock(_producers[index]->lock);
-
-        // Enqueue the item into the producer's ring buffer
-        return _producers[index]->buffer.produce(chunk, size);
-    }
-
-
-    bool consume(void* chunk, size_t& size){
-        // Try to dequeue one item from the one of producer's ring buffers
-        for (size_t i = 0; i < _concurrency; ++i)
-        {
-            size_t temp = size;
-            if (_producers[_consumer++ % _concurrency]->buffer.consume(chunk, temp))
-            {
-                size = temp;
-                return true;
-            }
-        }
-
-        size = 0;
-        return false;
-    }
-
-private:
-
-};
 
 #endif //CUBE_MPSC_H

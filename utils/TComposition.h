@@ -17,8 +17,13 @@ public:
     TComposition() = default;
     TComposition(std::tuple<Group...> elements)
             : _elements(elements) {}
-    TComposition(Group ...group)
+    TComposition(Group&& ...group)
             : _elements{std::forward<Group>(group)...} {}
+	template <typename ...Init>
+	TComposition(Init&& ...init) 
+		: _elements{std::forward<Init>(init)...}
+	{}
+
 
 
     template<typename Func>
