@@ -23,7 +23,7 @@
 # include <thread>
 
 # include "utils/TComposition.h"
-# include "system/lockfree/spsc.h"
+# include "system/lockfree/mpsc.h"
 # include "system/actor/ActorProxy.h"
 # include "system/io.h"
 
@@ -34,9 +34,14 @@ namespace cube {
     };
 
     template <typename T>
-    struct type_resolver {
+    struct type_solver {
         typedef T type;
     };
+
+    template <typename _Handler, typename ..._Core>
+    std::size_t nb_core() {
+        return (_Core::template Type<_Handler>::type::nb_core + ...);
+    }
 
 }
 

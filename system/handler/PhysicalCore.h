@@ -10,14 +10,18 @@ namespace cube {
     class PhysicalCoreHandler
 		: public nocopy 
 	{
+        friend _ParentHandler;
+        typedef _ParentHandler parent_t;
     public:
+        //////// Constexpr
+        constexpr static const std::uint64_t MaxEvents = ((std::numeric_limits<uint16_t>::max)());
+        constexpr static const std::size_t nb_core = 1;
         //////// Types
-        constexpr static std::uint64_t MaxEvents = ((std::numeric_limits<uint16_t>::max)());
         using SPSCBuffer = lockfree::spsc::ringbuffer<CacheLine, MaxEvents>;
+        using MPSCBuffer = lockfree::mpsc::ringbuffer<CacheLine, MaxEvents, 0>;
         using EventBuffer = std::array<CacheLine, MaxEvents>;
     private:
 		using parent_ptr_t = _ParentHandler*;
-        friend _ParentHandler;
         //////// Event Manager
 
         inline ActorId __generate_id() const {
@@ -86,16 +90,22 @@ namespace cube {
             using PipeMap = std::unordered_map<uint32_t, Pipe>;
             PhysicalCoreHandler &_core;
             SPSCBuffer _spsc_buffer;
+            MPSCBuffer _mpsc_buffer;
             EventBuffer _event_buffer;
             PipeMap _pipes;
 
-            EventManager(PhysicalCoreHandler &core) : _core(core) {}
+            EventManager(PhysicalCoreHandler &core)
+                    : _core(core)
+                    , _mpsc_buffer(_ParentHandler::parent_t::total_core - _ParentHandler::linked_core)
+            {}
 
             void flush() {
                 for (auto &it : _pipes) {
                     auto &pipe = it.second;
-                    _core.send(pipe._buffer.data(), it.first, pipe._index);
-                    pipe.reset();
+                    if (pipe._index) {
+                        _core.send(pipe._buffer.data(), it.first, pipe._index);
+                        pipe.reset();
+                    }
                 }
             }
 
@@ -103,11 +113,10 @@ namespace cube {
                 return _pipes[core];
             }
 
-            void receive() {
-                auto nb_events = _spsc_buffer.dequeue(_event_buffer.data(), MaxEvents);
+            void __receive(CacheLine *buffer, std::size_t const nb_events) {
                 uint64_t i = 0;
                 while (i < nb_events) {
-                    auto event = reinterpret_cast<Event *>(_event_buffer.data() + i);
+                    auto event = reinterpret_cast<Event *>(buffer + i);
                     const auto nb_buckets = event->context_size;
                     auto actor = _core._shared_core_actor.find(event->dest);
                     if (likely(actor != std::end(_core._shared_core_actor))) {
@@ -120,6 +129,16 @@ namespace cube {
                     //assert(i + nb_buckets > nb_events);
                     i += nb_buckets;
                 }
+            }
+
+            void receive() {
+                // linked_core_events
+                __receive(_event_buffer.data(), _spsc_buffer.dequeue(_event_buffer.data(), MaxEvents));
+                // global_core_events
+                _mpsc_buffer.dequeue([this](CacheLine *buffer, std::size_t nb_events){
+                        __receive(buffer, nb_events);
+                    }, _event_buffer.data(), MaxEvents);
+
             }
 
         };
@@ -222,12 +241,20 @@ namespace cube {
             _eventManager->_spsc_buffer.enqueue(data, size);
         }
 
+        inline bool receive_from_different_core(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
+            if (_index != index)
+                return true;
+            _eventManager->_mpsc_buffer.enqueue(source, data, size);
+            return false;
+        }
+
     public:
         constexpr static const std::size_t _index = _CoreIndex;
 
         PhysicalCoreHandler() = delete;
         PhysicalCoreHandler(_ParentHandler *parent)
-			: _parent(parent) {}
+			: _parent(parent) {
+        }
 
         ~PhysicalCoreHandler() {
             for (auto &it : _shared_core_actor) {
@@ -286,7 +313,7 @@ namespace cube {
 
 
         void send(CacheLine const *data, uint32_t const index, uint32_t const size) {
-            _parent->send(data, index, size);
+            _parent->send(data, _index, index, size);
         }
 
         auto &sharedData() {
