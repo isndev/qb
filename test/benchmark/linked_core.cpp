@@ -102,7 +102,7 @@ public:
 template<template<typename T> typename _ActorTest, typename _SharedData = void>
 struct TEST {
     static void pingpong(std::string const &name) {
-        test<100>("PingPong Core0/1 (" + name + ")", []() {
+        test<100>("PingPong Linked Core0/1 (" + name + ")", []() {
             cube::Main<
                     CoreLink<PhysicalCore<0>, PhysicalCore<1>>
             > main;
@@ -115,6 +115,7 @@ struct TEST {
             main.join();
             return 0;
         });
+
         test<100>("PingPong Core0/1 & Core2/3 (" + name + ")", []() {
             cube::Main<
                     CoreLink<PhysicalCore<0>, PhysicalCore<1>>,
@@ -124,6 +125,46 @@ struct TEST {
             for (int i = 0; i < 100; ++i) {
                 main.template addActor<1, _ActorTest>(main.template addActor<0, _ActorTest>());
                 main.template addActor<3, _ActorTest>(main.template addActor<2, _ActorTest>());
+            }
+
+            main.start();
+            main.join();
+            return 0;
+        });
+
+        test<100>("PingPong Not Linked Core0/1 (" + name + ")", []() {
+            cube::Main<PhysicalCore<0>, PhysicalCore<1>> main;
+
+            for (int i = 0; i < 100; ++i) {
+                main.template addActor<1, _ActorTest>(main.template addActor<0, _ActorTest>());
+            }
+
+            main.start();
+            main.join();
+            return 0;
+        });
+
+        test<100>("PingPong Not Linked Core0/3 (" + name + ")", []() {
+            cube::Main<PhysicalCore<0>, PhysicalCore<3>> main;
+
+            for (int i = 0; i < 100; ++i) {
+                main.template addActor<3, _ActorTest>(main.template addActor<0, _ActorTest>());
+            }
+
+            main.start();
+            main.join();
+            return 0;
+        });
+
+        test<100>("PingPong Multi Not Linked Core0/1 & Core2/3 (" + name + ")", []() {
+            cube::Main<
+                    CoreLink<PhysicalCore<0>, PhysicalCore<1>>,
+                    CoreLink<PhysicalCore<2>, PhysicalCore<3>>
+            > main;
+
+            for (int i = 0; i < 100; ++i) {
+                main.template addActor<1, _ActorTest>(main.template addActor<3, _ActorTest>());
+                main.template addActor<0, _ActorTest>(main.template addActor<2, _ActorTest>());
             }
 
             main.start();

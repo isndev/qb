@@ -4,19 +4,24 @@
 # include "Types.h"
 
 namespace cube {
-
+    
     template<typename ..._Core>
     class Main : public nocopy
-			   , public TComposition<typename _Core::template type<Main<_Core...>>...> {
-        using base_t = TComposition<typename _Core::template type<Main>...>;
+			   , public TComposition<typename _Core::template Type<Main<_Core...>>::type...> {
         std::unordered_map<uint64_t, ActorProxy> _all_actor;
 
     public:
+        //////// Static Const Data
+        static const std::size_t linked_core;
+        static const std::size_t total_core;
+
+        //////// Types
+        using parent_t = Main;
+        using base_t = TComposition<typename _Core::template Type<Main>::type...>;
 
 		Main()
-			: base_t((typename type_resolver<typename _Core::template type<Main>>::type::parent_ptr_t)(this)...)
-		{
-		}
+			: base_t((typename _Core::template Type<Main>::type::parent_ptr_t)(this)...)
+		{}
 
         //Todo : no thread safe need a lock or lockfree list
         // should be not accessible to users
@@ -28,7 +33,14 @@ namespace cube {
             //_all_actor.erase(id);
         }
 
-        void send(CacheLine const *data, uint32_t const index, uint32_t const size) {
+        void send(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
+		    if (this->each([data, source, index, size](auto &item) -> bool {
+		        if (!item.receive_from_different_core(data, source, index, size))
+		            return false;
+		        return true;
+		    })) {
+		        // try to send to unknown core
+		    }
         }
         /////////////////////////////////////////////////////
 
@@ -66,6 +78,11 @@ namespace cube {
 
     };
 
+    //Init static data
+    template<typename ..._Core>
+    const std::size_t Main<_Core...>::linked_core = 0;
+    template<typename ..._Core>
+    const std::size_t Main<_Core...>::total_core = nb_core<Main, _Core...>();
 }
 
 #endif //CUBE_MAIN_H
