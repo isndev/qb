@@ -34,10 +34,8 @@ namespace cube {
         }
 
         void send(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
-		    if (this->each([data, source, index, size](auto &item) -> bool {
-		        if (!item.receive_from_different_core(data, source, index, size))
-		            return false;
-		        return true;
+		    if (!this->each_or([data, source, index, size](auto &item) -> bool {
+		        return item.receive_from_different_core(data, source, index, size);
 		    })) {
 		        // try to send to unknown core
 		    }
@@ -49,11 +47,10 @@ namespace cube {
         template<std::size_t _CoreIndex, template<typename _Handler> typename _Actor, typename ..._Init>
         ActorId addActor(_Init const &...init) {
             ActorId id = ActorId::NotFound{};
-            this->each([this, &id, &init...](auto &item) -> int {
+            this->each_or([this, &id, &init...](auto &item) -> bool {
                 id = item.template addActor<_CoreIndex, _Actor>(init...);
-                if (id)
-                    return 0;
-                return 1;
+
+                return static_cast<bool>(id);
             });
             return id;
         }
