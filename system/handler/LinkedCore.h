@@ -43,10 +43,8 @@ namespace cube {
         }
 
         bool receive_from_different_core(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
-            return this->each([data, source, index, size](auto &item) -> bool {
-               if (!item.receive_from_different_core(data, source, index, size))
-                   return false;
-               return true;
+            return this->each_or([data, source, index, size](auto &item) -> bool {
+               return item.receive_from_different_core(data, source, index, size);
             });
         }
 
@@ -68,11 +66,10 @@ namespace cube {
         template<std::size_t _CoreIndex, template<typename _Handler> typename _Actor, typename ..._Init>
         ActorId addActor(_Init const &...init) {
             ActorId id = ActorId::NotFound{};
-            this->each([this, &id, &init...](auto &item) -> int {
+            this->each_or([this, &id, &init...](auto &item) -> bool {
                 id = item.template addActor<_CoreIndex, _Actor, _Init...>(init...);
-                if (id)
-                    return 0;
-                return 1;
+
+                return static_cast<bool>(id);
             });
             return id;
         }
@@ -82,11 +79,10 @@ namespace cube {
 		}
 
         void send(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
-            if (this->each([&data, index, size](auto &item) -> bool {
-                if (item._index == index) {
-                    item.receive(data, size);
-                    return false;
-                }
+            if (!this->each_or([&data, index, size](auto &item) -> bool {
+				if (item._index != index)
+					return false;
+                item.receive(data, size);
                 return true;
             }))
             {

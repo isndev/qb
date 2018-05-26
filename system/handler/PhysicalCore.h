@@ -243,9 +243,9 @@ namespace cube {
 
         inline bool receive_from_different_core(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
             if (_index != index)
-                return true;
+                return false;
             _eventManager->_mpsc_buffer.enqueue(source, data, size);
-            return false;
+            return true;
         }
 
     public:
