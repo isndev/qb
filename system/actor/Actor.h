@@ -66,6 +66,16 @@ namespace cube {
             return _handler->template addReferencedActor<_Actor, _Init...>(init...);
         }
 
+        template<template <typename __Handler> typename _Actor, typename ..._Init>
+        auto addRefActor(_Init const &...init) {
+            return _handler->template addReferencedActor<_Actor, _Init...>(init...);
+        }
+
+        template<template <typename _Trait, typename __Handler> typename _Actor, typename _Trait, typename ..._Init>
+        auto addRefActor(_Init const &...init) {
+            return _handler->template addReferencedActor<_Actor, _Trait, _Init...>(init...);
+        }
+
 
         template<typename _Data, typename ..._Init>
         _Data &push(ActorId const &dest, _Init const &...init) {

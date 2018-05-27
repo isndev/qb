@@ -122,9 +122,9 @@ namespace cube {
                     if (likely(actor != std::end(_core._shared_core_actor))) {
                         actor->second._this->hasEvent(event);
                     } else {
-                        LOG_WARN << "Failed Event" << _core << " [Source](" << event->source <<
-                                 ") [Dest](" << event->dest << ") NOT FOUND" << _core._shared_core_actor.size();
-                        //assert(true);
+                        LOG_WARN << "Failed Event" << _core
+                                 << " [Source](" << event->source << ")"
+                                 << " [Dest](" << event->dest << ") NOT FOUND";
                     }
                     //assert(i + nb_buckets > nb_events);
                     i += nb_buckets;
@@ -148,12 +148,11 @@ namespace cube {
         static void __start__physical_thread(PhysicalCoreHandler &core) {
             if (core.init()) {
                 std::vector<ActorProxy> _actor_to_remove;
-                LOG_INFO << "StartSequence" << core << " Init Success";
+                LOG_INFO << "StartSequence Init " << core << " Success";
                 while (likely(true)) {
                     //! not sure to implement this maybe it has overhead
                     for (auto &actor: core._shared_core_actor) {
                         if (unlikely(actor.second._this->main())) {
-                            core.removeActor(actor.second._id);
                             _actor_to_remove.push_back(actor.second);
                         }
                     }
@@ -164,7 +163,7 @@ namespace cube {
                         // remove dead actor
                         for (auto const &actor : _actor_to_remove) {
                             delete actor._this;
-                            core._shared_core_actor.erase(actor._id);
+                            core.removeActor(actor._id);
                         }
                         _actor_to_remove.clear();
                         if (core._shared_core_actor.empty())
@@ -174,7 +173,7 @@ namespace cube {
                     core._eventManager->receive();
                 }
             } else {
-                LOG_CRIT << "StartSequence" << core << " Init Failed";
+                LOG_CRIT << "StartSequence Init " << core << " Failed";
             }
         }
 
@@ -186,10 +185,6 @@ namespace cube {
         std::unordered_map<uint64_t, ActorProxy> _shared_core_actor;
         std::thread _thread;
         //////// !Members
-
-        void removeActor(ActorId const &id) {
-            _parent->removeActor(id);
-        }
 
         // Start Sequence Usage
         void __alloc__event() {
@@ -237,7 +232,7 @@ namespace cube {
             return true;
         }
 
-        void receive(CacheLine const *data, uint32_t const size) {
+        inline void receive(CacheLine const *data, uint32_t const size) {
             _eventManager->_spsc_buffer.enqueue(data, size);
         }
 
@@ -246,6 +241,50 @@ namespace cube {
                 return false;
             _eventManager->_mpsc_buffer.enqueue(source, data, size);
             return true;
+        }
+
+        inline void addActor(ActorProxy const &actor) {
+            _shared_core_actor.insert({actor._id, actor});
+            _parent->addActor(actor);
+            LOG_DEBUG << "New Actor[" << actor._id << "] in " << *this;
+        }
+
+        inline void removeActor(ActorId const &id) {
+            LOG_DEBUG << "Delete Actor[" << id << "] in " << *this;
+            _parent->removeActor(id);
+            _shared_core_actor.erase(id);
+        }
+
+        template<std::size_t _CoreIndex_
+                , typename _Actor
+                , typename ..._Init>
+        inline ActorId addActor(_Init const &...init) {
+            auto actor = new _Actor(init...);
+            actor->__set_id(__generate_id());
+            actor->_handler = this;
+            addActor(actor->proxy());
+            return actor->id();
+        };
+
+        template<std::size_t _CoreIndex_
+                , template<typename _Handler> typename _Actor
+                , typename ..._Init>
+        ActorId addActor(_Init const &...init) {
+            if constexpr (_CoreIndex_ == _index) {
+                return addActor<_CoreIndex_, _Actor<PhysicalCoreHandler>>(init...);
+            }
+            return ActorId::NotFound{};
+        }
+
+        template<std::size_t _CoreIndex_
+                , template<typename _Trait, typename _Handler> typename _Actor
+                , typename _Trait
+                , typename ..._Init>
+        ActorId addActor(_Init const &...init) {
+            if constexpr (_CoreIndex_ == _index) {
+                return addActor<_CoreIndex_, _Actor<_Trait, PhysicalCoreHandler>>(init...);
+            }
+            return ActorId::NotFound{};
         }
 
     public:
@@ -277,22 +316,21 @@ namespace cube {
                 delete actor;
                 return nullptr;
             }
-            _shared_core_actor.insert({actor->id(), actor->proxy()});
-            _parent->addActor(actor->proxy());
+            addActor(actor->proxy());
             return actor;
         };
 
-        template<std::size_t _CoreIndex_, template<typename _Handler> typename _Actor, typename ..._Init>
-        ActorId addActor(_Init const &...init) {
-            if constexpr (_CoreIndex_ == _index) {
-                auto actor = new _Actor<PhysicalCoreHandler>(init...);
-                actor->__set_id(__generate_id());
-                actor->_handler = this;
-                _shared_core_actor.insert({actor->id(), actor->proxy()});
-                _parent->addActor(actor->proxy());
-                return actor->id();
-            }
-            return ActorId::NotFound{};
+        template<template <typename _Handler> typename _Actor
+                , typename ..._Init>
+        inline auto addReferencedActor(_Init const &...init) {
+            return addReferencedActor<_Actor<PhysicalCoreHandler>>(init...);
+        }
+
+        template<template <typename _Trait, typename _Handler> typename _Actor
+                , typename _Trait
+                , typename ..._Init>
+        inline auto addReferencedActor(_Init const &...init) {
+            return addReferencedActor<_Actor<_Trait, PhysicalCoreHandler>>(init...);
         }
 
     public:

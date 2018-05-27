@@ -13,6 +13,7 @@
 # include "nanolog.h"
 
 #else
+# define LOG_DEBUG cube::io::cout()
 # define LOG_INFO cube::io::cout()
 # define LOG_WARN cube::io::cout()
 # define LOG_CRIT cube::io::cout()
