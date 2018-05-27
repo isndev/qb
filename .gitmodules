@@ -1,6 +1,12 @@
-[submodule "cube-linq"]
-	path = cube-linq
+[submodule "gperftools"]
+	path = modules/gperftools
+	url = https://github.com/gperftools/gperftools.git
+	branch = master
+[submodule "linq"]
+	path = modules/linq
 	url = https://github.com/isnDev/cube-linq.git
-[submodule "NanoLog"]
-	path = NanoLog
+	branch = master
+[submodule "nanolog"]
+	path = modules/nanolog
 	url = https://github.com/Iyengar111/NanoLog.git
+	branch = master

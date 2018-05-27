@@ -21,7 +21,9 @@ namespace cube {
 
 		Main()
 			: base_t((typename _Core::template Type<Main>::type::parent_ptr_t)(this)...)
-		{}
+		{
+		    LOG_INFO << "Init Main with " << total_core << " PhysicalCore(s)";
+		}
 
         //Todo : no thread safe need a lock or lockfree list
         // should be not accessible to users
@@ -44,11 +46,26 @@ namespace cube {
 
         // Start Sequence Usage
 
-        template<std::size_t _CoreIndex, template<typename _Handler> typename _Actor, typename ..._Init>
+        template<std::size_t _CoreIndex
+                , template<typename _Handler> typename _Actor
+                , typename ..._Init>
         ActorId addActor(_Init const &...init) {
             ActorId id = ActorId::NotFound{};
             this->each_or([this, &id, &init...](auto &item) -> bool {
                 id = item.template addActor<_CoreIndex, _Actor>(init...);
+
+                return static_cast<bool>(id);
+            });
+            return id;
+        }
+
+        template<std::size_t _CoreIndex
+                , template<typename _Trait, typename _Handler> typename _Actor
+                , typename _Trait, typename ..._Init>
+        ActorId addActor(_Init const &...init) {
+            ActorId id = ActorId::NotFound{};
+            this->each_or([this, &id, &init...](auto &item) -> bool {
+                id = item.template addActor<_CoreIndex, _Actor, _Trait>(init...);
 
                 return static_cast<bool>(id);
             });

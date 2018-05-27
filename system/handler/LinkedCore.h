@@ -63,11 +63,27 @@ namespace cube {
             _parent->removeActor(id);
         }
 
-        template<std::size_t _CoreIndex, template<typename _Handler> typename _Actor, typename ..._Init>
+        template<std::size_t _CoreIndex
+                , template<typename _Handler> typename _Actor
+                , typename ..._Init>
         ActorId addActor(_Init const &...init) {
             ActorId id = ActorId::NotFound{};
             this->each_or([this, &id, &init...](auto &item) -> bool {
                 id = item.template addActor<_CoreIndex, _Actor, _Init...>(init...);
+
+                return static_cast<bool>(id);
+            });
+            return id;
+        }
+
+        template<std::size_t _CoreIndex
+                , template<typename _Trait, typename _Handler> typename _Actor
+                , typename _Trait
+                , typename ..._Init>
+        ActorId addActor(_Init const &...init) {
+            ActorId id = ActorId::NotFound{};
+            this->each_or([this, &id, &init...](auto &item) -> bool {
+                id = item.template addActor<_CoreIndex, _Actor, _Trait, _Init...>(init...);
 
                 return static_cast<bool>(id);
             });
