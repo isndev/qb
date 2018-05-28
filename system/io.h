@@ -10,7 +10,7 @@
 
 #ifndef NOLOG
 
-# include "nanolog.h"
+# include "../nanolog/nanolog.h"
 
 #else
 # define LOG_DEBUG cube::io::cout()
