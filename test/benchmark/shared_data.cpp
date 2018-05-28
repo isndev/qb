@@ -13,15 +13,14 @@ class ActorMock_Shared : public cube::Actor<Handler> {
 public:
     ActorMock_Shared() : _counter(1) {}
 
-    int init() { return 0; }
-    int main() {
+    cube::ActorStatus main() {
         auto &data = this->sharedData();
         if (data.shared_vector.size() < 1000000) {
             data.shared_vector.push_back(_counter++);
-            return 0;
+            return cube::ActorStatus::Alive;
         }
 
-        return 1;
+        return cube::ActorStatus::Dead;
     }
 };
 

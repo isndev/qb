@@ -45,14 +45,17 @@ endif()
 
 add_executable(test-actor
 		test/actor/actor.cpp system/debug.cpp NanoLog/nanolog.cpp)
+add_executable(test-chain-actor
+        test/benchmark/chain_event.cpp system/debug.cpp nanolog/nanolog.cpp)
 add_executable(test-linked-core
         test/benchmark/linked_core.cpp system/debug.cpp nanolog/nanolog.cpp)
-add_executable(test-shared-data
+add_executable(test-core-shared_data
         test/benchmark/shared_data.cpp system/debug.cpp nanolog/nanolog.cpp)
 if (USE_TC_MALLOC)
 target_link_libraries(test-actor optimized ${tcmalloc})
+target_link_libraries(test-chain-actor optimized ${tcmalloc})
 target_link_libraries(test-linked-core optimized ${tcmalloc})
-target_link_libraries(test-shared-data optimized ${tcmalloc})
+target_link_libraries(test-core-shared_data optimized ${tcmalloc})
 endif()
 
 add_executable(test-TComposition

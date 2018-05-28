@@ -20,6 +20,28 @@ namespace cube {
         using SPSCBuffer = lockfree::spsc::ringbuffer<CacheLine, MaxEvents>;
         using MPSCBuffer = lockfree::mpsc::ringbuffer<CacheLine, MaxEvents, 0>;
         using EventBuffer = std::array<CacheLine, MaxEvents>;
+
+        class IActor {
+        public:
+            virtual ~IActor() {}
+
+            virtual ActorStatus init() = 0;
+            virtual ActorStatus main() = 0;
+            virtual void hasEvent(Event const *) = 0;
+        };
+
+        struct ActorProxy {
+            uint64_t const _id;
+            IActor *_this;
+            void *const _handler;
+
+            ActorProxy() : _id(0), _this(nullptr), _handler(nullptr) {}
+
+            ActorProxy(uint64_t const id, IActor *actor, void *const handler)
+                    : _id(id), _this(actor), _handler(handler) {
+            }
+        };
+
     private:
 		using parent_ptr_t = _ParentHandler*;
         //////// Event Manager
@@ -63,8 +85,7 @@ namespace cube {
             T &recycle(T const &data) {
                 T &ret = *reinterpret_cast<T *>(_buffer.data() + _index);
                 std::memcpy(&ret, &data, sizeof(T));
-                std::swap(ret.dest, ret.source);
-                const_cast<T &>(data).alive = true;
+                ret.alive = true;
                 return push(ret);
             }
 
@@ -94,7 +115,7 @@ namespace cube {
             EventBuffer _event_buffer;
             PipeMap _pipes;
 
-            EventManager(PhysicalCoreHandler &core)
+            EventManager(PhysicalCoreHandler &core, std::enable_if_t<!std::is_same<_ParentHandler, typename _ParentHandler::parent_t>::value>)
                     : _core(core)
                     , _mpsc_buffer(_ParentHandler::parent_t::total_core - _ParentHandler::linked_core)
             {}
@@ -132,8 +153,11 @@ namespace cube {
             }
 
             void receive() {
-                // linked_core_events
-                __receive(_event_buffer.data(), _spsc_buffer.dequeue(_event_buffer.data(), MaxEvents));
+                if constexpr (!std::is_same<_ParentHandler, typename _ParentHandler::parent_t>::value) {
+                    // linked_core_events
+                    __receive(_event_buffer.data(), _spsc_buffer.dequeue(_event_buffer.data(), MaxEvents));
+                }
+
                 // global_core_events
                 _mpsc_buffer.dequeue([this](CacheLine *buffer, std::size_t nb_events){
                         __receive(buffer, nb_events);
@@ -148,16 +172,18 @@ namespace cube {
         static void __start__physical_thread(PhysicalCoreHandler &core) {
             if (core.init()) {
                 std::vector<ActorProxy> _actor_to_remove;
+                _actor_to_remove.reserve(core._shared_core_actor.size());
                 LOG_INFO << "StartSequence Init " << core << " Success";
                 while (likely(true)) {
                     //! not sure to implement this maybe it has overhead
                     for (auto &actor: core._shared_core_actor) {
-                        if (unlikely(actor.second._this->main())) {
+                        if (unlikely(static_cast<int>(actor.second._this->main()))) {
                             _actor_to_remove.push_back(actor.second);
                         }
                     }
-                    core._eventManager->flush();
 
+                    core._eventManager->receive();
+                    core._eventManager->flush();
                     //! next
                     if (unlikely(!_actor_to_remove.empty())) {
                         // remove dead actor
@@ -169,8 +195,6 @@ namespace cube {
                         if (core._shared_core_actor.empty())
                             break;
                     }
-
-                    core._eventManager->receive();
                 }
             } else {
                 LOG_CRIT << "StartSequence Init " << core << " Failed";
@@ -187,11 +211,17 @@ namespace cube {
         //////// !Members
 
         // Start Sequence Usage
-        void __alloc__event() {
+        bool __alloc__event() {
             if constexpr (!std::is_void<_SharedData>::value) {
                 _sharedData = new _SharedData();
             }
             _eventManager = new EventManager(*this);
+            // Init StaticActors
+            for (auto &it : _shared_core_actor) {
+                if (static_cast<int>(it.second._this->init()))
+                    return false;
+            }
+            return true;
         }
 
         void __start() {
@@ -220,16 +250,7 @@ namespace cube {
             //!Note Cannot set affinity on windows with GNU Compiler
 #endif
 #endif
-            if (!ret)
-                return false;
-
-            // Init StaticActors
-            for (auto &it : _shared_core_actor) {
-                if (it.second._this->init())
-                    return false;
-            }
-
-            return true;
+            return ret;
         }
 
         inline void receive(CacheLine const *data, uint32_t const size) {
@@ -245,13 +266,11 @@ namespace cube {
 
         inline void addActor(ActorProxy const &actor) {
             _shared_core_actor.insert({actor._id, actor});
-            _parent->addActor(actor);
             LOG_DEBUG << "New Actor[" << actor._id << "] in " << *this;
         }
 
         inline void removeActor(ActorId const &id) {
             LOG_DEBUG << "Delete Actor[" << id << "] in " << *this;
-            _parent->removeActor(id);
             _shared_core_actor.erase(id);
         }
 
@@ -304,6 +323,7 @@ namespace cube {
 	            delete _eventManager;
             if constexpr (!std::is_void<_SharedData>::value)
                 delete _sharedData;
+            LOG_INFO << "Deleted " << *this;
         }
 
         template<typename _Actor, typename ..._Init>
@@ -312,7 +332,7 @@ namespace cube {
             actor->__set_id(__generate_id());
             actor->_handler = this;
 
-            if (unlikely(actor->init())) {
+            if (unlikely(static_cast<int>(actor->init()))) {
                 delete actor;
                 return nullptr;
             }
@@ -346,9 +366,18 @@ namespace cube {
         }
         template<typename T>
         T &reply(T const &event) {
-            return _eventManager->getPipe(event.source._index).template recycle<T>(event);
+            auto &ret = _eventManager->getPipe(event.source._index).template recycle<T>(event);
+            std::swap(ret.dest, ret.source);
+            return ret;
         }
 
+        template<typename T>
+        T &forward(ActorId const dest, T const &event) {
+            auto &ret = _eventManager->getPipe(dest._index).template recycle<T>(event);
+            std::swap(ret.dest, ret.source);
+            ret.dest = dest;
+            return ret;
+        }
 
         void send(CacheLine const *data, uint32_t const index, uint32_t const size) {
             _parent->send(data, _index, index, size);

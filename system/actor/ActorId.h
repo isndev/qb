@@ -30,6 +30,11 @@ namespace cube {
             return static_cast<uint64_t>(*this) != static_cast<uint64_t>(rhs);
         }
     };
+
+    enum class ActorStatus : int {
+        Alive = 0,
+        Dead = 1
+    };
 }
 
 #endif //CUBE_ACTORID_H

@@ -8,8 +8,6 @@ namespace cube {
     template<typename ..._Core>
     class Main : public nocopy
 			   , public TComposition<typename _Core::template Type<Main<_Core...>>::type...> {
-        std::unordered_map<uint64_t, ActorProxy> _all_actor;
-
     public:
         //////// Static Const Data
         static const std::size_t linked_core;
@@ -26,14 +24,6 @@ namespace cube {
 		}
 
         //Todo : no thread safe need a lock or lockfree list
-        // should be not accessible to users
-        void addActor(ActorProxy const &actor) {
-            //_all_actor.insert({actor._id, actor});
-        }
-
-        void removeActor(ActorId const &id) {
-            //_all_actor.erase(id);
-        }
 
         void send(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
 		    if (!this->each_or([data, source, index, size](auto &item) -> bool {
@@ -72,15 +62,16 @@ namespace cube {
             return id;
         }
 
-        void start() {
-            this->each([](auto &item) -> bool {
-                item.__alloc__event();
-                return true;
-            });
+        bool start() {
+            if (!this->each_and([](auto &item) -> bool {
+                return item.__alloc__event();
+            })) return false;
+
             this->each([](auto &item) -> bool {
                 item.__start();
                 return true;
             });
+            return true;
         }
 
         void join() {

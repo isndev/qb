@@ -2,14 +2,14 @@
 #ifndef CUBE_ACTOR_H
 # define CUBE_ACTOR_H
 # include <unordered_map>
-
-# include "ActorProxy.h"
+# include "Event.h"
 
 namespace cube {
 
     template<typename _Handler>
     class Actor
-            : public ActorId, public IActor, public nocopy {
+: public ActorId, public _Handler::IActor, public nocopy {
+    using ActorProxy = typename _Handler::ActorProxy;
 
         class IRegisterEvent {
         public:
@@ -42,7 +42,9 @@ namespace cube {
         }
 
     protected:
-        Actor() : _handler(nullptr) {}
+        Actor() : _handler(nullptr) {
+            _event_map.reserve(32);
+        }
 
         virtual ~Actor() {}
 
@@ -56,44 +58,49 @@ namespace cube {
         }
 
         template<typename _Data, typename _Actor>
-        void registerEvent(_Actor &actor) {
+        inline void registerEvent(_Actor &actor) {
             _event_map.insert({type_id<_Data>(), new RegisterEvent<_Data, _Actor>(actor)});
         };
 
 
         template<typename _Actor, typename ..._Init>
-        auto addRefActor(_Init const &...init) {
+        inline auto addRefActor(_Init const &...init) {
             return _handler->template addReferencedActor<_Actor, _Init...>(init...);
         }
 
         template<template <typename __Handler> typename _Actor, typename ..._Init>
-        auto addRefActor(_Init const &...init) {
+        inline auto addRefActor(_Init const &...init) {
             return _handler->template addReferencedActor<_Actor, _Init...>(init...);
         }
 
         template<template <typename _Trait, typename __Handler> typename _Actor, typename _Trait, typename ..._Init>
-        auto addRefActor(_Init const &...init) {
+        inline auto addRefActor(_Init const &...init) {
             return _handler->template addReferencedActor<_Actor, _Trait, _Init...>(init...);
         }
 
 
         template<typename _Data, typename ..._Init>
-        _Data &push(ActorId const &dest, _Init const &...init) {
+        inline _Data &push(ActorId const &dest, _Init const &...init) {
             return _handler->template push<_Data>(dest, id(), init...);
         }
 
-        template<typename _Data, typename ..._Init>
-        _Data &reply(_Data const &event) {
+        template<typename _Data>
+        inline _Data &reply(_Data const &event) {
             return _handler->template reply<_Data>(event);
         }
 
-        auto &sharedData() {
+        template<typename _Data>
+        inline _Data &forward(ActorId const dest, _Data const &event) {
+            return _handler->template forward<_Data>(dest, event);
+        }
+
+        inline auto &sharedData() {
             return _handler->sharedData();
         }
 
-        virtual int init() { return 0; }
+        virtual ActorStatus init() { return ActorStatus::Alive; }
 
-        virtual int main() { return 0; }
+        virtual ActorStatus main() { return ActorStatus::Alive; }
 
         virtual void hasEvent(Event const *event) override final {
             const auto nb_buckets = event->context_size;
