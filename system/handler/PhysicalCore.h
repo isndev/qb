@@ -86,8 +86,9 @@ namespace cube {
 
 			template<typename T, typename ..._Init>
 			T &allocate(_Init const &...init) {
+				constexpr std::size_t extra = (sizeof(T) % CUBE_LOCKFREE_CACHELINE_BYTES ? 1 : 0);
 				T &ret = *(new (reinterpret_cast<T *>(_buffer.data() + _index)) T(init...));
-				ret.bucket_size = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES + sizeof(T) % CUBE_LOCKFREE_CACHELINE_BYTES);
+				ret.bucket_size = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES) + extra;
 				return ret;
 			}
 
@@ -103,7 +104,7 @@ namespace cube {
             T &push(T &event) {
                 _index += event.bucket_size;
 //                if (unlikely(_index >= MaxEvents))
-//                    throw std::runtime_error();
+//                    throw std::runtime_error("push events exceed MaxSize");
                 if (event.dest != _last_actor) {
                     event.context_size = event.bucket_size;
                     _last_actor = event.dest;
@@ -263,13 +264,15 @@ namespace cube {
         }
 
         inline void receive(CacheLine const *data, uint32_t const size) {
-            _eventManager->_spsc_buffer.enqueue(data, size);
+            while(unlikely(!_eventManager->_spsc_buffer.enqueue(data, size)))
+                std::this_thread::yield();
         }
 
         inline bool receive_from_different_core(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
             if (_index != index)
                 return false;
-            _eventManager->_mpsc_buffer.enqueue(source, data, size);
+            while(unlikely(!_eventManager->_mpsc_buffer.enqueue(source, data, size)))
+                std::this_thread::yield();
             return true;
         }
 

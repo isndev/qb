@@ -42,7 +42,7 @@ public:
 
 
 void test_chain(int nb_actor) {
-    test("Test ChainEvent " + std::to_string(nb_actor) + " per Core 1000 loop\n",
+    test("Test ChainEvent " + std::to_string(nb_actor) + " Actor(s) per Core 1000 chain loop\n",
     [nb_actor]() {
         test<100>("ChainEvent 2 Unlinked Core", [nb_actor]() {
             cube::Main<PhysicalCore<0>, PhysicalCore<1>> main;

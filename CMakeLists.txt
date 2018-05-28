@@ -1,14 +1,12 @@
 cmake_minimum_required(VERSION 3.10)
 project(cube)
 
-include("${CMAKE_CURRENT_LIST_DIR}/cmake/gperftools.cmake")
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_VERBOSE_MAKEFILE OFF)
+set(CMAKE_VERBOSE_MAKEFILE ON)
 
-set(GPERFTOOLS_LIBRARIES ${CMAKE_CURRENT_LIST_DIR}/external/tcmalloc/win32/release)
 set(GPERFTOOLS_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR}/modules/gperftools/src)
+set(USE_TC_MALLOC ON)
 
 include_directories(${GPERFTOOLS_INCLUDE_DIR})
 include_directories(./)
@@ -22,13 +20,19 @@ if (WIN32)
     endif()
 
     find_library(
-            tcmalloc
+            TCMALLOC_RELEASE
             NAMES libtcmalloc_minimal
-            PATHS ${GPERFTOOLS_LIBRARIES}
+            PATHS ${CMAKE_CURRENT_LIST_DIR}/external/tcmalloc/win32/release
     )
-    set(USE_TC_MALLOC ON)
-    if (tcmalloc-NOTFOUND)
-        message("INFO: tcmalloc not found")
+
+    find_library(
+            TCMALLOC_DEBUG
+            NAMES libtcmalloc_minimal-debug
+            PATHS ${CMAKE_CURRENT_LIST_DIR}/external/tcmalloc/win32/debug
+    )
+
+    if (TCMALLOC_RELEASE-NOTFOUND)
+        message(STATUS "INFO: tcmalloc not found")
         set(USE_TC_MALLOC OFF)
     elseif (USE_TC_MALLOC)
         if (GNU)
@@ -42,7 +46,6 @@ elseif(UNIX)
 
 endif()
 
-
 add_executable(test-actor
 		test/actor/actor.cpp system/debug.cpp NanoLog/nanolog.cpp)
 add_executable(test-chain-actor
@@ -51,14 +54,23 @@ add_executable(test-linked-core
         test/benchmark/linked_core.cpp system/debug.cpp nanolog/nanolog.cpp)
 add_executable(test-core-shared_data
         test/benchmark/shared_data.cpp system/debug.cpp nanolog/nanolog.cpp)
+add_executable(test-TComposition
+        test/utils/TComposition.cpp)
+add_executable(test-timestamp
+        test/utils/timstamp.cpp)
+
 if (USE_TC_MALLOC)
-target_link_libraries(test-actor optimized ${tcmalloc})
-target_link_libraries(test-chain-actor optimized ${tcmalloc})
-target_link_libraries(test-linked-core optimized ${tcmalloc})
-target_link_libraries(test-core-shared_data optimized ${tcmalloc})
+target_link_libraries(test-actor
+        debug ${TCMALLOC_DEBUG}
+        optimized ${TCMALLOC_RELEASE})
+target_link_libraries(test-chain-actor
+        debug ${TCMALLOC_DEBUG}
+        optimized ${TCMALLOC_RELEASE})
+target_link_libraries(test-linked-core
+        debug ${TCMALLOC_DEBUG}
+        optimized ${TCMALLOC_RELEASE})
+target_link_libraries(test-core-shared_data
+        debug ${TCMALLOC_DEBUG}
+        optimized ${TCMALLOC_RELEASE})
 endif()
 
-add_executable(test-TComposition
-		test/utils/TComposition.cpp)
-add_executable(test-timestamp
-		test/utils/timstamp.cpp)
