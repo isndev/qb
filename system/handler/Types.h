@@ -2,19 +2,6 @@
 #ifndef CUBE_HANDLER_H
 #define CUBE_HANDLER_H
 
-#ifdef UNIX
-#define __USE_GNU
-    #include <sched.h>
-    #include <errno.h>
-    #include <unistd.h>
-    #include <pthread.h>
-#endif
-
-#ifdef WIN32
-    #include <windows.h>
-    #include <process.h>
-#endif
-
 # include <cstring>
 # include <unordered_map>
 # include <vector>

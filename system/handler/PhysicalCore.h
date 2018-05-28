@@ -1,6 +1,16 @@
 
 #ifndef CUBE_PHYSICALCORE_H
 # define CUBE_PHYSICALCORE_H
+#if defined(unix) || defined(__unix) || defined(__unix__)
+#define __USE_GNU
+    #include <sched.h>
+    #include <errno.h>
+    #include <unistd.h>
+    #include <pthread.h>
+#elif defined(_WIN32) || defined(_WIN64)
+    #include <windows.h>
+    #include <process.h>
+#endif
 # include "Types.h"
 
 namespace cube {
@@ -115,7 +125,7 @@ namespace cube {
             EventBuffer _event_buffer;
             PipeMap _pipes;
 
-            EventManager(PhysicalCoreHandler &core, std::enable_if_t<!std::is_same<_ParentHandler, typename _ParentHandler::parent_t>::value>)
+            EventManager(PhysicalCoreHandler &core)
                     : _core(core)
                     , _mpsc_buffer(_ParentHandler::parent_t::total_core - _ParentHandler::linked_core)
             {}
@@ -234,21 +244,20 @@ namespace cube {
 
         bool init() {
             bool ret(true);
-#ifdef UNIX
+#if defined(unix) || defined(__unix) || defined(__unix__)
             cpu_set_t cpuset;
 
             CPU_ZERO(&cpuset);
             CPU_SET(_index, &cpuset);
 
             ret = !pthread_setaffinity_np(_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
-#endif
-#ifdef WIN32
-#ifdef _MSC_VER
-            DWORD_PTR mask = (1 << (_index < 0 ? 0 : _index));
-            ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
-#else
-            //!Note Cannot set affinity on windows with GNU Compiler
-#endif
+#elif defined(_WIN32) || defined(_WIN64)
+    #ifdef _MSC_VER
+                DWORD_PTR mask = (1 << (_index < 0 ? 0 : _index));
+                ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
+    #else
+        #warning "Cannot set affinity on windows with GNU Compiler"
+    #endif
 #endif
             return ret;
         }
