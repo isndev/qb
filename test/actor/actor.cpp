@@ -11,8 +11,8 @@ class ActorTest : public cube::Actor<Handler> {
 public:
     ActorTest() = default;
 
-    int main() {
-        return 1;
+    cube::ActorStatus main() {
+        return cube::ActorStatus::Dead;
     }
 };
 
@@ -24,7 +24,7 @@ public:
 
     ActorTraitTest() = default;
 
-    int init() {
+    cube::ActorStatus init() {
         static int construct_time = 0;
         // add actor linked to same core
         this-> template addRefActor<ActorTest>();
@@ -32,11 +32,11 @@ public:
         if (construct_time++ < 100)
             this-> template addRefActor<ActorTraitTest>();
 
-        return 0;
+        return cube::ActorStatus::Alive;
     }
 
-    int main() {
-        return 1;
+    cube::ActorStatus main() {
+        return cube::ActorStatus::Dead;
     }
 };
 

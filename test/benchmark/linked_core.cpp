@@ -18,88 +18,34 @@ struct DynamicEvent : cube::Event {
     DynamicEvent(uint64_t x) : x(x), vec(512, 8) {}
 };
 
-template<typename Handler = void>
-class ActorMock_Tiny : public cube::Actor<Handler> {
+template<typename EventTrait, typename Handler>
+class ActorPong : public cube::Actor<Handler> {
     const cube::ActorId actor_to_send;
-    int alive = 0;
+    cube::ActorStatus status = cube::ActorStatus::Alive;
 public:
-    ActorMock_Tiny(cube::ActorId const &id = cube::ActorId::NotFound{})
+    ActorPong(cube::ActorId const &id = cube::ActorId::NotFound{})
             : actor_to_send(id) {}
 
-    int init() {
-        this->template registerEvent<TinyEvent>(*this);
+    cube::ActorStatus init() {
+        this->template registerEvent<EventTrait>(*this);
         if (actor_to_send)
-            this->template push<TinyEvent>(actor_to_send, 0);
-        return 0;
+            this->template push<EventTrait>(actor_to_send, 0);
+        return cube::ActorStatus::Alive;
     }
 
-    int main() {
-        return alive;
+    cube::ActorStatus main() {
+        return status;
     }
 
-    void onEvent(TinyEvent const &event) {
-        if (event.x >= 3000) alive = 1;
-        auto &rep = this->template reply<TinyEvent>(event);
+    void onEvent(EventTrait const &event) {
+        if (event.x >= 3000) status = cube::ActorStatus::Dead;
+        auto &rep = this->template reply<EventTrait>(event);
         ++rep.x;
     }
 
 };
 
-template<typename Handler = void>
-class ActorMock_Big : public cube::Actor<Handler> {
-    const cube::ActorId actor_to_send;
-    int alive = 0;
-public:
-    ActorMock_Big(cube::ActorId const &id = cube::ActorId::NotFound{})
-            : actor_to_send(id) {}
-
-    int init() {
-        this->template registerEvent<BigEvent>(*this);
-        if (actor_to_send)
-            this->template push<BigEvent>(actor_to_send, 0);
-        return 0;
-    }
-
-    int main() {
-        return alive;
-    }
-
-    void onEvent(BigEvent const &event) {
-        if (event.x >= 3000) alive = 1;
-        auto &rep = this->template reply<BigEvent>(event);
-        ++rep.x;
-    }
-
-};
-
-template<typename Handler = void>
-class ActorMock_Dynamic : public cube::Actor<Handler> {
-    const cube::ActorId actor_to_send;
-    int alive = 0;
-public:
-    ActorMock_Dynamic(cube::ActorId const &id = cube::ActorId::NotFound{})
-            : actor_to_send(id) {}
-
-    int init() {
-        this->template registerEvent<DynamicEvent>(*this);
-        if (actor_to_send)
-            this->template push<DynamicEvent>(actor_to_send, 0);
-        return 0;
-    }
-
-    int main() {
-        return alive;
-    }
-
-    void onEvent(DynamicEvent const &event) {
-        if (event.x >= 3000) alive = 1;
-        auto &rep = this->template reply<DynamicEvent>(event);
-        ++rep.x;
-    }
-};
-
-
-template<template<typename T> typename _ActorTest, typename _SharedData = void>
+template<template<typename E, typename T> typename _ActorTest, typename _Event, typename _SharedData = void>
 struct TEST {
     static void pingpong(std::string const &name) {
         test<100>("PingPong Linked Core0/1 (" + name + ")", []() {
@@ -108,7 +54,7 @@ struct TEST {
             > main;
 
             for (int i = 0; i < 100; ++i) {
-                main.template addActor<1, _ActorTest>(main.template addActor<0, _ActorTest>());
+                main.template addActor<1, _ActorTest, _Event>(main.template addActor<0, _ActorTest, _Event>());
             }
 
             main.start();
@@ -123,8 +69,8 @@ struct TEST {
             > main;
 
             for (int i = 0; i < 100; ++i) {
-                main.template addActor<1, _ActorTest>(main.template addActor<0, _ActorTest>());
-                main.template addActor<3, _ActorTest>(main.template addActor<2, _ActorTest>());
+                main.template addActor<1, _ActorTest, _Event>(main.template addActor<0, _ActorTest, _Event>());
+                main.template addActor<3, _ActorTest, _Event>(main.template addActor<2, _ActorTest, _Event>());
             }
 
             main.start();
@@ -136,7 +82,7 @@ struct TEST {
             cube::Main<PhysicalCore<0>, PhysicalCore<1>> main;
 
             for (int i = 0; i < 100; ++i) {
-                main.template addActor<1, _ActorTest>(main.template addActor<0, _ActorTest>());
+                main.template addActor<1, _ActorTest, _Event>(main.template addActor<0, _ActorTest, _Event>());
             }
 
             main.start();
@@ -148,7 +94,7 @@ struct TEST {
             cube::Main<PhysicalCore<0>, PhysicalCore<3>> main;
 
             for (int i = 0; i < 100; ++i) {
-                main.template addActor<3, _ActorTest>(main.template addActor<0, _ActorTest>());
+                main.template addActor<3, _ActorTest, _Event>(main.template addActor<0, _ActorTest, _Event>());
             }
 
             main.start();
@@ -163,8 +109,8 @@ struct TEST {
             > main;
 
             for (int i = 0; i < 100; ++i) {
-                main.template addActor<1, _ActorTest>(main.template addActor<3, _ActorTest>());
-                main.template addActor<0, _ActorTest>(main.template addActor<2, _ActorTest>());
+                main.template addActor<1, _ActorTest, _Event>(main.template addActor<3, _ActorTest, _Event>());
+                main.template addActor<0, _ActorTest, _Event>(main.template addActor<2, _ActorTest, _Event>());
             }
 
             main.start();
@@ -179,9 +125,9 @@ int main() {
     nanolog::set_log_level(nanolog::LogLevel::WARN);
 
     // ping pong
-    TEST<ActorMock_Tiny>::pingpong("TinyEvent");
-    TEST<ActorMock_Big>::pingpong("BigEvent");
-    TEST<ActorMock_Dynamic>::pingpong("DynamicEvent");
+    TEST<ActorPong, TinyEvent>::pingpong("TinyEvent");
+    TEST<ActorPong, BigEvent>::pingpong("BigEvent");
+    TEST<ActorPong, DynamicEvent>::pingpong("DynamicEvent");
 
     return 0;
 }

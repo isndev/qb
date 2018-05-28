@@ -24,7 +24,6 @@
 
 # include "utils/TComposition.h"
 # include "system/lockfree/mpsc.h"
-# include "system/actor/ActorProxy.h"
 # include "system/io.h"
 
 namespace cube {

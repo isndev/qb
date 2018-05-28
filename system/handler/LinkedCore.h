@@ -21,10 +21,9 @@ namespace cube {
         using parent_ptr_t = _ParentHandler *;
     private:
         // Start Sequence Usage
-        void __alloc__event() {
-            this->each([](auto &item) -> bool {
-                item.__alloc__event();
-                return true;
+        bool __alloc__event() {
+            return this->each_and([](auto &item) -> bool {
+                return item.__alloc__event();
             });
         }
 
@@ -54,14 +53,6 @@ namespace cube {
 		LinkedCoreHandler(_ParentHandler *parent)
 			: base_t((typename _Core::template Type<LinkedCoreHandler>::type::parent_ptr_t)(this)...)
 			, _parent(parent) {}
-
-        void addActor(ActorProxy const &actor) {
-            _parent->addActor(actor);
-        }
-
-        void removeActor(ActorId const &id) {
-            _parent->removeActor(id);
-        }
 
         template<std::size_t _CoreIndex
                 , template<typename _Handler> typename _Actor

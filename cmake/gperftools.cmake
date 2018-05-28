@@ -1,51 +1,47 @@
-# Tries to find Gperftools.
-#
-# Usage of this module as follows:
-#
-#     find_package(Gperftools)
-#
-# Variables used by this module, they can change the default behaviour and need
-# to be set before calling find_package:
-#
-#  Gperftools_ROOT_DIR  Set this variable to the root installation of
-#                       Gperftools if the module has problems finding
-#                       the proper installation path.
-#
-# Variables defined by this module:
-#
-#  GPERFTOOLS_FOUND              System has Gperftools libs/headers
-#  GPERFTOOLS_LIBRARIES          The Gperftools libraries (tcmalloc & profiler)
-#  GPERFTOOLS_INCLUDE_DIR        The location of Gperftools headers
 
-find_library(GPERFTOOLS_TCMALLOC
-        NAMES tcmalloc
-        HINTS ${Gperftools_ROOT_DIR}/lib)
+function(find_static_library LIB_NAME PATH OUT)
+    if (WIN32 OR MSVC)
+        set(CMAKE_FIND_LIBRARY_SUFFIXES ".lib")
+    elseif (UNIX)
+        set(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+    endif()
 
-find_library(GPERFTOOLS_PROFILER
-        NAMES profiler
-        HINTS ${Gperftools_ROOT_DIR}/lib)
+    find_library(
+            FOUND_${LIB_NAME}_STATIC
+            NAMES ${LIB_NAME}
+            PATH ${PATH}
+    )
 
-find_library(GPERFTOOLS_TCMALLOC_AND_PROFILER
-        NAMES tcmalloc_and_profiler
-        HINTS ${Gperftools_ROOT_DIR}/lib)
+    if (FOUND_${LIB_NAME}_STATIC)
+        get_filename_component(ABS_FILE ${FOUND_${LIB_NAME}_STATIC} ABSOLUTE)
+    else()
+        message(SEND_ERROR "Unable to find library ${LIB_NAME}")
+    endif()
 
-find_path(GPERFTOOLS_INCLUDE_DIR
-        NAMES gperftools/heap-profiler.h
-        HINTS ${Gperftools_ROOT_DIR}/include)
+    set(${OUT} ${ABS_FILE} PARENT_SCOPE)
 
-set(GPERFTOOLS_LIBRARIES ${GPERFTOOLS_TCMALLOC_AND_PROFILER})
+endfunction()
 
-include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(
-        Gperftools
-        DEFAULT_MSG
-        GPERFTOOLS_LIBRARIES
-        GPERFTOOLS_INCLUDE_DIR)
+function(find_dynamic_library LIB_NAME PATH OUT)
 
-mark_as_advanced(
-        Gperftools_ROOT_DIR
-        GPERFTOOLS_TCMALLOC
-        GPERFTOOLS_PROFILER
-        GPERFTOOLS_TCMALLOC_AND_PROFILER
-        GPERFTOOLS_LIBRARIES
-        GPERFTOOLS_INCLUDE_DIR)
+    if (WIN32 OR MSVC)
+        set(CMAKE_FIND_LIBRARY_SUFFIXES ".dll")
+    elseif (UNIX)
+        set(CMAKE_FIND_LIBRARY_SUFFIXES ".so")
+    endif()
+
+    find_library(
+            FOUND_${LIB_NAME}_DYNAMIC
+            ${LIB_NAME}
+            ${PATH}
+    )
+
+    if (FOUND_${LIB_NAME}_DYNAMIC)
+        get_filename_component(ABS_FILE ${FOUND_${LIB_NAME}_DYNAMIC} ABSOLUTE)
+    else()
+        message(SEND_ERROR "Unable to find library ${LIB_NAME}")
+    endif()
+
+    set(${OUT} ${ABS_FILE} PARENT_SCOPE)
+
+endfunction()
