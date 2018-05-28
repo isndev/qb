@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
-set(GPERFTOOLS_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR}/modules/gperftools/src)
+set(GPERFTOOLS_INCLUDE_DIR modules/gperftools/src)
 set(USE_TC_MALLOC ON)
 
 include_directories(${GPERFTOOLS_INCLUDE_DIR})
@@ -22,13 +22,13 @@ if (WIN32)
     find_library(
             TCMALLOC_RELEASE
             NAMES libtcmalloc_minimal
-            PATHS ${CMAKE_CURRENT_LIST_DIR}/external/tcmalloc/win32/release
+            PATHS external/tcmalloc/win32/release
     )
 
     find_library(
             TCMALLOC_DEBUG
             NAMES libtcmalloc_minimal-debug
-            PATHS ${CMAKE_CURRENT_LIST_DIR}/external/tcmalloc/win32/debug
+            PATHS external/tcmalloc/win32/debug
     )
 
     if (TCMALLOC_RELEASE-NOTFOUND)

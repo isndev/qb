@@ -20,7 +20,7 @@
 #endif
 
 namespace cube {
-#ifdef NODEBUG
+#ifdef NDEBUG
     constexpr static bool debug = false;
 #else
     constexpr static bool debug = true;
