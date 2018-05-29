@@ -85,9 +85,9 @@ namespace cube {
             ~Pipe() = default;
 
 			template<typename T, typename ..._Init>
-			T &allocate(_Init const &...init) {
+			T &allocate(_Init &&...init) {
 				constexpr std::size_t extra = (sizeof(T) % CUBE_LOCKFREE_CACHELINE_BYTES ? 1 : 0);
-				T &ret = *(new (reinterpret_cast<T *>(_buffer.data() + _index)) T(init...));
+				T &ret = *(new (reinterpret_cast<T *>(_buffer.data() + _index)) T(std::forward<_Init>(init)...));
 				ret.bucket_size = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES) + extra;
 				return ret;
 			}
@@ -224,7 +224,8 @@ namespace cube {
         // Start Sequence Usage
         bool __alloc__event() {
             if constexpr (!std::is_void<_SharedData>::value) {
-                _sharedData = new _SharedData();
+                if (_sharedData == nullptr)
+                    _sharedData = new _SharedData();
             }
             _eventManager = new EventManager(*this);
             // Init StaticActors
@@ -233,6 +234,15 @@ namespace cube {
                     return false;
             }
             return true;
+        }
+
+        template <std::size_t _CoreIndex_, typename ..._Init>
+        bool __init_shared(_Init &&...init) {
+            if constexpr (_CoreIndex_ == _CoreIndex) {
+                _sharedData = new _SharedData(std::forward<_Init>(init)...);
+                return true;
+            }
+            return false;
         }
 
         void __start() {
@@ -289,8 +299,8 @@ namespace cube {
         template<std::size_t _CoreIndex_
                 , typename _Actor
                 , typename ..._Init>
-        inline ActorId addActor(_Init const &...init) {
-            auto actor = new _Actor(init...);
+        inline ActorId addActor(_Init &&...init) {
+            auto actor = new _Actor(std::forward<_Init>(init)...);
             actor->__set_id(__generate_id());
             actor->_handler = this;
             addActor(actor->proxy());
@@ -300,9 +310,10 @@ namespace cube {
         template<std::size_t _CoreIndex_
                 , template<typename _Handler> typename _Actor
                 , typename ..._Init>
-        ActorId addActor(_Init const &...init) {
+        ActorId addActor(_Init &&...init) {
             if constexpr (_CoreIndex_ == _index) {
-                return addActor<_CoreIndex_, _Actor<PhysicalCoreHandler>>(init...);
+                return addActor<_CoreIndex_, _Actor<PhysicalCoreHandler>>
+                        (std::forward<_Init>(init)...);
             }
             return ActorId::NotFound{};
         }
@@ -311,9 +322,10 @@ namespace cube {
                 , template<typename _Trait, typename _Handler> typename _Actor
                 , typename _Trait
                 , typename ..._Init>
-        ActorId addActor(_Init const &...init) {
+        ActorId addActor(_Init &&...init) {
             if constexpr (_CoreIndex_ == _index) {
-                return addActor<_CoreIndex_, _Actor<_Trait, PhysicalCoreHandler>>(init...);
+                return addActor<_CoreIndex_, _Actor<_Trait, PhysicalCoreHandler>>
+                        (std::forward<_Init>(init)...);
             }
             return ActorId::NotFound{};
         }
@@ -339,8 +351,8 @@ namespace cube {
         }
 
         template<typename _Actor, typename ..._Init>
-        _Actor *addReferencedActor(_Init const &...init) {
-            auto actor = new _Actor(init...);
+        _Actor *addReferencedActor(_Init &&...init) {
+            auto actor = new _Actor(std::forward<_Init>(init)...);
             actor->__set_id(__generate_id());
             actor->_handler = this;
 
@@ -354,23 +366,25 @@ namespace cube {
 
         template<template <typename _Handler> typename _Actor
                 , typename ..._Init>
-        inline auto addReferencedActor(_Init const &...init) {
-            return addReferencedActor<_Actor<PhysicalCoreHandler>>(init...);
+        inline auto addReferencedActor(_Init &&...init) {
+            return addReferencedActor<_Actor<PhysicalCoreHandler>>
+                    (std::forward<_Init>(init)...);
         }
 
         template<template <typename _Trait, typename _Handler> typename _Actor
                 , typename _Trait
                 , typename ..._Init>
-        inline auto addReferencedActor(_Init const &...init) {
-            return addReferencedActor<_Actor<_Trait, PhysicalCoreHandler>>(init...);
+        inline auto addReferencedActor(_Init &&...init) {
+            return addReferencedActor<_Actor<_Trait, PhysicalCoreHandler>>
+                    (std::forward<_Init>(init)...);
         }
 
     public:
 
         template<typename T, typename ..._Init>
-        T &push(ActorId const &dest, ActorId const &source, _Init const &...init) {
+        T &push(ActorId const &dest, ActorId const &source, _Init &&...init) {
 			auto &pipe = _eventManager->getPipe(dest._index);
-            auto &ret = pipe.template allocate<T, _Init...>(init...);
+            auto &ret = pipe.template allocate<T, _Init...>(std::forward<_Init>(init)...);
 			ret.id = type_id<T>();
 			ret.dest = dest;
 			ret.source = source;

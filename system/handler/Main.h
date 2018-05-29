@@ -23,8 +23,6 @@ namespace cube {
 		    LOG_INFO << "Init Main with " << total_core << " PhysicalCore(s)";
 		}
 
-        //Todo : no thread safe need a lock or lockfree list
-
         void send(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
 		    if (!this->each_or([data, source, index, size](auto &item) -> bool {
 		        return item.receive_from_different_core(data, source, index, size);
@@ -60,6 +58,13 @@ namespace cube {
                 return static_cast<bool>(id);
             });
             return id;
+        }
+
+        template <std::size_t _CoreIndex, typename ..._Init>
+        bool setSharedData(_Init &&...init) {
+            return this->each_or([&init...](auto &item) -> bool {
+                return item.template __init_shared<_CoreIndex>(std::forward<_Init>(init)...);
+            });
         }
 
         bool start() {
