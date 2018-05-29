@@ -4,16 +4,20 @@ project(cube)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
+option(USE_TC_MALLOC "TCMalloc is ennabled" ON)
 option(COMPILE_TESTS "COMPILE_TESTS" OFF)
 option(NOLOG "NOLOG" OFF)
 option(NOCOUT "NOCOUT" ON)
 
+
 set(GPERFTOOLS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/gperftools/src)
-option(USE_TC_MALLOC "TCMalloc is ennabled" ON)
+get_directory_property(IS_INVOKED PARENT_DIRECTORY)
 
 include_directories(${GPERFTOOLS_INCLUDE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/nanolog)
+
+
 
 if (WIN32)
     if (MSVC)
@@ -73,4 +77,7 @@ endif()
 
 add_library(cube STATIC ${DEBUGFILES} ${LOGFILES})
 
+if(IS_INVOKED)
+    set(CUBE_CXX_FLAGS "${CMAKE_CXX_FLAGS}" PARENT_SCOPE)
+endif()
 
