@@ -220,7 +220,7 @@ namespace cube {
         std::unordered_map<uint64_t, ActorProxy> _shared_core_actor;
         std::thread _thread;
         //////// !Members
-
+    public:
         // Start Sequence Usage
         bool __alloc__event() {
             if constexpr (!std::is_void<_SharedData>::value) {

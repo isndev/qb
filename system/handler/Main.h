@@ -1,13 +1,12 @@
 
 #ifndef CUBE_MAIN_H
 # define CUBE_MAIN_H
-# include "Types.h"
+# include "BaseHandler.h"
 
 namespace cube {
     
     template<typename ..._Core>
-    class Main : public nocopy
-			   , public TComposition<typename _Core::template Type<Main<_Core...>>::type...> {
+    class Main : public BaseHandler<typename _Core::template Type<Main<_Core...>>::type...> {
     public:
         //////// Static Const Data
         static const std::size_t linked_core;
@@ -15,7 +14,7 @@ namespace cube {
 
         //////// Types
         using parent_t = Main;
-        using base_t = TComposition<typename _Core::template Type<Main>::type...>;
+        using base_t = BaseHandler<typename _Core::template Type<Main>::type...>;
 
 		Main()
 			: base_t((typename _Core::template Type<Main>::type::parent_ptr_t)(this)...)
@@ -23,72 +22,36 @@ namespace cube {
 		    LOG_INFO << "Init Main with " << total_core << " PhysicalCore(s)";
 		}
 
-        void send(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
-		    if (!this->each_or([data, source, index, size](auto &item) -> bool {
-		        return item.receive_from_different_core(data, source, index, size);
-		    })) {
-		        // try to send to unknown core
-		    }
-        }
         /////////////////////////////////////////////////////
+        void send(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
+            if (unlikely(!this->each_or([data, source, index, size](auto &item) -> bool {
+                return item.receive_from_different_core(data, source, index, size);
+            }))) {
+                LOG_WARN << "Core(" << source << ") failed to send event to nonexistent Core(" << index << ")";
+            }
+        }
 
         // Start Sequence Usage
-
-        template<std::size_t _CoreIndex
-                , template<typename _Handler> typename _Actor
-                , typename ..._Init>
-        ActorId addActor(_Init const &...init) {
-            ActorId id = ActorId::NotFound{};
-            this->each_or([this, &id, &init...](auto &item) -> bool {
-                id = item.template addActor<_CoreIndex, _Actor>(init...);
-
-                return static_cast<bool>(id);
-            });
-            return id;
-        }
-
-        template<std::size_t _CoreIndex
-                , template<typename _Trait, typename _Handler> typename _Actor
-                , typename _Trait, typename ..._Init>
-        ActorId addActor(_Init const &...init) {
-            ActorId id = ActorId::NotFound{};
-            this->each_or([this, &id, &init...](auto &item) -> bool {
-                id = item.template addActor<_CoreIndex, _Actor, _Trait>(init...);
-
-                return static_cast<bool>(id);
-            });
-            return id;
-        }
-
         template <std::size_t _CoreIndex, typename ..._Init>
         bool setSharedData(_Init &&...init) {
-            return this->each_or([&init...](auto &item) -> bool {
-                return item.template __init_shared<_CoreIndex>(std::forward<_Init>(init)...);
-            });
+            return this->template __init_shared<_CoreIndex>(std::forward<_Init>(init)...);
         }
 
         bool start() {
-            if (!this->each_and([](auto &item) -> bool {
-                return item.__alloc__event();
-            })) return false;
-
-            this->each([](auto &item) -> bool {
-                item.__start();
-                return true;
-            });
+            if (!this->__alloc__event())
+                return false;
+            //Todo : should return status
+            this->__start();
             return true;
         }
 
         void join() {
-            this->each([](auto &item) -> bool {
-                item.__join();
-                return true;
-            });
+            this->__join();
         }
 
     };
 
-    //Init static data
+    // not constexpr because of windows issue
     template<typename ..._Core>
     const std::size_t Main<_Core...>::linked_core = 0;
     template<typename ..._Core>
