@@ -71,7 +71,7 @@ else()
     message(STATUS "Added log source files")
 endif()
 
-if (COMPILE_TESTS)
+if (COMPILE_TESTS OR MSVC)
     add_subdirectory(test)
 endif()
 

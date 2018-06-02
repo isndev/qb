@@ -59,9 +59,19 @@ namespace cube {
 
         template<typename _Data, typename _Actor>
         inline void registerEvent(_Actor &actor) {
-            _event_map.insert({type_id<_Data>(), new RegisterEvent<_Data, _Actor>(actor)});
+			auto it = _event_map.find(type_id<_Data>());
+			if (it != _event_map.end())
+				delete it->second;
+			_event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<_Data, _Actor>(actor));
         };
 
+        template<typename _Data, typename _Actor>
+        inline void unRegisterEvent(_Actor &actor) {
+			auto it = _event_map.find(type_id<_Data>());
+			if (it != _event_map.end())
+				delete it->second;
+            _event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<Event, _Actor>(actor));
+        };
 
         template<typename _Actor, typename ..._Init>
         inline auto addRefActor(_Init const &...init) {
@@ -110,6 +120,10 @@ namespace cube {
                 i += event->bucket_size;
                 event += event->bucket_size;
             }
+        }
+
+        void onEvent(Event const &event) {
+            LOG_WARN << "Actor[" << _id << "] received removed event[" << event.id << "]";
         }
 
     };
