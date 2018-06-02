@@ -12,6 +12,8 @@ include_directories(${TEST_PATH}/..)
 
 add_executable(test-actor
         ${TEST_PATH}/actor/actor.cpp ${DEBUGFILES} ${LOGFILES})
+add_executable(test-event
+        ${TEST_PATH}/actor/event.cpp ${DEBUGFILES} ${LOGFILES})
 add_executable(test-chain-actor
         ${TEST_PATH}/benchmark/chain_event.cpp ${DEBUGFILES} ${LOGFILES})
 add_executable(test-linked-core
@@ -25,6 +27,9 @@ add_executable(test-timestamp
 
 if (USE_TC_MALLOC)
     target_link_libraries(test-actor
+            debug ${TCMALLOC_DEBUG}
+            optimized ${TCMALLOC_RELEASE})
+    target_link_libraries(test-event
             debug ${TCMALLOC_DEBUG}
             optimized ${TCMALLOC_RELEASE})
     target_link_libraries(test-chain-actor

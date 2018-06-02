@@ -172,24 +172,9 @@ namespace cube {
 					}
 
 				public:
-
-					/** Check if the ringbuffer is empty
-					*
-					* \return true, if the ringbuffer is empty, false otherwise
-					* \note Due to the concurrent nature of the ringbuffer the result may be inaccurate.
-					* */
 					bool empty(void)
 					{
 						return empty(write_index_.load(std::memory_order_relaxed), read_index_.load(std::memory_order_relaxed));
-					}
-
-					/**
-					* \return true, if implementation is lock-free.
-					*
-					* */
-					bool is_lock_free(void) const
-					{
-						return write_index_.is_lock_free() && read_index_.is_lock_free();
 					}
 
 				private:
