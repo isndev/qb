@@ -4,6 +4,7 @@
 struct ChainEvent : cube::Event
 {
     cube::ActorId first;
+    uint64_t creation_time;
     uint64_t loop = 0;
 };
 
@@ -22,6 +23,7 @@ public:
         if (first) {
             auto &event = this-> template push<ChainEvent>(to_send);
             event.first = this->id();
+            event.creation_time = cube::Timestamp::rdts();
         }
         return cube::ActorStatus::Alive;
     }
@@ -29,10 +31,15 @@ public:
     void onEvent(ChainEvent const &event) {
         if (event.loop >= 10000) {
             status = cube::ActorStatus::Dead;
+            if (!to_send)
+                LOG_INFO << "Event Time To Arrive " << cube::Timestamp::rdts() - event.creation_time << "ns";
         }
         auto &fwd = this-> forward(to_send ? to_send : event.first, event);
-        if (!to_send)
+        if (first)
+            fwd.creation_time = cube::Timestamp::rdts();
+        if (!to_send) {
             ++fwd.loop;
+        }
     }
 
     cube::ActorStatus main() {
