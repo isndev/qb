@@ -17,10 +17,10 @@ namespace cube {
     namespace lockfree {
         namespace spsc {
             namespace internal {
-                template<typename T, typename _Size = uint64_t>
+                template<typename T>
                 class ringbuffer
                         : public nocopy {
-                    typedef _Size size_t;
+                    typedef std::size_t size_t;
                     constexpr static const int padding_size = CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(size_t);
                     std::atomic<size_t> write_index_;
                     char padding1[padding_size]; /* force read_index and write_index to different cache lines */
@@ -31,7 +31,7 @@ namespace cube {
 						write_index_(0), read_index_(0)
 					{}
 
-					static size_t next_index(size_t arg, size_t max_size)
+					static size_t next_index(size_t arg, size_t const max_size)
 					{
 						size_t ret = arg + 1;
 						while (likely(ret >= max_size))
@@ -39,7 +39,7 @@ namespace cube {
 						return ret;
 					}
 
-					static size_t read_available(size_t write_index, size_t read_index, size_t max_size)
+					static size_t read_available(size_t write_index, size_t read_index, size_t const max_size)
 					{
 						if (write_index >= read_index)
 							return write_index - read_index;
@@ -48,7 +48,7 @@ namespace cube {
 						return ret;
 					}
 
-					static size_t write_available(size_t write_index, size_t read_index, size_t max_size)
+					static size_t write_available(size_t write_index, size_t read_index, size_t const max_size)
 					{
 						size_t ret = read_index - write_index - 1;
 						if (write_index >= read_index)
@@ -56,21 +56,21 @@ namespace cube {
 						return ret;
 					}
 
-					size_t read_available(size_t max_size) const
+					size_t read_available(size_t const max_size) const
 					{
 						size_t write_index = write_index_.load(std::memory_order_acquire);
 						const size_t read_index = read_index_.load(std::memory_order_relaxed);
 						return read_available(write_index, read_index, max_size);
 					}
 
-					size_t write_available(size_t max_size) const
+					size_t write_available(size_t const max_size) const
 					{
 						size_t write_index = write_index_.load(std::memory_order_relaxed);
 						const size_t read_index = read_index_.load(std::memory_order_acquire);
 						return write_available(write_index, read_index, max_size);
 					}
 
-					bool enqueue(T const & t, T * buffer, size_t max_size)
+					bool enqueue(T const & t, T * buffer, size_t const max_size)
 					{
 						const size_t write_index = write_index_.load(std::memory_order_relaxed);  // only written from enqueue thread
 						const size_t next = next_index(write_index, max_size);
@@ -86,7 +86,7 @@ namespace cube {
 					}
 
 					template <bool _All>
-					size_t enqueue(const T * input_buffer, size_t input_count, T * internal_buffer, size_t max_size)
+					size_t enqueue(const T * input_buffer, size_t input_count, T * internal_buffer, size_t const max_size)
 					{
 						const size_t write_index = write_index_.load(std::memory_order_relaxed);  // only written from push thread
 						const size_t read_index = read_index_.load(std::memory_order_acquire);
@@ -124,7 +124,7 @@ namespace cube {
 					}
 
 
-					size_t dequeue(T * output_buffer, size_t output_count, T * internal_buffer, size_t max_size)
+					size_t dequeue(T * output_buffer, size_t output_count, T * internal_buffer, size_t const max_size)
 					{
 						const size_t write_index = write_index_.load(std::memory_order_acquire);
 						const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
@@ -186,10 +186,11 @@ namespace cube {
 
             } /* namespace internal */
 
-            template<typename T, size_t max_size, typename _Size = uint64_t>
+            template<typename T, size_t _MaxSize>
             class ringbuffer
                     : public internal::ringbuffer<T> {
-                typedef _Size size_t;
+                typedef std::size_t size_t;
+                constexpr static size_t max_size = _MaxSize + 1;
                 std::array<T, max_size> array_;
 
             public:
@@ -223,13 +224,13 @@ namespace cube {
             class ringbuffer<T, 0>
                     : public internal::ringbuffer<T> {
                 typedef std::size_t size_t;
-                size_t max_size_;
+                const size_t max_size_;
                 std::unique_ptr<T> array_;
 
             public:
                 //! Constructs a ringbuffer for max_size elements
                 explicit ringbuffer(size_t const max_size)
-                        : max_size_(max_size), array_(new T[max_size]) {}
+                        : max_size_(max_size + 1), array_(new T[max_size + 1]) {}
 
                 inline bool enqueue(T const &t) noexcept {
                     return internal::ringbuffer<T>::enqueue(t, array_.get(), max_size_);

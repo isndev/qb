@@ -52,6 +52,15 @@ namespace cube {
             }
         };
 
+        struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT HandlerEvent {
+            uint64_t id;
+            ActorId dest;
+            ActorId source;
+            uint32_t context_size;
+            uint16_t bucket_size;
+            uint16_t alive;
+        };
+
     private:
 		using parent_ptr_t = _ParentHandler*;
         //////// Event Manager
@@ -86,9 +95,9 @@ namespace cube {
 
 			template<typename T, typename ..._Init>
 			T &allocate(_Init &&...init) {
-				constexpr std::size_t extra = (sizeof(T) % CUBE_LOCKFREE_CACHELINE_BYTES ? 1 : 0);
+				constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES) + (sizeof(T) % CUBE_LOCKFREE_CACHELINE_BYTES ? 1 : 0);
 				T &ret = *(new (reinterpret_cast<T *>(_buffer.data() + _index)) T(std::forward<_Init>(init)...));
-				ret.bucket_size = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES) + extra;
+                reinterpret_cast<HandlerEvent *>(&ret)->bucket_size = BUCKET_SIZE;
 				return ret;
 			}
 
@@ -96,21 +105,23 @@ namespace cube {
             T &recycle(T const &data) {
                 T &ret = *reinterpret_cast<T *>(_buffer.data() + _index);
                 std::memcpy(&ret, &data, sizeof(T));
-                ret.alive = true;
+                reinterpret_cast<HandlerEvent *>(&ret)->alive = 1;
                 return push(ret);
             }
 
             template<typename T>
             T &push(T &event) {
-                _index += event.bucket_size;
+			    const auto raw_event = reinterpret_cast<HandlerEvent *>(&event);
+                _index += raw_event->bucket_size;
+                //TODO : pipes have static size for the moment -> replace it to elastic vector
 //                if (unlikely(_index >= MaxEvents))
 //                    throw std::runtime_error("push events exceed MaxSize");
-                if (event.dest != _last_actor) {
-                    event.context_size = event.bucket_size;
-                    _last_actor = event.dest;
-                    _last_context_size = &(event.context_size);
+                if (raw_event->dest != _last_actor) {
+                    raw_event->context_size = raw_event->bucket_size;
+                    _last_actor = raw_event->dest;
+                    _last_context_size = &(raw_event->context_size);
                 } else {
-                    *_last_context_size += event.bucket_size;
+                    *_last_context_size += raw_event->bucket_size;
                 }
                 return event;
             }
@@ -148,11 +159,11 @@ namespace cube {
             void __receive(CacheLine *buffer, std::size_t const nb_events) {
                 uint64_t i = 0;
                 while (i < nb_events) {
-                    auto event = reinterpret_cast<Event *>(buffer + i);
+                    auto event = reinterpret_cast<HandlerEvent *>(buffer + i);
                     const auto nb_buckets = event->context_size;
                     auto actor = _core._shared_core_actor.find(event->dest);
                     if (likely(actor != std::end(_core._shared_core_actor))) {
-                        actor->second._this->hasEvent(event);
+                        actor->second._this->hasEvent(reinterpret_cast<Event *>(event));
                     } else {
                         LOG_WARN << "Failed Event" << _core
                                  << " [Source](" << event->source << ")"
@@ -385,23 +396,27 @@ namespace cube {
         T &push(ActorId const &dest, ActorId const &source, _Init &&...init) {
 			auto &pipe = _eventManager->getPipe(dest._index);
             auto &ret = pipe.template allocate<T, _Init...>(std::forward<_Init>(init)...);
-			ret.id = type_id<T>();
-			ret.dest = dest;
-			ret.source = source;
+            const auto raw_event = reinterpret_cast<HandlerEvent *>(&ret);
+			raw_event->id = type_id<T>();
+			raw_event->dest = dest;
+			raw_event->source = source;
 			return pipe.template push<T>(ret);
         }
         template<typename T>
         T &reply(T const &event) {
-            auto &ret = _eventManager->getPipe(event.source._index).template recycle<T>(event);
-            std::swap(ret.dest, ret.source);
+            auto &ret = _eventManager->getPipe(reinterpret_cast<HandlerEvent const *>(&event)->source._index).template recycle<T>(event);
+            const auto raw_event = reinterpret_cast<HandlerEvent *>(&ret);
+
+            std::swap(raw_event->dest, raw_event->source);
             return ret;
         }
 
         template<typename T>
         T &forward(ActorId const dest, T const &event) {
             auto &ret = _eventManager->getPipe(dest._index).template recycle<T>(event);
-            std::swap(ret.dest, ret.source);
-            ret.dest = dest;
+            const auto raw_event = reinterpret_cast<HandlerEvent *>(&ret);
+            std::swap(raw_event->dest, raw_event->source);
+            raw_event->dest = dest;
             return ret;
         }
 

@@ -27,7 +27,7 @@ namespace cube {
             virtual void invoke(Event const *data) const override final {
                 auto &event = *reinterpret_cast<_Data const *>(data);
                 _actor.onEvent(event);
-                if (!event.alive)
+                if (!event.recycled())
                     event.~_Data();
             }
         };
@@ -113,17 +113,18 @@ namespace cube {
         virtual ActorStatus main() { return ActorStatus::Alive; }
 
         virtual void hasEvent(Event const *event) override final {
-            const auto nb_buckets = event->context_size;
+            const auto nb_buckets = reinterpret_cast<typename _Handler::HandlerEvent const *>(event)->context_size;
             for (std::size_t i = 0; i < nb_buckets;) {
+                const auto raw_event = reinterpret_cast<typename _Handler::HandlerEvent const *>(event);
                 // TODO: secure this if event not registred
-                _event_map[event->id]->invoke(event);
-                i += event->bucket_size;
-                event += event->bucket_size;
+                _event_map[raw_event->id]->invoke(event);
+                i += raw_event->bucket_size;
+                event += raw_event->bucket_size;
             }
         }
 
         void onEvent(Event const &event) {
-            LOG_WARN << "Actor[" << _id << "] received removed event[" << event.id << "]";
+            LOG_WARN << "Actor[" << _id << "." << _index << "] received removed event[" << reinterpret_cast<typename _Handler::HandlerEvent const *>(&event)->id << "]";
         }
 
     };

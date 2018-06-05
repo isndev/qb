@@ -18,7 +18,7 @@ namespace cube {
                     constexpr static const int padding_size = CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
                     SpinLock lock;
                     char padding1[padding_size];
-                    spsc::ringbuffer<T, max_size, size_t> _ringbuffer;
+                    spsc::ringbuffer<T, max_size> _ringbuffer;
                 };
 
                 std::array<Producer, nb_producer> _producers;
@@ -92,7 +92,7 @@ namespace cube {
                     constexpr static const int padding_size = CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
                     SpinLock lock;
                     char padding1[padding_size];
-                    spsc::ringbuffer<T, max_size, size_t> _ringbuffer;
+                    spsc::ringbuffer<T, max_size> _ringbuffer;
                 };
 
                 std::unique_ptr<Producer> _producers;

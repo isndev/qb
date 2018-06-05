@@ -7,15 +7,19 @@
 namespace cube {
 
     struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT Event {
-        uint32_t context_size;
-        uint32_t bucket_size;
+    private:
         uint64_t id;
         ActorId dest;
         ActorId source;
-        bool alive;
-
+        uint32_t context_size;
+        uint16_t bucket_size;
+        uint16_t alive;
+    public:
         Event() = default;
 
+        ActorId getSource() const { return source; }
+        ActorId getDestination() const { return dest; }
+        bool recycled() const { return static_cast<bool>(alive); }
     };
 
     template<typename T>
@@ -26,8 +30,8 @@ namespace cube {
     template<typename T>
     std::size_t type_id() { return reinterpret_cast<size_t>(&type<T>::id); }
 
-    template<typename _Data, typename ..._Init>
-    struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT TEvent : public _Data {
+    template<typename _Handler, typename _Data, typename ..._Init>
+    struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT TEvent : public _Handler, public _Data {
         TEvent() = delete;
         TEvent(TEvent &&) = default;
         TEvent(_Init ...init)
