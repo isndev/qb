@@ -157,6 +157,8 @@ namespace cube {
             }
 
             void __receive(CacheLine *buffer, std::size_t const nb_events) {
+                if (!nb_events)
+                    return;
                 uint64_t i = 0;
                 while (i < nb_events) {
                     auto event = reinterpret_cast<HandlerEvent *>(buffer + i);
@@ -172,6 +174,7 @@ namespace cube {
                     //assert(i + nb_buckets > nb_events);
                     i += nb_buckets;
                 }
+                LOG_DEBUG << "Events " << _core << " received " << nb_events << " buckets";
             }
 
             void receive() {
@@ -420,11 +423,11 @@ namespace cube {
             return ret;
         }
 
-        void send(CacheLine const *data, uint32_t const index, uint32_t const size) {
+        inline void send(CacheLine const *data, uint32_t const index, uint32_t const size) {
             _parent->send(data, _index, index, size);
         }
 
-        auto &sharedData() {
+        inline auto &sharedData() {
             return *_sharedData;
         }
 
