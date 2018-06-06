@@ -72,6 +72,37 @@ namespace cube {
             return ActorId(static_cast<uint32_t >(duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count() + pid++), _CoreIndex);
         }
 
+        //receiver
+        bool receive_from_different_core(Event const &event, bool &ret) {
+            if (_index != event.dest._index)
+                return false;
+            ret = receive_from_unlinked_core(event);
+            return true;
+        }
+
+        inline bool receive_from_linked_core(Event const &event) {
+            for (int i = 0; i < 3; ++i) {
+                if (static_cast<bool>(_eventManager->_spsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event),
+                                                                          event.bucket_size)))
+                    return true;
+                std::this_thread::yield();
+            }
+
+            return false;
+        }
+
+        inline bool receive_from_unlinked_core(Event const &event) {
+            for (int i = 0; i < 3; ++i) {
+                if (static_cast<bool>(_eventManager->_mpsc_buffer.enqueue(event.source._index,
+                                                                          reinterpret_cast<CacheLine const *>(&event),
+                                                                          event.bucket_size)))
+                    return true;
+                std::this_thread::yield();
+            }
+
+            return false;
+        }
+
         class Pipe : public nocopy {
             friend class PhysicalCoreHandler::EventManager;
 
@@ -213,9 +244,9 @@ namespace cube {
                 }
 
                 // global_core_events
-                _mpsc_buffer.dequeue([this](CacheLine *buffer, std::size_t nb_events){
-                        __receive(buffer, nb_events);
-                    }, _event_buffer.data(), MaxRingEvents);
+                _mpsc_buffer.dequeue([this](CacheLine *buffer, std::size_t const nb_events){
+                    __receive(buffer, nb_events);
+                }, _event_buffer.data(), MaxRingEvents);
 
             }
 
@@ -414,37 +445,6 @@ namespace cube {
         }
 
     public:
-	    //receiver
-        bool receive_from_different_core(Event const &event, bool &ret) {
-            if (_index != event.dest._index)
-                return false;
-            ret = receive_from_unlinked_core(event);
-            return true;
-        }
-
-        inline bool receive_from_linked_core(Event const &event) {
-            for (int i = 0; i < 3; ++i) {
-                if (static_cast<bool>(_eventManager->_spsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event),
-                                                                          event.bucket_size)))
-                    return true;
-                std::this_thread::yield();
-            }
-
-            return false;
-        }
-
-        inline bool receive_from_unlinked_core(Event const &event) {
-            for (int i = 0; i < 3; ++i) {
-                if (static_cast<bool>(_eventManager->_mpsc_buffer.enqueue(event.source._index,
-                                                                          reinterpret_cast<CacheLine const *>(&event),
-                                                                          event.bucket_size)))
-                    return true;
-                std::this_thread::yield();
-            }
-
-            return false;
-        }
-
         //sender
         bool send(Event const &data) {
             return _parent->send(data);

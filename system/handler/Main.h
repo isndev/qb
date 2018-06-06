@@ -15,21 +15,13 @@ namespace cube {
         //////// Types
         using parent_t = Main;
         using base_t = BaseHandler<typename _Core::template Type<Main>::type...>;
-
+        /////////////////////////////////////////////////////
 		Main()
 			: base_t((typename _Core::template Type<Main>::type::parent_ptr_t)(this)...)
 		{
 		    LOG_INFO << "Init Main with " << total_core << " PhysicalCore(s)";
 		}
-
         /////////////////////////////////////////////////////
-//        void send(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
-//            if (unlikely(!this->each_or([data, source, index, size](auto &item) -> bool {
-//                return item.receive_from_different_core(data, source, index, size);
-//            }))) {
-//                LOG_WARN << "Core(" << source << ") failed to send event to nonexistent Core(" << index << ")";
-//            }
-//        }
 
         inline bool send(Event const &event) {
             bool ret = false;

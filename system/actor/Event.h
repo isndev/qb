@@ -18,9 +18,9 @@ namespace cube {
     public:
         Event() = default;
 
-        ActorId getDestination() const { return dest; }
-        ActorId getSource() const { return source; }
-        bool recycled() const { return static_cast<bool>(alive); }
+        inline ActorId getDestination() const { return dest; }
+        inline ActorId getSource() const { return source; }
+        inline bool recycled() const { return static_cast<bool>(alive); }
     };
 
     template<typename T>
