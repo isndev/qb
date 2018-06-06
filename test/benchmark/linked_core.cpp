@@ -2,7 +2,7 @@
 #include "assert.h"
 
 struct TinyEvent : cube::Event {
-    uint64_t x;
+    uint64_t x;	
     TinyEvent(uint64_t x) : x(x) {}
 };
 
@@ -121,7 +121,7 @@ struct TEST {
 };
 
 int main() {
-    nanolog::initialize(nanolog::GuaranteedLogger(), "./", "linked_core.log", 1024);
+    nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-linked_core.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::WARN);
 
     // ping pong

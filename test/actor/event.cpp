@@ -37,7 +37,7 @@ public:
 };
 
 int main() {
-    nanolog::initialize(nanolog::GuaranteedLogger(), "./", "test-event.log", 1024);
+    nanolog::initialize(nanolog::GuaranteedLogger(), "log", "test-event.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     test<100>("Test un/register event", []() {

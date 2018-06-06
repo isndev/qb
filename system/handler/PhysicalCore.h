@@ -24,12 +24,14 @@ namespace cube {
         typedef _ParentHandler parent_t;
     public:
         //////// Constexpr
-        constexpr static const std::uint64_t MaxEvents = ((std::numeric_limits<uint16_t>::max)());
+        constexpr static const std::uint64_t MaxBufferEvents = ((std::numeric_limits<uint16_t>::max)());
+        constexpr static const std::uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)()) / CUBE_LOCKFREE_CACHELINE_BYTES;
         constexpr static const std::size_t nb_core = 1;
         //////// Types
-        using SPSCBuffer = lockfree::spsc::ringbuffer<CacheLine, MaxEvents>;
-        using MPSCBuffer = lockfree::mpsc::ringbuffer<CacheLine, MaxEvents, 0>;
-        using EventBuffer = std::array<CacheLine, MaxEvents>;
+        using SPSCBuffer = lockfree::spsc::ringbuffer<CacheLine, MaxRingEvents>;
+        using MPSCBuffer = lockfree::mpsc::ringbuffer<CacheLine, MaxRingEvents, 0>;
+        using PipeBuffer = std::vector<CacheLine>;
+        using EventBuffer = std::array<CacheLine, MaxRingEvents>;
 
         class IActor {
         public:
@@ -52,14 +54,14 @@ namespace cube {
             }
         };
 
-        struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT HandlerEvent {
-            uint64_t id;
-            ActorId dest;
-            ActorId source;
-            uint32_t context_size;
-            uint16_t bucket_size;
-            uint16_t alive;
-        };
+//        struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT HandlerEvent {
+//            uint64_t id;
+//            ActorId dest;
+//            ActorId source;
+//            uint32_t context_size;
+//            uint16_t bucket_size;
+//            uint16_t alive;
+//        };
 
     private:
 		using parent_ptr_t = _ParentHandler*;
@@ -73,58 +75,75 @@ namespace cube {
         class Pipe : public nocopy {
             friend class PhysicalCoreHandler::EventManager;
 
-            std::uint32_t _index;
+            std::size_t _begin;
+            std::size_t _end;
             char __padding2__[CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(std::size_t)];
-            EventBuffer _buffer;
-            std::uint32_t *_last_context_size;
-            ActorId _last_actor;
+            PipeBuffer _buffer;
 
             inline void reset() {
-                _index = 0;
-                _last_context_size = nullptr;
-                _last_actor = ActorId::NotFound{};
+                _begin = 0;
+                _end = 0;
             }
 
-//            Pipe(Pipe const &) = delete;
-//            Pipe(Pipe&&) = default;
-
         public:
-            Pipe() : _index(0), _last_context_size(nullptr), _last_actor(ActorId::NotFound{}) {}
+            Pipe() : _begin(0), _end(0) {
+                _buffer.resize(MaxBufferEvents);
+            }
 
             ~Pipe() = default;
 
-			template<typename T, typename ..._Init>
-			T &allocate(_Init &&...init) {
-				constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES) + (sizeof(T) % CUBE_LOCKFREE_CACHELINE_BYTES ? 1 : 0);
-				T &ret = *(new (reinterpret_cast<T *>(_buffer.data() + _index)) T(std::forward<_Init>(init)...));
-                reinterpret_cast<HandlerEvent *>(&ret)->bucket_size = BUCKET_SIZE;
-				return ret;
-			}
+            inline void setBegin(std::size_t const begin) {
+                _begin = begin;
+            }
 
-			template<typename T>
-            T &recycle(T const &data) {
-                T &ret = *reinterpret_cast<T *>(_buffer.data() + _index);
-                std::memcpy(&ret, &data, sizeof(T));
-                reinterpret_cast<HandlerEvent *>(&ret)->alive = 1;
-                return push(ret);
+            inline std::size_t begin() const {
+                return _begin;
+            }
+
+            inline std::size_t end() const {
+                return _end;
+            }
+
+            inline void free(std::size_t const size) {
+                _end -= size;
+            }
+
+            inline void check_allocation_size(std::size_t const size) {
+                if (unlikely((_end + size) >= _buffer.size())) {
+                    _buffer.resize(_buffer.size() + MaxBufferEvents);
+                }
+            }
+
+            template<typename T, typename ..._Init>
+            T &allocate(_Init &&...init) {
+                constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES);
+                check_allocation_size(BUCKET_SIZE);
+
+                T &ret = *(new (reinterpret_cast<T *>(_buffer.data() + _end)) T(std::forward<_Init>(init)...));
+                ret.id = type_id<T>();
+                ret.bucket_size = BUCKET_SIZE;
+                ret.alive = 0;
+                _end += BUCKET_SIZE;
+                return ret;
             }
 
             template<typename T>
-            T &push(T &event) {
-			    const auto raw_event = reinterpret_cast<HandlerEvent *>(&event);
-                _index += raw_event->bucket_size;
-                //TODO : pipes have static size for the moment -> replace it to elastic vector
-//                if (unlikely(_index >= MaxEvents))
-//                    throw std::runtime_error("push events exceed MaxSize");
-                if (raw_event->dest != _last_actor) {
-                    raw_event->context_size = raw_event->bucket_size;
-                    _last_actor = raw_event->dest;
-                    _last_context_size = &(raw_event->context_size);
-                } else {
-                    *_last_context_size += raw_event->bucket_size;
-                }
-                return event;
+            T &recycle(T const &data) {
+                constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES);
+                check_allocation_size(BUCKET_SIZE);
+
+                T &ret = *reinterpret_cast<T *>(_buffer.data() + _end);
+                std::memcpy(&ret, &data, sizeof(T));
+                const_cast<T &>(data).alive = 1;
+                _end += BUCKET_SIZE;
+                return ret;
             }
+
+            void __recycle(Event const &data) {
+                std::memcpy((_buffer.data() + _end), &data, data.bucket_size * CUBE_LOCKFREE_CACHELINE_BYTES);
+                _end += data.bucket_size;
+            }
+
         };
 
         class EventManager : public nocopy {
@@ -145,9 +164,20 @@ namespace cube {
             void flush() {
                 for (auto &it : _pipes) {
                     auto &pipe = it.second;
-                    if (pipe._index) {
-                        _core.send(pipe._buffer.data(), it.first, pipe._index);
-                        pipe.reset();
+                    if (pipe._begin != pipe._end) {
+                        const auto save_end = pipe._end;
+                        for (auto i = pipe._begin; i < save_end;) {
+                            pipe.check_allocation_size(reinterpret_cast<const Event *>(pipe._buffer.data() + i)->bucket_size);
+                            const auto &event = *reinterpret_cast<const Event *>(pipe._buffer.data() + i);
+                            if (!_core.send(event)) {
+                                pipe.__recycle(event);
+                            }
+                            i += event.bucket_size;
+                        }
+                        if (save_end != pipe._end)
+                            pipe._begin = save_end;
+                        else
+                            pipe.reset();
                     }
                 }
             }
@@ -161,18 +191,17 @@ namespace cube {
                     return;
                 uint64_t i = 0;
                 while (i < nb_events) {
-                    auto event = reinterpret_cast<HandlerEvent *>(buffer + i);
-                    const auto nb_buckets = event->context_size;
+                    auto event = reinterpret_cast<Event *>(buffer + i);
                     auto actor = _core._shared_core_actor.find(event->dest);
                     if (likely(actor != std::end(_core._shared_core_actor))) {
-                        actor->second._this->hasEvent(reinterpret_cast<Event *>(event));
+                        actor->second._this->hasEvent(event);
                     } else {
                         LOG_WARN << "Failed Event" << _core
                                  << " [Source](" << event->source << ")"
                                  << " [Dest](" << event->dest << ") NOT FOUND";
                     }
                     //assert(i + nb_buckets > nb_events);
-                    i += nb_buckets;
+                    i += event->bucket_size;
                 }
                 LOG_DEBUG << "Events " << _core << " received " << nb_events << " buckets";
             }
@@ -180,13 +209,13 @@ namespace cube {
             void receive() {
                 if constexpr (!std::is_same<_ParentHandler, typename _ParentHandler::parent_t>::value) {
                     // linked_core_events
-                    __receive(_event_buffer.data(), _spsc_buffer.dequeue(_event_buffer.data(), MaxEvents));
+                    __receive(_event_buffer.data(), _spsc_buffer.dequeue(_event_buffer.data(), MaxRingEvents));
                 }
 
                 // global_core_events
                 _mpsc_buffer.dequeue([this](CacheLine *buffer, std::size_t nb_events){
                         __receive(buffer, nb_events);
-                    }, _event_buffer.data(), MaxEvents);
+                    }, _event_buffer.data(), MaxRingEvents);
 
             }
 
@@ -242,6 +271,10 @@ namespace cube {
                     _sharedData = new _SharedData();
             }
             _eventManager = new EventManager(*this);
+            return true;
+        }
+
+        bool __init__actor() {
             // Init StaticActors
             for (auto &it : _shared_core_actor) {
                 if (static_cast<int>(it.second._this->init()))
@@ -285,19 +318,6 @@ namespace cube {
     #endif
 #endif
             return ret;
-        }
-
-        inline void receive(CacheLine const *data, uint32_t const size) {
-            while(unlikely(!_eventManager->_spsc_buffer.enqueue(data, size)))
-                std::this_thread::yield();
-        }
-
-        inline bool receive_from_different_core(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
-            if (_index != index)
-                return false;
-            while(unlikely(!_eventManager->_mpsc_buffer.enqueue(source, data, size)))
-                std::this_thread::yield();
-            return true;
         }
 
         inline void addActor(ActorProxy const &actor) {
@@ -394,44 +414,81 @@ namespace cube {
         }
 
     public:
+	    //receiver
+        bool receive_from_different_core(Event const &event, bool &ret) {
+            if (_index != event.dest._index)
+                return false;
+            ret = receive_from_unlinked_core(event);
+            return true;
+        }
+
+        inline bool receive_from_linked_core(Event const &event) {
+            for (int i = 0; i < 3; ++i) {
+                if (static_cast<bool>(_eventManager->_spsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event),
+                                                                          event.bucket_size)))
+                    return true;
+                std::this_thread::yield();
+            }
+
+            return false;
+        }
+
+        inline bool receive_from_unlinked_core(Event const &event) {
+            for (int i = 0; i < 3; ++i) {
+                if (static_cast<bool>(_eventManager->_mpsc_buffer.enqueue(event.source._index,
+                                                                          reinterpret_cast<CacheLine const *>(&event),
+                                                                          event.bucket_size)))
+                    return true;
+                std::this_thread::yield();
+            }
+
+            return false;
+        }
+
+        //sender
+        bool send(Event const &data) {
+            return _parent->send(data);
+        }
+
+        template <typename T, typename ..._Init>
+        void send(ActorId const dest, ActorId const source, _Init &&...init) {
+            auto &pipe = _eventManager->getPipe(dest._index);
+            auto data = pipe.template allocate<T>(std::forward<_Init>(init)...);
+            data.dest = dest;
+            data.source = source;
+            if (_parent->send(data))
+                pipe.free(data.bucket_size);
+        }
 
         template<typename T, typename ..._Init>
         T &push(ActorId const &dest, ActorId const &source, _Init &&...init) {
-			auto &pipe = _eventManager->getPipe(dest._index);
-            auto &ret = pipe.template allocate<T, _Init...>(std::forward<_Init>(init)...);
-            const auto raw_event = reinterpret_cast<HandlerEvent *>(&ret);
-			raw_event->id = type_id<T>();
-			raw_event->dest = dest;
-			raw_event->source = source;
-			return pipe.template push<T>(ret);
+            auto &pipe = _eventManager->getPipe(dest._index);
+            auto &data = pipe.template allocate<T, _Init...>(std::forward<_Init>(init)...);
+            data.dest = dest;
+            data.source = source;
+            return data;
         }
+
         template<typename T>
         T &reply(T const &event) {
-            auto &ret = _eventManager->getPipe(reinterpret_cast<HandlerEvent const *>(&event)->source._index).template recycle<T>(event);
-            const auto raw_event = reinterpret_cast<HandlerEvent *>(&ret);
+            auto &ret = _eventManager->getPipe(event.source._index).template recycle<T>(event);
 
-            std::swap(raw_event->dest, raw_event->source);
+            std::swap(ret.dest, ret.source);
             return ret;
         }
 
         template<typename T>
         T &forward(ActorId const dest, T const &event) {
             auto &ret = _eventManager->getPipe(dest._index).template recycle<T>(event);
-            const auto raw_event = reinterpret_cast<HandlerEvent *>(&ret);
-            std::swap(raw_event->dest, raw_event->source);
-            raw_event->dest = dest;
-            return ret;
-        }
 
-        inline void send(CacheLine const *data, uint32_t const index, uint32_t const size) {
-            _parent->send(data, _index, index, size);
+            std::swap(ret.dest, ret.source);
+            ret.dest = dest;
+            return ret;
         }
 
         inline auto &sharedData() {
             return *_sharedData;
         }
-
-
     };
 
     template<typename _ParentHandler, std::size_t _CoreIndex, typename _SharedData>
