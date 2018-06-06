@@ -16,7 +16,8 @@
 namespace cube {
 
     struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT CacheLine {
-        uint64_t __padding__[CUBE_LOCKFREE_CACHELINE_BYTES / sizeof(uint64_t)];
+        uint32_t __raw__[16];
+        //uint_fast8_t __raw__[CUBE_LOCKFREE_CACHELINE_BYTES];
     };
 
     template <typename T>

@@ -54,13 +54,13 @@ void test(const std::string &name, F f, std::ostream &os = std::cout) {
     os << "Running test '" << name << "' \t";
     os.flush();
 
-    std::size_t i = 1;
+    std::size_t i = 0;
     double min = (std::numeric_limits<double>::max)();
     double max = (std::numeric_limits<double>::min)();
     double avg = 0;
 
     try {
-        while (i <= REPEAT) {
+        while (i < REPEAT) {
             auto duration = time<std::micro>(f).first;
             min = (std::min)(min, duration);
             max = (std::max)(max, duration);

@@ -17,6 +17,12 @@ namespace cube {
             });
         }
 
+        bool __init__actor() {
+            return this->each_and([](auto &item) -> bool {
+                return item.__init__actor();
+            });
+        }
+
         template<std::size_t _CoreIndex, typename ..._Init>
         bool __init_shared(_Init &&...init) {
             return this->each_or([&init...](auto &item) -> bool {

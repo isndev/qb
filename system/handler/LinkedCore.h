@@ -27,20 +27,28 @@ namespace cube {
 			: base_t((typename _Core::template Type<LinkedCoreHandler>::type::parent_ptr_t)(this)...)
 			, _parent(parent) {}
 
-        inline void send_to_different_core(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
-            _parent->send(data, source, index, size);
-		}
+        bool receive_from_different_core(Event const &event, bool &ret) {
+            return this->each_or([&event, &ret](auto &item) -> bool {
+                if (item._index != event.dest._index)
+                    return false;
+                ret = item.receive_from_linked_core(event);
+                return true;
+            });
+        }
 
-        void send(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
-            if (!this->each_or([&data, index, size](auto &item) -> bool {
-				if (item._index != index)
+        inline bool send(Event const &event) {
+		    bool ret = false;
+            if (!this->each_or([&event, &ret](auto &item) -> bool {
+				if (item._index != event.dest._index)
 					return false;
-                item.receive(data, size);
+                ret = item.receive_from_linked_core(event);
                 return true;
             })) {
-                send_to_different_core(data, source, index, size);
+                ret =_parent->send(event);
             }
+            return ret;
         }
+
     };
 
     // not constexpr because of windows issue

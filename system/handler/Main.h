@@ -23,12 +23,23 @@ namespace cube {
 		}
 
         /////////////////////////////////////////////////////
-        void send(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
-            if (unlikely(!this->each_or([data, source, index, size](auto &item) -> bool {
-                return item.receive_from_different_core(data, source, index, size);
+//        void send(CacheLine const *data, uint32_t const source, uint32_t const index, uint32_t const size) {
+//            if (unlikely(!this->each_or([data, source, index, size](auto &item) -> bool {
+//                return item.receive_from_different_core(data, source, index, size);
+//            }))) {
+//                LOG_WARN << "Core(" << source << ") failed to send event to nonexistent Core(" << index << ")";
+//            }
+//        }
+
+        inline bool send(Event const &event) {
+            bool ret = false;
+            if (unlikely(!this->each_or([&event, &ret](auto &item) -> bool {
+                return item.receive_from_different_core(event, ret);
             }))) {
-                LOG_WARN << "Core(" << source << ") failed to send event to nonexistent Core(" << index << ")";
+                ret = true;
+                LOG_WARN << "Core(" << event.source << ") failed to send event to nonexistent Core(" << event.dest._index << ")";
             }
+            return ret;
         }
 
         // Start Sequence Usage
@@ -39,6 +50,8 @@ namespace cube {
 
         bool start() {
             if (!this->__alloc__event())
+                return false;
+            if (!this->__init__actor())
                 return false;
             //Todo : should return status
             this->__start();

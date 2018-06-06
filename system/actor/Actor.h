@@ -33,7 +33,7 @@ namespace cube {
         };
 
         _Handler *_handler;
-        std::unordered_map<uint64_t, IRegisterEvent const *> _event_map;
+        std::unordered_map<uint32_t, IRegisterEvent const *> _event_map;
 
         friend _Handler;
 
@@ -104,6 +104,11 @@ namespace cube {
             return _handler->template forward<_Data>(dest, event);
         }
 
+        template<typename _Data, typename ..._Init>
+        inline void send(ActorId const &dest, _Init &&...init) {
+            return _handler->template send<_Data, _Init...>(dest, id(), std::forward<_Init>(init)...);
+        }
+
         inline auto &sharedData() {
             return _handler->sharedData();
         }
@@ -113,18 +118,12 @@ namespace cube {
         virtual ActorStatus main() { return ActorStatus::Alive; }
 
         virtual void hasEvent(Event const *event) override final {
-            const auto nb_buckets = reinterpret_cast<typename _Handler::HandlerEvent const *>(event)->context_size;
-            for (std::size_t i = 0; i < nb_buckets;) {
-                const auto raw_event = reinterpret_cast<typename _Handler::HandlerEvent const *>(event);
-                // TODO: secure this if event not registred
-                _event_map[raw_event->id]->invoke(event);
-                i += raw_event->bucket_size;
-                event += raw_event->bucket_size;
-            }
+            // TODO: secure this if event not registred
+            _event_map[event->id]->invoke(event);
         }
 
         void onEvent(Event const &event) {
-            LOG_WARN << "Actor[" << _id << "." << _index << "] received removed event[" << reinterpret_cast<typename _Handler::HandlerEvent const *>(&event)->id << "]";
+            LOG_WARN << "Actor[" << _id << "." << _index << "] received removed event[" << event.id << "]";
         }
 
     };

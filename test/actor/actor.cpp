@@ -41,7 +41,7 @@ public:
 };
 
 int main() {
-    nanolog::initialize(nanolog::GuaranteedLogger(), "./", "test-actor.log", 1024);
+    nanolog::initialize(nanolog::GuaranteedLogger(), "log", "test-actor.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     test<100>("CreateActor", []() {
