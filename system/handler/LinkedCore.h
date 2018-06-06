@@ -21,11 +21,6 @@ namespace cube {
 
     private:
         _ParentHandler *_parent;
-    public:
-        LinkedCoreHandler() = delete;
-		LinkedCoreHandler(_ParentHandler *parent)
-			: base_t((typename _Core::template Type<LinkedCoreHandler>::type::parent_ptr_t)(this)...)
-			, _parent(parent) {}
 
         bool receive_from_different_core(Event const &event, bool &ret) {
             return this->each_or([&event, &ret](auto &item) -> bool {
@@ -35,6 +30,12 @@ namespace cube {
                 return true;
             });
         }
+
+    public:
+        LinkedCoreHandler() = delete;
+		LinkedCoreHandler(_ParentHandler *parent)
+			: base_t((typename _Core::template Type<LinkedCoreHandler>::type::parent_ptr_t)(this)...)
+			, _parent(parent) {}
 
         inline bool send(Event const &event) {
 		    bool ret = false;
