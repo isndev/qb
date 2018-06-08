@@ -69,7 +69,9 @@ MyActor.h
 #ifndef MYACTOR_H_
 # define MYACTOR_H_
 
-struct MyEvent { int data; }; // Event example
+// Event example
+struct MyEvent : public cube::Event
+{ int data; }; 
 
 template <typename CoreHandler>
 class MyActor
