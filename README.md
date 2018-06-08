@@ -52,7 +52,7 @@ include_directories([CUBE_PATH])
 # Multiple hardware configuration example
 if (INTEL_CORE_2_DUO)
     set(SOURCE "$(SOURCE) main_intel_2core.cpp)
-else if(INTEL_I7_8CORE)
+elseif (INTEL_I7_8CORE)
     set(SOURCE "$(SOURCE) main_intel_8core.cpp)
 # etc...
 else()
