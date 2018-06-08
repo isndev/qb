@@ -25,11 +25,11 @@ namespace cube {
 
     template<typename T>
     struct type {
-        static void id() {}
+       constexpr static void id() {}
     };
 
     template<typename T>
-    uint32_t type_id() { return static_cast<uint32_t>(reinterpret_cast<std::size_t>(&type<T>::id)); }
+    constexpr uint32_t type_id() { return static_cast<uint32_t>(reinterpret_cast<std::size_t>(&type<T>::id)); }
 
     template<typename _Handler, typename _Data, typename ..._Init>
     struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT TEvent : public _Handler, public _Data {
