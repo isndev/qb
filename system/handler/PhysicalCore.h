@@ -54,26 +54,17 @@ namespace cube {
             }
         };
 
-//        struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT HandlerEvent {
-//            uint64_t id;
-//            ActorId dest;
-//            ActorId source;
-//            uint32_t context_size;
-//            uint16_t bucket_size;
-//            uint16_t alive;
-//        };
-
     private:
 		using parent_ptr_t = _ParentHandler*;
-        //////// Event Manager
 
         inline ActorId __generate_id() const {
             static std::size_t pid = 0;
             return ActorId(static_cast<uint32_t >(duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count() + pid++), _CoreIndex);
         }
 
-        //receiver
-        bool receive_from_different_core(Event const &event, bool &ret) {
+        //////// Event Manager
+        //// Receiver From Handler
+        inline bool receive_from_different_core(Event const &event, bool &ret) {
             if (_index != event.dest._index)
                 return false;
             ret = receive_from_unlinked_core(event);
@@ -103,25 +94,15 @@ namespace cube {
             return false;
         }
 
+        //// Pipe Events Queue
         class Pipe : public nocopy {
+            friend class PhysicalCoreHandler;
             friend class PhysicalCoreHandler::EventManager;
 
             std::size_t _begin;
             std::size_t _end;
             char __padding2__[CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(std::size_t)];
             PipeBuffer _buffer;
-
-            inline void reset() {
-                _begin = 0;
-                _end = 0;
-            }
-
-        public:
-            Pipe() : _begin(0), _end(0) {
-                _buffer.resize(MaxBufferEvents);
-            }
-
-            ~Pipe() = default;
 
             inline void setBegin(std::size_t const begin) {
                 _begin = begin;
@@ -137,6 +118,11 @@ namespace cube {
 
             inline void free(std::size_t const size) {
                 _end -= size;
+            }
+
+            inline void reset() {
+                _begin = 0;
+                _end = 0;
             }
 
             inline void check_allocation_size(std::size_t const size) {
@@ -175,6 +161,14 @@ namespace cube {
                 _end += data.bucket_size;
             }
 
+        public:
+            Pipe() : _begin(0), _end(0) {
+                _buffer.resize(MaxBufferEvents);
+            }
+
+            ~Pipe() = default;
+
+            //Todo: User dynamic Allocation
         };
 
         class EventManager : public nocopy {
