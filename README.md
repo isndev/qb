@@ -35,7 +35,7 @@ Our CPUs are not getting any faster. What’s happening is that we now have mult
 Cube runtime will handle all the rest and bridge the gap between parallel programming and hardware multicore complexity.
 
 # Getting Started !
-* ##### My First Project
+* #### My First Project
 CMakeList.txt
 ```cmake
 project(MyProject)
@@ -132,12 +132,12 @@ Done !
 
 You want to do more, refer to the wiki to see the full Cube API usage 
 
-### Wiki
-*  [Configuration]() - cmake options
-*  [Main]() - Framework Initializer
-*  [Actor]() - User defined Object API
-*  [Event]() - Actor communication API
-*  [Log]() 
+### [Wiki](https://github.com/isnDev/cube/wiki)
+*  [Configuration](https://github.com/isnDev/cube/wiki/Configuration) - cmake options
+*  [Main](https://github.com/isnDev/cube/wiki/Main) - Framework Initializer
+*  [Actor](https://github.com/isnDev/cube/wiki/Actor) - User defined Object API
+*  [Event](https://github.com/isnDev/cube/wiki/Event) - Actor communication API
+*  [Logger](https://github.com/isnDev/cube/wiki/Logger) 
 
 ### Todos
  - Make Wiki Documentation
