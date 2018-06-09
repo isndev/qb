@@ -56,7 +56,7 @@ elseif (INTEL_I7_8CORE)
     set(SOURCE "$(SOURCE) main_intel_8core.cpp")
 # etc...
 else()
-    set(SOURCE "$(SOURCE) main.cpp)
+    set(SOURCE "$(SOURCE) main.cpp")
 endif()
 
 add_executable(MyProject $(SOURCE))
