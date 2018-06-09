@@ -51,9 +51,9 @@ include_directories([CUBE_PATH])
 # Define your project
 # Multiple hardware configuration example
 if (INTEL_CORE_2_DUO)
-    set(SOURCE "$(SOURCE) main_intel_2core.cpp)
+    set(SOURCE "$(SOURCE) main_intel_2core.cpp")
 elseif (INTEL_I7_8CORE)
-    set(SOURCE "$(SOURCE) main_intel_8core.cpp)
+    set(SOURCE "$(SOURCE) main_intel_8core.cpp")
 # etc...
 else()
     set(SOURCE "$(SOURCE) main.cpp)
