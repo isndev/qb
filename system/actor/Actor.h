@@ -46,7 +46,10 @@ namespace cube {
             _event_map.reserve(32);
         }
 
-        virtual ~Actor() {}
+        virtual ~Actor() {
+            for (const auto &revent : _event_map)
+                delete revent.second;
+        }
 
     public:
         inline ActorId id() const {

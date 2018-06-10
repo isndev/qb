@@ -11,6 +11,7 @@ namespace cube {
         //////// Static Const Data
         static const std::size_t linked_core;
         static const std::size_t total_core;
+        static std::atomic<int> sync_start;
 
         //////// Types
         using parent_t = Main;
@@ -61,6 +62,8 @@ namespace cube {
     const std::size_t Main<_Core...>::linked_core = 0;
     template<typename ..._Core>
     const std::size_t Main<_Core...>::total_core = nb_core<Main, _Core...>();
+    template<typename ..._Core>
+    std::atomic<int> Main<_Core...>::sync_start(0);
 }
 
 #endif //CUBE_MAIN_H

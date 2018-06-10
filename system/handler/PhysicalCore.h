@@ -84,8 +84,7 @@ namespace cube {
 
         inline bool receive_from_unlinked_core(Event const &event) {
             for (int i = 0; i < 3; ++i) {
-                if (static_cast<bool>(_eventManager->_mpsc_buffer.enqueue(event.source._index,
-                                                                          reinterpret_cast<CacheLine const *>(&event),
+                if (static_cast<bool>(_eventManager->_mpsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event),
                                                                           event.bucket_size)))
                     return true;
                 std::this_thread::yield();
@@ -151,6 +150,7 @@ namespace cube {
 
                 T &ret = *reinterpret_cast<T *>(_buffer.data() + _end);
                 std::memcpy(&ret, &data, sizeof(T));
+				ret.alive = 0;
                 const_cast<T &>(data).alive = 1;
                 _end += BUCKET_SIZE;
                 return ret;
@@ -189,22 +189,42 @@ namespace cube {
             void flush() {
                 for (auto &it : _pipes) {
                     auto &pipe = it.second;
-                    if (pipe._begin != pipe._end) {
-                        const auto save_end = pipe._end;
-                        for (auto i = pipe._begin; i < save_end;) {
-                            pipe.check_allocation_size(reinterpret_cast<const Event *>(pipe._buffer.data() + i)->bucket_size);
+                    if (pipe._end) {
+                        auto i = pipe._begin;
+                        while (i < pipe._end) {
                             const auto &event = *reinterpret_cast<const Event *>(pipe._buffer.data() + i);
-                            if (!_core.send(event)) {
-                                pipe.__recycle(event);
-                            }
+                            if (!_core.send(event))
+                                break;
                             i += event.bucket_size;
                         }
-                        if (save_end != pipe._end)
-                            pipe._begin = save_end;
+                        if (i < pipe._end)
+                            pipe._begin = i;
                         else
                             pipe.reset();
                     }
                 }
+            }
+
+            bool flush_all() {
+                bool ret = false;
+                for (auto &it : _pipes) {
+                    auto &pipe = it.second;
+                    if (pipe._end) {
+                        ret = true;
+                        auto i = pipe._begin;
+                        while (i < pipe._end) {
+                            const auto &event = *reinterpret_cast<const Event *>(pipe._buffer.data() + i);
+                            if (!_core.send(event))
+                                break;
+                            i += event.bucket_size;
+                        }
+                        if (i < pipe._end)
+                            pipe._begin = i;
+                        else
+                            pipe.reset();
+                    }
+                }
+                return ret;
             }
 
             Pipe &getPipe(uint32_t core) {
@@ -248,20 +268,28 @@ namespace cube {
 
         /////// !Event Manager
 
+        static void __wait__all__cores__ready() {
+            const auto total_core = _ParentHandler::parent_t::total_core;
+            ++_ParentHandler::parent_t::sync_start;
+            while (_ParentHandler::parent_t::sync_start.load() < total_core)
+                std::this_thread::yield();
+        }
+
         static void __start__physical_thread(PhysicalCoreHandler &core) {
             if (core.init()) {
+                __wait__all__cores__ready();
+
                 std::vector<ActorProxy> _actor_to_remove;
                 _actor_to_remove.reserve(core._shared_core_actor.size());
                 LOG_INFO << "StartSequence Init " << core << " Success";
                 while (likely(true)) {
+                    core._eventManager->receive();
                     //! not sure to implement this maybe it has overhead
                     for (auto &actor: core._shared_core_actor) {
                         if (unlikely(static_cast<int>(actor.second._this->main()))) {
                             _actor_to_remove.push_back(actor.second);
                         }
                     }
-
-                    core._eventManager->receive();
                     core._eventManager->flush();
                     //! next
                     if (unlikely(!_actor_to_remove.empty())) {
@@ -271,10 +299,15 @@ namespace cube {
                             core.removeActor(actor._id);
                         }
                         _actor_to_remove.clear();
-                        if (core._shared_core_actor.empty())
-                            break;
+						if (core._shared_core_actor.empty()) {
+							break;
+						}
                     }
                 }
+                // receive and flush residual events
+                core._eventManager->receive();
+                while (core._eventManager->flush_all())
+                    std::this_thread::yield();
             } else {
                 LOG_CRIT << "StartSequence Init " << core << " Failed";
             }
