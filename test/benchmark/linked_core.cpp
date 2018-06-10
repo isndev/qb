@@ -38,9 +38,14 @@ public:
     }
 
     void onEvent(EventTrait const &event) {
-        if (event.x >= 3000) status = cube::ActorStatus::Dead;
-        auto &rep = this->template reply<EventTrait>(event);
-        ++rep.x;
+        if (event.x >= 3000)
+            status = cube::ActorStatus::Dead;
+        if (event.x <= 3000) {
+            auto &rep = this->template reply<EventTrait>(event);
+            ++rep.x;
+        }
+
+
     }
 
 };
