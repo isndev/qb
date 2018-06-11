@@ -1,9 +1,9 @@
 # Cube Framework
 
-Cube provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability, high throughput and hardware footprint savings. 
-We provide a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors. 
+Cube provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. 
+It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors. 
 
-Cube is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model. 
+Cube is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
 
 * #### Requirements
   - C++ standard (17) compiler
@@ -20,18 +20,20 @@ Cube is a thin-layer multicore-optimized runtime that enable users to build thei
   - Almost Everything is deduced at compile time, then it can increase the compilation time
   - Strong CPU usage
   - ...
+  
 # Actor Model
 Our CPUs are not getting any faster. What’s happening is that we now have multiple cores on them. If we want to take advantage of all this hardware we have available now, we need a way to run our code concurrently. Decades of untraceable bugs and developers’ depression have shown that threads are not the way to go.
 
-- The Actor model is a concurrent model of computation that treats "actors" as the universal primitives of concurrent computation. Hence, an Actor is the main structural element of any actor model. By definition, an Actor sends event messages to be received by another Actor, which is then treated by an Event handler.
+- The Actor model is a concurrent model of computation that treats "actors" as the universal primitives of concurrent computation. An Actor is the main structural element of any actor model. By definition, an Actor sends event messages to be received by another Actor, which is then treated by an Event handler.
 
 - The Event handler can execute a local function, create more actors, and send events to other Actors. In Cube programming semantics, Actors shall be mono-threaded and non-blocking.
 
-- The Event communication between two Actors is done with a dedicated unidirectional communication channel called a Pipe. Hence, the Actor programming model is completely asynchronous and event-driven. 
+- The Event communication between Actors is done with an unidirectional communication channel called a Pipe. Hence, the Actor programming model is completely asynchronous and event-driven. 
 
-- A Workflow is a program consisting of multiple Actors linked together with several Pipes and handling one or multiple Events. A Workflow solves one particular business problem. Once the Workflow skeleton is designed, the programming is broken down into coding mono-threaded and sequential Event handlers.
+<p align="center"><img src="https://github.com/isnDev/cube/blob/master/ressources/BasicActorModel.png" width="500px" /></p>
 
-- The business use cases are described as combinations of workflows using the Actor model which is scalable and parallel by nature.
+- Cube Workflow is a program consisting of multiple Actors handling one or multiple Events, attached to PhysicalCores linked together with several Pipes. It solves one particular problem, once the Workflow skeleton is designed, the programming is broken down into coding mono-threaded and sequential Event handlers. Hence, the Actor model which is scalable and parallel by nature.
+
 Cube runtime will handle all the rest and bridge the gap between parallel programming and hardware multicore complexity.
 
 # Getting Started !
