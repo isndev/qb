@@ -136,7 +136,7 @@ Done !
 You want to do more, refer to the wiki to see the full Cube API usage 
 
 ### [Wiki](https://github.com/isnDev/cube/wiki)
-*  [CMake](https://github.com/isnDev/cube/wiki/CMake) - CMake Options
+*  [Build](https://github.com/isnDev/cube/wiki/Build-Options) - Build Options
 *  [Start Sequence](https://github.com/isnDev/cube/wiki/Start-Sequence) - Engine Initializer
 *  [Actor](https://github.com/isnDev/cube/wiki/Actor) - Actor Interface
 *  [Logger](https://github.com/isnDev/cube/wiki/Logger) - Fast Multithreaded Logger
