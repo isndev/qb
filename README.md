@@ -32,7 +32,8 @@ Our CPUs are not getting any faster. What’s happening is that we now have mult
 
 <p align="center"><img src="https://github.com/isnDev/cube/blob/master/ressources/BasicActorModel.png" width="500px" /></p>
 
-- Cube Workflow is a program consisting of multiple Actors handling one or multiple Events, attached to PhysicalCores linked together with several Pipes. It solves one particular problem, once the Workflow skeleton is designed, the programming is broken down into coding mono-threaded and sequential Event handlers. Hence, the Actor model which is scalable and parallel by nature.
+- Cube Workflow is a program consisting of multiple Actors handling one or multiple Events, attached to PhysicalCores linked together with several Pipes. It solves one particular problem, once the Workflow skeleton is designed, the programming is broken down into coding mono-threaded and sequential Event handlers.  
+Hence, the Actor model which is scalable and parallel by nature.
 
 Cube runtime will handle all the rest and bridge the gap between parallel programming and hardware multicore complexity.
 
@@ -135,18 +136,17 @@ Done !
 You want to do more, refer to the wiki to see the full Cube API usage 
 
 ### [Wiki](https://github.com/isnDev/cube/wiki)
-*  [Configuration](https://github.com/isnDev/cube/wiki/Configuration) - cmake options
-*  [Main](https://github.com/isnDev/cube/wiki/Main) - Framework Initializer
-*  [Actor](https://github.com/isnDev/cube/wiki/Actor) - User defined Object API
-*  [Event](https://github.com/isnDev/cube/wiki/Event) - Actor communication API
-*  [Logger](https://github.com/isnDev/cube/wiki/Logger) 
+*  [CMake](https://github.com/isnDev/cube/wiki/CMake) - CMake Options
+*  [Start Sequence](https://github.com/isnDev/cube/wiki/StartSequence) - Engine Initializer
+*  [Actor](https://github.com/isnDev/cube/wiki/Actor) - Actor Interface
+*  [Logger](https://github.com/isnDev/cube/wiki/Logger) - Fast Multithreaded Logger
 
 ### Todos
- - Make Wiki Documentation
- - Use Google Test
- - Add Examples
- - Add Debug metrics report
- - Add PhysicalCore throughtput to manage the cpu usage
+  - [ ] Make Wiki Documentation (33%)
+  - [ ] Use Google Test (0%)
+  - [ ] Add Examples (0%)
+  - [ ] Add Debug metrics report (0%)
+  - [ ] Add PhysicalCore throughtput to manage the cpu usage (0%)
 
 License
 ----
