@@ -86,7 +86,7 @@ public:
         // register MyEvent
         this->template registerEvent<MyEvent> (*this);
         // send MyEvent to myself, forever alone ;(
-        auto &event = this->tempalte push<MyEvent>(this->id()); // and keep a reference to the event
+        auto &event = this->template push<MyEvent>(this->id()); // and keep a reference to the event
         event.data = 1337; // set data to send
         return cube::ActorStatus::Alive; // everything's ok actor will be added to engine
     }
