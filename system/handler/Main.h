@@ -41,14 +41,10 @@ namespace cube {
             return this->template __init_shared<_CoreIndex>(std::forward<_Init>(init)...);
         }
 
-        bool start() {
-            if (!this->__alloc__event())
-                return false;
-            if (!this->__init__actor())
-                return false;
-            //Todo : should return status
+        void start() {
+            this->__init__shared_data();
+            this->__init__actors();
             this->__start();
-            return true;
         }
 
         void join() {

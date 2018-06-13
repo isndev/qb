@@ -8,19 +8,24 @@ struct SharedDataMock {
 };
 
 template<typename Handler = void>
-class ActorMock_Shared : public cube::Actor<Handler> {
+class ActorMock_Shared : public cube::Actor<Handler>
+                       , public Handler::ICallBack
+{
     uint32_t _counter;
 public:
     ActorMock_Shared() : _counter(1) {}
 
-    cube::ActorStatus main() {
+    bool init() override final {
+        this->registerCallBack(*this);
+        return true;
+    }
+
+    void onCallBack() override final {
         auto &data = this->sharedData();
         if (data.shared_vector.size() < 1000000) {
             data.shared_vector.push_back(_counter++);
-            return cube::ActorStatus::Alive;
-        }
-
-        return cube::ActorStatus::Dead;
+        } else
+            this->kill();
     }
 };
 

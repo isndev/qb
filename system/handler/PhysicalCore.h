@@ -37,9 +37,15 @@ namespace cube {
         public:
             virtual ~IActor() {}
 
-            virtual ActorStatus init() = 0;
-            virtual ActorStatus main() = 0;
+            virtual bool init() = 0;
             virtual void hasEvent(Event const *) = 0;
+        };
+
+        class ICallBack {
+        public:
+            virtual ~ICallBack() {}
+
+            virtual void onCallBack() = 0;
         };
 
         struct ActorProxy {
@@ -48,7 +54,6 @@ namespace cube {
             void *const _handler;
 
             ActorProxy() : _id(0), _this(nullptr), _handler(nullptr) {}
-
             ActorProxy(uint64_t const id, IActor *actor, void *const handler)
                     : _id(id), _this(actor), _handler(handler) {
             }
@@ -142,6 +147,7 @@ namespace cube {
                 _end += BUCKET_SIZE;
                 return ret;
             }
+
 
             template<typename T>
             T &recycle(T const &data) {
@@ -237,8 +243,8 @@ namespace cube {
                 uint64_t i = 0;
                 while (i < nb_events) {
                     auto event = reinterpret_cast<Event *>(buffer + i);
-                    auto actor = _core._shared_core_actor.find(event->dest);
-                    if (likely(actor != std::end(_core._shared_core_actor))) {
+                    auto actor = _core._actors.find(event->dest);
+                    if (likely(actor != std::end(_core._actors))) {
                         actor->second._this->hasEvent(event);
                     } else {
                         LOG_WARN << "Failed Event" << _core
@@ -275,41 +281,35 @@ namespace cube {
                 std::this_thread::yield();
         }
 
-        static void __start__physical_thread(PhysicalCoreHandler &core) {
-            if (core.init()) {
+        void __workflow() {
+            if (init()) {
                 __wait__all__cores__ready();
 
-                std::vector<ActorProxy> _actor_to_remove;
-                _actor_to_remove.reserve(core._shared_core_actor.size());
-                LOG_INFO << "StartSequence Init " << core << " Success";
+                LOG_INFO << "StartSequence Init " << *this << " Success";
                 while (likely(true)) {
-                    core._eventManager->receive();
-                    //! not sure to implement this maybe it has overhead
-                    for (auto &actor: core._shared_core_actor) {
-                        if (unlikely(static_cast<int>(actor.second._this->main()))) {
-                            _actor_to_remove.push_back(actor.second);
-                        }
-                    }
-                    core._eventManager->flush();
-                    //! next
+                    _eventManager->receive();
+
+                    for (const auto &callback : _actor_callbacks)
+                        callback.second->onCallBack();
+
+                    _eventManager->flush();
+
                     if (unlikely(!_actor_to_remove.empty())) {
                         // remove dead actor
-                        for (auto const &actor : _actor_to_remove) {
-                            delete actor._this;
-                            core.removeActor(actor._id);
-                        }
+                        for (auto const &actor : _actor_to_remove)
+                            removeActor(actor);
                         _actor_to_remove.clear();
-						if (core._shared_core_actor.empty()) {
+						if (_actors.empty()) {
 							break;
 						}
                     }
                 }
                 // receive and flush residual events
-                core._eventManager->receive();
-                while (core._eventManager->flush_all())
+                _eventManager->receive();
+                while (_eventManager->flush_all())
                     std::this_thread::yield();
             } else {
-                LOG_CRIT << "StartSequence Init " << core << " Failed";
+                LOG_CRIT << "StartSequence Init " << *this << " Failed";
             }
         }
 
@@ -318,27 +318,26 @@ namespace cube {
         EventManager *_eventManager = nullptr;
         _SharedData *_sharedData = nullptr;
 
-        std::unordered_map<uint64_t, ActorProxy> _shared_core_actor;
+        std::unordered_map<uint64_t, ActorProxy>  _actors;
+        std::unordered_map<uint64_t, ICallBack *> _actor_callbacks;
+        std::vector<ActorId> _actor_to_remove;
         std::thread _thread;
         //////// !Members
     public:
         // Start Sequence Usage
-        bool __alloc__event() {
+        void __init__shared_data() {
             if constexpr (!std::is_void<_SharedData>::value) {
                 if (_sharedData == nullptr)
                     _sharedData = new _SharedData();
             }
-            _eventManager = new EventManager(*this);
-            return true;
         }
 
-        bool __init__actor() {
+        void __init__actors() const {
             // Init StaticActors
-            for (auto &it : _shared_core_actor) {
-                if (static_cast<int>(it.second._this->init()))
-                    return false;
+            for (const auto &it : _actors) {
+                if (!it.second._this->init())
+                    LOG_WARN << "Actor at " << *this << " failed to init";
             }
-            return true;
         }
 
         template <std::size_t _CoreIndex_, typename ..._Init>
@@ -351,7 +350,9 @@ namespace cube {
         }
 
         void __start() {
-            _thread = std::thread(__start__physical_thread, std::ref(*this));
+            _thread = std::thread(&PhysicalCoreHandler::__workflow, this);
+            if (_thread.get_id() == std::thread::id())
+                std::runtime_error("failed to start a PhysicalCore");
         }
 
         void __join() {
@@ -375,17 +376,23 @@ namespace cube {
         #warning "Cannot set affinity on windows with GNU Compiler"
     #endif
 #endif
+            _actor_to_remove.reserve(_actors.size());
             return ret;
         }
 
         inline void addActor(ActorProxy const &actor) {
-            _shared_core_actor.insert({actor._id, actor});
+            _actors.insert({actor._id, actor});
             LOG_DEBUG << "New Actor[" << actor._id << "] in " << *this;
         }
 
         inline void removeActor(ActorId const &id) {
-            LOG_DEBUG << "Delete Actor[" << id << "] in " << *this;
-            _shared_core_actor.erase(id);
+            const auto it = _actors.find(id);
+            if (it != _actors.end()) {
+                LOG_DEBUG << "Delete Actor[" << id << "] in " << *this;
+                delete it->second._this;
+                _actors.erase(id);
+                unRegisterCallBack(id);
+            }
         }
 
         template<std::size_t _CoreIndex_
@@ -396,6 +403,7 @@ namespace cube {
             actor->__set_id(__generate_id());
             actor->_handler = this;
             addActor(actor->proxy());
+
             return actor->id();
         };
 
@@ -427,11 +435,12 @@ namespace cube {
 
         PhysicalCoreHandler() = delete;
         PhysicalCoreHandler(_ParentHandler *parent)
-			: _parent(parent) {
-        }
+                : _parent(parent)
+                , _eventManager(new EventManager(*this))
+        {}
 
         ~PhysicalCoreHandler() {
-            for (auto &it : _shared_core_actor) {
+            for (auto &it : _actors) {
                 delete it.second._this;
             }
 
@@ -448,13 +457,29 @@ namespace cube {
             actor->__set_id(__generate_id());
             actor->_handler = this;
 
-            if (unlikely(static_cast<int>(actor->init()))) {
+            if (unlikely(!actor->init())) {
                 delete actor;
                 return nullptr;
             }
             addActor(actor->proxy());
+
             return actor;
         };
+
+        template <typename _Actor>
+        void registerCallBack(_Actor &actor) {
+            _actor_callbacks.insert({actor.id(), &actor});
+        }
+
+        void unRegisterCallBack(ActorId const &id) {
+            auto it =_actor_callbacks.find(id);
+            if (it != _actor_callbacks.end())
+                _actor_callbacks.erase(it);
+        }
+
+        void killActor(ActorId const &id) {
+            _actor_to_remove.push_back(id);
+        }
 
         template<template <typename _Handler> typename _Actor
                 , typename ..._Init>

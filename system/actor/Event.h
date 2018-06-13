@@ -31,14 +31,6 @@ namespace cube {
     template<typename T>
     constexpr uint32_t type_id() { return static_cast<uint32_t>(reinterpret_cast<std::size_t>(&type<T>::id)); }
 
-    template<typename _Handler, typename _Data, typename ..._Init>
-    struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT TEvent : public _Handler, public _Data {
-        TEvent() = delete;
-        TEvent(TEvent &&) = default;
-        TEvent(_Init ...init)
-                : _Data(std::forward<_Init>(init)...) {}
-    };
-
 }
 
 #endif //CUBE_EVENT_H

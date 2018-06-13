@@ -21,25 +21,21 @@ struct DynamicEvent : cube::Event {
 template<typename EventTrait, typename Handler>
 class ActorPong : public cube::Actor<Handler> {
     const cube::ActorId actor_to_send;
-    cube::ActorStatus status = cube::ActorStatus::Alive;
+
 public:
     ActorPong(cube::ActorId const &id = cube::ActorId::NotFound{})
             : actor_to_send(id) {}
 
-    cube::ActorStatus init() {
+    bool init() override final {
         this->template registerEvent<EventTrait>(*this);
         if (actor_to_send)
             this->template push<EventTrait>(actor_to_send, 0);
-        return cube::ActorStatus::Alive;
+        return true;
     }
 
-    cube::ActorStatus main() {
-        return status;
-    }
-
-    void onEvent(EventTrait const &event) {
+    void onEvent(EventTrait const &event) const {
         if (event.x >= 3000)
-            status = cube::ActorStatus::Dead;
+            this->kill();
         if (event.x <= 3000) {
             auto &rep = this->template reply<EventTrait>(event);
             ++rep.x;

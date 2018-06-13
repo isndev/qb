@@ -12,25 +12,25 @@ template <typename Handler>
 class ActorTest : public cube::Actor<Handler> {
     const bool first;
     const cube::ActorId to_send;
-    cube::ActorStatus status = cube::ActorStatus::Alive;
+
 public:
     ActorTest(cube::ActorId const id = {}, bool first = false)
             : first(first)
             , to_send(id) {}
 
-    cube::ActorStatus init() {
+    bool init() override final {
         this-> template registerEvent<ChainEvent>(*this);
         if (first) {
             auto &event = this-> template push<ChainEvent>(to_send);
             event.first = this->id();
             event.creation_time = cube::Timestamp::rdts();
         }
-        return cube::ActorStatus::Alive;
+        return true;
     }
 
-    void onEvent(ChainEvent const &event) {
+    void onEvent(ChainEvent const &event) const {
         if (event.loop >= 10000) {
-            status = cube::ActorStatus::Dead;
+            this->kill();
             if (!to_send)
                 LOG_INFO << "Event Time To Arrive " << cube::Timestamp::rdts() - event.creation_time << "ns";
         }
@@ -40,10 +40,6 @@ public:
         if (!to_send) {
             ++fwd.loop;
         }
-    }
-
-    cube::ActorStatus main() {
-        return status;
     }
 };
 
