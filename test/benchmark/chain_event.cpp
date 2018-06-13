@@ -18,7 +18,7 @@ public:
             : first(first)
             , to_send(id) {}
 
-    bool init() override final {
+    bool onInit() override final {
         this-> template registerEvent<ChainEvent>(*this);
         if (first) {
             auto &event = this-> template push<ChainEvent>(to_send);

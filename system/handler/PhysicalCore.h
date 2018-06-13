@@ -37,15 +37,15 @@ namespace cube {
         public:
             virtual ~IActor() {}
 
-            virtual bool init() = 0;
-            virtual void hasEvent(Event const *) = 0;
+            virtual bool onInit() = 0;
+            virtual void onEvent(Event const *) = 0;
         };
 
-        class ICallBack {
+        class ICallback {
         public:
-            virtual ~ICallBack() {}
+            virtual ~ICallback() {}
 
-            virtual void onCallBack() = 0;
+            virtual void onCallback() = 0;
         };
 
         struct ActorProxy {
@@ -245,7 +245,7 @@ namespace cube {
                     auto event = reinterpret_cast<Event *>(buffer + i);
                     auto actor = _core._actors.find(event->dest);
                     if (likely(actor != std::end(_core._actors))) {
-                        actor->second._this->hasEvent(event);
+                        actor->second._this->onEvent(event);
                     } else {
                         LOG_WARN << "Failed Event" << _core
                                  << " [Source](" << event->source << ")"
@@ -290,7 +290,7 @@ namespace cube {
                     _eventManager->receive();
 
                     for (const auto &callback : _actor_callbacks)
-                        callback.second->onCallBack();
+                        callback.second->onCallback();
 
                     _eventManager->flush();
 
@@ -319,7 +319,7 @@ namespace cube {
         _SharedData *_sharedData = nullptr;
 
         std::unordered_map<uint64_t, ActorProxy>  _actors;
-        std::unordered_map<uint64_t, ICallBack *> _actor_callbacks;
+        std::unordered_map<uint64_t, ICallback *> _actor_callbacks;
         std::vector<ActorId> _actor_to_remove;
         std::thread _thread;
         //////// !Members
@@ -335,7 +335,7 @@ namespace cube {
         void __init__actors() const {
             // Init StaticActors
             for (const auto &it : _actors) {
-                if (!it.second._this->init())
+                if (!it.second._this->onInit())
                     LOG_WARN << "Actor at " << *this << " failed to init";
             }
         }
@@ -457,7 +457,7 @@ namespace cube {
             actor->__set_id(__generate_id());
             actor->_handler = this;
 
-            if (unlikely(!actor->init())) {
+            if (unlikely(!actor->onInit())) {
                 delete actor;
                 return nullptr;
             }

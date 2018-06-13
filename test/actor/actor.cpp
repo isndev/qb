@@ -8,24 +8,24 @@ struct MyTrait {
 
 template <typename Handler>
 class ActorTest : public cube::Actor<Handler>
-                , public Handler::ICallBack
+                , public Handler::ICallback
 {
 public:
     ActorTest() = default;
 
-    bool init() override final {
+    bool onInit() override final {
         this->registerCallBack(*this);
         return true;
     }
 
-    void onCallBack() override final {
+    void onCallback() override final {
         this->kill();
     }
 };
 
 template <typename Trait, typename Handler>
 class ActorTraitTest : public cube::Actor<Handler>
-                     , public Handler::ICallBack
+                     , public Handler::ICallback
 {
 public:
     typename Trait::_1 x;
@@ -33,7 +33,7 @@ public:
 
     ActorTraitTest() {}
 
-    bool init() override final {
+    bool onInit() override final {
         static int construct_time = 0;
         // add actor linked to same core
         this-> template addRefActor<ActorTest>();
@@ -44,7 +44,7 @@ public:
         return true;
     }
 
-    void onCallBack() override final {
+    void onCallback() override final {
         this->kill();
     }
 };

@@ -45,9 +45,8 @@ namespace cube {
             return {id(), this, _handler};
         }
 
-        virtual bool init() { return true; }
-
-        virtual void hasEvent(Event const *event) override final {
+        virtual bool onInit() { return true; }
+        virtual void onEvent(Event const *event) override final {
             // TODO: secure this if event not registred
             _event_map[event->id]->invoke(event);
         }
