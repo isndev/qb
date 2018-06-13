@@ -7,6 +7,7 @@
 #include "utils/nocopy.h"
 
 namespace cube {
+
     struct ActorId {
         using NotFound = ActorId;
 
@@ -31,10 +32,6 @@ namespace cube {
         }
     };
 
-    enum class ActorStatus : int {
-        Alive = 0,
-        Dead = 1
-    };
 }
 
 #endif //CUBE_ACTORID_H

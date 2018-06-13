@@ -6,19 +6,14 @@ struct MyEvent : public cube::Event {
 
 template <typename Handler>
 class ActorTest : public cube::Actor<Handler> {
-    cube::ActorStatus status = cube::ActorStatus::Alive;
 public:
     ActorTest() = default;
 
-    cube::ActorStatus init() {
+    bool init() override final {
         this->template registerEvent<MyEvent>(*this);
         // Send event to myself
         this->template push<MyEvent>(this->id());
-        return status;
-    }
-
-    cube::ActorStatus main() {
-        return status;
+        return true;
     }
 
     // MyEvent call back
@@ -32,17 +27,18 @@ public:
     void onEvent (cube::Event const &event) {
         cube::Actor<Handler>::onEvent(event);
         // Kill me on next loop
-        status = cube::ActorStatus::Dead;
+        this->kill();
     }
 };
 
 int main() {
-    nanolog::initialize(nanolog::GuaranteedLogger(), "log", "test-event.log", 1024);
+    nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-event.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     test<100>("Test un/register event", []() {
-        cube::Main<PhysicalCore<0>, PhysicalCore<1>> main;
-        for (int i = 0; i < 1000; ++i) {
+        cube::Main<PhysicalCore<0>, PhysicalCore<1> > main;
+
+        for (int i = 0; i < 2; ++i) {
             main.addActor<0, ActorTest>();
             main.addActor<1, ActorTest>();
         }

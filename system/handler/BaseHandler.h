@@ -11,15 +11,17 @@ namespace cube {
         using base_t = TComposition<_Core...>;
     public:
         // Start Sequence Usage
-        bool __alloc__event() {
-            return this->each_and([](auto &item) -> bool {
-                return item.__alloc__event();
+        void __init__shared_data() {
+            this->each([](auto &item) -> bool {
+                item.__init__shared_data();
+                return true;
             });
         }
 
-        bool __init__actor() {
-            return this->each_and([](auto &item) -> bool {
-                return item.__init__actor();
+        void __init__actors() {
+            this->each([](auto &item) -> bool {
+                item.__init__actors();
+                return true;
             });
         }
 

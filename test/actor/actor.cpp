@@ -7,41 +7,50 @@ struct MyTrait {
 };
 
 template <typename Handler>
-class ActorTest : public cube::Actor<Handler> {
+class ActorTest : public cube::Actor<Handler>
+                , public Handler::ICallBack
+{
 public:
     ActorTest() = default;
 
-    cube::ActorStatus main() {
-        return cube::ActorStatus::Dead;
+    bool init() override final {
+        this->registerCallBack(*this);
+        return true;
+    }
+
+    void onCallBack() override final {
+        this->kill();
     }
 };
 
 template <typename Trait, typename Handler>
-class ActorTraitTest : public cube::Actor<Handler> {
+class ActorTraitTest : public cube::Actor<Handler>
+                     , public Handler::ICallBack
+{
 public:
     typename Trait::_1 x;
     typename Trait::_2 y;
 
-    ActorTraitTest() = default;
+    ActorTraitTest() {}
 
-    cube::ActorStatus init() {
+    bool init() override final {
         static int construct_time = 0;
         // add actor linked to same core
         this-> template addRefActor<ActorTest>();
         // add me
         if (construct_time++ < 100)
             this-> template addRefActor<ActorTraitTest>();
-
-        return cube::ActorStatus::Alive;
+        this->registerCallBack(*this);
+        return true;
     }
 
-    cube::ActorStatus main() {
-        return cube::ActorStatus::Dead;
+    void onCallBack() override final {
+        this->kill();
     }
 };
 
 int main() {
-    nanolog::initialize(nanolog::GuaranteedLogger(), "log", "test-actor.log", 1024);
+    nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-actor.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     test<100>("CreateActor", []() {
