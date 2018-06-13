@@ -14,7 +14,7 @@ public:
     ActorTest() = default;
 
     bool onInit() override final {
-        this->registerCallBack(*this);
+        this->registerCallback(*this);
         return true;
     }
 
@@ -40,7 +40,7 @@ public:
         // add me
         if (construct_time++ < 100)
             this-> template addRefActor<ActorTraitTest>();
-        this->registerCallBack(*this);
+        this->registerCallback(*this);
         return true;
     }
 

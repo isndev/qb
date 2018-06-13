@@ -16,7 +16,7 @@ public:
     ActorMock_Shared() : _counter(1) {}
 
     bool onInit() override final {
-        this->registerCallBack(*this);
+        this->registerCallback(*this);
         return true;
     }
 
