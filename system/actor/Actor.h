@@ -45,6 +45,13 @@ namespace cube {
             return {id(), this, _handler};
         }
 
+        virtual bool init() { return true; }
+
+        virtual void hasEvent(Event const *event) override final {
+            // TODO: secure this if event not registred
+            _event_map[event->id]->invoke(event);
+        }
+
     protected:
         Actor() : _handler(nullptr) {
             _event_map.reserve(32);
@@ -55,13 +62,7 @@ namespace cube {
                 delete revent.second;
         }
 
-        virtual bool init() { return true; }
-
-        virtual void hasEvent(Event const *event) override final {
-            // TODO: secure this if event not registred
-            _event_map[event->id]->invoke(event);
-        }
-    protected:
+    public:
         inline ActorId id() const {
             return *this;
         }
@@ -82,7 +83,6 @@ namespace cube {
             _event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<Event, _Actor>(actor));
         };
 
-    protected:
         template <typename _Actor>
         inline void registerCallBack(_Actor &actor) const {
             _handler->registerCallBack(actor);
