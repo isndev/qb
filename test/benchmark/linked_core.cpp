@@ -26,7 +26,7 @@ public:
     ActorPong(cube::ActorId const &id = cube::ActorId::NotFound{})
             : actor_to_send(id) {}
 
-    bool init() override final {
+    bool onInit() override final {
         this->template registerEvent<EventTrait>(*this);
         if (actor_to_send)
             this->template push<EventTrait>(actor_to_send, 0);

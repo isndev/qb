@@ -9,7 +9,7 @@ class ActorTest : public cube::Actor<Handler> {
 public:
     ActorTest() = default;
 
-    bool init() override final {
+    bool onInit() override final {
         this->template registerEvent<MyEvent>(*this);
         // Send event to myself
         this->template push<MyEvent>(this->id());
