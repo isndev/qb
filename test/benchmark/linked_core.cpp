@@ -18,7 +18,7 @@ struct DynamicEvent : cube::Event {
     DynamicEvent(uint64_t x) : x(x), vec(512, 8) {}
 };
 
-template<typename EventTrait, typename Handler>
+template<typename Handler, typename EventTrait>
 class ActorPong : public cube::Actor<Handler> {
     const cube::ActorId actor_to_send;
 

@@ -23,7 +23,7 @@ public:
     }
 };
 
-template <typename Trait, typename Handler>
+template <typename Handler, typename Trait>
 class ActorTraitTest : public cube::Actor<Handler>
                      , public Handler::ICallback
 {

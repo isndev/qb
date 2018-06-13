@@ -60,7 +60,9 @@ namespace cube {
                 : base_t(std::forward<_Init>(init)...) {}
 
     public:
-        template<std::size_t _CoreIndex, template<typename _Handler> typename _Actor, typename ..._Init>
+        template< std::size_t _CoreIndex
+                , template<typename _Handler> typename _Actor
+                , typename ..._Init >
         ActorId addActor(_Init &&...init) {
             ActorId id = ActorId::NotFound{};
             this->each_or([this, &id, &init...](auto &item) -> bool {
@@ -72,7 +74,10 @@ namespace cube {
             return id;
         }
 
-        template<std::size_t _CoreIndex, template<typename _Trait, typename _Handler> typename _Actor, typename _Trait, typename ..._Init>
+        template< std::size_t _CoreIndex
+                , template <typename _Handler, typename _Trait> typename _Actor
+                , typename _Trait
+                , typename ..._Init >
         ActorId addActor(_Init &&...init) {
             ActorId id = ActorId::NotFound{};
             this->each_or([this, &id, &init...](auto &item) -> bool {
