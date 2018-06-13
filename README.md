@@ -30,7 +30,7 @@ Our CPUs are not getting any faster. What’s happening is that we now have mult
 
 - The Event communication between Actors is done with an unidirectional communication channel called a Pipe. Hence, the Actor programming model is completely asynchronous and event-driven. 
 
-<p align="center"><img src="https://github.com/isnDev/cube/blob/master/ressources/BasicActorModel.png" width="500px" /></p>
+<p align="center"><img src="./ressources/BasicActorModel.png" width="500px" /></p>
 
 - Cube Workflow is a program consisting of multiple Actors handling one or multiple Events, attached to PhysicalCores linked together with several Pipes. It solves one particular problem, once the Workflow skeleton is designed, the programming is broken down into coding mono-threaded and sequential Event handlers.  
 Hence, the Actor model which is scalable and parallel by nature.
@@ -82,7 +82,7 @@ class MyActor
         , public CoreHandler::ICallback {
 public:
     MyActor() = default;
-    // will call this function before adding the Actor
+    // will call this function before adding MyActor
     bool onInit() override final {
         this->template registerEvent<MyEvent> (*this);          // will listen MyEvent
         this->registerCallback(*this);                          // each core loop, call onCallback
@@ -90,13 +90,13 @@ public:
         // send MyEvent to me ! forever alone ;(
         auto &event = this->template push<MyEvent>(this->id()); // and keep a reference to the event
         event.data = 1337;                                      // set data
-        return true;                                            // everything's ok actor will be added
+        return true;                                            // init ok, MyActor will be added
     }
     
     // will call this function each core loop
     void onCallback() override final {
         // I am a dummy actor, notify the engine to remove me !
-        return cube::ActorStatus::Dead;
+        this->kill();
     }
     
     // will call this function when MyActor received MyEvent 
