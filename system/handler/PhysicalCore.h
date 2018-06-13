@@ -407,9 +407,9 @@ namespace cube {
             return actor->id();
         };
 
-        template<std::size_t _CoreIndex_
+        template< std::size_t _CoreIndex_
                 , template<typename _Handler> typename _Actor
-                , typename ..._Init>
+                , typename ..._Init >
         ActorId addActor(_Init &&...init) {
             if constexpr (_CoreIndex_ == _index) {
                 return addActor<_CoreIndex_, _Actor<PhysicalCoreHandler>>
@@ -418,13 +418,13 @@ namespace cube {
             return ActorId::NotFound{};
         }
 
-        template<std::size_t _CoreIndex_
-                , template<typename _Trait, typename _Handler> typename _Actor
+        template< std::size_t _CoreIndex_
+                , template<typename _Handler, typename _Trait> typename _Actor
                 , typename _Trait
-                , typename ..._Init>
+                , typename ..._Init >
         ActorId addActor(_Init &&...init) {
             if constexpr (_CoreIndex_ == _index) {
-                return addActor<_CoreIndex_, _Actor<_Trait, PhysicalCoreHandler>>
+                return addActor<_CoreIndex_, _Actor<PhysicalCoreHandler, _Trait>>
                         (std::forward<_Init>(init)...);
             }
             return ActorId::NotFound{};
@@ -481,18 +481,18 @@ namespace cube {
             _actor_to_remove.push_back(id);
         }
 
-        template<template <typename _Handler> typename _Actor
-                , typename ..._Init>
+        template< template <typename _Handler> typename _Actor
+                , typename ..._Init >
         inline auto addReferencedActor(_Init &&...init) {
             return addReferencedActor<_Actor<PhysicalCoreHandler>>
                     (std::forward<_Init>(init)...);
         }
 
-        template<template <typename _Trait, typename _Handler> typename _Actor
+        template< template <typename _Handler, typename _Trait> typename _Actor
                 , typename _Trait
-                , typename ..._Init>
+                , typename ..._Init >
         inline auto addReferencedActor(_Init &&...init) {
-            return addReferencedActor<_Actor<_Trait, PhysicalCoreHandler>>
+            return addReferencedActor<_Actor<PhysicalCoreHandler, _Trait>>
                     (std::forward<_Init>(init)...);
         }
 
