@@ -78,24 +78,28 @@ struct MyEvent : public cube::Event
 
 template <typename CoreHandler>
 class MyActor
-        : public cube::Actor<CoreHandler> {
+        : public cube::Actor<CoreHandler>
+        , public CoreHandler::ICallback {
 public:
     MyActor() = default;
-    // (optional) implementation if has to check initialization
-    cube::ActorStatus init() {
-        // register MyEvent
-        this->template registerEvent<MyEvent> (*this);
-        // send MyEvent to myself, forever alone ;(
+    // will call this function before adding the Actor
+    bool onInit() override final {
+        this->template registerEvent<MyEvent> (*this);          // will listen MyEvent
+        this->registerCallback(*this);                          // each core loop, call onCallback
+
+        // send MyEvent to me ! forever alone ;(
         auto &event = this->template push<MyEvent>(this->id()); // and keep a reference to the event
-        event.data = 1337; // set data to send
-        return cube::ActorStatus::Alive; // everything's ok actor will be added to engine
+        event.data = 1337;                                      // set data
+        return true;                                            // everything's ok actor will be added
     }
-    // (optional) implementation if actor has a looped callback
-    cube::ActorStatus main() {
+    
+    // will call this function each core loop
+    void onCallback() override final {
         // I am a dummy actor, notify the engine to remove me !
         return cube::ActorStatus::Dead;
     }
-    // this is the callback when MyActor received 
+    
+    // will call this function when MyActor received MyEvent 
     void onEvent(MyEvent const &event) {
         // ...
     }
@@ -109,8 +113,8 @@ main.cpp
 
 int main () {
     // (optional) initialize the logger
-    nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "serge-challenge.log", 1024);
-    nanolog::set_log_level(nanolog::LogLevel::WARN);
+    nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "MyProject.log", 1024);
+    nanolog::set_log_level(nanolog::LogLevel::WARN); // log only warning an critical
 
     // configure the Main Engine 
     // Note : I will use only the core 0 and 1 
