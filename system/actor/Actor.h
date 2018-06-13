@@ -83,12 +83,12 @@ namespace cube {
         };
 
         template <typename _Actor>
-        inline void registerCallBack(_Actor &actor) const {
-            _handler->registerCallBack(actor);
+        inline void registerCallback(_Actor &actor) const {
+            _handler->registerCallback(actor);
         }
 
-        inline void unRegisterCallBack() const {
-            _handler->unRegisterCallBack(id());
+        inline void unRegisterCallback() const {
+            _handler->unRegisterCallback(id());
         }
 
         inline void kill() const {

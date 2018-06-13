@@ -391,7 +391,7 @@ namespace cube {
                 LOG_DEBUG << "Delete Actor[" << id << "] in " << *this;
                 delete it->second._this;
                 _actors.erase(id);
-                unRegisterCallBack(id);
+                unRegisterCallback(id);
             }
         }
 
@@ -467,11 +467,11 @@ namespace cube {
         };
 
         template <typename _Actor>
-        void registerCallBack(_Actor &actor) {
+        void registerCallback(_Actor &actor) {
             _actor_callbacks.insert({actor.id(), &actor});
         }
 
-        void unRegisterCallBack(ActorId const &id) {
+        void unRegisterCallback(ActorId const &id) {
             auto it =_actor_callbacks.find(id);
             if (it != _actor_callbacks.end())
                 _actor_callbacks.erase(it);
