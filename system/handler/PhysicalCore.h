@@ -366,7 +366,8 @@ namespace cube {
             CPU_ZERO(&cpuset);
             CPU_SET(_index, &cpuset);
 
-            ret = !pthread_setaffinity_np(_thread.native_handle(), sizeof(cpu_set_t), &cpuset);
+	    pthread_t current_thread = pthread_self();
+            ret = !pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
 #elif defined(_WIN32) || defined(_WIN64)
     #ifdef _MSC_VER
                 DWORD_PTR mask = (1 << (_index < 0 ? 0 : _index));
