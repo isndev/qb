@@ -39,8 +39,6 @@ Once designed, the programming is broken down into coding mono-threaded and sequ
 Hence, the Actor model which is scalable and parallel by nature.  
 
 Cube runtime will handle all the rest and bridge the gap between parallel programming and hardware multicore complexity.
-It solves one particular problem, 
-
 
 # Getting Started !
 * #### My First Project
@@ -151,7 +149,7 @@ You want to do more, refer to the wiki to see the full Cube API usage
 *  [Logger](https://github.com/isnDev/cube/wiki/Logger) - Fast Multithreaded Logger
 
 ### Todos
-  - [ ] Make Wiki Documentation (33%)
+  - [ ] Make Wiki Documentation (37%)
   - [ ] Use Google Test (0%)
   - [ ] Add Examples (0%)
   - [ ] Add Debug metrics report (0%)
