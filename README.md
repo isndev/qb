@@ -25,19 +25,22 @@ Cube is a thin-layer multicore-optimized runtime that enable users to build thei
 #### Introduction
 Our CPUs are not getting any faster. What’s happening is that we now have multiple cores on them. If we want to take advantage of all this hardware we have available now, we need a way to run our code concurrently. Decades of untraceable bugs and developers’ depression have shown that threads are not the way to go.
 
-The Actor model is a concurrent model of computation that treats "actors" as the universal primitives of concurrent computation.
-
-#### Workflow
+#### Definition
+The Actor model is a concurrent model of computation that treats "actors" as the universal primitives of concurrent computation.  
 - The Actor sends event messages to be received by another Actor, which is then treated by an Event handler.
 - The Event handler can execute a local function, create more actors, and send events to other Actors. In Cube programming semantics, Actors shall be mono-threaded and non-blocking.
 - The Event communication between Actors is done with an unidirectional communication channel called a Pipe. Hence, the Actor programming model is completely asynchronous and event-driven. 
 
 <p align="center"><img src="./ressources/BasicActorModel.png" width="500px" /></p>
 
-- Cube Workflow is a program consisting of multiple Actors handling one or multiple Events, attached to PhysicalCores linked together with several Pipes. It solves one particular problem, once the Workflow skeleton is designed, the programming is broken down into coding mono-threaded and sequential Event handlers.  
-Hence, the Actor model which is scalable and parallel by nature.
+#### Cube + Actor Model
+A program developped with Cube is consisting of multiple Actors handling one or multiple Events, attached to PhysicalCores linked together with several Pipes.  
+Once designed, the programming is broken down into coding mono-threaded and sequential Event handlers.  
+Hence, the Actor model which is scalable and parallel by nature.  
 
 Cube runtime will handle all the rest and bridge the gap between parallel programming and hardware multicore complexity.
+It solves one particular problem, 
+
 
 # Getting Started !
 * #### My First Project
