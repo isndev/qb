@@ -2,7 +2,6 @@
 #ifndef CUBE_PHYSICALCORE_H
 # define CUBE_PHYSICALCORE_H
 #if defined(unix) || defined(__unix) || defined(__unix__)
-#define __USE_GNU
     #include <sched.h>
     #include <errno.h>
     #include <unistd.h>
