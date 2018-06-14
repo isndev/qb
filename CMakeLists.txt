@@ -46,7 +46,7 @@ if (WIN32)
     if (TCMALLOC_RELEASE)
         message(STATUS "INFO: will use tcmalloc")
         if (GNU)
-            SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
+            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
         elseif (MSVC)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /INCLUDE:\"__tcmalloc\"")
         endif()
@@ -56,7 +56,8 @@ if (WIN32)
     endif()
 
 elseif(UNIX)
-
+	set(USE_TC_MALLOC OFF)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 endif()
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")

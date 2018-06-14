@@ -273,7 +273,7 @@ public:
 #if defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
         struct timespec timestamp;
     if (clock_gettime(CLOCK_REALTIME, &timestamp) != 0)
-        throwex SystemException("Cannot get value of CLOCK_REALTIME timer!");
+        throw std::runtime_error("Cannot get value of CLOCK_REALTIME timer!");
     return (timestamp.tv_sec * 1000000000) + timestamp.tv_nsec;
 #elif defined(_WIN32) || defined(_WIN64)
         FILETIME ft;
@@ -293,7 +293,7 @@ public:
     struct tm local;
     time_t seconds = timestamp / (1000000000);
     if (localtime_r(&seconds, &local) != &local)
-        throwex SystemException("Cannot convert CLOCK_REALTIME time to local date & time structure!");
+        throw std::runtime_error("Cannot convert CLOCK_REALTIME time to local date & time structure!");
     return timestamp + (local.tm_gmtoff * 1000000000);
 #elif defined(_WIN32) || defined(_WIN64)
         FILETIME ft;
@@ -317,7 +317,7 @@ public:
 #elif defined(unix) || defined(__unix) || defined(__unix__)
         struct timespec timestamp = {0};
     if (clock_gettime(CLOCK_MONOTONIC, &timestamp) != 0)
-        throwex SystemException("Cannot get value of CLOCK_MONOTONIC timer!");
+        throw std::runtime_error("Cannot get value of CLOCK_MONOTONIC timer!");
     return (timestamp.tv_sec * 1000000000) + timestamp.tv_nsec;
 #elif defined(_WIN32) || defined(_WIN64)
         static uint64_t offset = 0;
