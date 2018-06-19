@@ -1,6 +1,7 @@
 
 #ifndef CUBE_EVENT_H
 # define CUBE_EVENT_H
+# include <bitset>
 # include "utils/prefix.h"
 # include "ActorId.h"
 
@@ -10,7 +11,7 @@ namespace cube {
     public:
         uint32_t id;
         uint16_t bucket_size;
-        uint16_t alive;
+        std::bitset<16> state;
         // for users
         ActorId dest;
         ActorId source;
@@ -20,7 +21,14 @@ namespace cube {
 
         inline ActorId getDestination() const { return dest; }
         inline ActorId getSource() const { return source; }
-        inline bool recycled() const { return static_cast<bool>(alive); }
+    };
+
+    struct TimedEvent : public Event {
+        std::uint32_t save_id;
+        std::uint64_t duration;
+    };
+
+    struct KillEvent : public Event {
     };
 
     template<typename T>
