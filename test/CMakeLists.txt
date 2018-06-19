@@ -7,6 +7,8 @@ add_executable(test-actor
         ${TEST_PATH}/actor/actor.cpp ${DEBUGFILES} ${LOGFILES})
 add_executable(test-event
         ${TEST_PATH}/actor/event.cpp ${DEBUGFILES} ${LOGFILES})
+add_executable(test-scheduler
+        ${TEST_PATH}/actor/scheduler.cpp ${DEBUGFILES} ${LOGFILES})
 add_executable(test-chain-actor
         ${TEST_PATH}/benchmark/chain_event.cpp ${DEBUGFILES} ${LOGFILES})
 add_executable(test-linked-core
@@ -32,6 +34,9 @@ if (USE_TC_MALLOC)
             debug ${TCMALLOC_DEBUG}
             optimized ${TCMALLOC_RELEASE})
     target_link_libraries(test-core-shared_data
+            debug ${TCMALLOC_DEBUG}
+            optimized ${TCMALLOC_RELEASE})
+    target_link_libraries(test-scheduler
             debug ${TCMALLOC_DEBUG}
             optimized ${TCMALLOC_RELEASE})
 endif()

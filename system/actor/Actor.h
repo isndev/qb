@@ -27,7 +27,7 @@ namespace cube {
             virtual void invoke(Event const *data) const override final {
                 auto &event = *reinterpret_cast<_Data const *>(data);
                 _actor.onEvent(event);
-                if (!event.recycled())
+                if (!event.state[0])
                     event.~_Data();
             }
         };
@@ -54,6 +54,8 @@ namespace cube {
     protected:
         Actor() : _handler(nullptr) {
             _event_map.reserve(32);
+            _event_map[type_id<KillEvent>()] = new RegisterEvent<KillEvent, Actor>(*this);
+            _event_map[type_id<Event>()] = new RegisterEvent<Event, Actor>(*this);
         }
 
         virtual ~Actor() {
@@ -129,6 +131,10 @@ namespace cube {
             return _handler->template forward<_Data>(dest, event);
         }
 
+        inline bool send(Event const &event) const {
+            return _handler->send(event);
+        }
+
         template<typename _Data, typename ..._Init>
         inline void send(ActorId const &dest, _Init &&...init) const {
             return _handler->template send<_Data, _Init...>(dest, id(), std::forward<_Init>(init)...);
@@ -140,6 +146,10 @@ namespace cube {
 
         void onEvent(Event const &event) const {
             LOG_WARN << "Actor[" << _id << "." << _index << "] received removed event[" << event.id << "]";
+        }
+
+        void onEvent(KillEvent const &) {
+            kill();
         }
 
     };

@@ -97,6 +97,7 @@ namespace cube {
             return false;
         }
 
+	public:
         //// Pipe Events Queue
         class Pipe : public nocopy {
             friend class PhysicalCoreHandler;
@@ -107,58 +108,10 @@ namespace cube {
             char __padding2__[CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(std::size_t)];
             PipeBuffer _buffer;
 
-            inline void setBegin(std::size_t const begin) {
-                _begin = begin;
-            }
-
-            inline std::size_t begin() const {
-                return _begin;
-            }
-
-            inline std::size_t end() const {
-                return _end;
-            }
-
-            inline void free(std::size_t const size) {
-                _end -= size;
-            }
-
-            inline void reset() {
-                _begin = 0;
-                _end = 0;
-            }
-
             inline void check_allocation_size(std::size_t const size) {
                 if (unlikely((_end + size) >= _buffer.size())) {
                     _buffer.resize(_buffer.size() + MaxBufferEvents);
                 }
-            }
-
-            template<typename T, typename ..._Init>
-            T &allocate(_Init &&...init) {
-                constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES);
-                check_allocation_size(BUCKET_SIZE);
-
-                T &ret = *(new (reinterpret_cast<T *>(_buffer.data() + _end)) T(std::forward<_Init>(init)...));
-                ret.id = type_id<T>();
-                ret.bucket_size = BUCKET_SIZE;
-                ret.alive = 0;
-                _end += BUCKET_SIZE;
-                return ret;
-            }
-
-
-            template<typename T>
-            T &recycle(T const &data) {
-                constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES);
-                check_allocation_size(BUCKET_SIZE);
-
-                T &ret = *reinterpret_cast<T *>(_buffer.data() + _end);
-                std::memcpy(&ret, &data, sizeof(T));
-				ret.alive = 0;
-                const_cast<T &>(data).alive = 1;
-                _end += BUCKET_SIZE;
-                return ret;
             }
 
             void __recycle(Event const &data) {
@@ -173,9 +126,90 @@ namespace cube {
 
             ~Pipe() = default;
 
-            //Todo: User dynamic Allocation
-        };
+            inline CacheLine *buffer() {
+                return _buffer.data();
+            }
 
+            inline std::size_t begin() const {
+                return _begin;
+            }
+
+            inline std::size_t end() const {
+                return _end;
+            }
+
+            inline void free_front(std::size_t const size) {
+                _begin += size;
+            }
+
+            inline void free_back(std::size_t const size) {
+                _end -= size;
+            }
+
+            inline void reset() {
+                _begin = 0;
+                _end = 0;
+            }
+
+            template <typename T, typename ..._Init>
+            T &allocate(_Init &&...init) {
+                constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES);
+                check_allocation_size(BUCKET_SIZE);
+
+                T &ret = *(new (reinterpret_cast<T *>(_buffer.data() + _end)) T(std::forward<_Init>(init)...));
+                if constexpr (std::is_base_of<TimedEvent, T>::value) {
+                    ret.save_id = type_id<T>();
+                    ret.id = type_id<TimedEvent>();
+                } else {
+                    ret.id = type_id<T>();
+                }
+                ret.bucket_size = BUCKET_SIZE;
+                ret.state = 0;
+                _end += BUCKET_SIZE;
+                return ret;
+            }
+
+            template <typename T>
+            T &dynallocate(CacheLine const *data, uint16_t const size) {
+                std::size_t index;
+                if (_begin - size < _end) {
+                    index = (_begin -= size);
+                } else {
+                    check_allocation_size(size);
+                    index = _end;
+                    _end += size;
+                }
+                T &ret = *reinterpret_cast<T *>(_buffer.data() + index);
+                std::memcpy(&ret, data, size * CUBE_LOCKFREE_CACHELINE_BYTES);
+                return ret;
+            }
+
+            void *dynallocate(uint16_t const size) {
+                std::size_t index;
+                if (_end - size > _end) {
+                    index = (_begin -= size);
+                } else {
+                    check_allocation_size(size);
+                    index = _end;
+                    _end += size;
+                }
+                return (_buffer.data() + index);
+            }
+
+            template <typename T>
+            T &recycle(T const &data) {
+                constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES);
+                check_allocation_size(BUCKET_SIZE);
+
+                T &ret = *reinterpret_cast<T *>(_buffer.data() + _end);
+                std::memcpy(&ret, &data, sizeof(T));
+				ret.state = 0;
+                const_cast<T &>(data).state[0] = 1;
+                _end += BUCKET_SIZE;
+                return ret;
+            }
+        };
+	private:
         class EventManager : public nocopy {
             friend class PhysicalCoreHandler;
 
@@ -498,8 +532,8 @@ namespace cube {
 
     public:
         //sender
-        bool send(Event const &data) {
-            return _parent->send(data);
+        bool send(Event const &event) {
+            return _parent->send(event);
         }
 
         template <typename T, typename ..._Init>
@@ -509,7 +543,7 @@ namespace cube {
             data.dest = dest;
             data.source = source;
             if (_parent->send(data))
-                pipe.free(data.bucket_size);
+                pipe.free_back(data.bucket_size);
         }
 
         template<typename T, typename ..._Init>
