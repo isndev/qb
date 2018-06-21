@@ -58,13 +58,13 @@ namespace cube {
             }
         };
 
-    private:
-		using parent_ptr_t = _ParentHandler*;
-
-        inline ActorId __generate_id() const {
+        static inline ActorId generate_id() {
             static std::size_t pid = 0;
             return ActorId(static_cast<uint32_t >(duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count() + pid++), _CoreIndex);
         }
+	
+    private:
+		using parent_ptr_t = _ParentHandler*;
 
         //////// Event Manager
         //// Receiver From Handler
@@ -103,16 +103,11 @@ namespace cube {
             friend class PhysicalCoreHandler;
             friend class PhysicalCoreHandler::EventManager;
 
+	protected:
             std::size_t _begin;
             std::size_t _end;
             char __padding2__[CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(std::size_t)];
             PipeBuffer _buffer;
-
-            inline void check_allocation_size(std::size_t const size) {
-                if (unlikely((_end + size) >= _buffer.size())) {
-                    _buffer.resize(_buffer.size() + MaxBufferEvents);
-                }
-            }
 
             void __recycle(Event const &data) {
                 std::memcpy((_buffer.data() + _end), &data, data.bucket_size * CUBE_LOCKFREE_CACHELINE_BYTES);
@@ -151,62 +146,46 @@ namespace cube {
                 _end = 0;
             }
 
+			inline CacheLine *allocate_sync(std::size_t const size) {
+				const auto save_index = _end;
+				if (unlikely((_end + size) >= _buffer.size())) {
+					_buffer.resize(_buffer.size() + MaxBufferEvents);
+				}
+				_end += size;
+				return _buffer.data() + save_index;
+			}
+
             template <typename T, typename ..._Init>
-            T &allocate(_Init &&...init) {
+            inline T &allocate_sync(_Init &&...init) {
                 constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES);
-                check_allocation_size(BUCKET_SIZE);
-
-                T &ret = *(new (reinterpret_cast<T *>(_buffer.data() + _end)) T(std::forward<_Init>(init)...));
-                if constexpr (std::is_base_of<TimedEvent, T>::value) {
-                    ret.save_id = type_id<T>();
-                    ret.id = type_id<TimedEvent>();
-                } else {
-                    ret.id = type_id<T>();
-                }
-                ret.bucket_size = BUCKET_SIZE;
-                ret.state = 0;
-                _end += BUCKET_SIZE;
-                return ret;
+                return *(new (reinterpret_cast<T *>(allocate_sync(BUCKET_SIZE))) T(std::forward<_Init>(init)...));
             }
 
+	    CacheLine *allocate_async(uint16_t const size) {		
+	      if (_begin - size < _end) {
+		_begin -= size;
+		return _buffer.data() + _begin;
+	      }
+	      
+	      return allocate_sync(size);
+	    }
+	    
+	    template <typename T, typename ..._Init>
+	      inline T &allocate_async(_Init &&...init) {
+	      constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES);
+	      return *(new (reinterpret_cast<T *>(allocate_async(sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES))) T(std::forward<_Init>(init)...));
+	    }
+	    
+	    template <typename T>
+	      T &recycle_sync(T const &data) {
+				return *reinterpret_cast<T *>(std::memcpy(allocate_sync(sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES)
+									  , &data, sizeof(T)));
+	    }
+	    
             template <typename T>
-            T &dynallocate(CacheLine const *data, uint16_t const size) {
-                std::size_t index;
-                if (_begin - size < _end) {
-                    index = (_begin -= size);
-                } else {
-                    check_allocation_size(size);
-                    index = _end;
-                    _end += size;
-                }
-                T &ret = *reinterpret_cast<T *>(_buffer.data() + index);
-                std::memcpy(&ret, data, size * CUBE_LOCKFREE_CACHELINE_BYTES);
-                return ret;
-            }
-
-            void *dynallocate(uint16_t const size) {
-                std::size_t index;
-                if (_end - size > _end) {
-                    index = (_begin -= size);
-                } else {
-                    check_allocation_size(size);
-                    index = _end;
-                    _end += size;
-                }
-                return (_buffer.data() + index);
-            }
-
-            template <typename T>
-            T &recycle(T const &data) {
-                constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES);
-                check_allocation_size(BUCKET_SIZE);
-
-                T &ret = *reinterpret_cast<T *>(_buffer.data() + _end);
-                std::memcpy(&ret, &data, sizeof(T));
-				ret.state = 0;
-                const_cast<T &>(data).state[0] = 1;
-                _end += BUCKET_SIZE;
-                return ret;
+            T &recycle_async(T const &data) {
+				return *reinterpret_cast<T *>(std::memcpy(allocate_async(sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES)
+														 , &data, sizeof(T)));
             }
         };
 	private:
@@ -434,7 +413,6 @@ namespace cube {
                 , typename ..._Init>
         inline ActorId addActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
-            actor->__set_id(__generate_id());
             actor->_handler = this;
             addActor(actor->proxy());
 
@@ -488,7 +466,6 @@ namespace cube {
         template<typename _Actor, typename ..._Init>
         _Actor *addReferencedActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
-            actor->__set_id(__generate_id());
             actor->_handler = this;
 
             if (unlikely(!actor->onInit())) {
@@ -539,36 +516,58 @@ namespace cube {
         template <typename T, typename ..._Init>
         void send(ActorId const dest, ActorId const source, _Init &&...init) {
             auto &pipe = _eventManager->getPipe(dest._index);
-            auto data = pipe.template allocate<T>(std::forward<_Init>(init)...);
-            data.dest = dest;
-            data.source = source;
-            if (_parent->send(data))
-                pipe.free_back(data.bucket_size);
+			const auto save_begin = pipe._begin;
+			const auto save_end = pipe._end;
+
+            auto &data = pipe.template allocate_async<T>(std::forward<_Init>(init)...);
+	    data.id = type_id<T>();
+	    data.dest = dest;
+	    data.source = source;
+	    if constexpr (std::is_base_of<ServiceEvent, T>::value) {
+		data.forward = source;
+		std::swap(data.id, data.service_event_id);
+	    }
+	    data.state = 0;
+	    data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
+            if (likely(_parent->send(data))) {
+				pipe._end = save_end;
+				pipe._begin = save_begin;
+	    }
         }
 
-        template<typename T, typename ..._Init>
+        template <typename T, typename ..._Init>
         T &push(ActorId const &dest, ActorId const &source, _Init &&...init) {
             auto &pipe = _eventManager->getPipe(dest._index);
-            auto &data = pipe.template allocate<T, _Init...>(std::forward<_Init>(init)...);
-            data.dest = dest;
-            data.source = source;
+            auto &data = pipe.template allocate_sync<T, _Init...>(std::forward<_Init>(init)...);
+	    data.id = type_id<T>();
+	    data.dest = dest;
+	    data.source = source;
+	    if constexpr (std::is_base_of<ServiceEvent, T>::value) {
+		data.forward = source;
+		std::swap(data.id, data.service_event_id);
+	    }
+
+	    data.state = 0;
+	    data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
             return data;
         }
-
-        template<typename T>
+	
+        template <typename T>
         T &reply(T const &event) {
-            auto &ret = _eventManager->getPipe(event.source._index).template recycle<T>(event);
+            auto &ret = _eventManager->getPipe(event.source._index).template recycle_async<T>(event);
 
             std::swap(ret.dest, ret.source);
+            const_cast<T &>(event).state[0] = 1;
             return ret;
         }
 
         template<typename T>
         T &forward(ActorId const dest, T const &event) {
-            auto &ret = _eventManager->getPipe(dest._index).template recycle<T>(event);
+            auto &ret = _eventManager->getPipe(dest._index).template recycle_async<T>(event);
 
-            std::swap(ret.dest, ret.source);
+            ret.source = ret.dest;
             ret.dest = dest;
+            const_cast<T &>(event).state[0] = 1;
             return ret;
         }
 
@@ -584,6 +583,9 @@ namespace cube {
         os << ss.str();
         return os;
     };
+
+    using ServiceHandler = PhysicalCoreHandler<void, 0, void>;
 }
+
 
 #endif //CUBE_PHYSICALCORE_H

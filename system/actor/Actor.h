@@ -37,6 +37,7 @@ namespace cube {
 
         friend _Handler;
 
+    protected:
         inline void __set_id(ActorId const &id) {
             static_cast<ActorId &>(*this) = id;
         }
@@ -52,8 +53,8 @@ namespace cube {
         }
 
     protected:
-        Actor() : _handler(nullptr) {
-            _event_map.reserve(32);
+        Actor() : ActorId(_Handler::generate_id()), _handler(nullptr) {
+            _event_map.reserve(64);
             _event_map[type_id<KillEvent>()] = new RegisterEvent<KillEvent, Actor>(*this);
             _event_map[type_id<Event>()] = new RegisterEvent<Event, Actor>(*this);
         }
@@ -120,7 +121,7 @@ namespace cube {
         inline _Data &push(ActorId const &dest, _Init const &...init) const {
             return _handler->template push<_Data>(dest, id(), init...);
         }
-
+	
         template<typename _Data>
         inline _Data &reply(_Data const &event) const {
             return _handler->template reply<_Data>(event);
@@ -154,6 +155,17 @@ namespace cube {
 
     };
 
+
+    template <typename _Handler, uint32_t _Tag>
+    class ServiceActor : public Actor<_Handler> {
+    public:
+
+      constexpr static const uint32_t Tag = _Tag;
+
+      ServiceActor() {
+	this->__set_id(ActorId(_Tag, _Handler::_index));
+      }
+    };
 }
 
 #endif //CUBE_ACTOR_H
