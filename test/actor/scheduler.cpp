@@ -2,28 +2,25 @@
 #include "cube.h"
 
 struct MyEvent : public cube::TimedEvent {
-    uint64_t data;
+  MyEvent(cube::Timespan const &ts)
+    : TimedEvent(ts) {}
 };
 
 template <typename Handler>
 class ActorTest : public cube::Actor<Handler> {
 public:
-    cube::ActorId id_sched;
-    ActorTest() = delete;
-    ActorTest(cube::ActorId const &id_sched)
-            : id_sched(id_sched) {}
-
+    ActorTest() = default;
+  
     bool onInit() override final {
         this->template registerEvent<MyEvent>(*this);
         // Send event to myself
-        auto &e = this->template push<MyEvent>(id_sched);
-        e.duration = (cube::NanoTimestamp() + cube::Timespan::seconds(1)).nanoseconds();
+        auto &e = this->template push<MyEvent>(cube::Tag<cube::SchedulerActor<Handler>, 0>::id(), cube::Timespan::seconds(1));
         return true;
     }
 
     // MyEvent call back
     void onEvent(MyEvent const &event) {
-        this->template push<cube::KillEvent>(id_sched);
+      this->template push<cube::KillEvent>(cube::Tag<cube::SchedulerActor<Handler>, 0>::id());
         this->kill();
     }
 
@@ -33,11 +30,11 @@ int main() {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-scheduler.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::DEBUG);
 
-    test<3>("Test un/register event", []() {
+    test<3>("Test scheduled event", []() {
         cube::Main<PhysicalCore<0>, PhysicalCore<1> > main;
 
-        auto id_sched = main.addActor<0, cube::SchedulerActor, void>();
-        main.addActor<1, ActorTest>(id_sched);
+        auto id_sched = main.addActor<0, cube::SchedulerActor>();
+        main.addActor<1, ActorTest>();
 
         main.start();
         main.join();

@@ -32,6 +32,12 @@ namespace cube {
         }
     };
 
+    template <typename _Actor, std::size_t CoreIndex>
+    struct Tag
+    {
+      constexpr static ActorId id() { return ActorId(_Actor::Tag, CoreIndex); }
+    };
+    
 }
 
 #endif //CUBE_ACTORID_H
