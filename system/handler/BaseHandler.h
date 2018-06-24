@@ -1,6 +1,6 @@
 
 #ifndef CUBE_BASEHANDLER_H
-#define CUBE_BASEHANDLER_H
+# define CUBE_BASEHANDLER_H
 # include "Types.h"
 
 namespace cube {
@@ -47,7 +47,7 @@ namespace cube {
         }
 
         bool receive_from_different_core(CacheLine const *data, uint32_t const source, uint32_t const index,
-                                           uint32_t const size) {
+                                         uint32_t const size) {
             return this->each_or([data, source, index, size](auto &item) -> bool {
                 return item.receive_from_different_core(data, source, index, size);
             });

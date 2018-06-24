@@ -1,6 +1,6 @@
 
-#ifndef CUBE_MPSC_H
-#define CUBE_MPSC_H
+#ifndef CUBE_LOCKFREE_MPSC_H
+#define CUBE_LOCKFREE_MPSC_H
 # include <mutex>
 # include "spsc.h"
 # include "spinlock.h"
@@ -167,4 +167,4 @@ namespace cube {
     } /* namespace lockfree */
 } /* namespace cube */
 
-#endif //CUBE_MPSC_H
+#endif //CUBE_LOCKFREE_MPSC_H

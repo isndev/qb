@@ -2,23 +2,24 @@
 #ifndef CUBE_PHYSICALCORE_H
 # define CUBE_PHYSICALCORE_H
 #if defined(unix) || defined(__unix) || defined(__unix__)
-    #include <sched.h>
+#include <sched.h>
     #include <errno.h>
     #include <unistd.h>
     #include <pthread.h>
 #elif defined(_WIN32) || defined(_WIN64)
-    #include <windows.h>
-    #include <process.h>
+#include <windows.h>
+#include <process.h>
 #endif
 # include "Types.h"
+# include "Pipe.h"
 
 namespace cube {
     using namespace std::chrono;
 
     template<typename _ParentHandler, std::size_t _CoreIndex, typename _SharedData>
     class PhysicalCoreHandler
-		: public nocopy 
-	{
+            : nocopy
+    {
         friend _ParentHandler;
         typedef _ParentHandler parent_t;
     public:
@@ -62,9 +63,9 @@ namespace cube {
             static std::size_t pid = 0;
             return ActorId(static_cast<uint32_t >(duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count() + pid++), _CoreIndex);
         }
-	
+
     private:
-		using parent_ptr_t = _ParentHandler*;
+        using parent_ptr_t = _ParentHandler*;
 
         //////// Event Manager
         //// Receiver From Handler
@@ -97,99 +98,10 @@ namespace cube {
             return false;
         }
 
-	public:
-        //// Pipe Events Queue
-        class Pipe : public nocopy {
-            friend class PhysicalCoreHandler;
-            friend class PhysicalCoreHandler::EventManager;
-
-	protected:
-            std::size_t _begin;
-            std::size_t _end;
-            char __padding2__[CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(std::size_t)];
-            PipeBuffer _buffer;
-
-            void __recycle(Event const &data) {
-                std::memcpy((_buffer.data() + _end), &data, data.bucket_size * CUBE_LOCKFREE_CACHELINE_BYTES);
-                _end += data.bucket_size;
-            }
-
-        public:
-            Pipe() : _begin(0), _end(0) {
-                _buffer.resize(MaxBufferEvents);
-            }
-
-            ~Pipe() = default;
-
-            inline CacheLine *buffer() {
-                return _buffer.data();
-            }
-
-            inline std::size_t begin() const {
-                return _begin;
-            }
-
-            inline std::size_t end() const {
-                return _end;
-            }
-
-            inline void free_front(std::size_t const size) {
-                _begin += size;
-            }
-
-            inline void free_back(std::size_t const size) {
-                _end -= size;
-            }
-
-            inline void reset() {
-                _begin = 0;
-                _end = 0;
-            }
-
-			inline CacheLine *allocate_sync(std::size_t const size) {
-				const auto save_index = _end;
-				if (unlikely((_end + size) >= _buffer.size())) {
-					_buffer.resize(_buffer.size() + MaxBufferEvents);
-				}
-				_end += size;
-				return _buffer.data() + save_index;
-			}
-
-            template <typename T, typename ..._Init>
-            inline T &allocate_sync(_Init &&...init) {
-                constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES);
-                return *(new (reinterpret_cast<T *>(allocate_sync(BUCKET_SIZE))) T(std::forward<_Init>(init)...));
-            }
-
-	    CacheLine *allocate_async(uint16_t const size) {		
-	      if (_begin - size < _end) {
-		_begin -= size;
-		return _buffer.data() + _begin;
-	      }
-	      
-	      return allocate_sync(size);
-	    }
-	    
-	    template <typename T, typename ..._Init>
-	      inline T &allocate_async(_Init &&...init) {
-	      constexpr std::size_t BUCKET_SIZE = (sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES);
-	      return *(new (reinterpret_cast<T *>(allocate_async(sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES))) T(std::forward<_Init>(init)...));
-	    }
-	    
-	    template <typename T>
-	      T &recycle_sync(T const &data) {
-				return *reinterpret_cast<T *>(std::memcpy(allocate_sync(sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES)
-									  , &data, sizeof(T)));
-	    }
-	    
-            template <typename T>
-            T &recycle_async(T const &data) {
-				return *reinterpret_cast<T *>(std::memcpy(allocate_async(sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES)
-														 , &data, sizeof(T)));
-            }
-        };
-	private:
-        class EventManager : public nocopy {
+    public:
+        using Pipe = pipe_allocator<CacheLine>;
+    private:
+        class EventManager : nocopy {
             friend class PhysicalCoreHandler;
 
             using PipeMap = std::unordered_map<uint32_t, Pipe>;
@@ -207,18 +119,15 @@ namespace cube {
             void flush() {
                 for (auto &it : _pipes) {
                     auto &pipe = it.second;
-                    if (pipe._end) {
-                        auto i = pipe._begin;
-                        while (i < pipe._end) {
-                            const auto &event = *reinterpret_cast<const Event *>(pipe._buffer.data() + i);
+                    if (pipe.end()) {
+                        auto i = pipe.begin();
+                        while (i < pipe.end()) {
+                            const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
                             if (!_core.send(event))
                                 break;
                             i += event.bucket_size;
                         }
-                        if (i < pipe._end)
-                            pipe._begin = i;
-                        else
-                            pipe.reset();
+                        pipe.reset(i);
                     }
                 }
             }
@@ -227,19 +136,16 @@ namespace cube {
                 bool ret = false;
                 for (auto &it : _pipes) {
                     auto &pipe = it.second;
-                    if (pipe._end) {
-                        ret = true;
-                        auto i = pipe._begin;
-                        while (i < pipe._end) {
-                            const auto &event = *reinterpret_cast<const Event *>(pipe._buffer.data() + i);
+                    if (pipe.end()) {
+                        ret = false;
+                        auto i = pipe.begin();
+                        while (i < pipe.end()) {
+                            const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
                             if (!_core.send(event))
                                 break;
                             i += event.bucket_size;
                         }
-                        if (i < pipe._end)
-                            pipe._begin = i;
-                        else
-                            pipe.reset();
+                        pipe.reset(i);
                     }
                 }
                 return ret;
@@ -311,9 +217,9 @@ namespace cube {
                         for (auto const &actor : _actor_to_remove)
                             removeActor(actor);
                         _actor_to_remove.clear();
-						if (_actors.empty()) {
-							break;
-						}
+                        if (_actors.empty()) {
+                            break;
+                        }
                     }
                 }
                 // receive and flush residual events
@@ -382,12 +288,12 @@ namespace cube {
 	    pthread_t current_thread = pthread_self();
 	    ret = !pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
 #elif defined(_WIN32) || defined(_WIN64)
-    #ifdef _MSC_VER
-                DWORD_PTR mask = (1 << (_index < 0 ? 0 : _index));
-                ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
-    #else
-        #warning "Cannot set affinity on windows with GNU Compiler"
-    #endif
+#ifdef _MSC_VER
+            DWORD_PTR mask = (1 << (_index < 0 ? 0 : _index));
+            ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
+#else
+#warning "Cannot set affinity on windows with GNU Compiler"
+#endif
 #endif
             _actor_to_remove.reserve(_actors.size());
             return ret;
@@ -456,8 +362,8 @@ namespace cube {
                 delete it.second._this;
             }
 
-			if (_eventManager)
-	            delete _eventManager;
+            if (_eventManager)
+                delete _eventManager;
             if constexpr (!std::is_void<_SharedData>::value)
                 delete _sharedData;
             LOG_INFO << "Deleted " << *this;
@@ -516,45 +422,58 @@ namespace cube {
         template <typename T, typename ..._Init>
         void send(ActorId const dest, ActorId const source, _Init &&...init) {
             auto &pipe = _eventManager->getPipe(dest._index);
-			const auto save_begin = pipe._begin;
-			const auto save_end = pipe._end;
-
-            auto &data = pipe.template allocate_async<T>(std::forward<_Init>(init)...);
-	    data.id = type_id<T>();
-	    data.dest = dest;
-	    data.source = source;
-	    if constexpr (std::is_base_of<ServiceEvent, T>::value) {
-		data.forward = source;
-		std::swap(data.id, data.service_event_id);
-	    }
-	    data.state = 0;
-	    data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
-            if (likely(_parent->send(data))) {
-				pipe._end = save_end;
-				pipe._begin = save_begin;
-	    }
+            auto &data = pipe.template allocate<T>(std::forward<_Init>(init)...);
+            data.id = type_id<T>();
+            data.dest = dest;
+            data.source = source;
+            if constexpr (std::is_base_of<ServiceEvent, T>::value) {
+                data.forward = source;
+                std::swap(data.id, data.service_event_id);
+            }
+            data.state = 0;
+            data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
+            if (likely(_parent->send(data)))
+                pipe.free(data.bucket_size);
         }
 
         template <typename T, typename ..._Init>
         T &push(ActorId const &dest, ActorId const &source, _Init &&...init) {
             auto &pipe = _eventManager->getPipe(dest._index);
-            auto &data = pipe.template allocate_sync<T, _Init...>(std::forward<_Init>(init)...);
-	    data.id = type_id<T>();
-	    data.dest = dest;
-	    data.source = source;
-	    if constexpr (std::is_base_of<ServiceEvent, T>::value) {
-		data.forward = source;
-		std::swap(data.id, data.service_event_id);
-	    }
+            auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
+            data.id = type_id<T>();
+            data.dest = dest;
+            data.source = source;
+            if constexpr (std::is_base_of<ServiceEvent, T>::value) {
+                data.forward = source;
+                std::swap(data.id, data.service_event_id);
+            }
 
-	    data.state = 0;
-	    data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
+            data.state = 0;
+            data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
             return data;
         }
-	
+
+        template <typename T, typename ..._Init>
+        T &fast_push(ActorId const &dest, ActorId const &source, _Init &&...init) {
+            auto &pipe = _eventManager->getPipe(dest._index);
+            auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
+            data.id = type_id<T>();
+            data.dest = dest;
+            data.source = source;
+            if constexpr (std::is_base_of<ServiceEvent, T>::value) {
+                data.forward = source;
+                std::swap(data.id, data.service_event_id);
+            }
+
+            data.state = 0;
+            data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
+            if (likely(_parent->send(data)))
+                pipe.free_back(data.bucket_size);
+        }
+
         template <typename T>
         T &reply(T const &event) {
-            auto &ret = _eventManager->getPipe(event.source._index).template recycle_async<T>(event);
+            auto &ret = _eventManager->getPipe(event.source._index).template recycle<T>(event);
 
             std::swap(ret.dest, ret.source);
             const_cast<T &>(event).state[0] = 1;
@@ -563,7 +482,7 @@ namespace cube {
 
         template<typename T>
         T &forward(ActorId const dest, T const &event) {
-            auto &ret = _eventManager->getPipe(dest._index).template recycle_async<T>(event);
+            auto &ret = _eventManager->getPipe(dest._index).template recycle<T>(event);
 
             ret.source = ret.dest;
             ret.dest = dest;

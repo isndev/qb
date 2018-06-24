@@ -8,8 +8,10 @@ namespace cube {
 
     template<typename _Handler>
     class Actor
-: public ActorId, public _Handler::IActor, public nocopy {
-    using ActorProxy = typename _Handler::ActorProxy;
+            : nocopy,
+              ActorId,
+              public _Handler::IActor {
+        using ActorProxy = typename _Handler::ActorProxy;
 
         class IRegisterEvent {
         public:
@@ -36,7 +38,8 @@ namespace cube {
         std::unordered_map<uint32_t, IRegisterEvent const *> _event_map;
 
         friend _Handler;
-
+    public:
+        using handler_t = _Handler;
     protected:
         inline void __set_id(ActorId const &id) {
             static_cast<ActorId &>(*this) = id;
@@ -121,7 +124,7 @@ namespace cube {
         inline _Data &push(ActorId const &dest, _Init const &...init) const {
             return _handler->template push<_Data>(dest, id(), init...);
         }
-	
+
         template<typename _Data>
         inline _Data &reply(_Data const &event) const {
             return _handler->template reply<_Data>(event);
@@ -160,11 +163,11 @@ namespace cube {
     class ServiceActor : public Actor<_Handler> {
     public:
 
-      constexpr static const uint32_t Tag = _Tag;
+        constexpr static const uint32_t Tag = _Tag;
 
-      ServiceActor() {
-	this->__set_id(ActorId(_Tag, _Handler::_index));
-      }
+        ServiceActor() {
+            this->__set_id(ActorId(_Tag, _Handler::_index));
+        }
     };
 }
 
