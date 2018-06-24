@@ -4,7 +4,7 @@
 # include <utility>
 # include <cstdint>
 
-#include "utils/nocopy.h"
+# include "utils/nocopy.h"
 
 namespace cube {
 
@@ -32,12 +32,18 @@ namespace cube {
         }
     };
 
-    template <typename _Actor, std::size_t CoreIndex>
+    template <typename _Actor, std::size_t CoreIndex = std::numeric_limits<std::size_t >::max()>
     struct Tag
     {
       constexpr static ActorId id() { return ActorId(_Actor::Tag, CoreIndex); }
     };
-    
+
+    template <typename _Actor>
+    struct Tag<_Actor, std::numeric_limits<std::size_t >::max()>
+    {
+        constexpr static ActorId id(std::size_t const CoreIndex) { return ActorId(_Actor::Tag, CoreIndex); }
+    };
+
 }
 
 #endif //CUBE_ACTORID_H

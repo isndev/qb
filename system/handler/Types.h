@@ -1,7 +1,6 @@
 
-#ifndef CUBE_HANDLER_H
-#define CUBE_HANDLER_H
-
+#ifndef CUBE_TYPES_H
+# define CUBE_TYPES_H
 # include <cstring>
 # include <unordered_map>
 # include <vector>
@@ -32,4 +31,4 @@ namespace cube {
 
 }
 
-#endif //CUBE_HANDLER_H
+#endif //CUBE_TYPES_H

@@ -1,27 +1,41 @@
 #include "assert.h"
 #include "cube.h"
 
-struct MyEvent : public cube::TimedEvent {
-  MyEvent(cube::Timespan const &ts)
-    : TimedEvent(ts) {}
+struct MyTimedEvent : public cube::TimedEvent {
+    MyTimedEvent(cube::Timespan const &ts)
+            : TimedEvent(ts) {}
+};
+
+struct MyIntervalEvent : public cube::IntervalEvent {
+    MyIntervalEvent(cube::Timespan const &ts)
+            : IntervalEvent(ts) {}
 };
 
 template <typename Handler>
 class ActorTest : public cube::Actor<Handler> {
 public:
     ActorTest() = default;
-  
+
     bool onInit() override final {
-        this->template registerEvent<MyEvent>(*this);
+        this->template registerEvent<MyTimedEvent>(*this);
+        this->template registerEvent<MyIntervalEvent>(*this);
         // Send event to myself
-        auto &e = this->template push<MyEvent>(cube::Tag<cube::SchedulerActor<Handler>, 0>::id(), cube::Timespan::seconds(1));
+        this->template push<MyTimedEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id(), cube::Timespan::seconds(1));
+        auto &e = this->template push<MyIntervalEvent>(cube::Tag<cube::service::IntervalActor<Handler>, 0>::id(), cube::Timespan::seconds(1));
+        e.repeat = 3;
         return true;
     }
 
     // MyEvent call back
-    void onEvent(MyEvent const &event) {
-      this->template push<cube::KillEvent>(cube::Tag<cube::SchedulerActor<Handler>, 0>::id());
-        this->kill();
+    void onEvent(MyTimedEvent const &event) {
+        this->template push<cube::KillEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id());
+    }
+
+    void onEvent(MyIntervalEvent const &event) {
+        if (event.repeat <= 1) {
+            this->template push<cube::KillEvent>(cube::Tag<cube::service::IntervalActor<Handler>, 0>::id());
+            this->kill();
+        }
     }
 
 };
@@ -30,15 +44,18 @@ int main() {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-scheduler.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::DEBUG);
 
-    test<3>("Test scheduled event", []() {
+    test<1>("Test scheduled event", []() {
         cube::Main<PhysicalCore<0>, PhysicalCore<1> > main;
 
-        auto id_sched = main.addActor<0, cube::SchedulerActor>();
+        main.addActor<0, cube::service::TimerActor>();
+        main.addActor<0, cube::service::IntervalActor>();
         main.addActor<1, ActorTest>();
 
         main.start();
         main.join();
         return 0;
     });
+
+
     return 0;
 }

@@ -1,9 +1,9 @@
 
 #ifndef CUBE_LOCKFREE_SPINLOCK_H
-#define CUBE_LOCKFREE_SPINLOCK_H
-#include "utils/timestamp.h"
+# define CUBE_LOCKFREE_SPINLOCK_H
+# include <atomic>
+# include "utils/timestamp.h"
 
-#include <atomic>
 
 namespace cube {
     namespace lockfree {
