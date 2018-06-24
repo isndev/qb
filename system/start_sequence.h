@@ -1,6 +1,7 @@
 
 #ifndef CUBE_START_SEQUENCE_H
 # define CUBE_START_SEQUENCE_H
+# include "Types.h"
 # include "handler/PhysicalCore.h"
 # include "handler/LinkedCore.h"
 # include "handler/Main.h"

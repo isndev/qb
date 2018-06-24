@@ -2,6 +2,7 @@
 #ifndef CUBE_PIPE_H
 # define CUBE_PIPE_H
 # include <memory>
+# include <cstring>
 # include "utils/nocopy.h"
 # include "system/Types.h"
 
@@ -23,7 +24,7 @@ namespace cube {
                 , _end(0)
                 , _capacity(_SIZE)
                 , _factor(1)
-                , _data(base_type::allocate(_SIZE * sizeof(T))) {
+                , _data(base_type::allocate(_SIZE)) {
         }
 
         ~pipe_allocator() {
@@ -80,7 +81,7 @@ namespace cube {
             _factor <<= 1;
             const auto nb_item = _end - _begin;
             const auto new_capacity = _factor * _SIZE;
-            const auto new_data = base_type::allocate(new_capacity * sizeof(T));
+            const auto new_data = base_type::allocate(new_capacity);
             std::memcpy(new_data, _data + _begin, nb_item * sizeof(T));
             base_type::deallocate(_data, _capacity);
 
@@ -93,11 +94,11 @@ namespace cube {
 
         template <typename U, typename ..._Init>
         inline U &allocate_back(_Init &&...init) {
-            constexpr std::size_t BUCKET_SIZE = (sizeof(U) / CUBE_LOCKFREE_CACHELINE_BYTES);
+            constexpr std::size_t BUCKET_SIZE = (sizeof(U) / sizeof(T));
             return *(new (reinterpret_cast<U *>(allocate_back(BUCKET_SIZE))) U(std::forward<_Init>(init)...));
         }
 
-        CacheLine *allocate(uint16_t const size) {
+        inline auto allocate(uint16_t const size) {
             if (_begin - size < _end) {
                 _begin -= size;
                 return _data + _begin;
@@ -108,26 +109,26 @@ namespace cube {
 
         template <typename U, typename ..._Init>
         inline U &allocate(_Init &&...init) {
-            constexpr std::size_t BUCKET_SIZE = (sizeof(U) / CUBE_LOCKFREE_CACHELINE_BYTES);
-            return *(new (reinterpret_cast<U *>(allocate(sizeof(U) / CUBE_LOCKFREE_CACHELINE_BYTES))) U(std::forward<_Init>(init)...));
+            constexpr std::size_t BUCKET_SIZE = (sizeof(U) / sizeof(T));
+            return *(new (reinterpret_cast<U *>(allocate(sizeof(U) / sizeof(T)))) U(std::forward<_Init>(init)...));
         }
 
         template <typename U>
         inline U &recycle_back(U const &data) {
-            return *reinterpret_cast<U *>(std::memcpy(allocate_back(sizeof(U) / CUBE_LOCKFREE_CACHELINE_BYTES)
+            return *reinterpret_cast<U *>(std::memcpy(allocate_back(sizeof(U) / sizeof(T))
                     , &data, sizeof(U)));
         }
 
         template <typename U>
         U &recycle(U const &data) {
-            return *reinterpret_cast<U *>(std::memcpy(allocate(sizeof(U) / CUBE_LOCKFREE_CACHELINE_BYTES)
+            return *reinterpret_cast<U *>(std::memcpy(allocate(sizeof(U) / sizeof(T))
                     , &data, sizeof(U)));
         }
 
         template <typename U>
         U &recycle(U const &data, std::size_t const size) {
             return *reinterpret_cast<U *>(std::memcpy(allocate(size)
-                    , &data, size * CUBE_LOCKFREE_CACHELINE_BYTES));
+                    , &data, size * sizeof(T)));
         }
     };
 
