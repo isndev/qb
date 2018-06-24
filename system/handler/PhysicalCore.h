@@ -10,7 +10,7 @@
 #include <windows.h>
 #include <process.h>
 #endif
-# include "Types.h"
+# include "system/Types.h"
 # include "Pipe.h"
 
 namespace cube {
