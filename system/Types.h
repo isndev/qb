@@ -1,6 +1,6 @@
 
-#ifndef CUBE_TYPES_H
-# define CUBE_TYPES_H
+#ifndef CUBE_TYPES_H__
+# define CUBE_TYPES_H__
 # include <cstring>
 # include <unordered_map>
 # include <vector>
@@ -16,7 +16,6 @@ namespace cube {
 
     struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT CacheLine {
         uint32_t __raw__[16];
-        //uint_fast8_t __raw__[CUBE_LOCKFREE_CACHELINE_BYTES];
     };
 
     template <typename T>
@@ -31,4 +30,4 @@ namespace cube {
 
 }
 
-#endif //CUBE_TYPES_H
+#endif //CUBE_TYPES_H__
