@@ -3,6 +3,7 @@
 # define CUBE_PIPE_H
 # include <memory>
 # include "utils/nocopy.h"
+# include "system/Types.h"
 
 namespace cube {
 
