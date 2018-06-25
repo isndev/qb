@@ -202,8 +202,10 @@ namespace cube {
             auto best = getBestTime();
             _nano_timer = now - _nano_timer;
             if (reinterpret_cast<uint8_t const *>(&best)[sizeof(_nano_timer) - 1] == _index) {
-                reinterpret_cast<uint8_t *>(&_nano_timer)[sizeof(_nano_timer) - 1] = _index;
-                _ParentHandler::parent_t::sync_start.compare_exchange_weak(best, _nano_timer);
+                if (_nano_timer > best) {
+                    reinterpret_cast<uint8_t *>(&_nano_timer)[sizeof(_nano_timer) - 1] = _index;
+                    _ParentHandler::parent_t::sync_start.store(_nano_timer);
+                }
             } else if (_nano_timer < best) {
                 reinterpret_cast<uint8_t *>(&_nano_timer)[sizeof(_nano_timer) - 1] = _index;
                 _ParentHandler::parent_t::sync_start.store(_nano_timer);
@@ -388,7 +390,7 @@ namespace cube {
         }
 
         uint64_t getBestTime() const {
-            _ParentHandler::parent_t::sync_start.load();
+           return _ParentHandler::parent_t::sync_start.load();
         }
 
         uint32_t getBestCore() const {
