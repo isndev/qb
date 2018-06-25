@@ -16,7 +16,7 @@ namespace cube {
         class IRegisterEvent {
         public:
             virtual ~IRegisterEvent() {}
-            virtual void invoke(Event const *data) const = 0;
+            virtual void invoke(Event *data) const = 0;
         };
 
         template<typename _Data, typename _Actor>
@@ -26,8 +26,8 @@ namespace cube {
             RegisterEvent(_Actor &actor)
                     : _actor(actor) {}
 
-            virtual void invoke(Event const *data) const override final {
-                auto &event = *reinterpret_cast<_Data const *>(data);
+            virtual void invoke(Event *data) const override final {
+                auto &event = *reinterpret_cast<_Data *>(data);
                 _actor.onEvent(event);
                 if (!event.state[0])
                     event.~_Data();
@@ -50,7 +50,7 @@ namespace cube {
         }
 
         virtual bool onInit() { return true; }
-        virtual void onEvent(Event const *event) override final {
+        virtual void onEvent(Event *event) override final {
             // TODO: secure this if event not registred
             _event_map[event->id]->invoke(event);
         }
@@ -125,18 +125,20 @@ namespace cube {
             return _handler->template push<_Data>(dest, id(), init...);
         }
 
-        template<typename _Data>
-        inline _Data &reply(_Data const &event) const {
-            return _handler->template reply<_Data>(event);
+        inline void reply(Event &event) const {
+            return _handler->reply(event);
         }
 
-        template<typename _Data>
-        inline _Data &forward(ActorId const dest, _Data const &event) const {
-            return _handler->template forward<_Data>(dest, event);
+        inline void forward(ActorId const dest, Event &event) const {
+            return _handler->forward(dest, event);
         }
 
-        inline bool send(Event const &event) const {
-            return _handler->send(event);
+        inline void send(Event const &event) const {
+            _handler->send(event);
+        }
+
+        inline bool try_send(Event const &event) const {
+            return _handler->try_send(event);
         }
 
         template<typename _Data, typename ..._Init>
@@ -146,6 +148,18 @@ namespace cube {
 
         inline auto &sharedData() const {
             return _handler->sharedData();
+        }
+
+        inline auto getTime() const {
+            return _handler->getTime();
+        }
+
+        inline uint64_t getBestTime() const {
+            return _handler->getBestTime();
+        }
+
+        inline uint32_t getBestCore() const {
+            return _handler->getBestCore();
         }
 
         void onEvent(Event const &event) const {

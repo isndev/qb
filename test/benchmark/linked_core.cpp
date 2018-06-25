@@ -33,12 +33,12 @@ public:
         return true;
     }
 
-    void onEvent(EventTrait const &event) const {
+    void onEvent(EventTrait &event) const {
         if (event.x >= 3000)
             this->kill();
         if (event.x <= 3000) {
-            auto &rep = this->template reply<EventTrait>(event);
-            ++rep.x;
+            ++event.x;
+            this->template reply(event);
         }
 
 

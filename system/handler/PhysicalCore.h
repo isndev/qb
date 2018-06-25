@@ -29,7 +29,6 @@ namespace cube {
         //////// Types
         using SPSCBuffer = lockfree::spsc::ringbuffer<CacheLine, MaxRingEvents>;
         using MPSCBuffer = lockfree::mpsc::ringbuffer<CacheLine, MaxRingEvents, 0>;
-        using PipeBuffer = std::vector<CacheLine>;
         using EventBuffer = std::array<CacheLine, MaxRingEvents>;
 
         class IActor {
@@ -37,13 +36,12 @@ namespace cube {
             virtual ~IActor() {}
 
             virtual bool onInit() = 0;
-            virtual void onEvent(Event const *) = 0;
+            virtual void onEvent(Event *) = 0;
         };
 
         class ICallback {
         public:
             virtual ~ICallback() {}
-
             virtual void onCallback() = 0;
         };
 
@@ -122,7 +120,7 @@ namespace cube {
                         auto i = pipe.begin();
                         while (i < pipe.end()) {
                             const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
-                            if (!_core.send(event))
+                            if (!_core.try_send(event))
                                 break;
                             i += event.bucket_size;
                         }
@@ -140,7 +138,7 @@ namespace cube {
                         auto i = pipe.begin();
                         while (i < pipe.end()) {
                             const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
-                            if (!_core.send(event))
+                            if (!_core.try_send(event))
                                 break;
                             i += event.bucket_size;
                         }
@@ -196,6 +194,21 @@ namespace cube {
             ++_ParentHandler::parent_t::sync_start;
             while (_ParentHandler::parent_t::sync_start.load() < total_core)
                 std::this_thread::yield();
+            _ParentHandler::parent_t::sync_start.store(std::numeric_limits<uint64_t >::max());
+        }
+
+        void updateTimer() {
+            const auto now = Timestamp::nano();
+            auto best = getBestTime();
+            _nano_timer = now - _nano_timer;
+            if (reinterpret_cast<uint8_t const *>(&best)[sizeof(_nano_timer) - 1] == _index) {
+                reinterpret_cast<uint8_t *>(&_nano_timer)[sizeof(_nano_timer) - 1] = _index;
+                _ParentHandler::parent_t::sync_start.compare_exchange_weak(best, _nano_timer);
+            } else if (_nano_timer < best) {
+                reinterpret_cast<uint8_t *>(&_nano_timer)[sizeof(_nano_timer) - 1] = _index;
+                _ParentHandler::parent_t::sync_start.store(_nano_timer);
+            }
+            _nano_timer = now;
         }
 
         void __workflow() {
@@ -204,6 +217,7 @@ namespace cube {
 
                 LOG_INFO << "StartSequence Init " << *this << " Success";
                 while (likely(true)) {
+                    updateTimer();
                     _eventManager->receive();
 
                     for (const auto &callback : _actor_callbacks)
@@ -231,14 +245,15 @@ namespace cube {
         }
 
         //////// Members
-        _ParentHandler *_parent = nullptr;
-        EventManager *_eventManager = nullptr;
-        _SharedData *_sharedData = nullptr;
+        _ParentHandler  *_parent = nullptr;
+        EventManager    *_eventManager = nullptr;
+        _SharedData     *_sharedData = nullptr;
+        std::thread      _thread;
 
         std::unordered_map<uint64_t, ActorProxy>  _actors;
         std::unordered_map<uint64_t, ICallback *> _actor_callbacks;
         std::vector<ActorId> _actor_to_remove;
-        std::thread _thread;
+        std::uint64_t _nano_timer;
         //////// !Members
     public:
         // Start Sequence Usage
@@ -368,6 +383,20 @@ namespace cube {
             LOG_INFO << "Deleted " << *this;
         }
 
+        uint64_t getTime() const {
+            return _nano_timer;
+        }
+
+        uint64_t getBestTime() const {
+            _ParentHandler::parent_t::sync_start.load();
+        }
+
+        uint32_t getBestCore() const {
+            const auto best_time = getBestTime();
+            LOG_INFO << "BEST TIME[" << best_time << "]";
+            return reinterpret_cast<uint8_t const *>(&best_time)[sizeof(_nano_timer) - 1];
+        }
+
         template<typename _Actor, typename ..._Init>
         _Actor *addReferencedActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
@@ -414,8 +443,19 @@ namespace cube {
 
     public:
         //sender
-        bool send(Event const &event) {
+        inline bool try_send(Event const &event) {
             return _parent->send(event);
+        }
+
+        auto &push(Event const &event) {
+            auto &pipe = _eventManager->getPipe(event.dest._index);
+            auto &data = pipe.template recycle(event, event.bucket_size);
+            return data;
+        }
+
+        void send(Event const &event) {
+            if (unlikely(!try_send(event)))
+                push(event);
         }
 
         template <typename T, typename ..._Init>
@@ -470,23 +510,17 @@ namespace cube {
                 pipe.free_back(data.bucket_size);
         }
 
-        template <typename T>
-        T &reply(T const &event) {
-            auto &ret = _eventManager->getPipe(event.source._index).template recycle<T>(event);
-
-            std::swap(ret.dest, ret.source);
-            const_cast<T &>(event).state[0] = 1;
-            return ret;
+        void reply(Event &event) {
+            std::swap(event.dest, event.source);
+            event.state[0] = 1;
+            send(event);
         }
 
-        template<typename T>
-        T &forward(ActorId const dest, T const &event) {
-            auto &ret = _eventManager->getPipe(dest._index).template recycle<T>(event);
-
-            ret.source = ret.dest;
-            ret.dest = dest;
-            const_cast<T &>(event).state[0] = 1;
-            return ret;
+        void forward(ActorId const dest, Event &event) {
+            event.source = event.dest;
+            event.dest = dest;
+            event.state[0] = 1;
+            send(event);
         }
 
         inline auto &sharedData() {
