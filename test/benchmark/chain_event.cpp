@@ -28,18 +28,19 @@ public:
         return true;
     }
 
-    void onEvent(ChainEvent const &event) const {
+    void onEvent(ChainEvent &event) const {
         if (event.loop >= 10000) {
             this->kill();
             if (!to_send)
                 LOG_INFO << "Event Time To Arrive " << cube::Timestamp::rdts() - event.creation_time << "ns";
         }
-        auto &fwd = this-> forward(to_send ? to_send : event.first, event);
         if (first)
-            fwd.creation_time = cube::Timestamp::rdts();
+            event.creation_time = cube::Timestamp::rdts();
         if (!to_send) {
-            ++fwd.loop;
+            ++event.loop;
         }
+        this->forward(to_send ? to_send : event.first, event);
+
     }
 };
 

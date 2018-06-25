@@ -69,7 +69,7 @@ namespace cube {
             if (_begin - size >= _begin)
                 _end -= size;
             else
-                _begin -= size;
+                _begin += size;
         }
 
         inline auto *allocate_back(std::size_t const size) {

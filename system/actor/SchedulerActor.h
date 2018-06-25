@@ -22,10 +22,6 @@ namespace cube {
             service_event_id = type_id<TimedEvent>();
         }
 
-        inline void received() {
-            std::swap(dest, forward);
-            std::swap(id, service_event_id);
-        }
 
         inline void release() {
             execution_time = 0;
@@ -73,7 +69,7 @@ namespace cube {
                     bool free_event = false;
                     if (!event.execution_time)
                         free_event = i == this->begin();
-                    else if (now >= event.execution_time && this->send(event)) {
+                    else if (now >= event.execution_time && this->try_send(event)) {
                         event.release();
                         free_event = (!event.execution_time && i == this->begin());
                     }

@@ -35,6 +35,11 @@ namespace cube {
     struct ServiceEvent : public Event {
         ActorId forward;
         uint32_t service_event_id;
+
+        inline void received() {
+            std::swap(dest, forward);
+            std::swap(id, service_event_id);
+        }
     };
 
     struct KillEvent : public Event {
