@@ -21,7 +21,7 @@ public:
 
         if (!--_counter) {
             this->kill();
-            LOG_INFO << "DEAD DUMMY ACTOR";
+          //LOG_INFO << "DEAD DUMMY ACTOR";
         }
     }
 };
@@ -36,7 +36,7 @@ public:
     }
 
     void onEvent(CreateActorEvent const &event) {
-        LOG_INFO << "AGENT" << this->id()._index << " CREATE";
+        LOG_INFO << "AGENT CREATE ON CORE(" << this->id()._index << ")";
         this->template addRefActor<DummyActor>();
     }
 };
@@ -63,7 +63,7 @@ public:
         // Send event to myself
         auto &e = this->template push<MyIntervalEvent>(cube::Tag<cube::service::IntervalActor<Handler>, 0>::id(), cube::Timespan::microseconds(100));
         e.repeat = 1000;
-        LOG_INFO << "INIT ACTOR TEST";
+        //LOG_INFO << "INIT ACTOR TEST";
         return true;
     }
 
@@ -83,7 +83,7 @@ public:
             this->template push<MyTimedKillEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id(), cube::Timespan::seconds(3));
         } else {
             this->template send<CreateActorEvent>(cube::Tag<cube::service::ManagerActor<Handler>, 0>::id());
-            LOG_INFO << "SEND TO AGENT";
+            //LOG_INFO << "SEND TO AGENT";
         }
     }
 

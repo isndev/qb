@@ -395,7 +395,6 @@ namespace cube {
 
         uint32_t getBestCore() const {
             const auto best_time = getBestTime();
-            LOG_INFO << "BEST TIME[" << best_time << "]";
             return reinterpret_cast<uint8_t const *>(&best_time)[sizeof(_nano_timer) - 1];
         }
 
