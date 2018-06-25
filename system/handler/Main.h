@@ -20,6 +20,7 @@ namespace cube {
 		Main()
 			: base_t((typename _Core::template Type<Main>::type::parent_ptr_t)(this)...)
 		{
+		    sync_start.store(0);
 		    LOG_INFO << "Init Main with " << total_core << " PhysicalCore(s)";
 		}
         /////////////////////////////////////////////////////

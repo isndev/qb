@@ -44,7 +44,6 @@ namespace cube {
                 event.received();
                 event.dest._id = 4;
                 event.dest._index = this->getBestCore();
-                LOG_INFO << "MANAGER SEND TO " << event.dest._index;
                 this->send(event);
             }
         };
