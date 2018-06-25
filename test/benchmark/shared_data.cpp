@@ -48,7 +48,7 @@ struct TEST {
 };
 
 int main() {
-    nanolog::initialize(nanolog::GuaranteedLogger(), "log", "test-shared_data.log", 1024);
+    nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-shared_data.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::WARN);
 
     TEST<ActorMock_Shared, SharedDataMock, 0>::shared_data("Core0");

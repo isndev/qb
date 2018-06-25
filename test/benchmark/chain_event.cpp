@@ -100,7 +100,7 @@ void test_chain(int nb_actor) {
 }
 
 int main() {
-    nanolog::initialize(nanolog::GuaranteedLogger(), "log", "test-chain-actor.log", 1024);
+    nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-chain-actor.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::WARN);
     test_chain(1);
     test_chain(34);
