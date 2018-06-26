@@ -7,8 +7,12 @@ struct MyTimedEvent : public cube::TimedEvent {
 };
 
 struct MyIntervalEvent : public cube::IntervalEvent {
+    uint64_t i[32];
     MyIntervalEvent(cube::Timespan const &ts)
-            : IntervalEvent(ts) {}
+            : IntervalEvent(ts) {
+        i[31] = 666;
+    }
+
 };
 
 template <typename Handler>
@@ -31,11 +35,10 @@ public:
         this->template push<cube::KillEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id());
     }
 
-    void onEvent(MyIntervalEvent const &event) {
-        if (event.repeat <= 1) {
-            this->template push<cube::KillEvent>(cube::Tag<cube::service::IntervalActor<Handler>, 0>::id());
-            this->kill();
-        }
+    void onEvent(MyIntervalEvent &event) {
+        event.cancel<MyIntervalEvent>(*this);
+        this->template push<cube::KillEvent>(cube::Tag<cube::service::IntervalActor<Handler>, 0>::id());
+        this->kill();
     }
 
 };

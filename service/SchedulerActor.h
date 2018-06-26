@@ -4,14 +4,21 @@
 # include <thread>
 # include <algorithm>
 
-# include "Actor.h"
-# include "Event.h"
+# include "system/Types.h"
 # include "utils/timestamp.h"
+# include "system/actor/Actor.h"
+# include "system/actor/Event.h"
 
 namespace cube {
 
+    struct CancelTimedEvent
+            : public Event {
+        uint64_t time_id;
+    };
+
     struct TimedEvent
             : public ServiceEvent {
+        uint64_t time_id;
         uint64_t start_time;
         uint64_t execution_time;
 
@@ -21,7 +28,6 @@ namespace cube {
                 , execution_time(start_time + span.nanoseconds()) {
             service_event_id = type_id<TimedEvent>();
         }
-
 
         inline void release() {
             execution_time = 0;
@@ -40,6 +46,19 @@ namespace cube {
             service_event_id = type_id<IntervalEvent>();
             repeat = ~repeat;
             this->state[0] = 1;
+        }
+
+        template <typename _Event, typename _Actor>
+        inline void cancel(_Actor &actor) {
+            state[0] = 0;
+            CancelTimedEvent e;
+            e.id = type_id<CancelTimedEvent>();
+            e.time_id = time_id;
+            e.dest = dest;
+            e.source = forward;
+            e.bucket_size = sizeof(CancelTimedEvent) / CUBE_LOCKFREE_CACHELINE_BYTES;
+            actor.template unRegisterEvent<_Event>();
+            actor.reply(e);
         }
 
         void release() {
@@ -95,13 +114,21 @@ namespace cube {
 
         bool onInit() override final {
             this->template registerEvent<_SchedEvent>(*this);
+            if constexpr (std::is_same<_SchedEvent, IntervalEvent>::value)
+                this->template registerEvent<CancelTimedEvent>(*this);
             this->registerCallback(*this);
             return true;
         }
 
         void onEvent(event_type const &event) {
             auto &e = this->recycle(event, event.bucket_size);
+            e.time_id = (reinterpret_cast<cube::CacheLine *>(&e)) - this->data();
             e.received();
+        }
+
+        void onEvent(CancelTimedEvent const &event) {
+            auto &e = *reinterpret_cast<event_type *>(this->data() + event.time_id);
+            e.release();
         }
 
     };

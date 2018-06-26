@@ -47,8 +47,8 @@ namespace cube {
 
         struct ActorProxy {
             uint64_t const _id;
-            IActor *_this;
-            void *const _handler;
+            IActor*  const _this;
+            void*    const _handler;
 
             ActorProxy() : _id(0), _this(nullptr), _handler(nullptr) {}
             ActorProxy(uint64_t const id, IActor *actor, void *const handler)
@@ -228,7 +228,7 @@ namespace cube {
                     _eventManager->flush();
 
                     if (unlikely(!_actor_to_remove.empty())) {
-                        // remove dead actor
+                        // remove dead actors
                         for (auto const &actor : _actor_to_remove)
                             removeActor(actor);
                         _actor_to_remove.clear();
@@ -390,7 +390,7 @@ namespace cube {
         }
 
         uint64_t getBestTime() const {
-           return _ParentHandler::parent_t::sync_start.load();
+            return _ParentHandler::parent_t::sync_start.load();
         }
 
         uint32_t getBestCore() const {
