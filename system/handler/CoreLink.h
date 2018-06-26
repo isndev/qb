@@ -6,16 +6,16 @@
 namespace cube {
 
     template<typename _ParentHandler, typename ..._Core>
-    class LinkedCoreHandler
-            : public BaseHandler<typename _Core::template Type<LinkedCoreHandler<_ParentHandler, _Core...>>::type...> {
+    class CoreLinkHandler
+            : public BaseHandler<typename _Core::template Type<CoreLinkHandler<_ParentHandler, _Core...>>::type...> {
         friend _ParentHandler;
     public:
         //////// Constexpr
         static const std::size_t nb_core;
         static const std::size_t linked_core;
         //////// Types
-        typedef LinkedCoreHandler type;
-        using base_t = BaseHandler<typename _Core::template Type<LinkedCoreHandler>::type...>;
+        typedef CoreLinkHandler type;
+        using base_t = BaseHandler<typename _Core::template Type<CoreLinkHandler>::type...>;
         using parent_t = _ParentHandler;
         using parent_ptr_t = _ParentHandler *;
 
@@ -32,9 +32,9 @@ namespace cube {
         }
 
     public:
-        LinkedCoreHandler() = delete;
-		LinkedCoreHandler(_ParentHandler *parent)
-			: base_t((typename _Core::template Type<LinkedCoreHandler>::type::parent_ptr_t)(this)...)
+        CoreLinkHandler() = delete;
+		CoreLinkHandler(_ParentHandler *parent)
+			: base_t((typename _Core::template Type<CoreLinkHandler>::type::parent_ptr_t)(this)...)
 			, _parent(parent) {}
 
         inline bool send(Event const &event) {
@@ -54,9 +54,9 @@ namespace cube {
 
     // not constexpr because of windows issue
     template<typename _ParentHandler, typename ..._Core>
-    const std::size_t LinkedCoreHandler<_ParentHandler, _Core...>::nb_core = sizeof...(_Core);
+    const std::size_t CoreLinkHandler<_ParentHandler, _Core...>::nb_core = sizeof...(_Core);
     template<typename _ParentHandler, typename ..._Core>
-    const std::size_t LinkedCoreHandler<_ParentHandler, _Core...>::linked_core = sizeof...(_Core);
+    const std::size_t CoreLinkHandler<_ParentHandler, _Core...>::linked_core = sizeof...(_Core);
 
 }
 

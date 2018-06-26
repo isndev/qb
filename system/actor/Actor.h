@@ -37,7 +37,7 @@ namespace cube {
         _Handler *_handler;
         std::unordered_map<uint32_t, IRegisterEvent const *> _event_map;
 
-        friend _Handler;
+        friend typename _Handler::base_t;
     public:
         using handler_t = _Handler;
     protected:
