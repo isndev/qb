@@ -88,6 +88,14 @@ namespace cube {
             _event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<Event, _Actor>(actor));
         };
 
+        template<typename _Data>
+        inline void unRegisterEvent() {
+            auto it = _event_map.find(type_id<_Data>());
+            if (it != _event_map.end())
+                delete it->second;
+            _event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<Event, Actor>(*this));
+        };
+
         template <typename _Actor>
         inline void registerCallback(_Actor &actor) const {
             _handler->registerCallback(actor);

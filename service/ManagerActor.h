@@ -7,8 +7,8 @@
 
 #include <thread>
 #include <algorithm>
-#include "Actor.h"
-#include "Event.h"
+#include "system/actor/Actor.h"
+#include "system/actor/Event.h"
 #include "system/Types.h"
 
 namespace cube {
