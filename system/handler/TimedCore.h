@@ -18,13 +18,13 @@ namespace cube {
             const auto now = Timestamp::nano();
             auto best = getBestTime();
             _nano_timer = now - _nano_timer;
-            if (reinterpret_cast<uint8_t const *>(&best)[sizeof(_nano_timer) - 1] == _index) {
+            if (reinterpret_cast<uint8_t const *>(&best)[sizeof(_nano_timer) - 1] == _CoreIndex) {
                 if (_nano_timer > best) {
-                    reinterpret_cast<uint8_t *>(&_nano_timer)[sizeof(_nano_timer) - 1] = _index;
+                    reinterpret_cast<uint8_t *>(&_nano_timer)[sizeof(_nano_timer) - 1] = _CoreIndex;
                     _ParentHandler::parent_t::sync_start.store(_nano_timer);
                 }
             } else if (_nano_timer < best) {
-                reinterpret_cast<uint8_t *>(&_nano_timer)[sizeof(_nano_timer) - 1] = _index;
+                reinterpret_cast<uint8_t *>(&_nano_timer)[sizeof(_nano_timer) - 1] = _CoreIndex;
                 _ParentHandler::parent_t::sync_start.store(_nano_timer);
             }
             _nano_timer = now;

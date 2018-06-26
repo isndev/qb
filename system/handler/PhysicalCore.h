@@ -28,14 +28,12 @@ namespace cube {
         }
     };
 
-    template<std::size_t _CoreIndex, typename _ParentHandler, typename _DerivedCore, typename _SharedData>
+    template<std::size_t _CoreIndex, typename _ParentHandler, typename _Derived, typename _SharedData>
     class BaseCoreHandler
             : nocopy
-            , CoreTrait<_DerivedCore>
     {
         friend _ParentHandler;
         typedef _ParentHandler parent_t;
-        typedef CoreTrait<_DerivedCore> trait_t;
 
 //        using trait_t::__onInit;
 //        using trait_t::__onCallBack;
@@ -218,12 +216,12 @@ namespace cube {
         inline void onCallback() {}
 
         void spawn() {
-            if (init() && this->__onInit()) {
+            if (init() && static_cast<_Derived &>(*this).onInit()) {
                 __wait__all__cores__ready();
 
                 LOG_INFO << "StartSequence Init " << *this << " Success";
                 while (likely(true)) {
-                    this->__onCallback();
+                    static_cast<_Derived &>(*this).onCallback();
                     _eventManager->receive();
 
                     for (const auto &callback :  _actor_callbacks)
@@ -339,7 +337,7 @@ namespace cube {
                 , typename ..._Init>
         inline ActorId addActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
-            actor->_handler = static_cast<_DerivedCore *>(this);
+            actor->_handler = static_cast<_Derived *>(this);
             addActor(actor->proxy());
 
             return actor->id();
@@ -350,7 +348,7 @@ namespace cube {
                 , typename ..._Init >
         ActorId addActor(_Init &&...init) {
             if constexpr (_CoreIndex_ == _index) {
-                return addActor<_CoreIndex_, _Actor<_DerivedCore>>
+                return addActor<_CoreIndex_, _Actor<_Derived>>
                         (std::forward<_Init>(init)...);
             }
             return ActorId::NotFound{};
@@ -362,7 +360,7 @@ namespace cube {
                 , typename ..._Init >
         ActorId addActor(_Init &&...init) {
             if constexpr (_CoreIndex_ == _index) {
-                return addActor<_CoreIndex_, _Actor<_DerivedCore, _Trait>>
+                return addActor<_CoreIndex_, _Actor<_Derived, _Trait>>
                         (std::forward<_Init>(init)...);
             }
             return ActorId::NotFound{};
@@ -392,7 +390,7 @@ namespace cube {
         template<typename _Actor, typename ..._Init>
         _Actor *addReferencedActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
-            actor->_handler = static_cast<_DerivedCore *>(this);
+            actor->_handler = static_cast<_Derived *>(this);
 
             if (unlikely(!actor->onInit())) {
                 delete actor;
@@ -421,7 +419,7 @@ namespace cube {
         template< template <typename _Handler> typename _Actor
                 , typename ..._Init >
         inline auto addReferencedActor(_Init &&...init) {
-            return addReferencedActor<_Actor<_DerivedCore>>
+            return addReferencedActor<_Actor<_Derived>>
                     (std::forward<_Init>(init)...);
         }
 
@@ -429,7 +427,7 @@ namespace cube {
                 , typename _Trait
                 , typename ..._Init >
         inline auto addReferencedActor(_Init &&...init) {
-            return addReferencedActor<_Actor<_DerivedCore, _Trait>>
+            return addReferencedActor<_Actor<_Trait, _Trait>>
                     (std::forward<_Init>(init)...);
         }
 
