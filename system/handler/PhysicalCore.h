@@ -1,6 +1,7 @@
 
 #ifndef CUBE_PHYSICALCORE_H
 # define CUBE_PHYSICALCORE_H
+# include <limits>
 #if defined(unix) || defined(__unix) || defined(__unix__)
 #include <sched.h>
     #include <errno.h>
@@ -194,7 +195,7 @@ namespace cube {
             ++_ParentHandler::parent_t::sync_start;
             while (_ParentHandler::parent_t::sync_start.load() < total_core)
                 std::this_thread::yield();
-            _ParentHandler::parent_t::sync_start.store(std::numeric_limits<uint64_t >::max());
+            _ParentHandler::parent_t::sync_start.store((std::numeric_limits<uint64_t >::max)());
         }
 
         void updateTimer() {
