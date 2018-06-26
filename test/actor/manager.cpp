@@ -94,7 +94,7 @@ int main() {
     nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     test<1>("Test scheduled event", []() {
-        cube::Main<PhysicalCore<0>, PhysicalCore<1> > main;
+        cube::Main<TimedCore<0>, TimedCore<1> > main;
 
         main.addActor<0, cube::service::TimerActor>();
         main.addActor<0, cube::service::IntervalActor>();

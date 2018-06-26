@@ -16,12 +16,29 @@
 namespace cube {
     using namespace std::chrono;
 
-    template<typename _ParentHandler, std::size_t _CoreIndex, typename _SharedData>
-    class PhysicalCoreHandler
+    template <typename T>
+    class CoreTrait {
+    protected:
+        inline bool __onInit() {
+            return static_cast<T &>(*this).onInit();
+        }
+
+        void __onCallback() {
+            static_cast<T &>(*this).onCallback();
+        }
+    };
+
+    template<std::size_t _CoreIndex, typename _ParentHandler, typename _DerivedCore, typename _SharedData>
+    class BaseCoreHandler
             : nocopy
+            , CoreTrait<_DerivedCore>
     {
         friend _ParentHandler;
         typedef _ParentHandler parent_t;
+        typedef CoreTrait<_DerivedCore> trait_t;
+
+//        using trait_t::__onInit;
+//        using trait_t::__onCallBack;
     public:
         //////// Constexpr
         constexpr static const std::uint64_t MaxBufferEvents = ((std::numeric_limits<uint16_t>::max)());
@@ -62,7 +79,7 @@ namespace cube {
             return ActorId(static_cast<uint32_t >(duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count() + pid++), _CoreIndex);
         }
 
-    private:
+    protected:
         using parent_ptr_t = _ParentHandler*;
 
         //////// Event Manager
@@ -98,18 +115,18 @@ namespace cube {
 
     public:
         using Pipe = pipe_allocator<CacheLine>;
-    private:
+    protected:
         class EventManager : nocopy {
-            friend class PhysicalCoreHandler;
+            friend class BaseCoreHandler;
 
             using PipeMap = std::unordered_map<uint32_t, Pipe>;
-            PhysicalCoreHandler &_core;
+            BaseCoreHandler &_core;
             SPSCBuffer _spsc_buffer;
             MPSCBuffer _mpsc_buffer;
             EventBuffer _event_buffer;
             PipeMap _pipes;
 
-            EventManager(PhysicalCoreHandler &core)
+            EventManager(BaseCoreHandler &core)
                     : _core(core)
                     , _mpsc_buffer(_ParentHandler::parent_t::total_core - _ParentHandler::linked_core)
             {}
@@ -198,42 +215,28 @@ namespace cube {
             _ParentHandler::parent_t::sync_start.store((std::numeric_limits<uint64_t >::max)());
         }
 
-        void updateTimer() {
-            const auto now = Timestamp::nano();
-            auto best = getBestTime();
-            _nano_timer = now - _nano_timer;
-            if (reinterpret_cast<uint8_t const *>(&best)[sizeof(_nano_timer) - 1] == _index) {
-                if (_nano_timer > best) {
-                    reinterpret_cast<uint8_t *>(&_nano_timer)[sizeof(_nano_timer) - 1] = _index;
-                    _ParentHandler::parent_t::sync_start.store(_nano_timer);
-                }
-            } else if (_nano_timer < best) {
-                reinterpret_cast<uint8_t *>(&_nano_timer)[sizeof(_nano_timer) - 1] = _index;
-                _ParentHandler::parent_t::sync_start.store(_nano_timer);
-            }
-            _nano_timer = now;
-        }
+        inline void onCallback() {}
 
-        void __workflow() {
-            if (init()) {
+        void spawn() {
+            if (init() && this->__onInit()) {
                 __wait__all__cores__ready();
 
                 LOG_INFO << "StartSequence Init " << *this << " Success";
                 while (likely(true)) {
-                    updateTimer();
+                    this->__onCallback();
                     _eventManager->receive();
 
-                    for (const auto &callback : _actor_callbacks)
+                    for (const auto &callback :  _actor_callbacks)
                         callback.second->onCallback();
 
                     _eventManager->flush();
 
                     if (unlikely(!_actor_to_remove.empty())) {
                         // remove dead actors
-                        for (auto const &actor : _actor_to_remove)
+                        for (auto const &actor :  _actor_to_remove)
                             removeActor(actor);
                         _actor_to_remove.clear();
-                        if (_actors.empty()) {
+                        if ( _actors.empty()) {
                             break;
                         }
                     }
@@ -256,7 +259,7 @@ namespace cube {
         std::unordered_map<uint64_t, ActorProxy>  _actors;
         std::unordered_map<uint64_t, ICallback *> _actor_callbacks;
         std::vector<ActorId> _actor_to_remove;
-        std::uint64_t _nano_timer;
+
         //////// !Members
     public:
         // Start Sequence Usage
@@ -285,7 +288,7 @@ namespace cube {
         }
 
         void __start() {
-            _thread = std::thread(&PhysicalCoreHandler::__workflow, this);
+            _thread = std::thread(&BaseCoreHandler::spawn, this);
             if (_thread.get_id() == std::thread::id())
                 std::runtime_error("failed to start a PhysicalCore");
         }
@@ -336,7 +339,7 @@ namespace cube {
                 , typename ..._Init>
         inline ActorId addActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
-            actor->_handler = this;
+            actor->_handler = static_cast<_DerivedCore *>(this);
             addActor(actor->proxy());
 
             return actor->id();
@@ -347,7 +350,7 @@ namespace cube {
                 , typename ..._Init >
         ActorId addActor(_Init &&...init) {
             if constexpr (_CoreIndex_ == _index) {
-                return addActor<_CoreIndex_, _Actor<PhysicalCoreHandler>>
+                return addActor<_CoreIndex_, _Actor<_DerivedCore>>
                         (std::forward<_Init>(init)...);
             }
             return ActorId::NotFound{};
@@ -359,7 +362,7 @@ namespace cube {
                 , typename ..._Init >
         ActorId addActor(_Init &&...init) {
             if constexpr (_CoreIndex_ == _index) {
-                return addActor<_CoreIndex_, _Actor<PhysicalCoreHandler, _Trait>>
+                return addActor<_CoreIndex_, _Actor<_DerivedCore, _Trait>>
                         (std::forward<_Init>(init)...);
             }
             return ActorId::NotFound{};
@@ -368,13 +371,13 @@ namespace cube {
     public:
         constexpr static const std::size_t _index = _CoreIndex;
 
-        PhysicalCoreHandler() = delete;
-        PhysicalCoreHandler(_ParentHandler *parent)
+        BaseCoreHandler() = delete;
+        BaseCoreHandler(_ParentHandler *parent)
                 : _parent(parent)
                 , _eventManager(new EventManager(*this))
         {}
 
-        ~PhysicalCoreHandler() {
+        ~BaseCoreHandler() {
             for (auto &it : _actors) {
                 delete it.second._this;
             }
@@ -386,23 +389,10 @@ namespace cube {
             LOG_INFO << "Deleted " << *this;
         }
 
-        uint64_t getTime() const {
-            return _nano_timer;
-        }
-
-        uint64_t getBestTime() const {
-            return _ParentHandler::parent_t::sync_start.load();
-        }
-
-        uint32_t getBestCore() const {
-            const auto best_time = getBestTime();
-            return reinterpret_cast<uint8_t const *>(&best_time)[sizeof(_nano_timer) - 1];
-        }
-
         template<typename _Actor, typename ..._Init>
         _Actor *addReferencedActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
-            actor->_handler = this;
+            actor->_handler = static_cast<_DerivedCore *>(this);
 
             if (unlikely(!actor->onInit())) {
                 delete actor;
@@ -431,7 +421,7 @@ namespace cube {
         template< template <typename _Handler> typename _Actor
                 , typename ..._Init >
         inline auto addReferencedActor(_Init &&...init) {
-            return addReferencedActor<_Actor<PhysicalCoreHandler>>
+            return addReferencedActor<_Actor<_DerivedCore>>
                     (std::forward<_Init>(init)...);
         }
 
@@ -439,7 +429,7 @@ namespace cube {
                 , typename _Trait
                 , typename ..._Init >
         inline auto addReferencedActor(_Init &&...init) {
-            return addReferencedActor<_Actor<PhysicalCoreHandler, _Trait>>
+            return addReferencedActor<_Actor<_DerivedCore, _Trait>>
                     (std::forward<_Init>(init)...);
         }
 
@@ -451,7 +441,7 @@ namespace cube {
 
         auto &push(Event const &event) {
             auto &pipe = _eventManager->getPipe(event.dest._index);
-            auto &data = pipe.template recycle(event, event.bucket_size);
+            auto &data = pipe.recycle(event, event.bucket_size);
             return data;
         }
 
@@ -530,15 +520,36 @@ namespace cube {
         }
     };
 
-    template<typename _ParentHandler, std::size_t _CoreIndex, typename _SharedData>
-    cube::io::stream &operator<<(cube::io::stream &os, PhysicalCoreHandler<_ParentHandler, _CoreIndex, _SharedData> const &core) {
+    template<std::size_t _CoreIndex, typename _ParentHandler, typename _Derived, typename _SharedData>
+    cube::io::stream &operator<<(cube::io::stream &os, BaseCoreHandler<_CoreIndex, _ParentHandler, _Derived, _SharedData> const &core) {
         std::stringstream ss;
         ss << "PhysicalCore(" << core._index << ").id(" << std::this_thread::get_id() << ")";
         os << ss.str();
         return os;
     };
 
-    using ServiceHandler = PhysicalCoreHandler<void, 0, void>;
+    template<std::size_t _CoreIndex, typename _ParentHandler, typename _SharedData>
+    class PhysicalCoreHandler
+            : public BaseCoreHandler<_CoreIndex,
+                    _ParentHandler,
+                    PhysicalCoreHandler<_CoreIndex, _ParentHandler, _SharedData>,
+                    _SharedData> {
+        friend _ParentHandler;
+    public:
+        using base_t = BaseCoreHandler<_CoreIndex, _ParentHandler, PhysicalCoreHandler, _SharedData>;
+
+        PhysicalCoreHandler() = delete;
+        PhysicalCoreHandler(_ParentHandler *parent)
+                : base_t(parent)
+        {}
+
+        inline bool onInit() const {
+            return true;
+        }
+
+        inline void onCallback() const {}
+    };
+
 }
 
 
