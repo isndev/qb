@@ -271,9 +271,9 @@ namespace cube {
         static uint64_t utc()  {
 #if defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
             struct timespec timestamp;
-    if (clock_gettime(CLOCK_REALTIME, &timestamp) != 0)
-        throw std::runtime_error("Cannot get value of CLOCK_REALTIME timer!");
-    return (timestamp.tv_sec * 1000000000) + timestamp.tv_nsec;
+            if (clock_gettime(CLOCK_REALTIME, &timestamp) != 0)
+                throw std::runtime_error("Cannot get value of CLOCK_REALTIME timer!");
+            return (timestamp.tv_sec * 1000000000) + timestamp.tv_nsec;
 #elif defined(_WIN32) || defined(_WIN64)
             FILETIME ft;
             GetSystemTimePreciseAsFileTime(&ft);
@@ -288,12 +288,12 @@ namespace cube {
 #if defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
             uint64_t timestamp = utc();
 
-    // Adjust UTC time with local timezone offset
-    struct tm local;
-    time_t seconds = timestamp / (1000000000);
-    if (localtime_r(&seconds, &local) != &local)
-        throw std::runtime_error("Cannot convert CLOCK_REALTIME time to local date & time structure!");
-    return timestamp + (local.tm_gmtoff * 1000000000);
+            // Adjust UTC time with local timezone offset
+            struct tm local;
+            time_t seconds = timestamp / (1000000000);
+            if (localtime_r(&seconds, &local) != &local)
+                throw std::runtime_error("Cannot convert CLOCK_REALTIME time to local date & time structure!");
+            return timestamp + (local.tm_gmtoff * 1000000000);
 #elif defined(_WIN32) || defined(_WIN64)
             FILETIME ft;
             GetSystemTimePreciseAsFileTime(&ft);
@@ -319,7 +319,7 @@ namespace cube {
             //    if (clock_gettime(CLOCK_MONOTONIC, &timestamp) != 0)
             //        throw std::runtime_error("Cannot get value of CLOCK_MONOTONIC timer!");
             //    return (timestamp.tv_sec * 1000000000) + timestamp.tv_nsec;
-            return duration_cast<std::chrono::nanoseconds>(high_resolution_clock::now().time_since_epoch()).count();
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
 #elif defined(_WIN32) || defined(_WIN64)
             static uint64_t offset = 0;
             static LARGE_INTEGER first = { 0 };
