@@ -35,8 +35,6 @@ namespace cube {
         friend _ParentHandler;
         typedef _ParentHandler parent_t;
 
-//        using trait_t::__onInit;
-//        using trait_t::__onCallBack;
     public:
         //////// Constexpr
         constexpr static const std::uint64_t MaxBufferEvents = ((std::numeric_limits<uint16_t>::max)());
@@ -439,13 +437,14 @@ namespace cube {
 
         auto &push(Event const &event) {
             auto &pipe = _eventManager->getPipe(event.dest._index);
-            auto &data = pipe.recycle(event, event.bucket_size);
-            return data;
+            return pipe.recycle_back(event, event.bucket_size);
         }
 
         void send(Event const &event) {
-            if (unlikely(!try_send(event)))
-                push(event);
+            if (unlikely(!try_send(event))) {
+				auto &pipe = _eventManager->getPipe(event.dest._index);
+				pipe.recycle(event, event.bucket_size);
+			}
         }
 
         template <typename T, typename ..._Init>
@@ -516,6 +515,15 @@ namespace cube {
         inline auto &sharedData() {
             return *_sharedData;
         }
+
+		uint64_t getBestTime() const {
+			return _ParentHandler::parent_t::sync_start.load();
+		}
+
+		uint32_t getBestCore() const {
+			const auto best_time = getBestTime();
+			return reinterpret_cast<uint8_t const *>(&best_time)[0];
+		}
     };
 
     template<std::size_t _CoreIndex, typename _ParentHandler, typename _Derived, typename _SharedData>
