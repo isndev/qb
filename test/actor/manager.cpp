@@ -8,7 +8,7 @@ template <typename Handler>
 class DummyActor : public cube::Actor<Handler>
         , public Handler::ICallback
 {
-    int _counter = 100000;
+    int _counter = 5;
 public:
     DummyActor() = default;
 
@@ -18,10 +18,9 @@ public:
     }
 
     void onCallback() override final {
-
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (!--_counter) {
             this->kill();
-          //LOG_INFO << "DEAD DUMMY ACTOR";
         }
     }
 };
@@ -61,8 +60,8 @@ public:
         this->template registerEvent<MyIntervalEvent>(*this);
         this->template registerEvent<MyTimedKillEvent>(*this);
         // Send event to myself
-        auto &e = this->template push<MyIntervalEvent>(cube::Tag<cube::service::IntervalActor<Handler>, 0>::id(), cube::Timespan::microseconds(100));
-        e.repeat = 1000;
+        auto &e = this->template push<MyIntervalEvent>(cube::Tag<cube::service::IntervalActor<Handler>, 0>::id(), cube::Timespan::seconds(1));
+        e.repeat = 10;
         //LOG_INFO << "INIT ACTOR TEST";
         return true;
     }
@@ -72,36 +71,36 @@ public:
         this->template push<cube::KillEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id());
         this->template push<cube::KillEvent>(cube::Tag<cube::service::IntervalActor<Handler>, 0>::id());
         this->template push<cube::KillEvent>(cube::Tag<cube::service::ManagerActor<Handler>, 0>::id());
-        this->template push<cube::KillEvent>(cube::Tag<MyAgent<Handler>, 0>::id());
-        this->template push<cube::KillEvent>(cube::Tag<MyAgent<Handler>, 1>::id());
+        this->template push<cube::KillEvent>(cube::Tag<MyAgent<Handler>, 2>::id());
+        this->template push<cube::KillEvent>(cube::Tag<MyAgent<Handler>, 3>::id());
         this->kill();
         LOG_INFO << "DEAD ALL ACTOR TEST";
     }
 
-    void onEvent(MyIntervalEvent const &event) {
+    void onEvent(MyIntervalEvent &event) {
         if (event.repeat <= 1) {
-            this->template push<MyTimedKillEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id(), cube::Timespan::seconds(3));
+			event.cancel<MyIntervalEvent>(*this);
+            this->template push<MyTimedKillEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id(), cube::Timespan::seconds(1));
         } else {
             this->template send<CreateActorEvent>(cube::Tag<cube::service::ManagerActor<Handler>, 0>::id());
-            //LOG_INFO << "SEND TO AGENT";
         }
     }
 
 };
 
 int main() {
-    nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-scheduler.log", 1024);
+    nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-manager.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     test<1>("Test scheduled event", []() {
-        cube::Main<TimedCore<0>, TimedCore<1> > main;
+        cube::Main<PhysicalCore<0>, CoreLink<TimedCore<2>, TimedCore<3>>> main;
 
         main.addActor<0, cube::service::TimerActor>();
         main.addActor<0, cube::service::IntervalActor>();
-        main.addActor<0, MyAgent>();
-        main.addActor<1, MyAgent>();
-        main.addActor<0, cube::service::ManagerActor>();
-        main.addActor<1, ActorTest>();
+		main.addActor<2, MyAgent>();
+		main.addActor<3, MyAgent>();
+		main.addActor<0, cube::service::ManagerActor>();
+        main.addActor<0, ActorTest>();
 
         main.start();
         main.join();

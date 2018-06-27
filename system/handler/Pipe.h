@@ -66,7 +66,7 @@ namespace cube {
         }
 
         inline void free(std::size_t const size) {
-            if (_begin - size >= _begin)
+            if (_begin - (size + 1) >= _begin)
                 _end -= size;
             else
                 _begin += size;
@@ -99,7 +99,7 @@ namespace cube {
         }
 
         inline auto allocate(uint16_t const size) {
-            if (_begin - size < _end) {
+            if (_begin - (size + 1) < _end) {
                 _begin -= size;
                 return _data + _begin;
             }
@@ -119,14 +119,20 @@ namespace cube {
                     , &data, sizeof(U)));
         }
 
+		template <typename U>
+		inline U &recycle_back(U const &data, std::size_t const size) {
+			return *reinterpret_cast<U *>(std::memcpy(allocate_back(size)
+				, &data, size * sizeof(T)));
+		}
+
         template <typename U>
-        U &recycle(U const &data) {
+        inline U &recycle(U const &data) {
             return *reinterpret_cast<U *>(std::memcpy(allocate(sizeof(U) / sizeof(T))
                     , &data, sizeof(U)));
         }
 
         template <typename U>
-        U &recycle(U const &data, std::size_t const size) {
+        inline U &recycle(U const &data, std::size_t const size) {
             return *reinterpret_cast<U *>(std::memcpy(allocate(size)
                     , &data, size * sizeof(T)));
         }
