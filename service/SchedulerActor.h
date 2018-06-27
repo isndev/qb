@@ -4,7 +4,6 @@
 # include <thread>
 # include <algorithm>
 
-# include "system/Types.h"
 # include "utils/timestamp.h"
 # include "system/actor/Actor.h"
 # include "system/actor/Event.h"
@@ -57,7 +56,7 @@ namespace cube {
             e.dest = dest;
             e.source = forward;
             e.bucket_size = sizeof(CancelTimedEvent) / CUBE_LOCKFREE_CACHELINE_BYTES;
-            actor.template unRegisterEvent<_Event>();
+            actor.template unregisterEvent<_Event>();
             actor.reply(e);
         }
 
@@ -120,13 +119,13 @@ namespace cube {
             return true;
         }
 
-        void onEvent(event_type const &event) {
+        void on(event_type const &event) {
             auto &e = this->recycle(event, event.bucket_size);
             e.time_id = (reinterpret_cast<cube::CacheLine *>(&e)) - this->data();
             e.received();
         }
 
-        void onEvent(CancelTimedEvent const &event) {
+        void on(CancelTimedEvent const &event) {
             auto &e = *reinterpret_cast<event_type *>(this->data() + event.time_id);
             e.release();
         }
