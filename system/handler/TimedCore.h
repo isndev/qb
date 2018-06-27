@@ -16,7 +16,7 @@ namespace cube {
 
         void updateTimer() {
             const auto now = Timestamp::nano();
-            auto best = getBestTime();
+            auto best = this->getBestTime();
             _nano_timer = now - _nano_timer;
             if (reinterpret_cast<uint8_t const *>(&best)[0] == _CoreIndex) {
                 if (_nano_timer > best) {
