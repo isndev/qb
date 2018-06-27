@@ -38,7 +38,7 @@ namespace cube {
             TimedCoreHandler() = delete;
 
             TimedCoreHandler(_ParentHandler *parent)
-                    : base_t(parent) {}
+                    : base_t(parent), _nano_timer() {}
 
 
             inline bool onInit() const {
