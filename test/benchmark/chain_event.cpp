@@ -28,7 +28,7 @@ public:
         return true;
     }
 
-    void onEvent(ChainEvent &event) const {
+    void on(ChainEvent &event) const {
         if (event.loop >= 10000) {
             this->kill();
             if (!to_send)
@@ -44,12 +44,12 @@ public:
     }
 };
 
-
+using namespace cube;
 void test_chain(int nb_actor) {
     test("Test ChainEvent " + std::to_string(nb_actor) + " Actor(s) per Core 1000 chain loop\n",
     [nb_actor]() {
         test<100>("ChainEvent 2 Unlinked Core", [nb_actor]() {
-            cube::Main<PhysicalCore<0>, PhysicalCore<1>> main;
+            Engine<PhysicalCore<0>, PhysicalCore<1>> main;
             for (int i =0; i < nb_actor; ++i) {
                 main.addActor<0, ActorTest>(main.addActor<1, ActorTest>(), true);
             }
@@ -59,7 +59,7 @@ void test_chain(int nb_actor) {
         });
 
         test<100>("ChainEvent 2 Linked Core", [nb_actor]() {
-            cube::Main<CoreLink<PhysicalCore<0>, PhysicalCore<1>>> main;
+            Engine<CoreLinker<PhysicalCore<0>, PhysicalCore<1>>> main;
             for (int i =0; i < nb_actor; ++i) {
                 main.addActor<0, ActorTest>(main.addActor<1, ActorTest>(), true);
             }
@@ -69,7 +69,7 @@ void test_chain(int nb_actor) {
         });
 
         test<100>("ChainEvent 4 Unlinked Core", [nb_actor]() {
-            cube::Main<PhysicalCore<0>, PhysicalCore<1>, PhysicalCore<2>, PhysicalCore<3>> main;
+            Engine<PhysicalCore<0>, PhysicalCore<1>, PhysicalCore<2>, PhysicalCore<3>> main;
             for (int i =0; i < nb_actor; ++i) {
                 main.addActor<0, ActorTest>(
                         main.addActor<1, ActorTest>(
@@ -83,7 +83,7 @@ void test_chain(int nb_actor) {
         });
 
         test<100>("ChainEvent 2/2 Linked Core", [nb_actor]() {
-            cube::Main<CoreLink<PhysicalCore<0>, PhysicalCore<1>>, CoreLink<PhysicalCore<2>, PhysicalCore<3>>> main;
+            Engine<CoreLinker<PhysicalCore<0>, PhysicalCore<1>>, CoreLinker<PhysicalCore<2>, PhysicalCore<3>>> main;
             for (int i =0; i < nb_actor; ++i) {
                 main.addActor<0, ActorTest>(
                         main.addActor<1, ActorTest>(

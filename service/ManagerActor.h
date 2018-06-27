@@ -9,7 +9,6 @@
 #include <algorithm>
 #include "system/actor/Actor.h"
 #include "system/actor/Event.h"
-#include "system/Types.h"
 
 namespace cube {
 
@@ -40,10 +39,10 @@ namespace cube {
                 return true;
             }
 
-            void onEvent(BestCoreEvent &event) {
+            void on(BestCoreEvent &event) {
                 event.received();
                 event.dest._id = 4;
-                event.dest._index = this->getBestCore();
+                event.dest._index = this->bestCore();
                 this->send(event);
             }
         };

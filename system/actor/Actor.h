@@ -2,6 +2,8 @@
 #ifndef CUBE_ACTOR_H
 # define CUBE_ACTOR_H
 # include <unordered_map>
+
+# include "utils/nocopy.h"
 # include "Event.h"
 
 namespace cube {
@@ -28,7 +30,7 @@ namespace cube {
 
             virtual void invoke(Event *data) const override final {
                 auto &event = *reinterpret_cast<_Data *>(data);
-                _actor.onEvent(event);
+                _actor.on(event);
                 if (!event.state[0])
                     event.~_Data();
             }
@@ -38,19 +40,17 @@ namespace cube {
         std::unordered_map<uint32_t, IRegisterEvent const *> _event_map;
 
         friend typename _Handler::base_t;
-    public:
-        using handler_t = _Handler;
     protected:
         inline void __set_id(ActorId const &id) {
             static_cast<ActorId &>(*this) = id;
         }
 
         inline ActorProxy proxy() {
-            return {id(), this, _handler};
+            return {id(), this};
         }
 
         virtual bool onInit() { return true; }
-        virtual void onEvent(Event *event) override final {
+        virtual void on(Event *event) override final {
             // TODO: secure this if event not registred
             _event_map[event->id]->invoke(event);
         }
@@ -72,6 +72,10 @@ namespace cube {
             return *this;
         }
 
+        inline auto getPipe(ActorId const dest) const {
+            return _handler->getProxyPipe(dest, id());
+        }
+
         template<typename _Data, typename _Actor>
         inline void registerEvent(_Actor &actor) {
             auto it = _event_map.find(type_id<_Data>());
@@ -81,7 +85,7 @@ namespace cube {
         };
 
         template<typename _Data, typename _Actor>
-        inline void unRegisterEvent(_Actor &actor) {
+        inline void unregisterEvent(_Actor &actor) {
             auto it = _event_map.find(type_id<_Data>());
             if (it != _event_map.end())
                 delete it->second;
@@ -89,7 +93,7 @@ namespace cube {
         };
 
         template<typename _Data>
-        inline void unRegisterEvent() {
+        inline void unregisterEvent() {
             auto it = _event_map.find(type_id<_Data>());
             if (it != _event_map.end())
                 delete it->second;
@@ -101,8 +105,8 @@ namespace cube {
             _handler->registerCallback(actor);
         }
 
-        inline void unRegisterCallback() const {
-            _handler->unRegisterCallback(id());
+        inline void unregisterCallback() const {
+            _handler->unregisterCallback(id());
         }
 
         inline void kill() const {
@@ -158,23 +162,23 @@ namespace cube {
             return _handler->sharedData();
         }
 
-        inline auto getTime() const {
-            return _handler->getTime();
+        inline auto time() const {
+            return _handler->time();
         }
 
-        inline uint64_t getBestTime() const {
-            return _handler->getBestTime();
+        inline uint64_t bestTime() const {
+            return _handler->bestTime();
         }
 
-        inline uint32_t getBestCore() const {
-            return _handler->getBestCore();
+        inline uint32_t bestCore() const {
+            return _handler->bestCore();
         }
 
-        void onEvent(Event const &event) const {
+        void on(Event const &event) const {
             LOG_WARN << "Actor[" << _id << "." << _index << "] received removed event[" << event.id << "]";
         }
 
-        void onEvent(KillEvent const &) {
+        void on(KillEvent const &) {
             kill();
         }
 

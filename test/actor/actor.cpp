@@ -49,12 +49,13 @@ public:
     }
 };
 
+using namespace cube;
 int main() {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-actor.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     test<100>("CreateActor", []() {
-        cube::Main<PhysicalCore<0>, PhysicalCore<1>> main;
+        Engine<PhysicalCore<0>, PhysicalCore<1>> main;
 
         main.addActor<0, ActorTest>();
         main.addActor<1, ActorTraitTest, MyTrait>();

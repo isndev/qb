@@ -1,8 +1,9 @@
 
 #ifndef CUBE_EVENT_H
 # define CUBE_EVENT_H
+# include <utility>
 # include <bitset>
-# include "utils/branch_hints.h"
+
 # include "utils/prefix.h"
 # include "ActorId.h"
 

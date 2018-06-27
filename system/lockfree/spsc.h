@@ -2,6 +2,7 @@
 #ifndef CUBE_LOCKFREE_RINGBUFFER_H
 # define CUBE_LOCKFREE_RINGBUFFER_H
 # include <cstdint>
+# include <cstring>
 # include <array>
 # include <algorithm>
 # include <thread>

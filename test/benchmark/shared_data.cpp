@@ -29,11 +29,12 @@ public:
     }
 };
 
+using namespace cube;
 template<template<typename T> typename _ActorTest, typename _SharedData, std::size_t ..._Index>
 struct TEST {
     static void shared_data(std::string const &name) {
         test<100>("SharedData (" + name + ")", []() {
-            cube::Main<PhysicalCore<_Index, _SharedData>...> main;
+            Engine<PhysicalCore<_Index, _SharedData>...> main;
 
             for (int i = 0; i < 100; ++i) {
                 (main.template addActor<_Index, _ActorTest>() && ...);

@@ -34,7 +34,7 @@ public:
         return true;
     }
 
-    void onEvent(CreateActorEvent const &event) {
+    void on(CreateActorEvent const &event) {
         LOG_INFO << "AGENT CREATE ON CORE(" << this->id()._index << ")";
         this->template addRefActor<DummyActor>();
     }
@@ -66,7 +66,7 @@ public:
         return true;
     }
 
-    void onEvent(MyTimedKillEvent const &)
+    void on(MyTimedKillEvent const &)
     {
         this->template push<cube::KillEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id());
         this->template push<cube::KillEvent>(cube::Tag<cube::service::IntervalActor<Handler>, 0>::id());
@@ -77,7 +77,7 @@ public:
         LOG_INFO << "DEAD ALL ACTOR TEST";
     }
 
-    void onEvent(MyIntervalEvent &event) {
+    void on(MyIntervalEvent &event) {
         if (event.repeat <= 1) {
 			event.cancel<MyIntervalEvent>(*this);
             this->template push<MyTimedKillEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id(), cube::Timespan::seconds(1));
@@ -88,12 +88,13 @@ public:
 
 };
 
+using namespace cube;
 int main() {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-manager.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     test<1>("Test scheduled event", []() {
-        cube::Main<PhysicalCore<0>, CoreLink<TimedCore<2>, TimedCore<3>>> main;
+        Engine<PhysicalCore<0>, CoreLinker<TimedCore<2>, TimedCore<3>>> main;
 
         main.addActor<0, cube::service::TimerActor>();
         main.addActor<0, cube::service::IntervalActor>();

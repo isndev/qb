@@ -103,7 +103,7 @@ public:
     }
     
     // will call this function when MyActor received MyEvent 
-    void onEvent(MyEvent const &event) {
+    void on(MyEvent const &event) {
         // ...
     }
 };
@@ -119,9 +119,9 @@ int main () {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "MyProject.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::WARN); // log only warning an critical
 
-    // configure the Main Engine 
+    // configure the Engine Engine 
     // Note : I will use only the core 0 and 1 
-    cube::Main<PhysicalCore<0>, PhysicalCore<1>> main;
+    cube::Engine<PhysicalCore<0>, PhysicalCore<1>> main;
     
     // My start sequence -> add MyActor to core 0 and 1
     main.addActor<0, MyActor>();

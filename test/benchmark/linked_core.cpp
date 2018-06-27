@@ -33,12 +33,12 @@ public:
         return true;
     }
 
-    void onEvent(EventTrait &event) const {
+    void on(EventTrait &event) const {
         if (event.x >= 3000)
             this->kill();
         if (event.x <= 3000) {
             ++event.x;
-            this->template reply(event);
+            this->reply(event);
         }
 
 
@@ -46,12 +46,13 @@ public:
 
 };
 
+using namespace cube;
 template<template<typename E, typename T> typename _ActorTest, typename _Event, typename _SharedData = void>
 struct TEST {
     static void pingpong(std::string const &name) {
         test<100>("PingPong Linked Core0/1 (" + name + ")", []() {
-            cube::Main<
-                    CoreLink<PhysicalCore<0>, PhysicalCore<1>>
+            Engine<
+                    CoreLinker<PhysicalCore<0>, PhysicalCore<1>>
             > main;
 
             for (int i = 0; i < 100; ++i) {
@@ -64,9 +65,9 @@ struct TEST {
         });
 
         test<100>("PingPong Core0/1 & Core2/3 (" + name + ")", []() {
-            cube::Main<
-                    CoreLink<PhysicalCore<0>, PhysicalCore<1>>,
-                    CoreLink<PhysicalCore<2>, PhysicalCore<3>>
+            Engine<
+                    CoreLinker<PhysicalCore<0>, PhysicalCore<1>>,
+                    CoreLinker<PhysicalCore<2>, PhysicalCore<3>>
             > main;
 
             for (int i = 0; i < 100; ++i) {
@@ -80,7 +81,7 @@ struct TEST {
         });
 
         test<100>("PingPong Not Linked Core0/1 (" + name + ")", []() {
-            cube::Main<PhysicalCore<0>, PhysicalCore<1>> main;
+            Engine<PhysicalCore<0>, PhysicalCore<1>> main;
 
             for (int i = 0; i < 100; ++i) {
                 main.template addActor<1, _ActorTest, _Event>(main.template addActor<0, _ActorTest, _Event>());
@@ -92,7 +93,7 @@ struct TEST {
         });
 
         test<100>("PingPong Not Linked Core0/3 (" + name + ")", []() {
-            cube::Main<PhysicalCore<0>, PhysicalCore<3>> main;
+            Engine<PhysicalCore<0>, PhysicalCore<3>> main;
 
             for (int i = 0; i < 100; ++i) {
                 main.template addActor<3, _ActorTest, _Event>(main.template addActor<0, _ActorTest, _Event>());
@@ -104,9 +105,9 @@ struct TEST {
         });
 
         test<100>("PingPong Multi Not Linked Core0/1 & Core2/3 (" + name + ")", []() {
-            cube::Main<
-                    CoreLink<PhysicalCore<0>, PhysicalCore<1>>,
-                    CoreLink<PhysicalCore<2>, PhysicalCore<3>>
+            Engine<
+                    CoreLinker<PhysicalCore<0>, PhysicalCore<1>>,
+                    CoreLinker<PhysicalCore<2>, PhysicalCore<3>>
             > main;
 
             for (int i = 0; i < 100; ++i) {

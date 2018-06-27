@@ -3,7 +3,6 @@
 # define CUBE_CUBE_H
 
 // components
-# include "system/io.h"
 # include "system/actor/Actor.h"
 # include "system/start_sequence.h"
 // services

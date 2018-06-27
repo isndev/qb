@@ -17,26 +17,27 @@ public:
     }
 
     // MyEvent call back
-    void onEvent(MyEvent const &event) {
-        this->template unRegisterEvent<MyEvent>(*this);
+    void on(MyEvent const &event) {
+        this->template unregisterEvent<MyEvent>(*this);
         // Send event to myself again but it will fail
         this->template push<MyEvent>(this->id());
     }
 
     // Overload when received removed event
-    void onEvent (cube::Event const &event) {
-        cube::Actor<Handler>::onEvent(event);
+    void on (cube::Event const &event) {
+        cube::Actor<Handler>::on(event);
         // Kill me on next loop
         this->kill();
     }
 };
 
+using namespace cube;
 int main() {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-event.log", 1024);
     nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     test<100>("Test un/register event", []() {
-        cube::Main<PhysicalCore<0>, PhysicalCore<1> > main;
+        Engine<PhysicalCore<0>, PhysicalCore<1> > main;
 
         for (int i = 0; i < 2; ++i) {
             main.addActor<0, ActorTest>();
