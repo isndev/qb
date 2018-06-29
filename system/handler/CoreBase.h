@@ -6,7 +6,7 @@
 # include <thread>
 
 #if defined(unix) || defined(__unix) || defined(__unix__)
-    #include <sched.h>
+#include <sched.h>
     #include <errno.h>
     #include <unistd.h>
     #include <pthread.h>
@@ -118,7 +118,7 @@ namespace cube {
             ProxyPipe() = delete;
             ProxyPipe(ProxyPipe const &) = default;
             ProxyPipe(Pipe &pipe, ActorId dest, ActorId source)
-                : pipe(pipe), dest(dest), source(source)
+                    : pipe(pipe), dest(dest), source(source)
             {}
 
             template <typename T, typename ..._Init>
@@ -328,8 +328,8 @@ namespace cube {
             CPU_ZERO(&cpuset);
             CPU_SET(_index, &cpuset);
 
-	        pthread_t current_thread = pthread_self();
-	        ret = !pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
+            pthread_t current_thread = pthread_self();
+            ret = !pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
 #elif defined(_WIN32) || defined(_WIN64)
 #ifdef _MSC_VER
             DWORD_PTR mask = (1 << (_index < 0 ? 0 : _index));

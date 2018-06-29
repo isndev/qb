@@ -67,6 +67,7 @@ namespace cube {
         private:
             std::atomic<bool> _lock;
         };
+
     } /* namespace lockfree */
 } /* namespace cube */
 

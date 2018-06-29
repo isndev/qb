@@ -2,7 +2,7 @@
 #include "assert.h"
 
 struct TinyEvent : cube::Event {
-    uint64_t x;	
+    uint64_t x;
     TinyEvent(uint64_t x) : x(x) {}
 };
 

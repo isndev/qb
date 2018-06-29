@@ -119,11 +119,11 @@ namespace cube {
                     , &data, sizeof(U)));
         }
 
-		template <typename U>
-		inline U &recycle_back(U const &data, std::size_t const size) {
-			return *reinterpret_cast<U *>(std::memcpy(allocate_back(size)
-				, &data, size * sizeof(T)));
-		}
+        template <typename U>
+        inline U &recycle_back(U const &data, std::size_t const size) {
+            return *reinterpret_cast<U *>(std::memcpy(allocate_back(size)
+                , &data, size * sizeof(T)));
+        }
 
         template <typename U>
         inline U &recycle(U const &data) {

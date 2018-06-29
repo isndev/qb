@@ -25,10 +25,10 @@ public:
     TComposition(Group&& ...group)
             : _elements{std::forward<Group>(group)...}
     {}
-	template <typename ...Init>
-	TComposition(Init&& ...init) 
-		: _elements{std::forward<Init>(init)...}
-	{}
+    template <typename ...Init>
+    TComposition(Init&& ...init)
+        : _elements{std::forward<Init>(init)...}
+    {}
 
     template<typename Func>
     using ret_type = decltype(std::declval<Func>()(std::get<0>(_elements)));

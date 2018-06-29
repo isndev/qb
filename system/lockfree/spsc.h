@@ -27,161 +27,161 @@ namespace cube {
                     std::atomic<size_t> read_index_;
 
                 protected:
-					ringbuffer(void) :
-						write_index_(0), read_index_(0)
-					{}
+                    ringbuffer(void) :
+                            write_index_(0), read_index_(0)
+                    {}
 
-					static size_t next_index(size_t arg, size_t const max_size)
-					{
-						size_t ret = arg + 1;
-						while (likely(ret >= max_size))
-							ret -= max_size;
-						return ret;
-					}
+                    static size_t next_index(size_t arg, size_t const max_size)
+                    {
+                        size_t ret = arg + 1;
+                        while (likely(ret >= max_size))
+                            ret -= max_size;
+                        return ret;
+                    }
 
-					static size_t read_available(size_t write_index, size_t read_index, size_t const max_size)
-					{
-						if (write_index >= read_index)
-							return write_index - read_index;
+                    static size_t read_available(size_t write_index, size_t read_index, size_t const max_size)
+                    {
+                        if (write_index >= read_index)
+                            return write_index - read_index;
 
-						const size_t ret = write_index + max_size - read_index;
-						return ret;
-					}
+                        const size_t ret = write_index + max_size - read_index;
+                        return ret;
+                    }
 
-					static size_t write_available(size_t write_index, size_t read_index, size_t const max_size)
-					{
-						size_t ret = read_index - write_index - 1;
-						if (write_index >= read_index)
-							ret += max_size;
-						return ret;
-					}
+                    static size_t write_available(size_t write_index, size_t read_index, size_t const max_size)
+                    {
+                        size_t ret = read_index - write_index - 1;
+                        if (write_index >= read_index)
+                            ret += max_size;
+                        return ret;
+                    }
 
-					size_t read_available(size_t const max_size) const
-					{
-						size_t write_index = write_index_.load(std::memory_order_acquire);
-						const size_t read_index = read_index_.load(std::memory_order_relaxed);
-						return read_available(write_index, read_index, max_size);
-					}
+                    size_t read_available(size_t const max_size) const
+                    {
+                        size_t write_index = write_index_.load(std::memory_order_acquire);
+                        const size_t read_index = read_index_.load(std::memory_order_relaxed);
+                        return read_available(write_index, read_index, max_size);
+                    }
 
-					size_t write_available(size_t const max_size) const
-					{
-						size_t write_index = write_index_.load(std::memory_order_relaxed);
-						const size_t read_index = read_index_.load(std::memory_order_acquire);
-						return write_available(write_index, read_index, max_size);
-					}
+                    size_t write_available(size_t const max_size) const
+                    {
+                        size_t write_index = write_index_.load(std::memory_order_relaxed);
+                        const size_t read_index = read_index_.load(std::memory_order_acquire);
+                        return write_available(write_index, read_index, max_size);
+                    }
 
-					bool enqueue(T const & t, T * buffer, size_t const max_size)
-					{
-						const size_t write_index = write_index_.load(std::memory_order_relaxed);  // only written from enqueue thread
-						const size_t next = next_index(write_index, max_size);
+                    bool enqueue(T const & t, T * buffer, size_t const max_size)
+                    {
+                        const size_t write_index = write_index_.load(std::memory_order_relaxed);  // only written from enqueue thread
+                        const size_t next = next_index(write_index, max_size);
 
-						if (next == read_index_.load(std::memory_order_acquire))
-							return false; /* ringbuffer is full */
+                        if (next == read_index_.load(std::memory_order_acquire))
+                            return false; /* ringbuffer is full */
 
-						new (buffer + write_index) T(t); // copy-construct
+                        new (buffer + write_index) T(t); // copy-construct
 
-						write_index_.store(next, std::memory_order_release);
+                        write_index_.store(next, std::memory_order_release);
 
-						return true;
-					}
+                        return true;
+                    }
 
-					template <bool _All>
-					size_t enqueue(const T * input_buffer, size_t input_count, T * internal_buffer, size_t const max_size)
-					{
-						const size_t write_index = write_index_.load(std::memory_order_relaxed);  // only written from push thread
-						const size_t read_index = read_index_.load(std::memory_order_acquire);
-						const size_t avail = write_available(write_index, read_index, max_size);
+                    template <bool _All>
+                    size_t enqueue(const T * input_buffer, size_t input_count, T * internal_buffer, size_t const max_size)
+                    {
+                        const size_t write_index = write_index_.load(std::memory_order_relaxed);  // only written from push thread
+                        const size_t read_index = read_index_.load(std::memory_order_acquire);
+                        const size_t avail = write_available(write_index, read_index, max_size);
 
-						if constexpr (_All) {
+                        if constexpr (_All) {
                             if (avail < input_count)
                                 return 0;
                         } else {
                             if (!avail)
                                 return 0;
                             input_count = (std::min)(input_count, avail);
-						}
+                        }
 
-						size_t new_write_index = write_index + input_count;
+                        size_t new_write_index = write_index + input_count;
 
-						if (write_index + input_count > max_size) {
-							/* copy data in two sections */
-							size_t count0 = max_size - write_index;
+                        if (write_index + input_count > max_size) {
+                            /* copy data in two sections */
+                            size_t count0 = max_size - write_index;
 
-							std::uninitialized_copy(input_buffer, input_buffer + count0, internal_buffer + write_index);
-							std::uninitialized_copy(input_buffer + count0, input_buffer + input_count, internal_buffer);
-							new_write_index -= max_size;
-						}
-						else {
-							std::uninitialized_copy(input_buffer, input_buffer + input_count,
-								internal_buffer + write_index);
+                            std::uninitialized_copy(input_buffer, input_buffer + count0, internal_buffer + write_index);
+                            std::uninitialized_copy(input_buffer + count0, input_buffer + input_count, internal_buffer);
+                            new_write_index -= max_size;
+                        }
+                        else {
+                            std::uninitialized_copy(input_buffer, input_buffer + input_count,
+                                                    internal_buffer + write_index);
 
-							if (new_write_index == max_size)
-								new_write_index = 0;
-						}
+                            if (new_write_index == max_size)
+                                new_write_index = 0;
+                        }
 
-						write_index_.store(new_write_index, std::memory_order_release);
-						return input_count;
-					}
+                        write_index_.store(new_write_index, std::memory_order_release);
+                        return input_count;
+                    }
 
 
-					size_t dequeue(T * output_buffer, size_t output_count, T * internal_buffer, size_t const max_size)
-					{
-						const size_t write_index = write_index_.load(std::memory_order_acquire);
-						const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
+                    size_t dequeue(T * output_buffer, size_t output_count, T * internal_buffer, size_t const max_size)
+                    {
+                        const size_t write_index = write_index_.load(std::memory_order_acquire);
+                        const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
 
-						const size_t avail = read_available(write_index, read_index, max_size);
+                        const size_t avail = read_available(write_index, read_index, max_size);
 
-						if (avail == 0)
-							return 0;
+                        if (avail == 0)
+                            return 0;
 
-						output_count = (std::min)(output_count, avail);
+                        output_count = (std::min)(output_count, avail);
 
-						size_t new_read_index = read_index + output_count;
+                        size_t new_read_index = read_index + output_count;
 
-						if (read_index + output_count > max_size) {
-							/* copy data in two sections */
-							const size_t count0 = max_size - read_index;
-							const size_t count1 = output_count - count0;
+                        if (read_index + output_count > max_size) {
+                            /* copy data in two sections */
+                            const size_t count0 = max_size - read_index;
+                            const size_t count1 = output_count - count0;
 
-							std::memcpy(output_buffer, internal_buffer + read_index, count0 * sizeof(T));
-							std::memcpy(output_buffer + count0, internal_buffer, count1 * sizeof(T));
+                            std::memcpy(output_buffer, internal_buffer + read_index, count0 * sizeof(T));
+                            std::memcpy(output_buffer + count0, internal_buffer, count1 * sizeof(T));
 
-							new_read_index -= max_size;
-						}
-						else {
-							std::memcpy(output_buffer, internal_buffer + read_index, output_count * sizeof(T));
+                            new_read_index -= max_size;
+                        }
+                        else {
+                            std::memcpy(output_buffer, internal_buffer + read_index, output_count * sizeof(T));
 
-							if (new_read_index == max_size)
-								new_read_index = 0;
-						}
+                            if (new_read_index == max_size)
+                                new_read_index = 0;
+                        }
 
-						read_index_.store(new_read_index, std::memory_order_release);
-						return output_count;
-					}
+                        read_index_.store(new_read_index, std::memory_order_release);
+                        return output_count;
+                    }
 
-					const T& front(const T * internal_buffer) const
-					{
-						const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
-						return *(internal_buffer + read_index);
-					}
+                    const T& front(const T * internal_buffer) const
+                    {
+                        const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
+                        return *(internal_buffer + read_index);
+                    }
 
-					T& front(T * internal_buffer)
-					{
-						const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
-						return *(internal_buffer + read_index);
-					}
+                    T& front(T * internal_buffer)
+                    {
+                        const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
+                        return *(internal_buffer + read_index);
+                    }
 
-				public:
-					bool empty(void)
-					{
-						return empty(write_index_.load(std::memory_order_relaxed), read_index_.load(std::memory_order_relaxed));
-					}
+                public:
+                    bool empty(void)
+                    {
+                        return empty(write_index_.load(std::memory_order_relaxed), read_index_.load(std::memory_order_relaxed));
+                    }
 
-				private:
-					bool empty(size_t write_index, size_t read_index)
-					{
-						return write_index == read_index;
-					}
+                private:
+                    bool empty(size_t write_index, size_t read_index)
+                    {
+                        return write_index == read_index;
+                    }
                 };
 
             } /* namespace internal */
