@@ -76,6 +76,7 @@ if (COMPILE_TESTS OR MSVC)
 endif()
 
 add_library(cube STATIC ${DEBUGFILES} ${LOGFILES})
+add_subdirectory(network)
 
 if(IS_INVOKED)
     set(CUBE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
