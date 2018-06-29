@@ -70,7 +70,6 @@ namespace           cube {
             addr.sin_addr.s_addr = htonl(address);
             addr.sin_family      = AF_INET;
             addr.sin_port        = htons(port);
-            addr.sin_len = sizeof(addr);
 
             return addr;
         }

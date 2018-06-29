@@ -42,7 +42,7 @@ namespace           cube {
                 constexpr static const	Handler INVALID = INVALID_SOCKET;
 #else
                 typedef			int			Handler;
-				typedef			socklen_t	Length;
+				typedef			socklen_t	AddrLength;
 				constexpr static const	Handler INVALID = -1;
 #endif
 
