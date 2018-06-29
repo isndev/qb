@@ -1,8 +1,8 @@
-#include				<errno.h>
+#include                <errno.h>
 #include                <cstdint>
 
-#ifndef			CUBE_CONFIG_HPP_
-#define			CUBE_CONFIG_HPP_
+#ifndef            CUBE_CONFIG_HPP_
+#define            CUBE_CONFIG_HPP_
 
 #if defined(_WIN32) || defined(__WIN32__)
 #define __WIN__SYSTEM__
@@ -17,7 +17,7 @@
 // Linux
 #define __LINUX__SYSTEM__
 #else
-	#error "Unsupported Operating System"
+    #error "Unsupported Operating System"
 #endif
 
 #if defined(__WIN__SYSTEM__)

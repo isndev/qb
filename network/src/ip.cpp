@@ -8,21 +8,21 @@ namespace           cube {
         const ip ip::None(INADDR_NONE);
         const ip ip::Any(0, 0, 0, 0);
         const ip ip::LocalHost(127, 0, 0, 1);
-        
+
         ip::ip() :
                 _address(INADDR_NONE) {
         }
-        
+
         ip::ip(const std::string &address) :
                 _address(0) {
             resolve(address);
         }
-        
+
         ip::ip(const char *address) :
                 _address(0) {
             resolve(address);
         }
-        
+
         ip::ip(uint8_t byte0, uint8_t byte1, uint8_t byte2, uint8_t byte3) :
                 _address(htonl((byte0 << 24) | (byte1 << 16) | (byte2 << 8) | byte3)) {
         }
@@ -42,7 +42,7 @@ namespace           cube {
         uint32_t ip::toInteger() const {
             return ntohl(_address);
         }
-        
+
         void ip::resolve(const std::string &address) {
             _address = 0;
 
@@ -76,27 +76,27 @@ namespace           cube {
                 }
             }
         }
-        
+
         bool operator==(const ip &left, const ip &right) {
             return !(left < right) && !(right < left);
         }
-        
+
         bool operator!=(const ip &left, const ip &right) {
             return !(left == right);
         }
-        
+
         bool operator<(const ip &left, const ip &right) {
             return left._address < right._address;
         }
-        
+
         bool operator>(const ip &left, const ip &right) {
             return right < left;
         }
-        
+
         bool operator<=(const ip &left, const ip &right) {
             return !(right < left);
         }
-        
+
         bool operator>=(const ip &left, const ip &right) {
             return !(left < right);
         }

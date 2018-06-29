@@ -60,8 +60,8 @@ namespace           cube {
 
         SocketInitializer GlobalInitializer;
 #else
-#include				<errno.h>
-#include				<fcntl.h>
+        #include                <errno.h>
+        #include                <fcntl.h>
 
         sockaddr_in Socket::createAddress(uint32_t address, unsigned short port)
         {
@@ -81,7 +81,7 @@ namespace           cube {
 
         bool Socket::block(Socket::Handler sock, bool newst)
         {
-            int	status = fcntl(sock, F_GETFL);
+            int    status = fcntl(sock, F_GETFL);
 
             return ((newst ?
                      fcntl(sock, F_SETFL, status & ~O_NONBLOCK) :

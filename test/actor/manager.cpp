@@ -18,7 +18,7 @@ public:
     }
 
     void onCallback() override final {
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (!--_counter) {
             this->kill();
         }
@@ -79,7 +79,7 @@ public:
 
     void on(MyIntervalEvent &event) {
         if (event.repeat <= 1) {
-			event.cancel<MyIntervalEvent>(*this);
+            event.cancel<MyIntervalEvent>(*this);
             this->template push<MyTimedKillEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id(), cube::Timespan::seconds(1));
         } else {
             this->template send<CreateActorEvent>(cube::Tag<cube::service::ManagerActor<Handler>, 0>::id());
@@ -98,9 +98,9 @@ int main() {
 
         main.addActor<0, cube::service::TimerActor>();
         main.addActor<0, cube::service::IntervalActor>();
-		main.addActor<2, MyAgent>();
-		main.addActor<3, MyAgent>();
-		main.addActor<0, cube::service::ManagerActor>();
+        main.addActor<2, MyAgent>();
+        main.addActor<3, MyAgent>();
+        main.addActor<0, cube::service::ManagerActor>();
         main.addActor<0, ActorTest>();
 
         main.start();
