@@ -10,3 +10,7 @@
 	path = modules/nanolog
 	url = https://github.com/Iyengar111/NanoLog.git
 	branch = master
+[submodule "sbe"]
+	path = modules/sbe
+	url = https://github.com/real-logic/simple-binary-encoding.git
+	branch = master
