@@ -10,6 +10,7 @@ namespace           cube {
 
         class CUBE_API Listener
                 : public TSocket<Socket::TCP> {
+        public:
             Listener();
 
             unsigned short getLocalPort() const;
