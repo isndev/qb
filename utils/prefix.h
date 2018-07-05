@@ -27,7 +27,8 @@
 
 #ifdef __GNUC__
 
-#define CUBE_LOCKFREE_CACHELINE_ALIGNMENT __attribute__((aligned(CUBE_LOCKFREE_CACHELINE_BYTES)))
+#define CUBE_LOCKFREE_CACHELINE_ALIGNMENT alignas(CUBE_LOCKFREE_CACHELINE_BYTES)
+//__attribute__((aligned(CUBE_LOCKFREE_CACHELINE_BYTES)))
 
 #if defined(__i386__) || defined(__ppc__)
 #define CUBE_LOCKFREE_DCAS_ALIGNMENT

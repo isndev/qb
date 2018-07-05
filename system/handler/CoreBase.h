@@ -279,8 +279,8 @@ namespace cube {
         _SharedData     *_sharedData = nullptr;
         std::thread      _thread;
 
-        std::unordered_map<uint64_t, ActorProxy>  _actors;
-        std::unordered_map<uint64_t, ICallback *> _actor_callbacks;
+        std::unordered_map<uint32_t, ActorProxy>  _actors;
+        std::unordered_map<uint32_t, ICallback *> _actor_callbacks;
         std::vector<ActorId> _actor_to_remove;
 
         //////// !Members
