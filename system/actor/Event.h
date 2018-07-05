@@ -15,13 +15,13 @@ namespace cube {
     };
 
     template<typename T>
-    constexpr uint32_t type_id() { return static_cast<uint32_t>(reinterpret_cast<std::size_t>(&type<T>::id)); }
+    constexpr uint16_t type_id() { return static_cast<uint16_t>(reinterpret_cast<std::size_t>(&type<T>::id)); }
 
     struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT Event {
     public:
-        uint32_t id;
+        uint16_t id;
         uint16_t bucket_size;
-        std::bitset<16> state;
+        std::bitset<32> state;
         // for users
         ActorId dest;
         ActorId source;
@@ -35,7 +35,7 @@ namespace cube {
 
     struct ServiceEvent : public Event {
         ActorId forward;
-        uint32_t service_event_id;
+        uint16_t service_event_id;
 
         inline void received() {
             std::swap(dest, forward);
