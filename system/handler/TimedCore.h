@@ -26,7 +26,6 @@ namespace cube {
                 } else if (_nano_timer < best) {
                     reinterpret_cast<uint8_t *>(&_nano_timer)[0] = _CoreIndex;
                     _ParentHandler::parent_t::sync_start.store(_nano_timer);
-                    //LOG_WARN << "SWITCH TO " << _CoreIndex << " TIME:" << _nano_timer << "best:" << best << "now:" << now;
                 }
                 _nano_timer = now;
             }

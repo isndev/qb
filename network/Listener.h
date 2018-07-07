@@ -2,8 +2,8 @@
 #include            <network/SocketBase.h>
 #include            <network/SocketTCP.h>
 
-#ifndef             CUBE_LISTENER_H
-#define             CUBE_LISTENER_H
+#ifndef             CUBE_NETWORK_LISTENER_H
+#define             CUBE_NETWORK_LISTENER_H
 
 namespace           cube {
     namespace       network {

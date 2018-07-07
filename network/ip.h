@@ -2,8 +2,8 @@
 #include            <string>
 #include            <utils/build_macros.h>
 
-#ifndef             CUBE_IPv4_H_
-#define             CUBE_IPv4_H_
+#ifndef             CUBE_NETWORK_IPv4_H_
+#define             CUBE_NETWORK_IPv4_H_
 
 namespace           cube {
     namespace       network {

@@ -1,15 +1,17 @@
 #include "assert.h"
 #include "cube.h"
 
-struct MyTimedEvent : public cube::TimedEvent {
+using namespace cube::service::scheduler;
+
+struct MyTimedEvent : public event::Timer {
     MyTimedEvent(cube::Timespan const &ts)
-            : TimedEvent(ts) {}
+            : Timer(ts) {}
 };
 
-struct MyIntervalEvent : public cube::IntervalEvent {
+struct MyIntervalEvent : public event::Timeout {
     uint64_t i[32];
     MyIntervalEvent(cube::Timespan const &ts)
-            : IntervalEvent(ts) {
+            : Timeout(ts) {
         i[31] = 666;
     }
 
@@ -24,20 +26,20 @@ public:
         this->template registerEvent<MyTimedEvent>(*this);
         this->template registerEvent<MyIntervalEvent>(*this);
         // Send event to myself
-        this->template push<MyTimedEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id(), cube::Timespan::seconds(1));
-        auto &e = this->template push<MyIntervalEvent>(cube::Tag<cube::service::IntervalActor<Handler>, 0>::id(), cube::Timespan::seconds(1));
+        this->template push<MyTimedEvent>(cube::Tag<ActorTimer, 0>::id(), cube::Timespan::seconds(1));
+        auto &e = this->template push<MyIntervalEvent>(cube::Tag<ActorTimeout , 0>::id(), cube::Timespan::seconds(1));
         e.repeat = 3;
         return true;
     }
 
     // MyEvent call back
     void on(MyTimedEvent const &event) {
-        this->template push<cube::KillEvent>(cube::Tag<cube::service::TimerActor<Handler>, 0>::id());
+        this->template push<cube::KillEvent>(cube::Tag<ActorTimer, 0>::id());
     }
 
     void on(MyIntervalEvent &event) {
         event.cancel<MyIntervalEvent>(*this);
-        this->template push<cube::KillEvent>(cube::Tag<cube::service::IntervalActor<Handler>, 0>::id());
+        this->template push<cube::KillEvent>(cube::Tag<ActorTimeout, 0>::id());
         this->kill();
     }
 
@@ -51,8 +53,8 @@ int main() {
     test<1>("Test scheduled event", []() {
         Engine<PhysicalCore<0>, PhysicalCore<1> > main;
 
-        main.addActor<0, cube::service::TimerActor>();
-        main.addActor<0, cube::service::IntervalActor>();
+        main.addActor<0, ActorTimer>();
+        main.addActor<0, ActorTimeout>();
         main.addActor<1, ActorTest>();
 
         main.start();

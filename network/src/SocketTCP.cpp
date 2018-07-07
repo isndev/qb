@@ -10,7 +10,7 @@ namespace
 #ifdef __WIN__SYSTEM__
     const int flags = 0;
 #else
-    const int flags = MSG_NOSIGNAL;
+    constexpr const int flags = MSG_NOSIGNAL;
 #endif
 }
 
