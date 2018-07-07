@@ -2,8 +2,8 @@
 #include            <network/ip.h>
 #include            <network/SocketBase.h>
 
-#ifndef             CUBE_SOCKETUDP_H_
-# define            CUBE_SOCKETUDP_H_
+#ifndef             CUBE_NETWORK_SOCKETUDP_H_
+# define            CUBE_NETWORK_SOCKETUDP_H_
 
 namespace           cube {
     namespace       network {
@@ -24,7 +24,7 @@ namespace           cube {
 
         };
 
-    } // namespace network
-} // namespace cube
+    } //namespace network
+} //namespace cube
 
 #endif

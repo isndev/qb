@@ -114,21 +114,21 @@ namespace cube {
         }
 
         template<typename _Actor, typename ..._Init>
-        inline auto addRefActor(_Init const &...init) const {
-            return _handler->template addReferencedActor<_Actor, _Init...>(init...);
+        inline auto addRefActor(_Init &&...init) const {
+            return _handler->template addReferencedActor<_Actor>(std::forward<_Init>(init)...);
         }
 
         template< template <typename __Handler> typename _Actor
                 , typename ..._Init >
-        inline auto addRefActor(_Init const &...init) const {
-            return _handler->template addReferencedActor<_Actor, _Init...>(init...);
+        inline auto addRefActor(_Init &&...init) const {
+            return _handler->template addReferencedActor<_Actor>(std::forward<_Init>(init)...);
         }
 
         template< template<typename __Handler, typename _Trait> typename _Actor
                 , typename _Trait
                 , typename ..._Init >
-        inline auto addRefActor(_Init const &...init) const {
-            return _handler->template addReferencedActor<_Actor, _Trait, _Init...>(init...);
+        inline auto addRefActor(_Init &&...init) const {
+            return _handler->template addReferencedActor<_Actor, _Trait>(std::forward<_Init>(init)...);
         }
 
 

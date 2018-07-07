@@ -1,8 +1,8 @@
 #include            <cstring>
 #include            <utils/build_macros.h>
 
-#ifndef             CUBE_SOCKET_H_
-# define            CUBE_SOCKET_H_
+#ifndef             CUBE_NETWORK_SOCKET_H_
+# define            CUBE_NETWORK_SOCKET_H_
 
 #ifdef __WIN__SYSTEM__
 #include <winsock2.h>
@@ -52,7 +52,7 @@ namespace           cube {
             static Socket::Status getErrorStatus();
         };
 
-    } // namespace network
-} // namespace cube
+    } //namespace network
+} //namespace cube
 
 #endif

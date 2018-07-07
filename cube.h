@@ -6,7 +6,8 @@
 # include "system/actor/Actor.h"
 # include "system/start_sequence.h"
 // services
-# include "service/SchedulerActor.h"
-# include "service/ManagerActor.h"
+# include "service/scheduler/actor.h"
+# include "service/manager/actor.h"
+//# include "service/iopoll/actor.h"
 
 #endif //CUBE_CUBE_H

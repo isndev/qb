@@ -1,6 +1,3 @@
-//
-// Created by mbelhadi on 22/05/18.
-//
 
 #ifndef FEATURES_CPU_H
 #define FEATURES_CPU_H

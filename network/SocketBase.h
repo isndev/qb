@@ -4,15 +4,14 @@
 #include            <utils/nocopy.h>
 #include            <network/Socket.h>
 
-#ifndef             CUBE_SOCKET_BASE_H_
-# define            CUBE_SOCKET_BASE_H_
+#ifndef             CUBE_NETWORK_SOCKET_BASE_H_
+# define            CUBE_NETWORK_SOCKET_BASE_H_
 
 namespace           cube {
     namespace       network {
 
         template <Socket::Type _Type>
-        class CUBE_API TSocket
-                : nocopy {
+        class CUBE_API TSocket {
         protected:
             Socket::Handler _handle;
             bool            _blocking;
@@ -65,7 +64,6 @@ namespace           cube {
             {}
 
             ~TSocket() {
-                close();
             }
 
             Socket::Handler getNative() const {
@@ -93,7 +91,7 @@ namespace           cube {
             }
         };
 
-    } // namespace network
-} // namespace cube
+    } //namespace network
+} //namespace cube
 
 #endif

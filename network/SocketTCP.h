@@ -1,8 +1,8 @@
 #include            <network/ip.h>
 #include            <network/SocketBase.h>
 
-#ifndef             CUBE_SOCKETTCP_H_
-# define            CUBE_SOCKETTCP_H_
+#ifndef             CUBE_NETWORK_SOCKETTCP_H_
+# define            CUBE_NETWORK_SOCKETTCP_H_
 
 namespace           cube {
     namespace       network {
@@ -11,6 +11,7 @@ namespace           cube {
                 : public TSocket<Socket::TCP> {
         public:
             SocketTCP();
+            SocketTCP(SocketTCP const &) = default;
 
             ip getRemoteAddress() const;
 
@@ -28,7 +29,7 @@ namespace           cube {
             friend class Listener;
         };
 
-    } // namespace network
-} // namespace cube
+    } //namespace network
+} //namespace cube
 
 #endif
