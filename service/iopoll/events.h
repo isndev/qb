@@ -1,6 +1,6 @@
 
-#include "network/epoll.h"
-#include "system/actor/Event.h"
+#include "../../network/epoll.h"
+#include "../../system/actor/Event.h"
 
 #ifndef CUBE_SERVICE_IOPOLL_EVENTS_H
 #define CUBE_SERVICE_IOPOLL_EVENTS_H

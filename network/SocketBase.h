@@ -1,8 +1,8 @@
 #include            <iostream>
 #include            <cstring>
 #include            <cstdlib>
-#include            <utils/nocopy.h>
-#include            <network/Socket.h>
+#include            "../utils/nocopy.h"
+#include            "Socket.h"
 
 #ifndef             CUBE_NETWORK_SOCKET_BASE_H_
 # define            CUBE_NETWORK_SOCKET_BASE_H_

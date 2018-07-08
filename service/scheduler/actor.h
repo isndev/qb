@@ -1,5 +1,5 @@
 
-#include "system/actor/Actor.h"
+#include "../../system/actor/Actor.h"
 #include "events.h"
 
 #ifndef CUBE_SERVICE_SCHEDULER_ACTOR_H

@@ -1,7 +1,7 @@
 #include            <sys/epoll.h>
 #include            <exception>
-#include            "utils/branch_hints.h"
-#include            "network/Socket.h"
+#include            "../utils/branch_hints.h"
+#include            "Socket.h"
 
 #ifndef             CUBE_NETWORK_EPOLL_H
 #define             CUBE_NETWORK_EPOLL_H

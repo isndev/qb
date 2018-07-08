@@ -4,7 +4,7 @@
 # include <utility>
 # include <bitset>
 
-# include "utils/prefix.h"
+# include "../../utils/prefix.h"
 # include "ActorId.h"
 
 namespace cube {
