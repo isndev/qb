@@ -1,7 +1,7 @@
 
 #ifndef CUBE_MAIN_H
 # define CUBE_MAIN_H
-# include "system/handler/BaseHandler.h"
+# include "BaseHandler.h"
 
 namespace cube {
     namespace handler {

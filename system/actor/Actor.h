@@ -3,7 +3,7 @@
 # define CUBE_ACTOR_H
 # include <unordered_map>
 
-# include "utils/nocopy.h"
+# include "../../utils/nocopy.h"
 # include "Event.h"
 
 namespace cube {

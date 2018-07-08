@@ -1,6 +1,6 @@
 #include            <array>
-#include            <network/ip.h>
-#include            <network/SocketBase.h>
+#include            "ip.h"
+#include            "SocketBase.h"
 
 #ifndef             CUBE_NETWORK_SOCKETUDP_H_
 # define            CUBE_NETWORK_SOCKETUDP_H_

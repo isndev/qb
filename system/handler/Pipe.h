@@ -3,8 +3,8 @@
 # define CUBE_PIPE_H
 # include <memory>
 # include <cstring>
-# include "utils/nocopy.h"
-# include "utils/prefix.h"
+# include "../utils/nocopy.h"
+# include "../utils/prefix.h"
 
 namespace cube {
 

@@ -6,7 +6,7 @@
 # include <thread>
 
 #if defined(unix) || defined(__unix) || defined(__unix__)
-#include <sched.h>
+    #include <sched.h>
     #include <errno.h>
     #include <unistd.h>
     #include <pthread.h>
@@ -15,9 +15,9 @@
     #include <process.h>
 #endif
 
-# include "utils/timestamp.h"
-# include "system/lockfree/mpsc.h"
-# include "system/actor/Event.h"
+# include "../../utils/timestamp.h"
+# include "../lockfree/mpsc.h"
+# include "../actor/Event.h"
 # include "Pipe.h"
 
 namespace cube {

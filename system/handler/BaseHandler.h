@@ -1,9 +1,9 @@
 
 #ifndef CUBE_BASEHANDLER_H
 # define CUBE_BASEHANDLER_H
-# include "utils/nocopy.h"
-# include "utils/TComposition.h"
-# include "system/actor/ActorId.h"
+# include "../../utils/nocopy.h"
+# include "../../utils/TComposition.h"
+# include "../actor/ActorId.h"
 
 namespace cube {
 
