@@ -17,8 +17,13 @@ namespace
 namespace           cube {
     namespace       network {
 
-        SocketTCP::SocketTCP() :
-                TSocket<Socket::TCP>() {
+        SocketTCP::SocketTCP()
+                : TSocket<Socket::TCP>() {
+        }
+
+        SocketTCP::SocketTCP(Socket::Handler fd)
+            : TSocket<Socket::TCP>() {
+            _handle = fd;
         }
 
         unsigned short SocketTCP::getLocalPort() const {

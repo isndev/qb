@@ -9,9 +9,9 @@
 # include <atomic>
 # include <memory>
 
-# include "utils/nocopy.h"
-# include "utils/branch_hints.h"
-# include "utils/prefix.h"
+# include "../../utils/nocopy.h"
+# include "../../utils/branch_hints.h"
+# include "../../utils/prefix.h"
 
 namespace cube {
     namespace lockfree {

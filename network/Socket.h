@@ -49,6 +49,7 @@ namespace           cube {
             static sockaddr_in createAddress(uint32_t address, unsigned short port);
             static bool close(Socket::Handler sock);
             static bool block(Socket::Handler sock, bool block);
+            static bool is_blocking(Socket::Handler sock);
             static Socket::Status getErrorStatus();
         };
 

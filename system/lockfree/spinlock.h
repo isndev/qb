@@ -2,7 +2,7 @@
 #ifndef CUBE_LOCKFREE_SPINLOCK_H
 # define CUBE_LOCKFREE_SPINLOCK_H
 # include <atomic>
-# include "utils/timestamp.h"
+# include "../../utils/timestamp.h"
 
 
 namespace cube {

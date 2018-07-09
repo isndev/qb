@@ -11,6 +11,7 @@ namespace           cube {
                 : public TSocket<Socket::TCP> {
         public:
             SocketTCP();
+            SocketTCP(Socket::Handler fd);
             SocketTCP(SocketTCP const &) = default;
 
             ip getRemoteAddress() const;
