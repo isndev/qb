@@ -3,6 +3,7 @@
 #define CUBE_BASECOREHANDLER_H
 # include <iostream>
 # include <vector>
+# include <unordered_map>
 # include <thread>
 
 #if defined(unix) || defined(__unix) || defined(__unix__)

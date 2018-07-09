@@ -14,7 +14,6 @@ namespace           cube {
         class CUBE_API TSocket {
         protected:
             Socket::Handler _handle;
-            bool            _blocking;
 
             void init() {
                 if (!good()) {
@@ -60,7 +59,6 @@ namespace           cube {
         public:
             TSocket()
                     : _handle(Socket::INVALID)
-                    , _blocking(true)
             {}
 
             ~TSocket() {
@@ -73,11 +71,10 @@ namespace           cube {
             void setBlocking(bool new_state) {
                 if (good())
                     Socket::block(_handle, new_state);
-                _blocking = new_state;
             }
 
             bool isBlocking() const {
-                return _blocking;
+                return Socket::is_blocking(_handle);
             }
 
             bool good() const {
