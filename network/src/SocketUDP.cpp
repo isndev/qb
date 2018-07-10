@@ -23,8 +23,6 @@ namespace           cube {
         }
 
         Socket::Status SocketUDP::bind(unsigned short port, const ip &address) {
-            // Close the socket if it is already bound
-            close();
 
             // Create the internal socket if it doesn't exist
             init();
@@ -49,9 +47,7 @@ namespace           cube {
         }
 
         Socket::Status
-        SocketUDP::send(const void *data, std::size_t size, const ip &remoteAddress, unsigned short remotePort) {
-            // Create the internal socket if it doesn't exist
-            init();
+        SocketUDP::send(const void *data, std::size_t size, const ip &remoteAddress, unsigned short remotePort) const {
 
             // Build the target address
             sockaddr_in address = Socket::createAddress(remoteAddress.toInteger(), remotePort);
@@ -68,7 +64,7 @@ namespace           cube {
         }
 
         Socket::Status SocketUDP::receive(void *data, std::size_t size, std::size_t &received, ip &remoteAddress,
-                                          unsigned short &remotePort) {
+                                          unsigned short &remotePort) const {
             // First clear the variables to fill
             received = 0;
             remoteAddress = ip();

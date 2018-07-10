@@ -1,5 +1,7 @@
 
 #include "../../network/epoll.h"
+#include "../../network/SocketTCP.h"
+#include "../../network/SocketUDP.h"
 #include "../../system/actor/Event.h"
 
 #ifndef CUBE_SERVICE_IOPOLL_EVENTS_H
@@ -14,6 +16,8 @@ namespace cube {
                         : public Event {
                     epoll_event ep_event;
 
+                    network::SocketUDP const udp() const { return *(reinterpret_cast<const network::SocketUDP*>(&ep_event.events + 1)); }
+                    network::SocketTCP const &tcp() const { return *reinterpret_cast<const network::SocketTCP*>(&ep_event.events + 1); }
                     inline void setHandle(int const fd) { ep_event.data.fd = fd; }
                     inline void setOwner(uint32_t const id) { *(&ep_event.data.u32 + 1) = id; }
                     inline void setEvents(uint32_t const events) { ep_event.events = events; }

@@ -48,6 +48,8 @@ namespace           cube {
             // Listen to the bound port
             if (::listen(_handle, SOMAXCONN) == -1)
             {
+                close();
+                _handle = Socket::INVALID;
                 // Oops, socket is deaf
                 std::cerr << "Failed to listen to port " << port << std::endl;
                 return Socket::Error;

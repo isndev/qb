@@ -150,15 +150,16 @@ namespace           cube {
         void SocketTCP::disconnect() {
             // Close the socket
             close();
+            _handle = Socket::INVALID;
         }
 
-        Socket::Status SocketTCP::send(const void *data, std::size_t size) {
+        Socket::Status SocketTCP::send(const void *data, std::size_t size) const {
             std::size_t sent;
 
             return send(data, size, sent);
         }
 
-        Socket::Status SocketTCP::send(const void *data, std::size_t size, std::size_t &sent) {
+        Socket::Status SocketTCP::send(const void *data, std::size_t size, std::size_t &sent) const {
             // Loop until every byte has been sent
             int result = 0;
             for (sent = 0; sent < size; sent += result) {
@@ -179,7 +180,7 @@ namespace           cube {
             return Socket::Done;
         }
 
-        Socket::Status SocketTCP::receive(void *data, std::size_t size, std::size_t &received) {
+        Socket::Status SocketTCP::receive(void *data, std::size_t size, std::size_t &received) const {
             // First clear the variables to fill
             received = 0;
 
