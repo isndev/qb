@@ -52,6 +52,7 @@ namespace cube {
         virtual bool onInit() { return true; }
         virtual void on(Event *event) override final {
             // TODO: secure this if event not registred
+            // branch fetch find
             _event_map[event->id]->invoke(event);
         }
 

@@ -19,8 +19,8 @@ namespace           cube {
             Socket::Status bind(unsigned short port, const ip& address = ip::Any);
             void unbind();
 
-            Socket::Status send(const void* data, std::size_t size, const ip& remoteAddress, unsigned short remotePort);
-            Socket::Status receive(void* data, std::size_t size, std::size_t& received, ip& remoteAddress, unsigned short& remotePort);
+            Socket::Status send(const void* data, std::size_t size, const ip& remoteAddress, unsigned short remotePort) const;
+            Socket::Status receive(void* data, std::size_t size, std::size_t& received, ip& remoteAddress, unsigned short& remotePort) const;
 
         };
 

@@ -37,12 +37,6 @@ namespace           cube {
                             std::cerr << "Failed to set socket option \"TCP_NODELAY\" ; "
                                       << "all your TCP packets will be buffered" << std::endl;
                         }
-
-                        // On Mac OS X, disable the SIGPIPE signal on disconnection
-#ifdef SFML_SYSTEM_MACOS
-                        if (setsockopt(handle, SOL_SOCKET, SO_NOSIGPIPE, reinterpret_cast<char*>(&yes), sizeof(yes)) == -1)
-                            std::cerr << "Failed to set socket option \"SO_NOSIGPIPE\"" << std::endl;
-#endif
                     } else {
                         // Enable broadcast by default for UDP sockets
                         int yes = 1;
@@ -68,9 +62,8 @@ namespace           cube {
                 return _handle;
             }
 
-            void setBlocking(bool new_state) {
-                if (good())
-                    Socket::block(_handle, new_state);
+            int setBlocking(bool new_state) const {
+                return Socket::block(_handle, new_state);
             }
 
             bool isBlocking() const {
@@ -81,10 +74,8 @@ namespace           cube {
                 return _handle != Socket::INVALID;
             }
 
-            void close() {
-                if (good())
-                    Socket::close(_handle);
-                _handle = Socket::INVALID;
+            void close() const {
+                Socket::close(_handle);
             }
         };
 
