@@ -19,6 +19,14 @@ namespace cube {
                         service_event_id = type_id<ToBestTimedCore>();
                     }
                 };
+
+		struct ToCore
+		        : public Base {
+		  uint16_t coreIndex = 0;
+		    ToCore() {
+                        service_event_id = type_id<ToCore>();
+		    }
+		};
             }
         }
     }
