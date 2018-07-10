@@ -20,6 +20,7 @@ namespace cube {
             public:
                 bool onInit() override final {
                     this->template registerEvent<event::ToBestTimedCore>(*this);
+		    this->template registerEvent<event::ToCore>(*this);
                     return true;
                 }
 
@@ -27,6 +28,13 @@ namespace cube {
                     event.received();
                     event.dest._id = 4;
                     event.dest._index = this->bestCore();
+                    this->send(event);
+                }
+
+		void on(event::ToCore &event) {
+                    event.received();
+                    event.dest._id = 4;
+                    event.dest._index = event.coreIndex;
                     this->send(event);
                 }
             };
