@@ -55,8 +55,8 @@ if (WIN32)
     endif()
 
 elseif(UNIX)
-	set(USE_TC_MALLOC OFF)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+    set(USE_TC_MALLOC OFF)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 endif()
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
