@@ -17,9 +17,9 @@
 #endif
 
 # include "../../utils/timestamp.h"
+# include "../../allocator/pipe.h"
 # include "../lockfree/mpsc.h"
 # include "../actor/Event.h"
-# include "Pipe.h"
 
 namespace cube {
 
@@ -109,7 +109,7 @@ namespace cube {
         }
 
     public:
-        using Pipe = pipe_allocator<CacheLine>;
+        using Pipe = allocator::pipe<CacheLine>;
 
         class ProxyPipe {
             ActorId const dest;

@@ -1,16 +1,16 @@
 [submodule "gperftools"]
-	path = modules/gperftools
-	url = https://github.com/gperftools/gperftools.git
-	branch = master
+    path = modules/gperftools
+    url = https://github.com/gperftools/gperftools.git
+    branch = master
 [submodule "linq"]
-	path = modules/linq
-	url = https://github.com/isnDev/cube-linq.git
-	branch = master
+    path = modules/linq
+    url = https://github.com/isnDev/cube-linq.git
+    branch = master
 [submodule "nanolog"]
-	path = modules/nanolog
-	url = https://github.com/Iyengar111/NanoLog.git
-	branch = master
+    path = modules/nanolog
+    url = https://github.com/Iyengar111/NanoLog.git
+    branch = master
 [submodule "sbe"]
-	path = modules/sbe
-	url = https://github.com/real-logic/simple-binary-encoding.git
-	branch = master
+    path = modules/sbe
+    url = https://github.com/real-logic/simple-binary-encoding.git
+    branch = master
