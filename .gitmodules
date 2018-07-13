@@ -4,7 +4,7 @@
     branch = master
 [submodule "linq"]
     path = modules/linq
-    url = https://github.com/isnDev/cube-linq.git
+    url = https://github.com/isndev/cube-linq.git
     branch = master
 [submodule "nanolog"]
     path = modules/nanolog
