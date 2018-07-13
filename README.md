@@ -142,11 +142,11 @@ Done !
 
 You want to do more, refer to the wiki to see the full Cube API usage 
 
-### [Wiki](https://github.com/isnDev/cube/wiki)
-*  [Build](https://github.com/isnDev/cube/wiki/Build-Options) - Build Options
-*  [Start Sequence](https://github.com/isnDev/cube/wiki/Start-Sequence) - Engine Initializer
-*  [Actor](https://github.com/isnDev/cube/wiki/Actor) - Actor Interface
-*  [Logger](https://github.com/isnDev/cube/wiki/Logger) - Fast Multithreaded Logger
+### [Wiki](https://github.com/isndev/cube/wiki)
+*  [Build](https://github.com/isndev/cube/wiki/Build-Options) - Build Options
+*  [Start Sequence](https://github.com/isndev/cube/wiki/Start-Sequence) - Engine Initializer
+*  [Actor](https://github.com/isndev/cube/wiki/Actor) - Actor Interface
+*  [Logger](https://github.com/isndev/cube/wiki/Logger) - Fast Multithreaded Logger
 
 ### Todos
   - [ ] Make Wiki Documentation (37%)
@@ -160,4 +160,4 @@ License
 
 MIT
 
-**ISNDEV Free Software, Hell Yeah!**
+**isndev Free Software, Hell Yeah!**
