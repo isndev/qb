@@ -33,7 +33,8 @@ namespace cube {
                 }
 
                 void on(event::Subscribe &event) {
-                    *(&event.ep_event.data.u32 + 1) = event.source;
+                    if (!event.getOwner())
+                        event.setOwner(event.source);
                     _epoll.add(event.ep_event);
                 }
 

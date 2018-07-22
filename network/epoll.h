@@ -11,8 +11,9 @@ namespace           cube {
 
         class       epoll_proxy {
         protected:
-            const int _epoll;
-
+            int _epoll;
+        public:
+            epoll_proxy() = default;
             epoll_proxy(const int epoll)
                     : _epoll(epoll) {
             }
