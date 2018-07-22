@@ -28,8 +28,8 @@ namespace cube {
 
             struct Proxy
                     : public Handle {
-                const network::epoll_proxy proxy;
-                Proxy() = delete;
+                network::epoll_proxy proxy;
+                Proxy() : proxy(-1) {}
                 Proxy(Proxy const &) = default;
                 Proxy(network::epoll_proxy const &proxy)
                         : proxy(proxy) {}
@@ -58,7 +58,7 @@ namespace cube {
                 // output events
                 struct Ready
                         : public Event
-                                , public Proxy {
+                        , public Proxy {
 
                     Ready() = delete;
                     Ready(network::epoll_proxy const &proxy, epoll_event const &event)
