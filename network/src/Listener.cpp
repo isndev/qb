@@ -32,6 +32,10 @@ namespace           cube {
             // init the internal socket if it doesn't exist
             init();
 
+            #ifdef __LINUX__SYSTEM__
+                int Yes = 1;
+                setsockopt(_handle, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&Yes), sizeof(Yes));
+            #endif
             // Check if the address is valid
             if ((address == ip::None))
                 return Socket::Error;
