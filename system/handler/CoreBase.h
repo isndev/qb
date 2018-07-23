@@ -69,7 +69,7 @@ namespace cube {
         };
 
         static inline ActorId generate_id() {
-            static std::size_t pid = 0;
+            static std::size_t pid = 10000;
             //duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count()
 	    //Timestamp::nano() % std::numeric_limits<uint32_t>::max() + pid++)
             return ActorId(static_cast<uint32_t >(++pid), _CoreIndex);
