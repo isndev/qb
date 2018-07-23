@@ -27,7 +27,7 @@ namespace cube {
                 return this->each_or([&event, &ret](auto &item) -> bool {
                     if (item._index != event.dest._index)
                         return false;
-                    ret = item.receive_from_linked_core(event);
+                    ret = item.receive_from_unlinked_core(event);
                     return true;
                 });
             }
