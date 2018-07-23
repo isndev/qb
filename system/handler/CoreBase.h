@@ -71,7 +71,8 @@ namespace cube {
         static inline ActorId generate_id() {
             static std::size_t pid = 0;
             //duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count()
-            return ActorId(static_cast<uint32_t >(Timestamp::nano() + pid++), _CoreIndex);
+	    //Timestamp::nano() % std::numeric_limits<uint32_t>::max() + pid++)
+            return ActorId(static_cast<uint32_t >(++pid), _CoreIndex);
         }
 
     protected:
@@ -87,25 +88,11 @@ namespace cube {
         }
 
         inline bool receive_from_linked_core(Event const &event) {
-            for (int i = 0; i < 3; ++i) {
-                if (static_cast<bool>(_eventManager->_spsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event),
-                                                                          event.bucket_size)))
-                    return true;
-                std::this_thread::yield();
-            }
-
-            return false;
+	  return static_cast<bool>(_eventManager->_spsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event), event.bucket_size));
         }
 
         inline bool receive_from_unlinked_core(Event const &event) {
-            for (int i = 0; i < 3; ++i) {
-                if (static_cast<bool>(_eventManager->_mpsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event),
-                                                                          event.bucket_size)))
-                    return true;
-                std::this_thread::yield();
-            }
-
-            return false;
+	  return static_cast<bool>(_eventManager->_mpsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event), event.bucket_size));
         }
 
     public:
@@ -176,11 +163,11 @@ namespace cube {
                 for (auto &it : _pipes) {
                     auto &pipe = it.second;
                     if (pipe.end()) {
-                        ret = false;
+                        ret = true;
                         auto i = pipe.begin();
                         while (i < pipe.end()) {
                             const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
-                            if (!_core.try_send(event))
+                            while (!_core.try_send(event))
                                 break;
                             i += event.bucket_size;
                         }
@@ -266,9 +253,10 @@ namespace cube {
                     }
                 }
                 // receive and flush residual events
-                _eventManager->receive();
-                while (_eventManager->flush_all())
-                    std::this_thread::yield();
+		do {
+                    _eventManager->receive();
+		}
+                while (_eventManager->flush_all());
             } else {
                 LOG_CRIT << "StartSequence Init " << *this << " Failed";
             }
