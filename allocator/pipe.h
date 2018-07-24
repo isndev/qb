@@ -105,7 +105,7 @@ namespace cube {
             inline auto allocate(uint16_t const size) {
                 if (_begin - (size + 1) < _end) {
                     _begin -= size;
-		    flag_front = true;
+		            flag_front = true;
                     return _data + _begin;
                 }
                 flag_front = false;
