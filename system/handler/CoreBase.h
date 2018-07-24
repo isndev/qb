@@ -7,12 +7,12 @@
 # include <thread>
 
 #if defined(unix) || defined(__unix) || defined(__unix__)
-    #include <sched.h>
-    #include <errno.h>
-    #include <unistd.h>
-    #include <pthread.h>
+#include <sched.h>
+#include <errno.h>
+#include <unistd.h>
+#include <pthread.h>
 #elif defined(_WIN32) || defined(_WIN64)
-    #include <windows.h>
+#include <windows.h>
     #include <process.h>
 #endif
 
@@ -71,7 +71,7 @@ namespace cube {
         static inline ActorId generate_id() {
             static std::size_t pid = 10000;
             //duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count()
-	    //Timestamp::nano() % std::numeric_limits<uint32_t>::max() + pid++)
+            //Timestamp::nano() % std::numeric_limits<uint32_t>::max() + pid++)
             return ActorId(static_cast<uint32_t >(++pid), _CoreIndex);
         }
 
@@ -88,11 +88,11 @@ namespace cube {
         }
 
         inline bool receive_from_linked_core(Event const &event) {
-	  return static_cast<bool>(_eventManager->_spsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event), event.bucket_size));
+            return static_cast<bool>(_eventManager->_spsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event), event.bucket_size));
         }
 
         inline bool receive_from_unlinked_core(Event const &event) {
-	  return static_cast<bool>(_eventManager->_mpsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event), event.bucket_size));
+            return static_cast<bool>(_eventManager->_mpsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event), event.bucket_size));
         }
 
     public:
@@ -184,7 +184,7 @@ namespace cube {
             void __receive(CacheLine *buffer, std::size_t const nb_events) {
                 if (!nb_events)
                     return;
-                uint64_t i = 0;
+                std::size_t i = 0;
                 while (i < nb_events) {
                     auto event = reinterpret_cast<Event *>(buffer + i);
                     auto actor = _core._actors.find(event->dest);
@@ -253,9 +253,9 @@ namespace cube {
                     }
                 }
                 // receive and flush residual events
-		do {
+                do {
                     _eventManager->receive();
-		}
+                }
                 while (_eventManager->flush_all());
             } else {
                 LOG_CRIT << "StartSequence Init " << *this << " Failed";
@@ -320,7 +320,7 @@ namespace cube {
             pthread_t current_thread = pthread_self();
             ret = !pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
 #elif defined(_WIN32) || defined(_WIN64)
-#ifdef _MSC_VER
+            #ifdef _MSC_VER
             DWORD_PTR mask = (1 << (_index < 0 ? 0 : _index));
             ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
 #else
