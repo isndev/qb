@@ -99,19 +99,29 @@ namespace cube {
         using Pipe = allocator::pipe<CacheLine>;
 
         class ProxyPipe {
-            ActorId const dest;
-            ActorId const source;
-            Pipe &pipe;
+            ActorId dest;
+            ActorId source;
+            Pipe *pipe;
+
+            template <typename T = cube::CacheLine>
+            T *allocate(std::size_t &size) {
+                if constexpr (sizeof(T) % sizeof(cube::CacheLine)) {
+                    size = size * sizeof(T) / sizeof(CacheLine) + 1;
+                }
+
+                return reinterpret_cast<T*>(pipe->allocate_back(size));
+            }
         public:
-            ProxyPipe() = delete;
+            ProxyPipe() = default;
             ProxyPipe(ProxyPipe const &) = default;
+            ProxyPipe &operator=(ProxyPipe const &) = default;
             ProxyPipe(Pipe &pipe, ActorId dest, ActorId source)
-                    : pipe(pipe), dest(dest), source(source)
+                    : pipe(&pipe), dest(dest), source(source)
             {}
 
             template <typename T, typename ..._Init>
             T &push(_Init &&...init) {
-                auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
+                auto &data = pipe->template allocate_back<T>(std::forward<_Init>(init)...);
                 data.id = type_id<T>();
                 data.dest = dest;
                 data.source = source;
@@ -124,6 +134,26 @@ namespace cube {
                 data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
                 return data;
             }
+
+            template <typename T, typename ..._Init>
+            T &allocated_push(std::size_t size, _Init &&...init) {
+                size += sizeof(T);
+                auto &data = *(new (reinterpret_cast<T *>(this->template allocate<char>(size))) T(std::forward<_Init>(init)...));
+
+                data.id = type_id<T>();
+                data.dest = dest;
+                data.source = source;
+                if constexpr (std::is_base_of<ServiceEvent, T>::value) {
+                    data.forward = source;
+                    std::swap(data.id, data.service_event_id);
+                }
+
+                data.state = 0;
+                data.bucket_size = size;
+                return data;
+            }
+
+
         };
 
     protected:
@@ -447,20 +477,20 @@ namespace cube {
 
     public:
         // proxy pipe
-        inline ProxyPipe getProxyPipe(ActorId const dest, ActorId const source) {
-            return {this->getPipe(dest._index), dest, source};
+        inline ProxyPipe getProxyPipe(ActorId const dest, ActorId const source) const {
+            return {_eventManager->getPipe(dest._index), dest, source};
         }
         //sender
-        inline bool try_send(Event const &event) {
+        inline bool try_send(Event const &event) const {
             return _parent->send(event);
         }
 
-        auto &push(Event const &event) {
+        auto &push(Event const &event) const {
             auto &pipe = _eventManager->getPipe(event.dest._index);
             return pipe.recycle_back(event, event.bucket_size);
         }
 
-        void send(Event const &event) {
+        void send(Event const &event) const {
             if (unlikely(!try_send(event))) {
                 auto &pipe = _eventManager->getPipe(event.dest._index);
                 pipe.recycle(event, event.bucket_size);
@@ -468,7 +498,7 @@ namespace cube {
         }
 
         template <typename T, typename ..._Init>
-        void send(ActorId const dest, ActorId const source, _Init &&...init) {
+        void send(ActorId const dest, ActorId const source, _Init &&...init) const {
             auto &pipe = _eventManager->getPipe(dest._index);
             auto &data = pipe.template allocate<T>(std::forward<_Init>(init)...);
             data.id = type_id<T>();
@@ -485,7 +515,7 @@ namespace cube {
         }
 
         template <typename T, typename ..._Init>
-        T &push(ActorId const &dest, ActorId const &source, _Init &&...init) {
+        T &push(ActorId const &dest, ActorId const &source, _Init &&...init) const {
             auto &pipe = _eventManager->getPipe(dest._index);
             auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
             data.id = type_id<T>();
@@ -502,7 +532,7 @@ namespace cube {
         }
 
         template <typename T, typename ..._Init>
-        T &fast_push(ActorId const &dest, ActorId const &source, _Init &&...init) {
+        T &fast_push(ActorId const &dest, ActorId const &source, _Init &&...init) const {
             auto &pipe = _eventManager->getPipe(dest._index);
             auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
             data.id = type_id<T>();
@@ -519,20 +549,20 @@ namespace cube {
                 pipe.free_back(data.bucket_size);
         }
 
-        void reply(Event &event) {
+        void reply(Event &event) const {
             std::swap(event.dest, event.source);
             event.state[0] = 1;
             send(event);
         }
 
-        void forward(ActorId const dest, Event &event) {
+        void forward(ActorId const dest, Event &event) const {
             event.source = event.dest;
             event.dest = dest;
             event.state[0] = 1;
             send(event);
         }
 
-        inline auto &sharedData() {
+        inline auto &sharedData() const {
             return *_sharedData;
         }
 

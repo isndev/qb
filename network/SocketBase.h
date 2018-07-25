@@ -75,7 +75,8 @@ namespace           cube {
             }
 
             void close() const {
-                Socket::close(_handle);
+                if (good() && !Socket::close(_handle))
+                    std::cerr << "Failed to close socket" << std::endl;
             }
         };
 
