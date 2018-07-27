@@ -149,8 +149,10 @@ namespace           cube {
 
         void SocketTCP::disconnect() {
             // Close the socket
-            close();
-            _handle = Socket::INVALID;
+            if (good()) {
+                close();
+                _handle = Socket::INVALID;
+            }
         }
 
         Socket::Status SocketTCP::send(const void *data, std::size_t size) const {
