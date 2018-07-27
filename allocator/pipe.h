@@ -16,7 +16,7 @@ namespace cube {
         protected:
             std::size_t _begin;
             std::size_t _end;
-	    bool flag_front;
+            bool flag_front;
             char __padding2__[CUBE_LOCKFREE_CACHELINE_BYTES - (2 *sizeof(std::size_t))];
             std::size_t _capacity;
             std::size_t _factor;
@@ -33,6 +33,10 @@ namespace cube {
 
             ~pipe() {
                 base_type::deallocate(_data, _capacity);
+            }
+
+            inline std::size_t capacity() const {
+                return _capacity;
             }
 
             inline const auto data() const {
@@ -68,7 +72,7 @@ namespace cube {
                 _begin = 0;
                 _end = 0;
             }
-	    
+
             inline void free(std::size_t const size) {
                 if (flag_front)
                     _begin += size;
@@ -105,7 +109,7 @@ namespace cube {
             inline auto allocate(uint16_t const size) {
                 if (_begin - (size + 1) < _end) {
                     _begin -= size;
-		            flag_front = true;
+                    flag_front = true;
                     return _data + _begin;
                 }
                 flag_front = false;
