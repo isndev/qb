@@ -145,6 +145,14 @@ namespace cube {
                 return *reinterpret_cast<U *>(std::memcpy(allocate(size)
                         , &data, size * sizeof(T)));
             }
+
+            inline void reorder() {
+                auto nb_item = _end - _begin;
+                std::memmove(_data, _data + _begin, nb_item);
+                _begin = 0;
+                _end = nb_item;
+            }
+
         };
 
     }
