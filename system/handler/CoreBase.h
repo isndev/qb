@@ -105,9 +105,10 @@ namespace cube {
 
             template <typename T = cube::CacheLine>
             T *allocate(std::size_t &size) {
-                if constexpr (sizeof(T) % sizeof(cube::CacheLine)) {
+                if (size % sizeof(cube::CacheLine))
                     size = size * sizeof(T) / sizeof(CacheLine) + 1;
-                }
+                else
+                    size /= sizeof(CacheLine);
 
                 return reinterpret_cast<T*>(pipe->allocate_back(size));
             }
