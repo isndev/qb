@@ -364,13 +364,13 @@ namespace cube {
 
         inline void addActor(ActorProxy const &actor) {
             _actors.insert({actor._id, actor});
-            LOG_DEBUG << "New Actor[" << actor._id << "] in " << *this;
+            LOG_DEBUG << "New Actor[" << actor._id << "] Core(" << _index << ")";
         }
 
         inline void removeActor(ActorId const &id) {
             const auto it = _actors.find(id);
             if (it != _actors.end()) {
-                LOG_DEBUG << "Delete Actor[" << id << "] in " << *this;
+                LOG_DEBUG << "Delete Actor[" << id << "] Core(" << _index << ")";
                 delete it->second._this;
                 _actors.erase(id);
                 unregisterCallback(id);
@@ -575,6 +575,7 @@ namespace cube {
             const auto best_time = bestTime();
             return reinterpret_cast<uint8_t const *>(&best_time)[0];
         }
+
     };
 
     template<std::size_t _CoreIndex, typename _ParentHandler, typename _Derived, typename _SharedData>
@@ -584,6 +585,7 @@ namespace cube {
         os << ss.str();
         return os;
     };
+
 }
 
 #endif //CUBE_BASECOREHANDLER_H

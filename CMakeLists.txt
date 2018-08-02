@@ -5,9 +5,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_VERBOSE_MAKEFILE OFF)
 option(USE_TC_MALLOC "TCMalloc is ennabled" ON)
-option(COMPILE_TESTS "COMPILE_TESTS" OFF)
-option(NOLOG "NOLOG" OFF)
-option(NOCOUT "NOCOUT" ON)
+option(COMPILE_TESTS "COMPILE_TESTS")
+option(NOLOG "NOLOG")
+option(NOCOUT "NOCOUT")
 
 
 set(GPERFTOOLS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/gperftools/src)
@@ -17,6 +17,10 @@ include_directories(${GPERFTOOLS_INCLUDE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/nanolog)
 
+
+if (COMPILE_TESTS OR MSVC)
+    set(NOLOG OFF)
+endif()
 
 if (WIN32)
     if (MSVC)
@@ -59,13 +63,8 @@ elseif(UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 endif()
 
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(DEBUGFILES ${CMAKE_CURRENT_SOURCE_DIR}/system/debug.cpp)
-    message(STATUS "Added debug source files")
-else()
-endif()
-
 if (NOLOG)
+    set(DEBUGFILES ${CMAKE_CURRENT_SOURCE_DIR}/system/debug.cpp)
 else()
     set(LOGFILES ${CMAKE_CURRENT_SOURCE_DIR}/nanolog/nanolog.cpp)
     message(STATUS "Added log source files")
@@ -77,6 +76,13 @@ endif()
 
 add_library(cube STATIC ${DEBUGFILES} ${LOGFILES})
 add_subdirectory(network)
+
+if (NOLOG)
+    target_compile_definitions(cube PUBLIC NOLOG=1)
+    if (NOCOUT)
+        target_compile_definitions(cube PUBLIC NOCOUT=1)
+    endif()
+endif()
 
 if(IS_INVOKED)
     set(CUBE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
