@@ -86,17 +86,28 @@ namespace cube {
                     _end += size;
                     return _data + save_index;
                 }
-                _factor <<= 1;
                 const auto nb_item = _end - _begin;
-                const auto new_capacity = _factor * _SIZE;
-                const auto new_data = base_type::allocate(new_capacity);
-                std::memcpy(new_data, _data + _begin, nb_item * sizeof(T));
-                base_type::deallocate(_data, _capacity);
+                const auto half = _capacity / 2;
+                if (_begin > half && size < half) {
+                    reorder();
+                    _end += size;
+                    return _data + nb_item;
+                } else {
+                    std::size_t new_capacity;
+                    do {
+                        _factor <<= 1;
+                        new_capacity = _factor * _SIZE;
+                    } while (new_capacity - nb_item < size);
 
-                _begin = 0;
-                _end = nb_item + size;
-                _capacity = new_capacity;
-                _data = new_data;
+                    const auto new_data = base_type::allocate(new_capacity);
+                    std::memcpy(new_data, _data + _begin, nb_item * sizeof(T));
+                    base_type::deallocate(_data, _capacity);
+
+                    _begin = 0;
+                    _end = nb_item + size;
+                    _capacity = new_capacity;
+                    _data = new_data;
+                }
                 return _data + nb_item;
             }
 
@@ -147,8 +158,8 @@ namespace cube {
             }
 
             inline void reorder() {
-                auto nb_item = _end - _begin;
-                std::memmove(_data, _data + _begin, nb_item);
+                const auto nb_item = _end - _begin;
+                std::memmove(_data, _data + _begin, nb_item * sizeof(T));
                 _begin = 0;
                 _end = nb_item;
             }
