@@ -17,7 +17,7 @@ namespace cube {
             std::size_t _begin;
             std::size_t _end;
             bool flag_front;
-            char __padding2__[CUBE_LOCKFREE_CACHELINE_BYTES - (2 *sizeof(std::size_t))];
+            char __padding2__[CUBE_LOCKFREE_CACHELINE_BYTES - (2 *sizeof(std::size_t) + sizeof(bool))];
             std::size_t _capacity;
             std::size_t _factor;
             T *_data;
@@ -117,6 +117,12 @@ namespace cube {
                 return *(new (reinterpret_cast<U *>(allocate_back(BUCKET_SIZE))) U(std::forward<_Init>(init)...));
             }
 
+            template <typename U, typename ..._Init>
+            inline U &allocate_size(std::size_t const size, _Init &&...init) {
+                constexpr std::size_t BUCKET_SIZE = (sizeof(U) / sizeof(T));
+                return *(new (reinterpret_cast<U *>(allocate_back(size + BUCKET_SIZE))) U(std::forward<_Init>(init)...));
+            }
+
             inline auto allocate(uint16_t const size) {
                 if (_begin - (size + 1) < _end) {
                     _begin -= size;
@@ -159,9 +165,11 @@ namespace cube {
 
             inline void reorder() {
                 const auto nb_item = _end - _begin;
+                std::cout << "start reorder " << _begin << ":" << _end << "|" << nb_item << std::endl;
                 std::memmove(_data, _data + _begin, nb_item * sizeof(T));
                 _begin = 0;
                 _end = nb_item;
+                std::cout << "end reorder " << _begin << ":" << _end << "|" << _end - _begin << std::endl;
             }
 
         };
