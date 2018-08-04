@@ -483,6 +483,10 @@ namespace cube {
         }
         //sender
         inline bool try_send(Event const &event) const {
+            if (event.dest._index == _index) {
+                _actors.find(event.dest)->second._this->on(const_cast<Event *>(&event));
+                return true;
+            }
             return _parent->send(event);
         }
 
