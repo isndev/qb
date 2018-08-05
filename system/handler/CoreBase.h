@@ -36,6 +36,7 @@ namespace cube {
 
     public:
         //////// Constexpr
+        constexpr static const std::size_t _index = _CoreIndex;
         constexpr static const uint64_t MaxBufferEvents = ((std::numeric_limits<uint16_t>::max)());
         constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)()) / CUBE_LOCKFREE_CACHELINE_BYTES;
         constexpr static const std::size_t nb_core = 1;
@@ -377,8 +378,7 @@ namespace cube {
             }
         }
 
-        template<std::size_t _CoreIndex_
-                , typename _Actor
+        template<typename _Actor
                 , typename ..._Init>
         inline ActorId addActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
@@ -393,7 +393,7 @@ namespace cube {
                 , typename ..._Init >
         ActorId addActor(_Init &&...init) {
             if constexpr (_CoreIndex_ == _index) {
-                return addActor<_CoreIndex_, _Actor<_Derived>>
+                return addActor<_Actor<_Derived>>
                         (std::forward<_Init>(init)...);
             }
             return ActorId::NotFound{};
@@ -405,14 +405,34 @@ namespace cube {
                 , typename ..._Init >
         ActorId addActor(_Init &&...init) {
             if constexpr (_CoreIndex_ == _index) {
-                return addActor<_CoreIndex_, _Actor<_Derived, _Trait>>
+                return addActor<_Actor<_Derived, _Trait>>
+                        (std::forward<_Init>(init)...);
+            }
+            return ActorId::NotFound{};
+        }
+
+        template<template<typename _Handler> typename _Actor
+                , typename ..._Init >
+        ActorId addActor(std::size_t index, _Init &&...init) {
+            if  (index == _index) {
+                return addActor<_Actor<_Derived>>
+                        (std::forward<_Init>(init)...);
+            }
+            return ActorId::NotFound{};
+        }
+
+        template<template<typename _Handler, typename _Trait> typename _Actor
+                , typename _Trait
+                , typename ..._Init >
+        ActorId addActor(std::size_t index, _Init &&...init) {
+            if (index == _index) {
+                return addActor<_Actor<_Derived, _Trait>>
                         (std::forward<_Init>(init)...);
             }
             return ActorId::NotFound{};
         }
 
     public:
-        constexpr static const std::size_t _index = _CoreIndex;
 
         BaseCoreHandler() = delete;
         BaseCoreHandler(_ParentHandler *parent)
@@ -472,7 +492,7 @@ namespace cube {
                 , typename _Trait
                 , typename ..._Init >
         inline auto addReferencedActor(_Init &&...init) {
-            return addReferencedActor<_Actor<_Trait, _Trait>>
+            return addReferencedActor<_Actor<_Derived, _Trait>>
                     (std::forward<_Init>(init)...);
         }
 
@@ -578,6 +598,10 @@ namespace cube {
         uint32_t bestCore() const {
             const auto best_time = bestTime();
             return reinterpret_cast<uint8_t const *>(&best_time)[0];
+        }
+
+        uint64_t time() const {
+            return 0;
         }
 
     };
