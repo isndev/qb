@@ -87,6 +87,32 @@ namespace cube {
                 });
                 return id;
             }
+
+            template<template<typename _Handler> typename _Actor, typename ..._Init>
+            ActorId addActor(std::size_t index, _Init &&...init) {
+                ActorId id = ActorId::NotFound{};
+                this->each_or([this, index, &id, &init...](auto &item) -> bool {
+                    id = item.template addActor<_Actor, _Init...>
+                            (index, std::forward<_Init>(init)...);
+
+                    return static_cast<bool>(id);
+                });
+                return id;
+            }
+
+            template<template<typename _Handler, typename _Trait> typename _Actor, typename _Trait, typename ..._Init>
+            ActorId addActor(std::size_t index, _Init &&...init) {
+                ActorId id = ActorId::NotFound{};
+                this->each_or([this, index, &id, &init...](auto &item) -> bool {
+                    id = item.template addActor<_Actor, _Trait, _Init...>
+                            (index, std::forward<_Init>(init)...);
+
+                    return static_cast<bool>(id);
+                });
+                return id;
+            }
+
+
         };
     }
 
