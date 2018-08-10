@@ -1,7 +1,7 @@
 
 #include "../../system/actor/Actor.h"
 #include "events.h"
-#include "tags"
+#include "tags.h"
 
 #ifndef CUBE_SERVICE_SCHEDULER_ACTOR_H
 #define CUBE_SERVICE_SCHEDULER_ACTOR_H

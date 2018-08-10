@@ -13,8 +13,8 @@ namespace cube {
                 constexpr static const uint16_t uid_timer = 1;
                 constexpr static const uint16_t uid_timeout = 2;
 
-                constexpr static ActorId id_timer() { return ActorId(uid, CoreIndex); }
-                constexpr static ActorId id_timeout() { return ActorId(uid_agent, CoreIndex); }
+                constexpr static ActorId id_timer() { return ActorId(uid_timer, CoreIndex); }
+                constexpr static ActorId id_timeout() { return ActorId(uid_timeout, CoreIndex); }
             };
         }
     }
