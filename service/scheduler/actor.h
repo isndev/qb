@@ -1,6 +1,7 @@
 
 #include "../../system/actor/Actor.h"
 #include "events.h"
+#include "tags"
 
 #ifndef CUBE_SERVICE_SCHEDULER_ACTOR_H
 #define CUBE_SERVICE_SCHEDULER_ACTOR_H
@@ -73,9 +74,9 @@ namespace cube {
             }
 
             template <typename Handler>
-            using ActorTimer = internal::Actor<internal::BaseActor<Handler, event::Timer, 1>>;
+            using ActorTimer = internal::Actor<internal::BaseActor<Handler, event::Timer, Tags<Handler::_index>::uid_timer>>;
             template <typename Handler>
-            using ActorTimeout = internal::Actor<internal::BaseActor<Handler, event::Timeout, 2>>;
+            using ActorTimeout = internal::Actor<internal::BaseActor<Handler, event::Timeout, Tags<Handler::_index>::uid_timeout>>;
 
         }
     }

@@ -37,13 +37,16 @@ namespace           cube {
                 setsockopt(_handle, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&Yes), sizeof(Yes));
             #endif
             // Check if the address is valid
-            if ((address == ip::None))
+            if ((address == ip::None)) {
+                _handle = Socket::INVALID;
                 return Socket::Error;
+            }
 
             // Bind the socket to the specified port
             sockaddr_in addr = Socket::createAddress(address.toInteger(), port);
             if (bind(_handle, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == -1)
             {
+                _handle = Socket::INVALID;
                 // Not likely to happen, but...
                 std::cerr << "Failed to bind listener socket to port " << port << std::endl;
                 return Socket::Error;

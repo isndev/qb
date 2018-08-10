@@ -1,6 +1,7 @@
 
 #include "../../system/actor/Actor.h"
 #include "events.h"
+#include "tags.h"
 
 #ifndef CUBE_SERVICE_IOPOLL_ACTOR_H
 #define CUBE_SERVICE_IOPOLL_ACTOR_H
@@ -11,7 +12,7 @@ namespace cube {
 
             template <typename Handler>
             class Actor
-                    : public cube::ServiceActor<Handler, 8>
+                    : public cube::ServiceActor<Handler, Tags<Handler::_index>::uid>
                     , public Handler::ICallback
             {
                 network::epoll<> _epoll;

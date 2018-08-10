@@ -132,7 +132,6 @@ namespace cube {
             return _handler->template addReferencedActor<_Actor, _Trait>(std::forward<_Init>(init)...);
         }
 
-
         template<typename _Data, typename ..._Init>
         inline _Data &push(ActorId const &dest, _Init const &...init) const {
             return _handler->template push<_Data>(dest, id(), init...);
@@ -185,6 +184,15 @@ namespace cube {
 
     };
 
+    template <typename _Handler>
+    class UserActor : public Actor<_Handler> {
+    public:
+
+        UserActor() = delete;
+        UserActor(uint32_t const id) {
+            this->__set_id(ActorId(id, _Handler::_index));
+        }
+    };
 
     template <typename _Handler, uint32_t _Tag>
     class ServiceActor : public Actor<_Handler> {
