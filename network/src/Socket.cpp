@@ -47,6 +47,11 @@ namespace           cube {
             }
         }
 
+        bool Socket::is_blocking(Socket::Handler sock)
+        {
+            return WSAIsBlocking();
+        }
+
         struct SocketInitializer {
             SocketInitializer() {
                 WSADATA InitData;
@@ -106,14 +111,13 @@ namespace           cube {
             }
         }
 
-#endif
-
         bool Socket::is_blocking(Socket::Handler sock)
         {
             int    status = fcntl(sock, F_GETFL);
 
             return !(status & O_NONBLOCK);
         }
+#endif
 
     }
 }

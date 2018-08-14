@@ -46,7 +46,7 @@ namespace cube {
         using EventBuffer = std::array<CacheLine, MaxRingEvents>;
 
         class BaseActor : nocopy,
-                          ActorId
+                          public ActorId
         {
             friend BaseCoreHandler;
             friend _Derived;
