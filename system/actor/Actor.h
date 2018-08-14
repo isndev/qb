@@ -10,19 +10,16 @@ namespace cube {
 
     template<typename _Handler>
     class Actor : public _Handler::BaseActor {
-        //friend typename _Handler::base_t;
-    protected:
-
-        virtual bool onInit() { return true; }
-
     protected:
         Actor() {
             this->template registerEvent<KillEvent>(*this);
         }
 
         virtual ~Actor() {}
+        virtual bool onInit() { return true; }
 
     public:
+
         inline auto getPipe(ActorId const dest) const {
             return _Handler::BaseActor::_handler->getPipeProxy(dest, this->id());
         }
