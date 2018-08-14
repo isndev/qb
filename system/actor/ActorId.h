@@ -33,39 +33,39 @@ namespace cube {
     };
 
     class Event;
-    class GenericHandler {
-    public:
-        class BaseActor {
-        public:
-            virtual ~BaseActor() {}
+//    class GenericHandler {
+//    public:
+//        class BaseActor {
+//        public:
+//            virtual ~BaseActor() {}
+//
+//            virtual bool onInit() = 0;
+//            virtual void on(Event *) = 0;
+//        };
+//
+//        class ICallback {
+//        public:
+//            virtual ~ICallback() {}
+//            virtual void onCallback() = 0;
+//        };
+//
+//        struct Pipe{};
+//        struct ActorProxy {};
+//
+//        using base_t = int;
+//    };
 
-            virtual bool onInit() = 0;
-            virtual void on(Event *) = 0;
-        };
-
-        class ICallback {
-        public:
-            virtual ~ICallback() {}
-            virtual void onCallback() = 0;
-        };
-
-        struct Pipe{};
-        struct ActorProxy {};
-
-        using base_t = int;
-    };
-
-    template <template <typename Handler> typename _Actor, std::size_t CoreIndex = std::numeric_limits<std::size_t >::max()>
-    struct Tag
-    {
-      constexpr static ActorId id() { return ActorId(_Actor<GenericHandler>::Tag, CoreIndex); }
-    };
-
-    template <template <typename Handler> typename _Actor>
-    struct Tag<_Actor, std::numeric_limits<std::size_t >::max()>
-    {
-        constexpr static ActorId id(std::size_t const CoreIndex) { return ActorId(_Actor<GenericHandler>::Tag, CoreIndex); }
-    };
+//    template <template <typename Handler> typename _Actor, std::size_t CoreIndex = std::numeric_limits<std::size_t >::max()>
+//    struct Tag
+//    {
+//      constexpr static ActorId id() { return ActorId(_Actor<GenericHandler>::Tag, CoreIndex); }
+//    };
+//
+//    template <template <typename Handler> typename _Actor>
+//    struct Tag<_Actor, std::numeric_limits<std::size_t >::max()>
+//    {
+//        constexpr static ActorId id(std::size_t const CoreIndex) { return ActorId(_Actor<GenericHandler>::Tag, CoreIndex); }
+//    };
 
 }
 

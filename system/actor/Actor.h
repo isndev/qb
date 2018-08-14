@@ -18,7 +18,6 @@ namespace cube {
     protected:
         Actor() {
             this->template registerEvent<KillEvent>(*this);
-            this->template registerEvent<Event>(*this);
         }
 
         virtual ~Actor() {}
@@ -102,17 +101,12 @@ namespace cube {
         }
 
         void on(Event const &event) const {
-            LOG_WARN << "Actor[" << this->id()._id << "." << this->id()._index << "] received removed event[" << event.id << "]";
+            _Handler::BaseActor::on(event);
         }
 
         void on(KillEvent const &) {
             kill();
         }
-
-        template<typename _Data>
-        inline void unregisterEvent() {
-            this->template unregisterEvent<_Data>(*this);
-        };
 
     };
 
