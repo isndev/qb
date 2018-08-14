@@ -17,7 +17,7 @@ namespace cube {
             //////// Types
             typedef CoreSetHandler type;
             using base_t = BaseHandler<typename _Core::template Type<CoreSetHandler>::type...>;
-            using parent_t = _ParentHandler;
+            using parent_t = type;
             using parent_ptr_t = _ParentHandler *;
 
         private:

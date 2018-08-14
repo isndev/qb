@@ -46,11 +46,62 @@ namespace cube {
         using EventBuffer = std::array<CacheLine, MaxRingEvents>;
 
         class IActor {
+            class IRegisterEvent {
+            public:
+                virtual ~IRegisterEvent() {}
+                virtual void invoke(Event *data) const = 0;
+            };
+
+            template<typename _Data, typename _Actor>
+            class RegisterEvent : public IRegisterEvent {
+                _Actor &_actor;
+            public:
+                RegisterEvent(_Actor &actor)
+                        : _actor(actor) {}
+
+                virtual void invoke(Event *data) const override final {
+                    auto &event = *reinterpret_cast<_Data *>(data);
+                    _actor.on(event);
+                    if (!event.state[0])
+                        event.~_Data();
+                }
+            };
+
+            std::unordered_map<uint32_t, IRegisterEvent const *> _event_map;
         public:
-            virtual ~IActor() {}
+            IActor() {
+                _event_map.reserve(64);
+            }
+
+            virtual ~IActor() {
+                for (const auto &revent : _event_map)
+                    delete revent.second;
+            }
 
             virtual bool onInit() = 0;
-            virtual void on(Event *) = 0;
+
+            void on(Event *event) const {
+                // TODO: secure this if event not registred
+                // branch fetch find
+                _event_map.at(event->id)->invoke(event);
+            }
+
+        public:
+            template<typename _Data, typename _Actor>
+            inline void registerEvent(_Actor &actor) {
+                auto it = _event_map.find(type_id<_Data>());
+                if (it != _event_map.end())
+                    delete it->second;
+                _event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<_Data, _Actor>(actor));
+            };
+
+            template<typename _Data, typename _Actor>
+            inline void unregisterEvent(_Actor &actor) {
+                auto it = _event_map.find(type_id<_Data>());
+                if (it != _event_map.end())
+                    delete it->second;
+                _event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<Event, _Actor>(actor));
+            };
         };
 
         class ICallback {

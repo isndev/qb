@@ -14,32 +14,9 @@ namespace cube {
               ActorId,
               public _Handler::IActor {
         using ActorProxy = typename _Handler::ActorProxy;
-
-        class IRegisterEvent {
-        public:
-            virtual ~IRegisterEvent() {}
-            virtual void invoke(Event *data) const = 0;
-        };
-
-        template<typename _Data, typename _Actor>
-        class RegisterEvent : public IRegisterEvent {
-            _Actor &_actor;
-        public:
-            RegisterEvent(_Actor &actor)
-                    : _actor(actor) {}
-
-            virtual void invoke(Event *data) const override final {
-                auto &event = *reinterpret_cast<_Data *>(data);
-                _actor.on(event);
-                if (!event.state[0])
-                    event.~_Data();
-            }
-        };
+        friend typename _Handler::base_t;
 
         _Handler *_handler;
-        std::unordered_map<uint32_t, IRegisterEvent const *> _event_map;
-
-        friend typename _Handler::base_t;
     protected:
         inline void __set_id(ActorId const &id) {
             static_cast<ActorId &>(*this) = id;
@@ -50,23 +27,14 @@ namespace cube {
         }
 
         virtual bool onInit() { return true; }
-        virtual void on(Event *event) override final {
-            // TODO: secure this if event not registred
-            // branch fetch find
-            _event_map[event->id]->invoke(event);
-        }
 
     protected:
         Actor() : ActorId(_Handler::generate_id()), _handler(nullptr) {
-            _event_map.reserve(64);
-            _event_map[type_id<KillEvent>()] = new RegisterEvent<KillEvent, Actor>(*this);
-            _event_map[type_id<Event>()] = new RegisterEvent<Event, Actor>(*this);
+            this->template registerEvent<KillEvent>(*this);
+            this->template registerEvent<Event>(*this);
         }
 
-        virtual ~Actor() {
-            for (const auto &revent : _event_map)
-                delete revent.second;
-        }
+        virtual ~Actor() {}
 
     public:
         inline ActorId id() const {
@@ -76,30 +44,6 @@ namespace cube {
         inline auto getPipe(ActorId const dest) const {
             return _handler->getProxyPipe(dest, id());
         }
-
-        template<typename _Data, typename _Actor>
-        inline void registerEvent(_Actor &actor) {
-            auto it = _event_map.find(type_id<_Data>());
-            if (it != _event_map.end())
-                delete it->second;
-            _event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<_Data, _Actor>(actor));
-        };
-
-        template<typename _Data, typename _Actor>
-        inline void unregisterEvent(_Actor &actor) {
-            auto it = _event_map.find(type_id<_Data>());
-            if (it != _event_map.end())
-                delete it->second;
-            _event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<Event, _Actor>(actor));
-        };
-
-        template<typename _Data>
-        inline void unregisterEvent() {
-            auto it = _event_map.find(type_id<_Data>());
-            if (it != _event_map.end())
-                delete it->second;
-            _event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<Event, Actor>(*this));
-        };
 
         template <typename _Actor>
         inline void registerCallback(_Actor &actor) const {
@@ -138,11 +82,11 @@ namespace cube {
         }
 
         inline void reply(Event &event) const {
-            return _handler->reply(event);
+            _handler->reply(event);
         }
 
         inline void forward(ActorId const dest, Event &event) const {
-            return _handler->forward(dest, event);
+            _handler->forward(dest, event);
         }
 
         inline void send(Event const &event) const {
@@ -155,7 +99,7 @@ namespace cube {
 
         template<typename _Data, typename ..._Init>
         inline void send(ActorId const &dest, _Init &&...init) const {
-            return _handler->template send<_Data, _Init...>(dest, id(), std::forward<_Init>(init)...);
+            _handler->template send<_Data, _Init...>(dest, id(), std::forward<_Init>(init)...);
         }
 
         inline auto &sharedData() const {
@@ -181,6 +125,11 @@ namespace cube {
         void on(KillEvent const &) {
             kill();
         }
+
+        template<typename _Data>
+        inline void unregisterEvent() {
+            this->template unregisterEvent<_Data>(*this);
+        };
 
     };
 
