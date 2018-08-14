@@ -2,6 +2,7 @@
 #include "cube.h"
 
 using namespace cube::service::scheduler;
+using scheduler_tag = cube::service::scheduler::Tags<0>;
 
 struct MyTimedEvent : public event::Timer {
     MyTimedEvent(cube::Timespan const &ts)
@@ -26,20 +27,20 @@ public:
         this->template registerEvent<MyTimedEvent>(*this);
         this->template registerEvent<MyIntervalEvent>(*this);
         // Send event to myself
-        this->template push<MyTimedEvent>(cube::Tag<ActorTimer, 0>::id(), cube::Timespan::seconds(1));
-        auto &e = this->template push<MyIntervalEvent>(cube::Tag<ActorTimeout , 0>::id(), cube::Timespan::seconds(1));
+        this->template push<MyTimedEvent>(scheduler_tag::id_timer(), cube::Timespan::seconds(1));
+        auto &e = this->template push<MyIntervalEvent>(scheduler_tag::id_timeout(), cube::Timespan::seconds(1));
         e.repeat = 3;
         return true;
     }
 
     // MyEvent call back
     void on(MyTimedEvent const &event) {
-        this->template push<cube::KillEvent>(cube::Tag<ActorTimer, 0>::id());
+        this->template push<cube::KillEvent>(scheduler_tag::id_timer());
     }
 
     void on(MyIntervalEvent &event) {
         event.cancel<MyIntervalEvent>(*this);
-        this->template push<cube::KillEvent>(cube::Tag<ActorTimeout, 0>::id());
+        this->template push<cube::KillEvent>(scheduler_tag::id_timeout());
         this->kill();
     }
 

@@ -83,6 +83,7 @@ namespace cube {
         protected:
             BaseActor() : ActorId(_Derived::generate_id()) {
                 _event_map.reserve(64);
+                this->template registerEvent<Event>(*this);
             }
 
             virtual ~BaseActor() {
@@ -96,6 +97,10 @@ namespace cube {
                 // TODO: secure this if event not registred
                 // branch fetch find
                 _event_map.at(event->id)->invoke(event);
+            }
+
+            void on(Event const &event) const {
+                LOG_WARN << "Actor[" << this->id()._id << "." << this->id()._index << "] received removed event[" << event.id << "]";
             }
 
         public:
@@ -117,6 +122,11 @@ namespace cube {
                 if (it != _event_map.end())
                     delete it->second;
                 _event_map.insert_or_assign(type_id<_Data>(), new RegisteredEvent<Event, _Actor>(actor));
+            };
+
+            template<typename _Data>
+            inline void unregisterEvent() {
+                this->template unregisterEvent<_Data>(*this);
             };
         };
 
