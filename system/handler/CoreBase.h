@@ -69,6 +69,8 @@ namespace cube {
 
             std::unordered_map<uint32_t, IRegisterEvent const *> _event_map;
         public:
+            static _Derived * _handler;
+        public:
             IActor() {
                 _event_map.reserve(64);
             }
@@ -433,7 +435,7 @@ namespace cube {
                 , typename ..._Init>
         inline ActorId addActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
-            actor->_handler = static_cast<_Derived *>(this);
+            //actor->_handler = static_cast<_Derived *>(this);
             addActor(actor->proxy());
 
             return actor->id();
@@ -489,7 +491,9 @@ namespace cube {
         BaseCoreHandler(_ParentHandler *parent)
                 : _parent(parent)
                 , _eventManager(new EventManager(*this))
-        {}
+        {
+            IActor::_handler = static_cast<_Derived*>(this);
+        }
 
         ~BaseCoreHandler() {
             for (auto &it : _actors) {
@@ -506,7 +510,7 @@ namespace cube {
         template<typename _Actor, typename ..._Init>
         _Actor *addReferencedActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
-            actor->_handler = static_cast<_Derived *>(this);
+            //actor->_handler = static_cast<_Derived *>(this);
 
             if (unlikely(!actor->onInit())) {
                 delete actor;
@@ -664,6 +668,9 @@ namespace cube {
         os << ss.str();
         return os;
     };
+
+    template<std::size_t _CoreIndex, typename _ParentHandler, typename _Derived, typename _SharedData>
+    _Derived *BaseCoreHandler<_CoreIndex, _ParentHandler, _Derived, _SharedData>::IActor::_handler = nullptr;
 
 }
 
