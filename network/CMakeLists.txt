@@ -13,3 +13,10 @@ set(NET_SOURCE
 
 add_library(cube-network-shared SHARED ${NET_SOURCE})
 add_library(cube-network STATIC ${NET_SOURCE})
+
+if (WIN32)
+    target_compile_definitions(cube-network-shared PRIVATE CUBE_DYNAMIC=1)
+    target_compile_definitions(cube-network-shared PRIVATE CUBE_EXPORTS=1)
+    target_link_libraries(cube-network-shared ws2_32)
+endif()
+

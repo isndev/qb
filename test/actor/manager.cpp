@@ -1,8 +1,8 @@
 #include "assert.h"
 #include "cube.h"
 
-using scheduler = cube::service::scheduler::Tags<0>;
-using manager = cube::service::manager::Tags<0>;
+using scheduler_tag = cube::service::scheduler::Tags<0>;
+using manager_tag = cube::service::manager::Tags<0>;
 
 struct CreateActorEvent : public cube::service::manager::event::ToBestTimedCore {
 };
@@ -63,7 +63,7 @@ public:
         this->template registerEvent<MyTimeoutEvent>(*this);
         this->template registerEvent<MyTimedEvent>(*this);
         // Send event to myself
-        auto &e = this->template push<MyTimeoutEvent>(scheduler::id_timeout(), cube::Timespan::seconds(1));
+        auto &e = this->template push<MyTimeoutEvent>(scheduler_tag::id_timeout(), cube::Timespan::seconds(1));
         e.repeat = 10;
         //LOG_INFO << "INIT ACTOR TEST";
         return true;
@@ -71,11 +71,11 @@ public:
 
     void on(MyTimedEvent const &)
     {
-        this->template push<cube::KillEvent>(scheduler::id_timer());
-        this->template push<cube::KillEvent>(scheduler::id_timeout());
-        this->template push<cube::KillEvent>(manager::id());
-        this->template push<cube::KillEvent>({manager::uid_agent, 2});
-        this->template push<cube::KillEvent>({manager::uid_agent, 3});
+        this->template push<cube::KillEvent>(scheduler_tag::id_timer());
+        this->template push<cube::KillEvent>(scheduler_tag::id_timeout());
+        this->template push<cube::KillEvent>(manager_tag::id());
+        this->template push<cube::KillEvent>({manager_tag::uid_agent, 2});
+        this->template push<cube::KillEvent>({manager_tag::uid_agent, 3});
         this->kill();
         LOG_INFO << "DEAD ALL ACTOR TEST";
     }
@@ -83,9 +83,9 @@ public:
     void on(MyTimeoutEvent &event) {
         if (event.repeat <= 1) {
             event.cancel<MyTimeoutEvent>(*this);
-            this->template push<MyTimedEvent>(scheduler::id_timer(), cube::Timespan::seconds(1));
+            this->template push<MyTimedEvent>(scheduler_tag::id_timer(), cube::Timespan::seconds(1));
         } else {
-            this->template send<CreateActorEvent>(manager::id());
+            this->template send<CreateActorEvent>(manager_tag::id());
         }
     }
 
