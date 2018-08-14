@@ -35,9 +35,9 @@ namespace cube {
     class Event;
     class GenericHandler {
     public:
-        class IActor {
+        class BaseActor {
         public:
-            virtual ~IActor() {}
+            virtual ~BaseActor() {}
 
             virtual bool onInit() = 0;
             virtual void on(Event *) = 0;

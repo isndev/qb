@@ -9,27 +9,14 @@
 namespace cube {
 
     template<typename _Handler>
-    class Actor
-            : nocopy,
-              ActorId,
-              public _Handler::IActor {
-        using ActorProxy = typename _Handler::ActorProxy;
-        friend typename _Handler::base_t;
-
-        //_Handler *_handler;
+    class Actor : public _Handler::BaseActor {
+        //friend typename _Handler::base_t;
     protected:
-        inline void __set_id(ActorId const &id) {
-            static_cast<ActorId &>(*this) = id;
-        }
-
-        inline ActorProxy proxy() {
-            return {id(), this};
-        }
 
         virtual bool onInit() { return true; }
 
     protected:
-        Actor() : ActorId(_Handler::generate_id()) {
+        Actor() {
             this->template registerEvent<KillEvent>(*this);
             this->template registerEvent<Event>(*this);
         }
@@ -37,89 +24,85 @@ namespace cube {
         virtual ~Actor() {}
 
     public:
-        inline ActorId id() const {
-            return *this;
-        }
-
         inline auto getPipe(ActorId const dest) const {
-            return _Handler::IActor::_handler->getProxyPipe(dest, id());
+            return _Handler::BaseActor::_handler->getPipeProxy(dest, this->id());
         }
 
         template <typename _Actor>
         inline void registerCallback(_Actor &actor) const {
-            _Handler::IActor::_handler->registerCallback(actor);
+            _Handler::BaseActor::_handler->registerCallback(actor);
         }
 
         inline void unregisterCallback() const {
-            _Handler::IActor::_handler->unregisterCallback(id());
+            _Handler::BaseActor::_handler->unregisterCallback(this->id());
         }
 
         inline void kill() const {
-            _Handler::IActor::_handler->killActor(id());
+            _Handler::BaseActor::_handler->killActor(this->id());
         }
 
         template<typename _Actor, typename ..._Init>
         inline auto addRefActor(_Init &&...init) const {
-            return _Handler::IActor::_handler->template addReferencedActor<_Actor>(std::forward<_Init>(init)...);
+            return _Handler::BaseActor::_handler->template addReferencedActor<_Actor>(std::forward<_Init>(init)...);
         }
 
         template< template <typename __Handler> typename _Actor
                 , typename ..._Init >
         inline auto addRefActor(_Init &&...init) const {
-            return _Handler::IActor::_handler->template addReferencedActor<_Actor>(std::forward<_Init>(init)...);
+            return _Handler::BaseActor::_handler->template addReferencedActor<_Actor>(std::forward<_Init>(init)...);
         }
 
         template< template<typename __Handler, typename _Trait> typename _Actor
                 , typename _Trait
                 , typename ..._Init >
         inline auto addRefActor(_Init &&...init) const {
-            return _Handler::IActor::_handler->template addReferencedActor<_Actor, _Trait>(std::forward<_Init>(init)...);
+            return _Handler::BaseActor::_handler->template addReferencedActor<_Actor, _Trait>(std::forward<_Init>(init)...);
         }
 
         template<typename _Data, typename ..._Init>
         inline _Data &push(ActorId const &dest, _Init const &...init) const {
-            return _Handler::IActor::_handler->template push<_Data>(dest, id(), init...);
+            return _Handler::BaseActor::_handler->template push<_Data>(dest, this->id(), init...);
         }
 
         inline void reply(Event &event) const {
-            _Handler::IActor::_handler->reply(event);
+            _Handler::BaseActor::_handler->reply(event);
         }
 
         inline void forward(ActorId const dest, Event &event) const {
-            _Handler::IActor::_handler->forward(dest, event);
+            _Handler::BaseActor::_handler->forward(dest, event);
         }
 
         inline void send(Event const &event) const {
-            _Handler::IActor::_handler->send(event);
+            _Handler::BaseActor::_handler->send(event);
         }
 
         inline bool try_send(Event const &event) const {
-            return _Handler::IActor::_handler->try_send(event);
+            return _Handler::BaseActor::_handler->try_send(event);
         }
 
         template<typename _Data, typename ..._Init>
         inline void send(ActorId const &dest, _Init &&...init) const {
-            _Handler::IActor::_handler->template send<_Data, _Init...>(dest, id(), std::forward<_Init>(init)...);
+            _Handler::BaseActor::_handler->template send<_Data, _Init...>(dest, this->id(), std::forward<_Init>(init)...);
         }
 
         inline auto &sharedData() const {
-            return _Handler::IActor::_handler->sharedData();
+            return _Handler::BaseActor::_handler->sharedData();
         }
 
         inline auto time() const {
-            return _Handler::IActor::_handler->time();
+            return _Handler::BaseActor::_handler->time();
         }
 
         inline uint64_t bestTime() const {
-            return _Handler::IActor::_handler->bestTime();
+            return _Handler::BaseActor::_handler->bestTime();
         }
 
         inline uint32_t bestCore() const {
-            return _Handler::IActor::_handler->bestCore();
+            return _Handler::BaseActor::_handler->bestCore();
         }
 
         void on(Event const &event) const {
-            LOG_WARN << "Actor[" << _id << "." << _index << "] received removed event[" << event.id << "]";
+            LOG_WARN << "Actor[" << this->id()._id << "." << this->id()._index << "] received removed event[" << event.id << "]";
         }
 
         void on(KillEvent const &) {

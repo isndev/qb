@@ -45,18 +45,23 @@ namespace cube {
         using MPSCBuffer = lockfree::mpsc::ringbuffer<CacheLine, MaxRingEvents, 0>;
         using EventBuffer = std::array<CacheLine, MaxRingEvents>;
 
-        class IActor {
-            class IRegisterEvent {
+        class BaseActor : nocopy,
+                          ActorId
+        {
+            friend BaseCoreHandler;
+            friend _Derived;
+
+            class IRegisteredEvent {
             public:
-                virtual ~IRegisterEvent() {}
+                virtual ~IRegisteredEvent() {}
                 virtual void invoke(Event *data) const = 0;
             };
 
             template<typename _Data, typename _Actor>
-            class RegisterEvent : public IRegisterEvent {
+            class RegisteredEvent : public IRegisteredEvent {
                 _Actor &_actor;
             public:
-                RegisterEvent(_Actor &actor)
+                RegisteredEvent(_Actor &actor)
                         : _actor(actor) {}
 
                 virtual void invoke(Event *data) const override final {
@@ -67,15 +72,20 @@ namespace cube {
                 }
             };
 
-            std::unordered_map<uint32_t, IRegisterEvent const *> _event_map;
-        public:
+            std::unordered_map<uint32_t, IRegisteredEvent const *> _event_map;
+        protected:
             static _Derived * _handler;
-        public:
-            IActor() {
+
+            inline void __set_id(ActorId const &id) {
+                static_cast<ActorId &>(*this) = id;
+            }
+
+        protected:
+            BaseActor() : ActorId(_Derived::generate_id()) {
                 _event_map.reserve(64);
             }
 
-            virtual ~IActor() {
+            virtual ~BaseActor() {
                 for (const auto &revent : _event_map)
                     delete revent.second;
             }
@@ -89,12 +99,16 @@ namespace cube {
             }
 
         public:
+            inline ActorId id() const {
+                return *this;
+            }
+
             template<typename _Data, typename _Actor>
             inline void registerEvent(_Actor &actor) {
                 auto it = _event_map.find(type_id<_Data>());
                 if (it != _event_map.end())
                     delete it->second;
-                _event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<_Data, _Actor>(actor));
+                _event_map.insert_or_assign(type_id<_Data>(), new RegisteredEvent<_Data, _Actor>(actor));
             };
 
             template<typename _Data, typename _Actor>
@@ -102,7 +116,7 @@ namespace cube {
                 auto it = _event_map.find(type_id<_Data>());
                 if (it != _event_map.end())
                     delete it->second;
-                _event_map.insert_or_assign(type_id<_Data>(), new RegisterEvent<Event, _Actor>(actor));
+                _event_map.insert_or_assign(type_id<_Data>(), new RegisteredEvent<Event, _Actor>(actor));
             };
         };
 
@@ -110,16 +124,6 @@ namespace cube {
         public:
             virtual ~ICallback() {}
             virtual void onCallback() = 0;
-        };
-
-        struct ActorProxy {
-            uint64_t const _id;
-            IActor*  const _this;
-
-            ActorProxy() : _id(0), _this(nullptr){}
-            ActorProxy(uint64_t const id, IActor *actor)
-                    : _id(id), _this(actor) {
-            }
         };
 
         static inline ActorId generate_id() {
@@ -152,7 +156,7 @@ namespace cube {
     public:
         using Pipe = allocator::pipe<CacheLine>;
 
-        class ProxyPipe {
+        class PipeProxy {
             ActorId dest;
             ActorId source;
             Pipe *pipe;
@@ -167,10 +171,10 @@ namespace cube {
                 return reinterpret_cast<T*>(pipe->allocate_back(size));
             }
         public:
-            ProxyPipe() = default;
-            ProxyPipe(ProxyPipe const &) = default;
-            ProxyPipe &operator=(ProxyPipe const &) = default;
-            ProxyPipe(Pipe &pipe, ActorId dest, ActorId source)
+            PipeProxy() = default;
+            PipeProxy(PipeProxy const &) = default;
+            PipeProxy &operator=(PipeProxy const &) = default;
+            PipeProxy(Pipe &pipe, ActorId dest, ActorId source)
                     : pipe(&pipe), dest(dest), source(source)
             {}
 
@@ -207,7 +211,6 @@ namespace cube {
                 data.bucket_size = size;
                 return data;
             }
-
 
         };
 
@@ -274,7 +277,7 @@ namespace cube {
                     auto event = reinterpret_cast<Event *>(buffer + i);
                     auto actor = _core._actors.find(event->dest);
                     if (likely(actor != std::end(_core._actors))) {
-                        actor->second._this->on(event);
+                        actor->second->on(event);
                     } else {
                         LOG_WARN << "Failed Event" << _core
                                  << " [Source](" << event->source << ")"
@@ -353,7 +356,7 @@ namespace cube {
         _SharedData     *_sharedData = nullptr;
         std::thread      _thread;
 
-        std::unordered_map<uint32_t, ActorProxy>  _actors;
+        std::unordered_map<uint32_t, BaseActor *>  _actors;
         std::unordered_map<uint32_t, ICallback *> _actor_callbacks;
         std::vector<ActorId> _actor_to_remove;
 
@@ -370,7 +373,7 @@ namespace cube {
         void __init__actors() const {
             // Init StaticActors
             for (const auto &it : _actors) {
-                if (!it.second._this->onInit())
+                if (!it.second->onInit())
                     LOG_WARN << "Actor at " << *this << " failed to init";
             }
         }
@@ -416,16 +419,16 @@ namespace cube {
             return ret;
         }
 
-        inline void addActor(ActorProxy const &actor) {
-            _actors.insert({actor._id, actor});
-            LOG_DEBUG << "New Actor[" << actor._id << "] Core(" << _index << ")";
+        inline void addActor(BaseActor *actor) {
+            _actors.insert({actor->id(), actor});
+            LOG_DEBUG << "New Actor[" << actor->_id << "] Core(" << _index << ")";
         }
 
         inline void removeActor(ActorId const &id) {
             const auto it = _actors.find(id);
             if (it != _actors.end()) {
                 LOG_DEBUG << "Delete Actor[" << id << "] Core(" << _index << ")";
-                delete it->second._this;
+                delete it->second;
                 _actors.erase(id);
                 unregisterCallback(id);
             }
@@ -435,8 +438,7 @@ namespace cube {
                 , typename ..._Init>
         inline ActorId addActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
-            //actor->_handler = static_cast<_Derived *>(this);
-            addActor(actor->proxy());
+            addActor(actor);
 
             return actor->id();
         };
@@ -492,12 +494,12 @@ namespace cube {
                 : _parent(parent)
                 , _eventManager(new EventManager(*this))
         {
-            IActor::_handler = static_cast<_Derived*>(this);
+            BaseActor::_handler = static_cast<_Derived*>(this);
         }
 
         ~BaseCoreHandler() {
             for (auto &it : _actors) {
-                delete it.second._this;
+                delete it.second;
             }
 
             if (_eventManager)
@@ -510,13 +512,12 @@ namespace cube {
         template<typename _Actor, typename ..._Init>
         _Actor *addReferencedActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
-            //actor->_handler = static_cast<_Derived *>(this);
 
             if (unlikely(!actor->onInit())) {
                 delete actor;
                 return nullptr;
             }
-            addActor(actor->proxy());
+            addActor(actor);
 
             return actor;
         };
@@ -553,13 +554,13 @@ namespace cube {
 
     public:
         // proxy pipe
-        inline ProxyPipe getProxyPipe(ActorId const dest, ActorId const source) const {
+        inline PipeProxy getPipeProxy(ActorId const dest, ActorId const source) const {
             return {_eventManager->getPipe(dest._index), dest, source};
         }
         //sender
         inline bool try_send(Event const &event) const {
             if (event.dest._index == _index) {
-                _actors.find(event.dest)->second._this->on(const_cast<Event *>(&event));
+                _actors.find(event.dest)->second->on(const_cast<Event *>(&event));
                 return true;
             }
             return _parent->send(event);
@@ -670,7 +671,7 @@ namespace cube {
     };
 
     template<std::size_t _CoreIndex, typename _ParentHandler, typename _Derived, typename _SharedData>
-    _Derived *BaseCoreHandler<_CoreIndex, _ParentHandler, _Derived, _SharedData>::IActor::_handler = nullptr;
+    _Derived *BaseCoreHandler<_CoreIndex, _ParentHandler, _Derived, _SharedData>::BaseActor::_handler = nullptr;
 
 }
 
