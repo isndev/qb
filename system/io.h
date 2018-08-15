@@ -34,9 +34,7 @@ namespace cube {
         using stream = nanolog::NanoLogLine;
 
         namespace log {
-            void setLevel(io::LogLevel lvl) {
-                nanolog::set_log_level(lvl);
-            }
+            void setLevel(io::LogLevel lvl);
         }
 
 #else
