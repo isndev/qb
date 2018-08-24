@@ -13,7 +13,7 @@
 #include <pthread.h>
 #elif defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
-    #include <process.h>
+#include <process.h>
 #endif
 
 # include "../../utils/timestamp.h"
@@ -418,7 +418,7 @@ namespace cube {
             pthread_t current_thread = pthread_self();
             ret = !pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
 #elif defined(_WIN32) || defined(_WIN64)
-            #ifdef _MSC_VER
+#ifdef _MSC_VER
             DWORD_PTR mask = (1 << (_index < 0 ? 0 : _index));
             ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
 #else

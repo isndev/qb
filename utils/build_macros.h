@@ -1,19 +1,19 @@
 #include                <errno.h>
 #include                <cstdint>
 
-#ifndef            CUBE_CONFIG_HPP_
-#define            CUBE_CONFIG_HPP_
+#ifndef            CUBE_BUILD_MACROS_H_
+#define            CUBE_BUILD_MACROS_H_
 
-#if defined(_WIN32) || defined(__WIN32__)
+#if defined(_WIN32) || defined(_WIN64)
 #define __WIN__SYSTEM__
-    #ifndef WIN32_LEAN_AND_MEAN
-        #define WIN32_LEAN_AND_MEAN
-    #endif
-    #ifndef NOMINMAX
-        #define NOMINMAX
-    #endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 
-#elif defined(linux) || defined(__linux)
+#elif defined(__linux__) || defined(__unix) || defined(__unix__)
 // Linux
 #define __LINUX__SYSTEM__
 #else
