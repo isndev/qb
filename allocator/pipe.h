@@ -71,6 +71,7 @@ namespace cube {
             inline void reset() {
                 _begin = 0;
                 _end = 0;
+                flag_front = false;
             }
 
             inline void free(std::size_t const size) {

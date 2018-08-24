@@ -125,11 +125,9 @@ namespace cube {
 
                         if (event.tcp().send(out_pipe.data() + out_pipe.begin(), (std::min)(2048ul, sent), sent) ==
                             cube::network::Socket::Done) {
-                            if (sent) {
-                                out_pipe.free_front(sent);
-                                if (out_pipe.begin() == out_pipe.end()) {
-                                    out_pipe.reset();
-                                }
+                            out_pipe.free_front(sent);
+                            if (out_pipe.begin() == out_pipe.end()) {
+                                out_pipe.reset();
                             }
                         } else {
                             LOG_INFO << "EPOLLOUT failed Session:" << this->id();
