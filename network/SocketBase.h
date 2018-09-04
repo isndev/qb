@@ -58,7 +58,7 @@ namespace           cube {
             ~TSocket() {
             }
 
-            Socket::Handler getNative() const {
+            Socket::Handler raw() const {
                 return _handle;
             }
 

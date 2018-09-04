@@ -71,7 +71,7 @@ namespace cube {
                     else
                         static_cast<Derived &>(*this).onDisconnect(event);
 
-                } else if (Derived::type == Type::READ) {
+                } else if constexpr (Derived::type == Type::READ) {
 
                     if (event.getEvents() & EPOLLIN
                         && static_cast<Derived &>(*this).onRead(event))

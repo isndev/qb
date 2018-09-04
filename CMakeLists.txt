@@ -63,9 +63,10 @@ elseif(UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 endif()
 
+set(DEBUGFILES ${CMAKE_CURRENT_SOURCE_DIR}/system/debug.cpp)
 if (NOLOG)
-    set(DEBUGFILES ${CMAKE_CURRENT_SOURCE_DIR}/system/debug.cpp)
 else()
+
     set(LOGFILES ${CMAKE_CURRENT_SOURCE_DIR}/nanolog/nanolog.cpp)
     message(STATUS "Added log source files")
 endif()
