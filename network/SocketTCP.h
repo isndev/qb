@@ -24,6 +24,7 @@ namespace           cube {
 
             Socket::Status send(const void *data, std::size_t size) const;
             Socket::Status send(const void *data, std::size_t size, std::size_t &sent) const;
+            Socket::Status sendall(const void *data, std::size_t size, std::size_t &sent) const;
             Socket::Status receive(void *data, std::size_t size, std::size_t &received) const;
 
         private:

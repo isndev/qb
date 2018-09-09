@@ -24,7 +24,7 @@ endif()
 
 if (WIN32)
     if (MSVC)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus /D_CRT_SECURE_NO_WARNINGS /D_SCL_SECURE_NO_WARNINGS")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GR- /Zc:__cplusplus /D_CRT_SECURE_NO_WARNINGS /D_SCL_SECURE_NO_WARNINGS")
         if (NOLOG)
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DNLOG")
         endif()
@@ -60,7 +60,7 @@ if (WIN32)
 
 elseif(UNIX)
     set(USE_TC_MALLOC OFF)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -fno-rtti")
 endif()
 
 set(DEBUGFILES ${CMAKE_CURRENT_SOURCE_DIR}/system/debug.cpp)
