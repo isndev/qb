@@ -33,17 +33,6 @@ namespace cube {
                 cube::mqtt::Reader reader;
                 std::vector<void (Derived::*)(event::Ready &)> messages;
 
-                // uint64_t  timer;
-                // std::size_t counter;
-                // void log_drop() {
-                //     auto now = this->time();
-                //     if (now >= timer) {
-                //         LOG_INFO << "Drop Message " << counter;
-                //         counter = 0;
-                //         timer = now + cube::Timespan::seconds(1).nanoseconds();
-                //     }
-                // }
-
                 // Todo: improve this publish
                 bool publish(void const *data, std::size_t const size) {
                     if (out_pipe.end() + size < MAX_ZERO_QOS_BYTES) {
@@ -90,37 +79,39 @@ namespace cube {
                     char *data = in_pipe.allocate_back(expected);
                     reader.setHeader(in_pipe.data());
 
-                    if (event.tcp().receive(data, expected, received) == cube::network::Socket::Done) {
-                        in_pipe.free_back(expected - received);
-                        reader.read(received);
+                    if (static_cast<Derived const &>(*this).canRead()) {
+                        if (event.tcp().receive(data, expected, received) == cube::network::Socket::Done) {
+                            in_pipe.free_back(expected - received);
+                            reader.read(received);
 
-                        if (reader.isComplete()) {
-                            // process message
-                            auto type = reader.header().getType();
-                            auto callback = &Derived::onDisconnect;
-                            if (type < cube::mqtt::MessageType::END) {
-                                callback = messages[type];
-                            }
+                            if (reader.isComplete()) {
+                                // process message
+                                auto type = reader.header().getType();
+                                auto callback = &Derived::onDisconnect;
+                                if (type < cube::mqtt::MessageType::END) {
+                                    callback = messages[type];
+                                }
 
-                            ((static_cast<Derived *>(this)->*(callback))(event));
-                            in_pipe.free_back(reader.readBytes());
-                            reader.reset();
-                            if (callback == &Derived::onDisconnect)
-                                return false;
-                        } else
-                            this->repoll(event);
-                    }
-                    else {
-                        LOG_INFO << "EPOLLIN failed actorId:" << event.getOwner() << " ErrorCode:"
-                                 << cube::network::Socket::getErrorStatus();
-                        return false;
-                    }
+                                ((static_cast<Derived *>(this)->*(callback))(event));
+                                in_pipe.free_back(reader.readBytes());
+                                reader.reset();
+                                if (callback == &Derived::onDisconnect)
+                                    return false;
+                            } else
+                                this->repoll(event);
+                        } else {
+                            LOG_INFO << "EPOLLIN failed actorId:" << event.getOwner() << " ErrorCode:"
+                                     << cube::network::Socket::getErrorStatus();
+                            return false;
+                        }
+                    } else
+                        this->repoll(event);
                     return true;
                 }
 
                 bool onWrite(event::Ready &event) {
                     // Socket write workflow
-                    if (out_pipe.begin() != out_pipe.end()) {
+                    if (static_cast<Derived const &>(*this).canWrite() && out_pipe.begin() != out_pipe.end()) {
                         std::size_t sent = out_pipe.end() - out_pipe.begin();
 
                         if (event.tcp().send(out_pipe.data() + out_pipe.begin(), (std::min)(2048ul, sent), sent) ==

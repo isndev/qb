@@ -222,6 +222,14 @@ namespace cube {
                 return data;
             }
 
+            ActorId getDest() const {
+                return dest;
+            }
+
+            ActorId getSource() const {
+                return source;
+            }
+
         };
 
     protected:
