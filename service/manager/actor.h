@@ -29,6 +29,7 @@ namespace cube {
                 virtual bool onInit() override final {
                     this->template registerEvent<event::ToBestTimedCore>(*this);
                     this->template registerEvent<event::ToCore>(*this);
+                    this->template registerEvent<event::ToCoreRange>(*this);
                     return true;
                 }
 
@@ -44,6 +45,15 @@ namespace cube {
 
                     event.dest._index = event.index;
                     this->send(event);
+                }
+
+                void on(event::ToCoreRange &event) {
+                    received(event);
+
+                    for (auto i = event.begin; i < event.end; ++i) {
+                        event.dest._index = i;
+                        this->send(event);
+                    }
                 }
             };
 
