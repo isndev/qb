@@ -14,10 +14,10 @@
 namespace cube {
     namespace session {
 
-        enum class Type {
-            READ = 1,
-            WRITE = 2,
-            READWRITE = 3
+        enum Type : uint32_t {
+            READ = EPOLLIN,
+            WRITE = EPOLLOUT,
+            READWRITE = EPOLLIN | EPOLLOUT
         };
 
         // example trait to implement
@@ -44,13 +44,7 @@ namespace cube {
             }
 
             inline void repoll(cube::service::iopoll::Proxy &event) const {
-                if constexpr (Derived::type == Type::WRITE) {
-                    event.setEvents(EPOLLOUT);
-                } else if (Derived::type == Type::READ) {
-                    event.setEvents(EPOLLIN);
-                } else {
-                    event.setEvents(EPOLLIN | EPOLLOUT);
-                }
+                event.setEvents(Derived::type);
                 event.repoll();
             }
 

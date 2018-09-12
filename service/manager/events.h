@@ -27,6 +27,15 @@ namespace cube {
                         service_event_id = type_id<ToCore>();
                     }
                 };
+
+                struct ToCoreRange
+                        : public Base {
+                    uint16_t begin = 0;
+                    uint16_t end = 0;
+                    ToCoreRange() {
+                        service_event_id = type_id<ToCoreRange>();
+                    }
+                };
             }
         }
     }
