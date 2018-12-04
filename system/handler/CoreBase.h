@@ -160,7 +160,7 @@ namespace cube {
         }
 
         inline bool receive_from_unlinked_core(Event const &event) {
-            return static_cast<bool>(_eventManager->_mpsc_buffer.enqueue(reinterpret_cast<CacheLine const *>(&event), event.bucket_size));
+            return static_cast<bool>(_eventManager->_mpsc_buffer.enqueue(event.source._index, reinterpret_cast<CacheLine const *>(&event), event.bucket_size));
         }
 
     public:
@@ -335,36 +335,40 @@ namespace cube {
         inline void onCallback() {}
 
         void spawn() {
-            if (init() && static_cast<_Derived &>(*this).onInit()) {
-                __wait__all__cores__ready();
+            try {
+                if (init() && static_cast<_Derived &>(*this).onInit()) {
+                    __wait__all__cores__ready();
 
-                LOG_INFO << "StartSequence Init " << *this << " Success";
-                while (likely(true)) {
-                    static_cast<_Derived &>(*this).onCallback();
-                    _eventManager->receive();
+                    LOG_INFO << "StartSequence Init " << *this << " Success";
+                    while (likely(true)) {
+                        static_cast<_Derived &>(*this).onCallback();
+                        _eventManager->receive();
 
-                    for (const auto &callback :  _actor_callbacks)
-                        callback.second->onCallback();
+                        for (const auto &callback :  _actor_callbacks)
+                            callback.second->onCallback();
 
-                    _eventManager->flush();
+                        _eventManager->flush();
 
-                    if (unlikely(!_actor_to_remove.empty())) {
-                        // remove dead actors
-                        for (auto const &actor :  _actor_to_remove)
-                            removeActor(actor);
-                        _actor_to_remove.clear();
-                        if ( _actors.empty()) {
-                            break;
+                        if (unlikely(!_actor_to_remove.empty())) {
+                            // remove dead actors
+                            for (auto const &actor :  _actor_to_remove)
+                                removeActor(actor);
+                            _actor_to_remove.clear();
+                            if (_actors.empty()) {
+                                break;
+                            }
                         }
                     }
+                    // receive and flush residual events
+                    do {
+                        _eventManager->receive();
+                    } while (_eventManager->flush_all());
+                } else {
+                    LOG_CRIT << "StartSequence Init " << *this << " Failed";
                 }
-                // receive and flush residual events
-                do {
-                    _eventManager->receive();
-                }
-                while (_eventManager->flush_all());
-            } else {
-                LOG_CRIT << "StartSequence Init " << *this << " Failed";
+            } catch (std::exception &e) {
+                LOG_CRIT << "Exception thrown on " << *this
+                         << "what:" << e.what();
             }
         }
 
@@ -651,14 +655,14 @@ namespace cube {
         void reply(Event &event) const {
             std::swap(event.dest, event.source);
             event.state[0] = 1;
-            send(event);
+            push(event);
         }
 
         void forward(ActorId const dest, Event &event) const {
             event.source = event.dest;
             event.dest = dest;
             event.state[0] = 1;
-            send(event);
+            push(event);
         }
 
         inline auto &sharedData() const {

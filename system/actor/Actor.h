@@ -56,8 +56,23 @@ namespace cube {
         }
 
         template<typename _Data, typename ..._Init>
+        inline _Data make_event(_Init const &...init) const {
+            _Data data {init...};
+            data.id = type_id<_Data>();
+            data.source = this->id();
+            data.state = 0;
+            data.bucket_size = sizeof(_Data) / CUBE_LOCKFREE_CACHELINE_BYTES;
+            return std::move(data);
+        }
+
+        template<typename _Data, typename ..._Init>
         inline _Data &push(ActorId const &dest, _Init const &...init) const {
             return _Handler::BaseActor::_handler->template push<_Data>(dest, this->id(), init...);
+        }
+
+        template<typename _Data, typename ..._Init>
+        inline _Data &fast_push(ActorId const &dest, _Init const &...init) const {
+            return _Handler::BaseActor::_handler->template fast_push<_Data>(dest, this->id(), init...);
         }
 
         inline void reply(Event &event) const {
@@ -70,6 +85,10 @@ namespace cube {
 
         inline void send(Event const &event) const {
             _Handler::BaseActor::_handler->send(event);
+        }
+
+        inline void push(Event const &event) const {
+            _Handler::BaseActor::_handler->push(event);
         }
 
         inline bool try_send(Event const &event) const {
