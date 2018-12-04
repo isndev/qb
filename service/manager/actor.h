@@ -37,14 +37,14 @@ namespace cube {
                     received(event);
 
                     event.dest._index = this->bestCore();
-                    this->send(event);
+                    this->push(event);
                 }
 
                 void on(event::ToCore &event) {
                     received(event);
 
                     event.dest._index = event.index;
-                    this->send(event);
+                    this->push(event);
                 }
 
                 void on(event::ToCoreRange &event) {
@@ -52,7 +52,7 @@ namespace cube {
 
                     for (auto i = event.begin; i < event.end; ++i) {
                         event.dest._index = i;
-                        this->send(event);
+                        this->push(event);
                     }
                 }
             };

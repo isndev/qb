@@ -35,7 +35,7 @@ namespace           cube {
                 : public epoll_proxy {
             epoll_event _epvts[_MAX_EVENTS];
         public:
-            epoll() throw()
+            epoll()
                     : epoll_proxy(epoll_create(_MAX_EVENTS)) {
                 if (unlikely(_epoll < 0))
                     throw std::runtime_error("failed to init epoll");
