@@ -129,7 +129,7 @@ struct TEST {
 
 int main() {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-linked_core.log", 1024);
-    nanolog::set_log_level(nanolog::LogLevel::WARN);
+    nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     // ping pong
     TEST<ActorPong, TinyEvent>::pingpong("TinyEvent");

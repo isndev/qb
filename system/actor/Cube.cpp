@@ -12,7 +12,7 @@ namespace cube {
             , _mail_boxes(_core_set.getSize())
     {
         _cores.reserve(_core_set.getNbCore());
-        sync_start.store(0);
+        sync_start.store(0, std::memory_order_release);
         for (auto core_id : core_set) {
             _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(_core_set.getNbCore() - 1);
             _cores.emplace(core_id, new Core(core_id, *this));
@@ -24,6 +24,10 @@ namespace cube {
             if (mailbox)
                 delete mailbox;
         }
+
+		for (auto core : _cores)
+			delete core.second;
+
     }
 
     bool Cube::send(Event const &event) const {
@@ -36,6 +40,7 @@ namespace cube {
     }
 
     void Cube::start() const {
+		LOG_INFO << "[CUBE] init with " << getNbCore() << " cores";
         for (auto core : _cores)
             core.second->start();
     }
