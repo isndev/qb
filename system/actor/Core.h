@@ -67,7 +67,7 @@ namespace cube {
                 : _index(id)
                 , _engine(engine)
                 , _mail_box(engine.getMailBox(id))
-                , _nano_timer(0) {}
+                , _nano_timer(Timestamp::nano()) {}
 
         ActorId __generate_id__() {
             static std::size_t pid = 10000;
@@ -174,24 +174,25 @@ namespace cube {
         }
         void __wait__all__cores__ready() {
             const auto total_core = _engine.getNbCore();
-            ++Cube::sync_start;
-            while (Cube::sync_start.load() < total_core)
+            Cube::sync_start.fetch_add(1, std::memory_order_acq_rel);
+			LOG_INFO << "[READY]" << *this;
+            while (Cube::sync_start.load(std::memory_order_acquire) < total_core)
                 std::this_thread::yield();
-            Cube::sync_start.store((std::numeric_limits<uint64_t >::max)());
+            //Cube::sync_start.store((std::numeric_limits<uint64_t >::max)());
         }
         void __updateTime__() {
             const auto now = Timestamp::nano();
-            auto best = bestTime();
-            _nano_timer = now - _nano_timer;
-            if (reinterpret_cast<uint8_t const *>(&best)[0] == _index) {
-                if (_nano_timer > best) {
-                    reinterpret_cast<uint8_t *>(&_nano_timer)[0] = _index;
-                    Cube::sync_start.store(_nano_timer);
-                }
-            } else if (_nano_timer < best) {
-                reinterpret_cast<uint8_t *>(&_nano_timer)[0] = _index;
-                Cube::sync_start.store(_nano_timer);
-            }
+            //auto best = bestTime();
+            //_nano_timer = now - _nano_timer;
+            //if (reinterpret_cast<uint8_t const *>(&best)[0] == _index) {
+            //    if (_nano_timer > best) {
+            //        reinterpret_cast<uint8_t *>(&_nano_timer)[0] = _index;
+            //        Cube::sync_start.store(_nano_timer);
+            //    }
+            //} else if (_nano_timer < best) {
+            //    reinterpret_cast<uint8_t *>(&_nano_timer)[0] = _index;
+            //    Cube::sync_start.store(_nano_timer);
+            //}
             _nano_timer = now;
         }
         void __spawn__() {
