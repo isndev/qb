@@ -9,27 +9,24 @@
 namespace cube {
 
     struct ActorId {
+        friend class Cube;
+        friend class Core;
+        friend class Actor;
+        friend class ServiceActor;
+
         using NotFound = ActorId;
 
         uint16_t _id;
         uint16_t _index;
+
+        ActorId(uint16_t const id, uint16_t const index);
+        ActorId(uint32_t const id);
     public:
-        ActorId() : _id(0), _index(0) {}
-        ActorId(uint16_t const id, uint16_t const index)
-                : _id(id), _index(index) {}
+        ActorId();
         ActorId(ActorId const &) = default;
 
-        ActorId(uint32_t const id) {
-            *reinterpret_cast<uint32_t *>(this) = id;
-        }
-
-        inline operator const uint32_t &() const {
-            return *reinterpret_cast<uint32_t const *>(this);
-        }
-
-        inline bool operator!=(ActorId const &rhs) const {
-            return static_cast<uint32_t>(*this) != static_cast<uint64_t>(rhs);
-        }
+        operator const uint32_t &() const;
+        bool operator!=(ActorId const &rhs) const;
     };
 
 }

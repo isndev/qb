@@ -20,9 +20,9 @@ namespace cube {
     namespace session {
         namespace mqtt {
 
-            template <typename Handler, typename Derived>
+            template <typename Derived>
             class Actor
-                    : public cube::session::Actor<Handler, Actor<Handler, Derived>> {
+                    : public cube::session::Actor<Actor<Derived>> {
             public:
                 constexpr static const cube::session::Type type = cube::session::Type::READWRITE;
             protected:

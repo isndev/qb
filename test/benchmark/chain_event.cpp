@@ -8,8 +8,7 @@ struct ChainEvent : cube::Event
     uint64_t loop = 0;
 };
 
-template <typename Handler>
-class ActorTest : public cube::Actor<Handler> {
+class ActorTest : public cube::Actor {
     const bool first;
     const cube::ActorId to_send;
 
@@ -49,9 +48,9 @@ void test_chain(int nb_actor) {
     test("Test ChainEvent " + std::to_string(nb_actor) + " Actor(s) per Core 1000 chain loop\n",
     [nb_actor]() {
         test<100>("ChainEvent 2 Unlinked Core", [nb_actor]() {
-            Engine<PhysicalCore<0>, PhysicalCore<1>> main;
+            Cube main({0, 3});
             for (int i =0; i < nb_actor; ++i) {
-                main.addActor<0, ActorTest>(main.addActor<1, ActorTest>(), true);
+                main.addActor<ActorTest>(0, main.addActor<ActorTest>(3), true);
             }
             main.start();
             main.join();
@@ -59,22 +58,22 @@ void test_chain(int nb_actor) {
         });
 
         test<100>("ChainEvent 2 Linked Core", [nb_actor]() {
-            Engine<CoreLinker<PhysicalCore<0>, PhysicalCore<1>>> main;
+            Cube main({0, 1});
             for (int i =0; i < nb_actor; ++i) {
-                main.addActor<0, ActorTest>(main.addActor<1, ActorTest>(), true);
+                main.addActor<ActorTest>(0, main.addActor<ActorTest>(1), true);
             }
             main.start();
             main.join();
             return 0;
         });
 
-        test<100>("ChainEvent 4 Unlinked Core", [nb_actor]() {
-            Engine<PhysicalCore<0>, PhysicalCore<1>, PhysicalCore<2>, PhysicalCore<3>> main;
+        test<100>("ChainEvent 4 Core", [nb_actor]() {
+            Cube main({0, 1, 2, 3});
             for (int i =0; i < nb_actor; ++i) {
-                main.addActor<0, ActorTest>(
-                        main.addActor<1, ActorTest>(
-                                main.addActor<2, ActorTest>(
-                                        main.addActor<3, ActorTest>())), true);
+                main.addActor<ActorTest>(0,
+                        main.addActor<ActorTest>(1,
+                                main.addActor<ActorTest>(2,
+                                        main.addActor<ActorTest>(3))), true);
             }
 
             main.start();
@@ -82,19 +81,6 @@ void test_chain(int nb_actor) {
             return 0;
         });
 
-        test<100>("ChainEvent 2/2 Linked Core", [nb_actor]() {
-            Engine<CoreLinker<PhysicalCore<0>, PhysicalCore<1>>, CoreLinker<PhysicalCore<2>, PhysicalCore<3>>> main;
-            for (int i =0; i < nb_actor; ++i) {
-                main.addActor<0, ActorTest>(
-                        main.addActor<1, ActorTest>(
-                                main.addActor<2, ActorTest>(
-                                        main.addActor<3, ActorTest>())), true);
-            }
-
-            main.start();
-            main.join();
-            return 0;
-        });
         return 0;
     });
 }

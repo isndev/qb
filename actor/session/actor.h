@@ -31,9 +31,9 @@ namespace cube {
             void onDisconnect(event::Ready &event);
         };
 
-        template <typename Handler, typename Derived>
+        template <typename Derived>
         class Actor
-                : public cube::Actor<Handler> {
+                : public cube::Actor {
 
             uint64_t limit_time_activity;
         protected:

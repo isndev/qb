@@ -126,7 +126,7 @@ namespace cube {
 
                 size_t enqueue(size_t const _index, T const *t, size_t const size) {
                     const size_t index = _index % _nb_producer;
-                    std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
+                    //std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
                     return _producers.get()[index]._ringbuffer.enqueue(t, size);
                 }
 

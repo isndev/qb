@@ -1,5 +1,5 @@
 
-#include "../../system/actor/Actor.h"
+#include "../../actor.h"
 #include "events.h"
 #include "tags.h"
 
@@ -10,14 +10,14 @@ namespace cube {
     namespace service {
         namespace iopoll {
 
-            template <typename Handler>
             class Actor
-                    : public cube::ServiceActor<Handler, Tags<Handler::_index>::uid>
-                    , public Handler::ICallback
+                    : public cube::ServiceActor
+                    , public cube::ICallback
             {
                 network::epoll<> _epoll;
             public:
-                Actor() = default;
+                Actor()
+                    : ServiceActor(Tag::sid) {}
 
                 bool onInit() override final {
                     this->template registerEvent<event::Subscribe>(*this);

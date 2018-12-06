@@ -1,5 +1,5 @@
 
-#include "../../system/actor/Actor.h"
+#include "../../actor.h"
 #include "events.h"
 #include "tags.h"
 
@@ -41,15 +41,27 @@ namespace cube {
                     }
                 };
 
-                template<typename Handler, typename _SchedEvent, std::size_t _Id>
+                template <typename T>
+                constexpr uint16_t resolve_default() {
+                    if constexpr (std::is_same<T, event::Timeout>::value)
+                        return TimeoutTag::sid;
+                    else
+                        return TimerTag::sid;
+                }
+
+                template<typename _SchedEvent>
                 class BaseActor
-                        : public ServiceActor<Handler, _Id>,
-                          public Handler::Pipe,
-                          public Handler::ICallback
+                        : public ServiceActor,
+                          public Core::Pipe,
+                          public ICallback
 
                 {
                 public:
                     using event_type = _SchedEvent;
+
+                    BaseActor()
+                            : ServiceActor(resolve_default<_SchedEvent>())
+                    {}
 
                     bool onInit() override final {
                         this->template registerEvent<_SchedEvent>(*this);
@@ -73,10 +85,8 @@ namespace cube {
                 };
             }
 
-            template <typename Handler>
-            using ActorTimer = internal::Actor<internal::BaseActor<Handler, event::Timer, Tags<Handler::_index>::uid_timer>>;
-            template <typename Handler>
-            using ActorTimeout = internal::Actor<internal::BaseActor<Handler, event::Timeout, Tags<Handler::_index>::uid_timeout>>;
+            using ActorTimer = internal::Actor<internal::BaseActor<event::Timer>>;
+            using ActorTimeout = internal::Actor<internal::BaseActor<event::Timeout>>;
 
         }
     }

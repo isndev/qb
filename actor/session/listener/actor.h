@@ -24,9 +24,9 @@ namespace cube {
                 void onConnect(network::SocketTCP event);
             };
 
-            template <typename Handler, typename Derived>
+            template <typename Derived>
             class Actor
-                    : public session::Actor<Handler, Actor<Handler, Derived>> {
+                    : public session::Actor<Actor<Derived>> {
             public:
                 constexpr static const session::Type type = session::Type::READ;
             private:
@@ -68,9 +68,7 @@ namespace cube {
                     return true;
                 }
 
-                void onDisconnect(event::Ready &event) {
-
-                }
+                void onDisconnect(event::Ready &event) {}
             };
 
         }

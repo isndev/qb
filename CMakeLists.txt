@@ -71,12 +71,19 @@ else()
     message(STATUS "Added log source files")
 endif()
 
-if (COMPILE_TESTS OR MSVC)
+#if (COMPILE_TESTS OR MSVC)
     add_subdirectory(test)
-endif()
+#endif()
 
-add_library(cube STATIC ${DEBUGFILES} ${LOGFILES})
+set(CUBE_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/system/actor/ActorId.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/system/actor/Actor.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/system/actor/Core.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/system/actor/CoreSet.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/system/actor/Cube.cpp)
+
+add_library(cube STATIC ${CUBE_SOURCE} ${DEBUGFILES} ${LOGFILES})
 add_subdirectory(network)
+
 
 if (NOLOG)
     target_compile_definitions(cube PUBLIC NOLOG=1)

@@ -18,8 +18,8 @@ struct DynamicEvent : cube::Event {
     DynamicEvent(uint64_t x) : x(x), vec(512, 8) {}
 };
 
-template<typename Handler, typename EventTrait>
-class ActorPong : public cube::Actor<Handler> {
+template<typename EventTrait>
+class ActorPong : public cube::Actor {
     const cube::ActorId actor_to_send;
 
 public:
@@ -47,16 +47,50 @@ public:
 };
 
 using namespace cube;
-template<template<typename E, typename T> typename _ActorTest, typename _Event, typename _SharedData = void>
+template<template<typename T> typename _ActorTest, typename _Event, typename _SharedData = void>
 struct TEST {
     static void pingpong(std::string const &name) {
-        test<100>("PingPong Linked Core0/1 (" + name + ")", []() {
-            Engine<
-                    CoreLinker<PhysicalCore<0>, PhysicalCore<1>>
-            > main;
+        test<100>("PingPong Core0/1 (" + name + ")", []() {
+            Cube main({0, 1});
 
             for (int i = 0; i < 100; ++i) {
-                main.template addActor<1, _ActorTest, _Event>(main.template addActor<0, _ActorTest, _Event>());
+                main.template addActor<_ActorTest, _Event>(1, main.template addActor<_ActorTest, _Event>(0));
+            }
+
+            main.start();
+            main.join();
+            return 0;
+        });
+
+        test<100>("PingPong Core1/2 (" + name + ")", []() {
+            Cube main({1, 2});
+
+            for (int i = 0; i < 100; ++i) {
+                main.template addActor<_ActorTest, _Event>(2, main.template addActor<_ActorTest, _Event>(1));
+            }
+
+            main.start();
+            main.join();
+            return 0;
+        });
+
+        test<100>("PingPong Core2/3 (" + name + ")", []() {
+            Cube main({2, 3});
+
+            for (int i = 0; i < 100; ++i) {
+                main.template addActor<_ActorTest, _Event>(3, main.template addActor<_ActorTest, _Event>(2));
+            }
+
+            main.start();
+            main.join();
+            return 0;
+        });
+
+        test<100>("PingPong  Core0/3 (" + name + ")", []() {
+            Cube main({0, 3});
+
+            for (int i = 0; i < 100; ++i) {
+                main.template addActor<_ActorTest, _Event>(3, main.template addActor<_ActorTest, _Event>(0));
             }
 
             main.start();
@@ -65,14 +99,11 @@ struct TEST {
         });
 
         test<100>("PingPong Core0/1 & Core2/3 (" + name + ")", []() {
-            Engine<
-                    CoreLinker<PhysicalCore<0>, PhysicalCore<1>>,
-                    CoreLinker<PhysicalCore<2>, PhysicalCore<3>>
-            > main;
+            Cube main({0, 1, 2, 3});
 
             for (int i = 0; i < 100; ++i) {
-                main.template addActor<1, _ActorTest, _Event>(main.template addActor<0, _ActorTest, _Event>());
-                main.template addActor<3, _ActorTest, _Event>(main.template addActor<2, _ActorTest, _Event>());
+                main.template addActor<_ActorTest, _Event>(1, main.template addActor<_ActorTest, _Event>(0));
+                main.template addActor<_ActorTest, _Event>(3, main.template addActor<_ActorTest, _Event>(2));
             }
 
             main.start();
@@ -80,11 +111,12 @@ struct TEST {
             return 0;
         });
 
-        test<100>("PingPong Not Linked Core0/1 (" + name + ")", []() {
-            Engine<PhysicalCore<0>, PhysicalCore<1>> main;
+        test<100>("PingPong Core0/2 & Core1/3 (" + name + ")", []() {
+            Cube main({0, 1, 2, 3});
 
             for (int i = 0; i < 100; ++i) {
-                main.template addActor<1, _ActorTest, _Event>(main.template addActor<0, _ActorTest, _Event>());
+                main.template addActor<_ActorTest, _Event>(2, main.template addActor<_ActorTest, _Event>(0));
+                main.template addActor<_ActorTest, _Event>(3, main.template addActor<_ActorTest, _Event>(1));
             }
 
             main.start();
@@ -92,33 +124,6 @@ struct TEST {
             return 0;
         });
 
-        test<100>("PingPong Not Linked Core0/3 (" + name + ")", []() {
-            Engine<PhysicalCore<0>, PhysicalCore<3>> main;
-
-            for (int i = 0; i < 100; ++i) {
-                main.template addActor<3, _ActorTest, _Event>(main.template addActor<0, _ActorTest, _Event>());
-            }
-
-            main.start();
-            main.join();
-            return 0;
-        });
-
-        test<100>("PingPong Multi Not Linked Core0/1 & Core2/3 (" + name + ")", []() {
-            Engine<
-                    CoreLinker<PhysicalCore<0>, PhysicalCore<1>>,
-                    CoreLinker<PhysicalCore<2>, PhysicalCore<3>>
-            > main;
-
-            for (int i = 0; i < 100; ++i) {
-                main.template addActor<1, _ActorTest, _Event>(main.template addActor<3, _ActorTest, _Event>());
-                main.template addActor<0, _ActorTest, _Event>(main.template addActor<2, _ActorTest, _Event>());
-            }
-
-            main.start();
-            main.join();
-            return 0;
-        });
     }
 };
 

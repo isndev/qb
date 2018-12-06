@@ -1,5 +1,8 @@
+//
+// Created by isndev on 12/5/18.
+//
 
-#include "../../system/actor/ActorId.h"
+#include <cstdint>
 
 #ifndef CUBE_SERVICE_IOPOLL_TAGS_H
 #define CUBE_SERVICE_IOPOLL_TAGS_H
@@ -7,12 +10,8 @@
 namespace cube {
     namespace service {
         namespace iopoll {
-            template <std::size_t CoreIndex>
-            struct Tags
-            {
-                constexpr static const uint8_t index = CoreIndex;
-                constexpr static const uint16_t uid = 8;
-                constexpr static ActorId id() { return ActorId(uid, CoreIndex); }
+            struct Tag {
+                static constexpr const uint16_t sid = 8;
             };
         }
     }

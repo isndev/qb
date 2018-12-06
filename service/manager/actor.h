@@ -1,5 +1,5 @@
 
-#include "../../system/actor/Actor.h"
+#include "../../actor.h"
 #include "events.h"
 #include "tags.h"
 
@@ -10,35 +10,43 @@ namespace cube {
     namespace service {
         namespace manager {
 
-            template<typename Handler>
             class ActorAgent
-                    : public ServiceActor<Handler, Tags<Handler::_index>::uid_agent> {
+                    : public ServiceActor {
+            public:
+
+                ActorAgent()
+                : ServiceActor(AgentTag::sid)
+                        {}
             };
 
-            template<typename Handler>
             class Actor
-                    : public ServiceActor<Handler, Tags<Handler::_index>::uid> {
+                    : public ServiceActor {
 
                 inline void received(event::Base &event) {
                     event.received();
                     if (event.dest == event.source)
-                        event.dest._id = 4;
+                        event.dest._id = AgentTag::sid;
                 }
 
             public:
+
+                Actor()
+                    : ServiceActor(Tag::sid)
+                {}
+
                 virtual bool onInit() override final {
-                    this->template registerEvent<event::ToBestTimedCore>(*this);
+//                    this->template registerEvent<event::ToBestTimedCore>(*this);
                     this->template registerEvent<event::ToCore>(*this);
                     this->template registerEvent<event::ToCoreRange>(*this);
                     return true;
                 }
 
-                void on(event::ToBestTimedCore &event) {
-                    received(event);
-
-                    event.dest._index = this->bestCore();
-                    this->push(event);
-                }
+//                void on(event::ToBestTimedCore &event) {
+//                    received(event);
+//
+//                    event.dest._index = this->bestCore();
+//                    this->push(event);
+//                }
 
                 void on(event::ToCore &event) {
                     received(event);
