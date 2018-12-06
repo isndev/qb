@@ -1,8 +1,8 @@
 #include "assert.h"
+#include "service/scheduler/actor.h"
 #include "cube.h"
 
 using namespace cube::service::scheduler;
-using scheduler_tag = cube::service::scheduler::Tags<0>;
 
 struct MyTimedEvent : public event::Timer {
     MyTimedEvent(cube::Timespan const &ts)
@@ -18,8 +18,7 @@ struct MyIntervalEvent : public event::Timeout {
 
 };
 
-template <typename Handler>
-class ActorTest : public cube::Actor<Handler> {
+class ActorTest : public cube::Actor {
 public:
     ActorTest() = default;
 
@@ -27,20 +26,20 @@ public:
         this->template registerEvent<MyTimedEvent>(*this);
         this->template registerEvent<MyIntervalEvent>(*this);
         // Send event to myself
-        this->template push<MyTimedEvent>(scheduler_tag::id_timer(), cube::Timespan::seconds(1));
-        auto &e = this->template push<MyIntervalEvent>(scheduler_tag::id_timeout(), cube::Timespan::seconds(1));
+        this->template push<MyTimedEvent>(getServiceId<TimerTag>(0), cube::Timespan::seconds(1));
+        auto &e = this->template push<MyIntervalEvent>(getServiceId<TimeoutTag>(0), cube::Timespan::seconds(1));
         e.repeat = 3;
         return true;
     }
 
     // MyEvent call back
     void on(MyTimedEvent const &event) {
-        this->template push<cube::KillEvent>(scheduler_tag::id_timer());
+        this->template push<cube::KillEvent>(getServiceId<TimerTag>(0));
     }
 
     void on(MyIntervalEvent &event) {
         event.cancel<MyIntervalEvent>(*this);
-        this->template push<cube::KillEvent>(scheduler_tag::id_timeout());
+        this->template push<cube::KillEvent>(getServiceId<TimeoutTag>(0));
         this->kill();
     }
 
@@ -52,11 +51,11 @@ int main() {
     nanolog::set_log_level(nanolog::LogLevel::DEBUG);
 
     test<1>("Test scheduled event", []() {
-        Engine<PhysicalCore<0>, PhysicalCore<1> > main;
+        Cube main({0, 1});
 
-        main.addActor<0, ActorTimer>();
-        main.addActor<0, ActorTimeout>();
-        main.addActor<1, ActorTest>();
+        main.addActor<ActorTimer>(0);
+        main.addActor<ActorTimeout>(0);
+        main.addActor<ActorTest>(1);
 
         main.start();
         main.join();

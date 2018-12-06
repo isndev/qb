@@ -3,20 +3,27 @@ set(TEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 include_directories(${TEST_PATH})
 include_directories(${TEST_PATH}/..)
 
-add_executable(test-actor
-        ${TEST_PATH}/actor/actor.cpp ${DEBUGFILES} ${LOGFILES})
-add_executable(test-event
-        ${TEST_PATH}/actor/event.cpp ${DEBUGFILES} ${LOGFILES})
-add_executable(test-manager
-        ${TEST_PATH}/actor/manager.cpp ${DEBUGFILES} ${LOGFILES})
-add_executable(test-scheduler
-        ${TEST_PATH}/actor/scheduler.cpp ${DEBUGFILES} ${LOGFILES})
-add_executable(test-chain-actor
-        ${TEST_PATH}/benchmark/chain_event.cpp ${DEBUGFILES} ${LOGFILES})
-add_executable(test-linked-core
-        ${TEST_PATH}/benchmark/linked_core.cpp ${DEBUGFILES} ${LOGFILES})
-add_executable(test-core-shared_data
-        ${TEST_PATH}/benchmark/shared_data.cpp ${DEBUGFILES} ${LOGFILES})
+add_executable(test-actor ${TEST_PATH}/actor/actor.cpp)
+target_link_libraries(test-actor cube)
+
+add_executable(test-event ${TEST_PATH}/actor/event.cpp)
+target_link_libraries(test-event cube)
+
+add_executable(test-manager ${TEST_PATH}/actor/manager.cpp)
+target_link_libraries(test-manager cube)
+
+add_executable(test-scheduler ${TEST_PATH}/actor/scheduler.cpp)
+target_link_libraries(test-scheduler cube)
+
+add_executable(test-chain-actor ${TEST_PATH}/benchmark/chain_event.cpp)
+target_link_libraries(test-chain-actor cube)
+
+add_executable(test-linked-core ${TEST_PATH}/benchmark/linked_core.cpp)
+target_link_libraries(test-linked-core cube)
+
+
+#add_executable(test-core-shared_data
+#        ${TEST_PATH}/benchmark/shared_data.cpp)
 add_executable(test-TComposition
         ${TEST_PATH}/utils/TComposition.cpp)
 add_executable(test-timestamp
@@ -24,7 +31,7 @@ add_executable(test-timestamp
 
 #if (UNIX)
 #    add_executable(test-poller
-#            ${TEST_PATH}/actor/poller.cpp ${DEBUGFILES} ${LOGFILES})
+#            ${TEST_PATH}/actor/poller.cpp)
 #    target_link_libraries(test-poller cube-network)
 #endif()
 

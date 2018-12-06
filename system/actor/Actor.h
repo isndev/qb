@@ -4,146 +4,135 @@
 # include <unordered_map>
 
 # include "../../utils/nocopy.h"
+# include "ICallback.h"
 # include "Event.h"
 
 namespace cube {
 
-    template<typename _Handler>
-    class Actor : public _Handler::BaseActor {
+    class Core;
+    class Actor : nocopy
+            , public ActorId
+    {
+        friend class Core;
+
+        class IRegisteredEvent {
+        public:
+            virtual ~IRegisteredEvent() {}
+            virtual void invoke(Event *data) const = 0;
+        };
+
+        template<typename _Data, typename _Actor>
+        class RegisteredEvent : public IRegisteredEvent {
+            _Actor &_actor;
+        public:
+            RegisteredEvent(_Actor &actor)
+                    : _actor(actor) {}
+
+            virtual void invoke(Event *data) const override final {
+                auto &event = *reinterpret_cast<_Data *>(data);
+                _actor.on(event);
+                if (!event.state[0])
+                    event.~_Data();
+            }
+        };
+
+
+        Core * _handler = nullptr;
+        std::unordered_map<uint32_t, IRegisteredEvent const *> _event_map;
     protected:
-        Actor() {
-            this->template registerEvent<KillEvent>(*this);
+
+        void __set_id(ActorId const &id) {
+            static_cast<ActorId &>(*this) = id;
         }
 
-        virtual ~Actor() {}
-        virtual bool onInit() { return true; }
+    protected:
+        Actor();
+        virtual ~Actor();
+        virtual bool onInit() = 0;
+        ActorId id() const {
+            return *this;
+        }
+
+        void on(Event *event) const;
+        void on(Event const &event);
+        void on(KillEvent const &);
 
     public:
 
-        inline auto getPipe(ActorId const dest) const {
-            return _Handler::BaseActor::_handler->getPipeProxy(dest, this->id());
+        template<typename _Data, typename _Actor>
+        void registerEvent(_Actor &actor) {
+            auto it = _event_map.find(type_id<_Data>());
+            if (it != _event_map.end())
+                delete it->second;
+            _event_map.insert_or_assign(type_id<_Data>(), new RegisteredEvent<_Data, _Actor>(actor));
         }
+
+        template<typename _Data, typename _Actor>
+        void unregisterEvent(_Actor &actor) {
+            auto it = _event_map.find(type_id<_Data>());
+            if (it != _event_map.end())
+                delete it->second;
+            _event_map.insert_or_assign(type_id<_Data>(), new RegisteredEvent<Event, _Actor>(actor));
+        }
+
+        template<typename _Data>
+        void unregisterEvent() {
+            this->template unregisterEvent<_Data>(*this);
+        }
+
+
+        auto getPipe(ActorId const dest) const;
+        uint16_t getIndex() const;
 
         template <typename _Actor>
-        inline void registerCallback(_Actor &actor) const {
-            _Handler::BaseActor::_handler->registerCallback(actor);
-        }
+        void registerCallback(_Actor &actor) const;
 
-        inline void unregisterCallback() const {
-            _Handler::BaseActor::_handler->unregisterCallback(this->id());
-        }
-
-        inline void kill() const {
-            _Handler::BaseActor::_handler->killActor(this->id());
-        }
+        void unregisterCallback() const;
+        void kill() const;
 
         template<typename _Actor, typename ..._Init>
-        inline auto addRefActor(_Init &&...init) const {
-            return _Handler::BaseActor::_handler->template addReferencedActor<_Actor>(std::forward<_Init>(init)...);
-        }
+        auto addRefActor(_Init &&...init) const;
 
-        template< template <typename __Handler> typename _Actor
-                , typename ..._Init >
-        inline auto addRefActor(_Init &&...init) const {
-            return _Handler::BaseActor::_handler->template addReferencedActor<_Actor>(std::forward<_Init>(init)...);
-        }
-
-        template< template<typename __Handler, typename _Trait> typename _Actor
+        template< template<typename _Trait> typename _Actor
                 , typename _Trait
                 , typename ..._Init >
-        inline auto addRefActor(_Init &&...init) const {
-            return _Handler::BaseActor::_handler->template addReferencedActor<_Actor, _Trait>(std::forward<_Init>(init)...);
-        }
+        auto addRefActor(_Init &&...init) const;
 
         template<typename _Data, typename ..._Init>
-        inline _Data make_event(_Init const &...init) const {
-            _Data data {init...};
-            data.id = type_id<_Data>();
-            data.source = this->id();
-            data.state = 0;
-            data.bucket_size = sizeof(_Data) / CUBE_LOCKFREE_CACHELINE_BYTES;
-            return std::move(data);
-        }
+        _Data &push(ActorId const &dest, _Init const &...init) const;
 
         template<typename _Data, typename ..._Init>
-        inline _Data &push(ActorId const &dest, _Init const &...init) const {
-            return _Handler::BaseActor::_handler->template push<_Data>(dest, this->id(), init...);
-        }
+        _Data &fast_push(ActorId const &dest, _Init const &...init) const;
 
         template<typename _Data, typename ..._Init>
-        inline _Data &fast_push(ActorId const &dest, _Init const &...init) const {
-            return _Handler::BaseActor::_handler->template fast_push<_Data>(dest, this->id(), init...);
-        }
+        void send(ActorId const &dest, _Init &&...init) const;
 
-        inline void reply(Event &event) const {
-            _Handler::BaseActor::_handler->reply(event);
-        }
+        void reply(Event &event) const;
+        void forward(ActorId const dest, Event &event) const;
+        void send(Event const &event) const;
+        void push(Event const &event) const;
+        bool try_send(Event const &event) const;
 
-        inline void forward(ActorId const dest, Event &event) const {
-            _Handler::BaseActor::_handler->forward(dest, event);
-        }
-
-        inline void send(Event const &event) const {
-            _Handler::BaseActor::_handler->send(event);
-        }
-
-        inline void push(Event const &event) const {
-            _Handler::BaseActor::_handler->push(event);
-        }
-
-        inline bool try_send(Event const &event) const {
-            return _Handler::BaseActor::_handler->try_send(event);
-        }
-
-        template<typename _Data, typename ..._Init>
-        inline void send(ActorId const &dest, _Init &&...init) const {
-            _Handler::BaseActor::_handler->template send<_Data, _Init...>(dest, this->id(), std::forward<_Init>(init)...);
-        }
-
-        inline auto &sharedData() const {
-            return _Handler::BaseActor::_handler->sharedData();
-        }
-
-        inline auto time() const {
-            return _Handler::BaseActor::_handler->time();
-        }
-
-        inline uint64_t bestTime() const {
-            return _Handler::BaseActor::_handler->bestTime();
-        }
-
-        inline uint32_t bestCore() const {
-            return _Handler::BaseActor::_handler->bestCore();
-        }
-
-        void on(Event const &event) const {
-            _Handler::BaseActor::on(event);
-        }
-
-        void on(KillEvent const &) {
-            kill();
-        }
-
-    };
-
-    template <typename _Handler>
-    class UserActor : public Actor<_Handler> {
-    public:
-
-        UserActor() = delete;
-        UserActor(uint32_t const id) {
-            this->__set_id(ActorId(id, _Handler::_index));
+        template <typename T>
+        ActorId getServiceId(uint16_t const index) const {
+            return {T::sid, index};
         }
     };
 
-    template <typename _Handler, uint32_t _Tag>
-    class ServiceActor : public Actor<_Handler> {
+//    template <typename _Handler>
+//    class UserActor : public Actor<_Handler> {
+//    public:
+//
+//        UserActor() = delete;
+//        UserActor(uint32_t const id) {
+//            this->__set_id(ActorId(id, _Handler::_index));
+//        }
+//    };
+
+    class ServiceActor : public Actor {
     public:
-
-        constexpr static const uint32_t Tag = _Tag;
-
-        ServiceActor() {
-            this->__set_id(ActorId(_Tag, _Handler::_index));
+        ServiceActor(uint16_t const id) {
+            this->__set_id(ActorId(id, 0));
         }
     };
 }

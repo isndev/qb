@@ -4,8 +4,7 @@
 struct MyEvent : public cube::Event {
 };
 
-template <typename Handler>
-class ActorTest : public cube::Actor<Handler> {
+class ActorTest : public cube::Actor {
 public:
     ActorTest() = default;
 
@@ -25,7 +24,7 @@ public:
 
     // Overload when received removed event
     void on (cube::Event const &event) {
-        cube::Actor<Handler>::on(event);
+        cube::Actor::on(event);
         // Kill me on next loop
         this->kill();
     }
@@ -37,11 +36,11 @@ int main() {
     nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     test<100>("Test un/register event", []() {
-        Engine<PhysicalCore<0>, PhysicalCore<1> > main;
+        Cube main({0,1});
 
         for (int i = 0; i < 2; ++i) {
-            main.addActor<0, ActorTest>();
-            main.addActor<1, ActorTest>();
+            main.addActor<ActorTest>(0);
+            main.addActor<ActorTest>(1);
         }
         main.start();
         main.join();

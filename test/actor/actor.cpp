@@ -6,9 +6,8 @@ struct MyTrait {
     using _2 = double;
 };
 
-template <typename Handler>
-class ActorTest : public cube::Actor<Handler>
-                , public Handler::ICallback
+class ActorTest : public cube::Actor
+                , public cube::ICallback
 {
 public:
     ActorTest() = default;
@@ -23,9 +22,9 @@ public:
     }
 };
 
-template <typename Handler, typename Trait>
-class ActorTraitTest : public cube::Actor<Handler>
-                     , public Handler::ICallback
+template <typename Trait>
+class ActorTraitTest : public cube::Actor
+                     , public cube::ICallback
 {
 public:
     typename Trait::_1 x;
@@ -55,10 +54,10 @@ int main() {
     nanolog::set_log_level(nanolog::LogLevel::INFO);
 
     test<100>("CreateActor", []() {
-        Engine<PhysicalCore<0>, PhysicalCore<1>> main;
+        Cube main({0, 1});
 
-        main.addActor<0, ActorTest>();
-        main.addActor<1, ActorTraitTest, MyTrait>();
+        main.addActor<ActorTest>(0);
+        main.addActor<ActorTraitTest, MyTrait>(1);
 
         main.start();
         main.join();
