@@ -38,6 +38,10 @@ namespace cube {
                     ep_event.events |= EPOLLONESHOT;
                     return proxy.ctl(ep_event);
                 }
+
+                inline int disconnect() {
+                    return proxy.remove(ep_event);
+                }
             };
 
             namespace event {
@@ -48,10 +52,6 @@ namespace cube {
 
                 // input events
                 struct Subscribe
-                        : public Base {
-                };
-
-                struct Unsubscribe
                         : public Base {
                 };
 

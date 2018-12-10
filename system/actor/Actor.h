@@ -5,6 +5,7 @@
 
 # include "../../utils/nocopy.h"
 # include "ICallback.h"
+# include "ProxyPipe.h"
 # include "Event.h"
 
 namespace cube {
@@ -49,15 +50,16 @@ namespace cube {
         Actor();
         virtual ~Actor();
         virtual bool onInit() = 0;
-        ActorId id() const {
-            return *this;
-        }
 
         void on(Event *event) const;
         void on(Event const &event);
         void on(KillEvent const &);
 
     public:
+
+        ActorId id() const {
+            return *this;
+        }
 
         template<typename _Data, typename _Actor>
         void registerEvent(_Actor &actor) {
@@ -80,8 +82,8 @@ namespace cube {
             this->template unregisterEvent<_Data>(*this);
         }
 
-
-        auto getPipe(ActorId const dest) const;
+        uint64_t time() const;
+        ProxyPipe getPipe(ActorId const dest) const;
         uint16_t getIndex() const;
 
         template <typename _Actor>

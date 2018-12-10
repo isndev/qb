@@ -28,6 +28,11 @@ namespace           cube {
             ctl(item_type &item) const {
                 return epoll_ctl(_epoll, EPOLL_CTL_MOD, item.data.fd, &item);
             }
+
+            inline int
+            remove(item_type const &item) {
+                return epoll_ctl(_epoll, EPOLL_CTL_DEL, item.data.fd, nullptr);
+            }
         };
 
         template <std::size_t _MAX_EVENTS = 1024>

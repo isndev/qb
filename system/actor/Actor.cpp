@@ -32,7 +32,11 @@ namespace cube {
         kill();
     }
 
-    auto Actor::getPipe(ActorId const dest) const {
+    uint64_t Actor::time() const {
+        return _handler->time();
+    }
+
+    ProxyPipe Actor::getPipe(ActorId const dest) const {
         return _handler->getPipeProxy(dest, this->id());
     }
 

@@ -4,9 +4,14 @@
 # include <limits>
 # include <cstdint>
 
+# include "../../utils/prefix.h"
 # include "../io.h"
 
 namespace cube {
+
+    struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT CacheLine {
+        uint32_t __raw__[16];
+    };
 
     struct ActorId {
         friend class Cube;

@@ -4,14 +4,9 @@
 # include <utility>
 # include <bitset>
 
-# include "../../utils/prefix.h"
 # include "ActorId.h"
 
 namespace cube {
-
-    struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT CacheLine {
-        uint32_t __raw__[16];
-    };
 
     template<typename T>
     struct type {
