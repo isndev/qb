@@ -21,7 +21,6 @@ namespace cube {
 
                 bool onInit() override final {
                     this->template registerEvent<event::Subscribe>(*this);
-                    this->template registerEvent<event::Unsubscribe>(*this);
                     this->registerCallback(*this);
 
                     return true;
@@ -37,10 +36,6 @@ namespace cube {
                     if (!event.getOwner())
                         event.setOwner(event.source);
                     _epoll.add(event.ep_event);
-                }
-
-                void on(event::Unsubscribe const &event) {
-                    _epoll.remove(event.ep_event);
                 }
             };
 

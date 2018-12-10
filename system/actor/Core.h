@@ -23,6 +23,7 @@
 # include "../../allocator/pipe.h"
 # include "../lockfree/mpsc.h"
 # include "ICallback.h"
+# include "ProxyPipe.h"
 # include "Event.h"
 # include "Actor.h"
 # include "Cube.h"
@@ -41,7 +42,6 @@ namespace cube {
         // Types
         using MPSCBuffer = Cube::MPSCBuffer;
         using EventBuffer = std::array<CacheLine, MaxRingEvents>;
-        using Pipe = allocator::pipe<CacheLine>;
         using ActorMap = std::unordered_map<uint32_t, Actor *>;
         using CallbackMap = std::unordered_map<uint32_t, ICallback *>;
         using PipeMap = std::unordered_map<uint32_t, Pipe>;
@@ -178,21 +178,9 @@ namespace cube {
 			LOG_INFO << "[READY]" << *this;
             while (Cube::sync_start.load(std::memory_order_acquire) < total_core)
                 std::this_thread::yield();
-            //Cube::sync_start.store((std::numeric_limits<uint64_t >::max)());
         }
         void __updateTime__() {
             const auto now = Timestamp::nano();
-            //auto best = bestTime();
-            //_nano_timer = now - _nano_timer;
-            //if (reinterpret_cast<uint8_t const *>(&best)[0] == _index) {
-            //    if (_nano_timer > best) {
-            //        reinterpret_cast<uint8_t *>(&_nano_timer)[0] = _index;
-            //        Cube::sync_start.store(_nano_timer);
-            //    }
-            //} else if (_nano_timer < best) {
-            //    reinterpret_cast<uint8_t *>(&_nano_timer)[0] = _index;
-            //    Cube::sync_start.store(_nano_timer);
-            //}
             _nano_timer = now;
         }
         void __spawn__() {
@@ -328,76 +316,8 @@ namespace cube {
         }
 
     public:
-        class PipeProxy {
-            ActorId dest;
-            ActorId source;
-            Pipe *pipe;
-
-            template<typename T = cube::CacheLine>
-            T *allocate(std::size_t &size) {
-                if (size % sizeof(cube::CacheLine))
-                    size = size * sizeof(T) / sizeof(CacheLine) + 1;
-                else
-                    size /= sizeof(CacheLine);
-
-                return reinterpret_cast<T *>(pipe->allocate_back(size));
-            }
-
-        public:
-            PipeProxy() = default;
-            PipeProxy(PipeProxy const &) = default;
-            PipeProxy &operator=(PipeProxy const &) = default;
-
-            PipeProxy(Pipe &pipe, ActorId dest, ActorId source)
-                    : pipe(&pipe), dest(dest), source(source) {}
-
-            template<typename T, typename ..._Init>
-            T &push(_Init &&...init) {
-                auto &data = pipe->template allocate_back<T>(std::forward<_Init>(init)...);
-                data.id = type_id<T>();
-                data.dest = dest;
-                data.source = source;
-                if constexpr (std::is_base_of<ServiceEvent, T>::value) {
-                    data.forward = source;
-                    std::swap(data.id, data.service_event_id);
-                }
-
-                data.state = 0;
-                data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
-                return data;
-            }
-
-            template<typename T, typename ..._Init>
-            T &allocated_push(std::size_t size, _Init &&...init) {
-                size += sizeof(T);
-                auto &data = *(new(reinterpret_cast<T *>(this->template allocate<char>(size))) T(
-                        std::forward<_Init>(init)...));
-
-                data.id = type_id<T>();
-                data.dest = dest;
-                data.source = source;
-                if constexpr (std::is_base_of<ServiceEvent, T>::value) {
-                    data.forward = source;
-                    std::swap(data.id, data.service_event_id);
-                }
-
-                data.state = 0;
-                data.bucket_size = size;
-                return data;
-            }
-
-            ActorId getDest() const {
-                return dest;
-            }
-
-            ActorId getSource() const {
-                return source;
-            }
-
-        };
-
         //Event Api
-        PipeProxy getPipeProxy(ActorId const dest, ActorId const source) {
+        ProxyPipe getPipeProxy(ActorId const dest, ActorId const source) {
             return {__getPipe__(dest._index), dest, source};
         }
         bool try_send(Event const &event) const {
