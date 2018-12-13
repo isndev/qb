@@ -4,15 +4,15 @@
 
 using namespace cube::service::scheduler;
 
-struct MyTimedEvent : public event::Timer {
+struct MyTimedEvent : public event::TimedEvent {
     MyTimedEvent(cube::Timespan const &ts)
-            : Timer(ts) {}
+            : TimedEvent(ts) {}
 };
 
-struct MyIntervalEvent : public event::Timeout {
+struct MyIntervalEvent : public event::TimedEvent {
     uint64_t i[32];
     MyIntervalEvent(cube::Timespan const &ts)
-            : Timeout(ts) {
+            : TimedEvent(ts) {
         i[31] = 666;
     }
 
@@ -26,21 +26,22 @@ public:
         this->template registerEvent<MyTimedEvent>(*this);
         this->template registerEvent<MyIntervalEvent>(*this);
         // Send event to myself
-        this->template push<MyTimedEvent>(getServiceId<TimerTag>(0), cube::Timespan::seconds(1));
-        auto &e = this->template push<MyIntervalEvent>(getServiceId<TimeoutTag>(0), cube::Timespan::seconds(1));
+        auto &e = this->template push<MyIntervalEvent>(getServiceId<Tag>(0), cube::Timespan::seconds(1));
         e.repeat = 3;
         return true;
     }
 
     // MyEvent call back
     void on(MyTimedEvent const &event) {
-        this->template push<cube::KillEvent>(getServiceId<TimerTag>(0));
+        this->template push<cube::KillEvent>(getServiceId<Tag>(0));
+        this->kill();
     }
 
     void on(MyIntervalEvent &event) {
-        event.cancel<MyIntervalEvent>(*this);
-        this->template push<cube::KillEvent>(getServiceId<TimeoutTag>(0));
-        this->kill();
+        if (event.repeat == 2) {
+            event.cancel<MyIntervalEvent>(*this);
+            this->template push<MyTimedEvent>(getServiceId<Tag>(0), cube::Timespan::seconds(3));
+        }
     }
 
 };
@@ -53,8 +54,7 @@ int main() {
     test<1>("Test scheduled event", []() {
         Cube main({0, 1});
 
-        main.addActor<ActorTimer>(0);
-        main.addActor<ActorTimeout>(0);
+        main.addActor<cube::service::scheduler::Actor>(0);
         main.addActor<ActorTest>(1);
 
         main.start();

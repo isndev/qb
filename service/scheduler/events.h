@@ -7,58 +7,51 @@
 namespace cube {
     namespace service {
         namespace scheduler {
+
+            class Actor;
+
             namespace event {
                 // input events
-                struct Cancel
+                class Cancel
                         : public Event {
                     uint64_t time_id;
+                public:
+                    Cancel() = delete;
+                    Cancel(uint64_t const id)
+                            : time_id(id) {}
+
+                    uint64_t getTimeId() const {
+                        return time_id;
+                    }
+
                 };
 
-
                 // input/output events
-                struct Timer
+                struct TimedEvent
                         : public ServiceEvent {
+                    friend class scheduler::Actor;
                     uint64_t time_id;
                     uint64_t start_time;
                     uint64_t execution_time;
-
-                    Timer() = delete;
-
-                    Timer(Timespan const &span)
-                            : start_time(Timestamp::nano()), execution_time(start_time + span.nanoseconds()) {
-                        service_event_id = type_id<Timer>();
-                    }
-
-                    inline void release() {
-                        execution_time = 0;
-                        this->state[0] = 0;
-                    }
-                };
-
-                struct Timeout
-                        : public Timer {
+                public:
                     uint32_t repeat;
 
-                    Timeout() = delete;
+                    TimedEvent() = delete;
 
-                    Timeout(Timespan const &span)
-                            : Timer(span) {
-                        service_event_id = type_id<Timeout>();
-                        repeat = ~repeat;
+                    TimedEvent(Timespan const &span, uint32_t const repeat = 1)
+                            : start_time(Timestamp::nano())
+                            , execution_time(start_time + span.nanoseconds())
+                            , repeat(repeat)
+                    {
+                        service_event_id = type_id<TimedEvent>();
                         this->state[0] = 1;
                     }
 
                     template<typename _Event, typename _Actor>
                     inline void cancel(_Actor &actor) {
                         state[0] = 0;
-                        Cancel e;
-                        e.id = type_id<Cancel>();
-                        e.time_id = time_id;
-                        e.dest = dest;
-                        e.source = forward;
-                        e.bucket_size = sizeof(Cancel) / CUBE_LOCKFREE_CACHELINE_BYTES;
                         actor.template unregisterEvent<_Event>();
-                        actor.reply(e);
+                        actor.template send<Cancel>(forward, time_id);
                     }
 
                     void release() {
@@ -67,7 +60,8 @@ namespace cube {
                             execution_time = now + (now - start_time);
                             start_time = now;
                         } else {
-                            Timer::release();
+                            execution_time = 0;
+                            this->state[0] = 0;
                         }
                     }
                 };

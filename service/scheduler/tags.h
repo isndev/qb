@@ -10,12 +10,8 @@
 namespace cube {
     namespace service {
         namespace scheduler {
-            struct TimerTag {
+            struct Tag {
                 static constexpr const uint16_t sid = 1;
-            };
-
-            struct TimeoutTag {
-                static constexpr const uint16_t sid = 2;
             };
         }
     }
