@@ -33,7 +33,7 @@ public:
 using namespace cube;
 int main() {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-event.log", 1024);
-    nanolog::set_log_level(nanolog::LogLevel::INFO);
+    nanolog::set_log_level(nanolog::LogLevel::DEBUG);
 
     test<100>("Test un/register event", []() {
         Cube main({0,1});

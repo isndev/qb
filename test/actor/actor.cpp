@@ -51,7 +51,7 @@ public:
 using namespace cube;
 int main() {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-actor.log", 1024);
-    nanolog::set_log_level(nanolog::LogLevel::INFO);
+    nanolog::set_log_level(nanolog::LogLevel::DEBUG);
 
     test<100>("CreateActor", []() {
         Cube main({0, 1});
