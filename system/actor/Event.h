@@ -16,7 +16,7 @@ namespace cube {
     template<typename T>
     constexpr uint16_t type_id() { return static_cast<uint16_t>(reinterpret_cast<std::size_t>(&type<T>::id)); }
 
-    struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT Event {
+    struct  Event {
     public:
         uint16_t id;
         uint16_t bucket_size;

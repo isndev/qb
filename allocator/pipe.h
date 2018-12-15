@@ -10,6 +10,11 @@
 namespace cube {
     namespace allocator {
 
+        template <typename T, typename U>
+        constexpr auto getItemSize() {
+            return sizeof(T) / sizeof(U) + static_cast<bool>(sizeof(T) % sizeof(U));
+        }
+
         template <typename T, std::size_t _SIZE = 4096>
         class pipe : nocopy, std::allocator<T> {
             using base_type = std::allocator<T>;
@@ -114,13 +119,13 @@ namespace cube {
 
             template <typename U, typename ..._Init>
             inline U &allocate_back(_Init &&...init) {
-                constexpr std::size_t BUCKET_SIZE = (sizeof(U) / sizeof(T));
+                constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
                 return *(new (reinterpret_cast<U *>(allocate_back(BUCKET_SIZE))) U(std::forward<_Init>(init)...));
             }
 
             template <typename U, typename ..._Init>
             inline U &allocate_size(std::size_t const size, _Init &&...init) {
-                constexpr std::size_t BUCKET_SIZE = (sizeof(U) / sizeof(T));
+                constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
                 return *(new (reinterpret_cast<U *>(allocate_back(size + BUCKET_SIZE))) U(std::forward<_Init>(init)...));
             }
 
@@ -136,13 +141,14 @@ namespace cube {
 
             template <typename U, typename ..._Init>
             inline U &allocate(_Init &&...init) {
-                constexpr std::size_t BUCKET_SIZE = (sizeof(U) / sizeof(T));
-                return *(new (reinterpret_cast<U *>(allocate(sizeof(U) / sizeof(T)))) U(std::forward<_Init>(init)...));
+                constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
+                return *(new (reinterpret_cast<U *>(allocate(BUCKET_SIZE))) U(std::forward<_Init>(init)...));
             }
 
             template <typename U>
             inline U &recycle_back(U const &data) {
-                return *reinterpret_cast<U *>(std::memcpy(allocate_back(sizeof(U) / sizeof(T))
+                constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
+                return *reinterpret_cast<U *>(std::memcpy(allocate_back(BUCKET_SIZE)
                         , &data, sizeof(U)));
             }
 
@@ -154,7 +160,8 @@ namespace cube {
 
             template <typename U>
             inline U &recycle(U const &data) {
-                return *reinterpret_cast<U *>(std::memcpy(allocate(sizeof(U) / sizeof(T))
+                constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
+                return *reinterpret_cast<U *>(std::memcpy(allocate(BUCKET_SIZE)
                         , &data, sizeof(U)));
             }
 

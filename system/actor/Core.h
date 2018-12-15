@@ -361,7 +361,7 @@ namespace cube {
                 std::swap(data.id, data.service_event_id);
             }
             data.state = 0;
-            data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
+            data.bucket_size = allocator::getItemSize<T, CacheLine>();
             if (likely(_engine.send(data)))
                 pipe.free(data.bucket_size);
         }
@@ -378,7 +378,7 @@ namespace cube {
             }
 
             data.state = 0;
-            data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
+            data.bucket_size = allocator::getItemSize<T, CacheLine>();
             return data;
         }
         template<typename T, typename ..._Init>
@@ -394,7 +394,7 @@ namespace cube {
             }
 
             data.state = 0;
-            data.bucket_size = sizeof(T) / CUBE_LOCKFREE_CACHELINE_BYTES;
+            data.bucket_size = allocator::getItemSize<T, CacheLine>();
             if (likely(_engine.send(data)))
                 pipe.free_back(data.bucket_size);
         }
