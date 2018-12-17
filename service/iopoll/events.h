@@ -34,6 +34,14 @@ namespace cube {
                 Proxy(network::epoll_proxy const &proxy)
                         : proxy(proxy) {}
 
+                inline bool receive(void *data, std::size_t size, std::size_t &received) const {
+                    return tcp().receive(data, size, received) == network::Socket::Done;
+                }
+
+                inline bool send(const void *data, std::size_t size, std::size_t &sent) const {
+                    return tcp().send(data, size, sent) == network::Socket::Done;
+                }
+
                 inline int repoll() {
                     ep_event.events |= EPOLLONESHOT;
                     return proxy.ctl(ep_event);
@@ -61,6 +69,9 @@ namespace cube {
                         , public Proxy {
 
                     Ready() = delete;
+                    Ready(Proxy const &proxy)
+                        : Proxy(proxy)
+                    {}
                     Ready(network::epoll_proxy const &proxy, epoll_event const &event)
                             : Proxy(proxy) {
                         ep_event = event;

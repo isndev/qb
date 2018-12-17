@@ -12,7 +12,7 @@ namespace cube {
 		namespace mqtt {
 			namespace event {
 				// input events
-				using Ready = cube::service::iopoll::event::Ready;
+				using Ready = cube::service::iopoll::Proxy;
 			}
 		}
 	}
