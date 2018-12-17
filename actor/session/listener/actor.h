@@ -28,7 +28,7 @@ namespace cube {
             class Actor
                     : public session::Actor<Actor<Derived>> {
             public:
-                constexpr static const session::Type type = session::Type::READ;
+                constexpr static const service::iopoll::Type type = service::iopoll::READ;
             private:
                 network::Listener listener;
 
@@ -47,11 +47,10 @@ namespace cube {
                     if (!listener.good())
                         return false;
 
-                    this->template registerEvent<event::Ready>(*this);
                     return static_cast<Derived &>(*this).onInitialize();
                 }
 
-                bool onRead(event::Ready &event) {
+                cube::session::ReturnValue onRead(event::Ready &event) {
                     network::SocketTCP socket;
 
                     if (listener.accept(socket) == network::Socket::Done) {
@@ -61,14 +60,14 @@ namespace cube {
                         LOG_WARN << "Failed to accept new connection";
                     }
 
-                    if (event.repoll()) {
-                        LOG_CRIT << "Failed to repoll new connection";
-                        return false;
-                    }
-                    return true;
+                    return ReturnValue::REPOLL;
                 }
 
-                void onDisconnect(event::Ready &event) {}
+                cube::session::ReturnValue onDisconnect(event::Ready &) {
+                    LOG_CRIT << "Service iopoll is down";
+                    this->kill();
+                    return ReturnValue::KO;
+                }
             };
 
         }
