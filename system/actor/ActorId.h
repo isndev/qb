@@ -32,8 +32,18 @@ namespace cube {
 
         operator const uint32_t &() const;
         bool operator!=(ActorId const &rhs) const;
+
+        uint16_t sid() const {
+            return _id;
+        }
+
+        uint16_t index() const {
+            return _index;
+        }
     };
 
 }
+
+cube::io::stream &operator<<(cube::io::stream &os, cube::ActorId const &id);
 
 #endif //CUBE_ACTORID_H

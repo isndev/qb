@@ -21,3 +21,10 @@ namespace cube {
         return static_cast<uint32_t>(*this) != static_cast<uint64_t>(rhs);
     }
 }
+
+cube::io::stream &operator<<(cube::io::stream &os, cube::ActorId const &id) {
+    std::stringstream ss;
+    ss << id.index() << "." << id.sid();
+    os << ss.str();
+    return os;
+}
