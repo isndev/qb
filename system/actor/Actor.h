@@ -121,16 +121,6 @@ namespace cube {
         }
     };
 
-//    template <typename _Handler>
-//    class UserActor : public Actor<_Handler> {
-//    public:
-//
-//        UserActor() = delete;
-//        UserActor(uint32_t const id) {
-//            this->__set_id(ActorId(id, _Handler::_index));
-//        }
-//    };
-
     class ServiceActor : public Actor {
     public:
         ServiceActor(uint16_t const id) {
@@ -138,5 +128,7 @@ namespace cube {
         }
     };
 }
+
+cube::io::stream &operator<<(cube::io::stream &os, cube::Actor const &actor);
 
 #endif //CUBE_ACTOR_H

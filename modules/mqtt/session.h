@@ -92,10 +92,10 @@ namespace cube {
                 // Socket read workflow
                 const std::size_t expected = reader.expected();
                 auto ret = session::ReturnValue::REPOLL;
-                std::size_t received = 0;
-                char *data = in_pipe.allocate_back(expected);
-                reader.setHeader(in_pipe.data());
                 if (static_cast<Derived const &>(*this).canRead()) {
+                    std::size_t received = 0;
+                    char *data = in_pipe.allocate_back(expected);
+                    reader.setHeader(in_pipe.data());
                     if (event.receive(data, expected, received)) {
                         received_bytes += received;
                         in_pipe.free_back(expected - received);

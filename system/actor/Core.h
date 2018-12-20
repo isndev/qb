@@ -27,6 +27,7 @@
 # include "Event.h"
 # include "Actor.h"
 # include "Cube.h"
+# define SERVICE_ACTOR_INDEX 10000
 
 class Core;
 cube::io::stream &operator<<(cube::io::stream &os, cube::Core const &core);
@@ -46,6 +47,7 @@ namespace cube {
         using CallbackMap = std::unordered_map<uint32_t, ICallback *>;
         using PipeMap = std::unordered_map<uint32_t, Pipe>;
         using RemoveActorList = std::vector<ActorId>;
+        using AvailableIdList = std::unordered_set<uint16_t>;
         //!Types
     private:
 
@@ -53,6 +55,7 @@ namespace cube {
         const uint8_t   _index;
         Cube           &_engine;
         MPSCBuffer     &_mail_box;
+        AvailableIdList _ids;
         ActorMap        _actors;
         CallbackMap     _actor_callbacks;
         RemoveActorList _actor_to_remove;
@@ -67,13 +70,17 @@ namespace cube {
                 : _index(id)
                 , _engine(engine)
                 , _mail_box(engine.getMailBox(id))
-                , _nano_timer(Timestamp::nano()) {}
+                , _nano_timer(Timestamp::nano()) {
+            _ids.reserve(std::numeric_limits<uint16_t>::max() - SERVICE_ACTOR_INDEX);
+            for (auto i = SERVICE_ACTOR_INDEX + 1; i <= std::numeric_limits<uint16_t>::max(); ++i) {
+                _ids.insert(i);
+            }
+        }
 
         ActorId __generate_id__() {
-            static std::size_t pid = 10000;
-            //duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count()
-            //Timestamp::nano() % std::numeric_limits<uint32_t>::max() + pid++)
-            return ActorId(static_cast<uint32_t >(++pid), _index);
+            if (!_ids.size())
+                return ActorId::NotFound();
+            return ActorId(_ids.extract(_ids.begin()).value(), _index);
         }
 
         // Event Management
@@ -175,7 +182,7 @@ namespace cube {
         void __wait__all__cores__ready() {
             const auto total_core = _engine.getNbCore();
             Cube::sync_start.fetch_add(1, std::memory_order_acq_rel);
-			LOG_INFO << "[READY]" << *this;
+            LOG_INFO << "[READY]" << *this;
             while (Cube::sync_start.load(std::memory_order_acquire) < total_core)
                 std::this_thread::yield();
         }
@@ -185,8 +192,8 @@ namespace cube {
         }
         void __spawn__() {
             try {
-                __init__actors__();
                 if (__init__()) {
+                    __init__actors__();
                     __wait__all__cores__ready();
 
                     LOG_INFO << "StartSequence Init " << *this << " Success";
@@ -194,14 +201,14 @@ namespace cube {
                         __updateTime__();
                         __receive__();
 
-                        for (const auto &callback :  _actor_callbacks)
+                        for (const auto &callback : _actor_callbacks)
                             callback.second->onCallback();
 
                         __flush__();
 
                         if (unlikely(!_actor_to_remove.empty())) {
                             // remove dead actors
-                            for (auto const &actor :  _actor_to_remove)
+                            for (auto const &actor : _actor_to_remove)
                                 removeActor(actor);
                             _actor_to_remove.clear();
                             if (_actors.empty()) {
@@ -224,33 +231,53 @@ namespace cube {
         //!Workflow
 
         // Actor Management
+        template<typename _Actor>
+        bool initActor(_Actor * const actor, bool doinit) {
+            if constexpr (!std::is_base_of<ServiceActor, _Actor>::value) {
+                auto id = __generate_id__();
+                actor->__set_id(id);
+                // Number of actors attends to its limit in this core
+                if (id == ActorId::NotFound() || (doinit && unlikely(!actor->onInit()))) {
+                    _ids.insert(id);
+                    delete actor;
+                    return false;
+                }
+            } else {
+                actor->_index = _index;
+                if (_actors.find(actor->id()) != _actors.end() || (doinit && unlikely(!actor->onInit()))) {
+                    delete actor;
+                    return false;
+                }
+            }
+            return true;
+        }
+
         void addActor(Actor *actor) {
             _actors.insert({actor->id(), actor});
-            LOG_DEBUG << "New Actor[" << actor->_id << "] Core(" << _index << ")";
+            LOG_DEBUG << "New " << *actor;
         }
         void removeActor(ActorId const &id) {
             const auto it = _actors.find(id);
-            if (it != _actors.end()) {
-                LOG_DEBUG << "Delete Actor[" << id << "] Core(" << _index << ")";
-                delete it->second;
-                _actors.erase(id);
-                unregisterCallback(id);
-            }
+            LOG_DEBUG << "Delete Actor(" << id.index() << "," << id.sid() << ")";
+            delete it->second;
+            _actors.erase(it);
+            unregisterCallback(id);
+            if (id._id > SERVICE_ACTOR_INDEX)
+                _ids.insert(id._id);
         }
 
         template<typename _Actor, typename ..._Init>
         ActorId addActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
             actor->_handler = this;
-            if constexpr (!std::is_base_of<ServiceActor, _Actor>::value) {
-                actor->__set_id(__generate_id__());
-            } else {
-                actor->_index = _index;
-            }
-            addActor(actor);
 
+            if (!initActor(actor, false))
+                return ActorId::NotFound();
+
+            addActor(actor);
             return actor->id();
         };
+
         template<typename _Actor
                 , typename ..._Init >
         ActorId addActor(std::size_t index, _Init &&...init) {
@@ -280,18 +307,11 @@ namespace cube {
         _Actor *addReferencedActor(_Init &&...init) {
             auto actor = new _Actor(std::forward<_Init>(init)...);
             actor->_handler = this;
-            if constexpr (!std::is_base_of<ServiceActor, _Actor>::value) {
-                actor->__set_id(__generate_id__());
-            } else {
-                actor->_index = _index;
-            }
 
-            if (unlikely(!actor->onInit())) {
-                delete actor;
+            if (!initActor(actor, true))
                 return nullptr;
-            }
-            addActor(actor);
 
+            addActor(actor);
             return actor;
         };
         template<template <typename _Trait> typename _Actor

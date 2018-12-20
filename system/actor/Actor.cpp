@@ -25,7 +25,7 @@ namespace cube {
     }
 
     void Actor::on(Event const &event) {
-        LOG_WARN << "Actor[" << this->id()._id << "." << this->id()._index << "] received removed event[" << event.id << "]";
+        LOG_WARN << *this << " received removed event[" << event.id << "]";
     }
 
     void Actor::on(KillEvent const &) {
@@ -73,4 +73,11 @@ namespace cube {
         return _handler->try_send(event);
     }
 
+}
+
+cube::io::stream &operator<<(cube::io::stream &os, cube::Actor const &actor){
+    std::stringstream ss;
+    ss << "Actor(" << actor.index() << "." << actor.sid() << ")";
+    os << ss.str();
+    return os;
 }
