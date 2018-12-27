@@ -23,6 +23,7 @@ namespace cube {
                     , public cube::session::Actor<Derived> {
             public:
                 constexpr static const service::iopoll::Type type = service::iopoll::READWRITE;
+                constexpr static const bool has_keepalive = true;
                 Actor() = default;
             };
 

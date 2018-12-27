@@ -34,7 +34,7 @@ namespace cube {
 
                 uint64_t limit_time_activity;
             protected:
-                Routine() {}
+                Routine() : limit_time_activity(0) {}
 
                 inline void setTimer(std::size_t const timer) {
                     limit_time_activity = timer;
@@ -70,10 +70,17 @@ namespace cube {
                         }
                         if (event.getEvents() & EPOLLIN)
                             status = static_cast<Derived &>(*this).onRead(event);
-                        else if (static_cast<Derived &>(*this).time() > limit_time_activity) {
+                    }
+
+
+                    if constexpr (Derived::has_keepalive) {
+                        if (static_cast<Derived &>(*this).time() > limit_time_activity) {
                             // check activity
                             status = session::ReturnValue::KO;
-                            LOG_INFO << "Will Disconnect for timer";
+                            LOG_INFO << "Will Disconnect for timer"
+                                     << static_cast<Derived &>(*this).time()
+                                     << ">" << limit_time_activity
+                                     << "DIFF= " << static_cast<Derived &>(*this).time() - limit_time_activity;
                         }
                     }
 

@@ -29,14 +29,18 @@ namespace cube {
                     : public session::Actor<Actor<Derived>> {
             public:
                 constexpr static const service::iopoll::Type type = service::iopoll::READ;
+                constexpr static const bool has_keepalive = false;
             private:
                 network::Listener listener;
+                const uint8_t io_core_id;
 
             protected:
                 inline network::Listener &getListener() { return listener; }
             public:
                 Actor() = delete;
-                Actor(unsigned short port, network::ip ip = network::ip::Any) {
+                Actor(uint8_t core, unsigned short port, network::ip ip = network::ip::Any)
+                    : io_core_id(core)
+                {
                     LOG_INFO << "Start listening on port " << port;
 
                     listener.listen(port, ip);
@@ -46,7 +50,9 @@ namespace cube {
                 bool onInitialize() {
                     if (!listener.good())
                         return false;
-
+                    auto &e = this->template push<event::Subscribe>(this->template getServiceId<service::iopoll::Tag>(io_core_id));
+                    e.setEvents(EPOLLIN | EPOLLONESHOT);
+                    e.setHandle(this->getListener().raw());
                     return static_cast<Derived &>(*this).onInitialize();
                 }
 
