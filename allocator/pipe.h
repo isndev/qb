@@ -173,11 +173,11 @@ namespace cube {
 
             inline void reorder() {
                 const auto nb_item = _end - _begin;
-//                LOG_DEBUG << "Start reorder " << _begin << ":" << _end << "|" << nb_item;
+                //std::cout << "Start reorder " << _begin << ":" << _end << "|" << nb_item;
                 std::memmove(_data, _data + _begin, nb_item * sizeof(T));
                 _begin = 0;
                 _end = nb_item;
-//                LOG_DEBUG << "End reorder " << _begin << ":" << _end << "|" << _end - _begin;
+                //std::cout << "End reorder " << _begin << ":" << _end << "|" << _end - _begin;
             }
 
         };

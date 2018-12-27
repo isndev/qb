@@ -163,10 +163,10 @@ namespace           cube {
         }
 
         Socket::Status SocketTCP::send(const void *data, std::size_t size, std::size_t &sent) const {
-            sent = ::send(_handle, static_cast<const char *>(data), static_cast<int>(size), flags);
-            if (unlikely(sent < 0))
+            int result = ::send(_handle, static_cast<const char *>(data), static_cast<int>(size), flags);
+            if (unlikely(result < 0))
                 return Socket::getErrorStatus();
-
+            sent = result;
             return Socket::Done;
         }
 

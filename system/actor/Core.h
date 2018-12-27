@@ -39,7 +39,7 @@ namespace cube {
         friend class Cube;
     public:
         ////////////
-        constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)()) / CUBE_LOCKFREE_CACHELINE_BYTES;
+        constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / CUBE_LOCKFREE_CACHELINE_BYTES * 4;
         // Types
         using MPSCBuffer = Cube::MPSCBuffer;
         using EventBuffer = std::array<CacheLine, MaxRingEvents>;
@@ -402,7 +402,7 @@ namespace cube {
             return data;
         }
         template<typename T, typename ..._Init>
-        T &fast_push(ActorId const &dest, ActorId const &source, _Init &&...init) {
+        void fast_push(ActorId const &dest, ActorId const &source, _Init &&...init) {
             auto &pipe = __getPipe__(dest._index);
             auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
             data.id = type_id<T>();
@@ -415,7 +415,7 @@ namespace cube {
 
             data.state = 0;
             data.bucket_size = allocator::getItemSize<T, CacheLine>();
-            if (likely(_engine.send(data)))
+            if (likely(try_send(data)))
                 pipe.free_back(data.bucket_size);
         }
         //!Event Api

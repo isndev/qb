@@ -113,6 +113,9 @@ namespace cube {
                             in_pipe.free_back(reader.readBytes());
                             reader.reset();
                         }
+                        if constexpr (Derived::has_keepalive) {
+                            static_cast<Derived &>(*this).reset_timer();
+                        }
                     } else
                         ret = session::ReturnValue::KO;
                 }
@@ -132,7 +135,10 @@ namespace cube {
                             out_pipe.reset();
                         }
                     } else
-                        return ret = session::ReturnValue::KO;
+                        ret = session::ReturnValue::KO;
+                    if constexpr (Derived::has_keepalive) {
+                        static_cast<Derived &>(*this).reset_timer();
+                    }
                 }
                 return ret;
             }

@@ -24,7 +24,7 @@ namespace cube {
             Actor() {}
 
             inline void reset_timer(std::size_t const seconds) {
-                this->setTimer(this->time() + cube::Timespan::seconds(seconds + 1).nanoseconds());
+                this->setTimer(this->time() + static_cast<uint64_t>(cube::Timespan::seconds(seconds + 3).nanoseconds()));
             }
 
         public:

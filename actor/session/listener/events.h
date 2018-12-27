@@ -13,6 +13,8 @@ namespace cube {
 			namespace event {
 				// input events
 				using Ready = cube::service::iopoll::Proxy;
+				// output events
+				using Subscribe = cube::service::iopoll::event::Subscribe;
 			}
 		}
 	}

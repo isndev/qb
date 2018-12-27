@@ -27,23 +27,27 @@ namespace cube {
                 template <size_t _Index>
                 bool enqueue(T const &t) {
                     const size_t index = _Index % nb_producer;
+                    std::lock_guard<SpinLock> lock(_producers[index].lock);
                     return _producers[index]._ringbuffer.enqueue(t);
                 }
 
                 template <size_t _Index, bool _All = true>
                 size_t enqueue(T const *t, size_t const size) {
                     const size_t index = _Index % nb_producer;
+                    std::lock_guard<SpinLock> lock(_producers[index].lock);
                     return _producers[index]._ringbuffer.enqueue(t, size);
                 }
 
                 bool enqueue(size_t const _index, T const &t) {
                     const size_t index = _index % nb_producer;
+                    std::lock_guard<SpinLock> lock(_producers[index].lock);
                     return _producers[index].enqueue(t);
                 }
 
                 template <bool _All = true>
                 size_t enqueue(size_t const _index, T const *t, size_t const size) {
                     const size_t index = _index % nb_producer;
+                    std::lock_guard<SpinLock> lock(_producers[index].lock);
                     return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
                 }
 
@@ -105,23 +109,27 @@ namespace cube {
                 template <size_t _Index>
                 bool enqueue(T const &t) {
                     const size_t index = _Index % _nb_producer;
+                    std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
                     return _producers.get()[index]._ringbuffer.enqueue(t);
                 }
 
                 template <size_t _Index, bool _All = true>
                 size_t enqueue(T const *t, size_t const size) {
                     const size_t index = _Index % _nb_producer;
+                    std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
                     return _producers.get()[index]._ringbuffer.enqueue<_All>(t, size);
                 }
 
                 bool enqueue(size_t const _index, T const &t) {
                     const size_t index = _index % _nb_producer;
+                    std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
                     return _producers.get()[index].enqueue(t);
                 }
 
                 template <bool _All = true>
                 size_t enqueue(size_t const _index, T const *t, size_t const size) {
                     const size_t index = _index % _nb_producer;
+                    std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
                     return _producers.get()[index]._ringbuffer. template enqueue<_All>(t, size);
                 }
 
