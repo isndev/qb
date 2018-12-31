@@ -28,7 +28,6 @@ namespace cube {
         private:
             // uint32_t max_bytes_to_receive;
             uint32_t max_bytes_to_send;
-            uint32_t received_bytes;
             uint32_t sent_bytes;
         protected:
 
@@ -50,16 +49,11 @@ namespace cube {
                     it = &Derived::onDisconnect;
             }
 
-            uint32_t receivedBytes() const {
-                return received_bytes;
-            }
-
             uint32_t sentBytes() const {
                 return sent_bytes;
             }
 
             void resetStats() {
-                received_bytes = 0;
                 sent_bytes = 0;
             }
 
@@ -67,7 +61,6 @@ namespace cube {
 
             Session(uint32_t const queue_limit = 134217728)
                     : max_bytes_to_send(queue_limit ? queue_limit : ~queue_limit)
-                    , received_bytes(0)
                     , sent_bytes(0)
             {
                 messages.resize(cube::mqtt::MessageType::END);
@@ -97,7 +90,6 @@ namespace cube {
                     char *data = in_pipe.allocate_back(expected);
                     reader.setHeader(in_pipe.data());
                     if (event.receive(data, expected, received)) {
-                        received_bytes += received;
                         in_pipe.free_back(expected - received);
                         reader.read(received);
 

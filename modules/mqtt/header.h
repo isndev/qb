@@ -52,7 +52,7 @@ namespace cube {
 
             inline void setType(uint8_t type) { control |= (type << 4); }
 
-            inline void setQos(uint8_t qos) { control |= (1 << (qos)); }
+            inline void setQos(uint8_t qos) { control = (control & ~(3 << 1)) | (qos << 1); }
 
             inline void setDup() { control |= (1 << 3); }
 
