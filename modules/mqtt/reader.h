@@ -10,7 +10,7 @@
 namespace cube {
     namespace mqtt {
 
-        constexpr std::size_t MAX_MESSAGE_SIZE = 16314;
+        constexpr std::size_t MAX_MESSAGE_SIZE = 65520;
 
         class Reader {
             FixedHeader const *_header = nullptr;
