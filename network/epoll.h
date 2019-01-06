@@ -35,7 +35,7 @@ namespace           cube {
             }
         };
 
-        template <std::size_t _MAX_EVENTS = 1024>
+        template <std::size_t _MAX_EVENTS = 4096>
         class          epoll
                 : public epoll_proxy {
             epoll_event _epvts[_MAX_EVENTS];
