@@ -33,7 +33,7 @@ namespace cube {
 
             // Todo: improve this publish
             bool publish(void const *data, std::size_t const size) {
-                if (out_pipe.end() + size < max_bytes_to_send) {
+                if (static_cast<Derived const &>(*this).canPublish() && out_pipe.end() + size < max_bytes_to_send) {
                     std::memcpy(out_pipe.allocate_back(size), static_cast<char const *>(data), size);
                     return true;
                 }
