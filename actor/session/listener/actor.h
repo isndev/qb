@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <vector>
+#include <exception>
 
 #include "../../../network/Listener.h"
 #include "../actor.h"
@@ -41,10 +42,10 @@ namespace cube {
                 Actor(uint8_t core, unsigned short port, network::ip ip = network::ip::Any)
                     : io_core_id(core)
                 {
-                    LOG_INFO << "Start listening on port " << port;
-
                     listener.listen(port, ip);
                     listener.setBlocking(false);
+                    if (listener.isBlocking())
+                        throw std::runtime_error("failed to set blocking socket listener");
                 }
 
                 bool onInitialize() {
@@ -63,14 +64,14 @@ namespace cube {
                         static_cast<Derived &>(*this).onConnect(socket.raw());
                         LOG_INFO << "Accepted new connection";
                     } else {
-                        LOG_WARN << "Failed to accept new connection";
+                        LOG_WARN << "Failed to accept new connection" << listener.raw();
                     }
 
                     return ReturnValue::REPOLL;
                 }
 
                 cube::session::ReturnValue onDisconnect(event::Ready &) {
-                    LOG_CRIT << "Service iopoll is down";
+                    LOG_CRIT << "Actor listener is down";
                     this->kill();
                     return ReturnValue::KO;
                 }

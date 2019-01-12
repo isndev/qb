@@ -40,10 +40,9 @@ namespace           cube {
                     } else {
                         // Enable broadcast by default for UDP sockets
                         int yes = 1;
-                        if (setsockopt(_handle, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<char*>(&yes), sizeof(yes)) == -1)
+                        if (setsockopt(handle, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<char*>(&yes), sizeof(yes)) == -1)
                             std::cerr << "Failed to enable broadcast on UDP socket" << std::endl;
                     }
-
                     _handle = handle;
                 } else {
                     throw std::runtime_error("Failed to init socket");
@@ -68,6 +67,14 @@ namespace           cube {
 
             bool isBlocking() const {
                 return Socket::is_blocking(_handle);
+            }
+
+            bool setReceiveBufferSize(int size) const {
+                return setsockopt(_handle, SOL_SOCKET, SO_RCVBUF, &size, sizeof(int)) != -1;
+            }
+
+            bool setSendBufferSize(int size) const {
+                return setsockopt(_handle, SOL_SOCKET, SO_SNDBUF, &size, sizeof(int)) != -1;
             }
 
             bool good() const {
