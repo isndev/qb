@@ -28,7 +28,7 @@ namespace cube {
 
                 void onCallback() override final {
                     _epoll.wait([this](auto &event){
-                        this->template send<event::Ready>(*(&event.data.u32 + 1), _epoll, event);
+                        this->template push<event::Ready>(*(&event.data.u32 + 1), _epoll, event);
                     });
                 }
 

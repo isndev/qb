@@ -342,6 +342,7 @@ namespace cube {
         }
         bool try_send(Event const &event) const {
             if (event.dest._index == _index) {
+                const_cast<Event &>(event).state[0] = 1;
                 _actors.find(event.dest)->second->on(const_cast<Event *>(&event));
                 return true;
             }
@@ -382,7 +383,7 @@ namespace cube {
             }
             data.state = 0;
             data.bucket_size = allocator::getItemSize<T, CacheLine>();
-            if (likely(_engine.send(data)))
+            if (likely(dest._index == source._index ? this->try_send(data) : _engine.send(data)))
                 pipe.free(data.bucket_size);
         }
         template<typename T, typename ..._Init>

@@ -89,7 +89,7 @@ namespace           cube {
             int    status = fcntl(sock, F_GETFL);
 
             return ((newst ?
-                     fcntl(sock, F_SETFL, status & ~O_NONBLOCK) :
+                     fcntl(sock, F_SETFL, status & ~O_NONBLOCK != -1) :
                      fcntl(sock, F_SETFL, status | O_NONBLOCK)) != -1);
         }
 
