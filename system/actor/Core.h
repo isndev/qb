@@ -96,6 +96,9 @@ namespace cube {
                 auto actor = _actors.find(event->dest);
                 if (likely(actor != std::end(_actors))) {
                     actor->second->on(event);
+                    LOG_DEBUG << "Sucess Event" << *this
+                             << " [Source](" << event->source << ")"
+                             << " [Dest](" << event->dest << ") Size=" << event->bucket_size;
                 } else {
                     LOG_WARN << "Failed Event" << *this
                              << " [Source](" << event->source << ")"
@@ -104,7 +107,6 @@ namespace cube {
 
                 i += event->bucket_size;
             }
-            LOG_DEBUG << "Events " << *this << " received " << nb_events << " buckets";
         }
         void __receive__() {
             // global_core_events
@@ -370,52 +372,47 @@ namespace cube {
             send(event);
         }
 
+        template <typename T>
+        inline void fill_event(T &data, ActorId const dest, ActorId const source) const {
+            data.id = type_id<T>();
+            data.dest = dest;
+            data.source = source;
+
+            if constexpr (std::is_base_of<ServiceEvent, T>::value) {
+                data.forward = source;
+                std::swap(data.id, data.service_event_id);
+            }
+
+            data.state = 0;
+            data.bucket_size = allocator::getItemSize<T, CacheLine>();
+        }
+
         template<typename T, typename ..._Init>
         void send(ActorId const dest, ActorId const source, _Init &&...init) {
             auto &pipe = __getPipe__(dest._index);
             auto &data = pipe.template allocate<T>(std::forward<_Init>(init)...);
-            data.id = type_id<T>();
-            data.dest = dest;
-            data.source = source;
-            if constexpr (std::is_base_of<ServiceEvent, T>::value) {
-                data.forward = source;
-                std::swap(data.id, data.service_event_id);
-            }
-            data.state = 0;
-            data.bucket_size = allocator::getItemSize<T, CacheLine>();
+
+            fill_event(data, dest, source);
+
             if (likely(dest._index == source._index ? this->try_send(data) : _engine.send(data)))
                 pipe.free(data.bucket_size);
         }
         template<typename T, typename ..._Init>
-        T &push(ActorId const &dest, ActorId const &source, _Init &&...init) {
+        T &push(ActorId const dest, ActorId const source, _Init &&...init) {
             auto &pipe = __getPipe__(dest._index);
             auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
-            data.id = type_id<T>();
-            data.dest = dest;
-            data.source = source;
-            if constexpr (std::is_base_of<ServiceEvent, T>::value) {
-                data.forward = source;
-                std::swap(data.id, data.service_event_id);
-            }
 
-            data.state = 0;
-            data.bucket_size = allocator::getItemSize<T, CacheLine>();
+            fill_event(data, dest, source);
+
             return data;
         }
         template<typename T, typename ..._Init>
-        void fast_push(ActorId const &dest, ActorId const &source, _Init &&...init) {
+        void fast_push(ActorId const dest, ActorId const source, _Init &&...init) {
             auto &pipe = __getPipe__(dest._index);
             auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
-            data.id = type_id<T>();
-            data.dest = dest;
-            data.source = source;
-            if constexpr (std::is_base_of<ServiceEvent, T>::value) {
-                data.forward = source;
-                std::swap(data.id, data.service_event_id);
-            }
 
-            data.state = 0;
-            data.bucket_size = allocator::getItemSize<T, CacheLine>();
+            fill_event(data, dest, source);
+
             if (likely(try_send(data)))
                 pipe.free_back(data.bucket_size);
         }
