@@ -14,7 +14,8 @@ namespace cube {
         _cores.reserve(_core_set.getNbCore());
         sync_start.store(0, std::memory_order_release);
         for (auto core_id : core_set) {
-            _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(_core_set.getNbCore() - 1);
+            const auto nb_producers = _core_set.getNbCore() - 1;
+            _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(nb_producers ? nb_producers : 1);
             _cores.emplace(core_id, new Core(core_id, *this));
         }
     }
