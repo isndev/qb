@@ -9,9 +9,6 @@ target_link_libraries(test-actor cube)
 add_executable(test-event ${TEST_PATH}/actor/event.cpp)
 target_link_libraries(test-event cube)
 
-add_executable(test-manager ${TEST_PATH}/actor/manager.cpp)
-target_link_libraries(test-manager cube)
-
 add_executable(test-scheduler ${TEST_PATH}/actor/scheduler.cpp)
 target_link_libraries(test-scheduler cube)
 
@@ -48,13 +45,7 @@ if (USE_TC_MALLOC)
     target_link_libraries(test-linked-core
             debug ${TCMALLOC_DEBUG}
             optimized ${TCMALLOC_RELEASE})
-    target_link_libraries(test-core-shared_data
-            debug ${TCMALLOC_DEBUG}
-            optimized ${TCMALLOC_RELEASE})
     target_link_libraries(test-scheduler
-            debug ${TCMALLOC_DEBUG}
-            optimized ${TCMALLOC_RELEASE})
-    target_link_libraries(test-manager
             debug ${TCMALLOC_DEBUG}
             optimized ${TCMALLOC_RELEASE})
 endif()

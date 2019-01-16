@@ -12,14 +12,6 @@ namespace cube {
                         : public ServiceEvent {
                 };
 
-                // input/output events
-                struct ToBestTimedCore
-                        : public Base {
-                    ToBestTimedCore() {
-                        service_event_id = type_id<ToBestTimedCore>();
-                    }
-                };
-
                 struct ToCore
                         : public Base {
                     uint16_t index = 0;

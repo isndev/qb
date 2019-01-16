@@ -17,6 +17,8 @@
 #elif defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
 #include <process.h>
+#undef max
+#undef min
 #endif
 
 # include "../../utils/timestamp.h"
@@ -95,6 +97,7 @@ namespace cube {
                 auto event = reinterpret_cast<Event *>(buffer + i);
                 auto actor = _actors.find(event->dest);
                 if (likely(actor != std::end(_actors))) {
+                    event->state[0] = 0;
                     actor->second->on(event);
                     LOG_DEBUG << "Sucess Event" << *this
                              << " [Source](" << event->source << ")"
@@ -344,7 +347,7 @@ namespace cube {
         }
         bool try_send(Event const &event) const {
             if (event.dest._index == _index) {
-                const_cast<Event &>(event).state[0] = 1;
+                const_cast<Event &>(event).state[0] = 0;
                 _actors.find(event.dest)->second->on(const_cast<Event *>(&event));
                 return true;
             }
@@ -383,7 +386,6 @@ namespace cube {
                 std::swap(data.id, data.service_event_id);
             }
 
-            data.state = 0;
             data.bucket_size = allocator::getItemSize<T, CacheLine>();
         }
 
