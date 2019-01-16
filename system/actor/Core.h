@@ -346,11 +346,12 @@ namespace cube {
             return {__getPipe__(dest._index), dest, source};
         }
         bool try_send(Event const &event) const {
-            if (event.dest._index == _index) {
-                const_cast<Event &>(event).state[0] = 0;
-                _actors.find(event.dest)->second->on(const_cast<Event *>(&event));
-                return true;
-            }
+            // Todo: Fix MonoThread Optimization
+            // if (event.dest._index == _index) {
+            //     const_cast<Event &>(event).state[0] = 0;
+            //     _actors.find(event.dest)->second->on(const_cast<Event *>(&event));
+            //     return true;
+            // }
             return _engine.send(event);
         }
         void send(Event const &event) {
