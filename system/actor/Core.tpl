@@ -1,0 +1,130 @@
+#include "Core.h"
+
+#ifndef CUBE_CORE_TPL
+# define CUBE_CORE_TPL
+
+namespace cube {
+
+    template<typename _Actor>
+    bool Core::initActor(_Actor * const actor, bool doinit) {
+        if constexpr (!std::is_base_of<ServiceActor, _Actor>::value) {
+            auto id = __generate_id__();
+            actor->__set_id(id);
+            // Number of actors attends to its limit in this core
+            if (id == ActorId::NotFound() || (doinit && unlikely(!actor->onInit()))) {
+                _ids.insert(id);
+                delete actor;
+                return false;
+            }
+        } else {
+            actor->_index = _index;
+            if (_actors.find(actor->id()) != _actors.end() || (doinit && unlikely(!actor->onInit()))) {
+                delete actor;
+                return false;
+            }
+        }
+        return true;
+    }
+
+    template<typename _Actor, typename ..._Init>
+    ActorId Core::addActor(_Init &&...init) {
+        auto actor = new _Actor(std::forward<_Init>(init)...);
+        actor->_handler = this;
+
+        if (!initActor(actor, false))
+            return ActorId::NotFound();
+
+        addActor(actor);
+        return actor->id();
+    };
+
+    template<typename _Actor
+            , typename ..._Init >
+    ActorId Core::addActor(std::size_t index, _Init &&...init) {
+        return addActor<_Actor>
+                (std::forward<_Init>(init)...);
+    }
+
+    template<template<typename _Trait> typename _Actor
+            , typename _Trait
+            , typename ..._Init >
+    ActorId Core::addActor(std::size_t index, _Init &&...init) {
+        return addActor<_Actor<_Trait>>
+                (std::forward<_Init>(init)...);
+    }
+
+    template<typename _Actor, typename ..._Init>
+    _Actor *Core::addReferencedActor(_Init &&...init) {
+        auto actor = new _Actor(std::forward<_Init>(init)...);
+        actor->_handler = this;
+
+        if (!initActor(actor, true))
+            return nullptr;
+
+        addActor(actor);
+        return actor;
+    };
+    template<template <typename _Trait> typename _Actor
+            , typename _Trait
+            , typename ..._Init>
+    auto Core::addReferencedActor(_Init &&...init) {
+        return addReferencedActor<_Actor<_Trait>>
+                (std::forward<_Init>(init)...);
+    }
+
+    template <typename _Actor>
+    void Core::registerCallback(_Actor &actor) {
+        _actor_callbacks.insert({actor.id(), &actor});
+    }
+
+    // Event API
+    template <typename T>
+    inline void Core::fill_event(T &data, ActorId const dest, ActorId const source) const {
+        data.id = type_id<T>();
+        data.dest = dest;
+        data.source = source;
+
+        if constexpr (std::is_base_of<ServiceEvent, T>::value) {
+            data.forward = source;
+            std::swap(data.id, data.service_event_id);
+        }
+
+        data.bucket_size = allocator::getItemSize<T, CacheLine>();
+    }
+
+    template<typename T, typename ..._Init>
+    void Core::send(ActorId const dest, ActorId const source, _Init &&...init) {
+        auto &pipe = __getPipe__(dest._index);
+        auto &data = pipe.template allocate<T>(std::forward<_Init>(init)...);
+
+        fill_event(data, dest, source);
+
+        if (likely(dest._index == source._index ? this->try_send(data) : _engine.send(data)))
+            pipe.free(data.bucket_size);
+    }
+
+    template<typename T, typename ..._Init>
+    T &Core::push(ActorId const dest, ActorId const source, _Init &&...init) {
+        auto &pipe = __getPipe__(dest._index);
+        auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
+
+        fill_event(data, dest, source);
+
+        return data;
+    }
+
+    template<typename T, typename ..._Init>
+    void Core::fast_push(ActorId const dest, ActorId const source, _Init &&...init) {
+        auto &pipe = __getPipe__(dest._index);
+        auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
+
+        fill_event(data, dest, source);
+
+        if (likely(try_send(data)))
+            pipe.free_back(data.bucket_size);
+    }
+    //!Event Api
+
+}
+
+#endif
