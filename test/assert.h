@@ -3,6 +3,7 @@
 #include <iostream>
 #include <chrono>
 #include <queue>
+#include <functional>
 
 #ifndef ASSERT_H_
 # define ASSERT_H_
@@ -18,16 +19,31 @@ void assertEquals(T1 t1, T2 t2) {
     }
 }
 
-template<typename T, typename F>
-auto time(F f) {
-    auto start = std::chrono::steady_clock::now();
 
-    auto result = f();
+template <typename T>
+class Timer {
 
-    auto end = std::chrono::steady_clock::now();
-    auto diff = end - start;
-    return std::make_pair(std::chrono::duration<double, T>(diff).count(), result);
-}
+    std::chrono::time_point<std::chrono::steady_clock, std::chrono::nanoseconds> start;
+public:
+
+    template<typename F>
+    auto time(F f) {
+        start = std::chrono::steady_clock::now();
+
+        auto result = f(*this);
+
+        auto end = std::chrono::steady_clock::now();
+        auto diff = end - start;
+        return std::make_pair(std::chrono::duration<double, T>(diff).count(), result);
+    }
+
+    void reset() {
+        start = std::chrono::steady_clock::now();
+    }
+
+};
+
+
 
 template<typename F>
 auto test(const std::string &name, F f, std::ostream &os = std::cout) {
@@ -35,7 +51,7 @@ auto test(const std::string &name, F f, std::ostream &os = std::cout) {
     os.flush();
 
     try {
-        auto result = time<std::micro>(f);
+        auto result = Timer<std::micro>().time(f);
         auto duration = result.first;
 
         os << "[" << duration << " us] ";
@@ -45,7 +61,7 @@ auto test(const std::string &name, F f, std::ostream &os = std::cout) {
     catch (const std::exception &e) {
         os << "-> Failed !" << std::endl;
         os << "\t => " << e.what() << std::endl;
-        return decltype(f()){};
+        return decltype(f(*new Timer<std::micro>())){};
     }
 }
 
@@ -61,7 +77,7 @@ void test(const std::string &name, F f, std::ostream &os = std::cout) {
 
     try {
         while (i < REPEAT) {
-            auto duration = time<std::micro>(f).first;
+            auto duration = Timer<std::micro>().time(f).first;
             min = (std::min)(min, duration);
             max = (std::max)(max, duration);
             avg += duration;

@@ -19,8 +19,6 @@ add_executable(test-linked-core ${TEST_PATH}/benchmark/linked_core.cpp)
 target_link_libraries(test-linked-core cube)
 
 
-#add_executable(test-core-shared_data
-#        ${TEST_PATH}/benchmark/shared_data.cpp)
 add_executable(test-TComposition
         ${TEST_PATH}/utils/TComposition.cpp)
 add_executable(test-timestamp
