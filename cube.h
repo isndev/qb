@@ -5,6 +5,7 @@
 // components
 # include "engine.h"
 # include "actor.h"
+# include "core.h"
 // services
 //# include "service/scheduler/actor.h"
 //# include "service/manager/actor.h"
