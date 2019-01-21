@@ -1,4 +1,5 @@
 #include "Core.h"
+#include "Core.tpl"
 
 #ifndef CUBE_ACTOR_TPL
 # define CUBE_ACTOR_TPL

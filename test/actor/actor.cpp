@@ -51,15 +51,16 @@ public:
 using namespace cube;
 int main() {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-actor.log", 1024);
-    nanolog::set_log_level(nanolog::LogLevel::DEBUG);
+    nanolog::set_log_level(nanolog::LogLevel::WARN);
 
-    test<100>("CreateActor", []() {
+    test<100>("CreateActor", [](auto &timer) {
         Cube main({0, 1});
 
         main.addActor<ActorTest>(0);
         main.addActor<ActorTraitTest, MyTrait>(1);
 
         main.start();
+        timer.reset();
         main.join();
         return 0;
     });

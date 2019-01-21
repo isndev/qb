@@ -22,7 +22,7 @@ public:
         if (first) {
             auto &event = this-> template push<ChainEvent>(to_send);
             event.first = this->id();
-            event.creation_time = cube::Timestamp::rdts();
+            event.creation_time = this->time();
         }
         return true;
     }
@@ -31,10 +31,10 @@ public:
         if (event.loop >= 10000) {
             this->kill();
             if (!to_send)
-                LOG_INFO << "Event Time To Arrive " << cube::Timestamp::rdts() - event.creation_time << "ns";
+                LOG_INFO << "Event Time To Arrive " << this->time() - event.creation_time << "ns";
         }
         if (first)
-            event.creation_time = cube::Timestamp::rdts();
+            event.creation_time = this->time();
         if (!to_send) {
             ++event.loop;
         }
@@ -46,28 +46,30 @@ public:
 using namespace cube;
 void test_chain(int nb_actor) {
     test("Test ChainEvent " + std::to_string(nb_actor) + " Actor(s) per Core 1000 chain loop\n",
-    [nb_actor]() {
-        test<100>("ChainEvent 2 Unlinked Core", [nb_actor]() {
+    [nb_actor](auto &timer) {
+        test<100>("ChainEvent 2 Unlinked Core", [nb_actor](auto &timer) {
             Cube main({0, 3});
             for (int i =0; i < nb_actor; ++i) {
                 main.addActor<ActorTest>(0, main.addActor<ActorTest>(3), true);
             }
             main.start();
+            timer.reset();
             main.join();
             return 0;
         });
 
-        test<100>("ChainEvent 2 Linked Core", [nb_actor]() {
+        test<100>("ChainEvent 2 Linked Core", [nb_actor](auto &timer) {
             Cube main({0, 1});
             for (int i =0; i < nb_actor; ++i) {
                 main.addActor<ActorTest>(0, main.addActor<ActorTest>(1), true);
             }
             main.start();
+            timer.reset();
             main.join();
             return 0;
         });
 
-        test<100>("ChainEvent 4 Core", [nb_actor]() {
+        test<100>("ChainEvent 4 Core", [nb_actor](auto &timer) {
             Cube main({0, 1, 2, 3});
             for (int i =0; i < nb_actor; ++i) {
                 main.addActor<ActorTest>(0,
@@ -77,6 +79,7 @@ void test_chain(int nb_actor) {
             }
 
             main.start();
+            timer.reset();
             main.join();
             return 0;
         });

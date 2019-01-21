@@ -49,9 +49,9 @@ public:
 using namespace cube;
 int main() {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-scheduler.log", 1024);
-    nanolog::set_log_level(nanolog::LogLevel::DEBUG);
+    nanolog::set_log_level(nanolog::LogLevel::WARN);
 
-    test<1>("Test scheduled event", []() {
+    test<1>("Test scheduled event", [](auto &timer) {
         Cube main({0, 1});
 
         main.addActor<cube::service::scheduler::Actor>(0);

@@ -33,9 +33,9 @@ public:
 using namespace cube;
 int main() {
     nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-event.log", 1024);
-    nanolog::set_log_level(nanolog::LogLevel::DEBUG);
+    nanolog::set_log_level(nanolog::LogLevel::WARN);
 
-    test<100>("Test un/register event", []() {
+    test<100>("Test un/register event", [](auto &timer) {
         Cube main({0,1});
 
         for (int i = 0; i < 2; ++i) {
@@ -43,6 +43,7 @@ int main() {
             main.addActor<ActorTest>(1);
         }
         main.start();
+        timer.reset();
         main.join();
         return 0;
     });
