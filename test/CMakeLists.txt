@@ -24,11 +24,11 @@ add_executable(test-TComposition
 add_executable(test-timestamp
         ${TEST_PATH}/utils/timstamp.cpp)
 
-#if (UNIX)
-#    add_executable(test-poller
-#            ${TEST_PATH}/actor/poller.cpp)
-#    target_link_libraries(test-poller cube-network)
-#endif()
+if (UNIX)
+    add_executable(test-poller
+            ${TEST_PATH}/actor/poller.cpp)
+    target_link_libraries(test-poller cube-network)
+endif()
 
 if (USE_TC_MALLOC)
     target_link_libraries(test-actor

@@ -40,10 +40,16 @@ namespace cube {
                                                                           event.bucket_size);
     }
 
-    void Cube::start() const {
+    void Cube::start(bool async) const {
 		LOG_INFO << "[CUBE] init with " << getNbCore() << " cores";
-        for (auto core : _cores)
-            core.second->start();
+		int i = 1;
+        for (auto core : _cores) {
+            if (!async && i == _cores.size())
+                core.second->__spawn__();
+            else
+                core.second->start();
+            ++i;
+        }
     }
 
     void Cube::join() const {

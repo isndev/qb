@@ -134,6 +134,13 @@ namespace cube {
                 }
                 return ret;
             }
+
+            session::ReturnValue onTimeout(EventData &event) {
+                if constexpr (std::is_void<std::void_t<decltype(std::declval<Derived *>()->onTimeout(event))>>::value)
+                    return session::ReturnValue::KO;
+                else
+                    return static_cast<Derived &>(*this).onTimeout(event);
+            }
         };
 
     }
