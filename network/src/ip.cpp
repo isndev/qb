@@ -56,10 +56,8 @@ namespace           cube {
                 // Try to convert the address as a byte representation ("xxx.xxx.xxx.xxx")
                 in_addr addr;
 
-                inet_pton(AF_INET, address.c_str(), &addr);
-                uint32_t ip = addr.s_addr;
-                if (ip != INADDR_NONE) {
-                    _address = ip;
+                if (inet_pton(AF_INET, address.c_str(), &addr)) {
+                    _address = static_cast<uint32_t>(addr.s_addr);
                 } else {
                     // Not a valid address, try to convert it as a host name
                     addrinfo hints;
@@ -68,7 +66,7 @@ namespace           cube {
                     addrinfo *result = NULL;
                     if (getaddrinfo(address.c_str(), NULL, &hints, &result) == 0) {
                         if (result) {
-                            ip = reinterpret_cast<sockaddr_in *>(result->ai_addr)->sin_addr.s_addr;
+                            uint32_t ip = reinterpret_cast<sockaddr_in *>(result->ai_addr)->sin_addr.s_addr;
                             freeaddrinfo(result);
                             _address = ip;
                         }

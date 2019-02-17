@@ -24,8 +24,9 @@ namespace cube {
                 constexpr static bool hasKeepAlive = true;
 
                 bool onInitialize();
-                bool onWrite(event::Ready &event);
-                bool onRead(event::Ready &event);
+                session::ReturnValue onRead(event::Ready &event);
+                session::ReturnValue onWrite(event::Ready &event);
+                session::ReturnValue onTimeout(event::Ready &event);
                 void onDisconnect(event::Ready &event);
             };
 
@@ -38,6 +39,10 @@ namespace cube {
 
                 inline void setTimer(std::size_t const timer) {
                     limit_time_activity = timer;
+                }
+
+                inline uint64_t getTimer() const {
+                    return limit_time_activity;
                 }
 
                 inline void repoll(service::iopoll::Proxy &event) const {
@@ -72,16 +77,10 @@ namespace cube {
                             status = static_cast<Derived &>(*this).onRead(event);
                     }
 
-
                     if constexpr (Derived::has_keepalive) {
-                        if (static_cast<Derived &>(*this).time() > limit_time_activity) {
-                            // check activity
-                            status = session::ReturnValue::KO;
-                            LOG_INFO << "Will Disconnect for timer"
-                                     << static_cast<Derived &>(*this).time()
-                                     << ">" << limit_time_activity
-                                     << "DIFF= " << static_cast<Derived &>(*this).time() - limit_time_activity;
-                        }
+                        // check activity
+                        if (static_cast<Derived &>(*this).time() > limit_time_activity)
+                            status = static_cast<Derived &>(*this).onTimeout(event);
                     }
 
                     switch (status) {

@@ -37,7 +37,7 @@ namespace cube {
         ~Cube();
 
         bool send(Event const &event) const;
-        void start() const;
+        void start(bool async = true) const;
         void join() const;
 
         MPSCBuffer &getMailBox(uint8_t const id) const;
