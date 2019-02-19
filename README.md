@@ -10,14 +10,13 @@ Cube is a thin-layer multicore-optimized runtime that enable users to build thei
   - (Recommended) CMake
   - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
 * #### Pros
-  - Multi plateforme (Linux|Windows|Apple)
-  - Compile with a specific hardware configuration
+  - Multi platform (Linux|Windows|Apple)
+  - Easy to use
   - CPU cache friendly
   - Very fast and low-latency
-  - Easy reusbale code from a project to another
-  - Forget everything about multithreading concurrency issues
+  - Reusable code from a project to another
+  - Forget everything about multi-threading concurrency issues
 * #### Coins
-  - Almost Everything is deduced at compile time, then it can increase the compilation time
   - Strong CPU usage
   - ...
   
@@ -34,7 +33,7 @@ The Actor model is a concurrent model of computation that treats "actors" as the
 <p align="center"><img src="./ressources/BasicActorModel.png" width="500px" /></p>
 
 #### Cube + Actor Model
-A program developped with Cube is consisting of multiple Actors handling one or multiple Events, attached to PhysicalCores linked together with several Pipes.  
+A program developed with Cube is consisting of multiple Actors handling one or multiple Events, attached to PhysicalCores linked together with several Pipes.  
 Once designed, the programming is broken down into coding mono-threaded and sequential Event handlers.  
 Hence, the Actor model which is scalable and parallel by nature.  
 
@@ -54,16 +53,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_subdirectory([CUBE_PATH])
 include_directories([CUBE_PATH])
 
-# Define your project
-# Multiple hardware configuration example
-if (INTEL_CORE_2_DUO)
-    set(SOURCE "$(SOURCE) main_intel_2core.cpp")
-elseif (INTEL_I7_8CORE)
-    set(SOURCE "$(SOURCE) main_intel_8core.cpp")
-# etc...
-else()
-    set(SOURCE "$(SOURCE) main.cpp")
-endif()
+# Define your project source
+set(SOURCE main.cpp)
 
 add_executable(MyProject $(SOURCE))
 # Link with cube
@@ -71,40 +62,50 @@ target_link_libraries(MyProject cube)
 ```
 MyActor.h
 ```cpp
-#include "cube.h"
+#include "actor.h"
 #ifndef MYACTOR_H_
 # define MYACTOR_H_
 
 // Event example
-struct MyEvent : public cube::Event
-{ int data; }; 
+struct MyEvent
+ : public cube::Event // /!\ should inherit from cube event
+{
+    int data; // trivial data
+    std::vector<int> container; // dynamic data
+    // std::string str; /!\ avoid using stl string
+    // instead use fixed cstring
+    // or compile with old ABI '-D_GLIBCXX_USE_CXX11_ABI=0'
+}; 
 
-template <typename CoreHandler>
 class MyActor
-        : public cube::Actor<CoreHandler>
-        , public CoreHandler::ICallback {
+        : public cube::Actor // /!\ should inherit from cube actor
+        , public cube::ICallback // (optional) required to register actor callback
+{
 public:
     MyActor() = default;
+    MyActor(int a, int b) {} // constructor with parameters
+    
     // will call this function before adding MyActor
     bool onInit() override final {
         this->template registerEvent<MyEvent> (*this);          // will listen MyEvent
-        this->registerCallback(*this);                          // each core loop, call onCallback
+        this->registerCallback(*this);                          // each core loop will call onCallback
 
-        // send MyEvent to me ! forever alone ;(
+        // ex: just send MyEvent to myself ! forever alone ;(
         auto &event = this->template push<MyEvent>(this->id()); // and keep a reference to the event
-        event.data = 1337;                                      // set data
+        event.data = 1337;                                      // set trivial data
+        event.container.push(7331);
         return true;                                            // init ok, MyActor will be added
     }
     
     // will call this function each core loop
     void onCallback() override final {
-        // I am a dummy actor, notify the engine to remove me !
-        this->kill();
+        // ...
     }
     
     // will call this function when MyActor received MyEvent 
     void on(MyEvent const &event) {
-        // ...
+        // I am a dummy actor, notify the engine to remove me !
+        this->kill();
     }
 };
 
@@ -112,22 +113,25 @@ public:
 ```
 main.cpp
 ```cpp
+#include "cube.h"
 #include "MyActor.h"
 
-int main () {
+int main (int argc, char *argv[]) {
     // (optional) initialize the logger
-    nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "MyProject.log", 1024);
-    nanolog::set_log_level(nanolog::LogLevel::WARN); // log only warning an critical
+    cube::io::log::init("./", argv[0]); // directory, filename
+    cube::io::log::setLevel(cube::io::log::Level::WARN); // log only warning an critical
+    // usage
+    LOG_INFO << "I will not be logged :(";
 
-    // configure the Engine Engine 
+    // configure the Engine 
     // Note : I will use only the core 0 and 1 
-    cube::Engine<PhysicalCore<0>, PhysicalCore<1>> main;
+    cube::Cube main({0, 1});
     
     // My start sequence -> add MyActor to core 0 and 1
-    main.addActor<0, MyActor>();
-    main.addActor<1, MyActor>();
+    main.addActor<MyActor>(0); // default constructed
+    main.addActor<MyActor>(1, 1337, 7331); // constructed with parameters
 
-    main.start();  // start the engine
+    main.start();  // start the engine asynchronously
     main.join();   // Wait for the running engine
     // if all my actors had been destroyed then it will release the wait !
     return 0;
@@ -135,7 +139,7 @@ int main () {
 ```
 Let's compile MyProject !
 ```sh
-$> cmake
+$> cmake -DCMAKE_BUILD_TYPE=Release -B[Build Directory Path] -H[CMakeList.txt Path]
 $> make
 ```
 Done !
