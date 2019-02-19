@@ -57,7 +57,7 @@ include_directories([CUBE_PATH])
 # Define your project source
 set(SOURCE main.cpp)
 
-add_executable(MyProject $(SOURCE))
+add_executable(MyProject ${SOURCE})
 # Link with cube
 target_link_libraries(MyProject cube)
 ```
