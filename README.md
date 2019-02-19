@@ -6,7 +6,7 @@ It's a complete development framework for multicore processing that has been spe
 Cube is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
 
 * #### Requirements
-  - C++ standard (17) compiler
+  - C++17 standard, (gcc7, clang4, msvc19.11)
   - (Recommended) CMake
   - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
 * #### Pros
@@ -43,9 +43,10 @@ Cube runtime will handle all the rest and bridge the gap between parallel progra
 * #### My First Project
 CMakeList.txt
 ```cmake
-project(MyProject)
-# Cube minimum requirements
 cmake_minimum_required(VERSION 3.10)
+project(MyProject)
+
+# Cube minimum requirements
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
