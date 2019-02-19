@@ -12,7 +12,7 @@ struct Dummy {
 };
 
 int main() {
-    test("Getters", [](){
+    test("Getters", [](auto &){
         TComposition<int, double, Dummy> compo {1, 2, {}};
         auto i = compo.get<0>();
         assertEquals(i, 1);
@@ -26,7 +26,7 @@ int main() {
         return 0;
     });
 
-    test("Each", [](){
+    test("Each", [](auto &){
         TComposition<int, double, Dummy> compo {1, 2, {}};
         int ret = 0;
 
@@ -66,7 +66,7 @@ int main() {
        return 0;
     });
 
-    test("Take", [](){
+    test("Take", [](auto &){
         TComposition<int, double, Dummy> compo {1, 2, {}};
 
         assertEquals(compo.take([](auto &i, auto &d, auto &dummy){
