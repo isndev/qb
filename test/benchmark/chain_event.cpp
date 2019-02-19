@@ -88,9 +88,10 @@ void test_chain(int nb_actor) {
     });
 }
 
-int main() {
-    nanolog::initialize(nanolog::GuaranteedLogger(), "./log/", "test-chain-actor.log", 1024);
-    nanolog::set_log_level(nanolog::LogLevel::WARN);
+int main(int argc, char *argv[]) {
+    cube::io::log::init("./", argv[0]);
+    cube::io::log::setLevel(cube::io::log::Level::WARN);
+
     test_chain(1);
     test_chain(34);
     test_chain(55);

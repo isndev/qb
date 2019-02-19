@@ -97,6 +97,8 @@ namespace nanolog
 				return "INFO";
 			case LogLevel::WARN:
 				return "WARN";
+			case LogLevel::ERROR:
+				return "ERROR";
 			case LogLevel::CRIT:
 				return "CRIT";
 		}
@@ -595,7 +597,7 @@ namespace nanolog
 			std::string log_file_name = m_name;
 			log_file_name.append(".");
 			log_file_name.append(std::to_string(++m_file_number));
-			log_file_name.append(".txt");
+			log_file_name.append(".log");
 			m_os->open(log_file_name, std::ofstream::out | std::ofstream::trunc);
 		}
 
@@ -712,9 +714,9 @@ namespace nanolog
 	struct LogInitializer {
 		static LogInitializer initializer;
 		LogInitializer() {
-			initialize(nanolog::GuaranteedLogger(), "./log/", "cube.log", 1024);
+			initialize(nanolog::GuaranteedLogger(), "./log/", "cube", 128);
 #ifdef NDEBUG
-			nanolog::set_log_level(nanolog::LogLevel::WARN);
+			nanolog::set_log_level(nanolog::LogLevel::INFO);
 #else
 			nanolog::set_log_level(nanolog::LogLevel::DEBUG);
 #endif

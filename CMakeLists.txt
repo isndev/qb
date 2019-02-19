@@ -13,25 +13,16 @@ option(NOCOUT "NOCOUT")
 set(GPERFTOOLS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/gperftools/src)
 get_directory_property(IS_INVOKED PARENT_DIRECTORY)
 
+
 include_directories(${GPERFTOOLS_INCLUDE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/nanolog)
 
 
-if (COMPILE_TESTS OR MSVC)
-    set(NOLOG OFF)
-endif()
-
 if (WIN32)
     if (MSVC)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GR- /Zc:__cplusplus /D_CRT_SECURE_NO_WARNINGS /D_SCL_SECURE_NO_WARNINGS")
-        if (NOLOG)
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /DNLOG")
-        endif()
     elseif(GNU)
-        if (NOLOG)
-            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNLOG")
-        endif()
     endif()
 
     find_library(
@@ -63,17 +54,12 @@ elseif(UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -fno-rtti")
 endif()
 
-set(DEBUGFILES ${CMAKE_CURRENT_SOURCE_DIR}/system/debug.cpp)
-if (NOLOG)
-else()
+set(IOFILES ${CMAKE_CURRENT_SOURCE_DIR}/nanolog/nanolog.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/system/io.cpp)
 
-    set(LOGFILES ${CMAKE_CURRENT_SOURCE_DIR}/nanolog/nanolog.cpp)
-    message(STATUS "Added log source files")
-endif()
-
-#if (COMPILE_TESTS OR MSVC)
+if (CUBE_TESTS)
     add_subdirectory(test)
-#endif()
+endif()
 
 set(CUBE_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/system/actor/ActorId.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/system/actor/Actor.cpp
@@ -81,16 +67,8 @@ set(CUBE_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/system/actor/ActorId.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/system/actor/CoreSet.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/system/actor/Cube.cpp)
 
-add_library(cube STATIC ${CUBE_SOURCE} ${DEBUGFILES} ${LOGFILES})
+add_library(cube STATIC ${CUBE_SOURCE} ${IOFILES})
 add_subdirectory(network)
-
-
-if (NOLOG)
-    target_compile_definitions(cube PUBLIC NOLOG=1)
-    if (NOCOUT)
-        target_compile_definitions(cube PUBLIC NOCOUT=1)
-    endif()
-endif()
 
 if(IS_INVOKED)
     set(CUBE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
