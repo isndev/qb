@@ -40,19 +40,30 @@ Hence, the Actor model which is scalable and parallel by nature.
 Cube runtime will handle all the rest and bridge the gap between parallel programming and hardware multicore complexity.
 
 # Getting Started !
-* #### My First Project
-CMakeList.txt
+#### MyProject
+
+- First, you'll have to create a folder named myproject and cd into it:
+```bash
+$> mkdir myproject && cd myproject
+```
+- Then clone the cube framework by doing:
+```bash
+$> git clone git@github.com:isndev/cube.git
+```
+- Next, create CMakeLists.txt file and paste the content below:
 ```cmake
+# CMakeLists.txt file
 cmake_minimum_required(VERSION 3.10)
 project(MyProject)
 
 # Cube minimum requirements
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CUBE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cube")
 
 # Add cube framework
-add_subdirectory([CUBE_PATH])
-include_directories([CUBE_PATH])
+add_subdirectory(${CUBE_PATH})
+include_directories(${CUBE_PATH})
 
 # Define your project source
 set(SOURCE main.cpp)
@@ -61,9 +72,12 @@ add_executable(MyProject ${SOURCE})
 # Link with cube
 target_link_libraries(MyProject cube)
 ```
-MyActor.h
+
+- Create MyActor.h file and paste the content below:
 ```cpp
-#include "actor.h"
+// MyActor.h file
+#include <vector>
+#include "./cube/actor.h"
 #ifndef MYACTOR_H_
 # define MYACTOR_H_
 
@@ -94,7 +108,7 @@ public:
         // ex: just send MyEvent to myself ! forever alone ;(
         auto &event = this->template push<MyEvent>(this->id()); // and keep a reference to the event
         event.data = 1337;                                      // set trivial data
-        event.container.push(7331);
+        event.container.push_back(7331);
         return true;                                            // init ok, MyActor will be added
     }
     
@@ -112,9 +126,10 @@ public:
 
 #endif
 ```
-main.cpp
+- Then finally create the main.cpp:
 ```cpp
-#include "cube.h"
+// main.cpp file
+#include "./cube/cube.h"
 #include "MyActor.h"
 
 int main (int argc, char *argv[]) {
@@ -144,6 +159,13 @@ $> cmake -DCMAKE_BUILD_TYPE=Release -B[Build Directory Path] -H[CMakeList.txt Pa
 $> make
 ```
 Done !
+
+Run it:
+```sh
+$> ./MyProject
+```
+it should run and exit instantly without any output
+
 
 You want to do more, refer to the wiki to see the full Cube API usage 
 
