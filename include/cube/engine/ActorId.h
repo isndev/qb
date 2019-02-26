@@ -13,6 +13,8 @@ namespace cube {
      * @class ActorId engine/ActorId.h cube/actorid.h
      * @ingroup Engine
      * @brief Actor unique identifier
+     * @details
+     * ActorId is a composition of a Service Index (sid) and Core Index (index).
      */
     class ActorId {
         friend class Main;
@@ -28,13 +30,23 @@ namespace cube {
     public:
         static constexpr uint32_t NotFound = 0;
 
+        /*!
+         * ActorId() == ActorId::NotFound
+         */
         ActorId();
         ActorId(ActorId const &) = default;
 
         operator const uint32_t &() const;
-        bool operator!=(ActorId const &rhs) const;
+        bool operator!=(ActorId const rhs) const;
+        bool operator!=(uint32_t const rhs) const;
 
+        /*!
+         * @return Service index
+         */
         uint16_t sid() const;
+        /*!
+         * @return Core index
+         */
         uint16_t index() const;
     };
 

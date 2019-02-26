@@ -17,8 +17,12 @@ namespace cube {
         return *reinterpret_cast<uint32_t const *>(this);
     }
 
-    bool ActorId::operator!=(ActorId const &rhs) const {
+    bool ActorId::operator!=(ActorId const rhs) const {
         return static_cast<uint32_t>(*this) != static_cast<uint64_t>(rhs);
+    }
+
+    bool ActorId::operator!=(uint32_t const rhs) const {
+        return *this != ActorId(rhs);
     }
 
     uint16_t ActorId::sid() const {
