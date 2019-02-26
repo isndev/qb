@@ -14,13 +14,13 @@ namespace           cube {
     namespace       network {
         namespace   epoll {
 
-            class proxy {
+            class Proxy {
             protected:
                 int _epoll;
             public:
-                proxy() = default;
+                Proxy() = default;
 
-                proxy(const int epoll)
+                Proxy(const int epoll)
                         : _epoll(epoll) {
                 }
 
@@ -28,7 +28,7 @@ namespace           cube {
 
                 using item_type = epoll_event;
 
-                proxy(proxy const &) = default;
+                Proxy(Proxy const &) = default;
 
                 inline int
                 ctl(item_type &item) const {
@@ -47,19 +47,19 @@ namespace           cube {
             };
 
             template<std::size_t _MAX_EVENTS = 4096>
-            class poller
-                    : public proxy {
+            class Poller
+                    : public Proxy {
                 epoll_event _epvts[_MAX_EVENTS];
             public:
-                poller()
-                        : proxy(epoll_create(_MAX_EVENTS)) {
+                Poller()
+                        : Proxy(epoll_create(_MAX_EVENTS)) {
                     if (unlikely(_epoll < 0))
-                        throw std::runtime_error("failed to init epoll::poller");
+                        throw std::runtime_error("failed to init epoll::Poller");
                 }
 
-                poller(poller const &) = delete;
+                Poller(Poller const &) = delete;
 
-                ~poller() {
+                ~Poller() {
                     ::close(_epoll);
                 }
 
@@ -68,7 +68,7 @@ namespace           cube {
                 wait(_Func const &func, int const timeout = 0) {
                     const int ret = epoll_wait(_epoll, _epvts, _MAX_EVENTS, timeout);
                     if (unlikely(ret < 0)) {
-                        std::cerr << "epoll::poller polling has failed " << std::endl;
+                        std::cerr << "epoll::Poller polling has failed " << std::endl;
                         return;
                     }
                     for (int i = 0; i < ret; ++i) {

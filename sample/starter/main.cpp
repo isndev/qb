@@ -1,5 +1,5 @@
 #include "MyActor.h"
-#include <cube/actor/main.h>
+#include <cube/main.h>
 
 int main (int, char *argv[]) {
     // (optional) initialize the logger

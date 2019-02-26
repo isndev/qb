@@ -41,4 +41,8 @@
 #endif
 #endif /* __GNUC__ */
 
+struct CUBE_LOCKFREE_CACHELINE_ALIGNMENT CacheLine {
+    uint32_t __raw__[16];
+};
+
 #endif /* CUBE_UTILS_PREFIX_H */

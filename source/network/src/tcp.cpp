@@ -19,18 +19,18 @@ namespace           cube {
     namespace       network {
         namespace   tcp {
 
-            socket::socket()
-                    : TSocket<SocketType::TCP>() {
+            Socket::Socket()
+                    : sys::Socket<SocketType::TCP>() {
             }
 
-            socket::socket(SocketHandler fd)
-                    : TSocket<SocketType::TCP>() {
+            Socket::Socket(SocketHandler fd)
+                    : sys::Socket<SocketType::TCP>() {
                 _handle = fd;
             }
 
-            unsigned short socket::getLocalPort() const {
+            unsigned short Socket::getLocalPort() const {
                 if (good()) {
-                    // Retrieve informations about the local end of the socket
+                    // Retrieve informations about the local end of the Socket
                     sockaddr_in address;
                     AddrLength size = sizeof(address);
                     if (getsockname(_handle, reinterpret_cast<sockaddr *>(&address), &size) != -1) {
@@ -42,7 +42,7 @@ namespace           cube {
                 return 0;
             }
 
-            ip socket::getRemoteAddress() const {
+            ip Socket::getRemoteAddress() const {
                 if (good()) {
                     // Retrieve informations about the remote end of the socket
                     sockaddr_in address;
@@ -56,7 +56,7 @@ namespace           cube {
                 return ip::None;
             }
 
-            unsigned short socket::getRemotePort() const {
+            unsigned short Socket::getRemotePort() const {
                 if (good()) {
                     // Retrieve informations about the remote end of the socket
                     sockaddr_in address;
@@ -70,7 +70,7 @@ namespace           cube {
                 return 0;
             }
 
-            SocketStatus socket::connect(const ip &remoteAddress, unsigned short remotePort, int timeout) {
+            SocketStatus Socket::connect(const ip &remoteAddress, unsigned short remotePort, int timeout) {
                 // Disconnect the socket if it is already connected
                 disconnect();
 
@@ -149,7 +149,7 @@ namespace           cube {
                 }
             }
 
-            void socket::disconnect() {
+            void Socket::disconnect() {
                 // Close the socket
                 if (good()) {
                     close();
@@ -157,13 +157,13 @@ namespace           cube {
                 }
             }
 
-            network::SocketStatus socket::send(const void *data, std::size_t size) const {
+            network::SocketStatus Socket::send(const void *data, std::size_t size) const {
                 std::size_t sent;
 
                 return send(data, size, sent);
             }
 
-            SocketStatus socket::send(const void *data, std::size_t size, std::size_t &sent) const {
+            SocketStatus Socket::send(const void *data, std::size_t size, std::size_t &sent) const {
                 int result = ::send(_handle, static_cast<const char *>(data), static_cast<int>(size), flags);
                 if (unlikely(result < 0))
                     return helper::getErrorStatus();
@@ -171,7 +171,7 @@ namespace           cube {
                 return SocketStatus::Done;
             }
 
-            SocketStatus socket::sendall(const void *data, std::size_t size, std::size_t &sent) const {
+            SocketStatus Socket::sendall(const void *data, std::size_t size, std::size_t &sent) const {
                 // Loop until every byte has been sent
                 int result = 0;
                 for (sent = 0; sent < size; sent += result) {
@@ -193,7 +193,7 @@ namespace           cube {
                 return SocketStatus::Done;
             }
 
-            SocketStatus socket::receive(void *data, std::size_t size, std::size_t &received) const {
+            SocketStatus Socket::receive(void *data, std::size_t size, std::size_t &received) const {
                 // First clear the variables to fill
                 received = 0;
 
@@ -211,11 +211,11 @@ namespace           cube {
                 }
             }
 
-            listener::listener()
-                    : socket()
+            Listener::Listener()
+                    : Socket()
             {}
 
-            unsigned short listener::getLocalPort() const
+            unsigned short Listener::getLocalPort() const
             {
                 if (good())
                 {
@@ -232,7 +232,7 @@ namespace           cube {
                 return 0;
             }
 
-            SocketStatus listener::listen(unsigned short port, const ip& address)
+            SocketStatus Listener::listen(unsigned short port, const ip& address)
             {
                 // Close the socket if it is already bound
                 close();
@@ -273,7 +273,7 @@ namespace           cube {
                 return SocketStatus::Done;
             }
 
-            SocketStatus listener::accept(socket& sock)
+            SocketStatus Listener::accept(Socket& sock)
             {
                 // Make sure that we're listening
                 if (!good())

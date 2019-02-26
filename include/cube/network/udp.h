@@ -1,5 +1,5 @@
 #include            "ip.h"
-#include            "tsocket.h"
+#include            "sys.h"
 
 #ifndef             CUBE_NETWORK_UDP_H_
 # define            CUBE_NETWORK_UDP_H_
@@ -8,11 +8,11 @@ namespace           cube {
     namespace       network {
         namespace   udp {
 
-            class CUBE_API socket
-                : public internal::TSocket<SocketType::UDP> {
+            class CUBE_API Socket
+                : public sys::Socket<SocketType::UDP> {
                 constexpr static const std::size_t MaxDatagramSize = 65507;
 
-                socket();
+                Socket();
 
                 unsigned short getLocalPort() const;
 

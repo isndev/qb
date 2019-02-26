@@ -10,7 +10,7 @@ Cube is a thin-layer multicore-optimized runtime that enable users to build thei
   - (Recommended) CMake
   - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
 * #### Pros
-  - Multi platform (Linux|Windows|Apple)
+  - Cross-platform (Linux|Windows)
   - Easy to use
   - CPU cache friendly
   - Very fast and low-latency
