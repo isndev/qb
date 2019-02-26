@@ -12,7 +12,7 @@ if(DOXYGEN_FOUND)
     endif()
 
 
-    set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile)
+    set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in)
     set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
     configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
     configure_file(${DOXYGEN_INPUT_DIR}/header.html.in ${DOXYGEN_OUTPUT_DIR}/header.html @ONLY)
@@ -20,7 +20,7 @@ if(DOXYGEN_FOUND)
     configure_file(${DOXYGEN_INPUT_DIR}/doxygen.css ${DOXYGEN_OUTPUT_DIR}/html/doxygen.css COPYONLY)
 
     message("Doxygen buld started")
-    add_custom_target(Doxygen ALL
+    add_custom_target(${CUBE_PREFIX}-docs ALL
             COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
             COMMENT "Generating API documentation with Doxygen"

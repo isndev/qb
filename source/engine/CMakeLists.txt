@@ -1,6 +1,9 @@
-project(${CMAKE_PROJECT_NAME}-engine VERSION 1.0.0.0 DESCRIPTION "A simple actor library")
+project(${CUBE_PREFIX}-engine VERSION 1.0.0.0 DESCRIPTION "A simple actor library")
 
 cxx_library(${PROJECT_NAME} ${cxx_default_lib} src/engine-all.cpp)
+target_include_directories(${PROJECT_NAME} INTERFACE
+        "$<BUILD_INTERFACE:${CUBE_DIRECTORY}/include;${CUBE_DIRECTORY}/modules>"
+        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
 
 #if (COMPILE_CUBE_TESTS)
     add_subdirectory(tests)
