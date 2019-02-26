@@ -18,7 +18,7 @@ namespace cube {
 
     ActorId Core::__generate_id__() {
         if (!_ids.size())
-            return ActorId::NotFound();
+            return ActorId::NotFound;
         return ActorId(_ids.extract(_ids.begin()).value(), _index);
     }
 
