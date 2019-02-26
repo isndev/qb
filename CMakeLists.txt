@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.1)
 project(cube)
 
-string(TOUPPER ${CMAKE_PROJECT_NAME} PROJECT_PREFIX)
+set(CUBE_PREFIX ${PROJECT_NAME})
+string(TOUPPER ${CUBE_PREFIX} CUBE_PREFIX_UPPER)
+set(CUBE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 #set(CMAKE_VERBOSE_MAKEFILE ON)
@@ -10,8 +13,8 @@ if(NOT CYGWIN)
 endif()
 
 option(USE_TC_MALLOC "TCMalloc is ennabled" ON)
-option("${PROJECT_PREFIX}_COMPILE_TESTS" "COMPILE_TESTS" OFF)
-
+option("${CUBE_PREFIX_UPPER}_COMPILE_TESTS" "COMPILE_TESTS" OFF)
+option("${CUBE_PREFIX_UPPER}_WITH_RTTI" "Build with RTTI" ON)
 
 set(GPERFTOOLS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/gperftools/src)
 get_directory_property(IS_INVOKED PARENT_DIRECTORY)
@@ -28,7 +31,7 @@ add_subdirectory(${GOOGLEBENCHMARK_DIR})
 if (MSVC)
     set(gtest_force_shared_crt ON)
 endif()
-set(GOOGLETEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googlebenchmark/googletest)
+set(GOOGLETEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googletest)
 add_subdirectory(${GOOGLETEST_DIR})
 
 # overload with our cmake utils
@@ -85,6 +88,10 @@ add_subdirectory(sample)
 add_subdirectory(docs)
 
 if(IS_INVOKED)
-    set(CUBE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-    set(CMAKE_CXX_FLAGS "${CUBE_CXX_FLAGS}" PARENT_SCOPE)
+    if(${CUBE_PREFIX_UPPER}_WITH_RTTI)
+        message("Will build ${CUBE_PREFIX} libraries with rtti")
+    else()
+        message("Will build ${CUBE_PREFIX} libraries without rtti")
+        set(CMAKE_CXX_FLAGS "${cxx_no_rtti_flags}" PARENT_SCOPE)
+    endif()
 endif()
