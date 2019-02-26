@@ -4,11 +4,12 @@
 namespace           cube {
     namespace       network {
         namespace   udp {
-            socket::socket() :
-                    TSocket<SocketType::UDP>() {
+
+            Socket::Socket() :
+                    sys::Socket<SocketType::UDP>() {
             }
 
-            unsigned short socket::getLocalPort() const {
+            unsigned short Socket::getLocalPort() const {
                 if (good()) {
                     // Retrieve informations about the local end of the socket
                     sockaddr_in address;
@@ -22,7 +23,7 @@ namespace           cube {
                 return 0;
             }
 
-            SocketStatus socket::bind(unsigned short port, const ip &address) {
+            SocketStatus Socket::bind(unsigned short port, const ip &address) {
 
                 // Create the internal socket if it doesn't exist
                 init();
@@ -41,13 +42,13 @@ namespace           cube {
                 return SocketStatus::Done;
             }
 
-            void socket::unbind() {
+            void Socket::unbind() {
                 // Simply close the socket
                 close();
             }
 
             SocketStatus
-            socket::send(const void *data, std::size_t size, const ip &remoteAddress, unsigned short remotePort) const {
+            Socket::send(const void *data, std::size_t size, const ip &remoteAddress, unsigned short remotePort) const {
 
                 // Build the target address
                 sockaddr_in address = helper::createAddress(remoteAddress.toInteger(), remotePort);
@@ -63,7 +64,7 @@ namespace           cube {
                 return SocketStatus::Done;
             }
 
-            SocketStatus socket::receive(void *data, std::size_t size, std::size_t &received, ip &remoteAddress,
+            SocketStatus Socket::receive(void *data, std::size_t size, std::size_t &received, ip &remoteAddress,
                                          unsigned short &remotePort) const {
                 // First clear the variables to fill
                 received = 0;

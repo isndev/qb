@@ -75,11 +75,14 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
 #    set(USE_TC_MALLOC OFF)
 #endif()
 
-add_subdirectory(source/actor)
+add_subdirectory(source/engine)
 add_subdirectory(source/network)
 
 # Sample Projects
 add_subdirectory(sample)
+
+# Build Documentation
+add_subdirectory(docs)
 
 if(IS_INVOKED)
     set(CUBE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")

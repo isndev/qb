@@ -1,0 +1,45 @@
+
+#ifndef CUBE_ACTORID_H
+# define CUBE_ACTORID_H
+# include <limits>
+# include <cstdint>
+// include from cube
+# include <cube/utility/prefix.h>
+# include <cube/io.h>
+
+namespace cube {
+
+    /*!
+     * @class ActorId engine/ActorId.h cube/actorid.h
+     * @ingroup Engine
+     * @brief Actor unique identifier
+     */
+    class ActorId {
+        friend class Main;
+        friend class Core;
+        friend class Actor;
+        friend class ServiceActor;
+
+        using NotFound = ActorId;
+
+        uint16_t _id;
+        uint16_t _index;
+
+        ActorId(uint16_t const id, uint16_t const index);
+        ActorId(uint32_t const id);
+    public:
+        ActorId();
+        ActorId(ActorId const &) = default;
+
+        operator const uint32_t &() const;
+        bool operator!=(ActorId const &rhs) const;
+
+        uint16_t sid() const;
+        uint16_t index() const;
+    };
+
+}
+
+cube::io::stream &operator<<(cube::io::stream &os, cube::ActorId const &id);
+
+#endif //CUBE_ACTORID_H

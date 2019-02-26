@@ -1,5 +1,5 @@
 #include            "ip.h"
-#include            "tsocket.h"
+#include            "sys.h"
 
 #ifndef             CUBE_NETWORK_TCP_H_
 # define            CUBE_NETWORK_TCP_H_
@@ -8,12 +8,12 @@ namespace           cube {
     namespace       network {
         namespace   tcp {
 
-            class CUBE_API socket
-                : public internal::TSocket<SocketType::TCP> {
+            class CUBE_API Socket
+                : public sys::Socket<SocketType::TCP> {
             public:
-                socket();
-                socket(socket const &) = default;
-                socket(SocketHandler fd);
+                Socket();
+                Socket(Socket const &rhs) = default;
+                Socket(SocketHandler fd);
 
                 ip getRemoteAddress() const;
                 unsigned short getLocalPort() const;
@@ -28,18 +28,19 @@ namespace           cube {
                 SocketStatus receive(void *data, std::size_t size, std::size_t &received) const;
 
             private:
-                friend class listener;
+                friend class Listener;
             };
 
-            class CUBE_API listener
-                    : public socket {
+            class CUBE_API Listener
+                    : public Socket {
             public:
-                listener();
+                Listener();
+                Listener(Listener const &) = delete;
 
                 unsigned short getLocalPort() const;
 
                 SocketStatus listen(unsigned short port, const ip &address = ip::Any);
-                SocketStatus accept(socket &socket);
+                SocketStatus accept(Socket &socket);
             };
 
         } // namespace tcp
