@@ -8,19 +8,19 @@
 
 struct TinyEvent : cube::Event {
     uint64_t x;
-    TinyEvent(uint64_t x) : x(x) {}
+    TinyEvent(uint64_t y) : x(y) {}
 };
 
 struct BigEvent : cube::Event {
     uint64_t x;
     uint64_t padding[127];
-    BigEvent(uint64_t x) : x(x) {}
+    BigEvent(uint64_t y) : x(y) {}
 };
 
 struct DynamicEvent : cube::Event {
     uint64_t x;
     std::vector<int> vec;
-    DynamicEvent(uint64_t x) : x(x), vec(512, 8) {}
+    DynamicEvent(uint64_t y) : x(y), vec(512, 8) {}
 };
 
 template<typename EventTrait>
@@ -29,7 +29,7 @@ class ActorPong : public cube::Actor {
     const cube::ActorId actor_to_send;
 
 public:
-    ActorPong(uint64_t const max, cube::ActorId const &id = cube::ActorId::NotFound{})
+    ActorPong(uint64_t const max, cube::ActorId const &id = cube::ActorId::NotFound)
             : max_sends(max)
             , actor_to_send(id) {}
 

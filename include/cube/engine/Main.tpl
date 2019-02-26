@@ -15,7 +15,7 @@ namespace cube {
                     (index, std::forward<_Init>(init)...);
         }
 
-        return ActorId::NotFound{};
+        return ActorId::NotFound;
     }
 
     template<template<typename _Trait> typename _Actor, typename _Trait, typename ..._Init>
@@ -26,7 +26,7 @@ namespace cube {
                     (index, std::forward<_Init>(init)...);
         }
 
-        return ActorId::NotFound{};
+        return ActorId::NotFound;
     }
 } // namespace cube
 

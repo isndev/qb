@@ -20,14 +20,14 @@ namespace cube {
         friend class Actor;
         friend class ServiceActor;
 
-        using NotFound = ActorId;
-
         uint16_t _id;
         uint16_t _index;
 
         ActorId(uint16_t const id, uint16_t const index);
         ActorId(uint32_t const id);
     public:
+        static constexpr uint32_t NotFound = 0;
+
         ActorId();
         ActorId(ActorId const &) = default;
 

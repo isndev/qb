@@ -11,7 +11,7 @@ namespace cube {
             auto id = __generate_id__();
             actor->__set_id(id);
             // Number of actors attends to its limit in this core
-            if (id == ActorId::NotFound() || (doinit && unlikely(!actor->onInit()))) {
+            if (id == ActorId::NotFound || (doinit && unlikely(!actor->onInit()))) {
                 _ids.insert(static_cast<uint16_t>(id));
                 delete actor;
                 return false;
@@ -32,7 +32,7 @@ namespace cube {
         actor->_handler = this;
 
         if (!initActor(actor, false))
-            return ActorId::NotFound();
+            return ActorId::NotFound;
 
         addActor(actor);
         return actor->id();
