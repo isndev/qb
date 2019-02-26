@@ -29,7 +29,7 @@ class ActorPong : public cube::Actor {
     const cube::ActorId actor_to_send;
 
 public:
-    ActorPong(uint64_t const max, cube::ActorId const &id = cube::ActorId::NotFound)
+    ActorPong(uint64_t const max, cube::ActorId const id = cube::ActorId())
             : max_sends(max)
             , actor_to_send(id) {}
 
