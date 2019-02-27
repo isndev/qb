@@ -18,8 +18,6 @@ int main (int, char *argv[]) {
 
     main.start();  // start the engine asynchronously
     main.join();   // Wait for the running engine
-    main.start();
-    main.join();   // Wait for the running engine
     // if all my actors had been destroyed then it will release the wait !
     return 0;
 }

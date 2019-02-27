@@ -2,14 +2,15 @@
 // Created by isndev on 12/4/18.
 //
 
+#include <csignal>
+#include <cstring>
 #include <cube/engine/Main.h>
 #include <cube/engine/Core.h>
-#include <csignal>
 
 namespace cube {
 
-    void Main::onSignal(int signal) {
-        io::cout() << "Received signal(" << signal << ") will stop the engine" << std::endl;
+    void Main::onSignal(int sig) {
+        io::cout() << "Received signal(" << sig << ") will stop the engine" << std::endl;
         is_running = false;
     }
 
@@ -25,6 +26,7 @@ namespace cube {
         }
         sync_start.store(0, std::memory_order_release);
         is_running = false;
+        LOG_INFO << "[MAIN] Init with " << getNbCore() << " cores";
     }
 
     Main::~Main() {
@@ -48,7 +50,6 @@ namespace cube {
     }
 
     void Main::start(bool async) const {
-		LOG_INFO << "[MAIN] Init with " << getNbCore() << " cores";
 		std::size_t i = 1;
 		is_running = true;
         for (auto core : _cores) {
@@ -60,12 +61,15 @@ namespace cube {
         }
 
         if (async) {
-            const auto now = Timestamp::nano();
-                while (sync_start.load(std::memory_order_acquire) < _cores.size())
-                    std::this_thread::yield();
-            LOG_INFO << "[MAIN] Init Success has waited init cores for " << Timestamp::nano() - now << "ns";
+            while (sync_start.load(std::memory_order_acquire) < _cores.size())
+                std::this_thread::yield();
+            LOG_INFO << "[MAIN] Init Success";
         }
         std::signal(SIGINT, &onSignal);
+    }
+
+    void Main::stop() const {
+        std::raise(SIGINT);
     }
 
     void Main::join() const {

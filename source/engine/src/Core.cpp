@@ -37,11 +37,11 @@ namespace cube {
             if (likely(actor != std::end(_actors))) {
                 event->state[0] = 0;
                 actor->second->on(event);
-                LOG_DEBUG << "Sucess Event" << *this
+                LOG_DEBUG << "" << *this << " Sucess Event"
                           << " [Source](" << event->source << ")"
                           << " [Dest](" << event->dest << ") Size=" << event->bucket_size;
             } else {
-                LOG_WARN << "Failed Event" << *this
+                LOG_WARN << "" << *this << " Failed Event"
                          << " [Source](" << event->source << ")"
                          << " [Dest](" << event->dest << ") NOT FOUND";
             }
@@ -130,9 +130,9 @@ namespace cube {
     void Core::__wait__all__cores__ready() {
         const auto total_core = _engine.getNbCore();
         Main::sync_start.fetch_add(1, std::memory_order_acq_rel);
-        LOG_INFO << "[READY]" << *this;
         while (Main::sync_start.load(std::memory_order_acquire) < total_core)
             std::this_thread::yield();
+        LOG_INFO << "" << *this << " Init Success";
     }
 
     void Core::__updateTime__() {
@@ -146,7 +146,6 @@ namespace cube {
                 __init__actors__();
                 __wait__all__cores__ready();
 
-                LOG_INFO << "StartSequence Init " << *this << " Success";
                 while (likely(Main::is_running)) {
                     __updateTime__();
                     __receive__();
@@ -170,8 +169,13 @@ namespace cube {
                 do {
                     __receive__();
                 } while (__flush_all__());
+
+                if (!Main::is_running)
+                    LOG_INFO << "" << *this << " Stopped by user";
+                else
+                    LOG_INFO << "" << *this << " Stopped normally";
             } else {
-                LOG_CRIT << "StartSequence Init " << *this << " Failed";
+                LOG_CRIT << "" << *this << " Init Failed";
             }
         } catch (std::exception &e) {
             LOG_CRIT << "Exception thrown on " << *this
