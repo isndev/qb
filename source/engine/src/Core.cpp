@@ -147,7 +147,7 @@ namespace cube {
                 __wait__all__cores__ready();
 
                 LOG_INFO << "StartSequence Init " << *this << " Success";
-                while (likely(true)) {
+                while (likely(Main::is_running)) {
                     __updateTime__();
                     __receive__();
 
@@ -261,7 +261,6 @@ namespace cube {
     //!Event Api
 
     uint16_t Core::getIndex() const { return _index; }
-    uint64_t Core::bestTime() const { return Main::sync_start.load(); }
     uint64_t Core::time() const { return _nano_timer; }
 
 }

@@ -26,6 +26,7 @@ namespace cube {
         friend class Core;
         friend class Actor;
         friend class ServiceActor;
+        friend class ProxyPipe;
         friend struct ServiceEvent;
 
         uint16_t id;

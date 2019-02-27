@@ -18,6 +18,7 @@ namespace cube {
     class CoreSet {
         friend class Main;
 
+        const std::unordered_set<uint8_t>  &_raw_set;
         const std::size_t       _nb_core;
         std::vector<uint8_t>    _set;
         std::size_t             _size;

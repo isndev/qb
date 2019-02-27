@@ -50,9 +50,7 @@ namespace cube {
         };
 
         void on(Event *event) const;
-        void __set_id(ActorId const &id) {
-            static_cast<ActorId &>(*this) = id;
-        }
+        void __set_id(ActorId const &id);
 
         mutable bool _alive = true;
         Core * _handler = nullptr;
@@ -65,12 +63,12 @@ namespace cube {
          */
 
         /*!
-         * default constructor
+         * Default constructor
          */
         Actor();
 
         /*!
-         * virtual destructor
+         * Virtual destructor
          */
         virtual ~Actor();
 
@@ -87,13 +85,13 @@ namespace cube {
          *   return true
          * }
          * @endcode
-         * @note
-         * /!\ if initialization has failed DerivedActor will not be added to the engine
+         * @attention
+         * /!\ If initialization has failed DerivedActor will not be added to the engine
          */
         virtual bool onInit() = 0;
 
         /*!
-         * will kill the Actor
+         * Kill the Actor
          */
         void kill() const;
 
@@ -140,8 +138,8 @@ namespace cube {
          *   this->kill();
          * }
          * @endcode
-         * @note
-         * /!\ do not forget to call kill
+         * @attention
+         * /!\ Do not forget to call kill on overloaded function.
          */
         void on(KillEvent const &event);
 
@@ -157,13 +155,13 @@ namespace cube {
          */
 
         /*!
-         * get current ActorId
+         * Get current ActorId
          * @return ActorId
          */
         ActorId id() const { return *this; }
 
         /*!
-         * get current core index
+         * Get current core index
          * @return core index
          */
         uint16_t getIndex() const;
@@ -175,7 +173,7 @@ namespace cube {
         ActorId getServiceId(uint16_t const index) const;
 
         /*!
-         * @brief get current time
+         * @brief Get current time
          * @return nano timestamp since epoch
          * @details
          * @note
@@ -186,13 +184,13 @@ namespace cube {
          * // ... some heavy calculation
          * assert(t1 == this->time()); // true - will not assert
          * @endcode
-         * To get precise time use NanoTimestamp
+         * To get precise time use NanoTimestamp.
          */
         uint64_t time() const;
 
         /*!
-         * @brief check if Actor is alive
-         * @return true if Actor is alive then false
+         * @brief Check if Actor is alive
+         * @return true if Actor is alive else false
          */
         bool isAlive() const;
 
@@ -208,7 +206,7 @@ namespace cube {
          */
 
         /*!
-         * @brief will register actor callback
+         * @brief Register a looped callback
          * @param actor reference of DerivedActor
          * @details
          * The registered callback will be called each Core loop.\n
@@ -235,7 +233,7 @@ namespace cube {
         void registerCallback(_Actor &actor) const;
 
         /*!
-         * @brief will unregister actor callback
+         * @brief Unregister actor callback
          * @param actor reference of DerivedActor
          * @details
          * example:
@@ -253,21 +251,22 @@ namespace cube {
 
 
         /*!
-         * @brief actor will listen on new _Event
+         * @brief Actor will listen on new _Event
          * @tparam _Event DerivedEvent type
          * @param actor reference of DerivedActor
          * @details
          * example:
          * @code
          * virtual bool onInit() {
-         * this->template registerEvent<MyEvent>(*this);
-         * // ...
+         *   this->template registerEvent<MyEvent>(*this);
+         *   // ...
          * }
          * @endcode
-         * @note _Actor must define the callback event function
+         * @note
+         * _Actor must define the callback event function.
          * @code
          * void on(MyEvent &event) {
-         * // do something
+         *   // do something
          * }
          * @endcode
          */
@@ -275,7 +274,7 @@ namespace cube {
         void registerEvent(_Actor &actor);
 
         /*!
-         * @brief actor will stop listening _Event
+         * @brief Actor will stop listening _Event
          * @tparam _Event DerivedEvent type
          * @param actor reference of DerivedActor
          * @details
@@ -295,7 +294,7 @@ namespace cube {
         void unregisterEvent();
 
         /*!
-         * @brief send a new ordered event
+         * @brief Send a new ordered event
          * @tparam _Event DerivedEvent type
          * @param dest destination ActorId
          * @param args arguments to forward to the constructor of the _Event
@@ -312,8 +311,9 @@ namespace cube {
          * // ...
          * @endcode
          * @note
-         * Pushed events are sent at the end of the core loop\n
-         * /!\ We recommend to non advanced users to use only this function to send events
+         * Pushed events are sent at the end of the core loop.
+         * @attention
+         * /!\ We recommend to non advanced users to use only this function to send events.
          */
         template<typename _Event, typename ..._Args>
         _Event &push(ActorId const &dest, _Args const &...args) const;
@@ -323,12 +323,13 @@ namespace cube {
          * @tparam _Event
          * @param dest
          * @param args
+         * @note Todo: implement this
          */
         template<typename _Event, typename ..._Args>
         void fast_push(ActorId const &dest, _Args const &...args) const;
 
         /*!
-         * @brief send a new unordered event
+         * @brief Send a new unordered event
          * @tparam _Event DerivedEvent type
          * @param dest destination ActorId
          * @param args arguments to forward to the constructor of the _Event
@@ -344,14 +345,15 @@ namespace cube {
          * // ...
          * @endcode
          * @note
-         * send may be faster than push in some cases\n
-         * /!\ We recommend to non advanced users to not use this function to send events
+         * send may be faster than push in some cases.
+         * @attention
+         * /!\ We recommend to non advanced users to not use this function to send events.
          */
         template<typename _Event, typename ..._Args>
         void send(ActorId const &dest, _Args &&...args) const;
 
         /*!
-         * @brief reply an event
+         * @brief Reply an event
          * @param event any received event
          * @details
          * example:
@@ -363,12 +365,12 @@ namespace cube {
          * }
          * @endcode
          * @note
-         * reply an event is faster than push a new one
+         * Replying an event is faster than pushing a new one.
          */
         void reply(Event &event) const;
 
         /*!
-         * @brief forward an event
+         * @brief Forward an event
          * @param dest destination ActorId
          * @param event any received event
          * @details
@@ -381,7 +383,7 @@ namespace cube {
          * }
          * @endcode
          * @note
-         * forward an event is faster than push a new one
+         * Forwarding an event is faster than pushing a new one.
          */
         void forward(ActorId const dest, Event &event) const;
 
@@ -404,18 +406,18 @@ namespace cube {
         bool try_send(Event const &event) const;
 
         /*!
-         * @brief get access to unidirectional events pipe
+         * @brief Get access to unidirectional out events pipe
          * @param dest destination ActorId
          * @return destination ProxyPipe
          * @details
          * If you want to send several events to same Actor or push dynamic sized events,\n
-         * Actor API allow to users to retrieve an event ProxyPipe to a desired Actor.\n
+         * Actor API allows to retrieve a ProxyPipe to a desired Actor.\n
          * more details on ProxyPipe section
          */
         ProxyPipe getPipe(ActorId const dest) const;
 
         /*!
-         * @brief create new referenced _Actor
+         * @brief Create new referenced _Actor
          * @tparam _Actor DerivedActor type
          * @param args arguments to forward to the constructor of the _Actor
          * @return _Actor * on success or nullptr on failure
@@ -438,7 +440,7 @@ namespace cube {
         auto addRefActor(_Args &&...args) const;
 
         /*!
-         * @brief create new referenced _Actor<_Trait>
+         * @brief Create new referenced _Actor<_Trait>
          * @tparam _Actor DerivedActor type
          * @tparam _Trait _Actor template argument
          * @param args arguments to forward to the constructor of the _Actor<_Trait>
@@ -468,13 +470,18 @@ namespace cube {
      * @ingroup Engine
      * @brief SingletonActor base class
      * @details
-     *
+     * ServiceActor is a special actor where DerivedActor
+     * must define unique service index.\n
+     * Inherited Service Actors are unique per Core.
+     * @attention
+     * /!\ Service Index from 0 to 1000 are reserved to Cube.\n
+     * /!\ Max Service Index is 10000.
      */
     class ServiceActor : public Actor {
     public:
         ServiceActor() = delete;
-        ServiceActor(uint16_t const id) {
-            this->__set_id(ActorId(id, 0));
+        ServiceActor(uint16_t const sid) {
+            this->__set_id(ActorId(sid, 0));
         }
     };
 }

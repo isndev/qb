@@ -4,20 +4,27 @@
 
 #include <cube/engine/Main.h>
 #include <cube/engine/Core.h>
+#include <csignal>
 
 namespace cube {
+
+    void Main::onSignal(int signal) {
+        io::cout() << "Received signal(" << signal << ") will stop the engine" << std::endl;
+        is_running = false;
+    }
 
     Main::Main(std::unordered_set<uint8_t> const &core_set)
             : _core_set (core_set)
             , _mail_boxes(_core_set.getSize())
     {
         _cores.reserve(_core_set.getNbCore());
-        sync_start.store(0, std::memory_order_release);
         for (auto core_id : core_set) {
             const auto nb_producers = _core_set.getNbCore() - 1;
             _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(nb_producers ? nb_producers : 1);
             _cores.emplace(core_id, new Core(core_id, *this));
         }
+        sync_start.store(0, std::memory_order_release);
+        is_running = false;
     }
 
     Main::~Main() {
@@ -41,8 +48,9 @@ namespace cube {
     }
 
     void Main::start(bool async) const {
-		LOG_INFO << "[CUBE] init with " << getNbCore() << " cores";
+		LOG_INFO << "[MAIN] Init with " << getNbCore() << " cores";
 		std::size_t i = 1;
+		is_running = true;
         for (auto core : _cores) {
             if (!async && i == _cores.size())
                 core.second->__spawn__();
@@ -50,6 +58,14 @@ namespace cube {
                 core.second->start();
             ++i;
         }
+
+        if (async) {
+            const auto now = Timestamp::nano();
+                while (sync_start.load(std::memory_order_acquire) < _cores.size())
+                    std::this_thread::yield();
+            LOG_INFO << "[MAIN] Init Success has waited init cores for " << Timestamp::nano() - now << "ns";
+        }
+        std::signal(SIGINT, &onSignal);
     }
 
     void Main::join() const {
@@ -66,5 +82,6 @@ namespace cube {
     }
 
     std::atomic<uint64_t> Main::sync_start(0);
+    bool Main::is_running(false);
 
 }
