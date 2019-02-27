@@ -53,7 +53,6 @@ namespace cube {
         using AvailableIdList = std::unordered_set<uint16_t>;
         //!Types
     private:
-
         // Members
         const uint8_t   _index;
         Main           &_engine;
@@ -144,9 +143,7 @@ namespace cube {
         //!Event Api
 
     public:
-
         uint16_t getIndex() const;
-        uint64_t bestTime() const;
         uint64_t time() const;
 
     };

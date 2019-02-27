@@ -21,6 +21,7 @@ namespace cube {
      * @ingroup Engine
      * @brief Engine main class
      * @details
+     * This is the Main engine class, initialized with desired CoreSet.
      */
     class Main {
         friend class Core;
@@ -30,6 +31,8 @@ namespace cube {
         using MPSCBuffer = lockfree::mpsc::ringbuffer<CacheLine, MaxRingEvents, 0>;
 
         static std::atomic<uint64_t> sync_start;
+        static bool                  is_running;
+        static void Main::onSignal(int signal);
 
     private:
         CoreSet _core_set;
@@ -45,15 +48,58 @@ namespace cube {
         Main(std::unordered_set<uint8_t> const &core_set);
         ~Main();
 
+        /*!
+         * Start the engine
+         * @param async
+         */
         void start(bool async = true) const;
+
+        /*!
+         * Wait until engine terminates
+         * @note
+         * You can avoid calling this function if main was started with async=false.
+         */
         void join() const;
 
     public:
 
-        template<typename _Actor, typename ..._Init>
-        ActorId addActor(std::size_t index, _Init &&...init);
-        template<template<typename _Trait> typename _Actor, typename _Trait, typename ..._Init>
-        ActorId addActor(std::size_t index, _Init &&...init);
+        /*!
+         * @brief Create new referenced _Actor
+         * @tparam _Actor DerivedActor type
+         * @param index Core index
+         * @param args arguments to forward to the constructor of the _Actor
+         * @return ActorId of the created _Actor
+         * @details
+         * create and initialize new _Actor on Core index.\n
+         * example:
+         * @code
+         * auto id = this->template addRefActor<MyActor>(0, param1, param2);
+         * @endcode
+         * @attention
+         * This function is available only before starting the engine.
+         */
+        template<typename _Actor, typename ..._Args>
+        ActorId addActor(std::size_t index, _Args &&...args);
+
+        /*!
+         * @brief Create new referenced _Actor<_Trait>
+         * @tparam _Actor DerivedActor type
+         * @tparam _Trait _Actor template argument
+         * @param index Core index
+         * @param args arguments to forward to the constructor of the _Actor
+         * @return ActorId of the created _Actor
+         * @details
+         * create and initialize new _Actor on Core index.\n
+         * example:
+         * @code
+         * auto id = this->template addRefActor<MyActor, MyTrait>(0, param1, param2);
+         * @endcode
+         * @attention
+         * This function is available only before starting the engine.
+         */
+        template<template<typename _Trait> typename _Actor, typename _Trait, typename ..._Args>
+        ActorId addActor(std::size_t index, _Args &&...args);
+
     };
 
 } // namespace cube

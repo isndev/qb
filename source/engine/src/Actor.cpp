@@ -25,6 +25,10 @@ namespace cube {
         _event_map.at(event->id)->invoke(event);
     }
 
+    void Actor::__set_id(ActorId const &id) {
+        static_cast<ActorId &>(*this) = id;
+    }
+
     void Actor::on(Event const &event) {
         LOG_WARN << *this << " received removed event[" << event.id << "]";
     }

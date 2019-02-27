@@ -7,7 +7,9 @@
 namespace cube {
 
     CoreSet::CoreSet(std::unordered_set <uint8_t> const &set)
-            : _nb_core(set.size()), _size(0) {
+            : _raw_set(set)
+            ,_nb_core(set.size())
+            , _size(0) {
         for (auto id : set)
             _size = id > _size ? id : _size;
         ++_size;

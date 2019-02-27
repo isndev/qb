@@ -115,13 +115,13 @@ namespace cube {
 
     template<typename T, typename ..._Init>
     void Core::fast_push(ActorId const dest, ActorId const source, _Init &&...init) {
-        auto &pipe = __getPipe__(dest._index);
-        auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
-
-        fill_event(data, dest, source);
-
-        if (likely(try_send(data)))
-            pipe.free_back(data.bucket_size);
+//        auto &pipe = __getPipe__(dest._index);
+//        auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
+//
+//        fill_event(data, dest, source);
+//
+//        if (likely(try_send(data)))
+//            pipe.free_back(data.bucket_size);
     }
     //!Event Api
 
