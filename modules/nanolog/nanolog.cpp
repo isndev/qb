@@ -103,15 +103,15 @@ namespace nanolog
 			case LogLevel::DEBUG:
 				return "DEBUG";
 			case LogLevel::VERBOSE:
-				return "VERB";
+				return "VERB ";
 			case LogLevel::INFO:
-				return "INFO";
+				return "INFO ";
 			case LogLevel::WARN:
-				return "WARN";
+				return "WARN ";
 			case LogLevel::ERROR:
 				return "ERROR";
 			case LogLevel::CRIT:
-				return "CRIT";
+				return "CRIT ";
 		}
 		return "XXXX";
 	}
@@ -160,7 +160,9 @@ namespace nanolog
 
 		os << '[' << to_string(loglevel) << ']'
 		   << '[' << threadid << ']'
-		   << '[' << file.m_s << ':' << function.m_s << ':' << line << "] ";
+		   << '['
+		   //<< file.m_s << ':'
+		   << function.m_s << ':' << line << "] ";
 
 		stringify(os, b, end);
 
@@ -725,7 +727,7 @@ namespace nanolog
 	struct LogInitializer {
 		static LogInitializer initializer;
 		LogInitializer() {
-			initialize(nanolog::GuaranteedLogger(), "./cube", 128);
+			initialize(nanolog::GuaranteedLogger(), "./cube", 512);
 #ifdef NDEBUG
 			nanolog::set_log_level(nanolog::LogLevel::INFO);
 #else

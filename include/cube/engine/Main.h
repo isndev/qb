@@ -32,7 +32,7 @@ namespace cube {
 
         static std::atomic<uint64_t> sync_start;
         static bool                  is_running;
-        static void Main::onSignal(int signal);
+        static void onSignal(int signal);
 
     private:
         CoreSet _core_set;
@@ -49,13 +49,22 @@ namespace cube {
         ~Main();
 
         /*!
-         * Start the engine
-         * @param async
+         * @brief Start the engine
+         * @param async has blocking execution
+         * @note
+         * If async = false the main thread will by used by a Core engine.
          */
         void start(bool async = true) const;
 
         /*!
-         * Wait until engine terminates
+         * @brief Stop the engine
+         * @note
+         * Same effect as receiving SIGINT Signal.
+         */
+        void stop() const;
+
+        /*!
+         * @brief Wait until engine terminates
          * @note
          * You can avoid calling this function if main was started with async=false.
          */
@@ -76,7 +85,7 @@ namespace cube {
          * auto id = this->template addRefActor<MyActor>(0, param1, param2);
          * @endcode
          * @attention
-         * This function is available only before starting the engine.
+         * This function is available only when the engine is not running.
          */
         template<typename _Actor, typename ..._Args>
         ActorId addActor(std::size_t index, _Args &&...args);
@@ -86,8 +95,8 @@ namespace cube {
          * @tparam _Actor DerivedActor type
          * @tparam _Trait _Actor template argument
          * @param index Core index
-         * @param args arguments to forward to the constructor of the _Actor
-         * @return ActorId of the created _Actor
+         * @param args arguments to forward to the constructor of the _Actor<_Trait>
+         * @return ActorId of the created _Actor<Trait>
          * @details
          * create and initialize new _Actor on Core index.\n
          * example:
@@ -95,7 +104,7 @@ namespace cube {
          * auto id = this->template addRefActor<MyActor, MyTrait>(0, param1, param2);
          * @endcode
          * @attention
-         * This function is available only before starting the engine.
+         * This function is available only when the engine is not running.
          */
         template<template<typename _Trait> typename _Actor, typename _Trait, typename ..._Args>
         ActorId addActor(std::size_t index, _Args &&...args);

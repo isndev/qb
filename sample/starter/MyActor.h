@@ -45,8 +45,8 @@ public:
     // will call this function when MyActor received MyEvent
     void on(MyEvent const &) {
         // I am a dummy actor, notify the engine to remove me !
-        cube::io::cout() << "MyActor(" << this->id() << ") received MyEvent and will Die";
-        //this->kill();
+        cube::io::cout() << "MyActor(" << this->id() << ") received MyEvent and will Die" << std::endl;
+        this->kill();
     }
 };
 

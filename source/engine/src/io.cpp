@@ -12,6 +12,6 @@ std::mutex cube::io::cout::io_lock;
 
 cube::io::cout::~cout() {
     std::lock_guard<std::mutex> lock(io_lock);
-    std::cout << ss.str() << std::endl << std::flush;
+    std::cout << ss.str() << std::flush;
 }
 
