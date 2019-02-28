@@ -1,4 +1,4 @@
-project(${CUBE_PREFIX}-network VERSION 1.0.0.0 DESCRIPTION "A simple network library")
+project(${CUBE_PREFIX}-network LANGUAGES CXX VERSION 1.0.0.0 DESCRIPTION "A simple network library")
 
 cxx_library(${PROJECT_NAME} ${cxx_default_lib} src/network-all.cpp)
 target_include_directories(${PROJECT_NAME} INTERFACE
