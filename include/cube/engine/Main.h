@@ -82,7 +82,7 @@ namespace cube {
          * create and initialize new _Actor on Core index.\n
          * example:
          * @code
-         * auto id = this->template addRefActor<MyActor>(0, param1, param2);
+         * auto id = this->template addActor<MyActor>(0, param1, param2);
          * @endcode
          * @attention
          * This function is available only when the engine is not running.
@@ -101,7 +101,7 @@ namespace cube {
          * create and initialize new _Actor on Core index.\n
          * example:
          * @code
-         * auto id = this->template addRefActor<MyActor, MyTrait>(0, param1, param2);
+         * auto id = this->template addActor<MyActor, MyTrait>(0, param1, param2);
          * @endcode
          * @attention
          * This function is available only when the engine is not running.
