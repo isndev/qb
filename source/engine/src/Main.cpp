@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cube/engine/Main.h>
 #include <cube/engine/Core.h>
+#include "../../../include/cube/main.h"
 
 namespace cube {
 
@@ -87,5 +88,18 @@ namespace cube {
 
     std::atomic<uint64_t> Main::sync_start(0);
     bool Main::is_running(false);
+
+    Main::CoreBuilder::CoreBuilder(CoreBuilder const &rhs)
+            : _index(rhs._index)
+            , _main(rhs._main)
+            , _ret_ids(std::move(rhs._ret_ids))
+            , _valid(rhs._valid)
+    {}
+
+    bool Main::CoreBuilder::valid() const { return _valid; }
+    Main::CoreBuilder::operator bool() const { return valid(); }
+    Main::CoreBuilder::ActorIdList const &Main::CoreBuilder::idList() const {
+        return _ret_ids;
+    }
 
 }

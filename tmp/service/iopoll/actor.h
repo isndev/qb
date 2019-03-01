@@ -20,7 +20,7 @@ namespace cube {
                     : ServiceActor(Tag::sid) {}
 
                 bool onInit() override final {
-                    this->template registerEvent<event::Subscribe>(*this);
+                    registerEvent<event::Subscribe>(*this);
                     this->registerCallback(*this);
 
                     return true;
@@ -28,7 +28,7 @@ namespace cube {
 
                 void onCallback() override final {
                     _epoll.wait([this](auto &event){
-                        this->template push<event::Ready>(*(&event.data.u32 + 1), _epoll, event);
+                        push<event::Ready>(*(&event.data.u32 + 1), _epoll, event);
                     });
                 }
 

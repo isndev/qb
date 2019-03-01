@@ -25,27 +25,27 @@ public:
             , to_send(id) {}
 
     bool onInit() override final {
-        this-> template registerEvent<ChainEvent>(*this);
+        registerEvent<ChainEvent>(*this);
         if (first) {
-            auto &event = this-> template push<ChainEvent>(to_send);
-            event.first = this->id();
-            event.creation_time = this->time();
+            auto &event = push<ChainEvent>(to_send);
+            event.first = id();
+            event.creation_time = time();
         }
         return true;
     }
 
     void on(ChainEvent &event) const {
         if (event.loop >= max_events) {
-            this->kill();
+            kill();
             if (!to_send)
-                LOG_INFO << "Event Time To Arrive " << this->time() - event.creation_time << "ns";
+                LOG_INFO << "Event Time To Arrive " << time() - event.creation_time << "ns";
         }
         if (first)
-            event.creation_time = this->time();
+            event.creation_time = time();
         if (!to_send) {
             ++event.loop;
         }
-        this->forward(to_send ? to_send : event.first, event);
+        forward(to_send ? to_send : event.first, event);
     }
 };
 

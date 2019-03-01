@@ -38,21 +38,6 @@ namespace cube {
         return actor->id();
     };
 
-    template<typename _Actor
-            , typename ..._Init >
-    ActorId Core::addActor(std::size_t, _Init &&...init) {
-        return addActor<_Actor>
-                (std::forward<_Init>(init)...);
-    }
-
-    template<template<typename _Trait> typename _Actor
-            , typename _Trait
-            , typename ..._Init >
-    ActorId Core::addActor(std::size_t, _Init &&...init) {
-        return addActor<_Actor<_Trait>>
-                (std::forward<_Init>(init)...);
-    }
-
     template<typename _Actor, typename ..._Init>
     _Actor *Core::addReferencedActor(_Init &&...init) {
         auto actor = new _Actor(std::forward<_Init>(init)...);
@@ -64,13 +49,6 @@ namespace cube {
         addActor(actor);
         return actor;
     };
-    template<template <typename _Trait> typename _Actor
-            , typename _Trait
-            , typename ..._Init>
-    auto Core::addReferencedActor(_Init &&...init) {
-        return addReferencedActor<_Actor<_Trait>>
-                (std::forward<_Init>(init)...);
-    }
 
     template <typename _Actor>
     void Core::registerCallback(_Actor &actor) {
@@ -99,7 +77,7 @@ namespace cube {
 
         fill_event(data, dest, source);
 
-        if (likely(dest._index == source._index ? this->try_send(data) : _engine.send(data)))
+        if (likely(dest._index == source._index ? try_send(data) : _engine.send(data)))
             pipe.free(data.bucket_size);
     }
 

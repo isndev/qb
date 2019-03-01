@@ -1,5 +1,6 @@
-#include "MyActor.h"
 #include <cube/main.h>
+#include "MyActor.h"
+
 
 int main (int, char *argv[]) {
     // (optional) initialize the logger
@@ -12,9 +13,14 @@ int main (int, char *argv[]) {
     // Note : I will use only the core 0 and 1
     cube::Main main({0, 1});
 
-    // My start sequence -> add MyActor to core 0 and 1
-    main.addActor<MyActor>(0); // default constructed
-    main.addActor<MyActor>(1, 1337, 7331); // constructed with parameters
+    // First way to add actors at start
+    main.addActor<MyActor>(0); // in Core id=0, default constructed
+    main.addActor<MyActor>(1, 1337, 7331); // in Core id=1, constructed with parameters
+
+    // Other way to add actors retrieving core builder
+    main.core(0)
+            .addActor<MyActor>()
+            .addActor<MyActor>(1337, 7331);
 
     main.start();  // start the engine asynchronously
     main.join();   // Wait for the running engine

@@ -7,27 +7,28 @@
 
 namespace cube {
     class Main;
+
     template<typename _Actor, typename ..._Init>
     ActorId Main::addActor(std::size_t index, _Init &&...init) {
         auto it = _cores.find(static_cast<uint8_t >(index));
         if (!Main::is_running && it != _cores.end()) {
             return it->second-> template addActor<_Actor, _Init...>
-                    (index, std::forward<_Init>(init)...);
+                    (std::forward<_Init>(init)...);
         }
 
         return ActorId::NotFound;
     }
 
-    template<template<typename _Trait> typename _Actor, typename _Trait, typename ..._Init>
-    ActorId Main::addActor(std::size_t index, _Init &&...init) {
-        auto it = _cores.find(static_cast<uint8_t>(index));
-        if (!Main::is_running && it != _cores.end()) {
-            return it->second-> template addActor<_Actor, _Trait, _Init...>
-                    (index, std::forward<_Init>(init)...);
-        }
+    template<typename _Actor, typename ..._Args>
+    Main::CoreBuilder &Main::CoreBuilder::addActor(_Args &&...args) {
+        auto id = _main.template addActor<_Actor, _Args...>(_index, std::forward<_Args>(args)...);
+        if (id == ActorId::NotFound)
+            _valid = false;
 
-        return ActorId::NotFound;
+        _ret_ids.push_back(id);
+        return *this;
     }
+
 } // namespace cube
 
 #endif //CUBE_CUBE_TPL

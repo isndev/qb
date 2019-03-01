@@ -34,38 +34,39 @@ namespace cube {
 
     template<typename _Event>
     void Actor::unregisterEvent() {
-        this->template unregisterEvent<_Event>(*this);
+        unregisterEvent<_Event>(*this);
     }
 
     template<typename _Actor, typename ..._Args>
-    auto Actor::addRefActor(_Args &&...args) const {
+    _Actor *Actor::addRefActor(_Args &&...args) const {
         return _handler->template addReferencedActor<_Actor>(std::forward<_Args>(args)...);
     }
 
-    template<template<typename _Trait> typename _Actor, typename _Trait, typename ..._Args>
-    auto Actor::addRefActor(_Args &&...args) const {
-        return _handler->template addReferencedActor<_Actor, _Trait>(std::forward<_Args>(args)...);
+    template<typename _Event, typename ..._Args>
+    _Event &Actor::push(ActorId const &dest, _Args &&...args) const {
+        return _handler->template push<_Event>(dest, id(), std::forward<_Args>(args)...);
     }
 
-    template<typename _Event, typename ..._Args>
-    _Event &Actor::push(ActorId const &dest, _Args const &...args) const {
-        return _handler->template push<_Event>(dest, this->id(), args...);
-    }
-
-    template<typename _Event, typename ..._Args>
-    void Actor::fast_push(ActorId const &dest, _Args const &...args) const {
-        // TODO: find a way to implement this
-        // _handler->template fast_push<_Event>(dest, this->id(), args...);
-    }
+    //    template<typename _Event, typename ..._Args>
+    //    void Actor::fast_push(ActorId const &dest, _Args const &...args) const {
+    //    TODO: find a way to implement this
+    //          _handler->template fast_push<_Event>(dest, id(), args...);
+    //    }
 
     template<typename _Event, typename ..._Args>
     void Actor::send(ActorId const &dest, _Args &&...args) const {
-        _handler->template send<_Event, _Args...>(dest, this->id(), std::forward<_Args>(args)...);
+        _handler->template send<_Event, _Args...>(dest, id(), std::forward<_Args>(args)...);
     }
 
     template <typename T>
     ActorId Actor::getServiceId(uint16_t const index) const {
         return {T::sid, index};
+    }
+
+    template<typename _Event, typename ..._Args>
+    Actor::EventBuilder &Actor::EventBuilder::push(_Args &&...args) {
+        dest_pipe.push<_Event>(std::forward<_Args>(args)...);
+        return *this;
     }
 
 }

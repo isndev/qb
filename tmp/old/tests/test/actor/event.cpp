@@ -9,17 +9,17 @@ public:
     ActorTest() = default;
 
     bool onInit() override final {
-        this->template registerEvent<MyEvent>(*this);
+        registerEvent<MyEvent>(*this);
         // Send event to myself
-        this->template push<MyEvent>(this->id());
+        push<MyEvent>(this->id());
         return true;
     }
 
     // MyEvent call back
     void on(MyEvent const &event) {
-        this->template unregisterEvent<MyEvent>(*this);
+        unregisterEvent<MyEvent>(*this);
         // Send event to myself again but it will fail
-        this->template push<MyEvent>(this->id());
+        push<MyEvent>(this->id());
     }
 
     // Overload when received removed event

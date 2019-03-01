@@ -35,10 +35,10 @@ public:
     bool onInit() override final {
         static int construct_time = 0;
         // add actor linked to same core
-        this-> template addRefActor<ActorTest>();
+        addRefActor<ActorTest>();
         // add me
         if (construct_time++ < 100)
-            this-> template addRefActor<ActorTraitTest>();
+            addRefActor<ActorTraitTest>();
         this->registerCallback(*this);
         return true;
     }

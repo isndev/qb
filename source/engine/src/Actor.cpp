@@ -10,8 +10,8 @@ namespace cube {
 
     Actor::Actor() {
         _event_map.reserve(64);
-        this->template registerEvent<Event>(*this);
-        this->template registerEvent<KillEvent>(*this);
+        registerEvent<Event>(*this);
+        registerEvent<KillEvent>(*this);
     }
 
     Actor::~Actor() {
@@ -46,7 +46,7 @@ namespace cube {
     }
 
     ProxyPipe Actor::getPipe(ActorId const dest) const {
-        return _handler->getPipeProxy(dest, this->id());
+        return _handler->getProxyPipe(dest, id());
     }
 
     uint16_t Actor::getIndex() const {
@@ -54,14 +54,20 @@ namespace cube {
     }
 
     void Actor::unregisterCallback() const {
-        _handler->unregisterCallback(this->id());
+        _handler->unregisterCallback(id());
     }
 
     void Actor::kill() const {
         _alive = false;
-        _handler->killActor(this->id());
+        _handler->killActor(id());
     }
 
+    Actor::EventBuilder::EventBuilder(ProxyPipe const &pipe)
+        : dest_pipe(pipe) {}
+
+    Actor::EventBuilder Actor::to(ActorId const dest) const {
+        return {getPipe(dest)};
+    }
 
     void Actor::reply(Event &event) const {
         _handler->reply(event);

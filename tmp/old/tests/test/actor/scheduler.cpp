@@ -23,24 +23,24 @@ public:
     ActorTest() = default;
 
     bool onInit() override final {
-        this->template registerEvent<MyTimedEvent>(*this);
-        this->template registerEvent<MyIntervalEvent>(*this);
+        registerEvent<MyTimedEvent>(*this);
+        registerEvent<MyIntervalEvent>(*this);
         // Send event to myself
-        auto &e = this->template push<MyIntervalEvent>(getServiceId<Tag>(0), cube::Timespan::seconds(1));
+        auto &e = push<MyIntervalEvent>(getServiceId<Tag>(0), cube::Timespan::seconds(1));
         e.repeat = 3;
         return true;
     }
 
     // MyEvent call back
     void on(MyTimedEvent const &event) {
-        this->template push<cube::KillEvent>(getServiceId<Tag>(0));
+        push<cube::KillEvent>(getServiceId<Tag>(0));
         this->kill();
     }
 
     void on(MyIntervalEvent &event) {
         if (event.repeat == 2) {
             event.cancel<MyIntervalEvent>(*this);
-            this->template push<MyTimedEvent>(getServiceId<Tag>(0), cube::Timespan::seconds(3));
+            push<MyTimedEvent>(getServiceId<Tag>(0), cube::Timespan::seconds(3));
         }
     }
 

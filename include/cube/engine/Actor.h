@@ -1,6 +1,7 @@
 
 #ifndef CUBE_ACTOR_H
 # define CUBE_ACTOR_H
+# include <vector>
 # include <unordered_map>
 // include from cube
 # include <cube/utility/nocopy.h>
@@ -90,6 +91,7 @@ namespace cube {
          */
         virtual bool onInit() = 0;
 
+    public:
         /*!
          * Kill the Actor
          */
@@ -99,7 +101,7 @@ namespace cube {
          * @}
          */
 
-
+    protected:
         /*!
          * @name Registered Event
          * @{
@@ -113,11 +115,11 @@ namespace cube {
          * example:
          * @code
          * // onInit()
-         * this->template registerEvent<cube::Event>(*this);
+         * registerEvent<cube::Event>(*this);
          * // DerivedActor should also define the event callback
          * void on(cube::Event &event) {
          *   // do something before killing actor
-         *   this->kill();
+         *   kill();
          * }
          * @endcode
          */
@@ -131,11 +133,11 @@ namespace cube {
          * example:
          * @code
          * // ...
-         * this->template registerEvent<cube::KillEvent>(*this);
+         * registerEvent<cube::KillEvent>(*this);
          * // DerivedActor should also define the event callback
          * void on(cube::KillEvent &event) {
          *   // do something before killing actor
-         *   this->kill();
+         *   kill();
          * }
          * @endcode
          * @attention
@@ -148,6 +150,44 @@ namespace cube {
          */
 
     public:
+
+        /*!
+         * @class EventBuilder engine/ActorId.h cube/actor.h
+         * @ingroup Engine
+         * @brief Helper to build Events
+         */
+        class EventBuilder {
+            friend class Actor;
+
+            ProxyPipe dest_pipe;
+
+            EventBuilder(ProxyPipe const &pipe);
+
+        public:
+            EventBuilder() = delete;
+            EventBuilder(EventBuilder const &rhs) = default;
+
+            /*!
+             * @brief Send a new ordered event
+             * @tparam _Event DerivedEvent type
+             * @param args arguments to forward to the constructor of the _Event
+             * @return Current EventBuilder
+             * @details
+             * EventBuilder is given by Actor::to function.\n
+             * This function can be chained.\n
+             * All events pushed will be received ordered by push order.\n
+             * example:
+             * @code
+             * to(destId)
+             * .push<MyEvent1>()
+             * .push<MyEvent2>(param1, param2)
+             * // ...
+             * ;
+             * @endcode
+             */
+            template<typename _Event, typename ..._Args>
+            EventBuilder &push(_Args &&...args);
+        };
 
         /*!
          * @name Public Accessors
@@ -180,9 +220,9 @@ namespace cube {
          * This value is optimized and updated each Core loop.
          * @code
          * // ...
-         * auto t1 = this->time();
+         * auto t1 = time();
          * // ... some heavy calculation
-         * assert(t1 == this->time()); // true - will not assert
+         * assert(t1 == time()); // true - will not assert
          * @endcode
          * To get precise time use NanoTimestamp.
          */
@@ -218,7 +258,7 @@ namespace cube {
          * , public cube::ICallback
          * {
          *   virtual bool onInit() {
-         *     this->registerCallback(*this);
+         *     registerCallback(*this);
          *   }
          * // ...
          *   virtual void onCallback() override final {
@@ -238,7 +278,7 @@ namespace cube {
          * @details
          * example:
          * @code
-         * this->unregisterCallback(*this);
+         * unregisterCallback(*this);
          * @endcode
          */
         template <typename _Actor>
@@ -258,7 +298,7 @@ namespace cube {
          * example:
          * @code
          * virtual bool onInit() {
-         *   this->template registerEvent<MyEvent>(*this);
+         *   registerEvent<MyEvent>(*this);
          *   // ...
          * }
          * @endcode
@@ -280,7 +320,7 @@ namespace cube {
          * @details
          * example:
          * @code
-         * this->template unregisterEvent<MyEvent>(*this);
+         * unregisterEvent<MyEvent>(*this);
          * @endcode
          */
         template<typename _Event, typename _Actor>
@@ -294,6 +334,29 @@ namespace cube {
         void unregisterEvent();
 
         /*!
+         * @brief Get EventBuilder for ActorId destination
+         * @param dest ActorId destination
+         * @return EventBuilder
+         * @details
+         * A way to push chained events to destination Actor.\n
+         * example:
+         * @code
+         * to(destId)
+         * .push<MyEvent1>()
+         * .push<MyEvent2>(param1, param2)
+         * // ...
+         * ;
+         * @endcode
+         * @attention
+         * @code
+         * auto builder1 = main.to(sameid);
+         * auto builder2 = main.to(sameid);
+         * // builder1 == builder2 -> true
+         * @endcode
+         */
+        EventBuilder to(ActorId const dest) const;
+
+        /*!
          * @brief Send a new ordered event
          * @tparam _Event DerivedEvent type
          * @param dest destination ActorId
@@ -304,10 +367,10 @@ namespace cube {
          * example:
          * @code
          * // ...
-         * auto &e = this->template push<MyEvent>(id_1); // (1) first push
+         * auto &e = push<MyEvent>(id_1); // (1) first push
          * e.some_data = 1337; // set my event data without using constructor
-         * this->template push<MyEvent>(id_2, param2); // (2) id_2 != id_1 /!\ possible to be received before (1)
-         * this->template push<MyEvent>(id_1, param3); // (3) Guaranteed to be received after (1)
+         * push<MyEvent>(id_2, param2); // (2) id_2 != id_1 /!\ possible to be received before (1)
+         * push<MyEvent>(id_1, param3); // (3) Guaranteed to be received after (1)
          * // ...
          * @endcode
          * @note
@@ -316,17 +379,7 @@ namespace cube {
          * /!\ We recommend to non advanced users to use only this function to send events.
          */
         template<typename _Event, typename ..._Args>
-        _Event &push(ActorId const &dest, _Args const &...args) const;
-
-        /*!
-         * @private
-         * @tparam _Event
-         * @param dest
-         * @param args
-         * @note Todo: implement this
-         */
-        template<typename _Event, typename ..._Args>
-        void fast_push(ActorId const &dest, _Args const &...args) const;
+        _Event &push(ActorId const &dest, _Args &&...args) const;
 
         /*!
          * @brief Send a new unordered event
@@ -338,9 +391,9 @@ namespace cube {
          * example:
          * @code
          * // ...
-         * this->template send<MyEvent>(id_1, param1); // (1)
-         * this->template send<MyEvent>(id_1, param2); // (2)
-         * this->template send<MyEvent>(id_1, param3); // (3)
+         * send<MyEvent>(id_1, param1); // (1)
+         * send<MyEvent>(id_1, param2); // (2)
+         * send<MyEvent>(id_1, param3); // (3)
          * // Actor with id_1 will receive events in random order
          * // ...
          * @endcode
@@ -361,7 +414,7 @@ namespace cube {
          * // ...
          * void on(MyEvent &event) {
          *   // do something...
-         *   this->reply(event);
+         *   reply(event);
          * }
          * @endcode
          * @note
@@ -379,7 +432,7 @@ namespace cube {
          * // ...
          * void on(MyEvent &event) {
          *   // do something...
-         *   this->forward(id_1, event);
+         *   forward(id_1, event);
          * }
          * @endcode
          * @note
@@ -425,7 +478,7 @@ namespace cube {
          * create and initialize new _Actor on same Core as the callee Actor.\n
          * example:
          * @code
-         * auto actor = this->template addRefActor<MyActor>(param1, param2);
+         * auto actor = addRefActor<MyActor>(param1, param2);
          * if (actor) {
          *   // actor was created and pushed to the engine
          * }
@@ -437,27 +490,7 @@ namespace cube {
          * then improve global performance.
          */
         template<typename _Actor, typename ..._Args>
-        auto addRefActor(_Args &&...args) const;
-
-        /*!
-         * @brief Create new referenced _Actor<_Trait>
-         * @tparam _Actor DerivedActor type
-         * @tparam _Trait _Actor template argument
-         * @param args arguments to forward to the constructor of the _Actor<_Trait>
-         * @return _Actor<_Trait> * on success or nullptr on failure
-         * @details
-         * example:
-         * @code
-         * auto actor = this->template addRefActor<MyActor, MyTrait>(param1, param2);
-         * if (actor) {
-         *   // actor was created and pushed to the engine
-         * }
-         * @endcode
-         */
-        template< template<typename _Trait> typename _Actor
-                , typename _Trait
-                , typename ..._Args >
-        auto addRefActor(_Args &&...args) const;
+        _Actor *addRefActor(_Args &&...args) const;
 
         /*!
          * @}
@@ -481,7 +514,7 @@ namespace cube {
     public:
         ServiceActor() = delete;
         ServiceActor(uint16_t const sid) {
-            this->__set_id(ActorId(sid, 0));
+            __set_id(ActorId(sid, 0));
         }
     };
 }

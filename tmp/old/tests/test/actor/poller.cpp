@@ -15,8 +15,8 @@
 //{
 //public:
 //    bool onInit() override final {
-//        this->template registerEvent<event::Ready>(*this);
-//        auto &e = this->template push<event::Subscribe>(cube::Tag<Actor, 0>::id());
+//        registerEvent<event::Ready>(*this);
+//        auto &e = push<event::Subscribe>(cube::Tag<Actor, 0>::id());
 //        e.ep_event.data.fd = this->getNative();
 //        e.ep_event.events = EPOLLIN | EPOLLOUT | EPOLLONESHOT;
 //        return true;
@@ -37,7 +37,7 @@
 //                event.proxy.ctl(event.ep_event);
 //            } else {
 //                SocketTCP::disconnect();
-//                auto &e = this->template push<event::Unsubscribe>(cube::Tag<Actor, 0>::id());
+//                auto &e = push<event::Unsubscribe>(cube::Tag<Actor, 0>::id());
 //                e.ep_event = event.ep_event;
 //                this->kill();
 //            }
@@ -72,8 +72,8 @@
 //            return false;
 //        }
 //
-//        this->template registerEvent<event::Ready>(*this);
-//        auto &e = this->template push<event::Subscribe>(cube::Tag<Actor, 0>::id());
+//        registerEvent<event::Ready>(*this);
+//        auto &e = push<event::Subscribe>(cube::Tag<Actor, 0>::id());
 //        e.ep_event.data.fd = server.getNative();
 //        e.ep_event.events = EPOLLIN | EPOLLONESHOT;
 //        return true;
@@ -83,7 +83,7 @@
 //    void on(event::Ready &event) {
 //        cube::network::SocketTCP socket;
 //        if (server.accept(socket) == cube::network::Socket::Done) {
-//            this->template addRefActor<ClientTest>(socket);
+//            addRefActor<ClientTest>(socket);
 //            event.ep_event.events |= EPOLLONESHOT;
 //            event.proxy.ctl(event.ep_event);
 //        } else

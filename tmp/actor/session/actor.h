@@ -29,7 +29,7 @@ namespace cube {
 
         public:
             virtual bool onInit() override final {
-                this->template registerEvent<event::Ready>(*this);
+                registerEvent<event::Ready>(*this);
                 return static_cast<service::iopoll::Routine<Derived> &>(*this).onInitialize();
             }
 

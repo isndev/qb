@@ -7,17 +7,13 @@
 /// More tutorials will arrive soon.
 ///
 /// \section example Short example
-/// Here is a short example, to show you how simple to use CUBE :
+/// Here is a short example, to show you how simple to use CUBE\n
 ///
+/// My First Event :
 /// \code
-/////MyActor.h
-///#include <vector>
-///#include <cube/actor.h>
-///
-///#ifndef MYACTOR_H_
-///# define MYACTOR_H_
-///
+///// MyEvent.h
 ///// Event example
+///
 ///struct MyEvent
 ///        : public cube::Event // /!\ should inherit from cube event
 ///{
@@ -26,28 +22,47 @@
 ///    // std::string str; /!\ avoid using stl string
 ///    // instead use fixed cstring
 ///    // or compile with old ABI '-D_GLIBCXX_USE_CXX11_ABI=0'
+///
+///    MyEvent() = default;
+///    MyEvent(int param)
+///            : data(param) {}
 ///};
+/// \endcode
+/// My First Actor :
+/// \code
+/////MyActor.h
+///#include <vector>
+///#include <cube/actor.h>
+///
+///#ifndef MYACTOR_H_
+///# define MYACTOR_H_
+///# include "MyEvent.h"
 ///
 ///class MyActor
-///        : public cube::Actor // /!\ should inherit from cube actor
+///        : public cube::Actor     // /!\ should inherit from cube actor
 ///                , public cube::ICallback // (optional) required to register actor callback
 ///{
 ///public:
-///    MyActor() = default;
-///    MyActor(int, int ) {} // constructor with parameters
+///    MyActor() = default;         // default constructor
+///    MyActor(int, int ) {}        // constructor with parameters
 ///
 ///    ~MyActor() {}
 ///
 ///    // will call this function before adding MyActor
 ///    virtual bool onInit() override final {
-///        this->template registerEvent<MyEvent> (*this);          // will listen MyEvent
-///        this->registerCallback(*this);                          // each core loop will call onCallback
+///        registerEvent<MyEvent>(*this);     // will listen MyEvent
+///        registerCallback(*this);           // each core loop will call onCallback
 ///
 ///        // ex: just send MyEvent to myself ! forever alone ;(
-///        auto &event = this->template push<MyEvent>(this->id()); // and keep a reference to the event
-///        event.data = 1337;                                      // set trivial data
-///        event.container.push_back(7331);
-///        return true;                                            // init ok, MyActor will be added
+///        auto &event = push<MyEvent>(id()); // and keep a reference to the event
+///        event.data = 1337;                 // set trivial data
+///        event.container.push_back(7331);   // set dynamic data
+///
+///        // other wait to send chain event setting data using constructors
+///        to(id())
+///                .push<MyEvent>()
+///                .push<MyEvent>(7331);
+///        return true;                       // init ok, MyActor will be added
 ///    }
 ///
 ///    // will call this function each core loop
@@ -58,15 +73,18 @@
 ///    // will call this function when MyActor received MyEvent
 ///    void on(MyEvent const &) {
 ///        // I am a dummy actor, notify the engine to remove me !
-///        cube::io::cout() << "MyActor(" << this->id() << ") received MyEvent and will Die";
-///        this->kill();
+///        cube::io::cout() << "MyActor(" << id() << ") received MyEvent and will Die" << std::endl;
+///        kill(); // /!\ after this line MyActor is not able to receive events
 ///    }
 ///};
 ///
 ///#endif
+/// \endcode
+/// My first program using Cube :
+/// \code
 ///// main.cpp
-///#include "MyActor.h"
 ///#include <cube/main.h>
+///#include "MyActor.h"
 ///
 ///int main (int, char *argv[]) {
 ///    // (optional) initialize the logger
@@ -79,9 +97,14 @@
 ///    // Note : I will use only the core 0 and 1
 ///    cube::Main main({0, 1});
 ///
-///    // My start sequence -> add MyActor to core 0 and 1
-///    main.addActor<MyActor>(0); // default constructed
-///    main.addActor<MyActor>(1, 1337, 7331); // constructed with parameters
+///    // First way to add actors at start
+///    main.addActor<MyActor>(0); // in Core id=0, default constructed
+///    main.addActor<MyActor>(1, 1337, 7331); // in Core id=1, constructed with parameters
+///
+///    // Other way to add actors retrieving core builder
+///    main.core(0)
+///            .addActor<MyActor>()
+///            .addActor<MyActor>(1337, 7331);
 ///
 ///    main.start();  // start the engine asynchronously
 ///    main.join();   // Wait for the running engine
