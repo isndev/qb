@@ -51,7 +51,7 @@ namespace cube {
                 bool onInitialize() {
                     if (!listener.good())
                         return false;
-                    auto &e = this->template push<event::Subscribe>(this->template getServiceId<service::iopoll::Tag>(io_core_id));
+                    auto &e = push<event::Subscribe>(getServiceId<service::iopoll::Tag>(io_core_id));
                     e.setEvents(EPOLLIN | EPOLLONESHOT);
                     e.setHandle(this->getListener().raw());
                     return static_cast<Derived &>(*this).onInitialize();

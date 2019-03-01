@@ -224,7 +224,7 @@ namespace cube {
     }
 
     //Event Api
-    ProxyPipe Core::getPipeProxy(ActorId const dest, ActorId const source) {
+    ProxyPipe Core::getProxyPipe(ActorId const dest, ActorId const source) {
         return {__getPipe__(dest._index), dest, source};
     }
 

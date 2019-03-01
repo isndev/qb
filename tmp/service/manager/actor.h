@@ -35,8 +35,8 @@ namespace cube {
                 {}
 
                 virtual bool onInit() override final {
-                    this->template registerEvent<event::ToCore>(*this);
-                    this->template registerEvent<event::ToCoreRange>(*this);
+                    registerEvent<event::ToCore>(*this);
+                    registerEvent<event::ToCoreRange>(*this);
                     return true;
                 }
 

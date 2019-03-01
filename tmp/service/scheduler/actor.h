@@ -23,8 +23,8 @@ namespace cube {
                 {}
 
                 bool onInit() override final {
-                    this->template registerEvent<event::TimedEvent>(*this);
-                    this->template registerEvent<event::Cancel>(*this);
+                    registerEvent<event::TimedEvent>(*this);
+                    registerEvent<event::Cancel>(*this);
                     this->registerCallback(*this);
                     return true;
                 }

@@ -97,13 +97,6 @@ namespace cube {
         template<typename _Actor, typename ..._Init>
         ActorId addActor(_Init &&...init);
 
-        template<typename _Actor
-                , typename ..._Init >
-        ActorId addActor(std::size_t index, _Init &&...init);
-        template<template<typename _Trait> typename _Actor
-                , typename _Trait
-                , typename ..._Init >
-        ActorId addActor(std::size_t index, _Init &&...init);
         //!Actor Management
 
         void start();
@@ -112,10 +105,6 @@ namespace cube {
     private:
         template<typename _Actor, typename ..._Init>
         _Actor *addReferencedActor(_Init &&...init);
-        template<template <typename _Trait> typename _Actor
-                , typename _Trait
-                , typename ..._Init>
-        auto addReferencedActor(_Init &&...init);
 
         void killActor(ActorId const &id);
 
@@ -125,7 +114,7 @@ namespace cube {
 
     private:
         // Event Api
-        ProxyPipe getPipeProxy(ActorId const dest, ActorId const source);
+        ProxyPipe getProxyPipe(ActorId const dest, ActorId const source);
         bool try_send(Event const &event) const;
         void send(Event const &event);
         Event &push(Event const &event);

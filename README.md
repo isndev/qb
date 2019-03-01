@@ -102,11 +102,11 @@ public:
     
     // will call this function before adding MyActor
     bool onInit() override final {
-        this->template registerEvent<MyEvent> (*this);          // will listen MyEvent
+        registerEvent<MyEvent> (*this);          // will listen MyEvent
         this->registerCallback(*this);                          // each core loop will call onCallback
 
         // ex: just send MyEvent to myself ! forever alone ;(
-        auto &event = this->template push<MyEvent>(this->id()); // and keep a reference to the event
+        auto &event = push<MyEvent>(this->id()); // and keep a reference to the event
         event.data = 1337;                                      // set trivial data
         event.container.push_back(7331);
         return true;                                            // init ok, MyActor will be added

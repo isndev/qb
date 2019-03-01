@@ -34,18 +34,18 @@ public:
             , actor_to_send(id) {}
 
     bool onInit() override final {
-        this->template registerEvent<EventTrait>(*this);
+        registerEvent<EventTrait>(*this);
         if (actor_to_send)
-            this->template push<EventTrait>(actor_to_send, 0);
+            push<EventTrait>(actor_to_send, 0);
         return true;
     }
 
     void on(EventTrait &event) const {
         if (event.x >= max_sends)
-            this->kill();
+            kill();
         if (event.x <= max_sends) {
             ++event.x;
-            this->reply(event);
+            reply(event);
         }
     }
 };
@@ -59,7 +59,7 @@ static void BM_PINGPONG_MONO_CORE(benchmark::State& state) {
         const auto max_events = state.range(0);
         const auto nb_actor = state.range(1);
         for (int i = 0; i < nb_actor; ++i) {
-            main.addActor<ActorPong, EventTrait>(0, max_events, main.addActor<ActorPong, EventTrait>(0, max_events));
+            main.addActor<ActorPong<EventTrait>>(0, max_events, main.addActor<ActorPong<EventTrait>>(0, max_events));
         }
 
         state.ResumeTiming();
@@ -80,7 +80,7 @@ static void BM_PINGPONG_DUAL_CORE(benchmark::State& state) {
         const auto max_events = state.range(0);
         const auto nb_actor = state.range(1);
         for (int i = 0; i < nb_actor; ++i) {
-            main.addActor<ActorPong, EventTrait>(0, max_events, main.addActor<ActorPong, EventTrait>(2, max_events));
+            main.addActor<ActorPong<EventTrait>>(0, max_events, main.addActor<ActorPong<EventTrait>>(2, max_events));
         }
 
         main.start();
@@ -102,8 +102,8 @@ static void BM_PINGPONG_QUAD_CORE(benchmark::State& state) {
         const auto max_events = state.range(0);
         const auto nb_actor = state.range(1) / 2;
         for (int i = 0; i < nb_actor; ++i) {
-            main.addActor<ActorPong, EventTrait>(0, max_events, main.addActor<ActorPong, EventTrait>(2, max_events));
-            main.addActor<ActorPong, EventTrait>(1, max_events, main.addActor<ActorPong, EventTrait>(3, max_events));
+            main.addActor<ActorPong<EventTrait>>(0, max_events, main.addActor<ActorPong<EventTrait>>(2, max_events));
+            main.addActor<ActorPong<EventTrait>>(1, max_events, main.addActor<ActorPong<EventTrait>>(3, max_events));
         }
 
         main.start();
