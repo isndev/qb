@@ -151,7 +151,8 @@ namespace nanolog
 		char const * const end = b + m_bytes_used;
 		uint64_t timestamp = *reinterpret_cast < uint64_t * >(b); b += sizeof(uint64_t);
 		std::thread::id threadid = *reinterpret_cast < std::thread::id * >(b); b += sizeof(std::thread::id);
-		// string_literal_t file = *reinterpret_cast < string_literal_t * >(b); b += sizeof(string_literal_t);
+		// string_literal_t file = *reinterpret_cast < string_literal_t * >(b);
+		b += sizeof(string_literal_t);
 		string_literal_t function = *reinterpret_cast < string_literal_t * >(b); b += sizeof(string_literal_t);
 		uint32_t line = *reinterpret_cast < uint32_t * >(b); b += sizeof(uint32_t);
 		LogLevel loglevel = *reinterpret_cast < LogLevel * >(b); b += sizeof(LogLevel);
