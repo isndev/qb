@@ -13,35 +13,41 @@ if(NOT CYGWIN)
 endif()
 
 option(USE_TC_MALLOC "TCMalloc is ennabled" ON)
-option("${CUBE_PREFIX_UPPER}_COMPILE_TESTS" "COMPILE_TESTS" OFF)
+option("${CUBE_PREFIX_UPPER}_BUILD_TEST" "Build Cube Tests" OFF)
+option("${CUBE_PREFIX_UPPER}_BUILD_SAMPLE" "Build Cube Samples" OFF)
+option("${CUBE_PREFIX_UPPER}_BUILD_DOC" "Build Cube Documentation" OFF)
 option("${CUBE_PREFIX_UPPER}_WITH_RTTI" "Build with RTTI" ON)
+
+#default build type to Release
+if (NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
+endif()
 
 set(GPERFTOOLS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/gperftools/src)
 get_directory_property(IS_INVOKED PARENT_DIRECTORY)
 
-include(CTest)
-enable_testing()
-
-# add google benchmark module
-set(BENCHMARK_DOWNLOAD_DEPENDENCIES ON CACHE BOOL "" FORCE)
-set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-set(GOOGLEBENCHMARK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googlebenchmark)
-add_subdirectory(${GOOGLEBENCHMARK_DIR})
-# add google test module
-if (MSVC)
-    set(gtest_force_shared_crt ON)
+if (${CUBE_PREFIX_UPPER}_BUILD_TEST)
+    include(CTest)
+    enable_testing()
+    # add google benchmark module
+    set(BENCHMARK_DOWNLOAD_DEPENDENCIES ON CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(GOOGLEBENCHMARK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googlebenchmark)
+    add_subdirectory(${GOOGLEBENCHMARK_DIR})
+    # add google test module
+    if (MSVC)
+        set(gtest_force_shared_crt ON)
+    endif()
+    set(GOOGLETEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googletest)
+    add_subdirectory(${GOOGLETEST_DIR})
 endif()
-set(GOOGLETEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googletest)
-add_subdirectory(${GOOGLETEST_DIR})
 
 # overload with our cmake utils
 include(cmake/utils.cmake)
 config_compiler_and_linker()  # Defined in internal_utils.cmake.
 
-#include_directories(${GPERFTOOLS_INCLUDE_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
-#include_directories(modules/nanolog)
 
 #if (WIN32)
 #    if (MSVC)
@@ -82,10 +88,14 @@ add_subdirectory(source/engine)
 add_subdirectory(source/network)
 
 # Sample Projects
-add_subdirectory(sample)
+if (${CUBE_PREFIX_UPPER}_BUILD_SAMPLE)
+    add_subdirectory(sample)
+endif()
 
 # Build Documentation
-add_subdirectory(docs)
+if (${CUBE_PREFIX_UPPER}_BUILD_DOC)
+    add_subdirectory(docs)
+endif()
 
 if(IS_INVOKED)
     if(${CUBE_PREFIX_UPPER}_WITH_RTTI)
