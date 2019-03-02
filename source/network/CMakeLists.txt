@@ -15,6 +15,6 @@ if (WIN32)
     target_link_libraries(${PROJECT_NAME}-shared ws2_32)
 endif()
 
-#if (COMPILE_CUBE_TESTS)
+if (${CUBE_PREFIX_UPPER}_BUILD_TEST)
     add_subdirectory(tests)
-#endif()
+endif()
