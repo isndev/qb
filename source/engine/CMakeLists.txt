@@ -5,6 +5,6 @@ target_include_directories(${PROJECT_NAME} INTERFACE
         "$<BUILD_INTERFACE:${CUBE_DIRECTORY}/include;${CUBE_DIRECTORY}/modules>"
         "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
 
-#if (COMPILE_CUBE_TESTS)
+if (${CUBE_PREFIX_UPPER}_BUILD_TEST)
     add_subdirectory(tests)
-#endif()
+endif()
