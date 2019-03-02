@@ -15,7 +15,7 @@ if(DOXYGEN_FOUND)
     set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in)
     set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
     configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
-    configure_file(${DOXYGEN_INPUT_DIR}/header.html.in ${DOXYGEN_OUTPUT_DIR}/header.html @ONLY)
+    # configure_file(${DOXYGEN_INPUT_DIR}/header.html.in ${DOXYGEN_OUTPUT_DIR}/header.html @ONLY)
     # copy the files needed by the documentation
     configure_file(${DOXYGEN_INPUT_DIR}/doxygen.css ${DOXYGEN_OUTPUT_DIR}/html/doxygen.css COPYONLY)
 
