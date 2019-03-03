@@ -13,7 +13,7 @@ namespace cube {
 
     template<typename _Actor>
     void Actor::unregisterCallback(_Actor &actor) const {
-        _handler->unregisterCallback(actor->id());
+        _handler->unregisterCallback(actor.id());
     }
 
     template<typename _Event, typename _Actor>

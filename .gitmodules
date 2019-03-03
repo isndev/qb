@@ -2,18 +2,6 @@
     path = modules/gperftools
     url = https://github.com/gperftools/gperftools.git
     branch = master
-[submodule "linq"]
-    path = modules/linq
-    url = https://github.com/isndev/cube-linq.git
-    branch = master
-[submodule "nanolog"]
-    path = modules/nanolog
-    url = https://github.com/Iyengar111/NanoLog.git
-    branch = master
-[submodule "sbe"]
-    path = modules/sbe
-    url = https://github.com/real-logic/simple-binary-encoding.git
-    branch = master
 [submodule "modules/googlebenchmark"]
 	path = modules/googlebenchmark
 	url = https://github.com/google/benchmark.git

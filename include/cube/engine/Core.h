@@ -40,9 +40,10 @@ namespace cube {
 
     class Core {
         enum Error : uint64_t {
-            BadInit = (1 << 16),
-            BadActorInit = (1 << 18),
-            NoActor = (1 << 17)
+            BadInit = (1 << 9),
+            NoActor = (1 << 10),
+            BadActorInit = (1 << 11),
+            ExceptionThrown = (1 << 12)
         };
 
         friend class Actor;

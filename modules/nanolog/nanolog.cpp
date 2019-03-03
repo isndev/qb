@@ -31,8 +31,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <atomic>
 #include <queue>
 #include <fstream>
-#include <cube/system/nanolog.h>
 #include <cube/system/timestamp.h>
+#include "nanolog.h"
 #undef ERROR
 
 namespace
@@ -104,15 +104,15 @@ namespace nanolog
 			case LogLevel::DEBUG:
 				return "DEBUG";
 			case LogLevel::VERBOSE:
-				return "VERB ";
+				return "VERB";
 			case LogLevel::INFO:
-				return "INFO ";
+				return "INFO";
 			case LogLevel::WARN:
-				return "WARN ";
+				return "WARN";
 			case LogLevel::ERROR:
 				return "ERROR";
 			case LogLevel::CRIT:
-				return "CRIT ";
+				return "CRIT";
 		}
 		return "XXXX";
 	}

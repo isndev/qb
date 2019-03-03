@@ -188,8 +188,9 @@ namespace cube {
             else
                 LOG_INFO << "" << *this << " Stopped normally";
         } catch (std::exception &e) {
-            LOG_CRIT << "Exception thrown on " << *this
-                     << "what:" << e.what();
+            LOG_CRIT << "Exception thrown on " << *this << " what:" << e.what();
+            Main::sync_start.store(Error::ExceptionThrown, std::memory_order_release);
+            Main::is_running = false;
         }
     }
     //!Workflow
