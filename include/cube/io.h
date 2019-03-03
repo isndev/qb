@@ -7,7 +7,7 @@
 # include <mutex>
 # include <utility>
 # include <type_traits>
-# include <nanolog/nanolog.h>
+# include <cube/system/nanolog.h>
 
 namespace cube {
 #ifdef NDEBUG

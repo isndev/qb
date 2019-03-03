@@ -8,4 +8,4 @@
 #include "CoreSet.cpp"
 #include "Main.cpp"
 #include "io.cpp"
-#include "nanolog/nanolog.cpp"
+#include "../../system/nanolog.cpp"
