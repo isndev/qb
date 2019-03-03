@@ -96,12 +96,10 @@ namespace cube {
     // Workflow
     void Core::__init__actors__() const {
         // Init StaticActors
-        for (const auto &it : _actors) {
-            if (!it.second->onInit()) {
-                LOG_CRIT << "Actor at " << *this << " failed to init";
-                Main::sync_start.store(Error::BadActorInit, std::memory_order_release);
-                return;
-            }
+        if (std::any_of(_actors.begin(), _actors.end(), [](auto &it) { return !it.second->onInit(); }))
+        {
+            LOG_CRIT << "Actor at " << *this << " failed to init";
+            Main::sync_start.store(Error::BadActorInit, std::memory_order_release);
         }
     }
 
@@ -117,7 +115,7 @@ namespace cube {
         ret = !pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
 #elif defined(_WIN32) || defined(_WIN64)
         #ifdef _MSC_VER
-            DWORD_PTR mask = static_cast<uint32_t>(1 << (_index < 0 ? 0 : _index));
+            DWORD_PTR mask = static_cast<uint32_t>(1 << _index);
             ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
 #else
 #warning "Cannot set affinity on windows with GNU Compiler"
