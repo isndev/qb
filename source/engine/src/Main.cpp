@@ -10,8 +10,8 @@
 
 namespace cube {
 
-    void Main::onSignal(int sig) {
-        io::cout() << "Received signal(" << sig << ") will stop the engine" << std::endl;
+    void Main::onSignal(int signal) {
+        io::cout() << "Received signal(" << signal << ") will stop the engine" << std::endl;
         is_running = false;
     }
 
@@ -112,6 +112,10 @@ namespace cube {
     Main::CoreBuilder::operator bool() const { return valid(); }
     Main::CoreBuilder::ActorIdList const &Main::CoreBuilder::idList() const {
         return _ret_ids;
+    }
+
+    Main::CoreBuilder Main::core(uint16_t const index) {
+        return {*this, index};
     }
 
 }

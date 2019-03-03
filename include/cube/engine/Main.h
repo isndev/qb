@@ -161,9 +161,7 @@ namespace cube {
          * // builder1 != builder2
          * @endcode
          */
-        CoreBuilder core(uint16_t const index) {
-            return {*this, index};
-        }
+        CoreBuilder core(uint16_t const index);
 
     };
 
