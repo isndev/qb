@@ -6,7 +6,6 @@
 #include <cstring>
 #include <cube/engine/Main.h>
 #include <cube/engine/Core.h>
-#include "../../../include/cube/main.h"
 
 namespace cube {
 

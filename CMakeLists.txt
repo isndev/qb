@@ -14,6 +14,7 @@ endif()
 
 option(USE_TC_MALLOC "TCMalloc is ennabled" ON)
 option("${CUBE_PREFIX_UPPER}_BUILD_TEST" "Build Cube Tests" OFF)
+option("${CUBE_PREFIX_UPPER}_BUILD_BENCHMARK" "Build Cube Benchmarks" OFF)
 option("${CUBE_PREFIX_UPPER}_BUILD_SAMPLE" "Build Cube Samples" OFF)
 option("${CUBE_PREFIX_UPPER}_BUILD_DOC" "Build Cube Documentation" OFF)
 option("${CUBE_PREFIX_UPPER}_WITH_RTTI" "Build with RTTI" ON)
