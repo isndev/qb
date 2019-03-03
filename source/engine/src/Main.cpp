@@ -61,16 +61,28 @@ namespace cube {
             ++i;
         }
 
-        if (async) {
-            while (sync_start.load(std::memory_order_acquire) < _cores.size())
-                std::this_thread::yield();
-            LOG_INFO << "[MAIN] Init Success";
+        uint64_t ret = 0;
+        do {
+            std::this_thread::yield();
+            ret = sync_start.load(std::memory_order_acquire);
         }
-        std::signal(SIGINT, &onSignal);
+        while (ret < _cores.size());
+        if (ret < Core::Error::BadInit) {
+            LOG_INFO << "[Main] Init Success";
+            std::signal(SIGINT, &onSignal);
+        } else {
+            LOG_CRIT << "[Main] Init Failed";
+            io::cout() << "CRITICAL: Engine Init Failed -> show logs to have more details" << std::endl;
+        }
     }
 
-    void Main::stop() const {
-        std::raise(SIGINT);
+    bool Main::hasError() {
+        return sync_start.load(std::memory_order_acquire) >= Core::Error::BadInit;
+    }
+
+    void Main::stop() {
+        if (is_running)
+            std::raise(SIGINT);
     }
 
     void Main::join() const {

@@ -30,7 +30,7 @@ namespace cube {
     public:
         CoreSet() = delete;
         CoreSet(CoreSet const &) = default;
-        CoreSet(std::unordered_set<uint8_t> const &set);
+        explicit CoreSet(std::unordered_set<uint8_t> const &set);
     };
 
 } // namespace cube

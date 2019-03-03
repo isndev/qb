@@ -38,7 +38,7 @@ namespace cube {
         class RegisteredEvent : public IRegisteredEvent {
             _Actor &_actor;
         public:
-            RegisteredEvent(_Actor &actor)
+            explicit RegisteredEvent(_Actor &actor)
                     : _actor(actor) {}
 
             virtual void invoke(Event *data) const override final {
@@ -513,7 +513,7 @@ namespace cube {
     class ServiceActor : public Actor {
     public:
         ServiceActor() = delete;
-        ServiceActor(uint16_t const sid) {
+        explicit ServiceActor(uint16_t const sid) {
             __set_id(ActorId(sid, 0));
         }
     };

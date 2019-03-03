@@ -23,7 +23,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 
 */
 
-#include "nanolog.h"
 #include <cstring>
 #include <chrono>
 #include <ctime>
@@ -32,6 +31,8 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <atomic>
 #include <queue>
 #include <fstream>
+#include <cube/system/nanolog.h>
+#include <cube/system/timestamp.h>
 #undef ERROR
 
 namespace
@@ -40,7 +41,7 @@ namespace
 	/* Returns microseconds since epoch */
 	uint64_t timestamp_now()
 	{
-		return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+		return cube::Timestamp::nano() / 1000;
 	}
 
 	/* I want [2016-10-13 00:01:23.528514] */

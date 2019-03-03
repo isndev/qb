@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
 #include <cube/actor.h>
 
-TEST(Example, Equals) {
-  cube::Main main({0, 1});
-  EXPECT_EQ(1, 1);
+TEST(Example, StartEngine) {
+  cube::Main main({0});
+
+  main.start();
+  main.join();
+  EXPECT_TRUE(main.hasError());
 }
