@@ -28,4 +28,10 @@ namespace cube {
         return _nb_core;
     }
 
+    CoreSet CoreSet::build(uint32_t const nb_core) {
+        std::unordered_set<uint8_t> set;
+        for (uint8_t i = 0; i < nb_core; ++i)
+            set.insert(i);
+        return CoreSet{std::move(set)};
+    }
 }

@@ -39,6 +39,7 @@ namespace cube {
         std::vector<MPSCBuffer *> _mail_boxes;
         std::unordered_map<uint8_t, Core *> _cores;
 
+        void __init__();
         bool send(Event const &event) const;
         MPSCBuffer &getMailBox(uint8_t const id) const;
         std::size_t getNbCore() const;
@@ -102,6 +103,7 @@ namespace cube {
         };
 
         Main() = delete;
+        explicit Main(CoreSet const &core_set);
         explicit Main(std::unordered_set<uint8_t> const &core_set);
         ~Main();
 

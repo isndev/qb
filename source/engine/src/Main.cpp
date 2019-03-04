@@ -14,19 +14,30 @@ namespace cube {
         is_running = false;
     }
 
-    Main::Main(std::unordered_set<uint8_t> const &core_set)
-            : _core_set (core_set)
-            , _mail_boxes(_core_set.getSize())
-    {
+    void Main::__init__() {
         _cores.reserve(_core_set.getNbCore());
-        for (auto core_id : core_set) {
-            const auto nb_producers = _core_set.getNbCore() - 1;
-            _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(nb_producers ? nb_producers : 1);
+        for (auto core_id : _core_set._raw_set) {
+            const auto nb_producers = _core_set.getNbCore();
+            _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(nb_producers);
             _cores.emplace(core_id, new Core(core_id, *this));
         }
         sync_start.store(0, std::memory_order_release);
         is_running = false;
         LOG_INFO << "[MAIN] Init with " << getNbCore() << " cores";
+    }
+
+    Main::Main(CoreSet const &core_set)
+            : _core_set (core_set)
+            , _mail_boxes(_core_set.getSize())
+    {
+        __init__();
+    }
+
+    Main::Main(std::unordered_set<uint8_t> const &core_set)
+            : _core_set (core_set)
+            , _mail_boxes(_core_set.getSize())
+    {
+        __init__();
     }
 
     Main::~Main() {
@@ -42,8 +53,7 @@ namespace cube {
 
     bool Main::send(Event const &event) const {
         uint16_t source_index = _core_set.resolve(event.source._index);
-        if (!source_index)
-            source_index = event.dest._index;
+
         return _mail_boxes[_core_set.resolve(event.dest._index)]->enqueue(source_index,
                                                                           reinterpret_cast<const CacheLine *>(&event),
                                                                           event.bucket_size);

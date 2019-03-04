@@ -127,9 +127,8 @@ namespace cube {
                 }
 
                 template <bool _All = true>
-                size_t enqueue(size_t const _index, T const *t, size_t const size) {
-                    const size_t index = _index % _nb_producer;
-                    std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
+                size_t enqueue(size_t const index, T const *t, size_t const size) {
+                    //std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
                     return _producers.get()[index]._ringbuffer. template enqueue<_All>(t, size);
                 }
 
