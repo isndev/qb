@@ -117,6 +117,11 @@ macro(config_compiler_and_linker)
     set(cxx_no_rtti_flags "")
   endif()
 
+  # Coverage
+  if (COVERAGE_COMPILER_FLAGS)
+    set(cxx_base_flags "${cxx_base_flags} ${COVERAGE_COMPILER_FLAGS}")
+  endif()
+
   # The pthreads library is available and allowed?
   if (DEFINED ${CUBE_PREFIX_UPPER}_HAS_PTHREAD)
     set(${CUBE_PREFIX_UPPER}_HAS_PTHREAD_MACRO "-D${CUBE_PREFIX_UPPER}_HAS_PTHREAD=1")
@@ -144,6 +149,9 @@ endmacro()
 # Defines the cube & cube_main libraries.  User tests should link
 # with one of them.
 function(cxx_library_with_type name type cxx_flags)
+  if (CMAKE_VERBOSE_MAKEFILE)
+    message("Build library ${name} with flags: ${cxx_flags}")
+  endif()
   # type can be either STATIC or SHARED to denote a static or shared library.
   # ARGN refers to additional arguments after 'cxx_flags'.
   add_library(${name} ${type} ${ARGN})
@@ -206,6 +214,9 @@ endfunction()
 # creates a named C++ executable that depends on the given libraries and
 # is built from the given source files with the given compiler flags.
 function(cxx_executable_with_flags name cxx_flags libs)
+  if (CMAKE_VERBOSE_MAKEFILE)
+    message("Build executable ${name} with flags: ${cxx_flags}")
+  endif()
   add_executable(${name} ${ARGN})
   if (MSVC)
     # BigObj required for tests.

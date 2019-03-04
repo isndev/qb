@@ -78,10 +78,18 @@ public:
     }
 };
 
+#ifdef NDEBUG
+constexpr uint32_t MAX_ACTORS = 1024u;
+constexpr uint32_t MAX_EVENTS = 1024u;
+#else
+constexpr uint32_t MAX_ACTORS = 8u;
+constexpr uint32_t MAX_EVENTS = 8u;
+#endif
+
 TEST(ActorEvent, PushMonoCore) {
     cube::Main main({0});
-    const auto max_events = 1024u;
-    for (auto i = 0u; i < 1024u; ++i) {
+    const auto max_events = MAX_EVENTS;
+    for (auto i = 0u; i < MAX_ACTORS; ++i) {
         main.addActor<TestActorSender>(0, max_events, main.addActor<TestActorReceiver>(0, max_events));
     }
 
@@ -92,14 +100,14 @@ TEST(ActorEvent, PushMonoCore) {
 
 TEST(ActorEvent, PushMultiCore) {
     const auto max_core = std::thread::hardware_concurrency();
-    const auto max_events = 1024u;
+    const auto max_events = MAX_EVENTS;
 
     EXPECT_GT(max_core, 1u);
     cube::Main main(cube::CoreSet::build(max_core));
 
     for (auto i = 0u; i < max_core; ++i)
     {
-        for (auto j = 0u; j < 1024u; ++j) {
+        for (auto j = 0u; j < MAX_ACTORS; ++j) {
             main.addActor<TestActorSender>(i, max_events, main.addActor<TestActorReceiver>(((i + 1) % max_core), max_events));
         }
     }
