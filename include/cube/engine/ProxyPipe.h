@@ -11,6 +11,12 @@
 namespace cube {
     using Pipe = allocator::pipe<CacheLine>;
 
+    /*!
+     * @brief Object returned by Actor::getPipe()
+     * @class ProxyPipe ProxyPipe.h cube/actor.h
+     * @details
+     * to define
+     */
     class ProxyPipe {
         Pipe *pipe;
         ActorId dest;
@@ -24,47 +30,39 @@ namespace cube {
         ProxyPipe(Pipe &i_pipe, ActorId i_dest, ActorId i_source)
                 : pipe(&i_pipe), dest(i_dest), source(i_source) {}
 
-        template<typename T, typename ..._Init>
-        T &push(_Init &&...init) {
-            constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, CacheLine>();
-            auto &data = pipe->template allocate_back<T>(std::forward<_Init>(init)...);
-            data.id = type_id<T>();
-            data.dest = dest;
-            data.source = source;
-            if constexpr (std::is_base_of<ServiceEvent, T>::value) {
-                data.forward = source;
-                std::swap(data.id, data.service_event_id);
-            }
+        /*!
+         *
+         * @tparam T
+         * @tparam _Args
+         * @param args
+         * @return
+         */
+        template<typename T, typename ..._Args>
+        T &push(_Args &&...args);
 
-            data.state = 0;
-            data.bucket_size = BUCKET_SIZE;
-            return data;
-        }
+        /*!
+         *
+         * @tparam T
+         * @tparam _Args
+         * @param size
+         * @param args
+         * @return
+         */
+        template<typename T, typename ..._Args>
+        T &allocated_push(std::size_t size, _Args &&...args);
 
-        template<typename T, typename ..._Init>
-        T &allocated_push(std::size_t size, _Init &&...init) {
-            size += sizeof(T);
-            size = size / sizeof(CacheLine) + static_cast<bool>(size % sizeof(CacheLine));
-            auto &data = *(new(reinterpret_cast<T *>(pipe->allocate_back(size))) T(
-                    std::forward<_Init>(init)...));
-
-            data.id = type_id<T>();
-            data.dest = dest;
-            data.source = source;
-            if constexpr (std::is_base_of<ServiceEvent, T>::value) {
-                data.forward = source;
-                std::swap(data.id, data.service_event_id);
-            }
-
-            data.state = 0;
-            data.bucket_size = size;
-            return data;
-        }
-
+        /*!
+         *
+         * @return
+         */
         inline ActorId getDestination() const {
             return dest;
         }
 
+        /*!
+         *
+         * @return
+         */
         inline ActorId getSource() const {
             return source;
         }

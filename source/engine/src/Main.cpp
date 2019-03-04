@@ -6,28 +6,38 @@
 #include <cstring>
 #include <cube/engine/Main.h>
 #include <cube/engine/Core.h>
-#include "../../../include/cube/main.h"
 
 namespace cube {
 
-    void Main::onSignal(int sig) {
-        io::cout() << "Received signal(" << sig << ") will stop the engine" << std::endl;
+    void Main::onSignal(int signal) {
+        io::cout() << "Received signal(" << signal << ") will stop the engine" << std::endl;
         is_running = false;
+    }
+
+    void Main::__init__() {
+        _cores.reserve(_core_set.getNbCore());
+        for (auto core_id : _core_set._raw_set) {
+            const auto nb_producers = _core_set.getNbCore();
+            _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(nb_producers);
+            _cores.emplace(core_id, new Core(core_id, *this));
+        }
+        sync_start.store(0, std::memory_order_release);
+        is_running = false;
+        LOG_INFO << "[MAIN] Init with " << getNbCore() << " cores";
+    }
+
+    Main::Main(CoreSet const &core_set)
+            : _core_set (core_set)
+            , _mail_boxes(_core_set.getSize())
+    {
+        __init__();
     }
 
     Main::Main(std::unordered_set<uint8_t> const &core_set)
             : _core_set (core_set)
             , _mail_boxes(_core_set.getSize())
     {
-        _cores.reserve(_core_set.getNbCore());
-        for (auto core_id : core_set) {
-            const auto nb_producers = _core_set.getNbCore() - 1;
-            _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(nb_producers ? nb_producers : 1);
-            _cores.emplace(core_id, new Core(core_id, *this));
-        }
-        sync_start.store(0, std::memory_order_release);
-        is_running = false;
-        LOG_INFO << "[MAIN] Init with " << getNbCore() << " cores";
+        __init__();
     }
 
     Main::~Main() {
@@ -43,8 +53,7 @@ namespace cube {
 
     bool Main::send(Event const &event) const {
         uint16_t source_index = _core_set.resolve(event.source._index);
-        if (!source_index)
-            source_index = event.dest._index;
+
         return _mail_boxes[_core_set.resolve(event.dest._index)]->enqueue(source_index,
                                                                           reinterpret_cast<const CacheLine *>(&event),
                                                                           event.bucket_size);
@@ -61,16 +70,28 @@ namespace cube {
             ++i;
         }
 
-        if (async) {
-            while (sync_start.load(std::memory_order_acquire) < _cores.size())
-                std::this_thread::yield();
-            LOG_INFO << "[MAIN] Init Success";
+        uint64_t ret = 0;
+        do {
+            std::this_thread::yield();
+            ret = sync_start.load(std::memory_order_acquire);
         }
-        std::signal(SIGINT, &onSignal);
+        while (ret < _cores.size());
+        if (ret < Core::Error::BadInit) {
+            LOG_INFO << "[Main] Init Success";
+            std::signal(SIGINT, &onSignal);
+        } else {
+            LOG_CRIT << "[Main] Init Failed";
+            io::cout() << "CRITICAL: Engine Init Failed -> show logs to have more details" << std::endl;
+        }
     }
 
-    void Main::stop() const {
-        std::raise(SIGINT);
+    bool Main::hasError() {
+        return sync_start.load(std::memory_order_acquire) >= Core::Error::BadInit;
+    }
+
+    void Main::stop() {
+        if (is_running)
+            std::raise(SIGINT);
     }
 
     void Main::join() const {
@@ -100,6 +121,10 @@ namespace cube {
     Main::CoreBuilder::operator bool() const { return valid(); }
     Main::CoreBuilder::ActorIdList const &Main::CoreBuilder::idList() const {
         return _ret_ids;
+    }
+
+    Main::CoreBuilder Main::core(uint16_t const index) {
+        return {*this, index};
     }
 
 }

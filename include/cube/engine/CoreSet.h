@@ -18,7 +18,7 @@ namespace cube {
     class CoreSet {
         friend class Main;
 
-        const std::unordered_set<uint8_t>  &_raw_set;
+        const std::unordered_set<uint8_t>  _raw_set;
         const std::size_t       _nb_core;
         std::vector<uint8_t>    _set;
         std::size_t             _size;
@@ -30,7 +30,9 @@ namespace cube {
     public:
         CoreSet() = delete;
         CoreSet(CoreSet const &) = default;
-        CoreSet(std::unordered_set<uint8_t> const &set);
+        explicit CoreSet(std::unordered_set<uint8_t> const &set);
+
+        static CoreSet build(uint32_t const nb_core = std::thread::hardware_concurrency());
     };
 
 } // namespace cube

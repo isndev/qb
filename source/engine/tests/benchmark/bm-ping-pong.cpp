@@ -8,19 +8,19 @@
 
 struct TinyEvent : cube::Event {
     uint64_t x;
-    TinyEvent(uint64_t y) : x(y) {}
+    explicit TinyEvent(uint64_t y) : x(y) {}
 };
 
 struct BigEvent : cube::Event {
     uint64_t x;
     uint64_t padding[127];
-    BigEvent(uint64_t y) : x(y) {}
+    explicit BigEvent(uint64_t y) : x(y), padding() {}
 };
 
 struct DynamicEvent : cube::Event {
     uint64_t x;
     std::vector<int> vec;
-    DynamicEvent(uint64_t y) : x(y), vec(512, 8) {}
+    explicit DynamicEvent(uint64_t y) : x(y), vec(512, 8) {}
 };
 
 template<typename EventTrait>

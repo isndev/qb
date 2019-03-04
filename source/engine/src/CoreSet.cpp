@@ -9,10 +9,7 @@ namespace cube {
     CoreSet::CoreSet(std::unordered_set <uint8_t> const &set)
             : _raw_set(set)
             ,_nb_core(set.size())
-            , _size(0) {
-        for (auto id : set)
-            _size = id > _size ? id : _size;
-        ++_size;
+            , _size(*std::max_element(set.cbegin(), set.cend()) + 1) {
         _set.resize(_size);
         uint8_t idx = 0;
         for (auto id : set)
@@ -31,4 +28,10 @@ namespace cube {
         return _nb_core;
     }
 
+    CoreSet CoreSet::build(uint32_t const nb_core) {
+        std::unordered_set<uint8_t> set;
+        for (uint8_t i = 0; i < nb_core; ++i)
+            set.insert(i);
+        return CoreSet{std::move(set)};
+    }
 }
