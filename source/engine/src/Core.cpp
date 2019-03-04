@@ -82,7 +82,7 @@ namespace cube {
                 auto i = pipe.begin();
                 while (i < pipe.end()) {
                     const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
-                    while (!try_send(event))
+                    if (!try_send(event))
                         break;
                     i += event.bucket_size;
                 }

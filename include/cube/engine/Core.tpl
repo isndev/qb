@@ -77,7 +77,7 @@ namespace cube {
 
         fill_event(data, dest, source);
 
-        if (likely(dest._index == source._index ? try_send(data) : _engine.send(data)))
+        if (try_send(data))
             pipe.free(data.bucket_size);
     }
 
