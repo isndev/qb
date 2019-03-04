@@ -39,6 +39,13 @@ cube::io::stream &operator<<(cube::io::stream &os, cube::Core const &core);
 namespace cube {
 
     class Core {
+        enum Error : uint64_t {
+            BadInit = (1 << 9),
+            NoActor = (1 << 10),
+            BadActorInit = (1 << 11),
+            ExceptionThrown = (1 << 12)
+        };
+
         friend class Actor;
         friend class Main;
         ////////////
@@ -81,9 +88,9 @@ namespace cube {
         //!Event Management
 
         // Workflow
-        bool __init__actors__() const;
-        bool __init__();
-        void __wait__all__cores__ready();
+        void __init__actors__() const;
+        void __init__();
+        bool __wait__all__cores__ready();
         void __updateTime__();
         void __spawn__();
         //!Workflow

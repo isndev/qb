@@ -19,7 +19,7 @@ if(DOXYGEN_FOUND)
     # copy the files needed by the documentation
     configure_file(${DOXYGEN_INPUT_DIR}/doxygen.css ${DOXYGEN_OUTPUT_DIR}/html/doxygen.css COPYONLY)
 
-    message("Doxygen buld started")
+    message("Doxygen build added to solution")
     add_custom_target(${CUBE_PREFIX}-docs ALL
             COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}

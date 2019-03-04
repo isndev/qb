@@ -2,8 +2,8 @@
 // Created by isndev on 12/4/18.
 //
 
-#ifndef CUBE_CUBE_H
-#define CUBE_CUBE_H
+#ifndef CUBE_MAIN_H
+#define CUBE_MAIN_H
 # include <iostream>
 # include <vector>
 # include <unordered_map>
@@ -26,7 +26,7 @@ namespace cube {
     class Main {
         friend class Core;
         constexpr static const uint64_t MaxRingEvents =
-                ((std::numeric_limits<uint16_t>::max)()) / CUBE_LOCKFREE_CACHELINE_BYTES;
+                (((std::numeric_limits<uint16_t>::max)()) / CUBE_LOCKFREE_CACHELINE_BYTES);
         //////// Types
         using MPSCBuffer = lockfree::mpsc::ringbuffer<CacheLine, MaxRingEvents, 0>;
 
@@ -39,6 +39,7 @@ namespace cube {
         std::vector<MPSCBuffer *> _mail_boxes;
         std::unordered_map<uint8_t, Core *> _cores;
 
+        void __init__();
         bool send(Event const &event) const;
         MPSCBuffer &getMailBox(uint8_t const id) const;
         std::size_t getNbCore() const;
@@ -102,7 +103,8 @@ namespace cube {
         };
 
         Main() = delete;
-        Main(std::unordered_set<uint8_t> const &core_set);
+        explicit Main(CoreSet const &core_set);
+        explicit Main(std::unordered_set<uint8_t> const &core_set);
         ~Main();
 
         /*!
@@ -113,12 +115,14 @@ namespace cube {
          */
         void start(bool async = true) const;
 
+        static bool hasError();
+
         /*!
          * @brief Stop the engine
          * @note
          * Same effect as receiving SIGINT Signal.
          */
-        void stop() const;
+        static void stop();
 
         /*!
          * @brief Wait until engine terminates
@@ -159,12 +163,10 @@ namespace cube {
          * // builder1 != builder2
          * @endcode
          */
-        CoreBuilder core(uint16_t const index) {
-            return {*this, index};
-        }
+        CoreBuilder core(uint16_t const index);
 
     };
 
 } // namespace cube
 
-#endif //CUBE_CUBE_H
+#endif //CUBE_MAIN_H

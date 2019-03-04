@@ -14,6 +14,7 @@ endif()
 
 option(USE_TC_MALLOC "TCMalloc is ennabled" ON)
 option("${CUBE_PREFIX_UPPER}_BUILD_TEST" "Build Cube Tests" OFF)
+option("${CUBE_PREFIX_UPPER}_BUILD_BENCHMARK" "Build Cube Benchmarks" OFF)
 option("${CUBE_PREFIX_UPPER}_BUILD_SAMPLE" "Build Cube Samples" OFF)
 option("${CUBE_PREFIX_UPPER}_BUILD_DOC" "Build Cube Documentation" OFF)
 option("${CUBE_PREFIX_UPPER}_WITH_RTTI" "Build with RTTI" ON)
@@ -26,7 +27,14 @@ endif()
 set(GPERFTOOLS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/gperftools/src)
 get_directory_property(IS_INVOKED PARENT_DIRECTORY)
 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32)
+    include(cmake/CodeCoverage.cmake)
+    APPEND_COVERAGE_COMPILER_FLAGS()
+    set(${CUBE_PREFIX_UPPER}_COVERAGE ON)
+endif()
+
 if (${CUBE_PREFIX_UPPER}_BUILD_TEST)
+
     include(CTest)
     enable_testing()
     # add google benchmark module
@@ -36,7 +44,7 @@ if (${CUBE_PREFIX_UPPER}_BUILD_TEST)
     add_subdirectory(${GOOGLEBENCHMARK_DIR})
     # add google test module
     if (MSVC)
-        set(gtest_force_shared_crt ON)
+        set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     endif()
     set(GOOGLETEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googletest)
     add_subdirectory(${GOOGLETEST_DIR})

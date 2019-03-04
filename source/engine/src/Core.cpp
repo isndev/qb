@@ -82,7 +82,7 @@ namespace cube {
                 auto i = pipe.begin();
                 while (i < pipe.end()) {
                     const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
-                    while (!try_send(event))
+                    if (!try_send(event))
                         break;
                     i += event.bucket_size;
                 }
@@ -94,18 +94,16 @@ namespace cube {
     //!Event Management
 
     // Workflow
-    bool Core::__init__actors__() const {
+    void Core::__init__actors__() const {
         // Init StaticActors
-        for (const auto &it : _actors) {
-            if (!it.second->onInit()) {
-                LOG_WARN << "Actor at " << *this << " failed to init";
-                return false;
-            }
+        if (std::any_of(_actors.begin(), _actors.end(), [](auto &it) { return !it.second->onInit(); }))
+        {
+            LOG_CRIT << "Actor at " << *this << " failed to init";
+            Main::sync_start.store(Error::BadActorInit, std::memory_order_release);
         }
-        return true;
     }
 
-    bool Core::__init__() {
+    void Core::__init__() {
         bool ret(true);
 #if defined(unix) || defined(__unix) || defined(__unix__)
         cpu_set_t cpuset;
@@ -117,22 +115,34 @@ namespace cube {
         ret = !pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
 #elif defined(_WIN32) || defined(_WIN64)
         #ifdef _MSC_VER
-            DWORD_PTR mask = static_cast<uint32_t>(1 << (_index < 0 ? 0 : _index));
+            DWORD_PTR mask = static_cast<uint32_t>(1 << _index);
             ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
 #else
 #warning "Cannot set affinity on windows with GNU Compiler"
 #endif
 #endif
         _actor_to_remove.reserve(_actors.size());
-        return ret;
+
+        if (!ret) {
+            LOG_CRIT << "" << *this << " Init Failed";
+            Main::sync_start.store(Error::BadInit, std::memory_order_release);
+        } else if (!_actors.size()) {
+            LOG_CRIT << "" << *this << " Started with 0 Actor";
+            Main::sync_start.store(Error::NoActor, std::memory_order_release);
+            return;
+        }
     }
 
-    void Core::__wait__all__cores__ready() {
+    bool Core::__wait__all__cores__ready() {
         const auto total_core = _engine.getNbCore();
         Main::sync_start.fetch_add(1, std::memory_order_acq_rel);
-        while (Main::sync_start.load(std::memory_order_acquire) < total_core)
+        uint64_t ret = 0;
+        do {
             std::this_thread::yield();
-        LOG_INFO << "" << *this << " Init Success";
+            ret = Main::sync_start.load(std::memory_order_acquire);
+        }
+        while (ret < total_core);
+        return ret < Error::BadInit;
     }
 
     void Core::__updateTime__() {
@@ -142,44 +152,45 @@ namespace cube {
 
     void Core::__spawn__() {
         try {
-            if (__init__()) {
-                __init__actors__();
-                __wait__all__cores__ready();
+            __init__();
+            __init__actors__();
+            if (!__wait__all__cores__ready())
+                return;
 
-                while (likely(Main::is_running)) {
-                    __updateTime__();
-                    __receive__();
+            LOG_INFO << "" << *this << " Init Success " << _actors.size() << " actor(s)";
 
-                    for (const auto &callback : _actor_callbacks)
-                        callback.second->onCallback();
+            while (likely(Main::is_running)) {
+                __updateTime__();
+                __receive__();
 
-                    __flush__();
+                for (const auto &callback : _actor_callbacks)
+                    callback.second->onCallback();
 
-                    if (unlikely(!_actor_to_remove.empty())) {
-                        // remove dead actors
-                        for (auto const &actor : _actor_to_remove)
-                            removeActor(actor);
-                        _actor_to_remove.clear();
-                        if (_actors.empty()) {
-                            break;
-                        }
+                __flush__();
+
+                if (unlikely(!_actor_to_remove.empty())) {
+                    // remove dead actors
+                    for (auto const &actor : _actor_to_remove)
+                        removeActor(actor);
+                    _actor_to_remove.clear();
+                    if (_actors.empty()) {
+                        break;
                     }
                 }
-                // receive and flush residual events
-                do {
-                    __receive__();
-                } while (__flush_all__());
-
-                if (!Main::is_running)
-                    LOG_INFO << "" << *this << " Stopped by user";
-                else
-                    LOG_INFO << "" << *this << " Stopped normally";
-            } else {
-                LOG_CRIT << "" << *this << " Init Failed";
             }
+            // receive and flush residual events
+            do {
+                __receive__();
+            } while (__flush_all__());
+
+            if (!Main::is_running)
+                LOG_INFO << "" << *this << " Stopped by user leave " << _actors.size() << " actor(s)";
+            else
+                LOG_INFO << "" << *this << " Stopped normally";
         } catch (std::exception &e) {
-            LOG_CRIT << "Exception thrown on " << *this
-                     << "what:" << e.what();
+            LOG_CRIT << "Exception thrown on " << *this << " what:" << e.what();
+            Main::sync_start.store(Error::ExceptionThrown, std::memory_order_release);
+            Main::is_running = false;
         }
     }
     //!Workflow

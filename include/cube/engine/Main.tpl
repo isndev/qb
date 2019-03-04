@@ -2,8 +2,8 @@
 #include "Core.h"
 #include "Main.h"
 
-#ifndef CUBE_CUBE_TPL
-#define CUBE_CUBE_TPL
+#ifndef CUBE_MAIN_TPL
+#define CUBE_MAIN_TPL
 
 namespace cube {
     class Main;
@@ -31,4 +31,4 @@ namespace cube {
 
 } // namespace cube
 
-#endif //CUBE_CUBE_TPL
+#endif //CUBE_MAIN_TPL
