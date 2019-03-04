@@ -157,7 +157,7 @@ namespace cube {
             if (!__wait__all__cores__ready())
                 return;
 
-            LOG_INFO << "" << *this << " Init Success";
+            LOG_INFO << "" << *this << " Init Success " << _actors.size() << " actor(s)";
 
             while (likely(Main::is_running)) {
                 __updateTime__();
@@ -184,7 +184,7 @@ namespace cube {
             } while (__flush_all__());
 
             if (!Main::is_running)
-                LOG_INFO << "" << *this << " Stopped by user";
+                LOG_INFO << "" << *this << " Stopped by user leave " << _actors.size() << " actor(s)";
             else
                 LOG_INFO << "" << *this << " Stopped normally";
         } catch (std::exception &e) {

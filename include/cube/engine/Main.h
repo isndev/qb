@@ -26,7 +26,7 @@ namespace cube {
     class Main {
         friend class Core;
         constexpr static const uint64_t MaxRingEvents =
-                ((std::numeric_limits<uint16_t>::max)()) / CUBE_LOCKFREE_CACHELINE_BYTES;
+                (((std::numeric_limits<uint16_t>::max)()) / CUBE_LOCKFREE_CACHELINE_BYTES) * 2;
         //////// Types
         using MPSCBuffer = lockfree::mpsc::ringbuffer<CacheLine, MaxRingEvents, 0>;
 

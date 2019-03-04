@@ -35,6 +35,10 @@ public:
     TestActorReceiver(uint32_t const max_events)
         : _max_events(max_events), _count(0) {}
 
+    ~TestActorReceiver() {
+        EXPECT_EQ(_count, _max_events);
+    }
+
     virtual bool onInit() override final {
       registerEvent<TestEvent>(*this);
       return true;
@@ -57,6 +61,10 @@ class TestActorSender
 public:
     TestActorSender(uint32_t const max_events, cube::ActorId const to)
             : _max_events(max_events), _to(to), _count(0) {}
+
+    ~TestActorSender() {
+        EXPECT_EQ(_count, _max_events);
+    }
 
     virtual bool onInit() override final {
         registerCallback(*this);
