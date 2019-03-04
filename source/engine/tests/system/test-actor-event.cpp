@@ -70,20 +70,20 @@ public:
     }
 };
 
-//TEST(ActorEvent, PushMonoCore) {
-//    cube::Main main({0});
-//    const auto max_events = 1024u;
-//    for (auto i = 0u; i < 1024u; ++i) {
-//        main.addActor<TestActorSender>(0, max_events, main.addActor<TestActorReceiver>(0, max_events));
-//    }
-//
-//    main.start();
-//    main.join();
-//    EXPECT_FALSE(main.hasError());
-//}
+TEST(ActorEvent, PushMonoCore) {
+    cube::Main main({0});
+    const auto max_events = 1024u;
+    for (auto i = 0u; i < 1024u; ++i) {
+        main.addActor<TestActorSender>(0, max_events, main.addActor<TestActorReceiver>(0, max_events));
+    }
+
+    main.start();
+    main.join();
+    EXPECT_FALSE(main.hasError());
+}
 
 TEST(ActorEvent, PushMultiCore) {
-    const auto max_core = std::thread::hardware_concurrency() / 2;
+    const auto max_core = std::thread::hardware_concurrency();
     const auto max_events = 1024u;
 
     EXPECT_GT(max_core, 1u);
