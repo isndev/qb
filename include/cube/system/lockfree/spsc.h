@@ -33,7 +33,7 @@ namespace cube {
                     static size_t next_index(size_t arg, size_t const max_size)
                     {
                         size_t ret = arg + 1;
-                        while (likely(ret >= max_size))
+                        while (unlikely(ret >= max_size))
                             ret -= max_size;
                         return ret;
                     }
