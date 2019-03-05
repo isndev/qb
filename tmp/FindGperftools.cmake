@@ -49,3 +49,33 @@ mark_as_advanced(
         GPERFTOOLS_TCMALLOC_AND_PROFILER
         GPERFTOOLS_LIBRARIES
         GPERFTOOLS_INCLUDE_DIR)
+
+#if (WIN32)
+#
+#    find_library(
+#            TCMALLOC_RELEASE
+#            NAMES libtcmalloc_minimal
+#            PATHS ${CMAKE_CURRENT_SOURCE_DIR}/external/tcmalloc/win32/release
+#    )
+#
+#    find_library(
+#            TCMALLOC_DEBUG
+#            NAMES libtcmalloc_minimal-debug
+#            PATHS ${CMAKE_CURRENT_SOURCE_DIR}/external/tcmalloc/win32/debug
+#    )
+#
+#    if (TCMALLOC_RELEASE)
+#        message(STATUS "INFO: will use tcmalloc")
+#        if (GNU)
+#            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
+#        elseif (MSVC)
+#            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /INCLUDE:\"__tcmalloc\"")
+#        endif()
+#    elseif (USE_TC_MALLOC)
+#        message(STATUS "INFO: tcmalloc not found")
+#        set(USE_TC_MALLOC OFF)
+#    endif()
+#
+#elseif(UNIX)
+#    set(USE_TC_MALLOC OFF)
+#endif()
