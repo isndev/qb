@@ -100,10 +100,8 @@ if (${CUBE_PREFIX_UPPER}_BUILD_SAMPLE)
     add_subdirectory(sample)
 endif()
 
-# Build Documentation
-if (${CUBE_PREFIX_UPPER}_BUILD_DOC)
-    add_subdirectory(docs)
-endif()
+# Generate Documentation
+add_subdirectory(docs)
 
 if(IS_INVOKED)
     if(${CUBE_PREFIX_UPPER}_WITH_RTTI)
