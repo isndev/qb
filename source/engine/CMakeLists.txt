@@ -7,4 +7,19 @@ target_include_directories(${PROJECT_NAME} INTERFACE
 
 if (${CUBE_PREFIX_UPPER}_BUILD_TEST)
     add_subdirectory(tests)
+    if (CUBE_COVERAGE)
+        set(COVERAGE_LCOV_EXCLUDES
+                '/usr/*'
+                '*benchmark*'
+                '*google*/*'
+                '*cube/system/*'
+                '*modules/*'
+                )
+        SETUP_TARGET_FOR_COVERAGE_LCOV(NAME ${PROJECT_NAME}-coverage
+                EXECUTABLE ctest
+                DEPENDENCIES cube-engine)
+        SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(NAME ${PROJECT_NAME}-coverage-xml
+                EXECUTABLE ctest
+                DEPENDENCIES cube-engine)
+    endif()
 endif()

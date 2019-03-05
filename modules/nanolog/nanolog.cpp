@@ -725,18 +725,4 @@ namespace nanolog
 	{
 		return static_cast<unsigned int>(level) >= loglevel.load(std::memory_order_relaxed);
 	}
-
-	struct LogInitializer {
-		static LogInitializer initializer;
-		LogInitializer() {
-			initialize(nanolog::GuaranteedLogger(), "./cube", 512);
-#ifdef NDEBUG
-			nanolog::set_log_level(nanolog::LogLevel::INFO);
-#else
-			nanolog::set_log_level(nanolog::LogLevel::DEBUG);
-#endif
-		}
-	};
-
-	LogInitializer LogInitializer::initializer = {};
 } // namespace nanologger
