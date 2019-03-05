@@ -1,51 +1,97 @@
-# Tries to find Gperftools.
+# -------------
 #
-# Usage of this module as follows:
+# Find a Google gperftools installation.
 #
-#     find_package(Gperftools)
+# This module finds if Google gperftools is installed and selects a default
+# configuration to use.
 #
-# Variables used by this module, they can change the default behaviour and need
-# to be set before calling find_package:
+#   find_package(GPERFTOOLS COMPONENTS ...)
 #
-#  Gperftools_ROOT_DIR  Set this variable to the root installation of
-#                       Gperftools if the module has problems finding
-#                       the proper installation path.
+# Valid components are:
 #
-# Variables defined by this module:
+#   TCMALLOC
+#   PROFILER
+#   TCMALLOC_MINIMAL
+#   TCMALLOC_AND_PROFILER
 #
-#  GPERFTOOLS_FOUND              System has Gperftools libs/headers
-#  GPERFTOOLS_LIBRARIES          The Gperftools libraries (tcmalloc & profiler)
-#  GPERFTOOLS_INCLUDE_DIR        The location of Gperftools headers
+# The following variables control which libraries are found::
+#
+#   GPERFTOOLS_USE_STATIC_LIBS  - Set to ON to force use of static libraries.
+#
+# The following are set after the configuration is done:
+#
+# ::
+#
+#   GPERFTOOLS_FOUND            - Set to TRUE if gperftools was found
+#   GPERFTOOLS_INCLUDE_DIRS     - Include directories
+#   GPERFTOOLS_LIBRARIES        - Path to the gperftools libraries
+#   GPERFTOOLS_LIBRARY_DIRS     - Compile time link directories
+#   GPERFTOOLS_<component>      - Path to specified component
+#
+#
+# Sample usage:
+#
+# ::
+#
+#   find_package(GPERFTOOLS)
+#   if(GPERFTOOLS_FOUND)
+#     target_link_libraries(<YourTarget> ${GPERFTOOLS_LIBRARIES})
+#   endif()
 
-find_library(GPERFTOOLS_TCMALLOC
-        NAMES tcmalloc
-        HINTS ${Gperftools_ROOT_DIR}/lib)
+if(GPERFTOOLS_USE_STATIC_LIBS)
+    set(_CMAKE_FIND_LIBRARY_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
+    set(CMAKE_FIND_LIBRARY_SUFFIXES .lib .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
+endif()
 
-find_library(GPERFTOOLS_PROFILER
-        NAMES profiler
-        HINTS ${Gperftools_ROOT_DIR}/lib)
+macro(_find_library libvar libname)
+    find_library(${libvar}
+            NAMES ${libname}
+            HINTS ENV LD_LIBRARY_PATH
+            HINTS ENV DYLD_LIBRARY_PATH
+            PATHS
+            /usr/lib
+            /usr/local/lib
+            /usr/local/homebrew/lib
+            /opt/local/lib
+            )
+    if(NOT ${libvar}_NOTFOUND)
+        set(${libvar}_FOUND TRUE)
+    endif()
+endmacro()
 
-find_library(GPERFTOOLS_TCMALLOC_AND_PROFILER
-        NAMES tcmalloc_and_profiler
-        HINTS ${Gperftools_ROOT_DIR}/lib)
+_find_library(GPERFTOOLS_TCMALLOC tcmalloc)
+_find_library(GPERFTOOLS_PROFILER profiler)
+_find_library(GPERFTOOLS_TCMALLOC_MINIMAL tcmalloc_minimal)
+_find_library(GPERFTOOLS_TCMALLOC_AND_PROFILER tcmalloc_and_profiler)
 
 find_path(GPERFTOOLS_INCLUDE_DIR
         NAMES gperftools/heap-profiler.h
-        HINTS ${Gperftools_ROOT_DIR}/include)
+        HINTS ${GPERFTOOLS_LIBRARY}/../../include
+        PATHS
+        /usr/include
+        /usr/local/include
+        /usr/local/homebrew/include
+        /opt/local/include
+        )
 
-set(GPERFTOOLS_LIBRARIES ${GPERFTOOLS_TCMALLOC_AND_PROFILER})
+get_filename_component(GPERFTOOLS_LIBRARY_DIR ${GPERFTOOLS_TCMALLOC} DIRECTORY)
+# Set standard CMake FindPackage variables if found.
+set(GPERFTOOLS_LIBRARIES
+        ${GPERFTOOLS_TCMALLOC}
+        ${GPERFTOOLS_PROFILER}
+        )
+
+set(GPERFTOOLS_INCLUDE_DIRS ${GPERFTOOLS_INCLUDE_DIR})
+set(GPERFTOOLS_LIBRARY_DIRS ${GPERFTOOLS_LIBRARY_DIR})
+
+if(GPERFTOOLS_USE_STATIC_LIBS)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ${_CMAKE_FIND_LIBRARY_SUFFIXES})
+endif()
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(
-        Gperftools
-        DEFAULT_MSG
-        GPERFTOOLS_LIBRARIES
-        GPERFTOOLS_INCLUDE_DIR)
-
-mark_as_advanced(
-        Gperftools_ROOT_DIR
-        GPERFTOOLS_TCMALLOC
-        GPERFTOOLS_PROFILER
-        GPERFTOOLS_TCMALLOC_AND_PROFILER
-        GPERFTOOLS_LIBRARIES
-        GPERFTOOLS_INCLUDE_DIR)
+        GPERFTOOLS
+        REQUIRED_VARS
+        GPERFTOOLS_INCLUDE_DIR
+        HANDLE_COMPONENTS
+)

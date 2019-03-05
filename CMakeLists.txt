@@ -4,10 +4,12 @@ project(cube)
 set(CUBE_PREFIX ${PROJECT_NAME})
 string(TOUPPER ${CUBE_PREFIX} CUBE_PREFIX_UPPER)
 set(CUBE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 #set(CMAKE_VERBOSE_MAKEFILE ON)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+
 if(NOT CYGWIN)
     set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
@@ -18,6 +20,7 @@ option("${CUBE_PREFIX_UPPER}_BUILD_BENCHMARK" "Build Cube Benchmarks" OFF)
 option("${CUBE_PREFIX_UPPER}_BUILD_SAMPLE" "Build Cube Samples" OFF)
 option("${CUBE_PREFIX_UPPER}_BUILD_DOC" "Build Cube Documentation" OFF)
 option("${CUBE_PREFIX_UPPER}_WITH_RTTI" "Build with RTTI" ON)
+option("${CUBE_PREFIX_UPPER}_USE_TCMALLOC" "Build with RTTI" ON)
 
 #default build type to Release
 if (NOT CMAKE_BUILD_TYPE)
@@ -34,18 +37,19 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32)
 endif()
 
 if (${CUBE_PREFIX_UPPER}_BUILD_TEST)
-
     include(CTest)
     enable_testing()
-    # add google benchmark module
-    set(BENCHMARK_DOWNLOAD_DEPENDENCIES ON CACHE BOOL "" FORCE)
-    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-    set(GOOGLEBENCHMARK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googlebenchmark)
-    add_subdirectory(${GOOGLEBENCHMARK_DIR})
-    # add google test module
+    if (${CUBE_PREFIX_UPPER}_BUILD_BENCHMARK)
+        # add google benchmark module
+        set(BENCHMARK_DOWNLOAD_DEPENDENCIES ON CACHE BOOL "" FORCE)
+        set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+        set(GOOGLEBENCHMARK_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googlebenchmark)
+        add_subdirectory(${GOOGLEBENCHMARK_DIR})
+    endif()
     if (MSVC)
         set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     endif()
+    # add google test module
     set(GOOGLETEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googletest)
     add_subdirectory(${GOOGLETEST_DIR})
 endif()
@@ -58,11 +62,6 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
 
 #if (WIN32)
-#    if (MSVC)
-#        set(${CMAKE_CXX_FLAGS} "${CMAKE_CXX_FLAGS} /D_CRT_SECURE_NO_WARNINGS /D_SCL_SECURE_NO_WARNINGS -MT")
-##        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GR- /Zc:__cplusplus /D_CRT_SECURE_NO_WARNINGS /D_SCL_SECURE_NO_WARNINGS")
-#    elseif(GNU)
-#    endif()
 #
 #    find_library(
 #            TCMALLOC_RELEASE
@@ -92,8 +91,20 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
 #    set(USE_TC_MALLOC OFF)
 #endif()
 
-add_subdirectory(source/engine)
 add_subdirectory(source/network)
+
+#TCMALLOC only available on linux for the moment
+if (NOT WIN32 AND ${CUBE_PREFIX_UPPER}_USE_TCMALLOC)
+    message(STATUS "INFO: will use tcmalloc library")
+    set(GPERFTOOLS_USE_STATIC_LIBS ON CACHE BOOL "" FORCE)
+    find_package(Gperftools)
+    if (GPERFTOOLS_FOUND)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -lunwind")
+        link_libraries(${GPERFTOOLS_TCMALLOC})
+    endif()
+endif()
+
+add_subdirectory(source/engine)
 
 # Sample Projects
 if (${CUBE_PREFIX_UPPER}_BUILD_SAMPLE)

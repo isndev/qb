@@ -38,7 +38,7 @@ namespace cube {
         }
 
         data.state = 0;
-        data.bucket_size = size;
+        data.bucket_size = static_cast<uint16_t>(size);
         return data;
     }
 
