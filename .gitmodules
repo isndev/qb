@@ -1,7 +1,3 @@
-[submodule "gperftools"]
-    path = modules/gperftools
-    url = https://github.com/gperftools/gperftools.git
-    branch = master
 [submodule "modules/googlebenchmark"]
 	path = modules/googlebenchmark
 	url = https://github.com/google/benchmark.git
