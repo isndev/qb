@@ -4,11 +4,14 @@
 
 class TestActor : public cube::Actor
 {
+    bool keep_live = false;
 public:
     TestActor() = default;
+    TestActor(bool live) : keep_live(live) {}
     virtual bool onInit() override final {
-      kill();
-      return true;
+        if (!keep_live)
+            kill();
+        return true;
     }
 };
 
@@ -57,6 +60,31 @@ TEST(Main, StartMultiCoreWithNoError) {
         main.addActor<TestActor>(i);
 
     main.start();
+    main.join();
+    EXPECT_FALSE(main.hasError());
+}
+
+TEST(Main, StopMonoCoreWithNoError) {
+    cube::Main main({0});
+
+    main.addActor<TestActor>(0, true);
+    main.start();
+    main.stop();
+    main.join();
+    EXPECT_FALSE(main.hasError());
+}
+
+TEST(Main, StopMultiCoreWithNoError) {
+    const auto max_core = std::thread::hardware_concurrency();
+
+    EXPECT_GT(max_core, 1u);
+    cube::Main main(cube::CoreSet::build(max_core));
+
+    for (auto i = 0u; i < max_core; ++i)
+        main.addActor<TestActor>(i, true);
+
+    main.start();
+    main.stop();
     main.join();
     EXPECT_FALSE(main.hasError());
 }

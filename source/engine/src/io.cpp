@@ -15,3 +15,17 @@ cube::io::cout::~cout() {
     std::cout << ss.str() << std::flush;
 }
 
+struct LogInitializer {
+    static LogInitializer initializer;
+    LogInitializer() {
+        cube::io::log::init("./cube", 512);
+#ifdef NDEBUG
+        cube::io::log::setLevel(cube::io::log::Level::INFO);
+#else
+        cube::io::log::setLevel(cube::io::log::Level::DEBUG);
+#endif
+    }
+};
+
+LogInitializer LogInitializer::initializer = {};
+
