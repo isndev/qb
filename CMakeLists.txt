@@ -6,6 +6,7 @@ string(TOUPPER ${CUBE_PREFIX} CUBE_PREFIX_UPPER)
 set(CUBE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(${CUBE_PREFIX_UPPER}_CXX_FLAGS "")
 #set(CMAKE_VERBOSE_MAKEFILE ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
@@ -58,36 +59,7 @@ config_compiler_and_linker()  # Defined in internal_utils.cmake.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
 
-#if (WIN32)
-#
-#    find_library(
-#            TCMALLOC_RELEASE
-#            NAMES libtcmalloc_minimal
-#            PATHS ${CMAKE_CURRENT_SOURCE_DIR}/external/tcmalloc/win32/release
-#    )
-#
-#    find_library(
-#            TCMALLOC_DEBUG
-#            NAMES libtcmalloc_minimal-debug
-#            PATHS ${CMAKE_CURRENT_SOURCE_DIR}/external/tcmalloc/win32/debug
-#    )
-#
-#    if (TCMALLOC_RELEASE)
-#        message(STATUS "INFO: will use tcmalloc")
-#        if (GNU)
-#            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
-#        elseif (MSVC)
-#            set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /INCLUDE:\"__tcmalloc\"")
-#        endif()
-#    elseif (USE_TC_MALLOC)
-#        message(STATUS "INFO: tcmalloc not found")
-#        set(USE_TC_MALLOC OFF)
-#    endif()
-#
-#elseif(UNIX)
-#    set(USE_TC_MALLOC OFF)
-#endif()
-
+# Network Projects
 add_subdirectory(source/network)
 
 #TCMALLOC only available on linux for the moment
@@ -96,11 +68,13 @@ if (NOT WIN32 AND ${CUBE_PREFIX_UPPER}_USE_TCMALLOC)
     set(GPERFTOOLS_USE_STATIC_LIBS ON CACHE BOOL "" FORCE)
     find_package(Gperftools)
     if (GPERFTOOLS_FOUND)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -lunwind")
+        set(${CUBE_PREFIX_UPPER}_CXX_FLAGS "-flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free -lunwind")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${${CUBE_PREFIX_UPPER}_CXX_FLAGS}")
         link_libraries(${GPERFTOOLS_TCMALLOC})
     endif()
 endif()
 
+# Cube Main Library
 add_subdirectory(source/engine)
 
 # Sample Projects
@@ -113,9 +87,10 @@ add_subdirectory(docs)
 
 if(IS_INVOKED)
     if(${CUBE_PREFIX_UPPER}_WITH_RTTI)
-        message("Will build ${CUBE_PREFIX} libraries with rtti")
+        message(STATUS "Will build ${CUBE_PREFIX} libraries with rtti")
     else()
-        message("Will build ${CUBE_PREFIX} libraries without rtti")
-        set(CMAKE_CXX_FLAGS "${cxx_no_rtti_flags}" PARENT_SCOPE)
+        message(STATUS "Will build ${CUBE_PREFIX} libraries without rtti")
+        set(${CUBE_PREFIX_UPPER}_CXX_FLAGS "${${CUBE_PREFIX_UPPER}_CXX_FLAGS} ${cxx_no_rtti_flags}")
     endif()
+    set(CMAKE_CXX_FLAGS "${${CUBE_PREFIX_UPPER}_CXX_FLAGS}" PARENT_SCOPE)
 endif()
