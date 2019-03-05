@@ -25,7 +25,7 @@ TEST(Main, StartMonoCoreShouldAbortIfNoActor) {
 
 TEST(Main, StartMultiCoreShouldAbortIfNoActor) {
     const auto max_core = std::thread::hardware_concurrency();
-    std::srand(std::time(nullptr));
+    std::srand(static_cast<unsigned int>(std::time(nullptr)));
     const auto fail_core = std::rand() % max_core;
 
     EXPECT_GT(max_core, 1u);
