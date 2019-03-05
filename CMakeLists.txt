@@ -27,9 +27,6 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
 endif()
 
-set(GPERFTOOLS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/gperftools/src)
-get_directory_property(IS_INVOKED PARENT_DIRECTORY)
-
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32)
     include(cmake/CodeCoverage.cmake)
     APPEND_COVERAGE_COMPILER_FLAGS()
