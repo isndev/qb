@@ -19,12 +19,14 @@ if(DOXYGEN_FOUND)
     # copy the files needed by the documentation
     configure_file(${DOXYGEN_INPUT_DIR}/doxygen.css ${DOXYGEN_OUTPUT_DIR}/html/doxygen.css COPYONLY)
 
-    message("Doxygen build added to solution")
-    add_custom_target(${CUBE_PREFIX}-docs ALL
-            COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-            COMMENT "Generating API documentation with Doxygen"
-            VERBATIM)
+    if (${CUBE_PREFIX_UPPER}_BUILD_DOC)
+        message("Doxygen build added to solution")
+        add_custom_target(${CUBE_PREFIX}-docs ALL
+                COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
+                WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                COMMENT "Generating API documentation with Doxygen"
+                VERBATIM)
+    endif()
 else(DOXYGEN_FOUND)
     message("Doxygen needs to be installed to generate the documentation.")
 endif(DOXYGEN_FOUND)
