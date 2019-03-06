@@ -3,16 +3,16 @@
 #include "events.h"
 #include "tags.h"
 
-#ifndef CUBE_SERVICE_IOPOLL_ACTOR_H
-#define CUBE_SERVICE_IOPOLL_ACTOR_H
+#ifndef QB_SERVICE_IOPOLL_ACTOR_H
+#define QB_SERVICE_IOPOLL_ACTOR_H
 
-namespace cube {
+namespace qb {
     namespace service {
         namespace iopoll {
 
             class Actor
-                    : public cube::ServiceActor
-                    , public cube::ICallback
+                    : public qb::ServiceActor
+                    , public qb::ICallback
             {
                 network::epoll<> _epoll;
             public:
@@ -43,4 +43,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_SERVICE_IOPOLL_ACTOR_H
+#endif //QB_SERVICE_IOPOLL_ACTOR_H

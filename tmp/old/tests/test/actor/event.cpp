@@ -1,10 +1,10 @@
 #include "assert.h"
 #include "cube.h"
 
-struct MyEvent : public cube::Event {
+struct MyEvent : public qb::Event {
 };
 
-class ActorTest : public cube::Actor {
+class ActorTest : public qb::Actor {
 public:
     ActorTest() = default;
 
@@ -23,17 +23,17 @@ public:
     }
 
     // Overload when received removed event
-    void on (cube::Event const &event) {
-        cube::Actor::on(event);
+    void on (qb::Event const &event) {
+        qb::Actor::on(event);
         // Kill me on next loop
         this->kill();
     }
 };
 
-using namespace cube;
+using namespace qb;
 int main(int argc, char *argv[]) {
-    cube::io::log::init("./", argv[0]);
-    cube::io::log::setLevel(cube::io::log::Level::WARN);
+    qb::io::log::init("./", argv[0]);
+    qb::io::log::setLevel(qb::io::log::Level::WARN);
 
     test<100>("Test un/register event", [](auto &timer) {
         Cube main({0,1});

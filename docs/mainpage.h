@@ -2,12 +2,12 @@
 /// \mainpage
 ///
 /// \section welcome Welcome
-/// Welcome to the official CUBE documentation. Here you will find a detailed
-/// view of all the CUBE classes, functions and Actors developed by us. <br/>
+/// Welcome to the official QB documentation. Here you will find a detailed
+/// view of all the QB classes, functions and Actors developed by us. <br/>
 /// More tutorials will arrive soon.
 ///
 /// \section example Short example
-/// Here is a short example, to show you how simple to use CUBE\n
+/// Here is a short example, to show you how simple to use QB\n
 ///
 /// My First Event :
 /// \code
@@ -15,7 +15,7 @@
 ///// Event example
 ///
 ///struct MyEvent
-///        : public cube::Event // /!\ should inherit from cube event
+///        : public qb::Event // /!\ should inherit from cube event
 ///{
 ///    int data; // trivial data
 ///    std::vector<int> container; // dynamic data
@@ -39,8 +39,8 @@
 ///# include "MyEvent.h"
 ///
 ///class MyActor
-///        : public cube::Actor     // /!\ should inherit from cube actor
-///                , public cube::ICallback // (optional) required to register actor callback
+///        : public qb::Actor     // /!\ should inherit from cube actor
+///                , public qb::ICallback // (optional) required to register actor callback
 ///{
 ///public:
 ///    MyActor() = default;         // default constructor
@@ -73,7 +73,7 @@
 ///    // will call this function when MyActor received MyEvent
 ///    void on(MyEvent const &) {
 ///        // I am a dummy actor, notify the engine to remove me !
-///        cube::io::cout() << "MyActor(" << id() << ") received MyEvent and will Die" << std::endl;
+///        qb::io::cout() << "MyActor(" << id() << ") received MyEvent and will Die" << std::endl;
 ///        kill(); // /!\ after this line MyActor is not able to receive events
 ///    }
 ///};
@@ -88,14 +88,14 @@
 ///
 ///int main (int, char *argv[]) {
 ///    // (optional) initialize the logger
-///    cube::io::log::init(argv[0]); // filepath
-///    cube::io::log::setLevel(cube::io::log::Level::WARN); // log only warning, error an critical
+///    qb::io::log::init(argv[0]); // filepath
+///    qb::io::log::setLevel(qb::io::log::Level::WARN); // log only warning, error an critical
 ///    // usage
 ///    LOG_INFO << "I will not be logged :(";
 ///
 ///    // configure the Engine
 ///    // Note : I will use only the core 0 and 1
-///    cube::Main main({0, 1});
+///    qb::Main main({0, 1});
 ///
 ///    // First way to add actors at start
 ///    main.addActor<MyActor>(0); // in Core id=0, default constructed

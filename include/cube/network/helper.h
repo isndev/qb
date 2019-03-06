@@ -1,8 +1,8 @@
 #include            <cstring>
 #include            <cube/utility/build_macros.h>
 
-#ifndef             CUBE_NETWORK_HELPER_H_
-# define            CUBE_NETWORK_HELPER_H_
+#ifndef             QB_NETWORK_HELPER_H_
+# define            QB_NETWORK_HELPER_H_
 
 #ifdef __WIN__SYSTEM__
 #include <winsock2.h>
@@ -17,7 +17,7 @@
 #include <unistd.h>
 #endif
 
-namespace           cube {
+namespace           qb {
     namespace       network {
 
         enum SocketType {
@@ -44,7 +44,7 @@ namespace           cube {
         constexpr static const SocketHandler SOCKET_INVALID = -1;
 #endif
 
-        class CUBE_API helper {
+        class QB_API helper {
         public:
             static sockaddr_in createAddress(uint32_t address, unsigned short port);
             static bool close(SocketHandler sock);
@@ -54,6 +54,6 @@ namespace           cube {
         };
 
     } // namespace network
-} // namespace cube
+} // namespace qb
 
-#endif // CUBE_NETWORK_HELPER_H_
+#endif // QB_NETWORK_HELPER_H_

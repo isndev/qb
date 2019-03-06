@@ -1,8 +1,8 @@
 
-#ifndef CUBE_UTILS_NOCOPY_H
-#define CUBE_UTILS_NOCOPY_H
+#ifndef QB_UTILS_NOCOPY_H
+#define QB_UTILS_NOCOPY_H
 
-namespace cube {
+namespace qb {
     struct nocopy {
         nocopy() = default;
         nocopy(nocopy const &) = delete;
@@ -11,4 +11,4 @@ namespace cube {
     };
 }
 
-#endif //CUBE_UTILS_NOCOPY_H
+#endif //QB_UTILS_NOCOPY_H

@@ -1,6 +1,6 @@
 #include            <cube/network/helper.h>
 
-namespace           cube {
+namespace           qb {
     namespace       network {
 #ifdef __WIN__SYSTEM__
 
@@ -120,5 +120,5 @@ namespace           cube {
 #endif
 
     } // namespace network
-} // namespace cube
+} // namespace qb
 

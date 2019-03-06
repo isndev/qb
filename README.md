@@ -59,11 +59,11 @@ project(MyProject)
 # Cube minimum requirements
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CUBE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cube")
+set(QB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cube")
 
 # Add cube framework
-add_subdirectory(${CUBE_PATH})
-include_directories(${CUBE_PATH})
+add_subdirectory(${QB_PATH})
+include_directories(${QB_PATH})
 
 # Define your project source
 set(SOURCE main.cpp)
@@ -83,7 +83,7 @@ target_link_libraries(MyProject cube)
 
 // Event example
 struct MyEvent
- : public cube::Event // /!\ should inherit from cube event
+ : public qb::Event // /!\ should inherit from cube event
 {
     int data; // trivial data
     std::vector<int> container; // dynamic data
@@ -93,8 +93,8 @@ struct MyEvent
 }; 
 
 class MyActor
-        : public cube::Actor // /!\ should inherit from cube actor
-        , public cube::ICallback // (optional) required to register actor callback
+        : public qb::Actor // /!\ should inherit from cube actor
+        , public qb::ICallback // (optional) required to register actor callback
 {
 public:
     MyActor() = default;
@@ -134,14 +134,14 @@ public:
 
 int main (int argc, char *argv[]) {
     // (optional) initialize the logger
-    cube::io::log::init("./", argv[0]); // directory, filename
-    cube::io::log::setLevel(cube::io::log::Level::WARN); // log only warning an critical
+    qb::io::log::init("./", argv[0]); // directory, filename
+    qb::io::log::setLevel(qb::io::log::Level::WARN); // log only warning an critical
     // usage
     LOG_INFO << "I will not be logged :(";
 
     // configure the Engine 
     // Note : I will use only the core 0 and 1 
-    cube::Cube main({0, 1});
+    qb::Cube main({0, 1});
     
     // My start sequence -> add MyActor to core 0 and 1
     main.addActor<MyActor>(0); // default constructed

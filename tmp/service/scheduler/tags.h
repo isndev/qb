@@ -4,10 +4,10 @@
 
 #include <cstdint>
 
-#ifndef CUBE_SERVICE_SCHEDULER_TAGS_H
-#define CUBE_SERVICE_SCHEDULER_TAGS_H
+#ifndef QB_SERVICE_SCHEDULER_TAGS_H
+#define QB_SERVICE_SCHEDULER_TAGS_H
 
-namespace cube {
+namespace qb {
     namespace service {
         namespace scheduler {
             struct Tag {
@@ -17,4 +17,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_SERVICE_SCHEDULER_TAGS_H
+#endif //QB_SERVICE_SCHEDULER_TAGS_H

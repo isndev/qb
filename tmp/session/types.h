@@ -2,10 +2,10 @@
 // Created by isndev on 12/15/18.
 //
 
-#ifndef CUBE_SESSION_TYPES_H
-#define CUBE_SESSION_TYPES_H
+#ifndef QB_SESSION_TYPES_H
+#define QB_SESSION_TYPES_H
 
-namespace cube {
+namespace qb {
     namespace session {
 
         enum class ReturnValue : int {
@@ -17,4 +17,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_SESSION_TYPES_H
+#endif //QB_SESSION_TYPES_H

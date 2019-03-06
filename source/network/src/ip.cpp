@@ -1,7 +1,7 @@
 #include            <cube/network/ip.h>
 #include            <cube/network/helper.h>
 
-namespace           cube {
+namespace           qb {
     namespace       network {
 
         const ip ip::None(INADDR_NONE);
@@ -111,4 +111,4 @@ namespace           cube {
         }
 
     } // namespace network
-} // namespace cube
+} // namespace qb

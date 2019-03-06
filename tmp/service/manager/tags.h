@@ -4,10 +4,10 @@
 
 #include <cstdint>
 
-#ifndef CUBE_SERVICE_MANAGER_TAGS_H
-#define CUBE_SERVICE_MANAGER_TAGS_H
+#ifndef QB_SERVICE_MANAGER_TAGS_H
+#define QB_SERVICE_MANAGER_TAGS_H
 
-namespace cube {
+namespace qb {
     namespace service {
         namespace manager {
             struct Tag {
@@ -21,4 +21,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_SERVICE_MANAGER_TAGS_H
+#endif //QB_SERVICE_MANAGER_TAGS_H

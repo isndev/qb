@@ -1,6 +1,6 @@
 
-#ifndef CUBE_UTILS_TCACHE_H_
-# define CUBE_UTILS_TCACHE_H_
+#ifndef QB_UTILS_TCACHE_H_
+# define QB_UTILS_TCACHE_H_
 
 template<typename _Item>
 class TCache : public _Item {
@@ -53,4 +53,4 @@ public:
     }
 };
 
-#endif // CUBE_UTILS_TCACHE_H_
+#endif // QB_UTILS_TCACHE_H_

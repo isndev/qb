@@ -4,10 +4,10 @@
 
 #include "header.h"
 
-#ifndef CUBE_MQTT_READER_H
-#define CUBE_MQTT_READER_H
+#ifndef QB_MQTT_READER_H
+#define QB_MQTT_READER_H
 
-namespace cube {
+namespace qb {
     namespace mqtt {
 
         constexpr std::size_t MAX_MESSAGE_SIZE = 65520;
@@ -89,6 +89,6 @@ namespace cube {
         };
 
     } // namespace mqtt
-} // namespace cube
+} // namespace qb
 
-#endif //CUBE_MQTT_READER_H
+#endif //QB_MQTT_READER_H

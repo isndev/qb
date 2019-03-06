@@ -1,8 +1,8 @@
 
-#ifndef CUBE_UTILS_BRANCH_HINTS_H
-#define CUBE_UTILS_BRANCH_HINTS_H
+#ifndef QB_UTILS_BRANCH_HINTS_H
+#define QB_UTILS_BRANCH_HINTS_H
 
-namespace cube {
+namespace qb {
     /** \brief hint for the branch prediction */
     inline bool likely(bool expr) {
 #ifdef __GNUC__
@@ -21,6 +21,6 @@ namespace cube {
 #endif
     }
 
-} /* namespace cube */
+} /* namespace qb */
 
-#endif /* CUBE_UTILS_BRANCH_HINTS_H */
+#endif /* QB_UTILS_BRANCH_HINTS_H */

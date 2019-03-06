@@ -5,10 +5,10 @@
 #include "header.h"
 #include <string>
 
-#ifndef CUBE_MQTT_PUBLISH_H
-#define CUBE_MQTT_PUBLISH_H
+#ifndef QB_MQTT_PUBLISH_H
+#define QB_MQTT_PUBLISH_H
 
-namespace cube {
+namespace qb {
     namespace mqtt {
 
         class Publish {
@@ -102,6 +102,6 @@ namespace cube {
         } __attribute__ ((__packed__));
 
     } // namespace mqtt
-} // namespace cube
+} // namespace qb
 
-#endif //CUBE_MQTT_PUBLISH_H
+#endif //QB_MQTT_PUBLISH_H

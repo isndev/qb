@@ -35,7 +35,7 @@ namespace Internals {
 
 } // namespace Internals
 
-namespace cube {
+namespace qb {
 
 template <typename T, typename TCleaner>
 auto resource(T handle, TCleaner cleaner)
@@ -252,6 +252,6 @@ public:
     }
 };
 
-} // namespace cube
+} // namespace qb
 
 #endif //FEATURES_CPU_H

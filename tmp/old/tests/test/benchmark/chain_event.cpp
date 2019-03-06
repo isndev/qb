@@ -1,7 +1,7 @@
 #include "assert.h"
 #include "cube.h"
 
-using namespace cube;
+using namespace qb;
 void test_chain(int nb_actor) {
     test("Test ChainEvent " + std::to_string(nb_actor) + " Actor(s) per Core 1000 chain loop\n",
     [nb_actor](auto &timer) {
@@ -47,8 +47,8 @@ void test_chain(int nb_actor) {
 }
 
 int main(int argc, char *argv[]) {
-    cube::io::log::init("./", argv[0]);
-    cube::io::log::setLevel(cube::io::log::Level::WARN);
+    qb::io::log::init("./", argv[0]);
+    qb::io::log::setLevel(qb::io::log::Level::WARN);
 
     test_chain(1);
     test_chain(34);

@@ -9,20 +9,20 @@
 #include "messages.h"
 #include "reader.h"
 
-#ifndef CUBE_MQTT_SESSION_H
-#define CUBE_MQTT_SESSION_H
+#ifndef QB_MQTT_SESSION_H
+#define QB_MQTT_SESSION_H
 
-namespace cube {
+namespace qb {
     namespace mqtt {
 
         template <typename EventData, typename Derived>
         class Session {
         protected:
-            using Pipe = cube::allocator::pipe<char>;
+            using Pipe = qb::allocator::pipe<char>;
             Pipe in_pipe;
             Pipe out_pipe;
 
-            cube::mqtt::Reader reader;
+            qb::mqtt::Reader reader;
             std::vector<session::ReturnValue (Derived::*)(EventData &)> messages;
 
         private:
@@ -63,7 +63,7 @@ namespace cube {
                     : max_bytes_to_send(queue_limit ? queue_limit : ~queue_limit)
                     , sent_bytes(0)
             {
-                messages.resize(cube::mqtt::MessageType::END);
+                messages.resize(qb::mqtt::MessageType::END);
                 reset_auth();
             }
 
@@ -72,7 +72,7 @@ namespace cube {
             // Cube events
             bool onInitialize() {
                 // init accepted messages
-                messages.resize(cube::mqtt::MessageType::END);
+                messages.resize(qb::mqtt::MessageType::END);
                 reset_auth();
                 return static_cast<Derived &>(*this).onInitialize();
             }
@@ -97,7 +97,7 @@ namespace cube {
                             // process message
                             auto type = reader.header().getType();
                             auto callback = &Derived::onDisconnect;
-                            if (type < cube::mqtt::MessageType::END) {
+                            if (type < qb::mqtt::MessageType::END) {
                                 callback = messages[type];
                             }
 
@@ -146,4 +146,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_MQTT_SESSION_H
+#endif //QB_MQTT_SESSION_H

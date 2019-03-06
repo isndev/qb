@@ -10,21 +10,21 @@
 #include "session/types.h"
 #include "events.h"
 
-#ifndef CUBE_SESSION_ACTOR_H
-#define CUBE_SESSION_ACTOR_H
+#ifndef QB_SESSION_ACTOR_H
+#define QB_SESSION_ACTOR_H
 
-namespace cube {
+namespace qb {
     namespace session {
 
         template <typename Derived>
         class Actor
                 : public service::iopoll::Routine<Derived>
-                , public cube::Actor {
+                , public qb::Actor {
         protected:
             Actor() {}
 
             inline void reset_timer(std::size_t const seconds) {
-                this->setTimer(this->time() + static_cast<uint64_t>(cube::Timespan::seconds(seconds + (seconds / 2)).nanoseconds()));
+                this->setTimer(this->time() + static_cast<uint64_t>(qb::Timespan::seconds(seconds + (seconds / 2)).nanoseconds()));
             }
 
         public:
@@ -42,4 +42,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_SESSION_ACTOR_H
+#endif //QB_SESSION_ACTOR_H

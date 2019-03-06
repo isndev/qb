@@ -2,10 +2,10 @@
 // Created by isndev on 7/22/18.
 //
 
-#ifndef CUBE_MQTT_HEADER_H
-#define CUBE_MQTT_HEADER_H
+#ifndef QB_MQTT_HEADER_H
+#define QB_MQTT_HEADER_H
 
-namespace cube {
+namespace qb {
     namespace mqtt {
 
         enum MessageType : uint8_t {
@@ -109,6 +109,6 @@ namespace cube {
         }
 
     } // namespace mqtt
-} // namespace cube
+} // namespace qb
 
-#endif //CUBE_MQTT_HEADER_H
+#endif //QB_MQTT_HEADER_H

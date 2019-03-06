@@ -1,8 +1,8 @@
 #include                <errno.h>
 #include                <cstdint>
 
-#ifndef            CUBE_BUILD_MACROS_H_
-#define            CUBE_BUILD_MACROS_H_
+#ifndef            QB_BUILD_MACROS_H_
+#define            QB_BUILD_MACROS_H_
 
 #if defined(_WIN32) || defined(_WIN64)
 #define __WIN__SYSTEM__
@@ -21,18 +21,18 @@
 #endif
 
 #if defined(__WIN__SYSTEM__)
-#define CUBE_GET __cdecl
-#ifdef CUBE_DYNAMIC
+#define QB_GET __cdecl
+#ifdef QB_DYNAMIC
 // Windows platforms
- #ifndef CUBE_LINKED_AS_SHARED
+ #ifndef QB_LINKED_AS_SHARED
  #pragma message ("WILL EXPORT DYNAMIC")
 // From DLL side, we must export
- #define CUBE_API __declspec(dllexport)
+ #define QB_API __declspec(dllexport)
  #else
   #pragma message ("WILL IMPORT DYNAMIC")
  // From client application side, we must import
- #define CUBE_GET __cdecl
- #define CUBE_API __declspec(dllimport)
+ #define QB_GET __cdecl
+ #define QB_API __declspec(dllimport)
  #endif
 // For Visual C++ compilers, we also need to turn off this annoying C4251 warning.
 // You can read lots ot different things about it, but the point is the code will
@@ -43,12 +43,12 @@
  #endif
 #else
 // No specific directive needed for static build
-#define CUBE_API
+#define QB_API
 #endif
 #else
 // Other platforms don't need to define anything
-    #define CUBE_GET
-    #define CUBE_API
+    #define QB_GET
+    #define QB_API
 #endif
 
 #endif

@@ -1,6 +1,6 @@
 
-#ifndef CUBE_LOCKFREE_RINGBUFFER_H
-# define CUBE_LOCKFREE_RINGBUFFER_H
+#ifndef QB_LOCKFREE_RINGBUFFER_H
+# define QB_LOCKFREE_RINGBUFFER_H
 # include <cstdint>
 # include <cstring>
 # include <array>
@@ -12,7 +12,7 @@
 # include <cube/utility/prefix.h>
 # include <cube/utility/nocopy.h>
 
-namespace cube {
+namespace qb {
     namespace lockfree {
         namespace spsc {
             namespace internal {
@@ -20,7 +20,7 @@ namespace cube {
                 class ringbuffer
                         : public nocopy {
                     typedef std::size_t size_t;
-                    constexpr static const int padding_size = CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(size_t);
+                    constexpr static const int padding_size = QB_LOCKFREE_CACHELINE_BYTES - sizeof(size_t);
                     std::atomic<size_t> write_index_;
                     char padding1[padding_size]; /* force read_index and write_index to different cache lines */
                     std::atomic<size_t> read_index_;
@@ -259,7 +259,7 @@ namespace cube {
 
         } /* namespace spsc */
     } /* namespace lockfree */
-} /* namespace cube */
+} /* namespace qb */
 
 
-#endif /* CUBE_LOCKFREE_RINGBUFFER_H */
+#endif /* QB_LOCKFREE_RINGBUFFER_H */

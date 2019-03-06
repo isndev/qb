@@ -7,10 +7,10 @@
 #error "epoll is not available on windows"
 #endif
 
-#ifndef             CUBE_NETWORK_EPOLL_H
-#define             CUBE_NETWORK_EPOLL_H
+#ifndef             QB_NETWORK_EPOLL_H
+#define             QB_NETWORK_EPOLL_H
 
-namespace           cube {
+namespace           qb {
     namespace       network {
         namespace   epoll {
 
@@ -79,6 +79,6 @@ namespace           cube {
 
         } // namespace epoll
     } // namespace network
-} // namespace cube
+} // namespace qb
 
-#endif // CUBE_NETWORK_EPOLL_H
+#endif // QB_NETWORK_EPOLL_H

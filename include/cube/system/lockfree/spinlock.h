@@ -1,11 +1,11 @@
 
-#ifndef CUBE_LOCKFREE_SPINLOCK_H
-# define CUBE_LOCKFREE_SPINLOCK_H
+#ifndef QB_LOCKFREE_SPINLOCK_H
+# define QB_LOCKFREE_SPINLOCK_H
 # include <atomic>
 # include <cube/system/timestamp.h>
 
 
-namespace cube {
+namespace qb {
     namespace lockfree {
 
         class SpinLock {
@@ -69,6 +69,6 @@ namespace cube {
         };
 
     } /* namespace lockfree */
-} /* namespace cube */
+} /* namespace qb */
 
-#endif //CUBE_LOCKFREE_SPINLOCK_H
+#endif //QB_LOCKFREE_SPINLOCK_H

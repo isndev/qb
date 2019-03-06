@@ -4,10 +4,10 @@
 
 #include "header.h"
 
-#ifndef CUBE_MQTT_SUBSCRIBE_H
-#define CUBE_MQTT_SUBSCRIBE_H
+#ifndef QB_MQTT_SUBSCRIBE_H
+#define QB_MQTT_SUBSCRIBE_H
 
-namespace cube {
+namespace qb {
     namespace mqtt {
 
         struct Topic {
@@ -138,6 +138,6 @@ namespace cube {
         } __attribute__ ((__packed__));
 
     } // namespace mqtt
-} // namespace cube
+} // namespace qb
 
-#endif //CUBE_MQTT_SUBSCRIBE_H
+#endif //QB_MQTT_SUBSCRIBE_H
