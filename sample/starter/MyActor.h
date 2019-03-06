@@ -1,6 +1,5 @@
 #include <vector>
 #include <cube/actor.h>
-#include "../../include/cube/io.h"
 
 #ifndef MYACTOR_H_
 # define MYACTOR_H_
