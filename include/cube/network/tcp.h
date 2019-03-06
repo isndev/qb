@@ -1,14 +1,14 @@
 #include            "ip.h"
 #include            "sys.h"
 
-#ifndef             CUBE_NETWORK_TCP_H_
-# define            CUBE_NETWORK_TCP_H_
+#ifndef             QB_NETWORK_TCP_H_
+# define            QB_NETWORK_TCP_H_
 
-namespace           cube {
+namespace           qb {
     namespace       network {
         namespace   tcp {
 
-            class CUBE_API Socket
+            class QB_API Socket
                 : public sys::Socket<SocketType::TCP> {
             public:
                 Socket();
@@ -31,7 +31,7 @@ namespace           cube {
                 friend class Listener;
             };
 
-            class CUBE_API Listener
+            class QB_API Listener
                     : public Socket {
             public:
                 Listener();
@@ -45,6 +45,6 @@ namespace           cube {
 
         } // namespace tcp
     } // namespace network
-} // namespace cube
+} // namespace qb
 
-#endif // CUBE_NETWORK_TCP_H_
+#endif // QB_NETWORK_TCP_H_

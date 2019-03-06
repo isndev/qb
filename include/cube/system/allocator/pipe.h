@@ -1,13 +1,13 @@
 
-#ifndef CUBE_PIPE_H
-# define CUBE_PIPE_H
+#ifndef QB_PIPE_H
+# define QB_PIPE_H
 # include <memory>
 # include <cstring>
 # include <cube/utility/nocopy.h>
 # include <cube/utility/prefix.h>
 # include <cube/utility/branch_hints.h>
 
-namespace cube {
+namespace qb {
     namespace allocator {
 
         template <typename T, typename U>
@@ -22,7 +22,7 @@ namespace cube {
             std::size_t _begin;
             std::size_t _end;
             bool flag_front;
-            char __padding2__[CUBE_LOCKFREE_CACHELINE_BYTES - (2 *sizeof(std::size_t) + sizeof(bool))];
+            char __padding2__[QB_LOCKFREE_CACHELINE_BYTES - (2 *sizeof(std::size_t) + sizeof(bool))];
             std::size_t _capacity;
             std::size_t _factor;
             T *_data;
@@ -185,4 +185,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_PIPE_H
+#endif //QB_PIPE_H

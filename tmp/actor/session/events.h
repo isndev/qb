@@ -1,10 +1,10 @@
 
 #include "service/iopoll/events.h"
 
-#ifndef CUBE_SESSION_EVENTS_H
-#define CUBE_SESSION_EVENTS_H
+#ifndef QB_SESSION_EVENTS_H
+#define QB_SESSION_EVENTS_H
 
-namespace cube {
+namespace qb {
     namespace session {
         namespace event {
             using Ready = service::iopoll::event::Ready;
@@ -12,4 +12,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_SESSION_EVENTS_H
+#endif //QB_SESSION_EVENTS_H

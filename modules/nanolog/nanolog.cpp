@@ -41,7 +41,7 @@ namespace
 	/* Returns microseconds since epoch */
 	uint64_t timestamp_now()
 	{
-		return cube::Timestamp::nano() / 1000;
+		return qb::Timestamp::nano() / 1000;
 	}
 
 	/* I want [2016-10-13 00:01:23.528514] */

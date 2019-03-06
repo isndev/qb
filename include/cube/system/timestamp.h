@@ -16,7 +16,7 @@
 #include <windows.h>
 #endif
 
-namespace cube {
+namespace qb {
 
     class Timespan {
     public:
@@ -416,6 +416,6 @@ namespace cube {
     };
 
 }
-// namespace cube
+// namespace qb
 
 #endif //FEATURES_TIMESTAMP_H

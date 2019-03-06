@@ -2,17 +2,17 @@
 #include            <string>
 #include            <cube/utility/build_macros.h>
 
-#ifndef             CUBE_NETWORK_IP_H_
-#define             CUBE_NETWORK_IP_H_
+#ifndef             QB_NETWORK_IP_H_
+#define             QB_NETWORK_IP_H_
 
-namespace           cube {
+namespace           qb {
     namespace       network {
 
-        class CUBE_API ip {
+        class QB_API ip {
             uint32_t     _address;
 
             void resolve(const std::string& address);
-            friend CUBE_API bool operator <(const ip& left, const ip& right);
+            friend QB_API bool operator <(const ip& left, const ip& right);
         public:
             ip();
             ip(const std::string& address);
@@ -33,16 +33,16 @@ namespace           cube {
 
         };
 
-        CUBE_API bool operator ==(const ip& left, const ip& right);
-        CUBE_API bool operator !=(const ip& left, const ip& right);
-        CUBE_API bool operator <(const ip& left, const ip& right);
-        CUBE_API bool operator >(const ip& left, const ip& right);
-        CUBE_API bool operator <=(const ip& left, const ip& right);
-        CUBE_API bool operator >=(const ip& left, const ip& right);
-        CUBE_API std::istream& operator >>(std::istream& stream, ip& address);
-        CUBE_API std::ostream& operator <<(std::ostream& stream, const ip& address);
+        QB_API bool operator ==(const ip& left, const ip& right);
+        QB_API bool operator !=(const ip& left, const ip& right);
+        QB_API bool operator <(const ip& left, const ip& right);
+        QB_API bool operator >(const ip& left, const ip& right);
+        QB_API bool operator <=(const ip& left, const ip& right);
+        QB_API bool operator >=(const ip& left, const ip& right);
+        QB_API std::istream& operator >>(std::istream& stream, ip& address);
+        QB_API std::ostream& operator <<(std::ostream& stream, const ip& address);
 
     } // namespace network
-} // namespace cube
+} // namespace qb
 
-#endif // CUBE_NETWORK_IP_H_
+#endif // QB_NETWORK_IP_H_

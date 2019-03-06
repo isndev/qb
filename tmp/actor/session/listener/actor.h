@@ -11,10 +11,10 @@
 
 #include "events.h"
 
-#ifndef CUBE_SESSION_LISTENER_ACTOR_H
-#define CUBE_SESSION_LISTENER_ACTOR_H
+#ifndef QB_SESSION_LISTENER_ACTOR_H
+#define QB_SESSION_LISTENER_ACTOR_H
 
-namespace cube {
+namespace qb {
     namespace session {
         namespace listener {
 
@@ -57,7 +57,7 @@ namespace cube {
                     return static_cast<Derived &>(*this).onInitialize();
                 }
 
-                cube::session::ReturnValue onRead(event::Ready &event) {
+                qb::session::ReturnValue onRead(event::Ready &event) {
                     network::SocketTCP socket;
 
                     if (listener.accept(socket) == network::Socket::Done) {
@@ -70,7 +70,7 @@ namespace cube {
                     return ReturnValue::REPOLL;
                 }
 
-                cube::session::ReturnValue onDisconnect(event::Ready &) {
+                qb::session::ReturnValue onDisconnect(event::Ready &) {
                     LOG_CRIT << "Actor listener is down";
                     this->kill();
                     return ReturnValue::KO;
@@ -81,4 +81,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_SESSION_MQTT_ACTOR_H
+#endif //QB_SESSION_MQTT_ACTOR_H

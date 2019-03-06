@@ -4,10 +4,10 @@
 #include "network/include/cube/network/udp.h"
 #include "../../system/actor/Event.h"
 
-#ifndef CUBE_SERVICE_IOPOLL_EVENTS_H
-#define CUBE_SERVICE_IOPOLL_EVENTS_H
+#ifndef QB_SERVICE_IOPOLL_EVENTS_H
+#define QB_SERVICE_IOPOLL_EVENTS_H
 
-namespace cube {
+namespace qb {
     namespace service {
         namespace iopoll {
 
@@ -82,4 +82,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_SERVICE_IOPOLL_EVENTS_H
+#endif //QB_SERVICE_IOPOLL_EVENTS_H

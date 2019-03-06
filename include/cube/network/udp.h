@@ -1,14 +1,14 @@
 #include            "ip.h"
 #include            "sys.h"
 
-#ifndef             CUBE_NETWORK_UDP_H_
-# define            CUBE_NETWORK_UDP_H_
+#ifndef             QB_NETWORK_UDP_H_
+# define            QB_NETWORK_UDP_H_
 
-namespace           cube {
+namespace           qb {
     namespace       network {
         namespace   udp {
 
-            class CUBE_API Socket
+            class QB_API Socket
                 : public sys::Socket<SocketType::UDP> {
                 constexpr static const std::size_t MaxDatagramSize = 65507;
 
@@ -30,6 +30,6 @@ namespace           cube {
 
         } // namespace udp
     } // namespace network
-} // namespace cube
+} // namespace qb
 
-#endif // CUBE_NETWORK_UDP_H_
+#endif // QB_NETWORK_UDP_H_

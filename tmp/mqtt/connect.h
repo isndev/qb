@@ -4,10 +4,10 @@
 
 #include "header.h"
 
-#ifndef CUBE_MQTT_CONNECT_H
-#define CUBE_MQTT_CONNECT_H
+#ifndef QB_MQTT_CONNECT_H
+#define QB_MQTT_CONNECT_H
 
-namespace cube {
+namespace qb {
     namespace mqtt {
 
         enum ConnectStatus : uint8_t {
@@ -136,6 +136,6 @@ namespace cube {
         };
 
     } // namespace mqtt
-} // namespace cube
+} // namespace qb
 
-#endif //CUBE_MQTT_CONNECT_H
+#endif //QB_MQTT_CONNECT_H

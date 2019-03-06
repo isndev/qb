@@ -5,7 +5,7 @@
 
 
 
-using namespace cube;
+using namespace qb;
 template<template<typename T> typename _ActorTest, typename _Event, typename _SharedData = void>
 struct TEST {
     static void pingpong(std::string const &name) {
@@ -93,8 +93,8 @@ struct TEST {
 };
 
 int main(int argc, char *argv[]) {
-    cube::io::log::init("./", argv[0]);
-    cube::io::log::setLevel(cube::io::log::Level::WARN);
+    qb::io::log::init("./", argv[0]);
+    qb::io::log::setLevel(qb::io::log::Level::WARN);
 
     // ping pong
     TEST<ActorPong, TinyEvent>::pingpong("TinyEvent");

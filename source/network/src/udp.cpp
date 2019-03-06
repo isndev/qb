@@ -1,7 +1,7 @@
 #include            <algorithm>
 #include            <cube/network/udp.h>
 
-namespace           cube {
+namespace           qb {
     namespace       network {
         namespace   udp {
 
@@ -93,4 +93,4 @@ namespace           cube {
 
         } // namespace udp
     } // namespace network
-} // namespace cube
+} // namespace qb

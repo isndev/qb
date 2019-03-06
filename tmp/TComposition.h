@@ -4,8 +4,8 @@
 #include <type_traits>
 #include <tuple>
 
-#ifndef CUBE_UTILS_TCOMPOSITION_H
-#define CUBE_UTILS_TCOMPOSITION_H
+#ifndef QB_UTILS_TCOMPOSITION_H
+#define QB_UTILS_TCOMPOSITION_H
 #if __cplusplus < 201402L
 #error "TComposition need min c++14, compile with -std=c++14"
 #endif
@@ -212,4 +212,4 @@ public:
 
 };
 
-#endif //CUBE_UTILS_TCOMPOSITION_H
+#endif //QB_UTILS_TCOMPOSITION_H

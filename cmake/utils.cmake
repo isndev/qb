@@ -55,12 +55,12 @@ endmacro()
 macro(config_compiler_and_linker)
   # Note: pthreads on MinGW is not supported, even if available
   # instead, we use windows threading primitives
-  unset(${CUBE_PREFIX_UPPER}_HAS_PTHREAD)
+  unset(${QB_PREFIX_UPPER}_HAS_PTHREAD)
   if (NOT cube_disable_pthreads AND NOT MINGW)
     # Defines CMAKE_USE_PTHREADS_INIT and CMAKE_THREAD_LIBS_INIT.
     find_package(Threads)
     if (CMAKE_USE_PTHREADS_INIT)
-      set(${CUBE_PREFIX_UPPER}_HAS_PTHREAD ON)
+      set(${QB_PREFIX_UPPER}_HAS_PTHREAD ON)
     endif()
   endif()
 
@@ -89,30 +89,30 @@ macro(config_compiler_and_linker)
     set(cxx_exception_flags "-fexceptions")
     set(cxx_no_exception_flags "-fno-exceptions")
     # Until version 4.3.2, GCC doesn't define a macro to indicate
-    # whether RTTI is enabled.  Therefore we define ${CUBE_PREFIX_UPPER}_HAS_RTTI
+    # whether RTTI is enabled.  Therefore we define ${QB_PREFIX_UPPER}_HAS_RTTI
     # explicitly.
-    set(cxx_no_rtti_flags "-fno-rtti -D${CUBE_PREFIX_UPPER}_HAS_RTTI=0")
+    set(cxx_no_rtti_flags "-fno-rtti -D${QB_PREFIX_UPPER}_HAS_RTTI=0")
     set(cxx_strict_flags
       "-Wextra -Wno-unused-parameter -Wno-missing-field-initializers")
   elseif (CMAKE_CXX_COMPILER_ID STREQUAL "SunPro")
     set(cxx_exception_flags "-features=except")
     # Sun Pro doesn't provide macros to indicate whether exceptions and
-    # RTTI are enabled, so we define ${CUBE_PREFIX_UPPER}_HAS_* explicitly.
-    set(cxx_no_exception_flags "-features=no%except -D${CUBE_PREFIX_UPPER}_HAS_EXCEPTIONS=0")
-    set(cxx_no_rtti_flags "-features=no%rtti -D${CUBE_PREFIX_UPPER}_HAS_RTTI=0")
+    # RTTI are enabled, so we define ${QB_PREFIX_UPPER}_HAS_* explicitly.
+    set(cxx_no_exception_flags "-features=no%except -D${QB_PREFIX_UPPER}_HAS_EXCEPTIONS=0")
+    set(cxx_no_rtti_flags "-features=no%rtti -D${QB_PREFIX_UPPER}_HAS_RTTI=0")
   elseif (CMAKE_CXX_COMPILER_ID STREQUAL "VisualAge" OR
       CMAKE_CXX_COMPILER_ID STREQUAL "XL")
     # CMake 2.8 changes Visual Age's compiler ID to "XL".
     set(cxx_exception_flags "-qeh")
     set(cxx_no_exception_flags "-qnoeh")
     # Until version 9.0, Visual Age doesn't define a macro to indicate
-    # whether RTTI is enabled.  Therefore we define ${CUBE_PREFIX_UPPER}_HAS_RTTI
+    # whether RTTI is enabled.  Therefore we define ${QB_PREFIX_UPPER}_HAS_RTTI
     # explicitly.
-    set(cxx_no_rtti_flags "-qnortti -D${CUBE_PREFIX_UPPER}_HAS_RTTI=0")
+    set(cxx_no_rtti_flags "-qnortti -D${QB_PREFIX_UPPER}_HAS_RTTI=0")
   elseif (CMAKE_CXX_COMPILER_ID STREQUAL "HP")
     set(cxx_base_flags "-AA -mt")
-    set(cxx_exception_flags "-D${CUBE_PREFIX_UPPER}_HAS_EXCEPTIONS=1")
-    set(cxx_no_exception_flags "+noeh -D${CUBE_PREFIX_UPPER}_HAS_EXCEPTIONS=0")
+    set(cxx_exception_flags "-D${QB_PREFIX_UPPER}_HAS_EXCEPTIONS=1")
+    set(cxx_no_exception_flags "+noeh -D${QB_PREFIX_UPPER}_HAS_EXCEPTIONS=0")
     # RTTI can not be disabled in HP aCC compiler.
     set(cxx_no_rtti_flags "")
   endif()
@@ -123,12 +123,12 @@ macro(config_compiler_and_linker)
   endif()
 
   # The pthreads library is available and allowed?
-  if (DEFINED ${CUBE_PREFIX_UPPER}_HAS_PTHREAD)
-    set(${CUBE_PREFIX_UPPER}_HAS_PTHREAD_MACRO "-D${CUBE_PREFIX_UPPER}_HAS_PTHREAD=1")
+  if (DEFINED ${QB_PREFIX_UPPER}_HAS_PTHREAD)
+    set(${QB_PREFIX_UPPER}_HAS_PTHREAD_MACRO "-D${QB_PREFIX_UPPER}_HAS_PTHREAD=1")
   else()
-    set(${CUBE_PREFIX_UPPER}_HAS_PTHREAD_MACRO "-D${CUBE_PREFIX_UPPER}_HAS_PTHREAD=0")
+    set(${QB_PREFIX_UPPER}_HAS_PTHREAD_MACRO "-D${QB_PREFIX_UPPER}_HAS_PTHREAD=0")
   endif()
-  set(cxx_base_flags "${cxx_base_flags} ${${CUBE_PREFIX_UPPER}_HAS_PTHREAD_MACRO}")
+  set(cxx_base_flags "${cxx_base_flags} ${${QB_PREFIX_UPPER}_HAS_PTHREAD_MACRO}")
 
   # For building cube's own tests and samples.
   set(cxx_exception "${cxx_base_flags} ${cxx_exception_flags}")
@@ -139,7 +139,7 @@ macro(config_compiler_and_linker)
 
   # For building the cube libraries.
   set(cxx_strict "${cxx_default} ${cxx_strict_flags}")
-  if (${CUBE_PREFIX_UPPER}_WITH_RTTI)
+  if (${QB_PREFIX_UPPER}_WITH_RTTI)
     set(cxx_default_lib "${cxx_default} ${cxx_strict_flags}")
   else()
     set(cxx_default_lib "${cxx_default} ${cxx_strict_flags} ${cxx_no_rtti_flags}")
@@ -182,12 +182,12 @@ function(cxx_library_with_type name type cxx_flags)
     set_target_properties(${name}
             PROPERTIES
             COMPILE_FLAGS "${cxx_flags}")
-    target_compile_definitions(${name} PUBLIC ${CUBE_PREFIX_UPPER}_DYNAMIC=1)
+    target_compile_definitions(${name} PUBLIC ${QB_PREFIX_UPPER}_DYNAMIC=1)
     if (NOT "${CMAKE_VERSION}" VERSION_LESS "2.8.11")
-      target_compile_definitions(${name} INTERFACE ${CUBE_PREFIX_UPPER}_LINKED_AS_SHARED=1)
+      target_compile_definitions(${name} INTERFACE ${QB_PREFIX_UPPER}_LINKED_AS_SHARED=1)
     endif()
   endif()
-  if (DEFINED ${CUBE_PREFIX_UPPER}_HAS_PTHREAD)
+  if (DEFINED ${QB_PREFIX_UPPER}_HAS_PTHREAD)
     if ("${CMAKE_VERSION}" VERSION_LESS "3.1.0")
       set(threads_spec ${CMAKE_THREAD_LIBS_INIT})
     else()
@@ -230,7 +230,7 @@ function(cxx_executable_with_flags name cxx_flags libs)
   if (BUILD_SHARED_LIBS)
     set_target_properties(${name}
       PROPERTIES
-      COMPILE_DEFINITIONS "${CUBE_PREFIX_UPPER}_LINKED_AS_SHARED_LIBRARY=1")
+      COMPILE_DEFINITIONS "${QB_PREFIX_UPPER}_LINKED_AS_SHARED_LIBRARY=1")
   endif()
   # To support mixing linking in static and dynamic libraries, link each
   # library in with an extra call to target_link_libraries.
@@ -358,7 +358,7 @@ endfunction()
 #
 # Installs the specified targets and configures the associated pkgconfig files.
 function(install_project)
-  if(INSTALL_${CUBE_PREFIX_UPPER})
+  if(INSTALL_${QB_PREFIX_UPPER})
     install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/"
       DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
     # Install the project targets.

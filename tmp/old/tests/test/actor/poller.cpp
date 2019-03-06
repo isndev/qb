@@ -6,17 +6,17 @@
 //#include "service/iopoll/actor.h"
 #include "network/include/cube/network/ip.h"
 
-//using namespace cube::service::iopoll;
+//using namespace qb::service::iopoll;
 //
 //template <typename Handler>
 //class ClientTest
-//        : public cube::Actor<Handler>
-//        , cube::network::SocketTCP
+//        : public qb::Actor<Handler>
+//        , qb::network::SocketTCP
 //{
 //public:
 //    bool onInit() override final {
 //        registerEvent<event::Ready>(*this);
-//        auto &e = push<event::Subscribe>(cube::Tag<Actor, 0>::id());
+//        auto &e = push<event::Subscribe>(qb::Tag<Actor, 0>::id());
 //        e.ep_event.data.fd = this->getNative();
 //        e.ep_event.events = EPOLLIN | EPOLLOUT | EPOLLONESHOT;
 //        return true;
@@ -31,13 +31,13 @@
 //        if (event.ep_event.events & EPOLLIN) {
 //            char buffer[256];
 //            std::size_t received = 0;
-//            if (SocketTCP::receive(buffer, 256, received) == cube::network::Socket::Done) {
+//            if (SocketTCP::receive(buffer, 256, received) == qb::network::Socket::Done) {
 //                std::cout << "Received: " << buffer;
 //                event.ep_event.events |= EPOLLOUT | EPOLLONESHOT;
 //                event.proxy.ctl(event.ep_event);
 //            } else {
 //                SocketTCP::disconnect();
-//                auto &e = push<event::Unsubscribe>(cube::Tag<Actor, 0>::id());
+//                auto &e = push<event::Unsubscribe>(qb::Tag<Actor, 0>::id());
 //                e.ep_event = event.ep_event;
 //                this->kill();
 //            }
@@ -57,9 +57,9 @@
 //
 //template <typename Handler>
 //class ServerTest
-//        : public cube::Actor<Handler>
+//        : public qb::Actor<Handler>
 //{
-//    cube::network::Listener server;
+//    qb::network::Listener server;
 //public:
 //    ServerTest() = default;
 //
@@ -73,7 +73,7 @@
 //        }
 //
 //        registerEvent<event::Ready>(*this);
-//        auto &e = push<event::Subscribe>(cube::Tag<Actor, 0>::id());
+//        auto &e = push<event::Subscribe>(qb::Tag<Actor, 0>::id());
 //        e.ep_event.data.fd = server.getNative();
 //        e.ep_event.events = EPOLLIN | EPOLLONESHOT;
 //        return true;
@@ -81,8 +81,8 @@
 //
 //    // MyEvent call back
 //    void on(event::Ready &event) {
-//        cube::network::SocketTCP socket;
-//        if (server.accept(socket) == cube::network::Socket::Done) {
+//        qb::network::SocketTCP socket;
+//        if (server.accept(socket) == qb::network::Socket::Done) {
 //            addRefActor<ClientTest>(socket);
 //            event.ep_event.events |= EPOLLONESHOT;
 //            event.proxy.ctl(event.ep_event);
@@ -97,7 +97,7 @@ int main() {
 //    nanolog::set_log_level(nanolog::LogLevel::DEBUG);
 //
 //    test<1>("Test poller event", []() {
-//        cube::Engine<cube::PhysicalCore<0>, cube::PhysicalCore<1> > main;
+//        qb::Engine<qb::PhysicalCore<0>, qb::PhysicalCore<1> > main;
 //
 //        main.addActor<0, Actor>();
 //        main.addActor<1, ServerTest>();
@@ -108,8 +108,8 @@ int main() {
 //    });
 //
 //
-    std::cout << cube::network::ip("127.0.0.1").toString() << std::endl;
-    std::cout << cube::network::ip("localhost").toString() << std::endl;
-    std::cout << cube::network::ip("server.isndev.com").toString() << std::endl;
+    std::cout << qb::network::ip("127.0.0.1").toString() << std::endl;
+    std::cout << qb::network::ip("localhost").toString() << std::endl;
+    std::cout << qb::network::ip("server.isndev.com").toString() << std::endl;
     return 0;
 }

@@ -3,10 +3,10 @@
 #include "events.h"
 #include "tags.h"
 
-#ifndef CUBE_SERVICE_SCHEDULER_ACTOR_H
-#define CUBE_SERVICE_SCHEDULER_ACTOR_H
+#ifndef QB_SERVICE_SCHEDULER_ACTOR_H
+#define QB_SERVICE_SCHEDULER_ACTOR_H
 
-namespace cube {
+namespace qb {
     namespace service {
         namespace scheduler {
 
@@ -31,7 +31,7 @@ namespace cube {
 
                 void on(event::TimedEvent const &event) {
                     auto &e = this->recycle(event, event.bucket_size);
-                    e.time_id = (reinterpret_cast<cube::CacheLine *>(&e)) - this->data();
+                    e.time_id = (reinterpret_cast<qb::CacheLine *>(&e)) - this->data();
                     e.received();
                 }
 
@@ -69,4 +69,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_SERVICE_SCHEDULER_ACTOR_H
+#endif //QB_SERVICE_SCHEDULER_ACTOR_H

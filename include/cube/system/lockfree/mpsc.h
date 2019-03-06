@@ -1,11 +1,11 @@
 
-#ifndef CUBE_LOCKFREE_MPSC_H
-#define CUBE_LOCKFREE_MPSC_H
+#ifndef QB_LOCKFREE_MPSC_H
+#define QB_LOCKFREE_MPSC_H
 # include <mutex>
 # include "spsc.h"
 # include "spinlock.h"
 
-namespace cube {
+namespace qb {
     namespace lockfree {
         namespace mpsc {
 
@@ -15,7 +15,7 @@ namespace cube {
                 typedef std::size_t size_t;
                 struct Producer
                 {
-                    constexpr static const int padding_size = CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
+                    constexpr static const int padding_size = QB_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
                     SpinLock lock;
                     char padding1[padding_size];
                     spsc::ringbuffer<T, max_size> _ringbuffer;
@@ -91,7 +91,7 @@ namespace cube {
                 typedef std::size_t size_t;
                 struct Producer
                 {
-                    constexpr static const int padding_size = CUBE_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
+                    constexpr static const int padding_size = QB_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
                     SpinLock lock;
                     char padding1[padding_size];
                     spsc::ringbuffer<T, max_size> _ringbuffer;
@@ -168,6 +168,6 @@ namespace cube {
 
         } /* namespace mpsc */
     } /* namespace lockfree */
-} /* namespace cube */
+} /* namespace qb */
 
-#endif //CUBE_LOCKFREE_MPSC_H
+#endif //QB_LOCKFREE_MPSC_H

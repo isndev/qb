@@ -7,7 +7,7 @@
 
 // Event example
 struct MyEvent
-        : public cube::Event // /!\ should inherit from cube event
+        : public qb::Event // /!\ should inherit from cube event
 {
     int data; // trivial data
     std::vector<int> container; // dynamic data
@@ -21,8 +21,8 @@ struct MyEvent
 };
 
 class MyActor
-        : public cube::Actor     // /!\ should inherit from cube actor
-        , public cube::ICallback // (optional) required to register actor callback
+        : public qb::Actor     // /!\ should inherit from cube actor
+        , public qb::ICallback // (optional) required to register actor callback
 {
 public:
     MyActor() = default;         // default constructor
@@ -55,7 +55,7 @@ public:
     // will call this function when MyActor received MyEvent
     void on(MyEvent const &) {
         // I am a dummy actor, notify the engine to remove me !
-        cube::io::cout() << "MyActor(" << id() << ") received MyEvent and will Die" << std::endl;
+        qb::io::cout() << "MyActor(" << id() << ") received MyEvent and will Die" << std::endl;
         kill(); // /!\ after this line MyActor is not able to receive events
     }
 };

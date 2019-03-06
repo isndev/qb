@@ -1,10 +1,10 @@
 
 #include "../../system/actor/Event.h"
 
-#ifndef CUBE_SERVICE_SCHEDULER_EVENTS_H
-#define CUBE_SERVICE_SCHEDULER_EVENTS_H
+#ifndef QB_SERVICE_SCHEDULER_EVENTS_H
+#define QB_SERVICE_SCHEDULER_EVENTS_H
 
-namespace cube {
+namespace qb {
     namespace service {
         namespace scheduler {
 
@@ -71,4 +71,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_SERVICE_SCHEDULER_EVENTS_H
+#endif //QB_SERVICE_SCHEDULER_EVENTS_H

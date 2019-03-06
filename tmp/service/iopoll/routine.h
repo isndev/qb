@@ -5,10 +5,10 @@
 #include "session/types.h"
 #include "events.h"
 
-#ifndef CUBE_SERVICE_IOPOLL_ROUTINE_H
-#define CUBE_SERVICE_IOPOLL_ROUTINE_H
+#ifndef QB_SERVICE_IOPOLL_ROUTINE_H
+#define QB_SERVICE_IOPOLL_ROUTINE_H
 
-namespace cube {
+namespace qb {
     namespace service {
         namespace iopoll {
 
@@ -102,4 +102,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_SERVICE_IOPOLL_ROUTINE_H
+#endif //QB_SERVICE_IOPOLL_ROUTINE_H

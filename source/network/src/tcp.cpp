@@ -15,7 +15,7 @@ namespace
 #endif
 }
 
-namespace           cube {
+namespace           qb {
     namespace       network {
         namespace   tcp {
 
@@ -300,4 +300,4 @@ namespace           cube {
 
         } // namespace socket
     } // namespace network
-} // namespace cube
+} // namespace qb

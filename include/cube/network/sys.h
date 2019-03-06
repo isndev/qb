@@ -2,15 +2,15 @@
 #include            <cube/utility/nocopy.h>
 #include            "helper.h"
 
-#ifndef             CUBE_NETWORK_TSOCKET_H_
-# define            CUBE_NETWORK_TSOCKET_H_
+#ifndef             QB_NETWORK_TSOCKET_H_
+# define            QB_NETWORK_TSOCKET_H_
 
-namespace           cube {
+namespace           qb {
     namespace       network {
         namespace   sys {
 
             template<SocketType _Type>
-            class CUBE_API Socket{
+            class QB_API Socket{
             protected:
                 SocketHandler _handle;
 
@@ -90,6 +90,6 @@ namespace           cube {
 
         } // namespace sys
     } // namespace network
-} // namespace cube
+} // namespace qb
 
-#endif // CUBE_NETWORK_TSOCKET_H_
+#endif // QB_NETWORK_TSOCKET_H_

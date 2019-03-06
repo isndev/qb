@@ -1,4 +1,4 @@
 
-project(${CUBE_PREFIX}-sample-starter)
+project(${QB_PREFIX}-sample-starter)
 
-cxx_executable(${PROJECT_NAME} ${CUBE_PREFIX}-engine main.cpp)
+cxx_executable(${PROJECT_NAME} ${QB_PREFIX}-core main.cpp)

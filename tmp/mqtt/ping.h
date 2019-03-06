@@ -4,10 +4,10 @@
 
 #include "header.h"
 
-#ifndef CUBE_MQTT_PING_H
-#define CUBE_MQTT_PING_H
+#ifndef QB_MQTT_PING_H
+#define QB_MQTT_PING_H
 
-namespace cube {
+namespace qb {
     namespace mqtt {
 
         class PingReq : public FixedHeader {
@@ -25,6 +25,6 @@ namespace cube {
         } __attribute__ ((__packed__));
 
     } // namespace mqtt
-} // namespace cube
+} // namespace qb
 
-#endif //CUBE_MQTT_PING_H
+#endif //QB_MQTT_PING_H

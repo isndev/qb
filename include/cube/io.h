@@ -1,6 +1,6 @@
 
-#ifndef CUBE_TYPES_H
-# define CUBE_TYPES_H
+#ifndef QB_TYPES_H
+# define QB_TYPES_H
 
 # include <iostream>
 # include <sstream>
@@ -9,7 +9,7 @@
 # include <type_traits>
 # include <nanolog/nanolog.h>
 
-namespace cube {
+namespace qb {
 #ifdef NDEBUG
     constexpr static bool debug = false;
 #else
@@ -42,4 +42,4 @@ namespace cube {
     }
 }
 
-#endif //CUBE_TYPES_H
+#endif //QB_TYPES_H
