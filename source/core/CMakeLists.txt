@@ -7,7 +7,7 @@ target_include_directories(${PROJECT_NAME} INTERFACE
 
 if (${QB_PREFIX_UPPER}_BUILD_TEST)
     add_subdirectory(tests)
-    if (QB_COVERAGE)
+    if (${QB_PREFIX_UPPER}_COVERAGE)
         set(COVERAGE_LCOV_EXCLUDES
                 '/usr/*'
                 '*benchmark*'
