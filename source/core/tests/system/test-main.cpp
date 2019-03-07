@@ -5,10 +5,14 @@
 class TestActor : public qb::Actor
 {
     bool keep_live = false;
+    bool throw_except;
 public:
     TestActor() = default;
-    TestActor(bool live) : keep_live(live) {}
+    TestActor(bool live, bool except = false) : keep_live(live), throw_except(except) {}
     virtual bool onInit() override final {
+        if (throw_except)
+            throw std::runtime_error("Test Exception Error");
+
         if (!keep_live)
             kill();
         return true;
@@ -35,6 +39,26 @@ TEST(Main, StartMultiCoreShouldAbortIfNoActor) {
         if (i != fail_core)
             main.addActor<TestActor>(i);
     }
+
+    main.start();
+    main.join();
+    EXPECT_TRUE(main.hasError());
+}
+
+TEST(Main, StartMonoCoreShouldAbortIfNoExistingCore) {
+    qb::Main main({255});
+
+    main.addActor<TestActor>(255, true);
+
+    main.start();
+    main.join();
+    EXPECT_TRUE(main.hasError());
+}
+
+TEST(Main, StartMonoCoreShouldAbortIfCoreHasThrownException) {
+    qb::Main main({0});
+
+    main.addActor<TestActor>(0, true, true);
 
     main.start();
     main.join();
