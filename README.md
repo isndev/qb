@@ -1,4 +1,4 @@
-# Cube Framework
+# Cube Actor Framework
 
 Cube provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. 
 It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors. 
@@ -6,10 +6,16 @@ It's a complete development framework for multicore processing that has been spe
 Cube is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
 
 * #### Requirements
-  - C++17 standard, (gcc7, clang4, msvc19.11)
-  - (Recommended) CMake
+  - C++17 compiler, (gcc7, clang4, msvc19.11)
+  - (Recommended) cmake
   - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
+* #### Build Status
+  | [![Cpp Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17) | Linux  | Windows | Documentation |
+  | ------- | ------ | ------- | ------------ |
+  | master  | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master)](https://github.com/isndev/cube/tree/master) | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master)](https://github.com/isndev/cube/tree/master) | [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/cube/) |
+  | develop | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop)](https://github.com/isndev/cube/tree/develop) |[![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop)](https://github.com/isndev/cube/tree/develop) | [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/cube/) |  
 * #### Pros
+  - Opensource
   - Cross-platform (Linux|Windows)
   - Easy to use
   - CPU cache friendly
@@ -40,21 +46,21 @@ Hence, the Actor model which is scalable and parallel by nature.
 Cube runtime will handle all the rest and bridge the gap between parallel programming and hardware multicore complexity.
 
 # Getting Started !
-#### MyProject
+#### Example ping-pong project
 
-- First, you'll have to create a folder named myproject and cd into it:
+- First, you'll have to create the project directory and cd into it
 ```bash
-$> mkdir myproject && cd myproject
+$> mkdir pingpong && cd pingpong
 ```
 - Then clone the cube framework by doing:
 ```bash
 $> git clone git@github.com:isndev/cube.git
 ```
-- Next, create CMakeLists.txt file and paste the content below:
+- Next, create CMakeLists.txt file and paste the content below
 ```cmake
 # CMakeLists.txt file
 cmake_minimum_required(VERSION 3.10)
-project(MyProject)
+project(pingpong)
 
 # Cube minimum requirements
 set(CMAKE_CXX_STANDARD 17)
@@ -63,124 +69,130 @@ set(QB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cube")
 
 # Add cube framework
 add_subdirectory(${QB_PATH})
-include_directories(${QB_PATH})
 
 # Define your project source
 set(SOURCE main.cpp)
 
-add_executable(MyProject ${SOURCE})
-# Link with cube
-target_link_libraries(MyProject cube)
+add_executable(pingpong ${SOURCE})
+# Link target with cube-core library
+target_link_libraries(pingpong cube-core)
 ```
-
-- Create MyActor.h file and paste the content below:
+- Create MyEvent.h file and define the event custom data
 ```cpp
-// MyActor.h file
+// MyEvent.h 
 #include <vector>
-#include "./cube/actor.h"
-#ifndef MYACTOR_H_
-# define MYACTOR_H_
-
+#include <cube/event.h>
+#ifndef MYEVENT_H_
+# define MYEVENT_H_
 // Event example
 struct MyEvent
  : public qb::Event // /!\ should inherit from cube event
 {
     int data; // trivial data
     std::vector<int> container; // dynamic data
-    // std::string str; /!\ avoid using stl string
-    // instead use fixed cstring
-    // or compile with old ABI '-D_GLIBCXX_USE_CXX11_ABI=0'
-}; 
+    // /!\ an event must never store an address of it own data
+    // /!\ ex : int *ptr = &data;
+    // /!\ avoid using std::string, instead use :
+    // /!\ - fixed cstring
+    // /!\ - pointer of std::string
+    // /!\ - or compile with old ABI '-D_GLIBCXX_USE_CXX11_ABI=0'
+};
+#endif
+```
+- Create PinPongActor.h file and paste the code below
+```cpp
+// PingPongActor.h file
+#include <cube/actor.h>
+#include "MyEvent.h"
+#ifndef PINGPONGACTOR_H_
+# define PINGPONGACTOR_H_
 
-class MyActor
+class PingPongActor
         : public qb::Actor // /!\ should inherit from cube actor
-        , public qb::ICallback // (optional) required to register actor callback
 {
+    const qb::ActorId _id_pong; // Pong ActorId
 public:
-    MyActor() = default;
-    MyActor(int a, int b) {} // constructor with parameters
-    
-    // will call this function before adding MyActor
+    PingPongActor(const qb::ActorId id_pong = {})
+      : _id_pong(id_pong) {}
+      
+    // /!\ never call any qb::Actor functions in constructor
+    // /!\ use onInit function 
+    // /!\ the engine will call this function before adding PingPongActor
     bool onInit() override final {
-        registerEvent<MyEvent> (*this);          // will listen MyEvent
-        this->registerCallback(*this);                          // each core loop will call onCallback
-
-        // ex: just send MyEvent to myself ! forever alone ;(
-        auto &event = push<MyEvent>(this->id()); // and keep a reference to the event
-        event.data = 1337;                                      // set trivial data
-        event.container.push_back(7331);
-        return true;                                            // init ok, MyActor will be added
+        registerEvent<MyEvent>(*this);            // will listen MyEvent
+        if (_id_pong) {                           // is Ping Actor
+           auto &event = push<MyEvent>(_id_pong); // push MyEvent to Pong Actor and keep a reference to the event
+           event.data = 1337;                     // set trivial data
+           event.container.push_back(7331);       // set dynamic data
+        }
+        return true;                              // init ok
     }
-    
-    // will call this function each core loop
-    void onCallback() override final {
-        // ...
-    }
-    
-    // will call this function when MyActor received MyEvent 
-    void on(MyEvent const &event) {
-        // I am a dummy actor, notify the engine to remove me !
-        this->kill();
+    // will call this function when PingPongActor receives MyEvent 
+    void on(MyEvent &event) {
+        // print some data
+        qb::io::cout() << "Actor id(" << id() << ") received MyEvent" << std::endl;
+        if (!_id_pong)   // is Pong Actor
+           reply(event); // reply the event to the Ping Actor           
+        kill();          // Ping or Pong will die after receiving MyEvent
     }
 };
 
 #endif
 ```
-- Then finally create the main.cpp:
+- Then finally create the main.cpp
 ```cpp
 // main.cpp file
-#include "./cube/cube.h"
-#include "MyActor.h"
+#include <cube/main.h>
+#include "PingPongActor.h"
 
 int main (int argc, char *argv[]) {
-    // (optional) initialize the logger
-    qb::io::log::init("./", argv[0]); // directory, filename
-    qb::io::log::setLevel(qb::io::log::Level::WARN); // log only warning an critical
-    // usage
-    LOG_INFO << "I will not be logged :(";
-
-    // configure the Engine 
-    // Note : I will use only the core 0 and 1 
-    qb::Cube main({0, 1});
+    // (optional) initialize the cube logger
+    qb::io::log::init(argv[0]); // filename
     
-    // My start sequence -> add MyActor to core 0 and 1
-    main.addActor<MyActor>(0); // default constructed
-    main.addActor<MyActor>(1, 1337, 7331); // constructed with parameters
+    // configure the Engine 
+    // Note : I will use only the core 0 and 1
+    qb::Main main({0, 1});
+    
+    // Build Pong Actor to core 0 and retrieve its unique identifier
+    auto id_pong = main.addActor<PingPongActor>(0); // default constructed
+    // Build Ping Actor to core 1 with Pong id as parameter
+    main.addActor<PingPongActor>(1, id_pong); // constructed with parameters
 
     main.start();  // start the engine asynchronously
-    main.join();   // Wait for the running engine
-    // if all my actors had been destroyed then it will release the wait !
+    main.join();   // wait for the running engine
+    // if all my actors had been destroyed then it will release the wait
     return 0;
 }
 ```
-Let's compile MyProject !
+Let's compile the project !
 ```sh
 $> cmake -DCMAKE_BUILD_TYPE=Release -B[Build Directory Path] -H[CMakeList.txt Path]
-$> make
+$> cd [Build Directory Path] && make
+```
+Run it
+```sh
+$> ./pingpong
+```
+it should print
+```
+Actor id(XXXXXX) received MyEvent
+Actor id(XXXXXX) received MyEvent
 ```
 Done !
 
-Run it:
-```sh
-$> ./MyProject
-```
-it should run and exit instantly without any output
-
-
-You want to do more, refer to the wiki to see the full Cube API usage 
+You want to do more, refer to the wiki
 
 ### [Wiki](https://github.com/isndev/cube/wiki)
-*  [Build](https://github.com/isndev/cube/wiki/Build-Options) - Build Options
-*  [Start Sequence](https://github.com/isndev/cube/wiki/Start-Sequence) - Engine Initializer
-*  [Actor](https://github.com/isndev/cube/wiki/Actor) - Actor Interface
-*  [Logger](https://github.com/isndev/cube/wiki/Logger) - Fast Multithreaded Logger
+*  [Build]() - Build options
+*  [Initialization]() - Engine initialization
+*  [Actor API]() - All about qb::Actor
+*  [Event API]() - Sending/Receiving events
+*  [Logger]() - Fast Multithreaded builtin logger
+*  [Documentation](https://isndev.github.io/cube/) - Full documentation
 
 ### Todos
-  - [ ] Make Wiki Documentation (37%)
-  - [ ] Use Google Test (0%)
-  - [ ] Add Examples (0%)
-  - [ ] Add Debug metrics report (0%)
-  - [ ] Add PhysicalCore throughtput to manage the cpu usage (0%)
+  - [ ] Make Wiki Documentation (0%)
+  - [ ] Add Core throughtput policy to manage the cpu usage (0%)
 
 License
 ----
