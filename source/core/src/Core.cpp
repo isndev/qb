@@ -201,7 +201,7 @@ namespace qb {
         LOG_DEBUG << "New " << *actor;
     }
 
-    void Core::removeActor(ActorId const &id) {
+    void Core::removeActor(ActorId const id) {
         const auto it = _actors.find(id);
         LOG_DEBUG << "Delete Actor(" << id.index() << "," << id.sid() << ")";
         delete it->second;
@@ -224,11 +224,11 @@ namespace qb {
             _thread.join();
     }
 
-    void Core::killActor(ActorId const &id) {
-        _actor_to_remove.push_back(id);
+    void Core::killActor(ActorId const id) {
+        _actor_to_remove.insert(id);
     }
 
-    void Core::unregisterCallback(ActorId const &id) {
+    void Core::unregisterCallback(ActorId const id) {
         auto it =_actor_callbacks.find(id);
         if (it != _actor_callbacks.end())
             _actor_callbacks.erase(it);

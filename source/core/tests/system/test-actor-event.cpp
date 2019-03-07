@@ -55,8 +55,8 @@ public:
     }
 
     void on(qb::Event &event) {
-        reply(event);
         kill();
+        _count = _max_events;
     }
 
     void on(TestEvent const &event) {
@@ -115,7 +115,7 @@ struct BasicPushActor : public BaseActorSender<BasicPushActor>
     }
 };
 
-struct BasicSendActor : public BaseActorSender<BasicPushActor>
+struct BasicSendActor : public BaseActorSender<BasicSendActor>
 {
     BasicSendActor(uint32_t const max_events, qb::ActorId const to)
             : BaseActorSender(max_events, to) {}
@@ -124,7 +124,7 @@ struct BasicSendActor : public BaseActorSender<BasicPushActor>
     }
 };
 
-struct EventBuilderPushActor : public BaseActorSender<BasicPushActor>
+struct EventBuilderPushActor : public BaseActorSender<EventBuilderPushActor>
 {
     EventBuilderPushActor(uint32_t const max_events, qb::ActorId const to)
             : BaseActorSender(max_events, to) {}
@@ -133,7 +133,7 @@ struct EventBuilderPushActor : public BaseActorSender<BasicPushActor>
     }
 };
 
-struct PipePushActor : public BaseActorSender<BasicPushActor>
+struct PipePushActor : public BaseActorSender<PipePushActor>
 {
     PipePushActor(uint32_t const max_events, qb::ActorId const to)
             : BaseActorSender(max_events, to) {}
@@ -142,7 +142,7 @@ struct PipePushActor : public BaseActorSender<BasicPushActor>
     }
 };
 
-struct AllocatedPipePushActor : public BaseActorSender<BasicPushActor>
+struct AllocatedPipePushActor : public BaseActorSender<AllocatedPipePushActor>
 {
     AllocatedPipePushActor(uint32_t const max_events, qb::ActorId const to)
             : BaseActorSender(max_events, to) {}
@@ -153,12 +153,15 @@ struct AllocatedPipePushActor : public BaseActorSender<BasicPushActor>
     }
 };
 
-struct RemovedEventActor : public BaseActorSender<BasicPushActor>
+struct RemovedEventActor : public BaseActorSender<RemovedEventActor>
 {
     RemovedEventActor(uint32_t const max_events, qb::ActorId const to)
-            : BaseActorSender(max_events, to) {}
+            : BaseActorSender(max_events, to) {
+        _count = _max_events - 1;
+    }
     void doSend() {
         getPipe(_to).push<RemovedEvent>();
+        kill();
     }
 };
 

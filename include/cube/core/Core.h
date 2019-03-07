@@ -56,7 +56,7 @@ namespace qb {
         using ActorMap = std::unordered_map<uint32_t, Actor *>;
         using CallbackMap = std::unordered_map<uint32_t, ICallback *>; // TODO: try to transform in std::vector
         using PipeMap = std::unordered_map<uint32_t, Pipe>;
-        using RemoveActorList = std::vector<ActorId>;
+        using RemoveActorList = std::unordered_set<uint32_t>;
         using AvailableIdList = std::unordered_set<uint16_t>;
         //!Types
     private:
@@ -99,7 +99,7 @@ namespace qb {
         template<typename _Actor>
         bool initActor(_Actor * const actor, bool doinit);
         void addActor(Actor *actor);
-        void removeActor(ActorId const &id);
+        void removeActor(ActorId const id);
 
         template<typename _Actor, typename ..._Init>
         ActorId addActor(_Init &&...init);
@@ -113,11 +113,11 @@ namespace qb {
         template<typename _Actor, typename ..._Init>
         _Actor *addReferencedActor(_Init &&...init);
 
-        void killActor(ActorId const &id);
+        void killActor(ActorId const id);
 
         template <typename _Actor>
         void registerCallback(_Actor &actor);
-        void unregisterCallback(ActorId const &id);
+        void unregisterCallback(ActorId const id);
 
     private:
         // Event Api
