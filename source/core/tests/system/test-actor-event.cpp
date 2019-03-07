@@ -90,7 +90,6 @@ public:
             : BaseSender(max_events, to) {}
 
     virtual bool onInit() override final {
-        registerEvent<RemovedEvent>(*this);
         registerCallback(*this);
         return true;
     }
@@ -99,10 +98,6 @@ public:
         static_cast<Derived &>(*this).doSend();
         if (++_count >= _max_events)
             kill();
-    }
-
-    void on(RemovedEvent const &) {
-        kill();
     }
 };
 
