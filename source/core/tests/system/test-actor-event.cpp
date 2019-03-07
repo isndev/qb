@@ -32,6 +32,8 @@ struct TestEvent : public qb::Event
     }
 };
 
+struct RemovedEvent : public qb::Event {};
+
 class TestActorReceiver
         : public qb::Actor
 {
@@ -47,7 +49,14 @@ public:
 
     virtual bool onInit() override final {
       registerEvent<TestEvent>(*this);
+      registerEvent<RemovedEvent>(*this);
+      unregisterEvent<RemovedEvent>(*this);
       return true;
+    }
+
+    void on(qb::Event &event) {
+        reply(event);
+        kill();
     }
 
     void on(TestEvent const &event) {
@@ -81,6 +90,7 @@ public:
             : BaseSender(max_events, to) {}
 
     virtual bool onInit() override final {
+        registerEvent<RemovedEvent>(*this);
         registerCallback(*this);
         return true;
     }
@@ -89,6 +99,10 @@ public:
         static_cast<Derived &>(*this).doSend();
         if (++_count >= _max_events)
             kill();
+    }
+
+    void on(RemovedEvent const &) {
+        kill();
     }
 };
 
@@ -136,6 +150,15 @@ struct AllocatedPipePushActor : public BaseActorSender<BasicPushActor>
         auto &e = getPipe(_to).allocated_push<TestEvent>(32);
         e.has_extra_data = true;
         memcpy(reinterpret_cast<uint8_t *>(&e) + sizeof(TestEvent), e._data, sizeof(e._data));
+    }
+};
+
+struct RemovedEventActor : public BaseActorSender<BasicPushActor>
+{
+    RemovedEventActor(uint32_t const max_events, qb::ActorId const to)
+            : BaseActorSender(max_events, to) {}
+    void doSend() {
+        getPipe(_to).push<RemovedEvent>();
     }
 };
 
@@ -188,7 +211,8 @@ typedef testing::Types <
         BasicSendActor,
         EventBuilderPushActor,
         PipePushActor,
-        AllocatedPipePushActor
+        AllocatedPipePushActor,
+        RemovedEventActor
         > Implementations;
 
 TYPED_TEST_SUITE(ActorEventMono, Implementations);
