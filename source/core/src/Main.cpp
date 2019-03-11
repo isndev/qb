@@ -4,8 +4,8 @@
 
 #include <csignal>
 #include <cstring>
-#include <cube/core/Main.h>
-#include <cube/core/Core.h>
+#include <qb/core/Main.h>
+#include <qb/core/Core.h>
 
 namespace qb {
 

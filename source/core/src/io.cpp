@@ -1,4 +1,4 @@
-#include <cube/io.h>
+#include <qb/io.h>
 
 void qb::io::log::init(std::string const &file_path, uint32_t const roll_MB) {
     nanolog::initialize(nanolog::GuaranteedLogger(), file_path, roll_MB);
@@ -18,7 +18,7 @@ qb::io::cout::~cout() {
 struct LogInitializer {
     static LogInitializer initializer;
     LogInitializer() {
-        qb::io::log::init("./cube", 512);
+        qb::io::log::init("./qb", 512);
 #ifdef NDEBUG
         qb::io::log::setLevel(qb::io::log::Level::INFO);
 #else

@@ -2,7 +2,7 @@
 // Created by isndev on 12/4/18.
 //
 
-#include <cube/core/Core.h>
+#include <qb/core/Core.h>
 
 namespace qb {
     Core::Core(uint8_t const id, Main &engine)
@@ -35,7 +35,6 @@ namespace qb {
             auto event = reinterpret_cast<Event *>(buffer + i);
             auto actor = _actors.find(event->dest);
             if (likely(actor != std::end(_actors))) {
-                event->state[0] = 0;
                 actor->second->on(event);
                 LOG_DEBUG << "" << *this << " Sucess Event"
                           << " [Source](" << event->source << ")"

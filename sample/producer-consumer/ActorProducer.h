@@ -1,13 +1,13 @@
 #include <vector>
 #include <random>
-#include <cube/actor.h>
+#include <qb/actor.h>
 #include "MyEvent.h"
 
 #ifndef ACTORPRODUCER_H_
 # define ACTORPRODUCER_H_
 
 class ActorProducer
-        : public qb::Actor     // /!\ should inherit from cube actor
+        : public qb::Actor     // /!\ should inherit from qb actor
         , public qb::ICallback // (optional) required to register actor callback
 {
     std::vector<qb::ActorId> const &_consumerIds;

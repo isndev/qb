@@ -1,9 +1,9 @@
 // main.cpp file
-#include <cube/main.h>
+#include <qb/main.h>
 #include "PingPongActor.h"
 
 int main (int, char *argv[]) {
-    // (optional) initialize the cube logger
+    // (optional) initialize the qb logger
     qb::io::log::init(argv[0]); // filename
 
     // configure the Engine

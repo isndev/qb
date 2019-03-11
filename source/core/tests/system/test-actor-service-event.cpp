@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
-#include <cube/actor.h>
-#include <cube/main.h>
+#include <qb/actor.h>
+#include <qb/main.h>
 #include <random>
 #include <numeric>
 

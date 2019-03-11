@@ -3,8 +3,8 @@
 //
 
 #include <benchmark/benchmark.h>
-#include <cube/actor.h>
-#include <cube/main.h>
+#include <qb/actor.h>
+#include <qb/main.h>
 
 static void BM_Main_Example(benchmark::State& state) {
     for (auto _ : state) {

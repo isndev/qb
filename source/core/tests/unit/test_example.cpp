@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include <cube/actor.h>
+#include <qb/actor.h>
 
 TEST(Example, StartEngine) {
   qb::Main main({0});

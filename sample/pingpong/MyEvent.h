@@ -1,11 +1,11 @@
 // MyEvent.h
 #include <vector>
-#include <cube/event.h>
+#include <qb/event.h>
 #ifndef MYEVENT_H_
 # define MYEVENT_H_
 // Event example
 struct MyEvent
-        : public qb::Event // /!\ should inherit from cube event
+        : public qb::Event // /!\ should inherit from qb event
 {
     int data; // trivial data
     std::vector<int> container; // dynamic data
