@@ -91,4 +91,31 @@ else()
     message(STATUS "Will build ${QB_PREFIX} libraries without rtti")
     set(${QB_PREFIX_UPPER}_CXX_FLAGS "${${QB_PREFIX_UPPER}_CXX_FLAGS} ${cxx_no_rtti_flags}")
 endif()
-set(CMAKE_CXX_FLAGS "${${QB_PREFIX_UPPER}_CXX_FLAGS}" PARENT_SCOPE)
+
+if(QB_MODULE_PATH)
+    qb_load_modules(${QB_MODULE_PATH})
+endif()
+
+if (${QB_PREFIX_UPPER}_COVERAGE)
+    set(COVERAGE_LCOV_EXCLUDES
+            '/usr/*'
+            '*benchmark*'
+            '*google*/*'
+            '*qb/system/*'
+            '*/modules/*'
+            )
+    SETUP_TARGET_FOR_COVERAGE_LCOV(NAME ${PROJECT_NAME}-coverage
+            EXECUTABLE ctest
+            DEPENDENCIES qb-core)
+    SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(NAME ${PROJECT_NAME}-coverage-xml
+            EXECUTABLE ctest
+            DEPENDENCIES qb-core)
+endif()
+
+# share some variable to parent
+get_directory_property(hasParent PARENT_DIRECTORY)
+if(hasParent)
+    set(CMAKE_CXX_FLAGS "${${QB_PREFIX_UPPER}_CXX_FLAGS}" PARENT_SCOPE)
+    set(QB_PREFIX "${QB_PREFIX}" PARENT_SCOPE)
+    set(QB_DIRECTORY "${QB_DIRECTORY}" PARENT_SCOPE)
+endif()

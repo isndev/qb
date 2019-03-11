@@ -32,7 +32,7 @@
 /// \code
 /////MyActor.h
 ///#include <vector>
-///#include <cube/actor.h>
+///#include <qb/actor.h>
 ///
 ///#ifndef MYACTOR_H_
 ///# define MYACTOR_H_
@@ -83,7 +83,7 @@
 /// My first program using Cube :
 /// \code
 ///// main.cpp
-///#include <cube/main.h>
+///#include <qb/main.h>
 ///#include "MyActor.h"
 ///
 ///int main (int, char *argv[]) {

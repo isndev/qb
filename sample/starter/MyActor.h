@@ -1,12 +1,12 @@
 #include <vector>
-#include <cube/actor.h>
+#include <qb/actor.h>
 
 #ifndef MYACTOR_H_
 # define MYACTOR_H_
 
 // Event example
 struct MyEvent
-        : public qb::Event // /!\ should inherit from cube event
+        : public qb::Event // /!\ should inherit from qb event
 {
     int data; // trivial data
     std::vector<int> container; // dynamic data
@@ -20,7 +20,7 @@ struct MyEvent
 };
 
 class MyActor
-        : public qb::Actor     // /!\ should inherit from cube actor
+        : public qb::Actor     // /!\ should inherit from qb actor
         , public qb::ICallback // (optional) required to register actor callback
 {
 public:

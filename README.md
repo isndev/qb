@@ -12,8 +12,8 @@ Cube is a thin-layer multicore-optimized runtime that enable users to build thei
 * #### Build Status
   | [![Cpp Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17) | Linux  | Windows | Documentation |
   | ------- | ------ | ------- | ------------ |
-  | master  | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master)](https://github.com/isndev/cube/tree/master) | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master)](https://github.com/isndev/cube/tree/master) | [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/cube/) |
-  | develop | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop)](https://github.com/isndev/cube/tree/develop) |[![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop)](https://github.com/isndev/cube/tree/develop) | [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/cube/) |  
+  | master  | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master)](https://github.com/isndev/qb/tree/master) | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master)](https://github.com/isndev/qb/tree/master) | [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/) |
+  | develop | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop)](https://github.com/isndev/qb/tree/develop) |[![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop)](https://github.com/isndev/qb/tree/develop) | [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/) |  
 * #### Pros
   - Opensource
   - Cross-platform (Linux|Windows)
@@ -54,7 +54,7 @@ $> mkdir pingpong && cd pingpong
 ```
 - Then clone the cube framework by doing:
 ```bash
-$> git clone git@github.com:isndev/cube.git
+$> git clone git@github.com:isndev/qb.git
 ```
 - Next, create CMakeLists.txt file and paste the content below
 ```cmake
@@ -65,7 +65,7 @@ project(pingpong)
 # Cube minimum requirements
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(QB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cube")
+set(QB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/qb")
 
 # Add cube framework
 add_subdirectory(${QB_PATH})
@@ -81,7 +81,7 @@ target_link_libraries(pingpong qb-core)
 ```cpp
 // MyEvent.h 
 #include <vector>
-#include <cube/event.h>
+#include <qb/event.h>
 #ifndef MYEVENT_H_
 # define MYEVENT_H_
 // Event example
@@ -102,7 +102,7 @@ struct MyEvent
 - Create PinPongActor.h file and paste the code below
 ```cpp
 // PingPongActor.h file
-#include <cube/actor.h>
+#include <qb/actor.h>
 #include "MyEvent.h"
 #ifndef PINGPONGACTOR_H_
 # define PINGPONGACTOR_H_
@@ -142,7 +142,7 @@ public:
 - Then finally create the main.cpp
 ```cpp
 // main.cpp file
-#include <cube/main.h>
+#include <qb/main.h>
 #include "PingPongActor.h"
 
 int main (int argc, char *argv[]) {
@@ -182,13 +182,13 @@ Done !
 
 You want to do more, refer to the wiki
 
-### [Wiki](https://github.com/isndev/cube/wiki)
+### [Wiki](https://github.com/isndev/qb/wiki)
 *  [Build]() - Build options
 *  [Initialization]() - Engine initialization
 *  [Actor API]() - All about qb::Actor
 *  [Event API]() - Sending/Receiving events
 *  [Logger]() - Fast Multithreaded builtin logger
-*  [Documentation](https://isndev.github.io/cube/) - Full documentation
+*  [Documentation](https://isndev.github.io/qb/) - Full documentation
 
 ### Todos
   - [ ] Make Wiki Documentation (0%)

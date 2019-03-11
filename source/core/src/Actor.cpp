@@ -3,9 +3,9 @@
 //
 
 #include <map>
-#include <cube/core/Actor.h>
-#include <cube/core/Actor.tpl>
-#include <cube/core/Core.h>
+#include <qb/core/Actor.h>
+#include <qb/core/Actor.tpl>
+#include <qb/core/Core.h>
 
 namespace qb {
 

@@ -2,7 +2,7 @@
 // Created by isndev on 12/5/18.
 //
 
-#include <cube/core/ActorId.h>
+#include <qb/core/ActorId.h>
 
 namespace qb {
     ActorId::ActorId() : _id(0), _index(0) {}

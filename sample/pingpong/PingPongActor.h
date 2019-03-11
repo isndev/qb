@@ -1,11 +1,11 @@
 // PingPongActor.h file
-#include <cube/actor.h>
+#include <qb/actor.h>
 #include "MyEvent.h"
 #ifndef PINGPONGACTOR_H_
 # define PINGPONGACTOR_H_
 
 class PingPongActor
-        : public qb::Actor // /!\ should inherit from cube actor
+        : public qb::Actor // /!\ should inherit from qb actor
 {
     const qb::ActorId _id_pong; // Pong ActorId
 public:

@@ -1,12 +1,12 @@
 #include <vector>
-#include <cube/actor.h>
+#include <qb/actor.h>
 #include "MyEvent.h"
 
 #ifndef ACTORCONSUMER_H_
 # define ACTORCONSUMER_H_
 
 class ActorConsumer
-        : public qb::Actor     // /!\ should inherit from cube actor
+        : public qb::Actor     // /!\ should inherit from qb actor
         , public qb::ICallback // (optional) required to register actor callback
 {
     uint64_t timer;

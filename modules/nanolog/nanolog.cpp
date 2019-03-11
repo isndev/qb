@@ -31,7 +31,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <atomic>
 #include <queue>
 #include <fstream>
-#include <cube/system/timestamp.h>
+#include <qb/system/timestamp.h>
 #include "nanolog.h"
 #undef ERROR
 

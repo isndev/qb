@@ -2,7 +2,7 @@
 // Created by isndev on 12/4/18.
 //
 
-#include <cube/core/CoreSet.h>
+#include <qb/core/CoreSet.h>
 
 namespace qb {
 
