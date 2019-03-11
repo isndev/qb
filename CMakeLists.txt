@@ -100,9 +100,9 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
     set(COVERAGE_LCOV_EXCLUDES
             '/usr/*'
             '*benchmark*'
-            '*google*/*'
+            '*google*'
             '*qb/system/*'
-            '*/modules/*'
+            '*modules/*'
             )
     SETUP_TARGET_FOR_COVERAGE_LCOV(NAME ${PROJECT_NAME}-coverage
             EXECUTABLE ctest
