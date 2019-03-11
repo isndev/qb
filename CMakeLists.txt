@@ -77,11 +77,6 @@ endif()
 # Cube Main Library
 add_subdirectory(source/core)
 
-# Sample Projects
-if (${QB_PREFIX_UPPER}_BUILD_SAMPLE)
-    add_subdirectory(sample)
-endif()
-
 # Generate Documentation
 add_subdirectory(docs)
 
@@ -100,11 +95,10 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
     set(COVERAGE_LCOV_EXCLUDES
             '/usr/*'
             '*benchmark*'
-            '*google*/*'
-            '*qb/system/*'
-            '*qb/network/*'
+            '*qb/*/system*'
+            '*qb/*/network*'
+            '*modules*'
             '*sample/*'
-            '*modules/*'
             )
     SETUP_TARGET_FOR_COVERAGE_LCOV(NAME ${PROJECT_NAME}-coverage
             EXECUTABLE ctest
@@ -112,6 +106,11 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
     SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(NAME ${PROJECT_NAME}-coverage-xml
             EXECUTABLE ctest
             DEPENDENCIES qb-core)
+endif()
+
+# Sample Projects
+if (${QB_PREFIX_UPPER}_BUILD_SAMPLE)
+    add_subdirectory(sample)
 endif()
 
 # share some variable to parent
