@@ -103,6 +103,7 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
             '*google*'
             '*qb/system/*'
             '*qb/network/*'
+            '*sample*'
             '*modules*'
             )
     SETUP_TARGET_FOR_COVERAGE_LCOV(NAME ${PROJECT_NAME}-coverage
