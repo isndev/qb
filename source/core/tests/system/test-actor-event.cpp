@@ -54,7 +54,7 @@ public:
       return true;
     }
 
-    void on(qb::Event &event) {
+    void on(qb::Event &) {
         kill();
         _count = _max_events;
     }

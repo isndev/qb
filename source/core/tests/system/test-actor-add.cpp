@@ -2,13 +2,15 @@
 #include <cube/actor.h>
 #include <cube/main.h>
 
-class TestServiceActor : public qb::ServiceActor
+struct Tag {};
+
+class TestServiceActor : public qb::ServiceActor<Tag>
 {
     bool _ret_init;
 public:
     TestServiceActor() = delete;
     explicit TestServiceActor(bool init)
-            : qb::ServiceActor(1337), _ret_init(init) {}
+            : _ret_init(init) {}
 
     virtual bool onInit() override final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
@@ -72,7 +74,7 @@ TEST(AddActor, ShouldReturnValidServiceActorIdAtStart) {
     qb::Main main({0});
 
     auto id = main.addActor<TestServiceActor>(0, true);
-    EXPECT_EQ(static_cast<uint32_t>(id), 1337u);
+    EXPECT_EQ(static_cast<uint32_t>(id), 1u);
 
     main.start(false);
     EXPECT_FALSE(main.hasError());
@@ -96,8 +98,12 @@ TEST(AddActorUsingCoreBuilder, ShouldRetrieveValidOrderedActorIdList) {
             .addActor<TestActor>(true);
     EXPECT_TRUE(static_cast<bool>(builder));
     EXPECT_EQ(builder.idList().size(), 2u);
-    EXPECT_EQ(static_cast<uint32_t>(builder.idList()[0]), 1337u);
+    EXPECT_EQ(static_cast<uint32_t>(builder.idList()[0]), 1u);
     EXPECT_NE(static_cast<uint32_t>(builder.idList()[1]), 0u);
+    builder.addActor<TestServiceActor>(true);
+    EXPECT_FALSE(static_cast<bool>(builder));
+    EXPECT_EQ(builder.idList().size(), 3u);
+    EXPECT_EQ(static_cast<uint32_t>(builder.idList()[2]), 0u);
 
     main.start(false);
     EXPECT_FALSE(main.hasError());

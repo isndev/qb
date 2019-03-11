@@ -74,8 +74,8 @@ add_subdirectory(${QB_PATH})
 set(SOURCE main.cpp)
 
 add_executable(pingpong ${SOURCE})
-# Link target with cube-core library
-target_link_libraries(pingpong cube-core)
+# Link target with qb-core library
+target_link_libraries(pingpong qb-core)
 ```
 - Create MyEvent.h file and define the event custom data
 ```cpp

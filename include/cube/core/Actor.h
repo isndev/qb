@@ -2,6 +2,7 @@
 #ifndef QB_ACTOR_H
 # define QB_ACTOR_H
 # include <vector>
+# include <map>
 # include <unordered_map>
 // include from cube
 # include <cube/utility/nocopy.h>
@@ -25,8 +26,13 @@ namespace qb {
             : nocopy
             , ActorId
     {
+	protected:
+		void __set_id(uint16_t const sid, uint16_t const cid);
+		template <typename Tag>
+		static uint16_t registerIndex();
+	private:
         friend class Core;
-        friend class ServiceActor;
+        //friend class ServiceActor;
 
         class IRegisteredEvent {
         public:
@@ -51,12 +57,11 @@ namespace qb {
         };
 
         void on(Event *event) const;
-        void __set_id(ActorId const &id);
 
         mutable bool _alive = true;
         Core * _handler = nullptr;
         std::unordered_map<uint32_t, IRegisteredEvent const *> _event_map;
-
+        void __set_id(ActorId const &id);
     protected:
         /*!
          * @name Construction/Destruction
@@ -210,7 +215,7 @@ namespace qb {
          * @private
          */
         template <typename T>
-        ActorId getServiceId(uint16_t const index) const;
+        static ActorId getServiceId(uint16_t const index);
 
         /*!
          * @brief Get current time
@@ -510,12 +515,19 @@ namespace qb {
      * /!\ Service Index from 0 to 1000 are reserved to Cube.\n
      * /!\ Max Service Index is 10000.
      */
-    class ServiceActor : public Actor {
+
+    struct Service {};
+
+    template <typename Tag>
+    class ServiceActor : public Service, public Actor {
+        static const uint16_t ServiceIndex;
     public:
-        ServiceActor() = delete;
-        explicit ServiceActor(uint16_t const sid) {
-            __set_id(ActorId(sid, 0));
+        ServiceActor() {
+            __set_id(ServiceIndex, 0);
         }
+//        explicit ServiceActor(uint16_t const sid) {
+//            __set_id(ActorId(sid, 0));
+//        }
     };
 }
 

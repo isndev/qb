@@ -2,6 +2,7 @@
 // Created by isndev on 12/4/18.
 //
 
+#include <map>
 #include <cube/core/Actor.h>
 #include <cube/core/Actor.tpl>
 #include <cube/core/Core.h>
@@ -27,6 +28,10 @@ namespace qb {
 
     void Actor::__set_id(ActorId const &id) {
         static_cast<ActorId &>(*this) = id;
+    }
+
+    void Actor::__set_id(uint16_t const sid, uint16_t const cid) {
+        static_cast<ActorId &>(*this) = {sid, cid};
     }
 
     void Actor::on(Event const &event) {
@@ -88,7 +93,6 @@ namespace qb {
     bool Actor::try_send(Event const &event) const {
         return _handler->try_send(event);
     }
-
 }
 
 qb::io::stream &operator<<(qb::io::stream &os, qb::Actor const &actor){

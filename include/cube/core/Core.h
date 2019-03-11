@@ -39,6 +39,12 @@ qb::io::stream &operator<<(qb::io::stream &os, qb::Core const &core);
 namespace qb {
 
     class Core {
+		static uint16_t _nb_service;
+		static std::unordered_map<uint32_t, uint16_t> &getServices() {
+			static std::unordered_map<uint32_t, uint16_t> service_ids;
+			return service_ids;
+		}
+
         enum Error : uint64_t {
             BadInit = (1 << 9),
             NoActor = (1 << 10),

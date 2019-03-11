@@ -58,15 +58,20 @@ namespace qb {
         _handler->template send<_Event, _Args...>(dest, id(), std::forward<_Args>(args)...);
     }
 
-    template <typename T>
-    ActorId Actor::getServiceId(uint16_t const index) const {
-        return {T::sid, index};
+    template <typename Tag>
+    ActorId Actor::getServiceId(uint16_t const index) {
+        return {Core::getServices()[type_id<Tag>()], index};
     }
 
     template<typename _Event, typename ..._Args>
     Actor::EventBuilder &Actor::EventBuilder::push(_Args &&...args) {
         dest_pipe.push<_Event>(std::forward<_Args>(args)...);
         return *this;
+    }
+
+    template <typename Tag>
+    uint16_t Actor::registerIndex() {
+        return Core::getServices()[type_id<Tag>()] = ++Core::_nb_service;
     }
 
 }
