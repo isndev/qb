@@ -102,7 +102,8 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
             '*benchmark*'
             '*google*'
             '*qb/system/*'
-            '*modules/*'
+            '*qb/network/*'
+            '*modules*'
             )
     SETUP_TARGET_FOR_COVERAGE_LCOV(NAME ${PROJECT_NAME}-coverage
             EXECUTABLE ctest
