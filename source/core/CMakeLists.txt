@@ -17,9 +17,9 @@ if (${QB_PREFIX_UPPER}_BUILD_TEST)
                 )
         SETUP_TARGET_FOR_COVERAGE_LCOV(NAME ${PROJECT_NAME}-coverage
                 EXECUTABLE ctest
-                DEPENDENCIES cube-core)
+                DEPENDENCIES qb-core)
         SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(NAME ${PROJECT_NAME}-coverage-xml
                 EXECUTABLE ctest
-                DEPENDENCIES cube-core)
+                DEPENDENCIES qb-core)
     endif()
 endif()

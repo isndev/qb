@@ -7,7 +7,7 @@ namespace qb {
 
     template<typename _Actor>
     bool Core::initActor(_Actor * const actor, bool doinit) {
-        if constexpr (!std::is_base_of<ServiceActor, _Actor>::value) {
+        if constexpr (!std::is_base_of<Service, _Actor>::value) {
             auto id = __generate_id__();
             actor->__set_id(id);
             // Number of actors attends to its limit in this core
@@ -102,6 +102,9 @@ namespace qb {
 //            pipe.free_back(data.bucket_size);
     }
     //!Event Api
+
+	    template <typename Tag>
+    const uint16_t ServiceActor<Tag>::ServiceIndex = Actor::registerIndex<Tag>();
 
 }
 

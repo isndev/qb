@@ -3,8 +3,8 @@
 //
 
 #include "src/ActorId.cpp"
-#include "src/Actor.cpp"
 #include "src/Core.cpp"
+#include "src/Actor.cpp"
 #include "src/CoreSet.cpp"
 #include "src/Main.cpp"
 #include "src/io.cpp"

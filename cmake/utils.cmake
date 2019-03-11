@@ -16,6 +16,8 @@
 #
 # This must be a macro(), as inside a function string() can only
 # update variables in the function scope.
+include(CMakeParseArguments)
+
 macro(fix_default_compiler_settings_)
   if (MSVC)
     # For MSVC, CMake sets certain flags to defaults we want to override.
@@ -207,6 +209,34 @@ endfunction()
 
 function(cxx_library name cxx_flags)
   cxx_library_with_type(${name} "" "${cxx_flags}" ${ARGN})
+endfunction()
+
+function(qb_register_module)
+  set(options NONE)
+  set(oneValueArgs NAME)
+  set(multiValueArgs NAME VERSION FLAGS URL DEPENDENCIES SOURCES)
+  cmake_parse_arguments(MODULE "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+  if (${MODULE_NAME})
+    message(STATUS "adding ${MODULE_NAME} module to qb")
+    if (NOT ${MODULE_FLAGS})
+      set(MODULE_FLAGS ${cxx_default_lib})
+    endif()
+    cxx_library_with_type(qb-module-${MODULE_NAME} "" "${MODULE_FLAGS}" ${ARGN})
+
+    target_include_directories(${MODULE_NAME} INTERFACE
+            "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules;${CMAKE_SOURCE_DIR}/modules>"
+            "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
+
+    string(REPLACE " " ";" LIB_LIST ${MODULE_DEPENDANCIES})
+    foreach (lib ${LIB_LIST})
+      target_link_libraries(${MODULE_NAME} ${lib})
+    endforeach()
+    target_link_libraries(${MODULE_NAME} ${QB_PREFIX}-core)
+  else()
+    message(FATAL_ERROR "qb_register: Missing module NAME")
+  endif()
+
 endfunction()
 
 # cxx_executable_with_flags(name cxx_flags libs srcs...)

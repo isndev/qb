@@ -150,7 +150,6 @@ function(SETUP_TARGET_FOR_COVERAGE_LCOV)
     endif() # NOT GENHTML_PATH
 
     # Setup target
-    message("target for coverage ${Coverage_NAME}")
     add_custom_target(${Coverage_NAME}
 
             # Cleanup lcov

@@ -25,7 +25,7 @@ namespace qb {
         friend class Main;
         friend class Core;
         friend class Actor;
-        friend class ServiceActor;
+        //friend class ServiceActor;
         friend class ProxyPipe;
         friend struct ServiceEvent;
 

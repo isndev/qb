@@ -20,7 +20,7 @@ namespace qb {
         friend class Main;
         friend class Core;
         friend class Actor;
-        friend class ServiceActor;
+//        friend class ServiceActor;
 
         uint16_t _id;
         uint16_t _index;

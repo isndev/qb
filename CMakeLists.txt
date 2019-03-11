@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.1)
-project(cube)
+project(qb)
 
 set(QB_PREFIX ${PROJECT_NAME})
 string(TOUPPER ${QB_PREFIX} QB_PREFIX_UPPER)

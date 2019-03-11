@@ -10,8 +10,8 @@ namespace qb {
             , _engine(engine)
             , _mail_box(engine.getMailBox(id))
             , _nano_timer(Timestamp::nano()) {
-        _ids.reserve(std::numeric_limits<uint16_t>::max() - SERVICE_ACTOR_INDEX);
-        for (auto i = SERVICE_ACTOR_INDEX + 1; i <= std::numeric_limits<uint16_t>::max(); ++i) {
+        _ids.reserve(std::numeric_limits<uint16_t>::max() - _nb_service);
+        for (auto i = _nb_service + 1; i <= std::numeric_limits<uint16_t>::max(); ++i) {
             _ids.insert(static_cast<uint16_t >(i));
         }
     }
@@ -207,7 +207,7 @@ namespace qb {
         delete it->second;
         _actors.erase(it);
         unregisterCallback(id);
-        if (id._id > SERVICE_ACTOR_INDEX)
+        if (id._id > _nb_service)
             _ids.insert(id._id);
     }
 
@@ -277,6 +277,7 @@ namespace qb {
 
     uint16_t Core::getIndex() const { return _index; }
     uint64_t Core::time() const { return _nano_timer; }
+	uint16_t Core::_nb_service = 0;
 
 }
 
