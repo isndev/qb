@@ -104,9 +104,9 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
             EXECUTABLE ctest
             DEPENDENCIES qb-core)
     set(COVERAGE_GCOVR_EXCLUDES
-            '*sample*'
-            '*benchmark*'
-            '*modules*'
+            '.*sample.*'
+            '.*benchmark.*'
+            '.*modules.*'
             )
     SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(NAME ${PROJECT_NAME}-coverage-xml
             EXECUTABLE ctest
