@@ -7,7 +7,7 @@ set(QB_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(${QB_PREFIX_UPPER}_CXX_FLAGS "")
-#set(CMAKE_VERBOSE_MAKEFILE ON)
+set(CMAKE_VERBOSE_MAKEFILE ON)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 
@@ -28,12 +28,6 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
 endif()
 
-if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32)
-    include(cmake/CodeCoverage.cmake)
-    APPEND_COVERAGE_COMPILER_FLAGS()
-    set(${QB_PREFIX_UPPER}_COVERAGE ON)
-endif()
-
 if (${QB_PREFIX_UPPER}_BUILD_TEST)
     include(CTest)
     enable_testing()
@@ -50,6 +44,12 @@ if (${QB_PREFIX_UPPER}_BUILD_TEST)
     # add google test module
     set(GOOGLETEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googletest)
     add_subdirectory(${GOOGLETEST_DIR})
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32)
+    include(cmake/CodeCoverage.cmake)
+    APPEND_COVERAGE_COMPILER_FLAGS()
+    set(${QB_PREFIX_UPPER}_COVERAGE ON)
 endif()
 
 # overload with our cmake utils
@@ -104,9 +104,11 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
             EXECUTABLE ctest
             DEPENDENCIES qb-core)
     set(COVERAGE_GCOVR_EXCLUDES
-            'modules.*'
-            'sample.*'
-            'benchmark.*'
+            ".*modules.*"
+            ".*sample.*"
+            ".*qb.network.*"
+            ".*qb.system.*"
+            ".*source.network.*"
             )
     SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(NAME ${PROJECT_NAME}-coverage-xml
             EXECUTABLE ctest
