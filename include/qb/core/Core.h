@@ -15,7 +15,6 @@
 #include <unistd.h>
 #include <pthread.h>
 #elif defined(_WIN32) || defined(_WIN64)
-#define NOMINMAX
 #include <Windows.h>
 #include <process.h>
 #endif
