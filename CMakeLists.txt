@@ -95,8 +95,8 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
     set(COVERAGE_LCOV_EXCLUDES
             '/usr/*'
             '*benchmark*'
-            '*qb/*/system*'
-            '*qb/*/network*'
+            '*/system*'
+            '*/network*'
             '*modules*'
             '*sample/*'
             )
