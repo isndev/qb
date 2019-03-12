@@ -13,6 +13,7 @@
 #elif defined(unix) || defined(__unix) || defined(__unix__)
 #include <time.h>
 #elif defined(_WIN32) || defined(_WIN64)
+#define NOMINMAX
 #include <windows.h>
 #endif
 
