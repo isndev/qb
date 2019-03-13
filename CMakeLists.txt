@@ -1,9 +1,29 @@
-cmake_minimum_required(VERSION 3.1)
-project(qb)
+#
+# qb - C++ Actor Framework
+# Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+#         limitations under the License.
+#
 
+cmake_minimum_required(VERSION 3.1)
+project(qb LANGUAGES CXX DESCRIPTION "C++17 Actor Framework")
+
+#set global variable
 set(QB_PREFIX ${PROJECT_NAME})
 string(TOUPPER ${QB_PREFIX} QB_PREFIX_UPPER)
 set(QB_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+set(QB_VERSION 0.9.0.0)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(${QB_PREFIX_UPPER}_CXX_FLAGS "")
@@ -15,6 +35,7 @@ if(NOT CYGWIN)
     set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
 
+option(QB_PATH "root" ${CMAKE_CURRENT_SOURCE_DIR})
 option(USE_TC_MALLOC "TCMalloc is ennabled" ON)
 option("${QB_PREFIX_UPPER}_BUILD_TEST" "Build Cube Tests" OFF)
 option("${QB_PREFIX_UPPER}_BUILD_BENCHMARK" "Build Cube Benchmarks" OFF)

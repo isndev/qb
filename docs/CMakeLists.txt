@@ -1,3 +1,19 @@
+#
+# qb - C++ Actor Framework
+# Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+#         limitations under the License.
+#
 
 # Doxygen Build
 option(BUILD_DOC "Build Documentation" ON)
@@ -15,9 +31,6 @@ if(DOXYGEN_FOUND)
     set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in)
     set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
     configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
-    # configure_file(${DOXYGEN_INPUT_DIR}/header.html.in ${DOXYGEN_OUTPUT_DIR}/header.html @ONLY)
-    # copy the files needed by the documentation
-    configure_file(${DOXYGEN_INPUT_DIR}/doxygen.css ${DOXYGEN_OUTPUT_DIR}/html/doxygen.css COPYONLY)
 
     if (${QB_PREFIX_UPPER}_BUILD_DOC)
         message("Doxygen build added to solution")

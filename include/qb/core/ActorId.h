@@ -1,3 +1,19 @@
+/*
+ * qb - C++ Actor Framework
+ * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
 
 #ifndef QB_ACTORID_H
 # define QB_ACTORID_H
@@ -11,14 +27,14 @@ namespace qb {
 
     /*!
      * @class ActorId core/ActorId.h qb/actorid.h
-     * @ingroup Engine
+     * @ingroup Core
      * @brief Actor unique identifier
      * @details
-     * ActorId is a composition of a Service Index (sid) and Core Index (index).
+     * ActorId is a composition of a Service Index (sid) and VirtualCore Index (index).
      */
     class ActorId {
         friend class Main;
-        friend class Core;
+        friend class VirtualCore;
         friend class Actor;
 
         uint16_t _id;
@@ -32,6 +48,10 @@ namespace qb {
          * ActorId() == ActorId::NotFound
          */
         ActorId();
+        /*!
+         * @private
+         * internal function
+         */
         ActorId(uint32_t const id);
         ActorId(ActorId const &) = default;
 
@@ -44,7 +64,7 @@ namespace qb {
          */
         uint16_t sid() const;
         /*!
-         * @return Core index
+         * @return VirtualCore index
          */
         uint16_t index() const;
     };

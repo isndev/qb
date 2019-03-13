@@ -1,5 +1,22 @@
-#include "Core.h"
-#include "Core.tpl"
+/*
+ * qb - C++ Actor Framework
+ * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
+
+#include "VirtualCore.h"
+#include "VirtualCore.tpl"
 
 #ifndef QB_ACTOR_TPL
 # define QB_ACTOR_TPL
@@ -60,7 +77,7 @@ namespace qb {
 
     template <typename Tag>
     ActorId Actor::getServiceId(uint16_t const index) {
-        return {Core::getServices()[type_id<Tag>()], index};
+        return {VirtualCore::getServices()[type_id<Tag>()], index};
     }
 
     template<typename _Event, typename ..._Args>
@@ -71,7 +88,7 @@ namespace qb {
 
     template <typename Tag>
     uint16_t Actor::registerIndex() {
-        return Core::getServices()[type_id<Tag>()] = ++Core::_nb_service;
+        return VirtualCore::getServices()[type_id<Tag>()] = ++VirtualCore::_nb_service;
     }
 
 }

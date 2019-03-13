@@ -1,11 +1,24 @@
-//
-// Created by isndev on 12/4/18.
-//
+/*
+ * qb - C++ Actor Framework
+ * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
 
-#include <qb/core/Core.h>
+#include <qb/core/VirtualCore.h>
 
 namespace qb {
-    Core::Core(uint8_t const id, Main &engine)
+    VirtualCore::VirtualCore(uint8_t const id, Main &engine)
             : _index(id)
             , _engine(engine)
             , _mail_box(engine.getMailBox(id))
@@ -16,18 +29,18 @@ namespace qb {
         }
     }
 
-    ActorId Core::__generate_id__() {
+    ActorId VirtualCore::__generate_id__() {
         if (!_ids.size())
             return ActorId::NotFound;
         return ActorId(_ids.extract(_ids.begin()).value(), _index);
     }
 
     // Event Management
-    Pipe &Core::__getPipe__(uint32_t core) {
+    Pipe &VirtualCore::__getPipe__(uint32_t core) {
         return _pipes[core];
     }
 
-    void Core::__receive_events__(CacheLine *buffer, std::size_t const nb_events) {
+    void VirtualCore::__receive_events__(CacheLine *buffer, std::size_t const nb_events) {
         if (!nb_events)
             return;
         std::size_t i = 0;
@@ -49,14 +62,14 @@ namespace qb {
         }
     }
 
-    void Core::__receive__() {
+    void VirtualCore::__receive__() {
         // global_core_events
         _mail_box.dequeue([this](CacheLine *buffer, std::size_t const nb_events){
             __receive_events__(buffer, nb_events);
         }, _event_buffer.data(), MaxRingEvents);
     }
 
-    void Core::__flush__() {
+    void VirtualCore::__flush__() {
         for (auto &it : _pipes) {
             auto &pipe = it.second;
             if (pipe.end()) {
@@ -72,7 +85,7 @@ namespace qb {
         }
     }
 
-    bool Core::__flush_all__() {
+    bool VirtualCore::__flush_all__() {
         bool ret = false;
         for (auto &it : _pipes) {
             auto &pipe = it.second;
@@ -93,7 +106,7 @@ namespace qb {
     //!Event Management
 
     // Workflow
-    void Core::__init__actors__() const {
+    void VirtualCore::__init__actors__() const {
         // Init StaticActors
         if (std::any_of(_actors.begin(), _actors.end(), [](auto &it) { return !it.second->onInit(); }))
         {
@@ -102,7 +115,7 @@ namespace qb {
         }
     }
 
-    void Core::__init__() {
+    void VirtualCore::__init__() {
         bool ret(true);
 #if defined(unix) || defined(__unix) || defined(__unix__)
         cpu_set_t cpuset;
@@ -132,7 +145,7 @@ namespace qb {
         }
     }
 
-    bool Core::__wait__all__cores__ready() {
+    bool VirtualCore::__wait__all__cores__ready() {
         const auto total_core = _engine.getNbCore();
         Main::sync_start.fetch_add(1, std::memory_order_acq_rel);
         uint64_t ret = 0;
@@ -144,12 +157,12 @@ namespace qb {
         return ret < Error::BadInit;
     }
 
-    void Core::__updateTime__() {
+    void VirtualCore::__updateTime__() {
         const auto now = Timestamp::nano();
         _nano_timer = now;
     }
 
-    void Core::__spawn__() {
+    void VirtualCore::__spawn__() {
         try {
             __init__();
             __init__actors__();
@@ -195,12 +208,12 @@ namespace qb {
     //!Workflow
 
     // Actor Management
-    void Core::addActor(Actor *actor) {
+    void VirtualCore::addActor(Actor *actor) {
         _actors.insert({actor->id(), actor});
         LOG_DEBUG << "New " << *actor;
     }
 
-    void Core::removeActor(ActorId const id) {
+    void VirtualCore::removeActor(ActorId const id) {
         const auto it = _actors.find(id);
         LOG_DEBUG << "Delete Actor(" << id.index() << "," << id.sid() << ")";
         delete it->second;
@@ -212,33 +225,33 @@ namespace qb {
 
     //!Actor Management
 
-    void Core::start() {
-        _thread = std::thread(&Core::__spawn__, this);
+    void VirtualCore::start() {
+        _thread = std::thread(&VirtualCore::__spawn__, this);
         if (_thread.get_id() == std::thread::id())
             std::runtime_error("failed to start a PhysicalCore");
     }
 
-    void Core::join() {
+    void VirtualCore::join() {
         if (_thread.get_id() != std::thread::id{})
             _thread.join();
     }
 
-    void Core::killActor(ActorId const id) {
+    void VirtualCore::killActor(ActorId const id) {
         _actor_to_remove.insert(id);
     }
 
-    void Core::unregisterCallback(ActorId const id) {
+    void VirtualCore::unregisterCallback(ActorId const id) {
         auto it =_actor_callbacks.find(id);
         if (it != _actor_callbacks.end())
             _actor_callbacks.erase(it);
     }
 
     //Event Api
-    ProxyPipe Core::getProxyPipe(ActorId const dest, ActorId const source) {
+    ProxyPipe VirtualCore::getProxyPipe(ActorId const dest, ActorId const source) {
         return {__getPipe__(dest._index), dest, source};
     }
 
-    bool Core::try_send(Event const &event) const {
+    bool VirtualCore::try_send(Event const &event) const {
         // Todo: Fix MonoThread Optimization
         // if (event.dest._index == _index) {
         //     const_cast<Event &>(event).state[0] = 0;
@@ -248,25 +261,25 @@ namespace qb {
         return _engine.send(event);
     }
 
-    void Core::send(Event const &event) {
+    void VirtualCore::send(Event const &event) {
         if (unlikely(!try_send(event))) {
             auto &pipe = __getPipe__(event.dest._index);
             pipe.recycle(event, event.bucket_size);
         }
     }
 
-    Event &Core::push(Event const &event) {
+    Event &VirtualCore::push(Event const &event) {
         auto &pipe = __getPipe__(event.dest._index);
         return pipe.recycle_back(event, event.bucket_size);
     }
 
-    void Core::reply(Event &event) {
+    void VirtualCore::reply(Event &event) {
         std::swap(event.dest, event.source);
         event.state[0] = 1;
         send(event);
     }
 
-    void Core::forward(ActorId const dest, Event &event) {
+    void VirtualCore::forward(ActorId const dest, Event &event) {
         event.source = event.dest;
         event.dest = dest;
         event.state[0] = 1;
@@ -274,15 +287,15 @@ namespace qb {
     }
     //!Event Api
 
-    uint16_t Core::getIndex() const { return _index; }
-    uint64_t Core::time() const { return _nano_timer; }
-	uint16_t Core::_nb_service = 0;
+    uint16_t VirtualCore::getIndex() const { return _index; }
+    uint64_t VirtualCore::time() const { return _nano_timer; }
+	uint16_t VirtualCore::_nb_service = 0;
 
 }
 
-qb::io::stream &operator<<(qb::io::stream &os, qb::Core const &core) {
+qb::io::stream &operator<<(qb::io::stream &os, qb::VirtualCore const &core) {
     std::stringstream ss;
-    ss << "Core(" << core.getIndex() << ").id(" << std::this_thread::get_id() << ")";
+    ss << "VirtualCore(" << core.getIndex() << ").id(" << std::this_thread::get_id() << ")";
     os << ss.str();
     return os;
 };
