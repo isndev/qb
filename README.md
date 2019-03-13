@@ -1,9 +1,9 @@
-# Cube Actor Framework
+# qb Actor Framework
 
-Cube provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. 
+**qb** provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. 
 It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors. 
 
-Cube is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
+**qb** is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
 
 * #### Requirements
   - C++17 compiler, (gcc7, clang4, msvc19.11)
@@ -33,17 +33,17 @@ Our CPUs are not getting any faster. What’s happening is that we now have mult
 #### Definition
 The Actor model is a concurrent model of computation that treats "actors" as the universal primitives of concurrent computation.  
 - The Actor sends event messages to be received by another Actor, which is then treated by an Event handler.
-- The Event handler can execute a local function, create more actors, and send events to other Actors. In Cube programming semantics, Actors shall be mono-threaded and non-blocking.
+- The Event handler can execute a local function, create more actors, and send events to other Actors. In **qb** programming semantics, Actors shall be mono-threaded and non-blocking.
 - The Event communication between Actors is done with an unidirectional communication channel called a Pipe. Hence, the Actor programming model is completely asynchronous and event-driven. 
 
 <p align="center"><img src="./ressources/BasicActorModel.png" width="500px" /></p>
 
-#### Cube + Actor Model
-A program developed with Cube is consisting of multiple Actors handling one or multiple Events, attached to PhysicalCores linked together with several Pipes.  
+#### qb + Actor Model
+A program developed with **qb** is consisting of multiple Actors handling one or multiple Events, attached to PhysicalCores linked together with several Pipes.  
 Once designed, the programming is broken down into coding mono-threaded and sequential Event handlers.  
 Hence, the Actor model which is scalable and parallel by nature.  
 
-Cube runtime will handle all the rest and bridge the gap between parallel programming and hardware multicore complexity.
+**qb** runtime will handle all the rest and bridge the gap between parallel programming and hardware multicore complexity.
 
 # Getting Started !
 #### Example ping-pong project
@@ -52,7 +52,7 @@ Cube runtime will handle all the rest and bridge the gap between parallel progra
 ```bash
 $> mkdir pingpong && cd pingpong
 ```
-- Then clone the cube framework by doing:
+- Then clone the **qb** framework by doing:
 ```bash
 $> git clone git@github.com:isndev/qb.git
 ```
@@ -62,12 +62,12 @@ $> git clone git@github.com:isndev/qb.git
 cmake_minimum_required(VERSION 3.10)
 project(pingpong)
 
-# Cube minimum requirements
+# qb minimum requirements
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(QB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/qb")
 
-# Add cube framework
+# Add qb framework
 add_subdirectory(${QB_PATH})
 
 # Define your project source
@@ -86,7 +86,7 @@ target_link_libraries(pingpong qb-core)
 # define MYEVENT_H_
 // Event example
 struct MyEvent
- : public qb::Event // /!\ should inherit from cube event
+ : public qb::Event // /!\ should inherit from qb event
 {
     int data; // trivial data
     std::vector<int> container; // dynamic data
@@ -108,7 +108,7 @@ struct MyEvent
 # define PINGPONGACTOR_H_
 
 class PingPongActor
-        : public qb::Actor // /!\ should inherit from cube actor
+        : public qb::Actor // /!\ should inherit from qb actor
 {
     const qb::ActorId _id_pong; // Pong ActorId
 public:
@@ -146,10 +146,10 @@ public:
 #include "PingPongActor.h"
 
 int main (int argc, char *argv[]) {
-    // (optional) initialize the cube logger
+    // (optional) initialize the qb logger
     qb::io::log::init(argv[0]); // filename
     
-    // configure the Engine 
+    // configure the Core 
     // Note : I will use only the core 0 and 1
     qb::Main main({0, 1});
     
@@ -184,7 +184,7 @@ You want to do more, refer to the wiki
 
 ### [Wiki](https://github.com/isndev/qb/wiki)
 *  [Build]() - Build options
-*  [Initialization]() - Engine initialization
+*  [Initialization]() - Core initialization
 *  [Actor API]() - All about qb::Actor
 *  [Event API]() - Sending/Receiving events
 *  [Logger]() - Fast Multithreaded builtin logger
@@ -192,11 +192,11 @@ You want to do more, refer to the wiki
 
 ### Todos
   - [ ] Make Wiki Documentation (0%)
-  - [ ] Add Core throughtput policy to manage the cpu usage (0%)
+  - [ ] Add VirtualCore throughtput policy to manage the cpu usage (0%)
 
 License
 ----
 
-MIT
+Apache Version 2.0
 
-**isndev Free Software, Hell Yeah!**
+**isndev** Free Software, Hell Yeah!

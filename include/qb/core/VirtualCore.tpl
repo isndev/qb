@@ -1,4 +1,21 @@
-#include "Core.h"
+/*
+ * qb - C++ Actor Framework
+ * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
+
+#include "VirtualCore.h"
 
 #ifndef QB_CORE_TPL
 # define QB_CORE_TPL
@@ -6,7 +23,7 @@
 namespace qb {
 
     template<typename _Actor>
-    bool Core::initActor(_Actor * const actor, bool doinit) {
+    bool VirtualCore::initActor(_Actor * const actor, bool doinit) {
         if constexpr (!std::is_base_of<Service, _Actor>::value) {
             auto id = __generate_id__();
             actor->__set_id(id);
@@ -27,7 +44,7 @@ namespace qb {
     }
 
     template<typename _Actor, typename ..._Init>
-    ActorId Core::addActor(_Init &&...init) {
+    ActorId VirtualCore::addActor(_Init &&...init) {
         auto actor = new _Actor(std::forward<_Init>(init)...);
         actor->_handler = this;
 
@@ -39,7 +56,7 @@ namespace qb {
     };
 
     template<typename _Actor, typename ..._Init>
-    _Actor *Core::addReferencedActor(_Init &&...init) {
+    _Actor *VirtualCore::addReferencedActor(_Init &&...init) {
         auto actor = new _Actor(std::forward<_Init>(init)...);
         actor->_handler = this;
 
@@ -51,13 +68,13 @@ namespace qb {
     };
 
     template <typename _Actor>
-    void Core::registerCallback(_Actor &actor) {
+    void VirtualCore::registerCallback(_Actor &actor) {
         _actor_callbacks.insert({actor.id(), &actor});
     }
 
     // Event API
     template <typename T>
-    inline void Core::fill_event(T &data, ActorId const dest, ActorId const source) const {
+    inline void VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) const {
         data.id = type_id<T>();
         data.dest = dest;
         data.source = source;
@@ -71,7 +88,7 @@ namespace qb {
     }
 
     template<typename T, typename ..._Init>
-    void Core::send(ActorId const dest, ActorId const source, _Init &&...init) {
+    void VirtualCore::send(ActorId const dest, ActorId const source, _Init &&...init) {
         auto &pipe = __getPipe__(dest._index);
         auto &data = pipe.template allocate<T>(std::forward<_Init>(init)...);
 
@@ -82,7 +99,7 @@ namespace qb {
     }
 
     template<typename T, typename ..._Init>
-    T &Core::push(ActorId const dest, ActorId const source, _Init &&...init) {
+    T &VirtualCore::push(ActorId const dest, ActorId const source, _Init &&...init) {
         auto &pipe = __getPipe__(dest._index);
         auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
 
@@ -92,7 +109,7 @@ namespace qb {
     }
 
     template<typename T, typename ..._Init>
-    void Core::fast_push(ActorId const dest, ActorId const source, _Init &&...init) {
+    void VirtualCore::fast_push(ActorId const dest, ActorId const source, _Init &&...init) {
 //        auto &pipe = __getPipe__(dest._index);
 //        auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
 //

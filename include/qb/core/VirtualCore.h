@@ -1,6 +1,19 @@
-//
-// Created by isndev on 12/4/18.
-//
+/*
+ * qb - C++ Actor Framework
+ * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
 
 #ifndef QB_CORE_H
 #define QB_CORE_H
@@ -31,12 +44,12 @@
 
 # define SERVICE_ACTOR_INDEX 10000
 
-class Core;
-qb::io::stream &operator<<(qb::io::stream &os, qb::Core const &core);
+class VirtualCore;
+qb::io::stream &operator<<(qb::io::stream &os, qb::VirtualCore const &core);
 
 namespace qb {
 
-    class Core {
+    class VirtualCore {
 		static uint16_t _nb_service;
 		static std::unordered_map<uint32_t, uint16_t> &getServices() {
 			static std::unordered_map<uint32_t, uint16_t> service_ids;
@@ -78,8 +91,8 @@ namespace qb {
         uint64_t        _nano_timer;
         // !Members
 
-        Core() = delete;
-        Core(uint8_t const id, Main &engine);
+        VirtualCore() = delete;
+        VirtualCore(uint8_t const id, Main &engine);
 
         ActorId __generate_id__();
 

@@ -1,6 +1,19 @@
-//
-// Created by isndev on 12/4/18.
-//
+/*
+ * qb - C++ Actor Framework
+ * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
 
 #ifndef QB_MAIN_H
 #define QB_MAIN_H
@@ -14,17 +27,17 @@
 
 namespace qb {
 
-    class Core;
+    class VirtualCore;
 
     /*!
      * @class Main core/Main.h qb/main.h
-     * @ingroup Engine
-     * @brief Engine main class
+     * @ingroup Core
+     * @brief Core main class
      * @details
      * This is the Main engine class, initialized with desired CoreSet.
      */
     class Main {
-        friend class Core;
+        friend class VirtualCore;
         constexpr static const uint64_t MaxRingEvents =
                 (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_CACHELINE_BYTES);
         //////// Types
@@ -37,7 +50,7 @@ namespace qb {
     private:
         CoreSet _core_set;
         std::vector<MPSCBuffer *> _mail_boxes;
-        std::unordered_map<uint8_t, Core *> _cores;
+        std::unordered_map<uint8_t, VirtualCore *> _cores;
 
         void __init__();
         bool send(Event const &event) const;
@@ -47,8 +60,7 @@ namespace qb {
 
         /*!
          * @class CoreBuilder core/Main.h qb/main.h
-         * @ingroup Engine
-         * @brief Helper to build Actors in Core
+         * @brief Helper to build Actors in VirtualCore
          */
         class CoreBuilder {
         public:
@@ -67,8 +79,8 @@ namespace qb {
                     , _valid(true)
             {}
 
-        public:
             CoreBuilder() = delete;
+        public:
             CoreBuilder(CoreBuilder const &rhs);
 
             /*!
@@ -77,10 +89,10 @@ namespace qb {
              * @param args arguments to forward to the constructor of the _Actor
              * @return itself
              * @details
-             * create new _Actor on attached Core, function can be chained.\n
+             * create new _Actor on attached VirtualCore, function can be chained.\n
              * example:
              * @code
-             * auto builder = main.core(0); // get builder of Core id 0
+             * auto builder = main.core(0); // get builder of VirtualCore id 0
              * builder.addActor<MyActor>(param1, param2)
              *        .addActor<MyActor>(param1, param2)
              *        // ...
@@ -111,7 +123,7 @@ namespace qb {
          * @brief Start the engine
          * @param async has blocking execution
          * @note
-         * If async = false the main thread will by used by a Core engine.
+         * If async = false the main thread will by used by a VirtualCore engine.
          */
         void start(bool async = true) const;
 
@@ -136,11 +148,11 @@ namespace qb {
         /*!
          * @brief Create new _Actor
          * @tparam _Actor DerivedActor type
-         * @param index Core index
+         * @param index VirtualCore index
          * @param args arguments to forward to the constructor of the _Actor
          * @return ActorId of the created _Actor
          * @details
-         * create new _Actor on Core index.\n
+         * create new _Actor on VirtualCore index.\n
          * example:
          * @code
          * auto id = addActor<MyActor>(0, param1, param2);
@@ -153,13 +165,13 @@ namespace qb {
 
         /*!
          * @brief Get CoreBuilder from index
-         * @param index Core index
+         * @param index VirtualCore index
          * @return CoreBuilder
          * @attention
          * @code
          * auto builder1 = main.core(0);
          * auto builder2 = main.core(0);
-         * // even both elements build the same Core
+         * // even both elements build the same VirtualCore
          * // builder1 != builder2
          * @endcode
          */

@@ -1,3 +1,19 @@
+/*
+ * qb - C++ Actor Framework
+ * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
 
 #ifndef QB_ACTOR_H
 # define QB_ACTOR_H
@@ -12,11 +28,11 @@
 
 namespace qb {
 
-    class Core;
+    class VirtualCore;
 
     /*!
      * @class Actor core/Actor.h qb/actor.h
-     * @ingroup Engine
+     * @ingroup Core
      * @brief Actor base class
      * @details
      * The Actor sends event messages to be received by another Actor, which is then treated by an Event handler.\n
@@ -26,13 +42,7 @@ namespace qb {
             : nocopy
             , ActorId
     {
-	protected:
-		void __set_id(uint16_t const sid, uint16_t const cid);
-		template <typename Tag>
-		static uint16_t registerIndex();
-	private:
-        friend class Core;
-        //friend class ServiceActor;
+        friend class VirtualCore;
 
         class IRegisteredEvent {
         public:
@@ -59,22 +69,30 @@ namespace qb {
         void on(Event *event) const;
 
         mutable bool _alive = true;
-        Core * _handler = nullptr;
+        VirtualCore * _handler = nullptr;
         std::unordered_map<uint32_t, IRegisteredEvent const *> _event_map;
         void __set_id(ActorId const &id);
     protected:
+        /*!
+         * @private
+         */
+        void __set_id(uint16_t const sid, uint16_t const cid);
+        /*!
+         * @private
+         */
+        template <typename Tag>
+        static uint16_t registerIndex();
+
         /*!
          * @name Construction/Destruction
          * @{
          */
 
         /*!
-         * Default constructor
          */
         Actor();
 
         /*!
-         * Virtual destructor
          */
         virtual ~Actor();
 
@@ -158,18 +176,15 @@ namespace qb {
 
         /*!
          * @class EventBuilder core/ActorId.h qb/actor.h
-         * @ingroup Engine
          * @brief Helper to build Events
          */
         class EventBuilder {
             friend class Actor;
-
             ProxyPipe dest_pipe;
 
-            EventBuilder(ProxyPipe const &pipe);
-
-        public:
             EventBuilder() = delete;
+            EventBuilder(ProxyPipe const &pipe);
+        public:
             EventBuilder(EventBuilder const &rhs) = default;
 
             /*!
@@ -222,7 +237,7 @@ namespace qb {
          * @return nano timestamp since epoch
          * @details
          * @note
-         * This value is optimized and updated each Core loop.
+         * This value is optimized and updated each VirtualCore loop.
          * @code
          * // ...
          * auto t1 = time();
@@ -254,7 +269,7 @@ namespace qb {
          * @brief Register a looped callback
          * @param actor reference of DerivedActor
          * @details
-         * The registered callback will be called each Core loop.\n
+         * The registered callback will be called each VirtualCore loop.\n
          * _Actor must inherit and implement ICallback interface.\n
          * example:
          * @code
@@ -480,7 +495,7 @@ namespace qb {
          * @param args arguments to forward to the constructor of the _Actor
          * @return _Actor * on success or nullptr on failure
          * @details
-         * create and initialize new _Actor on same Core as the callee Actor.\n
+         * create and initialize new _Actor on same VirtualCore as the callee Actor.\n
          * example:
          * @code
          * auto actor = addRefActor<MyActor>(param1, param2);
@@ -505,20 +520,19 @@ namespace qb {
 
     /*!
      * @class Service
-     * @ingroup Engine
      * @brief internal
      */
     class Service {};
 
     /*!
      * @class ServiceActor actor.h qb/actor.h
-     * @ingroup Engine
+     * @ingroup Core
      * @brief SingletonActor base class
      * @tparam Tag is a uniq struct Tag
      * @details
      * ServiceActor is a special actor where DerivedActor
      * must define a unique service index by Tag.\n
-     * Inherited Service Actors are unique per Core.
+     * Inherited Service Actors are unique per VirtualCore.
      */
     template <typename Tag>
     class ServiceActor : public Service, public Actor {

@@ -1,11 +1,24 @@
-//
-// Created by isndev on 12/4/18.
-//
+/*
+ * qb - C++ Actor Framework
+ * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
 
 #include <csignal>
 #include <cstring>
 #include <qb/core/Main.h>
-#include <qb/core/Core.h>
+#include <qb/core/VirtualCore.h>
 
 namespace qb {
 
@@ -19,7 +32,7 @@ namespace qb {
         for (auto core_id : _core_set._raw_set) {
             const auto nb_producers = _core_set.getNbCore();
             _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(nb_producers);
-            _cores.emplace(core_id, new Core(core_id, *this));
+            _cores.emplace(core_id, new VirtualCore(core_id, *this));
         }
         sync_start.store(0, std::memory_order_release);
         is_running = false;
@@ -76,17 +89,17 @@ namespace qb {
             ret = sync_start.load(std::memory_order_acquire);
         }
         while (ret < _cores.size());
-        if (ret < Core::Error::BadInit) {
+        if (ret < VirtualCore::Error::BadInit) {
             LOG_INFO << "[Main] Init Success";
             std::signal(SIGINT, &onSignal);
         } else {
             LOG_CRIT << "[Main] Init Failed";
-            io::cout() << "CRITICAL: Engine Init Failed -> show logs to have more details" << std::endl;
+            io::cout() << "CRITICAL: Core Init Failed -> show logs to have more details" << std::endl;
         }
     }
 
     bool Main::hasError() {
-        return sync_start.load(std::memory_order_acquire) >= Core::Error::BadInit;
+        return sync_start.load(std::memory_order_acquire) >= VirtualCore::Error::BadInit;
     }
 
     void Main::stop() {
