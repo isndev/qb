@@ -26,7 +26,7 @@
  *
  * **qb** is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
  * #### Build Status
- * | <img src='https://img.shields.io/badge/C%2B%2B-17-blue.svg' /> | Linux  | Windows | Documentation |
+ * | * | Linux  | Windows | Documentation |
  * | ------- | ------ | ------- | ------------ |
  * | master  | <img src='http://server.isndev.com:61090/buildStatus/icon?job=Cube-master' /> | <img src='http://server.isndev.com:61090/buildStatus/icon?job=Cube-master' /> | <img src='http://server.isndev.com:61090/buildStatus/icon?job=Cube-master&subject=doc' /> |
  * | develop | <img src='http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop' /> | <img src='http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop' /> | <img src='http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop&subject=doc' /> |
