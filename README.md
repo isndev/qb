@@ -5,6 +5,7 @@
 [![Cpp Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17)
 [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master&subject=master)](https://github.com/isndev/qb/tree/master)
 [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop&subject=develop)](https://github.com/isndev/qb/tree/develop)
+[![codecov](https://codecov.io/gh/isndev/qb/branch/master/graph/badge.svg)](https://codecov.io/gh/isndev/qb)
 [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/)
 
 **qb** provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. 
