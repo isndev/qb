@@ -1,6 +1,11 @@
-<p align="center"><img src="./ressources/logo.png" width="120px" /></p>
+<p align="center"><img src="./ressources/logo.png" width="180px" /></p>
 
-# C++17 Actor Framework
+# C++ Actor Framework
+
+[![Cpp Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17)
+[![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master&subject=master)](https://github.com/isndev/qb/tree/master)
+[![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop&subject=develop)](https://github.com/isndev/qb/tree/develop)
+[![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/)
 
 **qb** provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. 
 It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors. 
@@ -8,14 +13,9 @@ It's a complete development framework for multicore processing that has been spe
 **qb** is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
 
 * #### Requirements
-  - C++17 compiler, (gcc7, clang4, msvc19.11)
+  - C++17 compiler, (g++ >= 7, clang >= 4, msvc >= 19.11)
   - (Recommended) cmake
   - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
-* #### Build Status
-  | [![Cpp Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17) | Linux  | Windows | Documentation |
-  | ------- | ------ | ------- | ------------ |
-  | master  | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master)](https://github.com/isndev/qb/tree/master) | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master)](https://github.com/isndev/qb/tree/master) | [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/) |
-  | develop | [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop)](https://github.com/isndev/qb/tree/develop) |[![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop)](https://github.com/isndev/qb/tree/develop) | [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/) |  
 * #### Pros
   - Opensource
   - Cross-platform (Linux|Windows)
