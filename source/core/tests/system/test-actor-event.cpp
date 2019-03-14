@@ -71,7 +71,9 @@ public:
       return true;
     }
 
-    void on(qb::Event &) {
+    void on(qb::Event &event) {
+        Actor::on(event);
+        push<TestEvent>(0);
         kill();
         _count = _max_events;
     }

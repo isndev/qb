@@ -32,6 +32,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <atomic>
 #include <queue>
 #include <fstream>
+#include <qb/utility/build_macros.h>
 #include <qb/system/timestamp.h>
 #include "nanolog.h"
 #undef ERROR
@@ -368,7 +369,7 @@ namespace nanolog
 		struct alignas(64) Item
 		{
 			Item()
-					: flag{ ATOMIC_FLAG_INIT }
+					: flag{0}
 					, written(0)
 					, logline(LogLevel::INFO, nullptr, nullptr, 0)
 			{
@@ -432,7 +433,7 @@ namespace nanolog
 		size_t const m_size;
 		Item * m_ring;
 		std::atomic < unsigned int > m_write_index;
-		char pad[64];
+		QB_UNUSED_VAR char pad[64];
 		unsigned int m_read_index;
 	};
 
@@ -503,7 +504,7 @@ namespace nanolog
 
 		QueueBuffer() : m_current_read_buffer{nullptr}
 				, m_write_index(0)
-				, m_flag{ATOMIC_FLAG_INIT}
+				, m_flag{0}
 				, m_read_index(0)
 		{
 			setup_next_write_buffer();
