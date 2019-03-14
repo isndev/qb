@@ -1,0 +1,8 @@
+[submodule "modules/googlebenchmark"]
+	path = modules/googlebenchmark
+	url = https://github.com/google/benchmark.git
+	branch = master
+[submodule "modules/googletest"]
+	path = modules/googletest
+	url = https://github.com/google/googletest.git
+	branch = master
