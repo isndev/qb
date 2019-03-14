@@ -1,4 +1,6 @@
-# qb Actor Framework
+<p align="center"><img src="./ressources/logo.png" width="120px" /></p>
+
+# C++17 Actor Framework
 
 **qb** provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. 
 It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors. 
