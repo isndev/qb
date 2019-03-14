@@ -207,14 +207,3 @@
  *
  * You want to do more, refer to the wiki
  */
-
-/*!
- * @page Build
- * @section BuildOptions Cmake Build Options
- * in development
- */
-
-/*!
- * @page Tutorial
- *
- */
