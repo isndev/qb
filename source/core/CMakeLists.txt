@@ -18,7 +18,7 @@
 project(${QB_PREFIX}-core LANGUAGES CXX VERSION ${QB_VERSION} DESCRIPTION "A simple actor library")
 
 cxx_library(${PROJECT_NAME} ${cxx_default_lib} core.cpp)
-message(STATUS "ON LIB QB_DIR=${QB_DIRECTORY}")
+set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION} SOVERSION ${QB_VERSION_MAJOR})
 target_include_directories(${PROJECT_NAME} INTERFACE
         "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
         "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")

@@ -18,11 +18,13 @@
 project(${QB_PREFIX}-network LANGUAGES CXX VERSION ${QB_VERSION} DESCRIPTION "A simple network library")
 
 cxx_library(${PROJECT_NAME} ${cxx_default_lib} src/network-all.cpp)
+set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION} SOVERSION ${QB_VERSION_MAJOR})
 target_include_directories(${PROJECT_NAME} INTERFACE
         "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
         "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
 
 cxx_shared_library(${PROJECT_NAME}-shared ${cxx_default_lib} src/network-all.cpp)
+set_target_properties(${PROJECT_NAME}-shared PROPERTIES VERSION ${QB_VERSION} SOVERSION ${QB_VERSION_MAJOR})
 target_include_directories(${PROJECT_NAME}-shared INTERFACE
         "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
         "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
