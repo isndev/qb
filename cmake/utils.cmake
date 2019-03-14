@@ -164,7 +164,7 @@ function(cxx_library_with_type name type cxx_flags)
     # Generate debug library name with a postfix.
     set_target_properties(${name}
             PROPERTIES
-            DEBUG_POSTFIX "d")
+            DEBUG_POSTFIX "-d")
     # Set the output directory for build artifacts
     set_target_properties(${name}
             PROPERTIES
@@ -244,7 +244,7 @@ function(qb_register_module)
       cxx_library_with_type(${Module_NAME} "INTERFACE" "")
       target_link_libraries(${Module_NAME} INTERFACE ${QB_PREFIX}-core)
     endif()
-#    target_include_directories(${Module_NAME} ${CMAKE_CURRENT_SOURCE_DIR})
+    #    target_include_directories(${Module_NAME} ${CMAKE_CURRENT_SOURCE_DIR})
     target_include_directories(${Module_NAME} INTERFACE
             "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules;${CMAKE_SOURCE_DIR}/modules>"
             "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
