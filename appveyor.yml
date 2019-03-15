@@ -6,7 +6,6 @@ branches:
     - experimental
 clone_folder: cmake-init
 image:
-  - Ubuntu
   - Visual Studio 2017
 configuration:
   - Release
