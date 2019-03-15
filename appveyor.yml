@@ -1,8 +1,9 @@
 version: '{build}'
 branches:
-  - master
-  - develop
-  - experimental
+  only:
+    - master
+    - develop
+    - experimental
 clone_folder: c:\projects\cmake-init
 image:
   - Ubuntu
