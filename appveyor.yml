@@ -4,7 +4,7 @@ branches:
     - master
     - develop
     - experimental
-clone_folder: C:\projects\cmake-init
+clone_folder: C:\projects\qb
 image:
   - Visual Studio 2017
 
@@ -22,7 +22,6 @@ matrix:
 
 # skip unsupported combinations
 init:
-  - C:\"Program Files (x86)"/%VSINSTALL%/vcvarsall.bat %MSVC_PLATFORM%
   - set arch=
   - if "%arch%"=="Win64" ( set arch= Win64)
   - echo %arch%
@@ -35,9 +34,10 @@ before_build:
       mkdir build
       cd build
       cmake --version
+      echo %generator%
       cmake -G %generator% -DQB_BUILD_TEST=ON -DQB_BUILD_SAMPLE=ON -H..
 build:
-  project: C:\projects\cmake-init\build\template.sln
+  project: C:\projects\qb\build\template.sln
   verbosity: minimal
   parallel: true
 only_commits:
