@@ -2,6 +2,7 @@
 
 # C++ Actor Framework
 
+[![Codacy Badge](https://api.codacy.com/project/badge/Grade/a365bfbc14f043e0a0c58217e51eaf60)](https://app.codacy.com/app/isndev/qb?utm_source=github.com&utm_medium=referral&utm_content=isndev/qb&utm_campaign=Badge_Grade_Dashboard)
 [![Cpp Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17)
 [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master&subject=master)](https://github.com/isndev/qb/tree/master)
 [![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop&subject=develop)](https://github.com/isndev/qb/tree/develop)
