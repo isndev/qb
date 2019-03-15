@@ -4,7 +4,7 @@ branches:
     - master
     - develop
     - experimental
-clone_folder: c:\projects\cmake-init
+clone_folder: cmake-init
 image:
   - Ubuntu
   - Visual Studio 2017
@@ -36,7 +36,7 @@ before_build:
       cmake --version
       cmake .. -G %generator%
 build:
-  project: c:\projects\cmake-init\build\template.sln
+  project: cmake-init\build\template.sln
   verbosity: minimal
   parallel: true
 only_commits:
