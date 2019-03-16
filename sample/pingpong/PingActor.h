@@ -44,7 +44,7 @@ public:
         return true;                           // init ok
     }
     // will call this function when PingActor receives MyEvent
-    void on(MyEvent &event) {
+    void on(MyEvent &) {
         // debug print
         qb::io::cout() << "PingActor id(" << id() << ") received MyEvent" << std::endl;
         kill(); // then notify engine to kill PingActor
