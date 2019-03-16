@@ -37,10 +37,8 @@ before_build:
       cmake --version
       echo %generator%
       cmake -G %generator% -DQB_BUILD_TEST=ON -DQB_BUILD_SAMPLE=ON -H..
-build:
-  project: C:\projects\qb\build\template.sln
-  verbosity: minimal
-  parallel: true
+build_script:
+    - cd build && cmake --build . --target ALL_BUILD --config %configuration% -- /nologo /logger:"C:\Program Files\AppVeyor\BuildAgent\Appveyor.MSBuildLogger.dll"
 only_commits:
   files:
     - CMakeLists.txt
