@@ -41,6 +41,12 @@ build_script:
   - cmd: |-
       cd C:\projects\qb\build
       cmake --build . --target ALL_BUILD --config %configuration% -- /nologo
+
+test_script:
+  - cmd: |-
+      cd C:\projects\qb\build
+      ctest -VV -C %configuration%
+
 only_commits:
   files:
     - CMakeLists.txt
