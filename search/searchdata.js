@@ -3,7 +3,8 @@ var indexSectionsWithContent =
   0: "acefghijklmnoprstuv",
   1: "acehiklmnprstuv",
   2: "acfgijkoprstu",
-  3: "cntu"
+  3: "cntu",
+  4: "h"
 };
 
 var indexSectionNames =
@@ -11,7 +12,8 @@ var indexSectionNames =
   0: "all",
   1: "classes",
   2: "functions",
-  3: "groups"
+  3: "groups",
+  4: "pages"
 };
 
 var indexSectionLabels =
@@ -19,6 +21,7 @@ var indexSectionLabels =
   0: "All",
   1: "Classes",
   2: "Functions",
-  3: "Modules"
+  3: "Modules",
+  4: "Pages"
 };
 

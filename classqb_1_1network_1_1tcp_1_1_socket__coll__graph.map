@@ -1,0 +1,3 @@
+<map id="qb::network::tcp::Socket" name="qb::network::tcp::Socket">
+<area shape="rect" id="node2" href="$classqb_1_1network_1_1sys_1_1_socket.html" title="{qb::network::sys::Socket\l\&lt; SocketType::TCP \&gt;\n|+ type\l# _handle\l|+ Socket()\l+ ~Socket()\l+ raw()\l+ setBlocking()\l+ isBlocking()\l+ setReceiveBufferSize()\l+ setSendBufferSize()\l+ good()\l+ close()\l# init()\l# init()\l}" alt="" coords="5,5,189,259"/>
+</map>

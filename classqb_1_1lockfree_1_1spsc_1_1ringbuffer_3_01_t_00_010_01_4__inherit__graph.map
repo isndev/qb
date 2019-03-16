@@ -1,0 +1,4 @@
+<map id="qb::lockfree::spsc::ringbuffer&lt; T, 0 &gt;" name="qb::lockfree::spsc::ringbuffer&lt; T, 0 &gt;">
+<area shape="rect" id="node2" href="$classqb_1_1lockfree_1_1spsc_1_1internal_1_1ringbuffer.html" title="{qb::lockfree::spsc\l::internal::ringbuffer\&lt; T \&gt;\n||+ empty()\l# ringbuffer()\l# read_available()\l# write_available()\l# enqueue()\l# enqueue()\l# dequeue()\l# front()\l# front()\l# next_index()\l# read_available()\l# write_available()\l}" alt="" coords="5,175,195,428"/>
+<area shape="rect" id="node3" href="$structqb_1_1nocopy.html" title="{qb::nocopy\n||+ nocopy()\l+ nocopy()\l+ nocopy()\l+ operator=()\l}" alt="" coords="43,5,157,127"/>
+</map>

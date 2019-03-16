@@ -1,9 +1,10 @@
 var NAVTREE =
 [
-  [ "Main Page", "index.html", [
-    [ "Disclaimer", "index.html#Disclaimer", null ],
-    [ "Introduction", "index.html#Introduction", null ],
-    [ "Get Started !", "index.html#GetStarted", null ],
+  [ "qb", "index.html", [
+    [ "Home", "index.html", [
+      [ "Introduction", "index.html#Introduction", null ],
+      [ "Getting Started !", "index.html#GetStarted", null ]
+    ] ],
     [ "Modules", "modules.html", "modules" ],
     [ "Classes", "annotated.html", [
       [ "Class List", "annotated.html", "annotated_dup" ],

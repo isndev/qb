@@ -1,0 +1,14 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="node1" href="$classqb_1_1_actor_id.html" title="Actor unique identifier. " alt="" coords="6,5,98,32"/>
+<area shape="rect" id="node2" href="$classqb_1_1_actor.html" title="Actor base class. " alt="" coords="201,5,281,32"/>
+<area shape="rect" id="node3" href="$classqb_1_1_service_actor.html" title="SingletonActor base class. " alt="" coords="394,31,574,57"/>
+<area shape="rect" id="node5" href="$classqb_1_1allocator_1_1pipe.html" title="qb::allocator::pipe\l\&lt; T, _SIZE \&gt;" alt="" coords="172,107,311,149"/>
+<area shape="rect" id="node6" href="$structqb_1_1nocopy.html" title="qb::nocopy" alt="" coords="5,188,99,215"/>
+<area shape="rect" id="node7" href="$classqb_1_1lockfree_1_1mpsc_1_1ringbuffer.html" title="qb::lockfree::mpsc\l::ringbuffer\&lt; T, max\l_size, nb_producer \&gt;" alt="" coords="162,173,321,229"/>
+<area shape="rect" id="node8" href="$classqb_1_1lockfree_1_1mpsc_1_1ringbuffer_3_01_t_00_01max__size_00_010_01_4.html" title="qb::lockfree::mpsc\l::ringbuffer\&lt; T, max\l_size, 0 \&gt;" alt="" coords="165,253,318,309"/>
+<area shape="rect" id="node9" href="$classqb_1_1lockfree_1_1spsc_1_1internal_1_1ringbuffer.html" title="qb::lockfree::spsc\l::internal::ringbuffer\&lt; T \&gt;" alt="" coords="147,334,336,375"/>
+<area shape="rect" id="node10" href="$classqb_1_1lockfree_1_1spsc_1_1ringbuffer.html" title="qb::lockfree::spsc\l::ringbuffer\&lt; T, _MaxSize \&gt;" alt="" coords="384,269,584,310"/>
+<area shape="rect" id="node11" href="$classqb_1_1lockfree_1_1spsc_1_1ringbuffer_3_01_t_00_010_01_4.html" title="qb::lockfree::spsc\l::ringbuffer\&lt; T, 0 \&gt;" alt="" coords="411,334,557,375"/>
+<area shape="rect" id="node12" href="$classqb_1_1lockfree_1_1spsc_1_1ringbuffer.html" title="qb::lockfree::spsc\l::ringbuffer\&lt; T, max\l_size \&gt;" alt="" coords="407,400,561,456"/>
+<area shape="rect" id="node13" href="$classqb_1_1_service.html" title="internal " alt="" coords="194,56,289,83"/>
+</map>

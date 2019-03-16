@@ -34,7 +34,7 @@ var annotated_dup =
           [ "Socket", "classqb_1_1network_1_1tcp_1_1_socket.html", "classqb_1_1network_1_1tcp_1_1_socket" ]
         ] ],
         [ "udp", null, [
-          [ "Socket", "classqb_1_1network_1_1udp_1_1_socket.html", null ]
+          [ "Socket", "classqb_1_1network_1_1udp_1_1_socket.html", "classqb_1_1network_1_1udp_1_1_socket" ]
         ] ],
         [ "helper", "classqb_1_1network_1_1helper.html", null ],
         [ "ip", "classqb_1_1network_1_1ip.html", "classqb_1_1network_1_1ip" ]
