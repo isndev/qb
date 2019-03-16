@@ -39,7 +39,8 @@ before_build:
       cmake -G %generator% -DQB_BUILD_TEST=ON -DQB_BUILD_SAMPLE=ON -H..
 build_script:
   - cmd: |-
-      cd build && cmake --build . --target ALL_BUILD --config %configuration% -- /nologo
+      cd C:\projects\qb\build
+      cmake --build . --target ALL_BUILD --config %configuration% -- /nologo
 only_commits:
   files:
     - CMakeLists.txt
