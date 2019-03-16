@@ -81,7 +81,7 @@ TEST(CallbackActor, ShouldCallOnCallbackIfRegistred) {
 TEST(CallbackActor, ShouldNotCallOnCallbackAnymoreIfUnregistred) {
     qb::Main main({0});
 
-    main.addActor<TestActor>(0, 1000);
+    main.addActor<TestActor>(0, 10000);
 
     main.start(false);
     EXPECT_FALSE(main.hasError());

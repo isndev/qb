@@ -33,7 +33,7 @@ if(DOXYGEN_FOUND)
     configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
 
     if (${QB_PREFIX_UPPER}_BUILD_DOC)
-        message(STATUS "INFO: Doxygen build added to solution")
+        message("Doxygen build added to solution")
         add_custom_target(${QB_PREFIX}-docs ALL
                 COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}

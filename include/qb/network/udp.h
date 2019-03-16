@@ -31,7 +31,6 @@ namespace           qb {
              */
             class QB_API Socket
                 : public sys::Socket<SocketType::UDP> {
-            public:
                 constexpr static const std::size_t MaxDatagramSize = 65507;
 
                 Socket();

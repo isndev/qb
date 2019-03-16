@@ -35,6 +35,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <qb/utility/build_macros.h>
 #include <qb/system/timestamp.h>
 #include "nanolog.h"
+#undef ERROR
 
 namespace
 {
@@ -110,6 +111,8 @@ namespace nanolog
 				return "INFO";
 			case LogLevel::WARN:
 				return "WARN";
+			case LogLevel::ERROR:
+				return "ERROR";
 			case LogLevel::CRIT:
 				return "CRIT";
 		}

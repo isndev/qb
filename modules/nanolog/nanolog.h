@@ -25,6 +25,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 
 #ifndef NANO_LOG_HEADER_GUARD
 #define NANO_LOG_HEADER_GUARD
+#undef ERROR
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -33,7 +34,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 
 namespace nanolog
 {
-	enum class LogLevel : uint8_t { DEBUG, VERBOSE, INFO, WARN, CRIT };
+	enum class LogLevel : uint8_t { DEBUG, VERBOSE, INFO, WARN, ERROR, CRIT };
 
 	class NanoLogLine
     {
@@ -163,6 +164,7 @@ namespace nanolog
 #define LOG_VERB nanolog::is_logged(nanolog::LogLevel::VERBOSE) && NANO_LOG(nanolog::LogLevel::VERBOSE)
 #define LOG_INFO nanolog::is_logged(nanolog::LogLevel::INFO) && NANO_LOG(nanolog::LogLevel::INFO)
 #define LOG_WARN nanolog::is_logged(nanolog::LogLevel::WARN) && NANO_LOG(nanolog::LogLevel::WARN)
+#define LOG_ERROR nanolog::is_logged(nanolog::LogLevel::ERROR) && NANO_LOG(nanolog::LogLevel::ERROR)
 #define LOG_CRIT nanolog::is_logged(nanolog::LogLevel::CRIT) && NANO_LOG(nanolog::LogLevel::CRIT)
 
 #endif /* NANO_LOG_HEADER_GUARD */

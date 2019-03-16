@@ -142,7 +142,7 @@ before_script:
 script:
   # build and run tests
   - cmake --build . -- -j${JOBS}
-  - ctest -VV --output-on-failure -j${JOBS}
+  - ctest --output-on-failure -j${JOBS}
   - |
     if [${BUILD_COVER} == "ON"]; then
       make qb-coverage;
