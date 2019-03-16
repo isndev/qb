@@ -57,7 +57,7 @@ class TestActorReceiver
     const uint32_t _max_events;
     uint32_t       _count;
 public:
-    TestActorReceiver(uint32_t const max_events)
+    explicit TestActorReceiver(uint32_t const max_events)
         : _max_events(max_events), _count(0) {}
 
     ~TestActorReceiver() {
