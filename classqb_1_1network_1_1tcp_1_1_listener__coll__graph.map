@@ -1,4 +1,0 @@
-<map id="qb::network::tcp::Listener" name="qb::network::tcp::Listener">
-<area shape="rect" id="node2" href="$classqb_1_1network_1_1tcp_1_1_socket.html" title="{qb::network::tcp::Socket\n||+ Socket()\l+ Socket()\l+ Socket()\l+ getRemoteAddress()\l+ getLocalPort()\l+ getRemotePort()\l+ connect()\l+ disconnect()\l+ send()\l+ send()\l+ sendall()\l+ receive()\l}" alt="" coords="9,307,188,545"/>
-<area shape="rect" id="node3" href="$classqb_1_1network_1_1sys_1_1_socket.html" title="{qb::network::sys::Socket\l\&lt; SocketType::TCP \&gt;\n|+ type\l# _handle\l|+ Socket()\l+ ~Socket()\l+ raw()\l+ setBlocking()\l+ isBlocking()\l+ setReceiveBufferSize()\l+ setSendBufferSize()\l+ good()\l+ close()\l# init()\l# init()\l}" alt="" coords="7,5,191,259"/>
-</map>

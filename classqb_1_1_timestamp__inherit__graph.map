@@ -1,6 +1,0 @@
-<map id="qb::Timestamp" name="qb::Timestamp">
-<area shape="rect" id="node2" href="$classqb_1_1_local_timestamp.html" title="{qb::LocalTimestamp\n||+ LocalTimestamp()\l+ LocalTimestamp()\l}" alt="" coords="5,468,160,560"/>
-<area shape="rect" id="node3" href="$classqb_1_1_nano_timestamp.html" title="{qb::NanoTimestamp\n||+ NanoTimestamp()\l+ NanoTimestamp()\l}" alt="" coords="184,468,339,560"/>
-<area shape="rect" id="node4" href="$classqb_1_1_rdts_timestamp.html" title="{qb::RdtsTimestamp\n||+ RdtsTimestamp()\l+ RdtsTimestamp()\l}" alt="" coords="363,468,514,560"/>
-<area shape="rect" id="node5" href="$classqb_1_1_utc_timestamp.html" title="{qb::UtcTimestamp\n||+ UtcTimestamp()\l+ UtcTimestamp()\l}" alt="" coords="538,468,681,560"/>
-</map>
