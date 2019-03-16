@@ -44,9 +44,9 @@ int main (int, char *argv[]) {
     } else
         return 1;
 
+    qb::io::cout() << "Program is running Ctrl-C to stop" << std::endl;
     main.start();  // start the engine asynchronously
-    std::getchar();
-    main.stop();
     main.join();   // Wait for the running engine
+    qb::io::cout() << "Program has stopped" << std::endl;
     return 0;
 }
