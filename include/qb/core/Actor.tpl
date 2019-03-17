@@ -35,23 +35,17 @@ namespace qb {
 
     template<typename _Event, typename _Actor>
     void Actor::registerEvent(_Actor &actor) {
-        auto it = _event_map.find(type_id<_Event>());
-        if (it != _event_map.end())
-            delete it->second;
-        _event_map.insert_or_assign(type_id<_Event>(), new RegisteredEvent<_Event, _Actor>(actor));
+        _handler->registerEvent<_Event>(actor);
     }
 
     template<typename _Event, typename _Actor>
     void Actor::unregisterEvent(_Actor &actor) {
-        auto it = _event_map.find(type_id<_Event>());
-        if (it != _event_map.end())
-            delete it->second;
-        _event_map.insert_or_assign(type_id<_Event>(), new RegisteredEvent<Event, _Actor>(actor));
+        _handler->unregisterEvent<_Event>(actor);
     }
 
     template<typename _Event>
     void Actor::unregisterEvent() {
-        unregisterEvent<_Event>(*this);
+        _handler->unregisterEvent<_Event>(*this);
     }
 
     template<typename _Actor, typename ..._Args>

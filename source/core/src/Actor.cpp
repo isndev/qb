@@ -22,33 +22,12 @@
 
 namespace qb {
 
-    Actor::Actor() {
-        _event_map.reserve(64);
-        registerEvent<Event>(*this);
-        registerEvent<KillEvent>(*this);
-    }
-
-    Actor::~Actor() {
-        for (const auto &revent : _event_map)
-            delete revent.second;
-    }
-
-    void Actor::on(Event *event) const {
-        // TODO: secure this if event not registred
-        // branch fetch find
-        _event_map.at(event->id)->invoke(event);
-    }
-
     void Actor::__set_id(ActorId const &id) {
         static_cast<ActorId &>(*this) = id;
     }
 
     void Actor::__set_id(uint16_t const sid, uint16_t const cid) {
         static_cast<ActorId &>(*this) = {sid, cid};
-    }
-
-    void Actor::on(Event const &event) {
-        LOG_WARN << *this << " received removed event[" << event.id << "]";
     }
 
     void Actor::on(KillEvent const &) {

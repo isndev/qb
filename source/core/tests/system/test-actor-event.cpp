@@ -71,18 +71,13 @@ public:
       return true;
     }
 
-    void on(qb::Event &event) {
-        Actor::on(event);
-        push<TestEvent>(0);
-        kill();
-        _count = _max_events;
-    }
-
     void on(TestEvent const &event) {
         EXPECT_TRUE(event.checkSum());
         if (++_count >= _max_events)
             kill();
     }
+
+    void on(RemovedEvent const &){}
 };
 
 class BaseSender {
@@ -167,18 +162,6 @@ struct AllocatedPipePushActor : public BaseActorSender<AllocatedPipePushActor>
     }
 };
 
-struct RemovedEventActor : public BaseActorSender<RemovedEventActor>
-{
-    RemovedEventActor(uint32_t const max_events, qb::ActorId const to)
-            : BaseActorSender(max_events, to) {
-        _count = _max_events - 1;
-    }
-    void doSend() {
-        getPipe(_to).push<RemovedEvent>();
-        kill();
-    }
-};
-
 #ifdef NDEBUG
 constexpr uint32_t MAX_ACTORS = 1024u;
 constexpr uint32_t MAX_EVENTS = 1024u;
@@ -228,8 +211,7 @@ typedef testing::Types <
         BasicSendActor,
         EventBuilderPushActor,
         PipePushActor,
-        AllocatedPipePushActor,
-        RemovedEventActor
+        AllocatedPipePushActor
         > Implementations;
 
 TYPED_TEST_SUITE(ActorEventMono, Implementations);

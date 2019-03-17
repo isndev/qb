@@ -91,6 +91,93 @@ namespace qb {
         uint64_t        _nano_timer;
         // !Members
 
+
+        class IRegisteredEventBase {
+        public:
+            virtual ~IRegisteredEventBase() {}
+            virtual uint32_t id() const = 0;
+        };
+
+        class IEventhandler {
+        public:
+            virtual ~IEventhandler() {}
+            virtual void invoke(Event *data) const = 0;
+            virtual void registerEvent(IRegisteredEventBase *iRegisteredEvent) = 0;
+            virtual void unregisterEvent(ActorId const id) = 0;
+        };
+
+        template<typename _Event>
+        class EventHandler : public IEventhandler {
+            friend VirtualCore;
+
+            class IRegisteredEvent : public IRegisteredEventBase {
+            public:
+                virtual ~IRegisteredEvent() {}
+                virtual void invoke(_Event &data) const = 0;
+                virtual uint32_t id() const = 0;
+            };
+
+            template<typename _Actor>
+            class RegisteredEvent : public IRegisteredEvent {
+                _Actor &_actor;
+            public:
+                explicit RegisteredEvent(_Actor &actor)
+                        : _actor(actor) {}
+
+                virtual void invoke(_Event &event) const override final {
+                    if (likely(_actor.isAlive()))
+                        _actor.on(event);
+                }
+
+                virtual uint32_t id() const override final {
+                    return _actor.id();
+                }
+            };
+
+            std::unordered_map<uint32_t, IRegisteredEvent *> _registered_events;
+
+            EventHandler() = default;
+
+            virtual void invoke(Event *data) const override final {
+                auto &event = *reinterpret_cast<_Event *>(data);
+                event.state[0] = 0;
+                if (event.state[1]) {
+                    for (const auto registered_event : _registered_events) {
+                        registered_event.second->invoke(event);
+                    }
+                } else {
+                    // Todo: secure this
+                    _registered_events.at(event.dest)->invoke(event);
+                }
+
+                if (!event.state[0])
+                    event.~_Event();
+            }
+
+            virtual void registerEvent(IRegisteredEventBase *ievent) override final {
+                auto it = _registered_events.find(ievent->id());
+                if (it == _registered_events.end())
+                    _registered_events.insert({ievent->id(), static_cast<IRegisteredEvent *>(ievent)});
+            }
+            virtual void unregisterEvent(ActorId const id) override final {
+                auto it = _registered_events.find(id);
+                if (it != _registered_events.end()) {
+                    delete it->second;
+                    _registered_events.erase(it);
+                }
+            }
+        };
+
+        std::unordered_map<uint32_t, IEventhandler *> _event_map;
+
+        template<typename _Event, typename _Actor>
+        void registerEvent(_Actor &actor);
+
+        template<typename _Event, typename _Actor>
+        void unregisterEvent(_Actor &actor);
+
+        void unregisterEvents(ActorId const id);
+
         VirtualCore() = delete;
         VirtualCore(uint8_t const id, Main &engine);
 
