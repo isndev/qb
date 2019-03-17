@@ -22,6 +22,27 @@
 
 namespace qb {
 
+    template<typename _Event, typename _Actor>
+    void VirtualCore::registerEvent(_Actor &actor) {
+        using handler_type = EventHandler<_Event>;
+        using event_type = typename handler_type::template RegisteredEvent<_Actor>;
+        auto ievent = new event_type(actor);
+        auto it = _event_map.find(qb::type_id<_Event>());
+        if (it == _event_map.end())
+            _event_map.insert({qb::type_id<_Event>(), new handler_type{}}).first->second->registerEvent(ievent);
+        else
+            it->second->registerEvent(ievent);
+    }
+
+    template<typename _Event, typename _Actor>
+    void VirtualCore::unregisterEvent(_Actor &actor) {
+        auto it = _event_map.find(qb::type_id<_Event>());
+        if (it != _event_map.end()) {
+            it->second->unregisterEvent(actor.id());
+        } else
+            LOG_WARN << "" << *this << "Failed to unregister event";
+    }
+
     template<typename _Actor>
     bool VirtualCore::initActor(_Actor * const actor, bool doinit) {
         if constexpr (!std::is_base_of<Service, _Actor>::value) {

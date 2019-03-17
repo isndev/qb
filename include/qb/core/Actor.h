@@ -44,33 +44,8 @@ namespace qb {
     {
         friend class VirtualCore;
 
-        class IRegisteredEvent {
-        public:
-            virtual ~IRegisteredEvent() {}
-            virtual void invoke(Event *data) const = 0;
-        };
-
-        template<typename _Event, typename _Actor>
-        class RegisteredEvent : public IRegisteredEvent {
-            _Actor &_actor;
-        public:
-            explicit RegisteredEvent(_Actor &actor)
-                    : _actor(actor) {}
-
-            virtual void invoke(Event *data) const override final {
-                auto &event = *reinterpret_cast<_Event *>(data);
-                if (likely(_actor.isAlive()))
-                    _actor.on(event);
-                if (!event.state[0])
-                    event.~_Event();
-            }
-        };
-
-        void on(Event *event) const;
-
         mutable bool _alive = true;
         VirtualCore * _handler = nullptr;
-        std::unordered_map<uint32_t, IRegisteredEvent const *> _event_map;
         void __set_id(ActorId const &id);
     protected:
         /*!
@@ -90,11 +65,11 @@ namespace qb {
 
         /*!
          */
-        Actor();
+        Actor() = default;
 
         /*!
          */
-        virtual ~Actor();
+        virtual ~Actor() = default;
 
         /*!
          * @brief DerivedActor should implement this method
@@ -129,24 +104,6 @@ namespace qb {
          * @name Registered Event
          * @{
          */
-
-        /*!
-         * @brief Called when received unregistered event
-         * @param event received event
-         * @details
-         * This event can be overloaded by DerivedActor.\n
-         * example:
-         * @code
-         * // onInit()
-         * registerEvent<qb::Event>(*this);
-         * // DerivedActor should also define the event callback
-         * void on(qb::Event &event) {
-         *   // do something before killing actor
-         *   kill();
-         * }
-         * @endcode
-         */
-        void on(Event const &event);
 
         /*!
          * @brief Receiving this event will kill the Actor

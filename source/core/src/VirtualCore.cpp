@@ -24,6 +24,7 @@ namespace qb {
             , _mail_box(engine.getMailBox(id))
             , _nano_timer(Timestamp::nano()) {
         _ids.reserve(std::numeric_limits<uint16_t>::max() - _nb_service);
+        _event_map.reserve(128);
         for (auto i = _nb_service + 1; i <= std::numeric_limits<uint16_t>::max(); ++i) {
             _ids.insert(static_cast<uint16_t >(i));
         }
@@ -36,6 +37,12 @@ namespace qb {
     }
 
     // Event Management
+    void VirtualCore::unregisterEvents(ActorId const id) {
+        for (auto handler : _event_map)
+            handler.second->unregisterEvent(id);
+
+    }
+
     Pipe &VirtualCore::__getPipe__(uint32_t core) {
         return _pipes[core];
     }
@@ -46,18 +53,8 @@ namespace qb {
         std::size_t i = 0;
         while (i < nb_events) {
             auto event = reinterpret_cast<Event *>(buffer + i);
-            auto actor = _actors.find(event->dest);
-            if (likely(actor != std::end(_actors))) {
-                actor->second->on(event);
-                LOG_DEBUG << "" << *this << " Sucess Event"
-                          << " [Source](" << event->source << ")"
-                          << " [Dest](" << event->dest << ") Size=" << event->bucket_size;
-            } else {
-                LOG_WARN << "" << *this << " Failed Event"
-                         << " [Source](" << event->source << ")"
-                         << " [Dest](" << event->dest << ") NOT FOUND";
-            }
-
+            // Todo : secure this
+            _event_map.at(event->id)->invoke(event);
             i += event->bucket_size;
         }
     }
@@ -209,18 +206,20 @@ namespace qb {
 
     // Actor Management
     void VirtualCore::addActor(Actor *actor) {
+        actor->registerEvent<KillEvent>(*actor);
         _actors.insert({actor->id(), actor});
         LOG_DEBUG << "New " << *actor;
     }
 
     void VirtualCore::removeActor(ActorId const id) {
         const auto it = _actors.find(id);
-        LOG_DEBUG << "Delete Actor(" << id.index() << "," << id.sid() << ")";
         delete it->second;
         _actors.erase(it);
         unregisterCallback(id);
+        unregisterEvents(id);
         if (id._id > _nb_service)
             _ids.insert(id._id);
+        LOG_DEBUG << "Delete Actor(" << id.index() << "," << id.sid() << ")";
     }
 
     //!Actor Management
