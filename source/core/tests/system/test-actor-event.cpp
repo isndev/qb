@@ -299,9 +299,14 @@ public:
 class TestSendReply : public qb::Actor
 {
     const qb::ActorId _to;
+    uint32_t counter = 0;
 public:
     explicit TestSendReply(qb::ActorId const to)
         : _to(to) {}
+
+    ~TestSendReply() {
+        EXPECT_EQ(counter, 1u);
+    }
 
     virtual bool onInit() override final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
@@ -315,9 +320,8 @@ public:
     }
 
     void on(TestEvent &event) {
-        unregisterEvent<TestEvent>(*this);
+        ++counter;
         EXPECT_TRUE(event.checkSum());
-        forward(_to, event);
         push<qb::KillEvent>(qb::BroadcastId(1));
         kill();
     }
@@ -325,8 +329,13 @@ public:
 
 class TestReceiveReply : public qb::Actor
 {
+    uint32_t counter = 0;
 public:
     TestReceiveReply() = default;
+
+    ~TestReceiveReply() {
+        EXPECT_EQ(counter, 2u);
+    }
 
     virtual bool onInit() override final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
@@ -338,6 +347,7 @@ public:
         EXPECT_TRUE(event.checkSum());
         reply(event);
         forward(event.getSource(), event);
+        ++counter;
     }
 };
 
