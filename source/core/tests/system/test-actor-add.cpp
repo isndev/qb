@@ -141,3 +141,39 @@ TEST(AddReferencedActor, ShouldReturnActorPtrOnSucess) {
     main.start(false);
     EXPECT_FALSE(main.hasError());
 }
+
+class TestKillSenderActor : public qb::Actor
+{
+public:
+    TestKillSenderActor() = default;
+
+    virtual bool onInit() override final {
+        EXPECT_NE(static_cast<uint32_t>(id()), 0u);
+        push<qb::KillEvent>(id());
+        push<qb::KillEvent>(qb::BroadcastId(1));
+        return true;
+    }
+};
+
+class TestKillActor : public qb::Actor
+{
+public:
+    TestKillActor() = default;
+
+    virtual bool onInit() override final {
+        EXPECT_NE(static_cast<uint32_t>(id()), 0u);
+        return true;
+    }
+};
+
+TEST(AddReferencedActor, KillActorUsingEvent) {
+    qb::Main main({0, 1});
+
+    main.addActor<TestKillSenderActor>(0);
+    auto builder = main.core(1);
+    for (auto i = 0u; i < 1024; ++i)
+        builder.addActor<TestKillActor>();
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+}

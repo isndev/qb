@@ -42,8 +42,6 @@
 # include "Actor.h"
 # include "Main.h"
 
-# define SERVICE_ACTOR_INDEX 10000
-
 class VirtualCore;
 qb::io::stream &operator<<(qb::io::stream &os, qb::VirtualCore const &core);
 
@@ -125,6 +123,7 @@ namespace qb {
             virtual void invoke(Event *data) const override final {
                 auto &event = *reinterpret_cast<_Event *>(data);
                 auto flag = false;
+
                 event.state[0] = 0;
                 if (event.dest.isBroadcast()) {
                     for (const auto registered_event : _registered_events) {
