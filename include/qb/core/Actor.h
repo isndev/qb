@@ -45,7 +45,7 @@ namespace qb {
         friend class VirtualCore;
 
         mutable bool _alive = true;
-        VirtualCore * _handler = nullptr;
+//        VirtualCore * _handler = nullptr;
         void __set_id(ActorId const &id);
     protected:
         /*!

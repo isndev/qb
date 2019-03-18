@@ -160,6 +160,7 @@ namespace qb {
     }
 
     void VirtualCore::__spawn__() {
+        _handler = this;
         try {
             __init__();
             __init__actors__();
@@ -206,8 +207,8 @@ namespace qb {
 
     // Actor Management
     void VirtualCore::addActor(Actor *actor) {
-        actor->registerEvent<KillEvent>(*actor);
         _actors.insert({actor->id(), actor});
+        registerEvent<KillEvent>(*actor);
         LOG_DEBUG << "New " << *actor;
     }
 
@@ -297,7 +298,7 @@ namespace qb {
     uint16_t VirtualCore::getIndex() const { return _index; }
     uint64_t VirtualCore::time() const { return _nano_timer; }
 	uint16_t VirtualCore::_nb_service = 0;
-
+    thread_local VirtualCore *VirtualCore::_handler = nullptr;
 }
 
 qb::io::stream &operator<<(qb::io::stream &os, qb::VirtualCore const &core) {
