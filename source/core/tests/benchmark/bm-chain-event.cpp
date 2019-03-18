@@ -78,7 +78,7 @@ static void BM_CHAIN_EVENT_MONO_CORE(benchmark::State& state) {
     }
 }
 
-BENCHMARK(BM_CHAIN_EVENT_MONO_CORE)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_CHAIN_EVENT_MONO_CORE)->Ranges({{4096, 8<<10}, {256, 1024}})->Unit(benchmark::kMillisecond);
 
 static void BM_CHAIN_EVENT_DUAL_CORE(benchmark::State& state) {
     for (auto _ : state) {
@@ -96,7 +96,7 @@ static void BM_CHAIN_EVENT_DUAL_CORE(benchmark::State& state) {
     }
 }
 
-BENCHMARK(BM_CHAIN_EVENT_DUAL_CORE)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_CHAIN_EVENT_DUAL_CORE)->Ranges({{4096, 8<<10}, {256, 1024}})->Unit(benchmark::kMillisecond);
 
 static void BM_CHAIN_EVENT_QUAD_CORE(benchmark::State& state) {
     for (auto _ : state) {
@@ -118,7 +118,7 @@ static void BM_CHAIN_EVENT_QUAD_CORE(benchmark::State& state) {
     }
 }
 
-BENCHMARK(BM_CHAIN_EVENT_QUAD_CORE)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_CHAIN_EVENT_QUAD_CORE)->Ranges({{4096, 8<<10}, {256, 1024}})->Unit(benchmark::kMillisecond);
 
 
 BENCHMARK_MAIN();

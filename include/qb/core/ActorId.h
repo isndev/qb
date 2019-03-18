@@ -58,8 +58,6 @@ namespace qb {
         ActorId(ActorId const &) = default;
 
         operator const uint32_t &() const;
-        bool operator!=(ActorId const rhs) const;
-        bool operator!=(uint32_t const rhs) const;
 
         /*!
          * @return Service index

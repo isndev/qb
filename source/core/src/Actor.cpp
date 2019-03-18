@@ -67,10 +67,16 @@ namespace qb {
     }
 
     void Actor::reply(Event &event) const {
+        if (unlikely(event.dest.isBroadcast())) {
+            LOG_WARN << "" << *this << " failed to reply broadcast event";
+        }
         _handler->reply(event);
     }
 
     void Actor::forward(ActorId const dest, Event &event) const {
+        if (unlikely(event.dest.isBroadcast())) {
+            LOG_WARN << "" << *this << " failed to forward broadcast event";
+        }
         _handler->forward(dest, event);
     }
 
