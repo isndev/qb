@@ -206,6 +206,44 @@ protected:
     virtual void TearDown() {}
 };
 
+template <typename ActorSender>
+class ActorEventBroadcastMono : public testing::Test
+{
+protected:
+    qb::Main main;
+    ActorEventBroadcastMono() : main({0}) {}
+    virtual void SetUp() {
+        main.addActor<ActorSender>(0, MAX_EVENTS, qb::BroadcastId(0));
+        for (auto i = 0u; i < MAX_ACTORS; ++i) {
+            main.addActor<TestActorReceiver>(0, MAX_EVENTS);
+        }
+    }
+    virtual void TearDown() {}
+};
+
+template <typename ActorSender>
+class ActorEventBroadcastMulti : public testing::Test
+{
+protected:
+    const uint32_t max_core;
+    qb::Main main;
+    ActorEventBroadcastMulti()
+            : max_core(std::thread::hardware_concurrency())
+            , main(qb::CoreSet::build(max_core))
+    {}
+
+    virtual void SetUp() {
+        for (auto i = 0u; i < max_core; ++i)
+        {
+            main.addActor<ActorSender>(i, MAX_EVENTS, qb::BroadcastId((i + 1) % max_core));
+            for (auto j = 0u; j < MAX_ACTORS; ++j) {
+                main.addActor<TestActorReceiver>(((i + 1) % max_core), MAX_EVENTS);
+            }
+        }
+    }
+    virtual void TearDown() {}
+};
+
 typedef testing::Types <
         BasicPushActor,
         BasicSendActor,
@@ -215,7 +253,9 @@ typedef testing::Types <
         > Implementations;
 
 TYPED_TEST_SUITE(ActorEventMono, Implementations);
+TYPED_TEST_SUITE(ActorEventBroadcastMono, Implementations);
 TYPED_TEST_SUITE(ActorEventMulti, Implementations);
+TYPED_TEST_SUITE(ActorEventBroadcastMulti, Implementations);
 
 TYPED_TEST(ActorEventMono, SendEvents) {
     this->main.start();
@@ -223,7 +263,20 @@ TYPED_TEST(ActorEventMono, SendEvents) {
     EXPECT_FALSE(this->main.hasError());
 }
 
+TYPED_TEST(ActorEventBroadcastMono, SendEvents) {
+    this->main.start();
+    this->main.join();
+    EXPECT_FALSE(this->main.hasError());
+}
+
 TYPED_TEST(ActorEventMulti, SendEvents) {
+    EXPECT_GT(this->max_core, 1u);
+    this->main.start();
+    this->main.join();
+    EXPECT_FALSE(this->main.hasError());
+}
+
+TYPED_TEST(ActorEventBroadcastMulti, SendEvents) {
     EXPECT_GT(this->max_core, 1u);
     this->main.start();
     this->main.join();

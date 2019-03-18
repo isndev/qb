@@ -34,7 +34,6 @@ namespace qb {
             std::swap(data.id, data.service_event_id);
         }
 
-        data.state = 0;
         data.bucket_size = BUCKET_SIZE;
         return data;
     }
@@ -54,7 +53,6 @@ namespace qb {
             std::swap(data.id, data.service_event_id);
         }
 
-        data.state = 0;
         data.bucket_size = static_cast<uint16_t>(size);
         return data;
     }

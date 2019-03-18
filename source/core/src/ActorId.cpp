@@ -45,6 +45,10 @@ namespace qb {
     uint16_t ActorId::index() const {
         return _index;
     }
+
+    bool ActorId::isBroadcast() const {
+        return _id == BroadcastSid;
+    }
 }
 
 qb::io::stream &operator<<(qb::io::stream &os, qb::ActorId const &id) {

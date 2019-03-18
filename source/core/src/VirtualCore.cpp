@@ -25,7 +25,7 @@ namespace qb {
             , _nano_timer(Timestamp::nano()) {
         _ids.reserve(std::numeric_limits<uint16_t>::max() - _nb_service);
         _event_map.reserve(128);
-        for (auto i = _nb_service + 1; i <= std::numeric_limits<uint16_t>::max(); ++i) {
+        for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
             _ids.insert(static_cast<uint16_t >(i));
         }
     }

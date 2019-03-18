@@ -75,22 +75,6 @@ namespace qb {
         using PipeMap = std::unordered_map<uint32_t, Pipe>;
         using RemoveActorList = std::unordered_set<uint32_t>;
         using AvailableIdList = std::unordered_set<uint16_t>;
-        //!Types
-    private:
-        // Members
-        const uint8_t   _index;
-        Main           &_engine;
-        MPSCBuffer     &_mail_box;
-        AvailableIdList _ids;
-        ActorMap        _actors;
-        CallbackMap     _actor_callbacks;
-        RemoveActorList _actor_to_remove;
-        PipeMap         _pipes;
-        EventBuffer     _event_buffer;
-        std::thread     _thread;
-        uint64_t        _nano_timer;
-        // !Members
-
 
         class IRegisteredEventBase {
         public:
@@ -141,7 +125,7 @@ namespace qb {
             virtual void invoke(Event *data) const override final {
                 auto &event = *reinterpret_cast<_Event *>(data);
                 event.state[0] = 0;
-                if (event.state[1]) {
+                if (event.dest.isBroadcast()) {
                     for (const auto registered_event : _registered_events) {
                         registered_event.second->invoke(event);
                     }
@@ -168,15 +152,24 @@ namespace qb {
             }
         };
 
-        std::unordered_map<uint32_t, IEventhandler *> _event_map;
+        using EventMap = std::unordered_map<uint32_t, IEventhandler *>;
 
-        template<typename _Event, typename _Actor>
-        void registerEvent(_Actor &actor);
-
-        template<typename _Event, typename _Actor>
-        void unregisterEvent(_Actor &actor);
-
-        void unregisterEvents(ActorId const id);
+        //!Types
+    private:
+        // Members
+        const uint8_t   _index;
+        Main           &_engine;
+        MPSCBuffer     &_mail_box;
+        AvailableIdList _ids;
+        ActorMap        _actors;
+        EventMap        _event_map;
+        CallbackMap     _actor_callbacks;
+        RemoveActorList _actor_to_remove;
+        PipeMap         _pipes;
+        EventBuffer     _event_buffer;
+        std::thread     _thread;
+        uint64_t        _nano_timer;
+        // !Members
 
         VirtualCore() = delete;
         VirtualCore(uint8_t const id, Main &engine);
@@ -184,6 +177,11 @@ namespace qb {
         ActorId __generate_id__();
 
         // Event Management
+        template<typename _Event, typename _Actor>
+        void registerEvent(_Actor &actor);
+        template<typename _Event, typename _Actor>
+        void unregisterEvent(_Actor &actor);
+        void unregisterEvents(ActorId const id);
         Pipe &__getPipe__(uint32_t core);
         void __receive_events__(CacheLine *buffer, std::size_t const nb_events);
         void __receive__();
