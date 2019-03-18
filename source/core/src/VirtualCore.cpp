@@ -251,13 +251,14 @@ namespace qb {
     }
 
     bool VirtualCore::try_send(Event const &event) const {
-        // Todo: Fix MonoThread Optimization
-         if (event.dest._index == _index && _mono_sends < 64) {
-             ++_mono_sends;
+        thread_local static uint32_t counter = 0;
+	    // Todo: Fix MonoThread Optimization
+         if (event.dest._index == _index && counter < 64) {
+             ++counter;
              _event_map.at(event.id)->invoke(const_cast<Event *>(&event));
              return true;
          }
-        _mono_sends = 0;
+        counter = 0;
         return _engine.send(event);
     }
 
