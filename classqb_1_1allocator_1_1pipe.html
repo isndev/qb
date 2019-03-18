@@ -1,0 +1,245 @@
+<!-- HTML header for doxygen 1.8.14-->
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta http-equiv="cache-control" content="max-age=86400"/>
+    <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+    <meta name="generator" content="Doxygen 1.8.13"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>qb: qb::allocator::pipe&lt; T, _SIZE &gt; Class Template Reference</title>
+    <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+    <meta name="keywords" content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, git">
+    <meta name="author" content="isndev">
+    <link href="tabs.css" rel="stylesheet" type="text/css"/>
+    <script type="text/javascript" src="jquery.js"></script>
+    <script type="text/javascript" src="dynsections.js"></script>
+    <script type="text/javascript" src="https://buttons.github.io/buttons.js"></script>
+    <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="resize.js"></script>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript">
+  $(document).ready(initResizable);
+</script>
+    <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+<script type="text/javascript">
+  $(document).ready(function() { init_search(); });
+</script>
+    <link href="doxygen.css" rel="stylesheet" type="text/css" />
+    <link href='https://fonts.googleapis.com/css?family=Roboto+Slab' rel='stylesheet' type='text/css'>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="style.css" rel="stylesheet" type="text/css"/>
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+    <script src="style.js"></script>
+</head>
+<body>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <a class="navbar-brand" href="/">
+            <img src="logo.png" width="80px" alt="qb">
+            <span>C++ Actor Framework</span>
+        </a>
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+        <div>        <div id="MSearchBox" class="MSearchBoxInactive">
+        <span class="left">
+          <img id="MSearchSelect" src="search/mag_sel.png"
+               onmouseover="return searchBox.OnSearchSelectShow()"
+               onmouseout="return searchBox.OnSearchSelectHide()"
+               alt=""/>
+          <input type="text" id="MSearchField" value="Search" accesskey="S"
+               onfocus="searchBox.OnSearchFieldFocus(true)" 
+               onblur="searchBox.OnSearchFieldFocus(false)" 
+               onkeyup="searchBox.OnSearchFieldChange(event)"/>
+          </span><span class="right">
+            <a id="MSearchClose" href="javascript:searchBox.CloseResultsWindow()"><img id="MSearchCloseImg" border="0" src="search/close.png" alt=""/></a>
+          </span>
+        </div>
+</div>
+    </nav>
+    <!--<div id="titlearea">-->
+        <!--<table cellspacing="0" cellpadding="0">-->
+            <!--<tbody>-->
+            <!--<tr style="height: 56px;">-->
+                <!--&lt;!&ndash;BEGIN PROJECT_LOGO&ndash;&gt;-->
+                <!--<td id="projectlogo"><a href="https://github.com/isndev/qb"><img alt="Logo" style="height: 56px;" src="logo.png"/></a></td>-->
+                <!--&lt;!&ndash;END PROJECT_LOGO&ndash;&gt;-->
+                <!--&lt;!&ndash;BEGIN PROJECT_NAME&ndash;&gt;-->
+                <!--<td id="projectalign" style="padding-left: 0.5em;">-->
+                    <!--<div id="projectname">qb-->
+                        <!--&lt;!&ndash;BEGIN PROJECT_NUMBER&ndash;&gt;&#160;<span id="projectnumber">0.9.0.0</span>&lt;!&ndash;END PROJECT_NUMBER&ndash;&gt;-->
+                    <!--</div>>-->
+                <!--</td>-->
+                <!--&lt;!&ndash;END PROJECT_NAME&ndash;&gt;-->
+                <!--&lt;!&ndash;BEGIN !PROJECT_NAME&ndash;&gt;-->
+                <!--&lt;!&ndash;BEGIN PROJECT_BRIEF&ndash;&gt;-->
+                <!--<td style="padding-left: 0.5em;">-->
+                    <!--<div id="projectbrief">C++17 Actor Framework</div>-->
+                <!--</td>-->
+                <!--&lt;!&ndash;END PROJECT_BRIEF&ndash;&gt;-->
+                <!--&lt;!&ndash;END !PROJECT_NAME&ndash;&gt;-->
+            <!--</tr>-->
+            <!--</tbody>-->
+        <!--</table>-->
+    <!--</div>-->
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.8.13 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search",false,'Search');
+</script>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(document).ready(function(){initNavTree('classqb_1_1allocator_1_1pipe.html','');});
+</script>
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<iframe src="javascript:void(0)" frameborder="0" 
+        name="MSearchResults" id="MSearchResults">
+</iframe>
+</div>
+
+<div class="header">
+  <div class="summary">
+<a href="#pub-methods">Public Member Functions</a> &#124;
+<a href="#pro-attribs">Protected Attributes</a> &#124;
+<a href="classqb_1_1allocator_1_1pipe-members.html">List of all members</a>  </div>
+  <div class="headertitle">
+<div class="title">qb::allocator::pipe&lt; T, _SIZE &gt; Class Template Reference</div>  </div>
+</div><!--header-->
+<div class="contents">
+<div class="dynheader">
+Inheritance diagram for qb::allocator::pipe&lt; T, _SIZE &gt;:</div>
+<div class="dyncontent">
+ <div class="center">
+  <img src="classqb_1_1allocator_1_1pipe.png" usemap="#qb::allocator::pipe_3C_20T_2C_20_5FSIZE_20_3E_map" alt=""/>
+  <map id="qb::allocator::pipe_3C_20T_2C_20_5FSIZE_20_3E_map" name="qb::allocator::pipe_3C_20T_2C_20_5FSIZE_20_3E_map">
+<area href="structqb_1_1nocopy.html" alt="qb::nocopy" shape="rect" coords="0,0,185,24"/>
+</map>
+ </div></div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:a0b7e41f9d393dff15ba03ea367e04bc9"><td class="memItemLeft" align="right" valign="top"><a id="a0b7e41f9d393dff15ba03ea367e04bc9"></a>
+std::size_t&#160;</td><td class="memItemRight" valign="bottom"><b>capacity</b> () const</td></tr>
+<tr class="separator:a0b7e41f9d393dff15ba03ea367e04bc9"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad92ca5e336fc1a1fc76cc0d6288d2f45"><td class="memItemLeft" align="right" valign="top"><a id="ad92ca5e336fc1a1fc76cc0d6288d2f45"></a>
+const auto&#160;</td><td class="memItemRight" valign="bottom"><b>data</b> () const</td></tr>
+<tr class="separator:ad92ca5e336fc1a1fc76cc0d6288d2f45"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab25b078b613cd35f4b8e34d9a50da01e"><td class="memItemLeft" align="right" valign="top"><a id="ab25b078b613cd35f4b8e34d9a50da01e"></a>
+std::size_t&#160;</td><td class="memItemRight" valign="bottom"><b>begin</b> () const</td></tr>
+<tr class="separator:ab25b078b613cd35f4b8e34d9a50da01e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a3494b4a02084f833144d61878a43994b"><td class="memItemLeft" align="right" valign="top"><a id="a3494b4a02084f833144d61878a43994b"></a>
+std::size_t&#160;</td><td class="memItemRight" valign="bottom"><b>end</b> () const</td></tr>
+<tr class="separator:a3494b4a02084f833144d61878a43994b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a32794d04e3e172a776c149546c4125af"><td class="memItemLeft" align="right" valign="top"><a id="a32794d04e3e172a776c149546c4125af"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>free_front</b> (std::size_t const size)</td></tr>
+<tr class="separator:a32794d04e3e172a776c149546c4125af"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a048a8c4f59fa33093c91c30e557581ce"><td class="memItemLeft" align="right" valign="top"><a id="a048a8c4f59fa33093c91c30e557581ce"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>free_back</b> (std::size_t const size)</td></tr>
+<tr class="separator:a048a8c4f59fa33093c91c30e557581ce"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab0d0bb2302f205abdfc9a4102caf3ba4"><td class="memItemLeft" align="right" valign="top"><a id="ab0d0bb2302f205abdfc9a4102caf3ba4"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>reset</b> (std::size_t const begin)</td></tr>
+<tr class="separator:ab0d0bb2302f205abdfc9a4102caf3ba4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a4d2afea11e9cf3b5ab14071fe9f20b35"><td class="memItemLeft" align="right" valign="top"><a id="a4d2afea11e9cf3b5ab14071fe9f20b35"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>reset</b> ()</td></tr>
+<tr class="separator:a4d2afea11e9cf3b5ab14071fe9f20b35"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aa07130d098f039d5429144aaa5c026f6"><td class="memItemLeft" align="right" valign="top"><a id="aa07130d098f039d5429144aaa5c026f6"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>free</b> (std::size_t const size)</td></tr>
+<tr class="separator:aa07130d098f039d5429144aaa5c026f6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6839664662f9d253839f066debe78e33"><td class="memItemLeft" align="right" valign="top"><a id="a6839664662f9d253839f066debe78e33"></a>
+auto *&#160;</td><td class="memItemRight" valign="bottom"><b>allocate_back</b> (std::size_t const size)</td></tr>
+<tr class="separator:a6839664662f9d253839f066debe78e33"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab0bd1d2b7b3534852602106cd83e52d7"><td class="memTemplParams" colspan="2"><a id="ab0bd1d2b7b3534852602106cd83e52d7"></a>
+template&lt;typename U , typename ... _Init&gt; </td></tr>
+<tr class="memitem:ab0bd1d2b7b3534852602106cd83e52d7"><td class="memTemplItemLeft" align="right" valign="top">U &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><b>allocate_back</b> (_Init &amp;&amp;...init)</td></tr>
+<tr class="separator:ab0bd1d2b7b3534852602106cd83e52d7"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad1f5e26c5a01a562765dbd7761df66f5"><td class="memTemplParams" colspan="2"><a id="ad1f5e26c5a01a562765dbd7761df66f5"></a>
+template&lt;typename U , typename ... _Init&gt; </td></tr>
+<tr class="memitem:ad1f5e26c5a01a562765dbd7761df66f5"><td class="memTemplItemLeft" align="right" valign="top">U &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><b>allocate_size</b> (std::size_t const size, _Init &amp;&amp;...init)</td></tr>
+<tr class="separator:ad1f5e26c5a01a562765dbd7761df66f5"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a557005612979b6f85268828f1b0ca70d"><td class="memItemLeft" align="right" valign="top"><a id="a557005612979b6f85268828f1b0ca70d"></a>
+auto&#160;</td><td class="memItemRight" valign="bottom"><b>allocate</b> (std::size_t const size)</td></tr>
+<tr class="separator:a557005612979b6f85268828f1b0ca70d"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a095389d4ec90f99d1602bdee23e413b8"><td class="memTemplParams" colspan="2"><a id="a095389d4ec90f99d1602bdee23e413b8"></a>
+template&lt;typename U , typename ... _Init&gt; </td></tr>
+<tr class="memitem:a095389d4ec90f99d1602bdee23e413b8"><td class="memTemplItemLeft" align="right" valign="top">U &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><b>allocate</b> (_Init &amp;&amp;...init)</td></tr>
+<tr class="separator:a095389d4ec90f99d1602bdee23e413b8"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a09372e3dfc97578af695c4aa74b5b887"><td class="memTemplParams" colspan="2"><a id="a09372e3dfc97578af695c4aa74b5b887"></a>
+template&lt;typename U &gt; </td></tr>
+<tr class="memitem:a09372e3dfc97578af695c4aa74b5b887"><td class="memTemplItemLeft" align="right" valign="top">U &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><b>recycle_back</b> (U const &amp;data)</td></tr>
+<tr class="separator:a09372e3dfc97578af695c4aa74b5b887"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a760903c2a2397ade68d6f40a2967ad4b"><td class="memTemplParams" colspan="2"><a id="a760903c2a2397ade68d6f40a2967ad4b"></a>
+template&lt;typename U &gt; </td></tr>
+<tr class="memitem:a760903c2a2397ade68d6f40a2967ad4b"><td class="memTemplItemLeft" align="right" valign="top">U &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><b>recycle_back</b> (U const &amp;data, std::size_t const size)</td></tr>
+<tr class="separator:a760903c2a2397ade68d6f40a2967ad4b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:aacf3bb588504f5c5998a12a01c9edee6"><td class="memTemplParams" colspan="2"><a id="aacf3bb588504f5c5998a12a01c9edee6"></a>
+template&lt;typename U &gt; </td></tr>
+<tr class="memitem:aacf3bb588504f5c5998a12a01c9edee6"><td class="memTemplItemLeft" align="right" valign="top">U &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><b>recycle</b> (U const &amp;data)</td></tr>
+<tr class="separator:aacf3bb588504f5c5998a12a01c9edee6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:adebff904ac574836574632db1f83faf0"><td class="memTemplParams" colspan="2"><a id="adebff904ac574836574632db1f83faf0"></a>
+template&lt;typename U &gt; </td></tr>
+<tr class="memitem:adebff904ac574836574632db1f83faf0"><td class="memTemplItemLeft" align="right" valign="top">U &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><b>recycle</b> (U const &amp;data, std::size_t const size)</td></tr>
+<tr class="separator:adebff904ac574836574632db1f83faf0"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ac33e071451d19bbb2021592ee8c7f032"><td class="memItemLeft" align="right" valign="top"><a id="ac33e071451d19bbb2021592ee8c7f032"></a>
+void&#160;</td><td class="memItemRight" valign="bottom"><b>reorder</b> ()</td></tr>
+<tr class="separator:ac33e071451d19bbb2021592ee8c7f032"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pro-attribs"></a>
+Protected Attributes</h2></td></tr>
+<tr class="memitem:a22abcaf4aa264a855045c1c5fdd6b8f3"><td class="memItemLeft" align="right" valign="top"><a id="a22abcaf4aa264a855045c1c5fdd6b8f3"></a>
+std::size_t&#160;</td><td class="memItemRight" valign="bottom"><b>_begin</b></td></tr>
+<tr class="separator:a22abcaf4aa264a855045c1c5fdd6b8f3"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a6e789fae1f59a74c62a573c16fba755c"><td class="memItemLeft" align="right" valign="top"><a id="a6e789fae1f59a74c62a573c16fba755c"></a>
+std::size_t&#160;</td><td class="memItemRight" valign="bottom"><b>_end</b></td></tr>
+<tr class="separator:a6e789fae1f59a74c62a573c16fba755c"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a171fa7d9af5d0db0751fc63f09543b32"><td class="memItemLeft" align="right" valign="top"><a id="a171fa7d9af5d0db0751fc63f09543b32"></a>
+bool&#160;</td><td class="memItemRight" valign="bottom"><b>flag_front</b></td></tr>
+<tr class="separator:a171fa7d9af5d0db0751fc63f09543b32"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a0f2c65262706501c6b5d009f44b2093e"><td class="memItemLeft" align="right" valign="top"><a id="a0f2c65262706501c6b5d009f44b2093e"></a>
+char&#160;</td><td class="memItemRight" valign="bottom"><b>__padding2__</b> [QB_LOCKFREE_CACHELINE_BYTES -(2 *sizeof(std::size_t)+sizeof(bool))]</td></tr>
+<tr class="separator:a0f2c65262706501c6b5d009f44b2093e"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab7a5df5c28d498b1fbfcfdad869f0e3b"><td class="memItemLeft" align="right" valign="top"><a id="ab7a5df5c28d498b1fbfcfdad869f0e3b"></a>
+std::size_t&#160;</td><td class="memItemRight" valign="bottom"><b>_capacity</b></td></tr>
+<tr class="separator:ab7a5df5c28d498b1fbfcfdad869f0e3b"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a800c36a57eca52fe5583af4447d0e4f3"><td class="memItemLeft" align="right" valign="top"><a id="a800c36a57eca52fe5583af4447d0e4f3"></a>
+std::size_t&#160;</td><td class="memItemRight" valign="bottom"><b>_factor</b></td></tr>
+<tr class="separator:a800c36a57eca52fe5583af4447d0e4f3"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a89f071250adcdd0ffb59e56d8f89cfc6"><td class="memItemLeft" align="right" valign="top"><a id="a89f071250adcdd0ffb59e56d8f89cfc6"></a>
+T *&#160;</td><td class="memItemRight" valign="bottom"><b>_data</b></td></tr>
+<tr class="separator:a89f071250adcdd0ffb59e56d8f89cfc6"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<!-- HTML footer for doxygen 1.8.14-->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+</div>
+</body>
+</html>

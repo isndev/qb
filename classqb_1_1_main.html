@@ -1,0 +1,343 @@
+<!-- HTML header for doxygen 1.8.14-->
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta http-equiv="cache-control" content="max-age=86400"/>
+    <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+    <meta name="generator" content="Doxygen 1.8.13"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>qb: qb::Main Class Reference</title>
+    <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+    <meta name="keywords" content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, git">
+    <meta name="author" content="isndev">
+    <link href="tabs.css" rel="stylesheet" type="text/css"/>
+    <script type="text/javascript" src="jquery.js"></script>
+    <script type="text/javascript" src="dynsections.js"></script>
+    <script type="text/javascript" src="https://buttons.github.io/buttons.js"></script>
+    <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="resize.js"></script>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript">
+  $(document).ready(initResizable);
+</script>
+    <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+<script type="text/javascript">
+  $(document).ready(function() { init_search(); });
+</script>
+    <link href="doxygen.css" rel="stylesheet" type="text/css" />
+    <link href='https://fonts.googleapis.com/css?family=Roboto+Slab' rel='stylesheet' type='text/css'>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="style.css" rel="stylesheet" type="text/css"/>
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+    <script src="style.js"></script>
+</head>
+<body>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <a class="navbar-brand" href="/">
+            <img src="logo.png" width="80px" alt="qb">
+            <span>C++ Actor Framework</span>
+        </a>
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+        <div>        <div id="MSearchBox" class="MSearchBoxInactive">
+        <span class="left">
+          <img id="MSearchSelect" src="search/mag_sel.png"
+               onmouseover="return searchBox.OnSearchSelectShow()"
+               onmouseout="return searchBox.OnSearchSelectHide()"
+               alt=""/>
+          <input type="text" id="MSearchField" value="Search" accesskey="S"
+               onfocus="searchBox.OnSearchFieldFocus(true)" 
+               onblur="searchBox.OnSearchFieldFocus(false)" 
+               onkeyup="searchBox.OnSearchFieldChange(event)"/>
+          </span><span class="right">
+            <a id="MSearchClose" href="javascript:searchBox.CloseResultsWindow()"><img id="MSearchCloseImg" border="0" src="search/close.png" alt=""/></a>
+          </span>
+        </div>
+</div>
+    </nav>
+    <!--<div id="titlearea">-->
+        <!--<table cellspacing="0" cellpadding="0">-->
+            <!--<tbody>-->
+            <!--<tr style="height: 56px;">-->
+                <!--&lt;!&ndash;BEGIN PROJECT_LOGO&ndash;&gt;-->
+                <!--<td id="projectlogo"><a href="https://github.com/isndev/qb"><img alt="Logo" style="height: 56px;" src="logo.png"/></a></td>-->
+                <!--&lt;!&ndash;END PROJECT_LOGO&ndash;&gt;-->
+                <!--&lt;!&ndash;BEGIN PROJECT_NAME&ndash;&gt;-->
+                <!--<td id="projectalign" style="padding-left: 0.5em;">-->
+                    <!--<div id="projectname">qb-->
+                        <!--&lt;!&ndash;BEGIN PROJECT_NUMBER&ndash;&gt;&#160;<span id="projectnumber">0.9.0.0</span>&lt;!&ndash;END PROJECT_NUMBER&ndash;&gt;-->
+                    <!--</div>>-->
+                <!--</td>-->
+                <!--&lt;!&ndash;END PROJECT_NAME&ndash;&gt;-->
+                <!--&lt;!&ndash;BEGIN !PROJECT_NAME&ndash;&gt;-->
+                <!--&lt;!&ndash;BEGIN PROJECT_BRIEF&ndash;&gt;-->
+                <!--<td style="padding-left: 0.5em;">-->
+                    <!--<div id="projectbrief">C++17 Actor Framework</div>-->
+                <!--</td>-->
+                <!--&lt;!&ndash;END PROJECT_BRIEF&ndash;&gt;-->
+                <!--&lt;!&ndash;END !PROJECT_NAME&ndash;&gt;-->
+            <!--</tr>-->
+            <!--</tbody>-->
+        <!--</table>-->
+    <!--</div>-->
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.8.13 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search",false,'Search');
+</script>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(document).ready(function(){initNavTree('classqb_1_1_main.html','');});
+</script>
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<iframe src="javascript:void(0)" frameborder="0" 
+        name="MSearchResults" id="MSearchResults">
+</iframe>
+</div>
+
+<div class="header">
+  <div class="summary">
+<a href="#nested-classes">Classes</a> &#124;
+<a href="#pub-methods">Public Member Functions</a> &#124;
+<a href="#pub-static-methods">Static Public Member Functions</a> &#124;
+<a href="classqb_1_1_main-members.html">List of all members</a>  </div>
+  <div class="headertitle">
+<div class="title">qb::Main Class Reference<div class="ingroups"><a class="el" href="group___core.html">Core</a></div></div>  </div>
+</div><!--header-->
+<div class="contents">
+
+<p>Core main class.  
+ <a href="classqb_1_1_main.html#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="core_2_main_8h_source.html">qb/main.h</a>&gt;</code></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_main_1_1_core_builder.html">CoreBuilder</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Helper to build Actors in <a class="el" href="classqb_1_1_virtual_core.html">VirtualCore</a>.  <a href="classqb_1_1_main_1_1_core_builder.html#details">More...</a><br /></td></tr>
+<tr class="separator:"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:a2462ee4e975d7117d141c7b1845fa6d1"><td class="memItemLeft" align="right" valign="top"><a id="a2462ee4e975d7117d141c7b1845fa6d1"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>Main</b> (<a class="el" href="classqb_1_1_core_set.html">CoreSet</a> const &amp;core_set)</td></tr>
+<tr class="separator:a2462ee4e975d7117d141c7b1845fa6d1"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7d9a320f2291671ac4a49319a907b0c4"><td class="memItemLeft" align="right" valign="top"><a id="a7d9a320f2291671ac4a49319a907b0c4"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>Main</b> (std::unordered_set&lt; uint8_t &gt; const &amp;core_set)</td></tr>
+<tr class="separator:a7d9a320f2291671ac4a49319a907b0c4"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ab0e036fbd8a78ee8c5da4c807dcb7891"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_main.html#ab0e036fbd8a78ee8c5da4c807dcb7891">start</a> (bool async=true) const</td></tr>
+<tr class="memdesc:ab0e036fbd8a78ee8c5da4c807dcb7891"><td class="mdescLeft">&#160;</td><td class="mdescRight">Start the engine.  <a href="#ab0e036fbd8a78ee8c5da4c807dcb7891">More...</a><br /></td></tr>
+<tr class="separator:ab0e036fbd8a78ee8c5da4c807dcb7891"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a952719a136a264714d5b5cfc93a05c05"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_main.html#a952719a136a264714d5b5cfc93a05c05">join</a> () const</td></tr>
+<tr class="memdesc:a952719a136a264714d5b5cfc93a05c05"><td class="mdescLeft">&#160;</td><td class="mdescRight">Wait until engine terminates.  <a href="#a952719a136a264714d5b5cfc93a05c05">More...</a><br /></td></tr>
+<tr class="separator:a952719a136a264714d5b5cfc93a05c05"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a356bae48b1b99c7ce26e427bc1e107fd"><td class="memTemplParams" colspan="2">template&lt;typename _Actor , typename ... _Args&gt; </td></tr>
+<tr class="memitem:a356bae48b1b99c7ce26e427bc1e107fd"><td class="memTemplItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_actor_id.html">ActorId</a>&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classqb_1_1_main.html#a356bae48b1b99c7ce26e427bc1e107fd">addActor</a> (std::size_t index, _Args &amp;&amp;...args)</td></tr>
+<tr class="memdesc:a356bae48b1b99c7ce26e427bc1e107fd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create new _Actor.  <a href="#a356bae48b1b99c7ce26e427bc1e107fd">More...</a><br /></td></tr>
+<tr class="separator:a356bae48b1b99c7ce26e427bc1e107fd"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a375cd46cd8ea4db8f7e0587624e84a96"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_main_1_1_core_builder.html">CoreBuilder</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_main.html#a375cd46cd8ea4db8f7e0587624e84a96">core</a> (uint16_t const index)</td></tr>
+<tr class="memdesc:a375cd46cd8ea4db8f7e0587624e84a96"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get <a class="el" href="classqb_1_1_main_1_1_core_builder.html" title="Helper to build Actors in VirtualCore. ">CoreBuilder</a> from index.  <a href="#a375cd46cd8ea4db8f7e0587624e84a96">More...</a><br /></td></tr>
+<tr class="separator:a375cd46cd8ea4db8f7e0587624e84a96"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-static-methods"></a>
+Static Public Member Functions</h2></td></tr>
+<tr class="memitem:a517269935e6d8b924d5c84e5ee1c9bae"><td class="memItemLeft" align="right" valign="top"><a id="a517269935e6d8b924d5c84e5ee1c9bae"></a>
+static bool&#160;</td><td class="memItemRight" valign="bottom"><b>hasError</b> ()</td></tr>
+<tr class="separator:a517269935e6d8b924d5c84e5ee1c9bae"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a58efa619beba288e2bf9245ff4263c02"><td class="memItemLeft" align="right" valign="top">static void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_main.html#a58efa619beba288e2bf9245ff4263c02">stop</a> ()</td></tr>
+<tr class="memdesc:a58efa619beba288e2bf9245ff4263c02"><td class="mdescLeft">&#160;</td><td class="mdescRight">Stop the engine.  <a href="#a58efa619beba288e2bf9245ff4263c02">More...</a><br /></td></tr>
+<tr class="separator:a58efa619beba288e2bf9245ff4263c02"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table>
+<a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Core main class. </p>
+<p>This is the <a class="el" href="classqb_1_1_main.html" title="Core main class. ">Main</a> engine class, initialized with desired <a class="el" href="classqb_1_1_core_set.html" title="Main initializer. ">CoreSet</a>. </p>
+</div><h2 class="groupheader">Member Function Documentation</h2>
+<a id="ab0e036fbd8a78ee8c5da4c807dcb7891"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab0e036fbd8a78ee8c5da4c807dcb7891">&#9670;&nbsp;</a></span>start()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::Main::start </td>
+          <td>(</td>
+          <td class="paramtype">bool&#160;</td>
+          <td class="paramname"><em>async</em> = <code>true</code></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Start the engine. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">async</td><td>has blocking execution </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section note"><dt>Note</dt><dd>If async = false the main thread will by used by a <a class="el" href="classqb_1_1_virtual_core.html">VirtualCore</a> engine. </dd></dl>
+
+</div>
+</div>
+<a id="a58efa619beba288e2bf9245ff4263c02"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a58efa619beba288e2bf9245ff4263c02">&#9670;&nbsp;</a></span>stop()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">static void qb::Main::stop </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel">static</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Stop the engine. </p>
+<dl class="section note"><dt>Note</dt><dd>Same effect as receiving SIGINT Signal. </dd></dl>
+
+</div>
+</div>
+<a id="a952719a136a264714d5b5cfc93a05c05"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a952719a136a264714d5b5cfc93a05c05">&#9670;&nbsp;</a></span>join()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::Main::join </td>
+          <td>(</td>
+          <td class="paramname"></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Wait until engine terminates. </p>
+<dl class="section note"><dt>Note</dt><dd>You can not avoid calling this function even if main has started with async=false. </dd></dl>
+
+</div>
+</div>
+<a id="a356bae48b1b99c7ce26e427bc1e107fd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a356bae48b1b99c7ce26e427bc1e107fd">&#9670;&nbsp;</a></span>addActor()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Actor , typename ... _Args&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1_actor_id.html">ActorId</a> qb::Main::addActor </td>
+          <td>(</td>
+          <td class="paramtype">std::size_t&#160;</td>
+          <td class="paramname"><em>index</em>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">_Args &amp;&amp;...&#160;</td>
+          <td class="paramname"><em>args</em>&#160;</td>
+        </tr>
+        <tr>
+          <td></td>
+          <td>)</td>
+          <td></td><td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Create new _Actor. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_Actor</td><td>DerivedActor type </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">index</td><td><a class="el" href="classqb_1_1_virtual_core.html">VirtualCore</a> index </td></tr>
+    <tr><td class="paramname">args</td><td>arguments to forward to the constructor of the _Actor </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd><a class="el" href="classqb_1_1_actor_id.html" title="Actor unique identifier. ">ActorId</a> of the created _Actor</dd></dl>
+<p>create new _Actor on <a class="el" href="classqb_1_1_virtual_core.html">VirtualCore</a> index.<br />
+example: </p><div class="fragment"><div class="line"><span class="keyword">auto</span> <span class="keywordtype">id</span> = addActor&lt;MyActor&gt;(0, param1, param2);</div></div><!-- fragment --> <dl class="section attention"><dt>Attention</dt><dd>This function is not available when the engine is running. </dd></dl>
+
+</div>
+</div>
+<a id="a375cd46cd8ea4db8f7e0587624e84a96"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a375cd46cd8ea4db8f7e0587624e84a96">&#9670;&nbsp;</a></span>core()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1_main_1_1_core_builder.html">CoreBuilder</a> qb::Main::core </td>
+          <td>(</td>
+          <td class="paramtype">uint16_t const&#160;</td>
+          <td class="paramname"><em>index</em></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Get <a class="el" href="classqb_1_1_main_1_1_core_builder.html" title="Helper to build Actors in VirtualCore. ">CoreBuilder</a> from index. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">index</td><td><a class="el" href="classqb_1_1_virtual_core.html">VirtualCore</a> index </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd><a class="el" href="classqb_1_1_main_1_1_core_builder.html" title="Helper to build Actors in VirtualCore. ">CoreBuilder</a> </dd></dl>
+<dl class="section attention"><dt>Attention</dt><dd><div class="fragment"><div class="line"><span class="keyword">auto</span> builder1 = main.core(0);</div><div class="line"><span class="keyword">auto</span> builder2 = main.core(0);</div><div class="line"><span class="comment">// even both elements build the same VirtualCore</span></div><div class="line"><span class="comment">// builder1 != builder2</span></div></div><!-- fragment --> </dd></dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<!-- HTML footer for doxygen 1.8.14-->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+</div>
+</body>
+</html>
