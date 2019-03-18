@@ -273,16 +273,22 @@ namespace qb {
     }
 
     void VirtualCore::reply(Event &event) {
+        ActorId save_direction[2] = {event.source, event.dest};
         std::swap(event.dest, event.source);
         event.state[0] = 1;
         send(event);
+        event.source = save_direction[0];
+        event.dest = save_direction[1];
     }
 
     void VirtualCore::forward(ActorId const dest, Event &event) {
+        ActorId save_direction[2] = {event.source, event.dest};
         event.source = event.dest;
         event.dest = dest;
         event.state[0] = 1;
         send(event);
+        event.source = save_direction[0];
+        event.dest = save_direction[1];
     }
     //!Event Api
 
