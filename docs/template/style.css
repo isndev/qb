@@ -545,3 +545,7 @@ h2.memtitle {
 .section.note {
     background-color: #ffff88;
 }
+
+.navbar span {
+    margin-right: 10px;
+}
