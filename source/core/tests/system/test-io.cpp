@@ -35,7 +35,7 @@ public:
 
     virtual bool onInit() override final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
-        LOG_VERB << "TestActor had been initialized";
+        LOG_VERB << "TestActor had been initialized at" << time();
         registerEvent<TestEvent>(*this);
         push<TestEvent>(id());
         qb::io::cout() << "Test Actor(" << id() << "): Hello master !" << std::endl;
@@ -43,9 +43,9 @@ public:
     }
 
     void on(TestEvent const &) {
-        LOG_INFO << "TestActor received TestEvent";
+        LOG_INFO << "TestActor received TestEvent at" << time();
         kill();
-        LOG_WARN << "TestActor will be killed";
+        LOG_WARN << "TestActor will be killed at" << time();
     }
 };
 
@@ -54,6 +54,7 @@ TEST(IO, BasicTestMonoCore) {
     qb::io::log::setLevel(qb::io::log::Level::DEBUG);
     qb::Main main({0});
 
+    LOG_INFO << "Broadcast id=" << qb::BroadcastId(0);
     main.addActor<TestActor>(0);
 
     main.start();

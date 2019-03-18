@@ -166,7 +166,7 @@ public:
     }
 };
 
-TEST(AddReferencedActor, KillActorUsingEvent) {
+TEST(KillActor, UsingEvent) {
     qb::Main main({0, 1});
 
     main.addActor<TestKillSenderActor>(0);
