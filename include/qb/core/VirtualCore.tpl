@@ -67,7 +67,7 @@ namespace qb {
     template<typename _Actor, typename ..._Init>
     ActorId VirtualCore::addActor(_Init &&...init) {
         auto actor = new _Actor(std::forward<_Init>(init)...);
-        actor->_handler = this;
+//        actor->_handler = this;
 
         if (!initActor(actor, false))
             return ActorId::NotFound;
@@ -79,7 +79,7 @@ namespace qb {
     template<typename _Actor, typename ..._Init>
     _Actor *VirtualCore::addReferencedActor(_Init &&...init) {
         auto actor = new _Actor(std::forward<_Init>(init)...);
-        actor->_handler = this;
+//        actor->_handler = this;
 
         if (!initActor(actor, true))
             return nullptr;

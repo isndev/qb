@@ -48,6 +48,7 @@ qb::io::stream &operator<<(qb::io::stream &os, qb::VirtualCore const &core);
 namespace qb {
 
     class VirtualCore {
+        thread_local static VirtualCore *_handler;
 		static uint16_t _nb_service;
 		static std::unordered_map<uint32_t, uint16_t> &getServices() {
 			static std::unordered_map<uint32_t, uint16_t> service_ids;

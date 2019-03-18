@@ -35,7 +35,7 @@ namespace qb {
     }
 
     uint64_t Actor::time() const {
-        return _handler->time();
+        return VirtualCore::_handler->time();
     }
 
     bool Actor::isAlive() const {
@@ -43,20 +43,20 @@ namespace qb {
     }
 
     ProxyPipe Actor::getPipe(ActorId const dest) const {
-        return _handler->getProxyPipe(dest, id());
+        return VirtualCore::_handler->getProxyPipe(dest, id());
     }
 
     uint16_t Actor::getIndex() const {
-        return _handler->getIndex();
+        return VirtualCore::_handler->getIndex();
     }
 
     void Actor::unregisterCallback() const {
-        _handler->unregisterCallback(id());
+        VirtualCore::_handler->unregisterCallback(id());
     }
 
     void Actor::kill() const {
         _alive = false;
-        _handler->killActor(id());
+        VirtualCore::_handler->killActor(id());
     }
 
     Actor::EventBuilder::EventBuilder(ProxyPipe const &pipe)
@@ -71,7 +71,7 @@ namespace qb {
             LOG_WARN << "" << *this << " failed to reply broadcast event";
             return;
         }
-        _handler->reply(event);
+        VirtualCore::_handler->reply(event);
     }
 
     void Actor::forward(ActorId const dest, Event &event) const {
@@ -79,20 +79,20 @@ namespace qb {
             LOG_WARN << "" << *this << " failed to forward broadcast event";
             return;
         }
-        _handler->forward(dest, event);
+        VirtualCore::_handler->forward(dest, event);
     }
 
 // OpenApi : internal future use
 //    void Actor::send(Event const &event) const {
-//        _handler->send(event);
+//        VirtualCore::_handler->send(event);
 //    }
 //
 //    void Actor::push(Event const &event) const {
-//        _handler->push(event);
+//        VirtualCore::_handler->push(event);
 //    }
 //
 //    bool Actor::try_send(Event const &event) const {
-//        return _handler->try_send(event);
+//        return VirtualCore::_handler->try_send(event);
 //    }
 }
 
