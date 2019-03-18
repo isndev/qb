@@ -40,9 +40,11 @@ namespace qb {
         uint16_t _id;
         uint16_t _index;
 
+    protected:
         ActorId(uint16_t const id, uint16_t const index);
     public:
         static constexpr uint32_t NotFound = 0;
+        static constexpr uint16_t BroadcastSid = std::numeric_limits<uint16_t>::max();
 
         /*!
          * ActorId() == ActorId::NotFound
@@ -67,6 +69,15 @@ namespace qb {
          * @return VirtualCore index
          */
         uint16_t index() const;
+
+        bool isBroadcast() const;
+    };
+
+    class BroadcastId : public ActorId {
+    public:
+        BroadcastId() = delete;
+        explicit BroadcastId(uint16_t core_id)
+            : ActorId(BroadcastSid, core_id) {}
     };
 
 }
