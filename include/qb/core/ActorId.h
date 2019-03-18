@@ -76,8 +76,8 @@ namespace qb {
     class BroadcastId : public ActorId {
     public:
         BroadcastId() = delete;
-        explicit BroadcastId(uint16_t core_id)
-            : ActorId(BroadcastSid, core_id) {}
+        explicit BroadcastId(uint32_t const core_id)
+            : ActorId(BroadcastSid, static_cast<uint16_t>(core_id)) {}
     };
 
 }
