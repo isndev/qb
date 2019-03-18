@@ -282,3 +282,69 @@ TYPED_TEST(ActorEventBroadcastMulti, SendEvents) {
     this->main.join();
     EXPECT_FALSE(this->main.hasError());
 }
+
+class TestKillSenderActor : public qb::Actor
+{
+public:
+    TestKillSenderActor() = default;
+
+    virtual bool onInit() override final {
+        EXPECT_NE(static_cast<uint32_t>(id()), 0u);
+        push<qb::KillEvent>(id());
+        push<qb::KillEvent>(qb::BroadcastId(1));
+        return true;
+    }
+};
+
+class TestSendReply : public qb::Actor
+{
+    const qb::ActorId _to;
+public:
+    explicit TestSendReply(qb::ActorId const to)
+        : _to(to) {}
+
+    virtual bool onInit() override final {
+        EXPECT_NE(static_cast<uint32_t>(id()), 0u);
+
+        registerEvent<TestEvent>(*this);
+
+        push<TestEvent>(qb::BroadcastId(1));
+        push<TestEvent>(_to);
+
+        return true;
+    }
+
+    void on(TestEvent &event) {
+        EXPECT_TRUE(event.checkSum());
+        forward(_to, event);
+        push<qb::KillEvent>(qb::BroadcastId(1));
+        kill();
+    }
+};
+
+class TestReceiveReply : public qb::Actor
+{
+public:
+    TestReceiveReply() = default;
+
+    virtual bool onInit() override final {
+        EXPECT_NE(static_cast<uint32_t>(id()), 0u);
+        registerEvent<TestEvent>(*this);
+        return true;
+    }
+
+    void on(TestEvent &event) {
+        EXPECT_TRUE(event.checkSum());
+        reply(event);
+    }
+};
+
+
+TEST(Event, PushReplyForward) {
+    qb::Main main({0, 1});
+
+    main.addActor<TestSendReply>(0, main.addActor<TestReceiveReply>(1));
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+}
