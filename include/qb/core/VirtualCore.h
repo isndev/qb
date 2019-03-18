@@ -130,6 +130,7 @@ namespace qb {
                         registered_event.second->invoke(event);
                         flag = true;
                     }
+                } else {
                     const auto it = _registered_events.find(event.dest);
                     if (likely(it != _registered_events.cend())) {
                         it->second->invoke(event);
