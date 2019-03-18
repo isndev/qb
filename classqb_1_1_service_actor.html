@@ -1,0 +1,247 @@
+<!-- HTML header for doxygen 1.8.14-->
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <meta http-equiv="cache-control" content="max-age=86400"/>
+    <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+    <meta name="generator" content="Doxygen 1.8.15"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>qb: qb::ServiceActor&lt; Tag &gt; Class Template Reference</title>
+    <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+    <meta name="keywords" content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, git">
+    <meta name="author" content="isndev">
+    <link href="tabs.css" rel="stylesheet" type="text/css"/>
+    <script type="text/javascript" src="jquery.js"></script>
+    <script type="text/javascript" src="dynsections.js"></script>
+    <script type="text/javascript" src="https://buttons.github.io/buttons.js"></script>
+    <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="resize.js"></script>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript">
+/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
+  $(document).ready(initResizable);
+/* @license-end */</script>
+    <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+<script type="text/javascript">
+/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
+  $(document).ready(function() { init_search(); });
+/* @license-end */
+</script>
+    <link href="doxygen.css" rel="stylesheet" type="text/css" />
+    <link href='https://fonts.googleapis.com/css?family=Roboto+Slab' rel='stylesheet' type='text/css'>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link href="style.css" rel="stylesheet" type="text/css"/>
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
+    <script src="style.js"></script>
+</head>
+<body>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <a class="navbar-brand" href="/">
+            <img src="logo.png" width="80px" alt="qb">
+            <span>C++ Actor Framework</span>
+        </a>
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+        <div>        <div id="MSearchBox" class="MSearchBoxInactive">
+        <span class="left">
+          <img id="MSearchSelect" src="search/mag_sel.png"
+               onmouseover="return searchBox.OnSearchSelectShow()"
+               onmouseout="return searchBox.OnSearchSelectHide()"
+               alt=""/>
+          <input type="text" id="MSearchField" value="Search" accesskey="S"
+               onfocus="searchBox.OnSearchFieldFocus(true)" 
+               onblur="searchBox.OnSearchFieldFocus(false)" 
+               onkeyup="searchBox.OnSearchFieldChange(event)"/>
+          </span><span class="right">
+            <a id="MSearchClose" href="javascript:searchBox.CloseResultsWindow()"><img id="MSearchCloseImg" border="0" src="search/close.png" alt=""/></a>
+          </span>
+        </div>
+</div>
+    </nav>
+    <!--<div id="titlearea">-->
+        <!--<table cellspacing="0" cellpadding="0">-->
+            <!--<tbody>-->
+            <!--<tr style="height: 56px;">-->
+                <!--&lt;!&ndash;BEGIN PROJECT_LOGO&ndash;&gt;-->
+                <!--<td id="projectlogo"><a href="https://github.com/isndev/qb"><img alt="Logo" style="height: 56px;" src="logo.png"/></a></td>-->
+                <!--&lt;!&ndash;END PROJECT_LOGO&ndash;&gt;-->
+                <!--&lt;!&ndash;BEGIN PROJECT_NAME&ndash;&gt;-->
+                <!--<td id="projectalign" style="padding-left: 0.5em;">-->
+                    <!--<div id="projectname">qb-->
+                        <!--&lt;!&ndash;BEGIN PROJECT_NUMBER&ndash;&gt;&#160;<span id="projectnumber">0.9.0.0</span>&lt;!&ndash;END PROJECT_NUMBER&ndash;&gt;-->
+                    <!--</div>>-->
+                <!--</td>-->
+                <!--&lt;!&ndash;END PROJECT_NAME&ndash;&gt;-->
+                <!--&lt;!&ndash;BEGIN !PROJECT_NAME&ndash;&gt;-->
+                <!--&lt;!&ndash;BEGIN PROJECT_BRIEF&ndash;&gt;-->
+                <!--<td style="padding-left: 0.5em;">-->
+                    <!--<div id="projectbrief">C++17 Actor Framework</div>-->
+                <!--</td>-->
+                <!--&lt;!&ndash;END PROJECT_BRIEF&ndash;&gt;-->
+                <!--&lt;!&ndash;END !PROJECT_NAME&ndash;&gt;-->
+            <!--</tr>-->
+            <!--</tbody>-->
+        <!--</table>-->
+    <!--</div>-->
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.8.15 -->
+<script type="text/javascript">
+/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
+var searchBox = new SearchBox("searchBox", "search",false,'Search');
+/* @license-end */
+</script>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
+$(document).ready(function(){initNavTree('classqb_1_1_service_actor.html','');});
+/* @license-end */
+</script>
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<iframe src="javascript:void(0)" frameborder="0" 
+        name="MSearchResults" id="MSearchResults">
+</iframe>
+</div>
+
+<div class="header">
+  <div class="summary">
+<a href="classqb_1_1_service_actor-members.html">List of all members</a>  </div>
+  <div class="headertitle">
+<div class="title">qb::ServiceActor&lt; Tag &gt; Class Template Reference<div class="ingroups"><a class="el" href="group___core.html">Core</a></div></div>  </div>
+</div><!--header-->
+<div class="contents">
+
+<p>SingletonActor base class.  
+ <a href="classqb_1_1_service_actor.html#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="core_2actor_8h_source.html">qb/actor.h</a>&gt;</code></p>
+<div class="dynheader">
+Inheritance diagram for qb::ServiceActor&lt; Tag &gt;:</div>
+<div class="dyncontent">
+ <div class="center">
+  <img src="classqb_1_1_service_actor.png" usemap="#qb::ServiceActor_3C_20Tag_20_3E_map" alt=""/>
+  <map id="qb::ServiceActor_3C_20Tag_20_3E_map" name="qb::ServiceActor_3C_20Tag_20_3E_map">
+<area href="classqb_1_1_service.html" title="internal" alt="qb::Service" shape="rect" coords="0,56,151,80"/>
+<area href="classqb_1_1_actor.html" title="Actor base class." alt="qb::Actor" shape="rect" coords="161,56,312,80"/>
+<area href="structqb_1_1nocopy.html" alt="qb::nocopy" shape="rect" coords="80,0,231,24"/>
+<area href="classqb_1_1_actor_id.html" title="Actor unique identifier." alt="qb::ActorId" shape="rect" coords="241,0,392,24"/>
+  </map>
+</div></div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="inherited"></a>
+Additional Inherited Members</h2></td></tr>
+<tr class="inherit_header pub_methods_classqb_1_1_actor"><td colspan="2" onclick="javascript:toggleInherit('pub_methods_classqb_1_1_actor')"><img src="closed.png" alt="-"/>&#160;Public Member Functions inherited from <a class="el" href="classqb_1_1_actor.html">qb::Actor</a></td></tr>
+<tr class="memitem:a859304ed2eeaecffc42b5d26abdbf70d inherit pub_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a859304ed2eeaecffc42b5d26abdbf70d">kill</a> () const</td></tr>
+<tr class="separator:a859304ed2eeaecffc42b5d26abdbf70d inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a7d15d4c64ccd1e111135d1668cef7a72 inherit pub_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_actor_id.html">ActorId</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a7d15d4c64ccd1e111135d1668cef7a72">id</a> () const</td></tr>
+<tr class="separator:a7d15d4c64ccd1e111135d1668cef7a72 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5f5573a7979948edab42415c3ca6a19d inherit pub_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top">uint16_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a5f5573a7979948edab42415c3ca6a19d">getIndex</a> () const</td></tr>
+<tr class="separator:a5f5573a7979948edab42415c3ca6a19d inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad6f360508b97fa703c7bd5d3b0ac6a45 inherit pub_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top">uint64_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#ad6f360508b97fa703c7bd5d3b0ac6a45">time</a> () const</td></tr>
+<tr class="memdesc:ad6f360508b97fa703c7bd5d3b0ac6a45 inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get current time.  <a href="classqb_1_1_actor.html#ad6f360508b97fa703c7bd5d3b0ac6a45">More...</a><br /></td></tr>
+<tr class="separator:ad6f360508b97fa703c7bd5d3b0ac6a45 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a3439cc02fefe373ffd39af17bc43cb30 inherit pub_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a3439cc02fefe373ffd39af17bc43cb30">isAlive</a> () const</td></tr>
+<tr class="memdesc:a3439cc02fefe373ffd39af17bc43cb30 inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check if <a class="el" href="classqb_1_1_actor.html" title="Actor base class.">Actor</a> is alive.  <a href="classqb_1_1_actor.html#a3439cc02fefe373ffd39af17bc43cb30">More...</a><br /></td></tr>
+<tr class="separator:a3439cc02fefe373ffd39af17bc43cb30 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a4b667e9f76fd2329769583d0847b7b99 inherit pub_methods_classqb_1_1_actor"><td class="memTemplParams" colspan="2">template&lt;typename _Actor &gt; </td></tr>
+<tr class="memitem:a4b667e9f76fd2329769583d0847b7b99 inherit pub_methods_classqb_1_1_actor"><td class="memTemplItemLeft" align="right" valign="top">void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a4b667e9f76fd2329769583d0847b7b99">registerCallback</a> (_Actor &amp;actor) const</td></tr>
+<tr class="memdesc:a4b667e9f76fd2329769583d0847b7b99 inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Register a looped callback.  <a href="classqb_1_1_actor.html#a4b667e9f76fd2329769583d0847b7b99">More...</a><br /></td></tr>
+<tr class="separator:a4b667e9f76fd2329769583d0847b7b99 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a40576547b79cdce14fcf9ff93fb48182 inherit pub_methods_classqb_1_1_actor"><td class="memTemplParams" colspan="2">template&lt;typename _Actor &gt; </td></tr>
+<tr class="memitem:a40576547b79cdce14fcf9ff93fb48182 inherit pub_methods_classqb_1_1_actor"><td class="memTemplItemLeft" align="right" valign="top">void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a40576547b79cdce14fcf9ff93fb48182">unregisterCallback</a> (_Actor &amp;actor) const</td></tr>
+<tr class="memdesc:a40576547b79cdce14fcf9ff93fb48182 inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Unregister actor callback.  <a href="classqb_1_1_actor.html#a40576547b79cdce14fcf9ff93fb48182">More...</a><br /></td></tr>
+<tr class="separator:a40576547b79cdce14fcf9ff93fb48182 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ad304f5ebd50d7ef915e33e71b5bec33d inherit pub_methods_classqb_1_1_actor"><td class="memTemplParams" colspan="2">template&lt;typename _Event , typename _Actor &gt; </td></tr>
+<tr class="memitem:ad304f5ebd50d7ef915e33e71b5bec33d inherit pub_methods_classqb_1_1_actor"><td class="memTemplItemLeft" align="right" valign="top">void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#ad304f5ebd50d7ef915e33e71b5bec33d">registerEvent</a> (_Actor &amp;actor)</td></tr>
+<tr class="memdesc:ad304f5ebd50d7ef915e33e71b5bec33d inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_actor.html" title="Actor base class.">Actor</a> will listen on new _Event.  <a href="classqb_1_1_actor.html#ad304f5ebd50d7ef915e33e71b5bec33d">More...</a><br /></td></tr>
+<tr class="separator:ad304f5ebd50d7ef915e33e71b5bec33d inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a54178311696324e115f21db5c7f14248 inherit pub_methods_classqb_1_1_actor"><td class="memTemplParams" colspan="2">template&lt;typename _Event , typename _Actor &gt; </td></tr>
+<tr class="memitem:a54178311696324e115f21db5c7f14248 inherit pub_methods_classqb_1_1_actor"><td class="memTemplItemLeft" align="right" valign="top">void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a54178311696324e115f21db5c7f14248">unregisterEvent</a> (_Actor &amp;actor)</td></tr>
+<tr class="memdesc:a54178311696324e115f21db5c7f14248 inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_actor.html" title="Actor base class.">Actor</a> will stop listening _Event.  <a href="classqb_1_1_actor.html#a54178311696324e115f21db5c7f14248">More...</a><br /></td></tr>
+<tr class="separator:a54178311696324e115f21db5c7f14248 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a1ca126ddd80e0157b8f9aad6e5d48cb1 inherit pub_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_actor_1_1_event_builder.html">EventBuilder</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a1ca126ddd80e0157b8f9aad6e5d48cb1">to</a> (<a class="el" href="classqb_1_1_actor_id.html">ActorId</a> const dest) const</td></tr>
+<tr class="memdesc:a1ca126ddd80e0157b8f9aad6e5d48cb1 inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get <a class="el" href="classqb_1_1_actor_1_1_event_builder.html" title="Helper to build Events.">EventBuilder</a> for <a class="el" href="classqb_1_1_actor_id.html" title="Actor unique identifier.">ActorId</a> destination.  <a href="classqb_1_1_actor.html#a1ca126ddd80e0157b8f9aad6e5d48cb1">More...</a><br /></td></tr>
+<tr class="separator:a1ca126ddd80e0157b8f9aad6e5d48cb1 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a9fa2bdc9f92155d5a9af958bd2892694 inherit pub_methods_classqb_1_1_actor"><td class="memTemplParams" colspan="2">template&lt;typename _Event , typename ... _Args&gt; </td></tr>
+<tr class="memitem:a9fa2bdc9f92155d5a9af958bd2892694 inherit pub_methods_classqb_1_1_actor"><td class="memTemplItemLeft" align="right" valign="top">_Event &amp;&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a9fa2bdc9f92155d5a9af958bd2892694">push</a> (<a class="el" href="classqb_1_1_actor_id.html">ActorId</a> const &amp;dest, _Args &amp;&amp;...args) const</td></tr>
+<tr class="memdesc:a9fa2bdc9f92155d5a9af958bd2892694 inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Send a new ordered event.  <a href="classqb_1_1_actor.html#a9fa2bdc9f92155d5a9af958bd2892694">More...</a><br /></td></tr>
+<tr class="separator:a9fa2bdc9f92155d5a9af958bd2892694 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a26e92929da0a4d58abf1f8536a2f5969 inherit pub_methods_classqb_1_1_actor"><td class="memTemplParams" colspan="2">template&lt;typename _Event , typename ... _Args&gt; </td></tr>
+<tr class="memitem:a26e92929da0a4d58abf1f8536a2f5969 inherit pub_methods_classqb_1_1_actor"><td class="memTemplItemLeft" align="right" valign="top">void&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a26e92929da0a4d58abf1f8536a2f5969">send</a> (<a class="el" href="classqb_1_1_actor_id.html">ActorId</a> const &amp;dest, _Args &amp;&amp;...args) const</td></tr>
+<tr class="memdesc:a26e92929da0a4d58abf1f8536a2f5969 inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Send a new unordered event.  <a href="classqb_1_1_actor.html#a26e92929da0a4d58abf1f8536a2f5969">More...</a><br /></td></tr>
+<tr class="separator:a26e92929da0a4d58abf1f8536a2f5969 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:ae662129a3b07c96f64a0dbf9a10a2657 inherit pub_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#ae662129a3b07c96f64a0dbf9a10a2657">reply</a> (<a class="el" href="classqb_1_1_event.html">Event</a> &amp;event) const</td></tr>
+<tr class="memdesc:ae662129a3b07c96f64a0dbf9a10a2657 inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Reply an event.  <a href="classqb_1_1_actor.html#ae662129a3b07c96f64a0dbf9a10a2657">More...</a><br /></td></tr>
+<tr class="separator:ae662129a3b07c96f64a0dbf9a10a2657 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a89b0a18335eefd7c5bf058fd67f7f985 inherit pub_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a89b0a18335eefd7c5bf058fd67f7f985">forward</a> (<a class="el" href="classqb_1_1_actor_id.html">ActorId</a> const dest, <a class="el" href="classqb_1_1_event.html">Event</a> &amp;event) const</td></tr>
+<tr class="memdesc:a89b0a18335eefd7c5bf058fd67f7f985 inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Forward an event.  <a href="classqb_1_1_actor.html#a89b0a18335eefd7c5bf058fd67f7f985">More...</a><br /></td></tr>
+<tr class="separator:a89b0a18335eefd7c5bf058fd67f7f985 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a71d29a689b2a7736c4a054395c3a52de inherit pub_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_proxy_pipe.html">ProxyPipe</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a71d29a689b2a7736c4a054395c3a52de">getPipe</a> (<a class="el" href="classqb_1_1_actor_id.html">ActorId</a> const dest) const</td></tr>
+<tr class="memdesc:a71d29a689b2a7736c4a054395c3a52de inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get access to unidirectional out events pipe.  <a href="classqb_1_1_actor.html#a71d29a689b2a7736c4a054395c3a52de">More...</a><br /></td></tr>
+<tr class="separator:a71d29a689b2a7736c4a054395c3a52de inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:abed1d9e292e5ae1e11708a8ddbd9be93 inherit pub_methods_classqb_1_1_actor"><td class="memTemplParams" colspan="2">template&lt;typename _Actor , typename ... _Args&gt; </td></tr>
+<tr class="memitem:abed1d9e292e5ae1e11708a8ddbd9be93 inherit pub_methods_classqb_1_1_actor"><td class="memTemplItemLeft" align="right" valign="top">_Actor *&#160;</td><td class="memTemplItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#abed1d9e292e5ae1e11708a8ddbd9be93">addRefActor</a> (_Args &amp;&amp;...args) const</td></tr>
+<tr class="memdesc:abed1d9e292e5ae1e11708a8ddbd9be93 inherit pub_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create new referenced _Actor.  <a href="classqb_1_1_actor.html#abed1d9e292e5ae1e11708a8ddbd9be93">More...</a><br /></td></tr>
+<tr class="separator:abed1d9e292e5ae1e11708a8ddbd9be93 inherit pub_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="inherit_header pro_methods_classqb_1_1_actor"><td colspan="2" onclick="javascript:toggleInherit('pro_methods_classqb_1_1_actor')"><img src="closed.png" alt="-"/>&#160;Protected Member Functions inherited from <a class="el" href="classqb_1_1_actor.html">qb::Actor</a></td></tr>
+<tr class="memitem:ab5b09ecc2c676c70096fc3f6f6163e07 inherit pro_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#ab5b09ecc2c676c70096fc3f6f6163e07">on</a> (<a class="el" href="structqb_1_1_kill_event.html">KillEvent</a> const &amp;event)</td></tr>
+<tr class="memdesc:ab5b09ecc2c676c70096fc3f6f6163e07 inherit pro_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">Receiving this event will kill the <a class="el" href="classqb_1_1_actor.html" title="Actor base class.">Actor</a>.  <a href="classqb_1_1_actor.html#ab5b09ecc2c676c70096fc3f6f6163e07">More...</a><br /></td></tr>
+<tr class="separator:ab5b09ecc2c676c70096fc3f6f6163e07 inherit pro_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a5c60fd95f839a8e9e92a52bc1f5a1dae inherit pro_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a5c60fd95f839a8e9e92a52bc1f5a1dae">Actor</a> ()=default</td></tr>
+<tr class="separator:a5c60fd95f839a8e9e92a52bc1f5a1dae inherit pro_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a619f03d64321d33f3f84a4ab5647cbae inherit pro_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top">virtual&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a619f03d64321d33f3f84a4ab5647cbae">~Actor</a> ()=default</td></tr>
+<tr class="separator:a619f03d64321d33f3f84a4ab5647cbae inherit pro_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memitem:a210e6c552ab2d3742688413c81aceb74 inherit pro_methods_classqb_1_1_actor"><td class="memItemLeft" align="right" valign="top">virtual bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html#a210e6c552ab2d3742688413c81aceb74">onInit</a> ()=0</td></tr>
+<tr class="memdesc:a210e6c552ab2d3742688413c81aceb74 inherit pro_methods_classqb_1_1_actor"><td class="mdescLeft">&#160;</td><td class="mdescRight">DerivedActor should implement this method.  <a href="classqb_1_1_actor.html#a210e6c552ab2d3742688413c81aceb74">More...</a><br /></td></tr>
+<tr class="separator:a210e6c552ab2d3742688413c81aceb74 inherit pro_methods_classqb_1_1_actor"><td class="memSeparator" colspan="2">&#160;</td></tr>
+</table>
+<a name="details" id="details"></a><h2 class="groupheader">Detailed Description</h2>
+<div class="textblock"><h3>template&lt;typename Tag&gt;<br />
+class qb::ServiceActor&lt; Tag &gt;</h3>
+
+<p>SingletonActor base class. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Tag</td><td>is a uniq struct Tag</td></tr>
+  </table>
+  </dd>
+</dl>
+<p><a class="el" href="classqb_1_1_service_actor.html" title="SingletonActor base class.">ServiceActor</a> is a special actor where DerivedActor must define a unique service index by Tag.<br />
+Inherited <a class="el" href="classqb_1_1_service.html" title="internal">Service</a> Actors are unique per <a class="el" href="classqb_1_1_virtual_core.html">VirtualCore</a>. </p>
+</div></div><!-- contents -->
+</div><!-- doc-content -->
+<!-- HTML footer for doxygen 1.8.14-->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+</div>
+</body>
+</html>
