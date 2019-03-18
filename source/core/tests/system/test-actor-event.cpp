@@ -315,6 +315,7 @@ public:
     }
 
     void on(TestEvent &event) {
+        unregisterEvent<TestEvent>(*this);
         EXPECT_TRUE(event.checkSum());
         forward(_to, event);
         push<qb::KillEvent>(qb::BroadcastId(1));
