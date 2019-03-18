@@ -252,11 +252,12 @@ namespace qb {
 
     bool VirtualCore::try_send(Event const &event) const {
         // Todo: Fix MonoThread Optimization
-        // if (event.dest._index == _index) {
-        //     const_cast<Event &>(event).state[0] = 0;
-        //     _actors.find(event.dest)->second->on(const_cast<Event *>(&event));
-        //     return true;
-        // }
+         if (event.dest._index == _index && _mono_sends < 128) {
+             ++_mono_sends;
+             _event_map.at(event.id)->invoke(const_cast<Event *>(&event));
+             return true;
+         }
+        _mono_sends = 0;
         return _engine.send(event);
     }
 

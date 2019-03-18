@@ -46,7 +46,7 @@ option("${QB_PREFIX_UPPER}_BUILD_BENCHMARK" "Build Cube Benchmarks" OFF)
 option("${QB_PREFIX_UPPER}_BUILD_SAMPLE" "Build Cube Samples" OFF)
 option("${QB_PREFIX_UPPER}_BUILD_DOC" "Build Cube Documentation" OFF)
 option("${QB_PREFIX_UPPER}_WITH_RTTI" "Build with RTTI" ON)
-option("${QB_PREFIX_UPPER}_USE_TCMALLOC" "Build with RTTI" ON)
+option("${QB_PREFIX_UPPER}_USE_TCMALLOC" "Build with RTTI" OFF)
 
 #default build type to Release
 if (NOT CMAKE_BUILD_TYPE)

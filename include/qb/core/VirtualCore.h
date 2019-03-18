@@ -143,8 +143,10 @@ namespace qb {
                              << " [Source](" << event.source << ")"
                              << " [Dest](" << event.dest << ") NOT FOUND";
 
-                if (!event.state[0])
+                if (!event.state[0]) {
                     event.~_Event();
+                    event.state[0] = 1;
+                }
             }
 
             virtual void registerEvent(IRegisteredEventBase *ievent) override final {
@@ -178,6 +180,7 @@ namespace qb {
         EventBuffer     _event_buffer;
         std::thread     _thread;
         uint64_t        _nano_timer;
+        mutable uint32_t        _mono_sends = 0u;
         // !Members
 
         VirtualCore() = delete;
