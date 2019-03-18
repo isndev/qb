@@ -336,6 +336,7 @@ public:
     void on(TestEvent &event) {
         EXPECT_TRUE(event.checkSum());
         reply(event);
+        forward(event.getSource(), event);
     }
 };
 

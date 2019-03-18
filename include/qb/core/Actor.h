@@ -417,23 +417,10 @@ namespace qb {
          */
         void forward(ActorId const dest, Event &event) const;
 
-        /*!
-         * @private
-         * @param event
-         */
-        void send(Event const &event) const;
-
-        /*!
-         * @private
-         * @param event
-         */
-        void push(Event const &event) const;
-
-        /*!
-         * @private
-         * @param event
-         */
-        bool try_send(Event const &event) const;
+        // OpenApi : internal future use
+        // void send(Event const &event) const;
+        // void push(Event const &event) const;
+        // bool try_send(Event const &event) const;
 
         /*!
          * @brief Get access to unidirectional out events pipe

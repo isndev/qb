@@ -69,6 +69,7 @@ namespace qb {
     void Actor::reply(Event &event) const {
         if (unlikely(event.dest.isBroadcast())) {
             LOG_WARN << "" << *this << " failed to reply broadcast event";
+            return;
         }
         _handler->reply(event);
     }
@@ -76,21 +77,23 @@ namespace qb {
     void Actor::forward(ActorId const dest, Event &event) const {
         if (unlikely(event.dest.isBroadcast())) {
             LOG_WARN << "" << *this << " failed to forward broadcast event";
+            return;
         }
         _handler->forward(dest, event);
     }
 
-    void Actor::send(Event const &event) const {
-        _handler->send(event);
-    }
-
-    void Actor::push(Event const &event) const {
-        _handler->push(event);
-    }
-
-    bool Actor::try_send(Event const &event) const {
-        return _handler->try_send(event);
-    }
+// OpenApi : internal future use
+//    void Actor::send(Event const &event) const {
+//        _handler->send(event);
+//    }
+//
+//    void Actor::push(Event const &event) const {
+//        _handler->push(event);
+//    }
+//
+//    bool Actor::try_send(Event const &event) const {
+//        return _handler->try_send(event);
+//    }
 }
 
 qb::io::stream &operator<<(qb::io::stream &os, qb::Actor const &actor){
