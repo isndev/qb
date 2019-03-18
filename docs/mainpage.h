@@ -17,10 +17,10 @@
 
 /*!
  * @mainpage Home
- * <p align="center"><img src="./logo.png" width="180px" /></p>
+ * <p align="center"><img src="./logo.png" width="180px" ></p>
  * <br>
  * Welcome to the official **qb** documentation. Here you will find a detailed
- * view of all the **qb** classes, functions and modules. <br/>
+ * view of all the **qb** classes, functions and modules. <br>
  *
  * **qb** provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput.
  * It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors.
@@ -64,7 +64,7 @@
  * - The Event handler can execute a local function, create more actors, and send events to other Actors. In **qb** programming semantics, Actors shall be mono-threaded and non-blocking.
  * - The Event communication between Actors is done with an unidirectional communication channel called a Pipe. Hence, the Actor programming model is completely asynchronous and event-driven.
  *
- * <p align="center"><img class="center" src="./BasicActorModel.png" width="500px" /></p>
+ * <p align="center"><img class="center" src="./BasicActorModel.png" width="500px" ></p>
  *
  * #### qb + Actor Model
  * A **program** developed with **qb** is consisting of multiple **actors** handling one or multiple **events** attached to several **cores** linked together with several **pipes**.
