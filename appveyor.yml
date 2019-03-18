@@ -4,7 +4,7 @@ branches:
     - master
     - develop
     - experimental
-clone_folder: C:\projects\qb
+clone_folder: C:\projects\project
 image:
   - Visual Studio 2017
 
@@ -39,13 +39,16 @@ before_build:
       cmake -G %generator% -DQB_BUILD_TEST=ON -DQB_BUILD_SAMPLE=ON -H..
 build_script:
   - cmd: |-
-      cd C:\projects\qb\build
+      cd C:\projects\project\build
       cmake --build . --target ALL_BUILD --config %configuration% -- /nologo
 
 only_commits:
+  message: /build|merge/
   files:
     - CMakeLists.txt
     - appveyor.yml
-    - include
-    - source
+    - include/
+    - source/
+    - modules/
+    - sample/
     - cmake/
