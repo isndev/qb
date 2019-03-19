@@ -45,8 +45,15 @@ namespace qb {
         friend class VirtualCore;
 
         mutable bool _alive = true;
-//        VirtualCore * _handler = nullptr;
+        std::uint32_t id_type;
         void __set_id(ActorId const &id);
+
+        /*!
+         * @private
+         * @tparam _Type
+         */
+        template<typename _Type>
+        bool require_type() const;
     protected:
         /*!
          * @private
@@ -124,6 +131,8 @@ namespace qb {
          * /!\ Do not forget to call kill on overloaded function.
          */
         void on(KillEvent const &event);
+
+        void on(PingEvent const &event);
 
         /*!
          * @}
@@ -381,6 +390,18 @@ namespace qb {
          */
         template<typename _Event, typename ..._Args>
         void send(ActorId const &dest, _Args &&...args) const;
+
+        template<typename _Type>
+        inline uint32_t is(uint32_t const id) { return id == type_id<_Type>(); }
+
+        template<typename _Type>
+        inline uint32_t is(RequireEvent const &event) { return event.type == type_id<_Type>(); }
+
+        template<typename ..._Actors>
+        bool require() const;
+
+        template<typename _Event, typename ..._Args>
+        void broadcast(_Args &&...args) const;
 
         /*!
          * @brief Reply an event

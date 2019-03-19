@@ -54,6 +54,7 @@ namespace qb {
 
         void __init__();
         bool send(Event const &event) const;
+        bool broadcast(Event const &event) const;
         MPSCBuffer &getMailBox(uint8_t const id) const;
         std::size_t getNbCore() const;
     public:

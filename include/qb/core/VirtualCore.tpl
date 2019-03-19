@@ -67,6 +67,7 @@ namespace qb {
     template<typename _Actor, typename ..._Init>
     ActorId VirtualCore::addActor(_Init &&...init) {
         auto actor = new _Actor(std::forward<_Init>(init)...);
+        actor->id_type = type_id<_Actor>();
 //        actor->_handler = this;
 
         if (!initActor(actor, false))
@@ -79,6 +80,7 @@ namespace qb {
     template<typename _Actor, typename ..._Init>
     _Actor *VirtualCore::addReferencedActor(_Init &&...init) {
         auto actor = new _Actor(std::forward<_Init>(init)...);
+        actor->id_type = type_id<_Actor>();
 //        actor->_handler = this;
 
         if (!initActor(actor, true))
@@ -117,6 +119,13 @@ namespace qb {
 
         if (try_send(data))
             pipe.free(data.bucket_size);
+    }
+
+
+    template<typename T, typename ..._Init>
+    void VirtualCore::broadcast(ActorId const source, _Init &&...init) {
+        for (const auto it : _engine._core_set.raw())
+            send<T, _Init...>(BroadcastId(it), source, std::forward<_Init>(init)...);
     }
 
     template<typename T, typename ..._Init>

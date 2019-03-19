@@ -21,28 +21,32 @@
 #ifndef PINGACTOR_H_
 # define PINGACTOR_H_
 
+class PongActor;
 class PingActor
         : public qb::Actor // /!\ should inherit from qb actor
 {
-    const qb::ActorId _id_pong; // Pong ActorId
 public:
-    PingActor() = delete; // PingActor requires PongActor Actorid
-    // /!\ never call any qb::Actor functions in constructor
-    // /!\ use onInit function
-    explicit PingActor(const qb::ActorId id_pong)
-            : _id_pong(id_pong) {}
+    PingActor() = default; // PingActor requires PongActor Acto
 
     // /!\ the engine will call this function before adding PingPongActor
     bool onInit() override final {
-        registerEvent<MyEvent>(*this);         // will listen MyEvent
-        auto &event = push<MyEvent>(_id_pong); // push MyEvent to PongActor and keep a reference to the event
-        event.data = 1337;                     // set trivial data
-        event.container.push_back(7331);       // set dynamic data
+        registerEvent<qb::RequireEvent>(*this); // id dependency
+        require<PongActor>(); // require PongActor id
 
-        // debug print
-        qb::io::cout() << "PingActor id(" << id() << ") has sent MyEvent" << std::endl;
         return true;                           // init ok
     }
+
+    void on(qb::RequireEvent const &event) {
+        if (is<PongActor>(event.type)) {
+            registerEvent<MyEvent>(*this);              // will listen MyEvent
+            auto &e = push<MyEvent>(event.getSource()); // push MyEvent to PongActor and keep a reference to the event
+            e.data = 1337;                              // set trivial data
+            e.container.push_back(7331);                // set dynamic data
+            // debug print
+            qb::io::cout() << "PingActor id(" << id() << ") has sent MyEvent" << std::endl;
+        }
+    }
+
     // will call this function when PingActor receives MyEvent
     void on(MyEvent &) {
         // debug print
