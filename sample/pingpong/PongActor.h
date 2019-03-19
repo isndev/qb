@@ -16,33 +16,25 @@
  */
 
 // PongActor.h file
-#include <qb/actor.h>
-#include "MyEvent.h"
 #ifndef PONGACTOR_H_
-# define PONGACTOR_H_
+#define PONGACTOR_H_
+#include <qb/actor.h>
+#include "PingPongEvent.h"
 
 class PongActor
-        : public qb::Actor // /!\ should inherit from qb actor
+        : public qb::Actor
 {
 public:
-    // /!\ never call any qb::Actor functions in constructor
-    // /!\ use onInit function
     PongActor() = default;
 
-    // /!\ the engine will call this function before adding PongActor
     bool onInit() override final {
-        registerEvent<MyEvent>(*this);         // will just listen MyEvent
+        registerEvent<PingPongEvent>(*this);
 
-        return true;                           // init ok
+        return true;
     }
-    // will call this function when PongActor receives MyEvent
-    void on(MyEvent &event) {
-        // debug print
-        qb::io::cout() << "PongActor id(" << id() << ") received MyEvent" << std::endl;
-        reply(event); // reply the event to SourceActor
-        // debug print
-        qb::io::cout() << "PongActor id(" << id() << ") has replied MyEvent" << std::endl;
-        kill(); // then notify engine to kill PongActor
+	
+    void on(PingPongEvent &event) {
+        reply(event); 
     }
 };
 

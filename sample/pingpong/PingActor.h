@@ -16,38 +16,46 @@
  */
 
 // PingActor.h file
-#include <qb/actor.h>
-#include "MyEvent.h"
 #ifndef PINGACTOR_H_
-# define PINGACTOR_H_
+#define PINGACTOR_H_
+#include <qb/actor.h>
+#include "PingPongEvent.h"
+#include "latency.hpp"
 
 class PingActor
-        : public qb::Actor // /!\ should inherit from qb actor
+        : public qb::Actor 
 {
-    const qb::ActorId _id_pong; // Pong ActorId
+    const qb::ActorId _id_pong; 
+    pg::latency<1000 * 1000, 900000> latency;
+	
 public:
-    PingActor() = delete; // PingActor requires PongActor Actorid
-    // /!\ never call any qb::Actor functions in constructor
-    // /!\ use onInit function
+    PingActor() = delete; 
+
     explicit PingActor(const qb::ActorId id_pong)
             : _id_pong(id_pong) {}
+			
+	bool onInit() override final {
+        registerEvent<PingPongEvent>(*this);
+        auto &event = push<PingPongEvent>(_id_pong); 
+		event.counter = 0;                    
+		event.timestamp = std::chrono::high_resolution_clock::now();     
 
-    // /!\ the engine will call this function before adding PingPongActor
-    bool onInit() override final {
-        registerEvent<MyEvent>(*this);         // will listen MyEvent
-        auto &event = push<MyEvent>(_id_pong); // push MyEvent to PongActor and keep a reference to the event
-        event.data = 1337;                     // set trivial data
-        event.container.push_back(7331);       // set dynamic data
-
-        // debug print
-        qb::io::cout() << "PingActor id(" << id() << ") has sent MyEvent" << std::endl;
-        return true;                           // init ok
+        return true;
     }
-    // will call this function when PingActor receives MyEvent
-    void on(MyEvent &) {
-        // debug print
-        qb::io::cout() << "PingActor id(" << id() << ") received MyEvent" << std::endl;
-        kill(); // then notify engine to kill PingActor
+	
+    void on(PingPongEvent &event) 
+	{
+		latency.add(std::chrono::high_resolution_clock::now() - event.timestamp);
+
+		if (event.counter > 0 && event.counter % 1000000 == 0)
+		{
+			latency.generate<std::ostream, std::chrono::nanoseconds>(std::cout, "ns");
+			exit(0);
+		}
+		
+		auto &e = push<PingPongEvent>(_id_pong);
+		e.counter = event.counter+1;                    
+		e.timestamp = std::chrono::high_resolution_clock::now(); 
     }
 };
 
