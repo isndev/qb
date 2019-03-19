@@ -45,6 +45,8 @@ namespace qb {
         CoreSet(CoreSet const &) = default;
         explicit CoreSet(std::unordered_set<uint8_t> const &set);
 
+        const std::unordered_set<uint8_t> &raw() const { return _raw_set; }
+
         static CoreSet build(uint32_t const nb_core = std::thread::hardware_concurrency());
     };
 

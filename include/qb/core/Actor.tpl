@@ -69,6 +69,22 @@ namespace qb {
         VirtualCore::_handler->template send<_Event, _Args...>(dest, id(), std::forward<_Args>(args)...);
     }
 
+    template<typename _Required>
+    bool Actor::require_type() const {
+        broadcast<PingEvent>(type_id<_Required>());
+        return true;
+    }
+
+    template<typename ..._Types>
+    bool Actor::require() const {
+        return (require_type<_Types>() && ...);
+    }
+
+    template<typename _Event, typename ..._Args>
+    void Actor::broadcast(_Args &&... args) const {
+        VirtualCore::_handler->template broadcast<_Event, _Args...>(id(), std::forward<_Args>(args)...);
+    }
+
     template <typename Tag>
     ActorId Actor::getServiceId(uint16_t const index) {
         return {VirtualCore::getServices()[type_id<Tag>()], index};

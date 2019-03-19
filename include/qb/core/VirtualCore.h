@@ -123,26 +123,21 @@ namespace qb {
 
             virtual void invoke(Event *data) const override final {
                 auto &event = *reinterpret_cast<_Event *>(data);
-                auto flag = false;
 
                 event.state[0] = 0;
                 if (event.dest.isBroadcast()) {
                     for (const auto registered_event : _registered_events) {
                         registered_event.second->invoke(event);
-                        flag = true;
                     }
                 } else {
                     const auto it = _registered_events.find(event.dest);
-                    if (likely(it != _registered_events.cend())) {
+                    if (likely(it != _registered_events.cend()))
                         it->second->invoke(event);
-                        flag = true;
-                    }
+                    else
+                        LOG_WARN << "Failed Event"
+                                 << " [Source](" << event.source << ")"
+                                 << " [Dest](" << event.dest << ") NOT FOUND";
                 }
-
-                if (unlikely(!flag))
-                    LOG_WARN << "Failed Event"
-                             << " [Source](" << event.source << ")"
-                             << " [Dest](" << event.dest << ") NOT FOUND";
 
                 if (!event.state[0]) {
                     event.~_Event();
@@ -246,6 +241,8 @@ namespace qb {
         inline void fill_event(T &data, ActorId const dest, ActorId const source) const;
         template<typename T, typename ..._Init>
         void send(ActorId const dest, ActorId const source, _Init &&...init);
+        template<typename T, typename ..._Init>
+        void broadcast(ActorId const source, _Init &&...init);
         template<typename T, typename ..._Init>
         T &push(ActorId const dest, ActorId const source, _Init &&...init);
         template<typename T, typename ..._Init>

@@ -92,6 +92,33 @@ namespace qb {
      */
     struct KillEvent : public Event {};
 
+    enum class ActorStatus : uint32_t {
+        Alive,
+        Dead
+    };
+
+    /*!
+     * @private
+     * @class PingEvent core/Event.h qb/event.h
+     * default registered event to kill Actor by event
+     */
+    struct PingEvent : public Event {
+        const uint32_t type;
+
+        explicit PingEvent(uint32_t const actor_type)
+            : type(actor_type)
+        {}
+    };
+
+    struct RequireEvent : public Event {
+        const uint32_t type;
+        const ActorStatus status;
+
+        explicit RequireEvent(uint32_t const actor_type, ActorStatus const actor_status)
+                : type(actor_type), status(actor_status)
+        {}
+    };
+
 } // namespace qb
 
 #endif //QB_EVENT_H

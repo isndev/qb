@@ -105,7 +105,7 @@ namespace qb {
     // Workflow
     void VirtualCore::__init__actors__() const {
         // Init StaticActors
-        if (std::any_of(_actors.begin(), _actors.end(), [](auto &it) { return !it.second->onInit(); }))
+        if (std::any_of(_actors.begin(), _actors.end(), [&](auto &it) { return !it.second->onInit(); }))
         {
             LOG_CRIT << "Actor at " << *this << " failed to init";
             Main::sync_start.store(Error::BadActorInit, std::memory_order_release);
@@ -209,6 +209,8 @@ namespace qb {
     void VirtualCore::addActor(Actor *actor) {
         _actors.insert({actor->id(), actor});
         registerEvent<KillEvent>(*actor);
+        registerEvent<PingEvent>(*actor);
+
         LOG_DEBUG << "New " << *actor;
     }
 

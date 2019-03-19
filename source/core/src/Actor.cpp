@@ -30,6 +30,11 @@ namespace qb {
         static_cast<ActorId &>(*this) = {sid, cid};
     }
 
+    void Actor::on(PingEvent const &event) {
+        if (event.type == id_type)
+            send<RequireEvent>(event.source, event.type, ActorStatus::Alive);
+    }
+
     void Actor::on(KillEvent const &) {
         kill();
     }
