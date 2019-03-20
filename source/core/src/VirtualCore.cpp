@@ -192,7 +192,7 @@ namespace qb {
     ActorId VirtualCore::initActor(Actor &actor, bool const is_service, bool const doInit) {
         if (is_service) {
             actor._index = _index;
-            if (_actors.find(actor.id()) != _actors.end() || (doInit && unlikely(!actor.onInit()))) {
+            if (_actors.find(actor.id()) != _actors.end()) {
                 delete &actor;
                 return ActorId::NotFound;
             }
@@ -206,7 +206,7 @@ namespace qb {
             actor.__set_id(id);
             // Number of actors attends to its limit in this core
             if (id == ActorId::NotFound) {
-                _ids.insert(static_cast<uint16_t>(id));
+                _ids.insert(static_cast<uint16_t>(id.sid()));
                 delete &actor;
                 return ActorId::NotFound;
             }
