@@ -80,7 +80,7 @@ public:
         return true;
     }
 
-    void on(qb::RequireEvent const &e) {
+    void on(qb::RequireEvent const &) {
         kill();
     }
 };

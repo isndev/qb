@@ -80,9 +80,9 @@ static void BM_PINGPONG_MONO_CORE(benchmark::State& state) {
     }
 }
 
-BENCHMARK_TEMPLATE(BM_PINGPONG_MONO_CORE, TinyEvent)->Ranges({{4096, 8<<10}, {256, 1024}})->Unit(benchmark::kMillisecond);
+//BENCHMARK_TEMPLATE(BM_PINGPONG_MONO_CORE, TinyEvent)->Ranges({{4096, 8<<10}, {256, 1024}})->Unit(benchmark::kMillisecond);
 BENCHMARK_TEMPLATE(BM_PINGPONG_MONO_CORE, BigEvent)->Ranges({{4096, 8<<10}, {256, 1024}})->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_PINGPONG_MONO_CORE, DynamicEvent)->Ranges({{4096, 8<<10}, {256, 1024}})->Unit(benchmark::kMillisecond);
+//BENCHMARK_TEMPLATE(BM_PINGPONG_MONO_CORE, DynamicEvent)->Ranges({{4096, 8<<10}, {256, 1024}})->Unit(benchmark::kMillisecond);
 
 template<typename EventTrait>
 static void BM_PINGPONG_DUAL_CORE(benchmark::State& state) {

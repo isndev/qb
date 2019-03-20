@@ -141,7 +141,7 @@ namespace qb {
 
                 if (!event.state[0]) {
                     event.~_Event();
-                    event.state[0] = 1;
+                    // event.state[0] = 1;
                 }
             }
 
