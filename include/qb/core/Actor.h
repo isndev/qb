@@ -20,6 +20,7 @@
 # include <vector>
 # include <map>
 # include <unordered_map>
+# include <utility>
 // include from qb
 # include <qb/utility/nocopy.h>
 # include "ICallback.h"
@@ -29,6 +30,7 @@
 namespace qb {
 
     class VirtualCore;
+    class ActorProxy;
 
     /*!
      * @class Actor core/Actor.h qb/actor.h
@@ -43,6 +45,7 @@ namespace qb {
             , ActorId
     {
         friend class VirtualCore;
+        friend class ActorProxy;
 
         mutable bool _alive = true;
         std::uint32_t id_type;
@@ -501,12 +504,61 @@ namespace qb {
      */
     template <typename Tag>
     class ServiceActor : public Service, public Actor {
+        friend class Main;
         static const uint16_t ServiceIndex;
     public:
+
         ServiceActor() {
             __set_id(ServiceIndex, 0);
         }
     };
+
+    class IActorFactory {
+    public:
+        virtual ~IActorFactory(){}
+        virtual Actor *create() = 0;
+        virtual bool isService() const = 0;
+    };
+
+    class ActorProxy
+    {
+    protected:
+        ActorProxy() = default;
+        template <typename _Type>
+        void setType(Actor &actor) {
+            actor.id_type = type_id<_Type>();
+        }
+        void setId(Actor &actor, ActorId const id) {
+            actor.__set_id(id);
+        }
+    };
+
+    template <typename _Actor, typename ..._Args>
+    class TActorFactory : public IActorFactory, public ActorProxy {
+        ActorId _id;
+        std::tuple<_Args...> _parameters;
+    public:
+        TActorFactory(ActorId const id, _Args &&...args)
+            : _id(id), _parameters(args...)
+        {}
+
+        template<std::size_t... Is>
+        Actor *create_impl(std::index_sequence<Is...>) {
+            auto actor = new _Actor(std::get<Is>(_parameters)...);
+            setType<_Actor>(*actor);
+            setId(*actor, _id);
+            return actor;
+        }
+
+        Actor *create() {
+            return create_impl(std::index_sequence_for<_Args...>{});
+        }
+
+        virtual bool isService() const {
+            return std::is_base_of<Service, _Actor>::value;
+        }
+    };
+
 
 }
 

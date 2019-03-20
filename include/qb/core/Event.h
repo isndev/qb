@@ -119,6 +119,41 @@ namespace qb {
         {}
     };
 
+    template <typename ..._Args>
+    struct WithData : public Event {
+        std::tuple<_Args...> data;
+
+        WithData(_Args &&...args)
+            : data(std::forward<_Args>(args)...)
+        {}
+    };
+
+    template <typename ..._Args>
+    class WithoutData : public Event {
+    };
+
+    /*!
+     * @private
+     * @tparam Data
+     */
+    template <typename ..._Args>
+    struct AskData : public WithoutData<_Args...> {
+    };
+
+    /*!
+     * @private
+     * @tparam Data
+     */
+    template <typename ..._Args>
+    struct FillEvent : public WithData<_Args...>
+    {
+        using base_t = WithData<_Args...>;
+        FillEvent() = default;
+        explicit FillEvent(_Args &&...args)
+            : base_t(std::forward<_Args>(args)...)
+        {}
+    };
+
 } // namespace qb
 
 #endif //QB_EVENT_H

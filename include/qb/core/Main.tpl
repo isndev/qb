@@ -25,15 +25,22 @@
 namespace qb {
     class Main;
 
-    template<typename _Actor, typename ..._Init>
-    ActorId Main::addActor(std::size_t index, _Init &&...init) {
-        auto it = _cores.find(static_cast<uint8_t >(index));
-        if (!Main::is_running && it != _cores.end()) {
-            return it->second-> template addActor<_Actor, _Init...>
-                    (std::forward<_Init>(init)...);
+    template<typename _Actor, typename ..._Args>
+    ActorId Main::addActor(std::size_t index, _Args &&...args) {
+        auto it = _core_set.raw().find(static_cast<uint8_t >(index));
+        ActorId id = ActorId::NotFound;
+        if (!Main::is_running && it != _core_set.raw().end()) {
+            if constexpr (std::is_base_of<Service, _Actor>::value)
+                id = ActorId(_Actor::ServiceIndex, index);
+            else
+                id = ActorId(generated_sid++, index);
+            auto fac = _actor_factories[index].find(id);
+            if (fac == _actor_factories[index].end())
+                _actor_factories[index].insert({id, new TActorFactory<_Actor, _Args...>(id, std::forward<_Args>(args)...)});
+            else
+                id = ActorId::NotFound;
         }
-
-        return ActorId::NotFound;
+        return id;
     }
 
     template<typename _Actor, typename ..._Args>

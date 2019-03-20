@@ -147,8 +147,9 @@ namespace qb {
 
             virtual void registerEvent(IRegisteredEventBase *ievent) override final {
                 auto it = _registered_events.find(ievent->id());
-                if (it == _registered_events.end())
-                    _registered_events.insert({ievent->id(), static_cast<IRegisteredEvent *>(ievent)});
+                if (it != _registered_events.end())
+                    unregisterEvent(ievent->id());
+                _registered_events.insert({ievent->id(), static_cast<IRegisteredEvent *>(ievent)});
             }
             virtual void unregisterEvent(ActorId const id) override final {
                 auto it = _registered_events.find(id);
@@ -174,7 +175,6 @@ namespace qb {
         RemoveActorList _actor_to_remove;
         PipeMap         _pipes;
         EventBuffer     _event_buffer;
-        std::thread     _thread;
         uint64_t        _nano_timer;
         // !Members
 
@@ -197,17 +197,16 @@ namespace qb {
         //!Event Management
 
         // Workflow
-        void __init__actors__() const;
         void __init__();
+        void __init__actors__() const;
         bool __wait__all__cores__ready();
         void __updateTime__();
-        void __spawn__();
+        void __workflow__();
         //!Workflow
 
         // Actor Management
-        template<typename _Actor>
-        bool initActor(_Actor * const actor, bool doinit);
-        void addActor(Actor *actor);
+        ActorId initActor(Actor &actor, bool const is_service, bool const doInit);
+        ActorId appendActor(Actor &actor, bool const is_service, bool const doInit = false);
         void removeActor(ActorId const id);
 
         template<typename _Actor, typename ..._Init>

@@ -43,51 +43,13 @@ namespace qb {
             LOG_WARN << "" << *this << "Failed to unregister event";
     }
 
-    template<typename _Actor>
-    bool VirtualCore::initActor(_Actor * const actor, bool doinit) {
-        if constexpr (!std::is_base_of<Service, _Actor>::value) {
-            auto id = __generate_id__();
-            actor->__set_id(id);
-            // Number of actors attends to its limit in this core
-            if (id == ActorId::NotFound || (doinit && unlikely(!actor->onInit()))) {
-                _ids.insert(static_cast<uint16_t>(id));
-                delete actor;
-                return false;
-            }
-        } else {
-            actor->_index = _index;
-            if (_actors.find(actor->id()) != _actors.end() || (doinit && unlikely(!actor->onInit()))) {
-                delete actor;
-                return false;
-            }
-        }
-        return true;
-    }
-
-    template<typename _Actor, typename ..._Init>
-    ActorId VirtualCore::addActor(_Init &&...init) {
-        auto actor = new _Actor(std::forward<_Init>(init)...);
-        actor->id_type = type_id<_Actor>();
-//        actor->_handler = this;
-
-        if (!initActor(actor, false))
-            return ActorId::NotFound;
-
-        addActor(actor);
-        return actor->id();
-    };
-
     template<typename _Actor, typename ..._Init>
     _Actor *VirtualCore::addReferencedActor(_Init &&...init) {
         auto actor = new _Actor(std::forward<_Init>(init)...);
         actor->id_type = type_id<_Actor>();
-//        actor->_handler = this;
-
-        if (!initActor(actor, true))
-            return nullptr;
-
-        addActor(actor);
-        return actor;
+        if (appendActor(*actor, std::is_base_of<Service, _Actor>::value, true))
+            return actor;
+        return nullptr;
     };
 
     template <typename _Actor>
