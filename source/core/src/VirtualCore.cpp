@@ -272,17 +272,17 @@ namespace qb {
     }
 
     bool VirtualCore::try_send(Event const &event) const {
-        thread_local static uint32_t counter = 0;
-        // Todo: Fix MonoThread Optimization
-        if (event.dest._index == _index && counter < 64) {
+//      thread_local static uint32_t counter = 0;
+//      // Todo: Fix MonoThread Optimization
+//      if (event.dest._index == _index && counter < 8) {
 //            auto it = _event_map.find(event.id);
 //            if (likely(it != _event_map.end())) {
-                ++counter;
-                _event_map.at(event.id)->invoke(const_cast<Event *>(&event));
-                return true;
+//              ++counter;
+//              _event_map.at(event.id)->invoke(const_cast<Event *>(&event));
+//              return true;
 //            }
-        }
-        counter = 0;
+//      }
+//      counter = 0;
         return _engine.send(event);
     }
 
@@ -299,22 +299,22 @@ namespace qb {
     }
 
     void VirtualCore::reply(Event &event) {
-        ActorId save_direction[2] = {event.source, event.dest};
+//        ActorId save_direction[2] = {event.source, event.dest};
         std::swap(event.dest, event.source);
         event.state[0] = 1;
         send(event);
-        event.source = save_direction[0];
-        event.dest = save_direction[1];
+//        event.source = save_direction[0];
+//        event.dest = save_direction[1];
     }
 
     void VirtualCore::forward(ActorId const dest, Event &event) {
-        ActorId save_direction[2] = {event.source, event.dest};
+//        ActorId save_direction[2] = {event.source, event.dest};
         event.source = event.dest;
         event.dest = dest;
         event.state[0] = 1;
         send(event);
-        event.source = save_direction[0];
-        event.dest = save_direction[1];
+//        event.source = save_direction[0];
+//        event.dest = save_direction[1];
     }
     //!Event Api
 

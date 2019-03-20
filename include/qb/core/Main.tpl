@@ -26,8 +26,9 @@ namespace qb {
     class Main;
 
     template<typename _Actor, typename ..._Args>
-    ActorId Main::addActor(std::size_t index, _Args &&...args) {
-        auto it = _core_set.raw().find(static_cast<uint8_t >(index));
+    ActorId Main::addActor(std::size_t cid, _Args &&...args) {
+        const auto index = static_cast<uint8_t>(cid);
+        auto it = _core_set.raw().find(index);
         ActorId id = ActorId::NotFound;
         if (!Main::is_running && it != _core_set.raw().end()) {
             if constexpr (std::is_base_of<Service, _Actor>::value)
