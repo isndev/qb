@@ -26,7 +26,7 @@ class PingActor
         : public qb::Actor // /!\ should inherit from qb actor
 {
 public:
-    PingActor() = default; // PingActor requires PongActor Acto
+    PingActor() = default; // PingActor requires PongActor Actor
 
     // /!\ the engine will call this function before adding PingPongActor
     bool onInit() override final {

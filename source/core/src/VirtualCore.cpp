@@ -103,15 +103,6 @@ namespace qb {
     //!Event Management
 
     // Workflow
-    void VirtualCore::__init__actors__() const {
-        // Init StaticActors
-        if (std::any_of(_actors.begin(), _actors.end(), [&](auto &it) { return !it.second->onInit(); }))
-        {
-            LOG_CRIT << "Actor at " << *this << " failed to init";
-            Main::sync_start.store(Error::BadActorInit, std::memory_order_release);
-        }
-    }
-
     void VirtualCore::__init__() {
         bool ret(true);
 #if defined(unix) || defined(__unix) || defined(__unix__)
@@ -135,10 +126,15 @@ namespace qb {
         if (!ret) {
             LOG_CRIT << "" << *this << " Init Failed";
             Main::sync_start.store(Error::BadInit, std::memory_order_release);
-        } else if (!_actors.size()) {
-            LOG_CRIT << "" << *this << " Started with 0 Actor";
-            Main::sync_start.store(Error::NoActor, std::memory_order_release);
-            return;
+        }
+    }
+
+    void VirtualCore::__init__actors__() const {
+        // Init StaticActors
+        if (std::any_of(_actors.begin(), _actors.end(), [](auto &it) { return !it.second->onInit(); }))
+        {
+            LOG_CRIT << "Actor at " << *this << " failed to init";
+            Main::sync_start.store(Error::BadActorInit, std::memory_order_release);
         }
     }
 
@@ -159,59 +155,82 @@ namespace qb {
         _nano_timer = now;
     }
 
-    void VirtualCore::__spawn__() {
-        _handler = this;
-        try {
-            __init__();
-            __init__actors__();
-            if (!__wait__all__cores__ready())
-                return;
+    void VirtualCore::__workflow__() {
+        LOG_INFO << "" << *this << " Init Success " << _actors.size() << " actor(s)";
+        while (likely(Main::is_running)) {
+            __updateTime__();
+            __receive__();
 
-            LOG_INFO << "" << *this << " Init Success " << _actors.size() << " actor(s)";
+            for (const auto &callback : _actor_callbacks)
+                callback.second->onCallback();
 
-            while (likely(Main::is_running)) {
-                __updateTime__();
-                __receive__();
+            __flush__();
 
-                for (const auto &callback : _actor_callbacks)
-                    callback.second->onCallback();
-
-                __flush__();
-
-                if (unlikely(!_actor_to_remove.empty())) {
-                    // remove dead actors
-                    for (auto const &actor : _actor_to_remove)
-                        removeActor(actor);
-                    _actor_to_remove.clear();
-                    if (_actors.empty()) {
-                        break;
-                    }
+            if (unlikely(!_actor_to_remove.empty())) {
+                // remove dead actors
+                for (auto const &actor : _actor_to_remove)
+                    removeActor(actor);
+                _actor_to_remove.clear();
+                if (_actors.empty()) {
+                    break;
                 }
             }
-            // receive and flush residual events
-            do {
-                __receive__();
-            } while (__flush_all__());
-
-            if (!Main::is_running)
-                LOG_INFO << "" << *this << " Stopped by user leave " << _actors.size() << " actor(s)";
-            else
-                LOG_INFO << "" << *this << " Stopped normally";
-        } catch (std::exception &e) {
-            LOG_CRIT << "Exception thrown on " << *this << " what:" << e.what();
-            Main::sync_start.store(Error::ExceptionThrown, std::memory_order_release);
-            Main::is_running = false;
         }
+        // receive and flush residual events
+        do {
+            __receive__();
+        } while (__flush_all__());
+
+        if (!Main::is_running)
+            LOG_INFO << "" << *this << " Stopped by user leave " << _actors.size() << " actor(s)";
+        else
+            LOG_INFO << "" << *this << " Stopped normally";
+
     }
     //!Workflow
-
     // Actor Management
-    void VirtualCore::addActor(Actor *actor) {
-        _actors.insert({actor->id(), actor});
-        registerEvent<KillEvent>(*actor);
-        registerEvent<PingEvent>(*actor);
+    ActorId VirtualCore::initActor(Actor &actor, bool const is_service, bool const doInit) {
+        if (is_service) {
+            actor._index = _index;
+            if (_actors.find(actor.id()) != _actors.end() || (doInit && unlikely(!actor.onInit()))) {
+                delete &actor;
+                return ActorId::NotFound;
+            }
+        } else {
+            auto id = actor.id();
+            if (id != ActorId::NotFound)
+                _ids.extract(id);
+            else
+                id = __generate_id__();
 
-        LOG_DEBUG << "New " << *actor;
+            actor.__set_id(id);
+            // Number of actors attends to its limit in this core
+            if ((doInit && unlikely(!actor.onInit()))) {
+                if (id != ActorId::NotFound)
+                    _ids.insert(static_cast<uint16_t>(id));
+                delete &actor;
+                return false;
+            }
+        }
+
+        registerEvent<KillEvent>(actor);
+        registerEvent<PingEvent>(actor);
+
+        if (doInit && unlikely(!actor.onInit())) {
+            removeActor(actor.id());
+            return ActorId::NotFound;
+        }
+
+        return actor.id();
+    }
+
+    ActorId VirtualCore::appendActor(Actor &actor, bool const is_service, bool const doInit) {
+        if (initActor(actor, is_service, doInit) != ActorId::NotFound) {
+            _actors.insert({actor.id(), &actor});
+            LOG_DEBUG << "New " << actor;
+            return actor.id();
+        }
+        return ActorId::NotFound;
     }
 
     void VirtualCore::removeActor(ActorId const id) {
@@ -227,16 +246,16 @@ namespace qb {
 
     //!Actor Management
 
-    void VirtualCore::start() {
-        _thread = std::thread(&VirtualCore::__spawn__, this);
-        if (_thread.get_id() == std::thread::id())
-            std::runtime_error("failed to start a PhysicalCore");
-    }
-
-    void VirtualCore::join() {
-        if (_thread.get_id() != std::thread::id{})
-            _thread.join();
-    }
+//    void VirtualCore::start() {
+//        _thread = std::thread(&VirtualCore::__spawn__, this);
+//        if (_thread.get_id() == std::thread::id())
+//            std::runtime_error("failed to start a PhysicalCore");
+//    }
+//
+//    void VirtualCore::join() {
+//        if (_thread.get_id() != std::thread::id{})
+//            _thread.join();
+//    }
 
     void VirtualCore::killActor(ActorId const id) {
         _actor_to_remove.insert(id);
@@ -255,12 +274,15 @@ namespace qb {
 
     bool VirtualCore::try_send(Event const &event) const {
         thread_local static uint32_t counter = 0;
-	    // Todo: Fix MonoThread Optimization
-         if (event.dest._index == _index && counter < 64) {
-             ++counter;
-             _event_map.at(event.id)->invoke(const_cast<Event *>(&event));
-             return true;
-         }
+        // Todo: Fix MonoThread Optimization
+        if (event.dest._index == _index && counter < 64) {
+//            auto it = _event_map.find(event.id);
+//            if (likely(it != _event_map.end())) {
+                ++counter;
+                _event_map.at(event.id)->invoke(const_cast<Event *>(&event));
+                return true;
+//            }
+        }
         counter = 0;
         return _engine.send(event);
     }
@@ -299,7 +321,7 @@ namespace qb {
 
     uint16_t VirtualCore::getIndex() const { return _index; }
     uint64_t VirtualCore::time() const { return _nano_timer; }
-	uint16_t VirtualCore::_nb_service = 0;
+    uint16_t VirtualCore::_nb_service = 0;
     thread_local VirtualCore *VirtualCore::_handler = nullptr;
 }
 

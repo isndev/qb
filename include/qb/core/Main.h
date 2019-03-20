@@ -20,6 +20,7 @@
 # include <iostream>
 # include <vector>
 # include <unordered_map>
+# include <thread>
 // include from qb
 # include <qb/system/lockfree/mpsc.h>
 # include "Event.h"
@@ -28,6 +29,7 @@
 namespace qb {
 
     class VirtualCore;
+    class IActorFactory;
 
     /*!
      * @class Main core/Main.h qb/main.h
@@ -45,12 +47,14 @@ namespace qb {
 
         static std::atomic<uint64_t> sync_start;
         static bool                  is_running;
+        static uint16_t              generated_sid;
         static void onSignal(int signal);
-
+        static void start_thread(uint8_t coreId, Main &engine);
     private:
         CoreSet _core_set;
         std::vector<MPSCBuffer *> _mail_boxes;
-        std::unordered_map<uint8_t, VirtualCore *> _cores;
+        std::vector<std::thread>  _cores;
+        std::unordered_map<uint8_t, std::unordered_map<uint32_t, IActorFactory *>> _actor_factories;
 
         void __init__();
         bool send(Event const &event) const;
@@ -126,7 +130,7 @@ namespace qb {
          * @note
          * If async = false the main thread will by used by a VirtualCore engine.
          */
-        void start(bool async = true) const;
+        void start(bool async = true);
 
         static bool hasError();
 
@@ -142,7 +146,7 @@ namespace qb {
          * @note
          * You can not avoid calling this function even if main has started with async=false.
          */
-        void join() const;
+        void join();
 
     public:
 

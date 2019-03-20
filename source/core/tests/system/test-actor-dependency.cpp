@@ -33,20 +33,12 @@ public:
 class TestActorDependency
         : public qb::Actor
 {
-    qb::Main::CoreBuilder::ActorIdList const _ids;
 public:
-    TestActorDependency(qb::Main::CoreBuilder::ActorIdList const &ids = {})
-            : _ids(std::move(ids)) {}
+    TestActorDependency() = default;
 
     virtual bool onInit() override final {
-        if (!_ids.size()) {
-            registerEvent<qb::RequireEvent>(*this);
-            require<TestActor>();
-        } else {
-            for (auto id : _ids)
-                push<qb::KillEvent>(id);
-            kill();
-        }
+        registerEvent<qb::RequireEvent>(*this);
+        require<TestActor>();
         return true;
     }
 
@@ -61,33 +53,37 @@ public:
     }
 };
 
-TEST(ActorDependency, GetActorIdDependencyFromAddActorAtStart) {
-    qb::Main main({0, 1});
-
-    qb::Main::CoreBuilder::ActorIdList list;
-    for (auto i = 0u; i < MAX_ACTOR; ++i) {
-        list.push_back(main.addActor<TestActor>(0));
+class TestActorReverse : public qb::Actor {
+    uint32_t counter = 0;
+public:
+    virtual bool onInit() override final {
+        // overload ping
+        registerEvent<qb::PingEvent>(*this);
+        return true;
     }
-    main.addActor<TestActorDependency>(1, list);
 
-    main.start(false);
-    main.join();
-    EXPECT_FALSE(main.hasError());
-}
-
-TEST(ActorDependency, GetActorIdDependencyFromCoreBuilderAtStart) {
-    qb::Main main({0, 1});
-
-    auto builder = main.core(0);
-    for (auto i = 0u; i < MAX_ACTOR; ++i) {
-        builder.addActor<TestActor>();
+    void on(qb::PingEvent const &event) {
+        if (is<TestActorReverse>(event.type)) {
+            send<qb::RequireEvent>(event.getSource(), event.type, qb::ActorStatus::Alive);
+            ++counter;
+        }
+        if (counter == MAX_ACTOR)
+            kill();
     }
-    main.addActor<TestActorDependency>(1, builder.idList());
+};
 
-    main.start(false);
-    main.join();
-    EXPECT_FALSE(main.hasError());
-}
+class TestActorReverseDependency : public qb::Actor {
+public:
+    virtual bool onInit() override final {
+        registerEvent<qb::RequireEvent>(*this);
+        require<TestActorReverse>();
+        return true;
+    }
+
+    void on(qb::RequireEvent const &e) {
+        kill();
+    }
+};
 
 TEST(ActorDependency, GetActorIdDependencyFromRequireEvent) {
     qb::Main main({0, 1});
@@ -97,6 +93,20 @@ TEST(ActorDependency, GetActorIdDependencyFromRequireEvent) {
         builder.addActor<TestActor>();
     }
     main.addActor<TestActorDependency>(1);
+
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+}
+
+TEST(ActorDependency, GetActorIdReverseDependencyFromRequireEvent) {
+    qb::Main main({0, 1});
+
+    auto builder = main.core(0);
+    for (auto i = 0u; i < MAX_ACTOR; ++i) {
+        builder.addActor<TestActorReverseDependency>();
+    }
+    main.addActor<TestActorReverse>(1);
 
     main.start(false);
     main.join();

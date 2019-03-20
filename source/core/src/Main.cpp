@@ -28,14 +28,14 @@ namespace qb {
     }
 
     void Main::__init__() {
-        _cores.reserve(_core_set.getNbCore());
+        _cores.resize(_core_set.getNbCore());
         for (auto core_id : _core_set._raw_set) {
             const auto nb_producers = _core_set.getNbCore();
             _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(nb_producers);
-            _cores.emplace(core_id, new VirtualCore(core_id, *this));
         }
         sync_start.store(0, std::memory_order_release);
         is_running = false;
+        generated_sid = VirtualCore::_nb_service + 1;
         LOG_INFO << "[MAIN] Init with " << getNbCore() << " cores";
     }
 
@@ -58,10 +58,9 @@ namespace qb {
             if (mailbox)
                 delete mailbox;
         }
-
-		for (auto core : _cores)
-			delete core.second;
-
+        for (auto &actor_factory : _actor_factories)
+            for (auto factory : actor_factory.second)
+                delete factory.second;
     }
 
     bool Main::send(Event const &event) const {
@@ -72,14 +71,45 @@ namespace qb {
                                                                           event.bucket_size);
     }
 
-    void Main::start(bool async) const {
-		std::size_t i = 1;
+    void Main::start_thread(uint8_t coreId, Main &engine) {
+        VirtualCore core(coreId, engine);
+        VirtualCore::_handler = &core;
+        try {
+            // Init VirtualCore
+            auto &core_factory = engine._actor_factories[coreId];
+            core.__init__();
+            if (!core_factory.size()) {
+                LOG_CRIT << "" << core << " Started with 0 Actor";
+                Main::sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
+                return;
+            }
+            else if (std::any_of(core_factory.begin(), core_factory.end(),
+                    [&core](auto it) {
+                        return !core.appendActor(*it.second->create(), it.second->isService());
+                    }))
+            {
+                LOG_CRIT << "Actor at " << core << " failed to init";
+                Main::sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
+            }
+            core.__init__actors__();
+            if (!core.__wait__all__cores__ready())
+                return;
+            core.__workflow__();
+        } catch (std::exception &e) {
+            LOG_CRIT << "Exception thrown on " << core << " what:" << e.what();
+            Main::sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
+            Main::is_running = false;
+        }
+    }
+
+    void Main::start(bool async) {
+		std::size_t i = 0;
 		is_running = true;
-        for (auto core : _cores) {
-            if (!async && i == _cores.size())
-                core.second->__spawn__();
+        for (auto &core : _cores) {
+            if (!async && i == (_cores.size() - 1))
+                start_thread(i, *this);
             else
-                core.second->start();
+                core = std::thread(start_thread, i, std::ref(*this));
             ++i;
         }
 
@@ -107,9 +137,11 @@ namespace qb {
             std::raise(SIGINT);
     }
 
-    void Main::join() const {
-        for (auto core : _cores)
-            core.second->join();
+    void Main::join() {
+        for (auto &core : _cores) {
+            if (core.joinable())
+                core.join();
+        }
     }
 
     Main::MPSCBuffer &Main::getMailBox(uint8_t const id) const {
@@ -122,6 +154,7 @@ namespace qb {
 
     std::atomic<uint64_t> Main::sync_start(0);
     bool Main::is_running(false);
+    uint16_t Main::generated_sid = 0;
 
     Main::CoreBuilder::CoreBuilder(CoreBuilder const &rhs)
             : _index(rhs._index)
@@ -135,6 +168,7 @@ namespace qb {
     Main::CoreBuilder::ActorIdList const &Main::CoreBuilder::idList() const {
         return _ret_ids;
     }
+
 
     Main::CoreBuilder Main::core(uint16_t const index) {
         return {*this, index};
