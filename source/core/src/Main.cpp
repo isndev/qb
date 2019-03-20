@@ -103,15 +103,14 @@ namespace qb {
     }
 
     void Main::start(bool async) {
-		std::size_t i = 0;
 		is_running = true;
-        for (auto &core : _cores) {
-            if (!async && i == (_cores.size() - 1))
-                start_thread(i, *this);
+		for (auto &coreId : _core_set.raw()) {
+		    auto index = _core_set.resolve(coreId);
+            if (!async && index == (_cores.size() - 1))
+                start_thread(coreId, *this);
             else
-                core = std::thread(start_thread, i, std::ref(*this));
-            ++i;
-        }
+                _cores[index] = std::thread(start_thread, coreId, std::ref(*this));
+		}
 
         uint64_t ret = 0;
         do {

@@ -199,17 +199,16 @@ namespace qb {
         } else {
             auto id = actor.id();
             if (id != ActorId::NotFound)
-                _ids.extract(id);
+                _ids.extract(id.sid());
             else
                 id = __generate_id__();
 
             actor.__set_id(id);
             // Number of actors attends to its limit in this core
-            if ((doInit && unlikely(!actor.onInit()))) {
-                if (id != ActorId::NotFound)
-                    _ids.insert(static_cast<uint16_t>(id));
+            if (id == ActorId::NotFound) {
+                _ids.insert(static_cast<uint16_t>(id));
                 delete &actor;
-                return false;
+                return ActorId::NotFound;
             }
         }
 
