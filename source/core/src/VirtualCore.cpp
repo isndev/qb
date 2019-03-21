@@ -30,6 +30,13 @@ namespace qb {
         }
     }
 
+    VirtualCore::~VirtualCore() {
+        for (auto it : _event_map)
+            delete it.second;
+        for (auto it : _actors)
+            delete it.second;
+    }
+
     ActorId VirtualCore::__generate_id__() {
         if (!_ids.size())
             return ActorId::NotFound;
@@ -233,28 +240,19 @@ namespace qb {
     }
 
     void VirtualCore::removeActor(ActorId const id) {
-        const auto it = _actors.find(id);
-        delete it->second;
-        _actors.erase(it);
         unregisterCallback(id);
         unregisterEvents(id);
-        if (id._id > _nb_service)
-            _ids.insert(id._id);
+        const auto it = _actors.find(id);
+        if (it != _actors.end()) {
+            delete it->second;
+            _actors.erase(it);
+            if (id._id > _nb_service)
+                _ids.insert(id._id);
+        }
         LOG_DEBUG << "Delete Actor(" << id.index() << "," << id.sid() << ")";
     }
 
     //!Actor Management
-
-//    void VirtualCore::start() {
-//        _thread = std::thread(&VirtualCore::__spawn__, this);
-//        if (_thread.get_id() == std::thread::id())
-//            std::runtime_error("failed to start a PhysicalCore");
-//    }
-//
-//    void VirtualCore::join() {
-//        if (_thread.get_id() != std::thread::id{})
-//            _thread.join();
-//    }
 
     void VirtualCore::killActor(ActorId const id) {
         _actor_to_remove.insert(id);
@@ -272,17 +270,6 @@ namespace qb {
     }
 
     bool VirtualCore::try_send(Event const &event) const {
-//      thread_local static uint32_t counter = 0;
-//      // Todo: Fix MonoThread Optimization
-//      if (event.dest._index == _index && counter < 8) {
-//            auto it = _event_map.find(event.id);
-//            if (likely(it != _event_map.end())) {
-//              ++counter;
-//              _event_map.at(event.id)->invoke(const_cast<Event *>(&event));
-//              return true;
-//            }
-//      }
-//      counter = 0;
         return _engine.send(event);
     }
 
@@ -293,28 +280,17 @@ namespace qb {
         }
     }
 
-    Event &VirtualCore::push(Event const &event) {
-        auto &pipe = __getPipe__(event.dest._index);
-        return pipe.recycle_back(event, event.bucket_size);
-    }
-
     void VirtualCore::reply(Event &event) {
-//        ActorId save_direction[2] = {event.source, event.dest};
         std::swap(event.dest, event.source);
         event.state[0] = 1;
         send(event);
-//        event.source = save_direction[0];
-//        event.dest = save_direction[1];
     }
 
     void VirtualCore::forward(ActorId const dest, Event &event) {
-//        ActorId save_direction[2] = {event.source, event.dest};
         event.source = event.dest;
         event.dest = dest;
         event.state[0] = 1;
         send(event);
-//        event.source = save_direction[0];
-//        event.dest = save_direction[1];
     }
     //!Event Api
 

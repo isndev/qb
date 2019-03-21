@@ -86,19 +86,6 @@ namespace qb {
         }
         VirtualCore::_handler->forward(dest, event);
     }
-
-// OpenApi : internal future use
-//    void Actor::send(Event const &event) const {
-//        VirtualCore::_handler->send(event);
-//    }
-//
-//    void Actor::push(Event const &event) const {
-//        VirtualCore::_handler->push(event);
-//    }
-//
-//    bool Actor::try_send(Event const &event) const {
-//        return VirtualCore::_handler->try_send(event);
-//    }
 }
 
 qb::io::stream &operator<<(qb::io::stream &os, qb::Actor const &actor){
