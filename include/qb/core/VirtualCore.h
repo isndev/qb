@@ -49,11 +49,11 @@ namespace qb {
 
     class VirtualCore {
         thread_local static VirtualCore *_handler;
-		static uint16_t _nb_service;
-		static std::unordered_map<uint32_t, uint16_t> &getServices() {
-			static std::unordered_map<uint32_t, uint16_t> service_ids;
-			return service_ids;
-		}
+        static uint16_t _nb_service;
+        static std::unordered_map<uint32_t, uint16_t> &getServices() {
+            static std::unordered_map<uint32_t, uint16_t> service_ids;
+            return service_ids;
+        }
 
         enum Error : uint64_t {
             BadInit = (1 << 9),
@@ -120,6 +120,10 @@ namespace qb {
             std::unordered_map<uint32_t, IRegisteredEvent *> _registered_events;
 
             EventHandler() = default;
+            ~EventHandler() {
+                for (auto revent : _registered_events)
+                    delete revent.second;
+            }
 
             virtual void invoke(Event *data) const override final {
                 auto &event = *reinterpret_cast<_Event *>(data);
@@ -139,10 +143,8 @@ namespace qb {
                                  << " [Dest](" << event.dest << ") NOT FOUND";
                 }
 
-                if (!event.state[0]) {
+                if (!event.state[0])
                     event.~_Event();
-                    // event.state[0] = 1;
-                }
             }
 
             virtual void registerEvent(IRegisteredEventBase *ievent) override final {
@@ -180,6 +182,7 @@ namespace qb {
 
         VirtualCore() = delete;
         VirtualCore(uint8_t const id, Main &engine);
+		~VirtualCore();
 
         ActorId __generate_id__();
 
@@ -232,7 +235,6 @@ namespace qb {
         ProxyPipe getProxyPipe(ActorId const dest, ActorId const source);
         bool try_send(Event const &event) const;
         void send(Event const &event);
-        Event &push(Event const &event);
         void reply(Event &event);
         void forward(ActorId const dest, Event &event);
 
@@ -244,14 +246,11 @@ namespace qb {
         void broadcast(ActorId const source, _Init &&...init);
         template<typename T, typename ..._Init>
         T &push(ActorId const dest, ActorId const source, _Init &&...init);
-        template<typename T, typename ..._Init>
-        void fast_push(ActorId const dest, ActorId const source, _Init &&...init);
         //!Event Api
 
     public:
         uint16_t getIndex() const;
         uint64_t time() const;
-
     };
 
 }

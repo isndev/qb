@@ -58,12 +58,6 @@ namespace qb {
         return VirtualCore::_handler->template push<_Event>(dest, id(), std::forward<_Args>(args)...);
     }
 
-    //    template<typename _Event, typename ..._Args>
-    //    void Actor::fast_push(ActorId const &dest, _Args const &...args) const {
-    //    TODO: find a way to implement this
-    //          VirtualCore::_handler->template fast_push<_Event>(dest, id(), args...);
-    //    }
-
     template<typename _Event, typename ..._Args>
     void Actor::send(ActorId const &dest, _Args &&...args) const {
         VirtualCore::_handler->template send<_Event, _Args...>(dest, id(), std::forward<_Args>(args)...);

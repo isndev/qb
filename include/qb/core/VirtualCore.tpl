@@ -47,7 +47,7 @@ namespace qb {
     _Actor *VirtualCore::addReferencedActor(_Init &&...init) {
         auto actor = new _Actor(std::forward<_Init>(init)...);
         actor->id_type = type_id<_Actor>();
-        if (appendActor(*actor, std::is_base_of<Service, _Actor>::value, true))
+        if (appendActor(*actor, std::is_base_of<Service, _Actor>::value, true) != ActorId::NotFound)
             return actor;
         return nullptr;
     };
@@ -99,20 +99,9 @@ namespace qb {
 
         return data;
     }
-
-    template<typename T, typename ..._Init>
-    void VirtualCore::fast_push(ActorId const dest, ActorId const source, _Init &&...init) {
-//        auto &pipe = __getPipe__(dest._index);
-//        auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
-//
-//        fill_event(data, dest, source);
-//
-//        if (likely(try_send(data)))
-//            pipe.free_back(data.bucket_size);
-    }
     //!Event Api
 
-	    template <typename Tag>
+    template <typename Tag>
     const uint16_t ServiceActor<Tag>::ServiceIndex = Actor::registerIndex<Tag>();
 
 }

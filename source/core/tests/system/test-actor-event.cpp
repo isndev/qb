@@ -283,18 +283,7 @@ TYPED_TEST(ActorEventBroadcastMulti, SendEvents) {
     EXPECT_FALSE(this->main.hasError());
 }
 
-class TestKillSenderActor : public qb::Actor
-{
-public:
-    TestKillSenderActor() = default;
-
-    virtual bool onInit() override final {
-        EXPECT_NE(static_cast<uint32_t>(id()), 0u);
-        push<qb::KillEvent>(id());
-        push<qb::KillEvent>(qb::BroadcastId(1));
-        return true;
-    }
-};
+struct EventForward : public TestEvent {};
 
 class TestSendReply : public qb::Actor
 {
@@ -305,16 +294,21 @@ public:
         : _to(to) {}
 
     ~TestSendReply() {
-        EXPECT_EQ(counter, 1u);
+        EXPECT_EQ(counter, 2u);
     }
 
     virtual bool onInit() override final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
 
         registerEvent<TestEvent>(*this);
+        registerEvent<EventForward>(*this);
 
-        push<TestEvent>(qb::BroadcastId(1));
+        if (_to.index()) {
+            push<TestEvent>(qb::BroadcastId(_to.index()));
+            push<EventForward>(qb::BroadcastId(_to.index()));
+        }
         push<TestEvent>(_to);
+        push<EventForward>(_to);
 
         return true;
     }
@@ -322,7 +316,12 @@ public:
     void on(TestEvent &event) {
         ++counter;
         EXPECT_TRUE(event.checkSum());
-        push<qb::KillEvent>(qb::BroadcastId(1));
+    }
+
+    void on(EventForward &event) {
+        ++counter;
+        EXPECT_TRUE(event.checkSum());
+        push<qb::KillEvent>(qb::BroadcastId(_to.index()));
         kill();
     }
 };
@@ -334,25 +333,43 @@ public:
     TestReceiveReply() = default;
 
     ~TestReceiveReply() {
-        EXPECT_EQ(counter, 2u);
+        if (id().index())
+            EXPECT_EQ(counter, 4u);
+        else
+            EXPECT_EQ(counter, 2u);
     }
 
     virtual bool onInit() override final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         registerEvent<TestEvent>(*this);
+        registerEvent<EventForward>(*this);
         return true;
     }
 
     void on(TestEvent &event) {
         EXPECT_TRUE(event.checkSum());
         reply(event);
+        ++counter;
+    }
+
+    void on(EventForward &event) {
+        EXPECT_TRUE(event.checkSum());
         forward(event.getSource(), event);
         ++counter;
     }
 };
 
 
-TEST(Event, PushReplyForward) {
+TEST(ActorEventMono, PushReplyForward) {
+    qb::Main main({0});
+
+    main.addActor<TestSendReply>(0, main.addActor<TestReceiveReply>(0));
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+}
+
+TEST(ActorEventMulti, PushReplyForward) {
     qb::Main main({0, 1});
 
     main.addActor<TestSendReply>(0, main.addActor<TestReceiveReply>(1));

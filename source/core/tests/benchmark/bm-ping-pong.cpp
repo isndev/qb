@@ -49,7 +49,7 @@ public:
     bool onInit() override final {
         registerEvent<EventTrait>(*this);
         if (actor_to_send)
-            push<EventTrait>(actor_to_send, 0);
+            push<EventTrait>(actor_to_send, 0u);
         return true;
     }
 
