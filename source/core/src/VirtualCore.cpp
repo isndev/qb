@@ -55,8 +55,6 @@ namespace qb {
     }
 
     void VirtualCore::__receive_events__(CacheLine *buffer, std::size_t const nb_events) {
-        if (!nb_events)
-            return;
         std::size_t i = 0;
         while (i < nb_events) {
             auto event = reinterpret_cast<Event *>(buffer + i);
@@ -121,9 +119,9 @@ namespace qb {
         pthread_t current_thread = pthread_self();
         ret = !pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
 #elif defined(_WIN32) || defined(_WIN64)
-        #ifdef _MSC_VER
-            DWORD_PTR mask = static_cast<uint32_t>(1 << _index);
-            ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
+#ifdef _MSC_VER
+        DWORD_PTR mask = static_cast<uint32_t>(1 << _index);
+        ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
 #else
 #warning "Cannot set affinity on windows with GNU Compiler"
 #endif
