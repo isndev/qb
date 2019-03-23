@@ -19,6 +19,7 @@
 # define QB_ACTORID_H
 # include <limits>
 # include <cstdint>
+# include <unordered_set>
 // include from qb
 # include <qb/utility/prefix.h>
 # include <qb/io.h>
@@ -77,6 +78,9 @@ namespace qb {
         explicit BroadcastId(uint32_t const core_id)
             : ActorId(BroadcastSid, static_cast<uint16_t>(core_id)) {}
     };
+
+    using CoreIds = std::unordered_set<uint8_t>;
+    using ActorIds = std::unordered_set<uint32_t>;
 
 }
 
