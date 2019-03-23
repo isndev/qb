@@ -119,6 +119,8 @@ namespace qb {
             ActorIdList const &idList() const;
         };
 
+        using ActorIds = CoreBuilder::ActorIdList;
+
         Main() = delete;
         explicit Main(CoreSet const &core_set);
         explicit Main(std::unordered_set<uint8_t> const &core_set);
