@@ -47,7 +47,7 @@ static void CustomArguments(benchmark::internal::Benchmark* b) {
     for (auto i = 1u; i <= nb_core; i *= 2) {
         for (int j = 1; j <= 1000; j *= 10) {
             if (j > 1 || i == 1)
-                b->Args({1, j, i});
+                b->Args({1000000, j, i});
         }
     }
 }
