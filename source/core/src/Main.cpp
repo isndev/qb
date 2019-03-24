@@ -36,7 +36,7 @@ namespace qb {
         sync_start.store(0, std::memory_order_release);
         is_running = false;
         generated_sid = VirtualCore::_nb_service + 1;
-        LOG_INFO << "[MAIN] Init with " << getNbCore() << " cores";
+        LOG_INFO("[MAIN] Init with " << getNbCore() << " cores");
     }
 
     Main::Main(CoreSet const &core_set)
@@ -79,7 +79,7 @@ namespace qb {
             auto &core_factory = engine._actor_factories[coreId];
             core.__init__();
             if (!core_factory.size()) {
-                LOG_CRIT << "" << core << " Started with 0 Actor";
+                LOG_CRIT("" << core << " Started with 0 Actor");
                 Main::sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
                 return;
             }
@@ -88,7 +88,7 @@ namespace qb {
                         return !core.appendActor(*it.second->create(), it.second->isService());
                     }))
             {
-                LOG_CRIT << "Actor at " << core << " failed to init";
+                LOG_CRIT("Actor at " << core << " failed to init");
                 Main::sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
             }
             core.__init__actors__();
@@ -96,7 +96,8 @@ namespace qb {
                 return;
             core.__workflow__();
         } catch (std::exception &e) {
-            LOG_CRIT << "Exception thrown on " << core << " what:" << e.what();
+			e;
+            LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
             Main::sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
             Main::is_running = false;
         }
@@ -119,10 +120,10 @@ namespace qb {
         }
         while (ret < _cores.size());
         if (ret < VirtualCore::Error::BadInit) {
-            LOG_INFO << "[Main] Init Success";
+            LOG_INFO("[Main] Init Success");
             std::signal(SIGINT, &onSignal);
         } else {
-            LOG_CRIT << "[Main] Init Failed";
+            LOG_CRIT("[Main] Init Failed");
             io::cout() << "CRITICAL: Core Init Failed -> show logs to have more details" << std::endl;
         }
     }

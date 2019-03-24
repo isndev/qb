@@ -51,7 +51,7 @@ public:
         if (event.loop >= max_events) {
             kill();
             if (!to_send)
-                LOG_INFO << "Event Time To Arrive " << time() - event.creation_time << "ns";
+                LOG_INFO("Event Time To Arrive " << time() - event.creation_time << "ns");
         }
         if (first)
             event.creation_time = time();

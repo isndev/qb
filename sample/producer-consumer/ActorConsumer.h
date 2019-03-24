@@ -49,7 +49,7 @@ public:
     virtual void onCallback() override final {
         if (time() > timer) {
             //qb::io::cout() << "Consumer(" << id() << ") received " << counter << "/s" << std::endl;
-            LOG_INFO << "Consumer(" << id() << ") received " << counter << "/s";
+            LOG_INFO("Consumer(" << id() << ") received " << counter << "/s");
             reset_timer();
             counter = 0;
         }

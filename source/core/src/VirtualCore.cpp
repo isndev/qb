@@ -28,6 +28,8 @@ namespace qb {
         for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
             _ids.insert(static_cast<uint16_t >(i));
         }
+        for (auto cid : engine._core_set.raw())
+            _pipes[cid];
     }
 
     VirtualCore::~VirtualCore() {
@@ -51,7 +53,7 @@ namespace qb {
     }
 
     Pipe &VirtualCore::__getPipe__(uint32_t core) {
-        return _pipes[core];
+        return _pipes.at(core);
     }
 
     void VirtualCore::__receive_events__(CacheLine *buffer, std::size_t const nb_events) {
@@ -129,7 +131,7 @@ namespace qb {
         _actor_to_remove.reserve(_actors.size());
 
         if (!ret) {
-            LOG_CRIT << "" << *this << " Init Failed";
+            LOG_CRIT("" << *this << " Init Failed");
             Main::sync_start.store(Error::BadInit, std::memory_order_release);
         }
     }
@@ -138,7 +140,7 @@ namespace qb {
         // Init StaticActors
         if (std::any_of(_actors.begin(), _actors.end(), [](auto &it) { return !it.second->onInit(); }))
         {
-            LOG_CRIT << "Actor at " << *this << " failed to init";
+            LOG_CRIT("Actor at " << *this << " failed to init");
             Main::sync_start.store(Error::BadActorInit, std::memory_order_release);
         }
     }
@@ -161,7 +163,7 @@ namespace qb {
     }
 
     void VirtualCore::__workflow__() {
-        LOG_INFO << "" << *this << " Init Success " << _actors.size() << " actor(s)";
+        LOG_INFO("" << *this << " Init Success " << _actors.size() << " actor(s)");
         while (likely(Main::is_running)) {
             __updateTime__();
             __receive__();
@@ -187,9 +189,9 @@ namespace qb {
         } while (__flush_all__());
 
         if (!Main::is_running)
-            LOG_INFO << "" << *this << " Stopped by user leave " << _actors.size() << " actor(s)";
+            LOG_INFO("" << *this << " Stopped by user leave " << _actors.size() << " actor(s)");
         else
-            LOG_INFO << "" << *this << " Stopped normally";
+            LOG_INFO("" << *this << " Stopped normally");
 
     }
     //!Workflow
@@ -231,7 +233,7 @@ namespace qb {
     ActorId VirtualCore::appendActor(Actor &actor, bool const is_service, bool const doInit) {
         if (initActor(actor, is_service, doInit) != ActorId::NotFound) {
             _actors.insert({actor.id(), &actor});
-            LOG_DEBUG << "New " << actor;
+            LOG_DEBUG("New " << actor);
             return actor.id();
         }
         return ActorId::NotFound;
@@ -247,7 +249,7 @@ namespace qb {
             if (id._id > _nb_service)
                 _ids.insert(id._id);
         }
-        LOG_DEBUG << "Delete Actor(" << id.index() << "," << id.sid() << ")";
+        LOG_DEBUG("Delete Actor(" << id.index() << "," << id.sid() << ")");
     }
 
     //!Actor Management

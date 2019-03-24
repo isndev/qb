@@ -22,7 +22,6 @@
 #include "../shared/TestEvent.h"
 #include "../shared/TestLatency.h"
 
-
 template <typename Event>
 static void BM_Unicast_Latency(benchmark::State& state) {
     for (auto _ : state) {
@@ -32,12 +31,13 @@ static void BM_Unicast_Latency(benchmark::State& state) {
         qb::Main  main(qb::CoreSet::build(nb_core));
 
         qb::ActorIds ids = {};
-        for (auto i = 1; i <= nb_actor; ++i) {
-            ids = {main.addActor<ConsumerActor<Event>>(i % nb_core, qb::ActorIds(ids))};
+        for (auto i = 0; i < nb_actor; ++i) {
+            const auto coreid = (i % (nb_core - (nb_core > 1))) + (nb_core > 1);
+            ids = {main.addActor<ConsumerActor<Event>>(coreid, qb::ActorIds(ids))};
         }
         main.addActor<ProducerActor<Event>>(0, qb::ActorIds(ids), nb_events);
 
-        main.start(true);
+        main.start(false);
         main.join();
     }
 }
@@ -45,20 +45,18 @@ static void BM_Unicast_Latency(benchmark::State& state) {
 static void CustomArguments(benchmark::internal::Benchmark* b) {
     auto nb_core = std::thread::hardware_concurrency();
     for (auto i = 1u; i <= nb_core; i *= 2) {
-        for (int j = i - 1; j <= 10; j *= 10) {
+        for (int j = i - 1; j <= static_cast<int>(nb_core * 10); j *= 10) {
             if (!j)
                 j = 1;
             b->Args({1000000, j, i});
-            if (j < 10)
-                j = 1;
         }
     }
 }
 
 // Register the function as a benchmark
 BENCHMARK_TEMPLATE(BM_Unicast_Latency, TestEvent)
-->Apply(CustomArguments)
-->ArgNames({"NB_EVENTS", "NB_ACTORS", "NB_CORE"})
-->Unit(benchmark::kMillisecond);;
+        ->Apply(CustomArguments)
+        ->ArgNames({"NB_EVENTS", "NB_ACTORS", "NB_CORE"})
+        ->Unit(benchmark::kMillisecond);;
 
 BENCHMARK_MAIN();

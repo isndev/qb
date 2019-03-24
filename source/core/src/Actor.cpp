@@ -73,7 +73,7 @@ namespace qb {
 
     void Actor::reply(Event &event) const {
         if (unlikely(event.dest.isBroadcast())) {
-            LOG_WARN << "" << *this << " failed to reply broadcast event";
+            LOG_WARN("" << *this << " failed to reply broadcast event");
             return;
         }
         VirtualCore::_handler->reply(event);
@@ -82,7 +82,7 @@ namespace qb {
     void Actor::forward(ActorId const dest, Event &event) const {
         event.source = id();
         if (unlikely(event.dest.isBroadcast())) {
-            LOG_WARN << "" << *this << " failed to forward broadcast event";
+            LOG_WARN("" << *this << " failed to forward broadcast event");
             return;
         }
         VirtualCore::_handler->forward(dest, event);
