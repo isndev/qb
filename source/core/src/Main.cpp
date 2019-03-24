@@ -96,7 +96,6 @@ namespace qb {
                 return;
             core.__workflow__();
         } catch (std::exception &e) {
-			e;
             LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
             Main::sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
             Main::is_running = false;
