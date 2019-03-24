@@ -14,7 +14,9 @@ class ConsumerActor
 public:
 
     explicit ConsumerActor(qb::ActorIds const ids)
-            : _idList(std::move(ids)){}
+            : _idList(ids)
+    {
+    }
 
     virtual bool onInit() override final {
         registerEvent<Event>(*this);
@@ -24,9 +26,9 @@ public:
     void on(Event &event) {
         if (_idList.size()) {
             for (auto to : _idList)
-                send<Event>(to);
+                send<Event>(to, event);
         } else
-            forward(event._ttl, event);
+            send<Event>(event._ttl, event);
     }
 };
 
