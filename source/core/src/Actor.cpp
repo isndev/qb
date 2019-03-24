@@ -65,7 +65,7 @@ namespace qb {
     }
 
     Actor::EventBuilder::EventBuilder(ProxyPipe const &pipe)
-        : dest_pipe(pipe) {}
+            : dest_pipe(pipe) {}
 
     Actor::EventBuilder Actor::to(ActorId const dest) const {
         return {getPipe(dest)};
@@ -80,6 +80,7 @@ namespace qb {
     }
 
     void Actor::forward(ActorId const dest, Event &event) const {
+        event.source = id();
         if (unlikely(event.dest.isBroadcast())) {
             LOG_WARN << "" << *this << " failed to forward broadcast event";
             return;

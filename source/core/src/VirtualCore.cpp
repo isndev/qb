@@ -285,7 +285,6 @@ namespace qb {
     }
 
     void VirtualCore::forward(ActorId const dest, Event &event) {
-        event.source = event.dest;
         event.dest = dest;
         event.state[0] = 1;
         send(event);
