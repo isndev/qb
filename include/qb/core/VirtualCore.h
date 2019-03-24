@@ -138,9 +138,9 @@ namespace qb {
                     if (likely(it != _registered_events.cend()))
                         it->second->invoke(event);
                     else
-                        LOG_WARN << "Failed Event"
+                        LOG_WARN("Failed Event"
                                  << " [Source](" << event.source << ")"
-                                 << " [Dest](" << event.dest << ") NOT FOUND";
+                                 << " [Dest](" << event.dest << ") NOT FOUND");
                 }
 
                 if (!event.state[0])

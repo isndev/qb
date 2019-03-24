@@ -23,7 +23,7 @@ int main (int, char *argv[]) {
     qb::io::log::init(argv[0]); // filepath
     qb::io::log::setLevel(qb::io::log::Level::WARN); // log only warning, error an critical
     // usage
-    LOG_INFO << "I will not be logged :(";
+    LOG_INFO("I will not be logged :(");
 
     // configure the Core
     // Note : I will use only the core 0 and 1

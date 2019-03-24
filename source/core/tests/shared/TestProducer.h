@@ -1,6 +1,19 @@
-//
-// Created by isnDev on 3/23/2019.
-//
+/*
+ * qb - C++ Actor Framework
+ * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
 
 #ifndef QB_TESTPRODUCER_H
 #define QB_TESTPRODUCER_H
@@ -8,19 +21,14 @@
 #include <qb/actor.h>
 #include "TestLatency.h"
 
-template <typename Event, std::size_t Throughput = 1000>
+template <typename Event>
 class ProducerActor
         : public qb::Actor
-        , public qb::ICallback {
+{
     const qb::ActorIds _idList;
     uint64_t _max_events;
-    uint64_t _received_events;
-    std::chrono::high_resolution_clock::time_point _timer;
     pg::latency<1000 * 1000, 900000> _latency;
 
-    inline void reset_timer() {
-        _timer = std::chrono::high_resolution_clock::now() + std::chrono::nanoseconds(Throughput);
-    }
 public:
 
     ~ProducerActor() {
@@ -30,35 +38,25 @@ public:
     ProducerActor(qb::ActorIds const ids, uint64_t const max)
             : _idList(ids)
             , _max_events(max)
-            , _received_events(max)
     {
     }
 
     virtual bool onInit() override final {
         registerEvent<Event>(*this);
-        registerCallback(*this);
-        reset_timer();
+        for (auto to : _idList)
+            send<Event>(to, id());
         return true;
-    }
-
-    virtual void onCallback() override final {
-        if (std::chrono::high_resolution_clock::now() >= _timer) {
-            for (auto to : _idList) {
-                if (_max_events) {
-                    send<Event>(to, id());
-                    --_max_events;
-                }
-            }
-            reset_timer();
-        }
     }
 
     void on(Event &event) {
         _latency.add(std::chrono::high_resolution_clock::now() - event._timepoint);
-        --_received_events;
-        if (!_received_events) {
+        --_max_events;
+        if (!_max_events) {
             kill();
             broadcast<qb::KillEvent>();
+        } else {
+            for (auto to : _idList)
+                send<Event>(to, id());
         }
     }
 };

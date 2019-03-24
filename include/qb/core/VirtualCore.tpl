@@ -40,7 +40,7 @@ namespace qb {
         if (it != _event_map.end()) {
             it->second->unregisterEvent(actor.id());
         } else
-            LOG_WARN << "" << *this << "Failed to unregister event";
+            LOG_WARN("" << *this << "Failed to unregister event");
     }
 
     template<typename _Actor, typename ..._Init>
