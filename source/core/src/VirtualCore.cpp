@@ -18,11 +18,10 @@
 #include <qb/core/VirtualCore.h>
 
 namespace qb {
-    VirtualCore::VirtualCore(uint8_t const id, Main &engine)
+    VirtualCore::VirtualCore(uint8_t const id, Main &engine) noexcept
             : _index(id)
             , _engine(engine)
-            , _mail_box(engine.getMailBox(id))
-            , _nano_timer(Timestamp::nano()) {
+            , _mail_box(engine.getMailBox(id)) {
         _ids.reserve(std::numeric_limits<uint16_t>::max() - _nb_service);
         _event_map.reserve(128);
         for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
@@ -32,27 +31,27 @@ namespace qb {
             _pipes[cid];
     }
 
-    VirtualCore::~VirtualCore() {
+    VirtualCore::~VirtualCore() noexcept {
         for (auto it : _event_map)
             delete it.second;
         for (auto it : _actors)
             delete it.second;
     }
 
-    ActorId VirtualCore::__generate_id__() {
+    ActorId VirtualCore::__generate_id__() noexcept {
         if (!_ids.size())
             return ActorId::NotFound;
         return ActorId(_ids.extract(_ids.begin()).value(), _index);
     }
 
     // Event Management
-    void VirtualCore::unregisterEvents(ActorId const id) {
+    void VirtualCore::unregisterEvents(ActorId const id) noexcept {
         for (auto handler : _event_map)
             handler.second->unregisterEvent(id);
 
     }
 
-    Pipe &VirtualCore::__getPipe__(uint32_t core) {
+    Pipe &VirtualCore::__getPipe__(uint32_t core) noexcept {
         return _pipes.at(core);
     }
 
@@ -68,12 +67,12 @@ namespace qb {
 
     void VirtualCore::__receive__() {
         // global_core_events
-        _mail_box.dequeue([this](CacheLine *buffer, std::size_t const nb_events){
+        _mail_box.dequeue([this](CacheLine *buffer, std::size_t const nb_events) {
             __receive_events__(buffer, nb_events);
         }, _event_buffer.data(), MaxRingEvents);
     }
 
-    void VirtualCore::__flush__() {
+    void VirtualCore::__flush__() noexcept {
         for (auto &it : _pipes) {
             auto &pipe = it.second;
             if (pipe.end()) {
@@ -89,7 +88,7 @@ namespace qb {
         }
     }
 
-    bool VirtualCore::__flush_all__() {
+    bool VirtualCore::__flush_all__() noexcept {
         bool ret = false;
         for (auto &it : _pipes) {
             auto &pipe = it.second;
@@ -145,7 +144,7 @@ namespace qb {
         }
     }
 
-    bool VirtualCore::__wait__all__cores__ready() {
+    bool VirtualCore::__wait__all__cores__ready() noexcept {
         const auto total_core = _engine.getNbCore();
         Main::sync_start.fetch_add(1, std::memory_order_acq_rel);
         uint64_t ret = 0;
@@ -157,15 +156,9 @@ namespace qb {
         return ret < Error::BadInit;
     }
 
-    void VirtualCore::__updateTime__() {
-        const auto now = Timestamp::nano();
-        _nano_timer = now;
-    }
-
     void VirtualCore::__workflow__() {
         LOG_INFO("" << *this << " Init Success " << _actors.size() << " actor(s)");
         while (likely(Main::is_running)) {
-            __updateTime__();
             __receive__();
 
             for (const auto &callback : _actor_callbacks)
@@ -188,15 +181,15 @@ namespace qb {
             __receive__();
         } while (__flush_all__());
 
-        if (!Main::is_running)
+        if (!Main::is_running) {
             LOG_INFO("" << *this << " Stopped by user leave " << _actors.size() << " actor(s)");
-        else
+        } else {
             LOG_INFO("" << *this << " Stopped normally");
-
+        }
     }
     //!Workflow
     // Actor Management
-    ActorId VirtualCore::initActor(Actor &actor, bool const is_service, bool const doInit) {
+    ActorId VirtualCore::initActor(Actor &actor, bool const is_service, bool const doInit) noexcept {
         if (is_service) {
             actor._index = _index;
             if (_actors.find(actor.id()) != _actors.end()) {
@@ -230,7 +223,7 @@ namespace qb {
         return actor.id();
     }
 
-    ActorId VirtualCore::appendActor(Actor &actor, bool const is_service, bool const doInit) {
+    ActorId VirtualCore::appendActor(Actor &actor, bool const is_service, bool const doInit) noexcept {
         if (initActor(actor, is_service, doInit) != ActorId::NotFound) {
             _actors.insert({actor.id(), &actor});
             LOG_DEBUG("New " << actor);
@@ -239,7 +232,7 @@ namespace qb {
         return ActorId::NotFound;
     }
 
-    void VirtualCore::removeActor(ActorId const id) {
+    void VirtualCore::removeActor(ActorId const id) noexcept {
         unregisterCallback(id);
         unregisterEvents(id);
         const auto it = _actors.find(id);
@@ -254,47 +247,46 @@ namespace qb {
 
     //!Actor Management
 
-    void VirtualCore::killActor(ActorId const id) {
+    void VirtualCore::killActor(ActorId const id) noexcept {
         _actor_to_remove.insert(id);
     }
 
-    void VirtualCore::unregisterCallback(ActorId const id) {
+    void VirtualCore::unregisterCallback(ActorId const id) noexcept {
         auto it =_actor_callbacks.find(id);
         if (it != _actor_callbacks.end())
             _actor_callbacks.erase(it);
     }
 
     //Event Api
-    ProxyPipe VirtualCore::getProxyPipe(ActorId const dest, ActorId const source) {
+    ProxyPipe VirtualCore::getProxyPipe(ActorId const dest, ActorId const source) noexcept{
         return {__getPipe__(dest._index), dest, source};
     }
 
-    bool VirtualCore::try_send(Event const &event) const {
+    bool VirtualCore::try_send(Event const &event) const noexcept {
         return _engine.send(event);
     }
 
-    void VirtualCore::send(Event const &event) {
+    void VirtualCore::send(Event const &event) noexcept {
         if (unlikely(!try_send(event))) {
             auto &pipe = __getPipe__(event.dest._index);
             pipe.recycle(event, event.bucket_size);
         }
     }
 
-    void VirtualCore::reply(Event &event) {
+    void VirtualCore::reply(Event &event) noexcept {
         std::swap(event.dest, event.source);
         event.state[0] = 1;
         send(event);
     }
 
-    void VirtualCore::forward(ActorId const dest, Event &event) {
+    void VirtualCore::forward(ActorId const dest, Event &event) noexcept {
         event.dest = dest;
         event.state[0] = 1;
         send(event);
     }
     //!Event Api
 
-    uint16_t VirtualCore::getIndex() const { return _index; }
-    uint64_t VirtualCore::time() const { return _nano_timer; }
+    uint16_t VirtualCore::getIndex() const noexcept { return _index; }
     uint16_t VirtualCore::_nb_service = 0;
     thread_local VirtualCore *VirtualCore::_handler = nullptr;
 }

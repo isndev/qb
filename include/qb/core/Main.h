@@ -49,18 +49,18 @@ namespace qb {
         static bool                  is_running;
         static uint16_t              generated_sid;
         static void onSignal(int signal);
-        static void start_thread(uint8_t coreId, Main &engine);
+        static void start_thread(uint8_t coreId, Main &engine) noexcept;
     private:
         CoreSet _core_set;
         std::vector<MPSCBuffer *> _mail_boxes;
         std::vector<std::thread>  _cores;
         std::unordered_map<uint8_t, std::unordered_map<uint32_t, IActorFactory *>> _actor_factories;
 
-        void __init__();
-        bool send(Event const &event) const;
-        bool broadcast(Event const &event) const;
-        MPSCBuffer &getMailBox(uint8_t const id) const;
-        std::size_t getNbCore() const;
+        void __init__() noexcept;
+        bool send(Event const &event) const noexcept;
+        bool broadcast(Event const &event) const noexcept;
+        MPSCBuffer &getMailBox(uint8_t const id) const noexcept;
+        std::size_t getNbCore() const noexcept;
     public:
 
         /*!
@@ -78,7 +78,7 @@ namespace qb {
             ActorIdList _ret_ids;
             bool _valid;
 
-            CoreBuilder(Main &main, uint16_t const index)
+            CoreBuilder(Main &main, uint16_t const index) noexcept
                     : _index(index)
                     , _main(main)
                     , _valid(true)
@@ -86,7 +86,7 @@ namespace qb {
 
             CoreBuilder() = delete;
         public:
-            CoreBuilder(CoreBuilder const &rhs);
+            CoreBuilder(CoreBuilder const &rhs) noexcept;
 
             /*!
              * @brief Create new _Actor
@@ -107,23 +107,23 @@ namespace qb {
              * This function is not available when the engine is running.
              */
             template<typename _Actor, typename ..._Args>
-            CoreBuilder &addActor(_Args &&...args);
+            CoreBuilder &addActor(_Args &&...args) noexcept;
 
-            bool valid() const;
-            operator bool() const;
+            bool valid() const noexcept;
+            operator bool() const noexcept;
 
             /*!
              * @brief Get list of created ActorId by the CoreBuilder
              * @return Created ActorId list
              */
-            ActorIdList const &idList() const;
+            ActorIdList const &idList() const noexcept;
         };
 
         using ActorIds = CoreBuilder::ActorIdList;
 
         Main() = delete;
-        explicit Main(CoreSet const &core_set);
-        explicit Main(std::unordered_set<uint8_t> const &core_set);
+        explicit Main(CoreSet const &core_set) noexcept;
+        explicit Main(std::unordered_set<uint8_t> const &core_set) noexcept;
         ~Main();
 
         /*!
@@ -134,14 +134,14 @@ namespace qb {
          */
         void start(bool async = true);
 
-        static bool hasError();
+        static bool hasError() noexcept;
 
         /*!
          * @brief Stop the engine
          * @note
          * Same effect as receiving SIGINT Signal.
          */
-        static void stop();
+        static void stop() noexcept;
 
         /*!
          * @brief Wait until engine terminates
@@ -168,7 +168,7 @@ namespace qb {
          * This function is not available when the engine is running.
          */
         template<typename _Actor, typename ..._Args>
-        ActorId addActor(std::size_t index, _Args &&...args);
+        ActorId addActor(std::size_t index, _Args &&...args) noexcept;
 
         /*!
          * @brief Get CoreBuilder from index
@@ -182,7 +182,7 @@ namespace qb {
          * // builder1 != builder2
          * @endcode
          */
-        CoreBuilder core(uint16_t const index);
+        CoreBuilder core(uint16_t const index) noexcept;
 
     };
 

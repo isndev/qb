@@ -23,7 +23,7 @@
 namespace qb {
 
     template<typename T, typename ..._Args>
-    T &ProxyPipe::push(_Args &&...args) {
+    T &ProxyPipe::push(_Args &&...args) const noexcept {
         constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, CacheLine>();
         auto &data = pipe->template allocate_back<T>(std::forward<_Args>(args)...);
         data.id = type_id<T>();
@@ -39,7 +39,7 @@ namespace qb {
     }
 
     template<typename T, typename ..._Args>
-    T &ProxyPipe::allocated_push(std::size_t size, _Args &&...args) {
+    T &ProxyPipe::allocated_push(std::size_t size, _Args &&...args) const noexcept {
         size += sizeof(T);
         size = size / sizeof(CacheLine) + static_cast<bool>(size % sizeof(CacheLine));
         auto &data = *(new(reinterpret_cast<T *>(pipe->allocate_back(size))) T(
