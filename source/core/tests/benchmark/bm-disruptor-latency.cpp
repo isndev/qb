@@ -53,6 +53,23 @@ static void BM_Pipeline_Latency(benchmark::State& state) {
 }
 
 template <typename Event>
+static void BM_Pipeline_Shared_Latency(benchmark::State& state) {
+    for (auto _ : state) {
+        const auto nb_events = state.range(0);
+        qb::Main  main({0, 1});
+
+        main.addActor<ProducerActor<Event>>(0,
+                qb::ActorIds{main.addActor<ConsumerActor<Event>>(1,
+                        qb::ActorIds{main.addActor<ConsumerActor<Event>>(1,
+                                qb::ActorIds{main.addActor<ConsumerActor<Event>>(1)})})},
+                                            nb_events);
+
+        main.start(false);
+        main.join();
+    }
+}
+
+template <typename Event>
 static void BM_Multicast_Latency(benchmark::State& state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
@@ -131,6 +148,11 @@ BENCHMARK_TEMPLATE(BM_Unicast_Latency, LightEvent)
         ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_TEMPLATE(BM_Pipeline_Latency, LightEvent)
+        ->Arg(1000000)
+        ->ArgName("NB_EVENTS")
+        ->Unit(benchmark::kMillisecond);
+
+BENCHMARK_TEMPLATE(BM_Pipeline_Shared_Latency, LightEvent)
         ->Arg(1000000)
         ->ArgName("NB_EVENTS")
         ->Unit(benchmark::kMillisecond);
