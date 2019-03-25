@@ -30,7 +30,7 @@ class ActorConsumer
     uint64_t counter;
 
     void reset_timer() {
-        timer = time() + qb::Timestamp::seconds(1).nanoseconds();
+        timer = qb::Timestamp::nano() + qb::Timestamp::seconds(1).nanoseconds();
     }
 
 public:
@@ -47,9 +47,9 @@ public:
 
     // will call this function each core loop
     virtual void onCallback() override final {
-        if (time() > timer) {
+        if (qb::Timestamp::nano() > timer) {
             //qb::io::cout() << "Consumer(" << id() << ") received " << counter << "/s" << std::endl;
-            LOG_INFO << "Consumer(" << id() << ") received " << counter << "/s";
+            LOG_INFO("Consumer(" << id() << ") received " << counter << "/s");
             reset_timer();
             counter = 0;
         }

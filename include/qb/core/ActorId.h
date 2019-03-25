@@ -19,6 +19,7 @@
 # define QB_ACTORID_H
 # include <limits>
 # include <cstdint>
+# include <unordered_set>
 // include from qb
 # include <qb/utility/prefix.h>
 # include <qb/io.h>
@@ -41,7 +42,7 @@ namespace qb {
         uint16_t _index;
 
     protected:
-        ActorId(uint16_t const id, uint16_t const index);
+        ActorId(uint16_t const id, uint16_t const index) noexcept;
     public:
         static constexpr uint32_t NotFound = 0;
         static constexpr uint16_t BroadcastSid = std::numeric_limits<uint16_t>::max();
@@ -49,34 +50,37 @@ namespace qb {
         /*!
          * ActorId() == ActorId::NotFound
          */
-        ActorId();
+        ActorId() noexcept;
         /*!
          * @private
          * internal function
          */
-        ActorId(uint32_t const id);
-        ActorId(ActorId const &) = default;
+        ActorId(uint32_t const id) noexcept;
+        ActorId(ActorId const &) noexcept = default;
 
-        operator const uint32_t &() const;
+        operator const uint32_t &() const noexcept;
 
         /*!
          * @return Service index
          */
-        uint16_t sid() const;
+        uint16_t sid() const noexcept;
         /*!
          * @return VirtualCore index
          */
-        uint16_t index() const;
+        uint16_t index() const noexcept;
 
-        bool isBroadcast() const;
+        bool isBroadcast() const noexcept;
     };
 
     class BroadcastId : public ActorId {
     public:
         BroadcastId() = delete;
-        explicit BroadcastId(uint32_t const core_id)
+        explicit BroadcastId(uint32_t const core_id) noexcept
             : ActorId(BroadcastSid, static_cast<uint16_t>(core_id)) {}
     };
+
+    using CoreIds = std::unordered_set<uint8_t>;
+    using ActorIds = std::unordered_set<uint32_t>;
 
 }
 

@@ -52,10 +52,10 @@ namespace qb {
         ActorId source;
 
     public:
-        Event() = default;
+        Event() noexcept = default;
 
-        inline ActorId getDestination() const { return dest; }
-        inline ActorId getSource() const { return source; }
+        inline ActorId getDestination() const noexcept { return dest; }
+        inline ActorId getSource() const noexcept { return source; }
     };
 
     /*!
@@ -69,19 +69,19 @@ namespace qb {
         ActorId forward;
         uint16_t service_event_id;
 
-        inline void received() {
+        inline void received() noexcept {
             std::swap(dest, forward);
             std::swap(id, service_event_id);
             live(true);
         }
 
-        inline void live(bool flag) {
+        inline void live(bool flag) noexcept {
             state[0] = flag;
         }
 
-        inline bool isLive() { return state[0]; }
+        inline bool isLive() const noexcept { return state[0]; }
 
-        inline uint16_t bucketSize() const {
+        inline uint16_t bucketSize() const noexcept {
             return bucket_size;
         }
     };
@@ -105,7 +105,7 @@ namespace qb {
     struct PingEvent : public Event {
         const uint32_t type;
 
-        explicit PingEvent(uint32_t const actor_type)
+        explicit PingEvent(uint32_t const actor_type) noexcept
             : type(actor_type)
         {}
     };
@@ -114,7 +114,7 @@ namespace qb {
         const uint32_t type;
         const ActorStatus status;
 
-        explicit RequireEvent(uint32_t const actor_type, ActorStatus const actor_status)
+        explicit RequireEvent(uint32_t const actor_type, ActorStatus const actor_status) noexcept
                 : type(actor_type), status(actor_status)
         {}
     };

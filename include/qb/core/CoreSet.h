@@ -36,18 +36,18 @@ namespace qb {
         std::vector<uint8_t>    _set;
         std::size_t             _size;
 
-        uint8_t resolve(std::size_t const id) const;
-        std::size_t getSize() const;
-        std::size_t getNbCore() const;
+        uint8_t resolve(std::size_t const id) const noexcept;
+        std::size_t getSize() const noexcept;
+        std::size_t getNbCore() const noexcept;
 
     public:
         CoreSet() = delete;
         CoreSet(CoreSet const &) = default;
-        explicit CoreSet(std::unordered_set<uint8_t> const &set);
+        explicit CoreSet(std::unordered_set<uint8_t> const &set) noexcept;
 
-        const std::unordered_set<uint8_t> &raw() const { return _raw_set; }
+        const std::unordered_set<uint8_t> &raw() const noexcept;
 
-        static CoreSet build(uint32_t const nb_core = std::thread::hardware_concurrency());
+        static CoreSet build(uint32_t const nb_core = std::thread::hardware_concurrency()) noexcept;
     };
 
 } // namespace qb

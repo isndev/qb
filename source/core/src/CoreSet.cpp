@@ -19,7 +19,7 @@
 
 namespace qb {
 
-    CoreSet::CoreSet(std::unordered_set <uint8_t> const &set)
+    CoreSet::CoreSet(std::unordered_set <uint8_t> const &set) noexcept
             : _raw_set(set)
             ,_nb_core(set.size())
             , _size(*std::max_element(set.cbegin(), set.cend()) + 1) {
@@ -29,19 +29,23 @@ namespace qb {
             _set[id] = idx++;
     }
 
-    uint8_t CoreSet::resolve(std::size_t const id) const {
+    uint8_t CoreSet::resolve(std::size_t const id) const noexcept {
         return _set[id];
     }
 
-    std::size_t CoreSet::getSize() const {
+    std::size_t CoreSet::getSize() const noexcept {
         return _size;
     }
 
-    std::size_t CoreSet::getNbCore() const {
+    std::size_t CoreSet::getNbCore() const noexcept {
         return _nb_core;
     }
 
-    CoreSet CoreSet::build(uint32_t const nb_core) {
+    const std::unordered_set<uint8_t> &CoreSet::raw() const noexcept {
+        return _raw_set;
+    }
+
+    CoreSet CoreSet::build(uint32_t const nb_core) noexcept {
         std::unordered_set<uint8_t> set;
         for (uint8_t i = 0; i < nb_core; ++i)
             set.insert(i);
