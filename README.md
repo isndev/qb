@@ -38,7 +38,7 @@ It's a complete development framework for multicore processing that has been spe
   - Very fast and low-latency
   - Reusable code from a project to another
   - Forget everything about multi-threading concurrency issues
-* #### Coins
+* #### Cons
   - Strong CPU usage
   - ...
   
