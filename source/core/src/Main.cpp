@@ -27,7 +27,7 @@ namespace qb {
         is_running = false;
     }
 
-    void Main::__init__() {
+    void Main::__init__() noexcept {
         _cores.resize(_core_set.getNbCore());
         for (auto core_id : _core_set._raw_set) {
             const auto nb_producers = _core_set.getNbCore();
@@ -36,17 +36,17 @@ namespace qb {
         sync_start.store(0, std::memory_order_release);
         is_running = false;
         generated_sid = VirtualCore::_nb_service + 1;
-        LOG_INFO << "[MAIN] Init with " << getNbCore() << " cores";
+        LOG_INFO("[MAIN] Init with " << getNbCore() << " cores");
     }
 
-    Main::Main(CoreSet const &core_set)
+    Main::Main(CoreSet const &core_set) noexcept
             : _core_set (core_set)
             , _mail_boxes(_core_set.getSize())
     {
         __init__();
     }
 
-    Main::Main(std::unordered_set<uint8_t> const &core_set)
+    Main::Main(std::unordered_set<uint8_t> const &core_set) noexcept
             : _core_set (core_set)
             , _mail_boxes(_core_set.getSize())
     {
@@ -63,7 +63,7 @@ namespace qb {
                 delete factory.second;
     }
 
-    bool Main::send(Event const &event) const {
+    bool Main::send(Event const &event) const noexcept {
         uint16_t source_index = _core_set.resolve(event.source._index);
 
         return _mail_boxes[_core_set.resolve(event.dest._index)]->enqueue(source_index,
@@ -71,7 +71,7 @@ namespace qb {
                                                                           event.bucket_size);
     }
 
-    void Main::start_thread(uint8_t coreId, Main &engine) {
+    void Main::start_thread(uint8_t coreId, Main &engine) noexcept {
         VirtualCore core(coreId, engine);
         VirtualCore::_handler = &core;
         try {
@@ -79,7 +79,7 @@ namespace qb {
             auto &core_factory = engine._actor_factories[coreId];
             core.__init__();
             if (!core_factory.size()) {
-                LOG_CRIT << "" << core << " Started with 0 Actor";
+                LOG_CRIT("" << core << " Started with 0 Actor");
                 Main::sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
                 return;
             }
@@ -88,7 +88,7 @@ namespace qb {
                         return !core.appendActor(*it.second->create(), it.second->isService());
                     }))
             {
-                LOG_CRIT << "Actor at " << core << " failed to init";
+                LOG_CRIT("Actor at " << core << " failed to init");
                 Main::sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
             }
             core.__init__actors__();
@@ -96,7 +96,8 @@ namespace qb {
                 return;
             core.__workflow__();
         } catch (std::exception &e) {
-            LOG_CRIT << "Exception thrown on " << core << " what:" << e.what();
+			(void)e;
+            LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
             Main::sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
             Main::is_running = false;
         }
@@ -119,19 +120,19 @@ namespace qb {
         }
         while (ret < _cores.size());
         if (ret < VirtualCore::Error::BadInit) {
-            LOG_INFO << "[Main] Init Success";
+            LOG_INFO("[Main] Init Success");
             std::signal(SIGINT, &onSignal);
         } else {
-            LOG_CRIT << "[Main] Init Failed";
+            LOG_CRIT("[Main] Init Failed");
             io::cout() << "CRITICAL: Core Init Failed -> show logs to have more details" << std::endl;
         }
     }
 
-    bool Main::hasError() {
+    bool Main::hasError() noexcept{
         return sync_start.load(std::memory_order_acquire) >= VirtualCore::Error::BadInit;
     }
 
-    void Main::stop() {
+    void Main::stop() noexcept {
         if (is_running)
             std::raise(SIGINT);
     }
@@ -143,11 +144,11 @@ namespace qb {
         }
     }
 
-    Main::MPSCBuffer &Main::getMailBox(uint8_t const id) const {
+    Main::MPSCBuffer &Main::getMailBox(uint8_t const id) const noexcept {
         return *_mail_boxes[_core_set.resolve(id)];
     }
 
-    std::size_t Main::getNbCore() const {
+    std::size_t Main::getNbCore() const noexcept {
         return _core_set.getNbCore();
     }
 
@@ -155,21 +156,20 @@ namespace qb {
     bool Main::is_running(false);
     uint16_t Main::generated_sid = 0;
 
-    Main::CoreBuilder::CoreBuilder(CoreBuilder const &rhs)
+    Main::CoreBuilder::CoreBuilder(CoreBuilder const &rhs) noexcept
             : _index(rhs._index)
             , _main(rhs._main)
             , _ret_ids(std::move(rhs._ret_ids))
             , _valid(rhs._valid)
     {}
 
-    bool Main::CoreBuilder::valid() const { return _valid; }
-    Main::CoreBuilder::operator bool() const { return valid(); }
-    Main::CoreBuilder::ActorIdList const &Main::CoreBuilder::idList() const {
+    bool Main::CoreBuilder::valid() const noexcept { return _valid; }
+    Main::CoreBuilder::operator bool() const noexcept { return valid(); }
+    Main::CoreBuilder::ActorIdList const &Main::CoreBuilder::idList() const noexcept {
         return _ret_ids;
     }
 
-
-    Main::CoreBuilder Main::core(uint16_t const index) {
+    Main::CoreBuilder Main::core(uint16_t const index) noexcept {
         return {*this, index};
     }
 

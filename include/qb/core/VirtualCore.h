@@ -77,16 +77,16 @@ namespace qb {
 
         class IRegisteredEventBase {
         public:
-            virtual ~IRegisteredEventBase() {}
-            virtual uint32_t id() const = 0;
+            virtual ~IRegisteredEventBase() noexcept {}
+            virtual uint32_t id() const noexcept = 0;
         };
 
         class IEventhandler {
         public:
-            virtual ~IEventhandler() {}
+            virtual ~IEventhandler() noexcept {}
             virtual void invoke(Event *data) const = 0;
-            virtual void registerEvent(IRegisteredEventBase *iRegisteredEvent) = 0;
-            virtual void unregisterEvent(ActorId const id) = 0;
+            virtual void registerEvent(IRegisteredEventBase *iRegisteredEvent) noexcept = 0;
+            virtual void unregisterEvent(ActorId const id) noexcept = 0;
         };
 
         template<typename _Event>
@@ -95,16 +95,16 @@ namespace qb {
 
             class IRegisteredEvent : public IRegisteredEventBase {
             public:
-                virtual ~IRegisteredEvent() {}
+                virtual ~IRegisteredEvent() noexcept {}
                 virtual void invoke(_Event &data) const = 0;
-                virtual uint32_t id() const = 0;
+                virtual uint32_t id() const noexcept = 0;
             };
 
             template<typename _Actor>
             class RegisteredEvent : public IRegisteredEvent {
                 _Actor &_actor;
             public:
-                explicit RegisteredEvent(_Actor &actor)
+                explicit RegisteredEvent(_Actor &actor) noexcept
                         : _actor(actor) {}
 
                 virtual void invoke(_Event &event) const override final {
@@ -112,7 +112,7 @@ namespace qb {
                         _actor.on(event);
                 }
 
-                virtual uint32_t id() const override final {
+                virtual uint32_t id() const noexcept override final {
                     return _actor.id();
                 }
             };
@@ -120,7 +120,7 @@ namespace qb {
             std::unordered_map<uint32_t, IRegisteredEvent *> _registered_events;
 
             EventHandler() = default;
-            ~EventHandler() {
+            ~EventHandler() noexcept {
                 for (auto revent : _registered_events)
                     delete revent.second;
             }
@@ -137,23 +137,24 @@ namespace qb {
                     const auto it = _registered_events.find(event.dest);
                     if (likely(it != _registered_events.cend()))
                         it->second->invoke(event);
-                    else
-                        LOG_WARN << "Failed Event"
-                                 << " [Source](" << event.source << ")"
-                                 << " [Dest](" << event.dest << ") NOT FOUND";
+                    else {
+                        LOG_WARN("Failed Event"
+                                         << " [Source](" << event.source << ")"
+                                         << " [Dest](" << event.dest << ") NOT FOUND");
+                    }
                 }
 
                 if (!event.state[0])
                     event.~_Event();
             }
 
-            virtual void registerEvent(IRegisteredEventBase *ievent) override final {
+            virtual void registerEvent(IRegisteredEventBase *ievent) noexcept override final {
                 auto it = _registered_events.find(ievent->id());
                 if (it != _registered_events.end())
                     unregisterEvent(ievent->id());
                 _registered_events.insert({ievent->id(), static_cast<IRegisteredEvent *>(ievent)});
             }
-            virtual void unregisterEvent(ActorId const id) override final {
+            virtual void unregisterEvent(ActorId const id) noexcept override final {
                 auto it = _registered_events.find(id);
                 if (it != _registered_events.end()) {
                     delete it->second;
@@ -177,43 +178,38 @@ namespace qb {
         RemoveActorList _actor_to_remove;
         PipeMap         _pipes;
         EventBuffer     _event_buffer;
-        uint64_t        _nano_timer;
         // !Members
 
         VirtualCore() = delete;
-        VirtualCore(uint8_t const id, Main &engine);
-		~VirtualCore();
+        VirtualCore(uint8_t const id, Main &engine) noexcept;
+		~VirtualCore() noexcept;
 
-        ActorId __generate_id__();
+        ActorId __generate_id__() noexcept;
 
         // Event Management
         template<typename _Event, typename _Actor>
-        void registerEvent(_Actor &actor);
+        void registerEvent(_Actor &actor) noexcept;
         template<typename _Event, typename _Actor>
-        void unregisterEvent(_Actor &actor);
-        void unregisterEvents(ActorId const id);
-        Pipe &__getPipe__(uint32_t core);
+        void unregisterEvent(_Actor &actor) noexcept;
+        void unregisterEvents(ActorId const id) noexcept;
+        Pipe &__getPipe__(uint32_t core) noexcept;
         void __receive_events__(CacheLine *buffer, std::size_t const nb_events);
         void __receive__();
-        void __flush__();
-        bool __flush_all__();
+        void __flush__() noexcept;
+        bool __flush_all__() noexcept;
         //!Event Management
 
         // Workflow
         void __init__();
         void __init__actors__() const;
-        bool __wait__all__cores__ready();
-        void __updateTime__();
+        bool __wait__all__cores__ready() noexcept;
         void __workflow__();
         //!Workflow
 
         // Actor Management
-        ActorId initActor(Actor &actor, bool const is_service, bool const doInit);
-        ActorId appendActor(Actor &actor, bool const is_service, bool const doInit = false);
-        void removeActor(ActorId const id);
-
-        template<typename _Actor, typename ..._Init>
-        ActorId addActor(_Init &&...init);
+        ActorId initActor(Actor &actor, bool const is_service, bool const doInit) noexcept;
+        ActorId appendActor(Actor &actor, bool const is_service, bool const doInit = false) noexcept;
+        void removeActor(ActorId const id) noexcept;
 
         //!Actor Management
 
@@ -222,35 +218,33 @@ namespace qb {
 
     private:
         template<typename _Actor, typename ..._Init>
-        _Actor *addReferencedActor(_Init &&...init);
-
-        void killActor(ActorId const id);
+        _Actor *addReferencedActor(_Init &&...init) noexcept;
+        void killActor(ActorId const id) noexcept;
 
         template <typename _Actor>
-        void registerCallback(_Actor &actor);
-        void unregisterCallback(ActorId const id);
+        void registerCallback(_Actor &actor) noexcept;
+        void unregisterCallback(ActorId const id) noexcept;
 
     private:
         // Event Api
-        ProxyPipe getProxyPipe(ActorId const dest, ActorId const source);
-        bool try_send(Event const &event) const;
-        void send(Event const &event);
-        void reply(Event &event);
-        void forward(ActorId const dest, Event &event);
+        ProxyPipe getProxyPipe(ActorId const dest, ActorId const source) noexcept;
+        bool try_send(Event const &event) const noexcept;
+        void send(Event const &event) noexcept;
+        void reply(Event &event) noexcept;
+        void forward(ActorId const dest, Event &event) noexcept;
 
         template <typename T>
-        inline void fill_event(T &data, ActorId const dest, ActorId const source) const;
+        inline void fill_event(T &data, ActorId const dest, ActorId const source) const noexcept;
         template<typename T, typename ..._Init>
-        void send(ActorId const dest, ActorId const source, _Init &&...init);
+        void send(ActorId const dest, ActorId const source, _Init &&...init) noexcept;
         template<typename T, typename ..._Init>
-        void broadcast(ActorId const source, _Init &&...init);
+        void broadcast(ActorId const source, _Init &&...init) noexcept;
         template<typename T, typename ..._Init>
-        T &push(ActorId const dest, ActorId const source, _Init &&...init);
+        T &push(ActorId const dest, ActorId const source, _Init &&...init) noexcept;
         //!Event Api
 
     public:
-        uint16_t getIndex() const;
-        uint64_t time() const;
+        uint16_t getIndex() const noexcept;
     };
 
 }

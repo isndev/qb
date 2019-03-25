@@ -26,16 +26,16 @@ class TestActor : public qb::Actor
 public:
     TestActor() {
         EXPECT_EQ(static_cast<uint32_t>(id()), 0u);
-        LOG_DEBUG << "TestActor had been constructed";
+        LOG_DEBUG("TestActor had been constructed");
     }
 
     ~TestActor() {
-        LOG_CRIT << "TestActor id dead";
+        LOG_CRIT("TestActor id dead");
     }
 
     virtual bool onInit() override final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
-        LOG_VERB << "TestActor had been initialized at" << time();
+        LOG_VERB("TestActor had been initialized at" << qb::Timestamp::nano());
         registerEvent<TestEvent>(*this);
         push<TestEvent>(id());
         qb::io::cout() << "Test Actor(" << id() << "): Hello master !" << std::endl;
@@ -43,9 +43,9 @@ public:
     }
 
     void on(TestEvent const &) {
-        LOG_INFO << "TestActor received TestEvent at" << time();
+        LOG_INFO("TestActor received TestEvent at" << qb::Timestamp::nano());
         kill();
-        LOG_WARN << "TestActor will be killed at" << time();
+        LOG_WARN("TestActor will be killed at" << qb::Timestamp::nano());
     }
 };
 
@@ -54,7 +54,7 @@ TEST(IO, BasicTestMonoCore) {
     qb::io::log::setLevel(qb::io::log::Level::DEBUG);
     qb::Main main({0});
 
-    LOG_INFO << "Broadcast id=" << qb::BroadcastId(0);
+    LOG_INFO("Broadcast id=" << qb::BroadcastId(0));
     main.addActor<TestActor>(0);
 
     main.start();

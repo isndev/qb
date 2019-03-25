@@ -18,27 +18,27 @@
 #include <qb/core/ActorId.h>
 
 namespace qb {
-    ActorId::ActorId() : _id(0), _index(0) {}
-    ActorId::ActorId(uint16_t const id, uint16_t const index)
+    ActorId::ActorId() noexcept : _id(0), _index(0) {}
+    ActorId::ActorId(uint16_t const id, uint16_t const index) noexcept
             : _id(id), _index(index) {}
 
-    ActorId::ActorId(uint32_t const id) {
+    ActorId::ActorId(uint32_t const id) noexcept {
         *reinterpret_cast<uint32_t *>(this) = id;
     }
 
-    ActorId::operator const uint32_t &() const {
+    ActorId::operator const uint32_t &() const noexcept {
         return *reinterpret_cast<uint32_t const *>(this);
     }
 
-    uint16_t ActorId::sid() const {
+    uint16_t ActorId::sid() const noexcept {
         return _id;
     }
 
-    uint16_t ActorId::index() const {
+    uint16_t ActorId::index() const noexcept {
         return _index;
     }
 
-    bool ActorId::isBroadcast() const {
+    bool ActorId::isBroadcast() const noexcept {
         return _id == BroadcastSid;
     }
 }

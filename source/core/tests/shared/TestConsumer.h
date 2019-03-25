@@ -15,26 +15,34 @@
  *         limitations under the License.
  */
 
-#ifndef QB_ICALLBACK_H
-#define QB_ICALLBACK_H
+#ifndef QB_TESTCONSUMER_H
+#define QB_TESTCONSUMER_H
 
-namespace qb {
+#include <qb/actor.h>
 
-    /*!
-     * @interface ICallback core/ICallback.h qb/icallback.h
-     * @ingroup Core
-     * @brief Actor callback interface
-     * @details
-     * DerivedActor must inherit from this interface
-     * to register loop callback
-     */
-    class ICallback {
-    public:
-        virtual ~ICallback() noexcept {}
+template <typename Event>
+class ConsumerActor
+        : public qb::Actor {
+    const qb::ActorIds _idList;
+public:
 
-        virtual void onCallback() = 0;
-    };
+    explicit ConsumerActor(qb::ActorIds const ids = {})
+            : _idList(ids)
+    {
+    }
 
-} // namespace qb
+    virtual bool onInit() override final {
+        registerEvent<Event>(*this);
+        return true;
+    }
 
-#endif //QB_ICALLBACK_H
+    void on(Event &event) {
+        if (_idList.size()) {
+            for (auto to : _idList)
+                send<Event>(to, event);
+        } else
+            send<Event>(event._ttl, event);
+    }
+};
+
+#endif //QB_TESTCONSUMER_H
