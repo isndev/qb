@@ -50,7 +50,7 @@ option("${QB_PREFIX_UPPER}_WITH_TCMALLOC" "TCMalloc is ennabled" OFF)
 
 if (${QB_PREFIX_UPPER}_WITH_LOG)
     message(STATUS "INFO: Will build ${QB_PREFIX} libraries with logger")
-    add_compile_definitions(QB_LOGGER=1)
+    add_definitions(-DQB_LOGGER=1)
 else()
     message(STATUS "INFO: Will build ${QB_PREFIX} libraries without logger")
 endif()
