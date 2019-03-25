@@ -23,7 +23,7 @@
 #include "../shared/TestLatency.h"
 
 template <typename Event>
-static void BM_Unicast_Latency(benchmark::State& state) {
+static void BM_Multicast_Latency(benchmark::State& state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
         const auto nb_actor = state.range(1);
@@ -33,9 +33,9 @@ static void BM_Unicast_Latency(benchmark::State& state) {
         qb::ActorIds ids = {};
         for (auto i = 0; i < nb_actor; ++i) {
             const auto coreid = (i % (nb_core - (nb_core > 1))) + (nb_core > 1);
-            ids = {main.addActor<ConsumerActor<Event>>(coreid, qb::ActorIds(ids))};
+            ids.insert(main.addActor<ConsumerActor<Event>>(coreid));
         }
-        main.addActor<ProducerActor<Event>>(0, qb::ActorIds(ids), nb_events);
+        main.addActor<ProducerActor<Event>>(0, ids, nb_events);
 
         main.start(false);
         main.join();
@@ -54,7 +54,7 @@ static void CustomArguments(benchmark::internal::Benchmark* b) {
 }
 
 // Register the function as a benchmark
-BENCHMARK_TEMPLATE(BM_Unicast_Latency, LightEvent)
+BENCHMARK_TEMPLATE(BM_Multicast_Latency, LightEvent)
         ->Apply(CustomArguments)
         ->ArgNames({"NB_EVENTS", "NB_ACTORS", "NB_CORE"})
         ->Unit(benchmark::kMillisecond);;

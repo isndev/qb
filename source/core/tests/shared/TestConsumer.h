@@ -26,7 +26,7 @@ class ConsumerActor
     const qb::ActorIds _idList;
 public:
 
-    explicit ConsumerActor(qb::ActorIds const ids)
+    explicit ConsumerActor(qb::ActorIds const ids = {})
             : _idList(ids)
     {
     }

@@ -43,10 +43,10 @@ namespace pg
         template <typename O, typename TRatio = std::chrono::microseconds>
         void generate(O& output, const char* unit)
         {
-            output  << std::setw(20) << "duration"
-                    << std::setw(21) << "percentile"
-                    << std::setw(20) << "count"
-                    << std::endl;
+//            output  << std::setw(20) << "duration"
+//                    << std::setw(21) << "percentile"
+//                    << std::setw(20) << "count"
+//                    << std::endl;
 
             size_t cum = 0;
             size_t q50 = 0;
@@ -62,12 +62,10 @@ namespace pg
 
             accumulate_and_print(output, unit, cum, mean, q50, q99, q999, outOufBoundCount, std::chrono::duration_cast<TRatio>(maxDuration));
 
-            output << std::endl;
-            output  << "# Mean  " << std::setw(10) << std::chrono::duration_cast<TRatio>(mean * bucketDuration).count() << unit << std::endl
-                    << "# Q50   " <<  std::setw(10) << std::chrono::duration_cast<TRatio>(q50 * bucketDuration).count() << unit << std::endl
-                    << "# Q99   " <<  std::setw(10) << std::chrono::duration_cast<TRatio>(q99 * bucketDuration).count() << unit << std::endl
-                    << "# Q99.9 " <<  std::setw(10) << std::chrono::duration_cast<TRatio>(q999 * bucketDuration).count() << unit << std::endl
-                    << std::endl;
+            output  << "# Mean  " << std::setw(10) << std::chrono::duration_cast<TRatio>(mean * bucketDuration).count() << unit << std::setw(10)
+                    << "# Q50   " <<  std::setw(10) << std::chrono::duration_cast<TRatio>(q50 * bucketDuration).count() << unit << std::setw(10)
+                    << "# Q99   " <<  std::setw(10) << std::chrono::duration_cast<TRatio>(q99 * bucketDuration).count() << unit << std::setw(10)
+                    << "# Q99.9 " <<  std::setw(10) << std::chrono::duration_cast<TRatio>(q999 * bucketDuration).count() << unit << std::endl;
         }
 
         template <typename O, typename T>

@@ -36,11 +36,11 @@ namespace qb {
         ActorId source;
 
     public:
-        ProxyPipe() = default;
-        ProxyPipe(ProxyPipe const &) = default;
-        ProxyPipe &operator=(ProxyPipe const &) = default;
+        ProxyPipe() noexcept = default;
+        ProxyPipe(ProxyPipe const &) noexcept = default;
+        ProxyPipe &operator=(ProxyPipe const &) noexcept = default;
 
-        ProxyPipe(Pipe &i_pipe, ActorId i_dest, ActorId i_source)
+        ProxyPipe(Pipe &i_pipe, ActorId i_dest, ActorId i_source) noexcept
                 : pipe(&i_pipe), dest(i_dest), source(i_source) {}
 
         /*!
@@ -51,7 +51,7 @@ namespace qb {
          * @return
          */
         template<typename T, typename ..._Args>
-        T &push(_Args &&...args);
+        T &push(_Args &&...args) const noexcept;
 
         /*!
          *
@@ -62,13 +62,13 @@ namespace qb {
          * @return
          */
         template<typename T, typename ..._Args>
-        T &allocated_push(std::size_t size, _Args &&...args);
+        T &allocated_push(std::size_t size, _Args &&...args) const noexcept;
 
         /*!
          *
          * @return
          */
-        inline ActorId getDestination() const {
+        inline ActorId getDestination() const noexcept {
             return dest;
         }
 
@@ -76,7 +76,7 @@ namespace qb {
          *
          * @return
          */
-        inline ActorId getSource() const {
+        inline ActorId getSource() const noexcept {
             return source;
         }
 

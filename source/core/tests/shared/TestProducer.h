@@ -54,7 +54,7 @@ public:
         if (!_max_events) {
             kill();
             broadcast<qb::KillEvent>();
-        } else {
+        } else if (!(_max_events % _idList.size())){
             for (auto to : _idList)
                 send<Event>(to, id());
         }

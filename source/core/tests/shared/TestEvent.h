@@ -24,6 +24,20 @@
 #ifndef QB_TESTEVENT_H
 #define QB_TESTEVENT_H
 
+struct LightEvent : public qb::Event {
+    std::chrono::high_resolution_clock::time_point _timepoint;
+    uint32_t _ttl;
+
+    LightEvent()
+        : _timepoint(std::chrono::high_resolution_clock::now())
+    {}
+
+    LightEvent(uint32_t const ttl)
+        : _timepoint(std::chrono::high_resolution_clock::now())
+        , _ttl(ttl)
+    {}
+};
+
 struct TestEvent : public qb::Event
 {
     uint8_t  _data[32];

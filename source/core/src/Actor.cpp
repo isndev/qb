@@ -22,56 +22,52 @@
 
 namespace qb {
 
-    void Actor::__set_id(ActorId const &id) {
+    void Actor::__set_id(ActorId const &id) noexcept {
         static_cast<ActorId &>(*this) = id;
     }
 
-    void Actor::__set_id(uint16_t const sid, uint16_t const cid) {
+    void Actor::__set_id(uint16_t const sid, uint16_t const cid) noexcept {
         static_cast<ActorId &>(*this) = {sid, cid};
     }
 
-    void Actor::on(PingEvent const &event) {
+    void Actor::on(PingEvent const &event) noexcept {
         if (event.type == id_type)
             send<RequireEvent>(event.source, event.type, ActorStatus::Alive);
     }
 
-    void Actor::on(KillEvent const &) {
+    void Actor::on(KillEvent const &) noexcept {
         kill();
     }
 
-    uint64_t Actor::time() const {
-        return VirtualCore::_handler->time();
-    }
-
-    bool Actor::isAlive() const {
+    bool Actor::isAlive() const noexcept{
         return _alive;
     }
 
-    ProxyPipe Actor::getPipe(ActorId const dest) const {
+    ProxyPipe Actor::getPipe(ActorId const dest) const noexcept {
         return VirtualCore::_handler->getProxyPipe(dest, id());
     }
 
-    uint16_t Actor::getIndex() const {
+    uint16_t Actor::getIndex() const noexcept {
         return VirtualCore::_handler->getIndex();
     }
 
-    void Actor::unregisterCallback() const {
+    void Actor::unregisterCallback() const noexcept {
         VirtualCore::_handler->unregisterCallback(id());
     }
 
-    void Actor::kill() const {
+    void Actor::kill() const noexcept {
         _alive = false;
         VirtualCore::_handler->killActor(id());
     }
 
-    Actor::EventBuilder::EventBuilder(ProxyPipe const &pipe)
+    Actor::EventBuilder::EventBuilder(ProxyPipe const &pipe) noexcept
             : dest_pipe(pipe) {}
 
-    Actor::EventBuilder Actor::to(ActorId const dest) const {
+    Actor::EventBuilder Actor::to(ActorId const dest) const noexcept {
         return {getPipe(dest)};
     }
 
-    void Actor::reply(Event &event) const {
+    void Actor::reply(Event &event) const noexcept {
         if (unlikely(event.dest.isBroadcast())) {
             LOG_WARN("" << *this << " failed to reply broadcast event");
             return;
@@ -79,7 +75,7 @@ namespace qb {
         VirtualCore::_handler->reply(event);
     }
 
-    void Actor::forward(ActorId const dest, Event &event) const {
+    void Actor::forward(ActorId const dest, Event &event) const noexcept {
         event.source = id();
         if (unlikely(event.dest.isBroadcast())) {
             LOG_WARN("" << *this << " failed to forward broadcast event");

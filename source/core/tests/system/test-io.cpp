@@ -35,7 +35,7 @@ public:
 
     virtual bool onInit() override final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
-        LOG_VERB("TestActor had been initialized at" << time());
+        LOG_VERB("TestActor had been initialized at" << qb::Timestamp::nano());
         registerEvent<TestEvent>(*this);
         push<TestEvent>(id());
         qb::io::cout() << "Test Actor(" << id() << "): Hello master !" << std::endl;
@@ -43,9 +43,9 @@ public:
     }
 
     void on(TestEvent const &) {
-        LOG_INFO("TestActor received TestEvent at" << time());
+        LOG_INFO("TestActor received TestEvent at" << qb::Timestamp::nano());
         kill();
-        LOG_WARN("TestActor will be killed at" << time());
+        LOG_WARN("TestActor will be killed at" << qb::Timestamp::nano());
     }
 };
 
