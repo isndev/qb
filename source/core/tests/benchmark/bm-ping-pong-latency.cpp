@@ -24,11 +24,11 @@
 class PongActor : public qb::Actor {
 public:
     virtual bool onInit() override final {
-        registerEvent<TestEvent>(*this);
+        registerEvent<LightEvent>(*this);
         return true;
     }
 
-    void on(TestEvent &event) {
+    void on(LightEvent &event) {
         --event._ttl;
         reply(event);
     }
@@ -44,19 +44,19 @@ public:
 
     virtual bool onInit() override final {
         registerEvent<qb::RequireEvent>(*this);
-        registerEvent<TestEvent>(*this);
+        registerEvent<LightEvent>(*this);
         require<PongActor>();
         return true;
     }
 
     void on(qb::RequireEvent const &event) {
-        send<TestEvent>(event.getSource(), 1000000);
+        send<LightEvent>(event.getSource(), 1000000);
     }
 
-    void on(TestEvent const &event) {
+    void on(LightEvent const &event) {
         _latency.add(std::chrono::high_resolution_clock::now() - event._timepoint);
         if (event._ttl)
-            send<TestEvent>(event.getSource(), event._ttl);
+            send<LightEvent>(event.getSource(), event._ttl);
         else {
             kill();
             send<qb::KillEvent>(event.getSource());
@@ -65,18 +65,18 @@ public:
 };
 
 bool run = true;
-void thread_ping(qb::lockfree::spsc::ringbuffer<TestEvent, 4096> *spsc) {
+void thread_ping(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
     auto &latency = *new pg::latency<1000 * 1000, 900000>{};
-    TestEvent events[4096];
+    LightEvent events[4096];
 
-    spsc[1].enqueue(TestEvent(1000000));
+    spsc[1].enqueue(LightEvent(1000000));
     while (qb::likely(run)) {
         // received
         spsc[0].dequeue([&] (auto event, auto nb_events) {
             for (auto i = 0u; i < nb_events; ++i) {
                 latency.add(std::chrono::high_resolution_clock::now() - event[i]._timepoint);
                 if (event[i]._ttl)
-                    spsc[1].enqueue(TestEvent(event[i]._ttl));
+                    spsc[1].enqueue(LightEvent(event[i]._ttl));
                 else {
                     run = false;
                 }
@@ -87,15 +87,15 @@ void thread_ping(qb::lockfree::spsc::ringbuffer<TestEvent, 4096> *spsc) {
     delete &latency;
 }
 
-void thread_pong(qb::lockfree::spsc::ringbuffer<TestEvent, 4096> *spsc) {
-    TestEvent events[4096];
+void thread_pong(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
+    LightEvent events[4096];
 
     while (qb::likely(run)) {
         // received
         spsc[1].dequeue([&] (auto event, auto nb_events) {
             for (auto i = 0u; i < nb_events; ++i) {
                 --event[i]._ttl;
-                spsc[0].enqueue(TestEvent(event[i]._ttl));
+                spsc[0].enqueue(LightEvent(event[i]._ttl));
             }
         }, events, 4096u);
     }
@@ -103,7 +103,7 @@ void thread_pong(qb::lockfree::spsc::ringbuffer<TestEvent, 4096> *spsc) {
 
 static void BM_Reference_Multi_PingPong_Latency(benchmark::State& state) {
     for (auto _ : state) {
-        auto spsc = new qb::lockfree::spsc::ringbuffer<TestEvent, 4096>[2];
+        auto spsc = new qb::lockfree::spsc::ringbuffer<LightEvent, 4096>[2];
         std::thread threads[2];
 
         threads[0] = std::thread(thread_ping, spsc);
