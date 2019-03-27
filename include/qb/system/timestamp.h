@@ -292,8 +292,11 @@ namespace qb {
             return (timestamp.tv_sec * 1000000000) + timestamp.tv_nsec;
 #elif defined(_WIN32) || defined(_WIN64)
             FILETIME ft;
+#if WINVER < _WIN32_WINNT_WIN8
+            GetSystemTimeAsFileTime(&ft);
+#else
             GetSystemTimePreciseAsFileTime(&ft);
-
+#endif
             ULARGE_INTEGER result;
             result.LowPart = ft.dwLowDateTime;
             result.HighPart = ft.dwHighDateTime;
@@ -312,7 +315,11 @@ namespace qb {
             return timestamp + (local.tm_gmtoff * 1000000000);
 #elif defined(_WIN32) || defined(_WIN64)
             FILETIME ft;
+#if WINVER < _WIN32_WINNT_WIN8
+            GetSystemTimeAsFileTime(&ft);
+#else
             GetSystemTimePreciseAsFileTime(&ft);
+#endif
 
             FILETIME ft_local;
             if (!FileTimeToLocalFileTime(&ft, &ft_local))
@@ -347,7 +354,11 @@ namespace qb {
             {
                 // Calculate timestamp offset
                 FILETIME timestamp;
+#if WINVER < _WIN32_WINNT_WIN8
+                GetSystemTimeAsFileTime(&timestamp);
+#else
                 GetSystemTimePreciseAsFileTime(&timestamp);
+#endif
 
                 ULARGE_INTEGER result;
                 result.LowPart = timestamp.dwLowDateTime;
