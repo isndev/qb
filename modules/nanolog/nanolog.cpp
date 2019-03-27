@@ -33,7 +33,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <queue>
 #include <fstream>
 #include <qb/utility/build_macros.h>
-#include <qb/system/timestamp.h>
 #include "nanolog.h"
 
 namespace
