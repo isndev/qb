@@ -17,6 +17,7 @@
 
 #include <vector>
 #include <qb/actor.h>
+#include <qb/system/timestamp.h>
 #include "MyEvent.h"
 
 #ifndef ACTORCONSUMER_H_
