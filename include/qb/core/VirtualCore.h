@@ -33,7 +33,6 @@
 #endif
 
 // include from qb
-# include <qb/system/timestamp.h>
 # include <qb/system/allocator/pipe.h>
 # include <qb/system/lockfree/mpsc.h>
 # include "ICallback.h"
