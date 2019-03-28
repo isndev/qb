@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 #include <qb/actor.h>
 #include <qb/main.h>
+#include <qb/system/timestamp.h>
 
 struct TestEvent : public qb::Event {};
 

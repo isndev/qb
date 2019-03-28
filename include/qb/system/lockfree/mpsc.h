@@ -18,12 +18,16 @@
 #ifndef QB_LOCKFREE_MPSC_H
 #define QB_LOCKFREE_MPSC_H
 # include <mutex>
+# include <chrono>
 # include "spsc.h"
 # include "spinlock.h"
 
 namespace qb {
     namespace lockfree {
         namespace mpsc {
+
+            using Clock = std::chrono::high_resolution_clock;
+            using Nanoseconds = std::chrono::nanoseconds;
 
             template<typename T, std::size_t max_size, size_t nb_producer = 0>
             class ringbuffer
@@ -60,14 +64,14 @@ namespace qb {
                 }
 
                 size_t enqueue(T const &t) {
-                    const size_t index = Timestamp::rdts() % nb_producer;
+                    const size_t index = Clock::now().time_since_epoch().count() % nb_producer;
                     std::lock_guard<SpinLock> lock(_producers[index].lock);
                     return _producers[index]._ringbuffer.enqueue(t);
                 }
 
                 template <bool _All = true>
                 size_t enqueue(T const *t, size_t const size) {
-                    const size_t index = Timestamp::rdts() % nb_producer;
+                    const size_t index = Clock::now().time_since_epoch().count() % nb_producer;
                     std::lock_guard<SpinLock> lock(_producers[index].lock);
                     return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
                 }
@@ -133,14 +137,14 @@ namespace qb {
                 }
 
                 size_t enqueue(T const &t) {
-                    const size_t index = Timestamp::rdts() % _nb_producer;
+                    const size_t index = Clock::now().time_since_epoch().count() % _nb_producer;
                     std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
                     return _producers.get()[index]._ringbuffer.enqueue(t);
                 }
 
                 template <bool _All = true>
                 size_t enqueue(T const *t, size_t const size) {
-                    const size_t index = Timestamp::rdts() % _nb_producer;
+                    const size_t index = Clock::now().time_since_epoch().count() % _nb_producer;
                     std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
                     return _producers.get()[index]._ringbuffer.template enqueue<_All>(t, size);
                 }
