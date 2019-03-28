@@ -10,27 +10,11 @@
 [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/)
 [![Gitter](https://img.shields.io/gitter/room/isndev/qbaf.svg)](https://gitter.im/qbaf)
 
-**qb** provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput.
-It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors.
+**qb** provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors.
 
-**qb** is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
+The **qb** framework is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
 
-* #### Requirements
-  - C++17 compiler, (g++ >= 7, clang >= 4, msvc >= 19.11)
-  - (Recommended) cmake
-  - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
-* ####
-  <details close>
-    <summary>Build Status</summary>
-
-  |              | linux | Windows | Coverage |
-  |:------------:|:-----:|:-------:|:--------:|
-  |    master    | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/master?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/master) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/master.svg) |
-  |    develop   | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/develop) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) |
-  | experimental | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/experimental) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
-  </details>
-
-* #### Pros
+## Why you need it
   - Opensource
   - Cross-platform (Linux|Windows)
   - Easy to use
@@ -38,11 +22,20 @@ It's a complete development framework for multicore processing that has been spe
   - Very fast and low-latency
   - Reusable code from a project to another
   - Forget everything about multi-threading concurrency issues
-* #### Cons
-  - Strong CPU usage
-  - ...
 
-# Actor Model
+## Requirements
+  - C++17 compiler, (g++ >= 7, clang >= 4, msvc >= 19.11)
+  - (Recommended) cmake
+  - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
+
+## Build Status
+|              | linux | Windows | Coverage |
+|:------------:|:-----:|:-------:|:--------:|
+|    master    | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/master?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/master) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/master.svg) |
+|    develop   | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/develop) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) |
+| experimental | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/experimental) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
+
+# The Actor design pattern
 
 In order to fuly take advantage of cpu cores power, we needed a way to run our code concurrently. Decades of untraceable bugs and developers depressions have shown that **threads were not the perfect solution**.
 
