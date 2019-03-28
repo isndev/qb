@@ -1,4 +1,4 @@
-<p align="center"><img src="./ressources/logo.png" width="180px" /></p>
+<p align="center"><img src="./ressources/logo.svg" width="180px" /></p>
 
 # C++ Actor Framework
 
