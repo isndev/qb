@@ -52,7 +52,7 @@ The Actor model is a concurrent model of computation that treats "actors" as the
 - The Event handler can execute a local function, create more actors, and send events to other Actors. In **qb** programming semantics, Actors shall be mono-threaded and non-blocking.
 - The Event communication between Actors is done with an unidirectional communication channel called a Pipe. Hence, the Actor programming model is completely asynchronous and event-driven. 
 
-<p align="center"><img src="./ressources/BasicActorModel.png" width="500px" /></p>
+<p align="center"><img src="./ressources/BasicActorModel.svg" width="500px" /></p>
 
 #### qb + Actor Model
 A **program** developed with **qb** is consisting of multiple **actors** handling one or multiple **events** attached to several **cores** linked together with several **pipes**.
