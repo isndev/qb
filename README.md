@@ -46,7 +46,7 @@ It's a complete development framework for multicore processing that has been spe
 
 In order to fuly take advantage of cpu cores power, we needed a way to run our code concurrently. Decades of untraceable bugs and developers depressions have shown that **threads were not the perfect solution**.
 
-In **qb** programming semantics, the Actor model is an universal primitive of concurrent computation.
+In **qb** programming semantics, the **Actor model** is an universal primitive of concurrent computation.
 
 Actors are:
 - mono-threaded
@@ -55,8 +55,8 @@ Actors are:
 - event-driven
 
 Actors roles:
-- The Actor A sends event messages to another Actor B, which is then treated by an Event handler.
-- The Event communication between Actors is done with an unidirectional communication channel called a Pipe.
+- The Actor A sends event messages to Actor B, which is then treated by an **Event handler**.
+- The Event communication between Actors is done with an **unidirectional communication** channel called a **Pipe**.
 - The Event handler can:
     - **Execute** a local function
     - **Create** Actors
@@ -65,9 +65,9 @@ Actors roles:
 <p align="center"><img src="./ressources/BasicActorModel.png" width="500px" /></p>
 
 #### qb + Actor Model
-By design, developing with **qb** is about having multiple **actors** handling one/multiple **events** that are attached to **cores** and linked together with **pipes**.
+By design, developing with **qb** is about having multiple **actors** handling one/multiple **events** that are attached to **cores** and communicate through **pipes**.
 
-Once designed, the program is divided into **mono-threaded** coding and sequential event handlers as the Actor model is scalable and parallel by default.
+Once designed, the Actor model is scalable and parallel by default as the program is divided into **mono-threaded** and sequential event handlers.
 
 **qb** runtime handles all the rest and bridge the gap between parallel programming and hardware multicore complexity.
 
