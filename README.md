@@ -10,27 +10,11 @@
 [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/)
 [![Gitter](https://img.shields.io/gitter/room/isndev/qbaf.svg)](https://gitter.im/qbaf)
 
-**qb** provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. 
-It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors. 
+**qb** provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors.
 
-**qb** is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
+The **qb** framework is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
 
-* #### Requirements
-  - C++17 compiler, (g++ >= 7, clang >= 4, msvc >= 19.11)
-  - (Recommended) cmake
-  - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
-* ####
-  <details close> 
-    <summary>Build Status</summary>
-  
-  |              | linux | Windows | Coverage |
-  |:------------:|:-----:|:-------:|:--------:|
-  |    master    | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/master?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/master) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/master.svg) |
-  |    develop   | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/develop) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) |
-  | experimental | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/experimental) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
-  </details>
-
-* #### Pros
+## Why you need it
   - Opensource
   - Cross-platform (Linux|Windows)
   - Easy to use
@@ -38,44 +22,59 @@ It's a complete development framework for multicore processing that has been spe
   - Very fast and low-latency
   - Reusable code from a project to another
   - Forget everything about multi-threading concurrency issues
-* #### Cons
-  - Strong CPU usage
-  - ...
-  
-# Actor Model
-#### Introduction
-Our CPUs are not getting any faster. What’s happening is that we now have multiple cores on them. If we want to take advantage of all this hardware we have available now, we need a way to run our code concurrently. Decades of untraceable bugs and developers’ depression have shown that threads are not the way to go.
 
-#### Definition
-The Actor model is a concurrent model of computation that treats "actors" as the universal primitives of concurrent computation.  
-- The Actor sends event messages to be received by another Actor, which is then treated by an Event handler.
-- The Event handler can execute a local function, create more actors, and send events to other Actors. In **qb** programming semantics, Actors shall be mono-threaded and non-blocking.
-- The Event communication between Actors is done with an unidirectional communication channel called a Pipe. Hence, the Actor programming model is completely asynchronous and event-driven. 
+## Requirements
+  - C++17 compiler, (g++ >= 7, clang >= 4, msvc >= 19.11)
+  - (Recommended) cmake
+  - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
+
+## Build Status
+|              | linux | Windows | Coverage |
+|:------------:|:-----:|:-------:|:--------:|
+|    master    | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/master?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/master) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/master.svg) |
+|    develop   | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/develop) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) |
+| experimental | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/experimental) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
+
+# The Actor design pattern
+
+In order to fuly take advantage of cpu cores power, we needed a way to run our code concurrently. Decades of untraceable bugs and developers depressions have shown that **threads were not the perfect solution**.
+
+In **qb** programming semantics, the **Actor model** is an universal primitive of concurrent computation.
+
+Actors are:
+- mono-threaded
+- non-blocking
+- completely asynchronous
+- event-driven
+
+Actors roles:
+- The Actor A sends event messages to Actor B, which is then treated by an **Event handler**.
+- The Event communication between Actors is done with an **unidirectional communication** channel called a **Pipe**.
+- The Event handler can:
+    - **Execute** a local function
+    - **Create** Actors
+    - **Send** events to other Actors
 
 <p align="center"><img src="./ressources/BasicActorModel.png" width="500px" /></p>
 
 #### qb + Actor Model
-A **program** developed with **qb** is consisting of multiple **actors** handling one or multiple **events** attached to several **cores** linked together with several **pipes**.
-Once designed, the programming is broken down into coding **mono-threaded** and sequential event handlers.  
-Hence, the Actor model which is scalable and parallel by nature.  
+By design, developing with **qb** is about having multiple **actors** handling one/multiple **events** that are attached to **cores** and communicate through **pipes**.
 
-**qb** runtime will handle all the rest and bridge the gap between parallel programming and hardware multicore complexity.
+Once designed, the Actor model is scalable and parallel by default as the program is divided into **mono-threaded** and sequential event handlers.
+
+**qb** runtime handles all the rest and bridge the gap between parallel programming and hardware multicore complexity.
 
 # Getting Started !
 #### Example ping-pong project
 
-- First, you'll have to create the project directory and cd into it
+- Clone **qb** framework and cd:
 ```bash
-$> mkdir pingpong && cd pingpong
+$> git clone git@github.com:isndev/qb.git pingpong && cd pingpong
 ```
-- Then clone the **qb** framework by doing:
-```bash
-$> git clone git@github.com:isndev/qb.git
-```
-- Next, create CMakeLists.txt file and paste the content below
-<details close> 
+- Then create CMakeLists.txt file and paste the content below
+<details close>
 <summary>View code</summary>
-  
+
 ```cmake
 # CMakeLists.txt file
 cmake_minimum_required(VERSION 3.10)
@@ -101,11 +100,11 @@ target_link_libraries(pingpong qb-core)
 
 - Define your first event with its custom data <br>
   MyEvent.h :
-<details close> 
+<details close>
 <summary>View code</summary>
-  
+
 ```cpp
-// MyEvent.h 
+// MyEvent.h
 #include <vector>
 #include <qb/event.h>
 #ifndef MYEVENT_H_
@@ -130,9 +129,9 @@ struct MyEvent
 - Let's define the PingActor <br>
   PingActor will send MyEvent to PongActor, receive the response and kill himself <br>
   PingActor.h :
-<details close> 
+<details close>
 <summary>View code</summary>
-  
+
 ```cpp
 // PingActor.h file
 #include <qb/actor.h>
@@ -147,7 +146,7 @@ class PingActor
 public:
     PingActor() = delete; // PingActor requires PongActor Actorid
     // /!\ never call any qb::Actor functions in constructor
-    // /!\ use onInit function 
+    // /!\ use onInit function
     explicit PingActor(const qb::ActorId id_pong)
       : _id_pong(id_pong) {}
 
@@ -162,7 +161,7 @@ public:
         qb::io::cout() << "PingActor id(" << id() << ") has sent MyEvent" << std::endl;
         return true;                           // init ok
     }
-    // will call this function when PingActor receives MyEvent 
+    // will call this function when PingActor receives MyEvent
     void on(MyEvent &event) {
         // debug print
         qb::io::cout() << "PingActor id(" << id() << ") received MyEvent" << std::endl;
@@ -177,9 +176,9 @@ public:
 - Let's define the PongActor <br>
   PongActor will just listen on MyEvent, reply the event and kill himself <br>
   PongActor.h :
-<details close> 
+<details close>
 <summary>View code</summary>
-  
+
 ```cpp
 // PongActor.h file
 #include <qb/actor.h>
@@ -198,10 +197,10 @@ public:
     // /!\ the engine will call this function before adding PongActor
     bool onInit() override final {
         registerEvent<MyEvent>(*this);         // will just listen MyEvent
-        
+
         return true;                           // init ok
     }
-    // will call this function when PongActor receives MyEvent 
+    // will call this function when PongActor receives MyEvent
     void on(MyEvent &event) {
         // debug print
         qb::io::cout() << "PongActor id(" << id() << ") received MyEvent" << std::endl;
@@ -217,9 +216,9 @@ public:
 </details>
 
 - Then finally create the main.cpp
-<details close> 
+<details close>
 <summary>View code</summary>
-  
+
 ```cpp
 // main.cpp file
 #include <qb/main.h>
@@ -229,11 +228,11 @@ public:
 int main (int argc, char *argv[]) {
     // (optional) initialize the qb logger
     qb::io::log::init(argv[0]); // filename
-    
+
     // configure the Engine
     // Note : I will use only the core 0 and 1
     qb::Main main({0, 1});
-    
+
     // Build Pong Actor to core 0 and retrieve its unique identifier
     auto id_pong = main.addActor<PongActor>(0); // default constructed
     // Build Ping Actor to core 1 with Pong ActorId as parameter
