@@ -1,4 +1,4 @@
-<p align="center"><img src="./ressources/logo.png" width="180px" /></p>
+<p align="center"><img src="./ressources/logo.svg" width="180px" /></p>
 
 # C++ Actor Framework
 
@@ -55,7 +55,7 @@ Actors roles:
     - **Create** Actors
     - **Send** events to other Actors
 
-<p align="center"><img src="./ressources/BasicActorModel.png" width="500px" /></p>
+<p align="center"><img src="./ressources/BasicActorModel.svg" width="500px" /></p>
 
 #### qb + Actor Model
 By design, developing with **qb** is about having multiple **actors** handling one/multiple **events** that are attached to **cores** and communicate through **pipes**.
