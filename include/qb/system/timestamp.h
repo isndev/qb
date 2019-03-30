@@ -285,36 +285,6 @@ namespace qb {
 
 
         static uint64_t epoch() noexcept { return 0; }
-        static uint64_t utc()  {
-			// Get current system time
-			//std::time_t system_now = std::time(0);
-
-			// Convert to UTC
-			//tm utc_now;
-			//gmtime_s(&utc_now, &system_now);
-			//time_t utc_time = mktime(&utc_now);
-
-			// Compute difference between system time and utc in nanoseconds
-			//uint64_t diff = std::abs(utc_time - system_now) * 1000000000;
-			//bool diff_sign = ((utc_time - system_now) < 0);
-			//return ((diff_sign) ? (nano() - diff) : (nano() + diff));
-            return nano();
-        }
-        static uint64_t local() {
-			// Get current system time
-			//std::time_t system_now = std::time(0);
-
-			// Convert to local time
-			//tm local_now;
-			//localtime_s(&local_now, &system_now);
-			//time_t local_time = mktime(&local_now);
-
-			// Compute difference between system time and local time in nanoseconds
-			//uint64_t diff = std::abs(local_time - system_now) * 1000000000;
-			//bool diff_sign = ((local_time - system_now) < 0);
-			//return ((diff_sign) ? (nano() - diff) : (nano() + diff));
-            return nano();
-        }
         static uint64_t nano() {
 			// Store system time and steady time on first call
 			static std::chrono::time_point<std::chrono::system_clock> clk_system_start = std::chrono::system_clock::now();
