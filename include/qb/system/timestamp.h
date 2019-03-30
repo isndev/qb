@@ -319,7 +319,7 @@ namespace qb {
     public:
         using Timestamp::Timestamp;
 
-        UtcTimestamp() : Timestamp(Timestamp::utc()) {}
+        UtcTimestamp() : Timestamp(Timestamp::nano()) {}
         UtcTimestamp(const Timestamp& timestamp) : Timestamp(timestamp) {}
     };
 
@@ -328,7 +328,7 @@ namespace qb {
     public:
         using Timestamp::Timestamp;
 
-        LocalTimestamp() : Timestamp(Timestamp::local()) {}
+        LocalTimestamp() : Timestamp(Timestamp::nano()) {}
         LocalTimestamp(const Timestamp& timestamp) : Timestamp(timestamp) {}
     };
 
