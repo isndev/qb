@@ -15,13 +15,11 @@
 The **qb** framework is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
 
 ## Why you need it
-  - Opensource
-  - Cross-platform (Linux|Windows)
-  - Easy to use
-  - CPU cache friendly
-  - Very fast and low-latency
-  - Reusable code from a project to another
-  - Forget everything about multi-threading concurrency issues
+  - *It's* Easy to use, **modular** and **painless** forget everything about multi-threading concurrency issues
+  - *It's* Very fast and low-latency
+  - *It's* CPU cache friendly
+  - *It's* Cross-platform (Linux|Windows)
+  - *It's* Opensource
 
 ## Requirements
   - C++17 compiler, (g++ >= 7, clang >= 4, msvc >= 19.11)
@@ -42,10 +40,10 @@ In order to fuly take advantage of cpu cores power, we needed a way to run our c
 In **qb** programming semantics, the **Actor model** is an universal primitive of concurrent computation.
 
 Actors are:
-- mono-threaded
-- non-blocking
-- completely asynchronous
-- event-driven
+- Mono-threaded
+- Non-blocking
+- Completely asynchronous
+- Event-driven
 
 Actors roles:
 - The Actor A sends event messages to Actor B, which is then treated by an **Event handler**.
