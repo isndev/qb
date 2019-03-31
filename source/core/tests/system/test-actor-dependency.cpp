@@ -35,7 +35,7 @@ class TestActorDependency
 {
     qb::Main::CoreBuilder::ActorIdList const _ids;
 public:
-    TestActorDependency(qb::Main::CoreBuilder::ActorIdList const &ids = {})
+    explicit TestActorDependency(qb::Main::CoreBuilder::ActorIdList const &ids = {})
             : _ids(std::move(ids)) {}
 
     virtual bool onInit() override final {
