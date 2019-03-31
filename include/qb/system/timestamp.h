@@ -32,6 +32,7 @@
 #elif defined(_WIN32) || defined(_WIN64)
 #include <windows.h>
 #endif
+#include <thread>
 
 namespace qb {
 
@@ -287,11 +288,14 @@ namespace qb {
         static uint64_t epoch() noexcept { return 0; }
         static uint64_t nano() {
 			// Store system time and steady time on first call
-			static std::chrono::time_point<std::chrono::system_clock> clk_system_start = std::chrono::system_clock::now();
-			static std::chrono::time_point<std::chrono::steady_clock> clk_steady_start = std::chrono::steady_clock::now();
+            static const std::chrono::time_point<std::chrono::system_clock> clk_system_start = std::chrono::system_clock::now();
+            static const std::chrono::time_point<std::chrono::steady_clock> clk_steady_start = std::chrono::steady_clock::now();
 
 			// Nano timestamp is (system_start + (steady_now - steady_start))
-            return std::chrono::duration_cast<std::chrono::nanoseconds>(clk_system_start.time_since_epoch() + (std::chrono::steady_clock::now().time_since_epoch() - clk_steady_start.time_since_epoch())).count();
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    clk_system_start.time_since_epoch() +
+                    (std::chrono::steady_clock::now().time_since_epoch() - clk_steady_start.time_since_epoch())
+            ).count();
         }
         static uint64_t rdts() {
 #if defined(_MSC_VER)
@@ -353,4 +357,4 @@ namespace qb {
 }
 // namespace qb
 
-#endif //FEATURES_TIMESTAMP_H
+#endif

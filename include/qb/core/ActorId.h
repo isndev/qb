@@ -26,6 +26,11 @@
 
 namespace qb {
 
+    using CoreId = uint16_t;
+    using ServiceId = uint16_t;
+    using TypeId = uint16_t;
+    using EventId = TypeId;
+
     /*!
      * @class ActorId core/ActorId.h qb/actorid.h
      * @ingroup Core
@@ -38,14 +43,14 @@ namespace qb {
         friend class VirtualCore;
         friend class Actor;
 
-        uint16_t _id;
-        uint16_t _index;
+        ServiceId _id;
+        CoreId _index;
 
     protected:
-        ActorId(uint16_t const id, uint16_t const index) noexcept;
+        ActorId(ServiceId const id, CoreId const index) noexcept;
     public:
         static constexpr uint32_t NotFound = 0;
-        static constexpr uint16_t BroadcastSid = std::numeric_limits<uint16_t>::max();
+        static constexpr ServiceId BroadcastSid = (std::numeric_limits<ServiceId>::max)();
 
         /*!
          * ActorId() == ActorId::NotFound
@@ -63,11 +68,11 @@ namespace qb {
         /*!
          * @return Service index
          */
-        uint16_t sid() const noexcept;
+        ServiceId sid() const noexcept;
         /*!
          * @return VirtualCore index
          */
-        uint16_t index() const noexcept;
+        CoreId index() const noexcept;
 
         bool isBroadcast() const noexcept;
     };
@@ -76,10 +81,10 @@ namespace qb {
     public:
         BroadcastId() = delete;
         explicit BroadcastId(uint32_t const core_id) noexcept
-            : ActorId(BroadcastSid, static_cast<uint16_t>(core_id)) {}
+            : ActorId(BroadcastSid, static_cast<CoreId>(core_id)) {}
     };
 
-    using CoreIds = std::unordered_set<uint8_t>;
+    using CoreIds = std::unordered_set<CoreId>;
     using ActorIds = std::unordered_set<uint32_t>;
 
 }
