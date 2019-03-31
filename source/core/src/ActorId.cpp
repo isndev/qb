@@ -19,7 +19,7 @@
 
 namespace qb {
     ActorId::ActorId() noexcept : _id(0), _index(0) {}
-    ActorId::ActorId(uint16_t const id, uint16_t const index) noexcept
+    ActorId::ActorId(ServiceId const id, CoreId const index) noexcept
             : _id(id), _index(index) {}
 
     ActorId::ActorId(uint32_t const id) noexcept {
@@ -30,11 +30,11 @@ namespace qb {
         return *reinterpret_cast<uint32_t const *>(this);
     }
 
-    uint16_t ActorId::sid() const noexcept {
+    ServiceId ActorId::sid() const noexcept {
         return _id;
     }
 
-    uint16_t ActorId::index() const noexcept {
+    CoreId ActorId::index() const noexcept {
         return _index;
     }
 

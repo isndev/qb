@@ -16,16 +16,17 @@
  */
 
 #include <qb/core/VirtualCore.h>
+#include <qb/system/timestamp.h>
 
 namespace qb {
-    VirtualCore::VirtualCore(uint8_t const id, Main &engine) noexcept
+    VirtualCore::VirtualCore(CoreId const id, Main &engine) noexcept
             : _index(id)
             , _engine(engine)
             , _mail_box(engine.getMailBox(id)) {
-        _ids.reserve(std::numeric_limits<uint16_t>::max() - _nb_service);
+        _ids.reserve(std::numeric_limits<ServiceId>::max() - _nb_service);
         _event_map.reserve(128);
         for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
-            _ids.insert(static_cast<uint16_t >(i));
+            _ids.insert(static_cast<ServiceId>(i));
         }
         for (auto cid : engine._core_set.raw())
             _pipes[cid];
@@ -159,6 +160,7 @@ namespace qb {
     void VirtualCore::__workflow__() {
         LOG_INFO("" << *this << " Init Success " << _actors.size() << " actor(s)");
         while (likely(Main::is_running)) {
+            _nanotimer = Timestamp::nano();
             __receive__();
 
             for (const auto &callback : _actor_callbacks)
@@ -206,7 +208,7 @@ namespace qb {
             actor.__set_id(id);
             // Number of actors attends to its limit in this core
             if (id == ActorId::NotFound) {
-                _ids.insert(static_cast<uint16_t>(id.sid()));
+                _ids.insert(static_cast<ServiceId>(id.sid()));
                 delete &actor;
                 return ActorId::NotFound;
             }
@@ -273,6 +275,11 @@ namespace qb {
         }
     }
 
+    Event &VirtualCore::push(Event const &event) noexcept {
+        auto &pipe = __getPipe__(event.dest._index);
+        return pipe.recycle_back(event, event.bucket_size);
+    }
+
     void VirtualCore::reply(Event &event) noexcept {
         std::swap(event.dest, event.source);
         event.state[0] = 1;
@@ -286,8 +293,9 @@ namespace qb {
     }
     //!Event Api
 
-    uint16_t VirtualCore::getIndex() const noexcept { return _index; }
-    uint16_t VirtualCore::_nb_service = 0;
+    CoreId VirtualCore::getIndex() const noexcept { return _index; }
+    uint64_t VirtualCore::time() const noexcept { return _nanotimer; }
+    ServiceId VirtualCore::_nb_service = 0;
     thread_local VirtualCore *VirtualCore::_handler = nullptr;
 }
 
