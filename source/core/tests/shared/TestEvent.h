@@ -19,6 +19,7 @@
 #include <numeric>
 #include <chrono>
 #include <qb/event.h>
+#include <qb/system/timestamp.h>
 
 #ifndef QB_TESTEVENT_H
 #define QB_TESTEVENT_H

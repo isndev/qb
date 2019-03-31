@@ -21,8 +21,10 @@
 # include <map>
 # include <unordered_map>
 # include <utility>
+# include <tuple>
 // include from qb
 # include <qb/utility/nocopy.h>
+# include <qb/utility/type_traits.h>
 # include "ICallback.h"
 # include "ProxyPipe.h"
 # include "Event.h"
@@ -61,12 +63,12 @@ namespace qb {
         /*!
          * @private
          */
-        void __set_id(uint16_t const sid, uint16_t const cid) noexcept;
+        void __set_id(ServiceId const sid, CoreId const cid) noexcept;
         /*!
          * @private
          */
         template <typename Tag>
-        static uint16_t registerIndex() noexcept;
+        static ServiceId registerIndex() noexcept;
 
         /*!
          * @name Construction/Destruction
@@ -193,13 +195,29 @@ namespace qb {
          * Get current core index
          * @return core index
          */
-        uint16_t getIndex() const noexcept;
+        CoreId getIndex() const noexcept;
+
+        /*!
+         * @brief Get current time
+         * @return nano timestamp since epoch
+         * @details
+         * @note
+         * This value is optimized and updated each VirtualCore loop.
+         * @code
+         * // ...
+         * auto t1 = time();
+         * // ... some heavy calculation
+         * assert(t1 == time()); // true - will not assert
+         * @endcode
+         * To get precise time use NanoTimestamp.
+         */
+        uint64_t time() const noexcept;
 
         /*!
          * @private
          */
         template <typename T>
-        static ActorId getServiceId(uint16_t const index) noexcept;
+        static ActorId getServiceId(CoreId const index) noexcept;
 
         /*!
          * @brief Check if Actor is alive
@@ -425,6 +443,11 @@ namespace qb {
          */
         void forward(ActorId const dest, Event &event) const noexcept;
 
+        // OpenApi : used for module
+         void send(Event const &event) const noexcept;
+         void push(Event const &event) const noexcept;
+         bool try_send(Event const &event) const noexcept;
+
         /*!
          * @brief Get access to unidirectional out events pipe
          * @param dest destination ActorId
@@ -484,7 +507,7 @@ namespace qb {
     template <typename Tag>
     class ServiceActor : public Service, public Actor {
         friend class Main;
-        static const uint16_t ServiceIndex;
+        static const ServiceId ServiceIndex;
     public:
 
         ServiceActor() {
@@ -515,10 +538,11 @@ namespace qb {
     template <typename _Actor, typename ..._Args>
     class TActorFactory : public IActorFactory, public ActorProxy {
         ActorId _id;
-        std::tuple<_Args...> _parameters;
+        std::tuple<typename remove_reference_if<_Args,
+                std::is_trivially_copyable<std::remove_reference_t<std::remove_all_extents_t<_Args>>>::value>::type...> _parameters;
     public:
         TActorFactory(ActorId const id, _Args &&...args)
-            : _id(id), _parameters(args...)
+            : _id(id), _parameters(std::forward<_Args>(args)...)
         {}
 
         template<std::size_t... Is>

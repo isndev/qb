@@ -18,6 +18,7 @@
 #ifndef QB_LOCKFREE_SPINLOCK_H
 # define QB_LOCKFREE_SPINLOCK_H
 # include <atomic>
+# include <qb/system/timestamp.h>
 
 namespace qb {
     namespace lockfree {
@@ -50,6 +51,24 @@ namespace qb {
 
                 // Failed to acquire spin-lock
                 return false;
+            }
+
+            bool trylock_for(const Timespan &timespan) noexcept {
+                // Calculate a finish timestamp
+                Timestamp finish = NanoTimestamp() + timespan;
+
+                // Try to acquire spin-lock at least one time
+                do {
+                    if (trylock())
+                        return true;
+                } while (NanoTimestamp() < finish);
+
+                // Failed to acquire spin-lock
+                return false;
+            }
+
+            bool trylock_until(const UtcTimestamp &timestamp) noexcept {
+                return trylock_for(timestamp - UtcTimestamp());
             }
 
             void lock() noexcept {

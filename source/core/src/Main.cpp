@@ -46,7 +46,7 @@ namespace qb {
         __init__();
     }
 
-    Main::Main(std::unordered_set<uint8_t> const &core_set) noexcept
+    Main::Main(std::unordered_set<CoreId> const &core_set) noexcept
             : _core_set (core_set)
             , _mail_boxes(_core_set.getSize())
     {
@@ -64,14 +64,14 @@ namespace qb {
     }
 
     bool Main::send(Event const &event) const noexcept {
-        uint16_t source_index = _core_set.resolve(event.source._index);
+        CoreId source_index = _core_set.resolve(event.source._index);
 
         return _mail_boxes[_core_set.resolve(event.dest._index)]->enqueue(source_index,
                                                                           reinterpret_cast<const CacheLine *>(&event),
                                                                           event.bucket_size);
     }
 
-    void Main::start_thread(uint8_t coreId, Main &engine) noexcept {
+    void Main::start_thread(CoreId coreId, Main &engine) noexcept {
         VirtualCore core(coreId, engine);
         VirtualCore::_handler = &core;
         try {
@@ -144,17 +144,17 @@ namespace qb {
         }
     }
 
-    Main::MPSCBuffer &Main::getMailBox(uint8_t const id) const noexcept {
+    Main::MPSCBuffer &Main::getMailBox(CoreId const id) const noexcept {
         return *_mail_boxes[_core_set.resolve(id)];
     }
 
-    std::size_t Main::getNbCore() const noexcept {
-        return _core_set.getNbCore();
+    CoreId Main::getNbCore() const noexcept {
+        return static_cast<CoreId>(_core_set.getNbCore());
     }
 
     std::atomic<uint64_t> Main::sync_start(0);
     bool Main::is_running(false);
-    uint16_t Main::generated_sid = 0;
+    ServiceId Main::generated_sid = 0;
 
     Main::CoreBuilder::CoreBuilder(CoreBuilder const &rhs) noexcept
             : _index(rhs._index)
@@ -169,7 +169,7 @@ namespace qb {
         return _ret_ids;
     }
 
-    Main::CoreBuilder Main::core(uint16_t const index) noexcept {
+    Main::CoreBuilder Main::core(CoreId const index) noexcept {
         return {*this, index};
     }
 

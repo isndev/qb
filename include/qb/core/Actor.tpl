@@ -80,7 +80,7 @@ namespace qb {
     }
 
     template <typename Tag>
-    ActorId Actor::getServiceId(uint16_t const index) noexcept {
+    ActorId Actor::getServiceId(CoreId const index) noexcept {
         return {VirtualCore::getServices()[type_id<Tag>()], index};
     }
 
@@ -91,7 +91,7 @@ namespace qb {
     }
 
     template <typename Tag>
-    uint16_t Actor::registerIndex() noexcept {
+    ServiceId Actor::registerIndex() noexcept {
         return VirtualCore::getServices()[type_id<Tag>()] = ++VirtualCore::_nb_service;
     }
 

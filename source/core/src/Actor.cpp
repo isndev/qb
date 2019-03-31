@@ -26,7 +26,7 @@ namespace qb {
         static_cast<ActorId &>(*this) = id;
     }
 
-    void Actor::__set_id(uint16_t const sid, uint16_t const cid) noexcept {
+    void Actor::__set_id(ServiceId const sid, CoreId const cid) noexcept {
         static_cast<ActorId &>(*this) = {sid, cid};
     }
 
@@ -39,6 +39,10 @@ namespace qb {
         kill();
     }
 
+    uint64_t Actor::time() const noexcept {
+        return VirtualCore::_handler->time();
+    }
+
     bool Actor::isAlive() const noexcept{
         return _alive;
     }
@@ -47,7 +51,7 @@ namespace qb {
         return VirtualCore::_handler->getProxyPipe(dest, id());
     }
 
-    uint16_t Actor::getIndex() const noexcept {
+    CoreId Actor::getIndex() const noexcept {
         return VirtualCore::_handler->getIndex();
     }
 
@@ -82,6 +86,19 @@ namespace qb {
             return;
         }
         VirtualCore::_handler->forward(dest, event);
+    }
+
+    // OpenApi : internal future use
+    void Actor::send(Event const &event) const noexcept {
+        VirtualCore::_handler->send(event);
+    }
+
+    void Actor::push(Event const &event) const noexcept {
+        VirtualCore::_handler->push(event);
+    }
+
+    bool Actor::try_send(Event const &event) const noexcept {
+        return VirtualCore::_handler->try_send(event);
     }
 }
 

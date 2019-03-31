@@ -33,6 +33,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <queue>
 #include <fstream>
 #include <qb/utility/build_macros.h>
+#include <qb/system/timestamp.h>
 #include "nanolog.h"
 
 namespace
@@ -41,7 +42,7 @@ namespace
 	/* Returns microseconds since epoch */
 	uint64_t timestamp_now()
 	{
-		return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+		return qb::Timestamp::nano() / 1000;
 	}
 
 	/* I want [2016-10-13 00:01:23.528514] */
