@@ -49,9 +49,9 @@ namespace qb {
 
     class VirtualCore {
         thread_local static VirtualCore *_handler;
-        static uint16_t _nb_service;
-        static std::unordered_map<uint32_t, uint16_t> &getServices() {
-            static std::unordered_map<uint32_t, uint16_t> service_ids;
+        static ServiceId _nb_service;
+        static std::unordered_map<TypeId, ServiceId> &getServices() {
+            static std::unordered_map<TypeId , ServiceId> service_ids;
             return service_ids;
         }
 
@@ -73,7 +73,7 @@ namespace qb {
         using CallbackMap = std::unordered_map<uint32_t, ICallback *>; // TODO: try to transform in std::vector
         using PipeMap = std::unordered_map<uint32_t, Pipe>;
         using RemoveActorList = std::unordered_set<uint32_t>;
-        using AvailableIdList = std::unordered_set<uint16_t>;
+        using AvailableIdList = std::unordered_set<ServiceId>;
 
         class IRegisteredEventBase {
         public:
@@ -168,7 +168,7 @@ namespace qb {
         //!Types
     private:
         // Members
-        const uint8_t   _index;
+        const CoreId   _index;
         Main           &_engine;
         MPSCBuffer     &_mail_box;
         AvailableIdList _ids;
@@ -178,10 +178,11 @@ namespace qb {
         RemoveActorList _actor_to_remove;
         PipeMap         _pipes;
         EventBuffer     _event_buffer;
+        uint64_t        _nanotimer;
         // !Members
 
         VirtualCore() = delete;
-        VirtualCore(uint8_t const id, Main &engine) noexcept;
+        VirtualCore(CoreId const id, Main &engine) noexcept;
 		~VirtualCore() noexcept;
 
         ActorId __generate_id__() noexcept;
@@ -230,6 +231,7 @@ namespace qb {
         ProxyPipe getProxyPipe(ActorId const dest, ActorId const source) noexcept;
         bool try_send(Event const &event) const noexcept;
         void send(Event const &event) noexcept;
+        Event &push(Event const &event) noexcept;
         void reply(Event &event) noexcept;
         void forward(ActorId const dest, Event &event) noexcept;
 
@@ -244,7 +246,8 @@ namespace qb {
         //!Event Api
 
     public:
-        uint16_t getIndex() const noexcept;
+        CoreId getIndex() const noexcept;
+        uint64_t time() const noexcept;
     };
 
 }

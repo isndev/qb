@@ -47,20 +47,20 @@ namespace qb {
 
         static std::atomic<uint64_t> sync_start;
         static bool                  is_running;
-        static uint16_t              generated_sid;
+        static ServiceId             generated_sid;
         static void onSignal(int signal);
-        static void start_thread(uint8_t coreId, Main &engine) noexcept;
+        static void start_thread(CoreId coreId, Main &engine) noexcept;
     private:
         CoreSet _core_set;
         std::vector<MPSCBuffer *> _mail_boxes;
         std::vector<std::thread>  _cores;
-        std::unordered_map<uint8_t, std::unordered_map<uint32_t, IActorFactory *>> _actor_factories;
+        std::unordered_map<CoreId, std::unordered_map<uint32_t, IActorFactory *>> _actor_factories;
 
         void __init__() noexcept;
         bool send(Event const &event) const noexcept;
         bool broadcast(Event const &event) const noexcept;
-        MPSCBuffer &getMailBox(uint8_t const id) const noexcept;
-        std::size_t getNbCore() const noexcept;
+        MPSCBuffer &getMailBox(CoreId const id) const noexcept;
+        CoreId getNbCore() const noexcept;
     public:
 
         /*!
@@ -73,12 +73,12 @@ namespace qb {
         private:
             friend class Main;
 
-            const uint16_t _index;
+            const CoreId _index;
             Main &_main;
             ActorIdList _ret_ids;
             bool _valid;
 
-            CoreBuilder(Main &main, uint16_t const index) noexcept
+            CoreBuilder(Main &main, CoreId const index) noexcept
                     : _index(index)
                     , _main(main)
                     , _valid(true)
@@ -123,7 +123,7 @@ namespace qb {
 
         Main() = delete;
         explicit Main(CoreSet const &core_set) noexcept;
-        explicit Main(std::unordered_set<uint8_t> const &core_set) noexcept;
+        explicit Main(std::unordered_set<CoreId> const &core_set) noexcept;
         ~Main();
 
         /*!
@@ -182,7 +182,7 @@ namespace qb {
          * // builder1 != builder2
          * @endcode
          */
-        CoreBuilder core(uint16_t const index) noexcept;
+        CoreBuilder core(CoreId const index) noexcept;
 
     };
 

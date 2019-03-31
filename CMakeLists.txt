@@ -48,13 +48,6 @@ option("${QB_PREFIX_UPPER}_WITH_LOG" "Enable nanolog" ON)
 option("${QB_PREFIX_UPPER}_WITH_RTTI" "Build with RTTI" ON)
 option("${QB_PREFIX_UPPER}_WITH_TCMALLOC" "TCMalloc is ennabled" OFF)
 
-if (${QB_PREFIX_UPPER}_WITH_LOG)
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries with logger")
-    add_definitions(-DQB_LOGGER=1)
-else()
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries without logger")
-endif()
-
 #default build type to Release
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
