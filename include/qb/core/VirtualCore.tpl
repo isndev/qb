@@ -103,7 +103,7 @@ namespace qb {
     //!Event Api
 
     template <typename Tag>
-    const uint16_t ServiceActor<Tag>::ServiceIndex = Actor::registerIndex<Tag>();
+    const ServiceId ServiceActor<Tag>::ServiceIndex = Actor::registerIndex<Tag>();
 
 }
 
