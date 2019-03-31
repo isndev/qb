@@ -30,7 +30,7 @@ namespace qb {
     };
 
     template<typename T>
-    constexpr uint16_t type_id() { return static_cast<uint16_t>(reinterpret_cast<std::size_t>(&type<T>::id)); }
+    constexpr TypeId type_id() { return static_cast<TypeId>(reinterpret_cast<std::size_t>(&type<T>::id)); }
 
     /*!
      * @class Event core/Event.h qb/event.h
@@ -44,7 +44,7 @@ namespace qb {
         friend class ProxyPipe;
         friend struct ServiceEvent;
 
-        uint16_t id;
+        EventId id;
         uint16_t bucket_size;
         std::bitset<32> state;
         // for users
@@ -67,7 +67,7 @@ namespace qb {
      */
     struct ServiceEvent : public Event {
         ActorId forward;
-        uint16_t service_event_id;
+        EventId service_event_id;
 
         inline void received() noexcept {
             std::swap(dest, forward);
