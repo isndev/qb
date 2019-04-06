@@ -37,12 +37,13 @@ namespace           qb {
         }
 
         bool helper::block(SocketHandler socket, bool block) {
-            unsigned long new_state = static_cast<unsigned long>(block);
+            unsigned long new_state = static_cast<unsigned long>(!block);
             return !ioctlsocket(socket, FIONBIO, &new_state);
         }
 
         SocketStatus helper::getErrorStatus() {
-            switch (WSAGetLastError()) {
+			const auto err = WSAGetLastError();
+            switch (err) {
                 case WSAEWOULDBLOCK:
                     return SocketStatus::NotReady;
                 case WSAEALREADY:
