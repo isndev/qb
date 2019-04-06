@@ -24,6 +24,7 @@ namespace           qb {
 
             Socket::Socket() :
                     sys::Socket<SocketType::UDP>() {
+                init();
             }
 
             unsigned short Socket::getLocalPort() const {
@@ -51,7 +52,7 @@ namespace           qb {
 
                 // Bind the socket
                 sockaddr_in addr = helper::createAddress(address.toInteger(), port);
-                if (::bind(_handle, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) == -1) {
+                if (::bind(_handle, reinterpret_cast<sockaddr *>(&addr), sizeof(addr))) {
                     std::cerr << "Failed to bind socket to port " << port << std::endl;
                     return SocketStatus::Error;
                 }
