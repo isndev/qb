@@ -128,8 +128,6 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
     set(COVERAGE_LCOV_EXCLUDES
             '/usr/*'
             '*benchmark*'
-            '*/system*'
-            '*/network*'
             '*modules*'
             '*sample/*'
             )
@@ -137,11 +135,9 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
             EXECUTABLE ctest
             DEPENDENCIES qb-core)
     set(COVERAGE_GCOVR_EXCLUDES
+            ".*benchmark.*"
             ".*modules.*"
             ".*sample.*"
-            ".*qb.network.*"
-            ".*qb.system.*"
-            ".*source.network.*"
             )
     SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(NAME ${PROJECT_NAME}-coverage-xml
             EXECUTABLE ctest
