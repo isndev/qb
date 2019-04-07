@@ -223,7 +223,6 @@ function(SETUP_TARGET_FOR_COVERAGE_GCOVR_XML)
         list(APPEND GCOVR_EXCLUDES "-e")
         list(APPEND GCOVR_EXCLUDES "${EXCLUDE_REPLACED}")
     endforeach()
-    message(STATUS "exclude : ${GCOVR_EXCLUDES}")
     add_custom_target(${Coverage_NAME}
             # Run tests
             ${Coverage_EXECUTABLE} ${Coverage_EXECUTABLE_ARGS}
