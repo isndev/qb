@@ -224,16 +224,22 @@ macro(SUBDIRLIST result curdir)
   set(${result} ${dirlist})
 endmacro()
 
+# qb_register_module(NAME name
+#                    VERSION 1.0.0
+#                    FLAGS ${cxx_default_lib}
+#                    DEPENDENCIES libs...
+#                    SOURCES sources...)
+# register a named qb C++ module that depends on the given libraries and
+# is built from the given source files with the given compiler flags.
 function(qb_register_module)
   set(options NONE)
   set(oneValueArgs NAME VERSION FLAGS URL)
   set(multiValueArgs DEPENDENCIES SOURCES)
   cmake_parse_arguments(Module "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-  message(STATUS "Module Name=${Module_NAME}")
   if (Module_NAME)
     set(Module_NAME "qbm-${Module_NAME}")
-    message(STATUS "adding ${Module_NAME} Module to qb")
+    message(STATUS "Load ${Module_NAME} Module")
     if (NOT ${Module_FLAGS})
       set(Module_FLAGS ${cxx_default_lib})
     endif()
@@ -262,11 +268,10 @@ function(qb_register_module)
 endfunction()
 
 function(qb_load_modules path)
-  message(STATUS ${path})
+  message(STATUS "Load modules on path : ${path}")
   SUBDIRLIST(list ${path})
 
   foreach(subdir ${list})
-    message(STATUS qb load module ${subdir})
     add_subdirectory(${path}/${subdir} ${CMAKE_CURRENT_BINARY_DIR}/qb-module/${subdir})
   endforeach()
   include_directories(path)
@@ -349,8 +354,14 @@ function(cxx_gtest name libs)
           ${ARGN})
 endfunction()
 
+# qb_register_module_gtest(NAME module_name
+#                          TESTNAME name
+#                          FLAGS ${cxx_default_lib}
+#                          DEPENDENCIES libs...
+#                          SOURCES sources...)
+# register a named qb C++ test module that depends on the given libraries and
+# is built from the given source files with the given compiler flags.
 function(qb_register_module_gtest)
-  message(STATUS "ON TEST QB_DIR=${QB_DIRECTORY}")
   set(options NONE)
   set(oneValueArgs NAME TESTNAME FLAGS)
   set(multiValueArgs SOURCES DEPENDENCIES)
@@ -366,8 +377,8 @@ function(qb_register_module_gtest)
   if (NOT ${Module_FLAGS})
     set(Module_FLAGS ${cxx_default_lib})
   endif()
-  message(STATUS "Load module ${Module_NAME} test dependant=${Module_DEPENDENCIES}")
   set(Module_NAME "qbm-${Module_NAME}-gtest-${Module_TESTNAME}")
+  message(STATUS "Load ${Module_NAME} Test")
   cxx_test_with_flags(
           "${Module_NAME}"
           "${Module_FLAGS}"
