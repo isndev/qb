@@ -29,6 +29,7 @@ TEST(TCP, Blocking) {
         qb::network::tcp::Listener listener;
         EXPECT_FALSE(listener.listen(port) != qb::network::SocketStatus::Done);
         EXPECT_TRUE(listener.good());
+        EXPECT_EQ(listener.getLocalPort(), port);
         qb::network::tcp::Socket sock;
         EXPECT_FALSE(listener.accept(sock) != qb::network::SocketStatus::Done);
         sock.setBlocking(true);
@@ -44,6 +45,7 @@ TEST(TCP, Blocking) {
         qb::network::tcp::Socket sock;
         EXPECT_FALSE(sock.connect("127.0.0.1", port, 10) != qb::network::SocketStatus::Done);
         EXPECT_TRUE(sock.good());
+        EXPECT_EQ(sock.getRemotePort(), port);
 		std::this_thread::sleep_for(std::chrono::seconds(3));
         const char msg[] = "Hello Test !";
         EXPECT_FALSE(sock.send(msg, sizeof(msg)) != qb::network::SocketStatus::Done);
@@ -59,6 +61,7 @@ TEST(TCP, NonBlocking) {
 		qb::network::tcp::Listener listener;
 		EXPECT_FALSE(listener.listen(port) != qb::network::SocketStatus::Done);
 		EXPECT_TRUE(listener.good());
+        EXPECT_EQ(listener.getLocalPort(), port);
 		qb::network::tcp::Socket sock;
 		EXPECT_FALSE(listener.accept(sock) != qb::network::SocketStatus::Done);
 		sock.setBlocking(false);
@@ -74,6 +77,7 @@ TEST(TCP, NonBlocking) {
 		qb::network::tcp::Socket sock;
 		EXPECT_FALSE(sock.connect("127.0.0.1", port, 10) != qb::network::SocketStatus::Done);
 		EXPECT_TRUE(sock.good());
+        EXPECT_EQ(sock.getRemotePort(), port);
 		sock.setBlocking(false);
 		std::this_thread::sleep_for(std::chrono::seconds(3));
 		const char msg[] = "Hello Test !";
@@ -90,6 +94,7 @@ TEST(UDP, Blocking) {
         qb::network::udp::Socket listener;
         EXPECT_FALSE(listener.bind(port) != qb::network::SocketStatus::Done);
         EXPECT_TRUE(listener.good());
+        EXPECT_EQ(listener.getLocalPort(), port);
         char buffer[512];
 		*buffer = 0;
         std::size_t received;
@@ -119,6 +124,7 @@ TEST(UDP, NonBlocking) {
         qb::network::udp::Socket listener;
         EXPECT_FALSE(listener.bind(port) != qb::network::SocketStatus::Done);
         EXPECT_TRUE(listener.good());
+        EXPECT_EQ(listener.getLocalPort(), port);
         listener.setBlocking(false);
         char buffer[512];
         *buffer = 0;
@@ -146,7 +152,10 @@ TEST(UDP, NonBlocking) {
 }
 
 
-TEST(Example, Equals) {
+TEST(IP, Resolving) {
   qb::network::ip ip("192.168.0.123");
+  std::cout << ip << std::endl;
   EXPECT_EQ(ip.toString(), "192.168.0.123");
+  const std::string ip_str("8.8.8.8");
+  EXPECT_EQ(qb::network::ip(ip_str), qb::network::ip(8, 8, 8, 8));
 }
