@@ -63,7 +63,33 @@ Once designed, the Actor model is scalable and parallel by default as the progra
 **qb** runtime handles all the rest and bridge the gap between parallel programming and hardware multicore complexity.
 
 # Getting Started !
-#### Example ping-pong project
+#### Start from existing **qb** sample project
+To **generate** a new ***boilerplate*** **qb** project, you can use the [qb-new-project.sh](https://github.com/isndev/qb/blob/master/script/qb-new-project.sh) script using cURL:
+
+```sh
+curl -o- https://raw.githubusercontent.com/isndev/qb/master/script/qb-new-project.sh | bash /dev/stdin [Project Name]
+```
+
+or Wget:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/isndev/qb/master/script/qb-new-project.sh | bash /dev/stdin [Project Name]
+```
+
+<sub>The script creates a new boilerplate project copied from [qb-sample-project](https://github.com/isndev/qb-sample-project) repository to a new **git** bare repository into `[Project Name]` directory.</sub>
+
+Let's compile the project !
+
+```sh
+$> cd [Project Name]
+$> cmake -DCMAKE_BUILD_TYPE=Release -B[Build Directory Path] -H[CMakeList.txt Path]
+$> cd [Build Directory Path] && make
+```
+
+<sub>**Note:** you can add otions to cmake command, `-DQB_BUILD_TEST=ON` to build tests and `-DQB_BUILD_BENCHMARK=ON` to build benchmarks.</sub>
+ 
+#### Start from scratch
+<sub>Example ping-pong project</sub>
 
 - Clone **qb** framework and cd:
 ```bash
@@ -262,11 +288,12 @@ PingActor id(XXXXXX) received MyEvent
 ```
 Done !
 
-You want to do more, refer to the [Documentation](https://isndev.github.io/qb/)
+You want to do more, refer to the full [Documentation](https://isndev.github.io/qb/)
 
 ### Todos
-  - [ ] Make Wiki and add tuto
-  - [ ] Add VirtualCore throughput policy to manage the cpu usage (0%)
+  - [ ] Add build options section
+  - [ ] Make Wiki and add more tuto
+  - [ ] Add modules section
 
 License
 ----
