@@ -81,6 +81,19 @@ matrix:
     - env: COMPILER=g++-7 BUILD_TYPE=Release BUILD_COVER=OFF
       addons: *gcc7
 
+    - env: COMPILER=clang++ BUILD_TYPE=Release BUILD_COVER=OFF
+      os: osx
+      osx_image: xcode10
+      brew_packages:
+        - cmake
+
+    - env: COMPILER=g++ BUILD_TYPE=Release BUILD_COVER=OFF
+      os: osx
+      osx_image: xcode10
+      brew_packages:
+        - gcc
+        - cmake
+
 install:
   # Dependencies required by the CI are installed in ${TRAVIS_BUILD_DIR}/deps/
   - DEPS_DIR="${TRAVIS_BUILD_DIR}/deps"
