@@ -18,6 +18,42 @@
 #include <qb/core/VirtualCore.h>
 #include <qb/system/timestamp.h>
 
+#ifdef __APPLE__
+#include <sys/types.h>
+#include <sys/sysctl.h>
+
+typedef struct cpu_set {
+  uint32_t    count;
+} cpu_set_t;
+
+static inline void
+CPU_ZERO(cpu_set_t *cs) { cs->count = 0; }
+
+static inline void
+CPU_SET(int num, cpu_set_t *cs) { cs->count |= (1 << num); }
+
+static inline int
+CPU_ISSET(int num, cpu_set_t *cs) { return (cs->count & (1 << num)); }
+
+static int pthread_setaffinity_np(pthread_t thread, size_t cpu_size,
+                           cpu_set_t *cpu_set)
+{
+  thread_port_t mach_thread;
+  int core = 0;
+
+  for (core = 0; core < 8 * cpu_size; core++) {
+    if (CPU_ISSET(core, cpu_set)) break;
+  }
+  if (core >= std::thread::hardware_concurrency())
+    return -1;
+  thread_affinity_policy_data_t policy = { core };
+  mach_thread = pthread_mach_thread_np(thread);
+  return thread_policy_set(mach_thread, THREAD_AFFINITY_POLICY,
+                    (thread_policy_t)&policy, 1) != KERN_SUCCESS;
+}
+#endif
+
+
 namespace qb {
     VirtualCore::VirtualCore(CoreId const id, Main &engine) noexcept
             : _index(id)
@@ -112,7 +148,7 @@ namespace qb {
     // Workflow
     void VirtualCore::__init__() {
         bool ret(true);
-#if defined(unix) || defined(__unix) || defined(__unix__)
+#if defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
         cpu_set_t cpuset;
 
         CPU_ZERO(&cpuset);
@@ -158,7 +194,7 @@ namespace qb {
     }
 
     void VirtualCore::__workflow__() {
-        LOG_INFO("" << *this << " Init Success " << _actors.size() << " actor(s)");
+        LOG_INFO("" << *this << " Init Success " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
         while (likely(Main::is_running)) {
             _nanotimer = Timestamp::nano();
             __receive__();
@@ -184,7 +220,7 @@ namespace qb {
         } while (__flush_all__());
 
         if (!Main::is_running) {
-            LOG_INFO("" << *this << " Stopped by user leave " << _actors.size() << " actor(s)");
+            LOG_INFO("" << *this << " Stopped by user leave " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
         } else {
             LOG_INFO("" << *this << " Stopped normally");
         }

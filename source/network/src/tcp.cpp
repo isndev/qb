@@ -25,7 +25,7 @@
 namespace
 {
     // Define the low-level send/receive flags, which depend on the OS
-#ifdef __WIN__SYSTEM__
+#if defined(__WIN__SYSTEM__) || defined(__APPLE__)
     const int flags = 0;
 #else
     constexpr const int flags = MSG_NOSIGNAL;
