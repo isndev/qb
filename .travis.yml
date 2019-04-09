@@ -83,13 +83,13 @@ matrix:
 
     - env: COMPILER=clang++ BUILD_TYPE=Release BUILD_COVER=OFF
       os: osx
-      osx_image: xcode10
+      osx_image: xcode10.2
       brew_packages:
         - cmake
 
     - env: COMPILER=g++ BUILD_TYPE=Release BUILD_COVER=OFF
       os: osx
-      osx_image: xcode10
+      osx_image: xcode10.2
       brew_packages:
         - gcc
         - cmake
