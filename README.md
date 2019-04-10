@@ -18,20 +18,21 @@ The **qb** framework is a thin-layer multicore-optimized runtime that enable use
   - *It's* Easy to use, **modular** and **painless** forget everything about multi-threading concurrency issues
   - *It's* Very fast and low-latency
   - *It's* CPU cache friendly
-  - *It's* Cross-platform (Linux|Windows)
+  - *It's* Cross-platform (Linux|Windows|macOS*)
   - *It's* Opensource
-
+  
+<sub>*Limited thread **affinity** because of **osx** scheduler</sub>
 ## Requirements
-  - C++17 compiler, (g++ >= 7, clang >= 4, msvc >= 19.11)
+  - C++17 compiler, (g++ >= 7, clang >= 4, msvc >= 19.11, Xcode >= 10.2)
   - (Recommended) cmake
   - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
 
 ## Build Status
-|              | linux | Windows | Mac | Coverage |
+|              | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/NewTux.svg/1000px-NewTux.svg.png" width="25"/> | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Windows_logo_-_2012_derivative.svg/50px-Windows_logo_-_2012_derivative.svg.png" width="25"/> | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Apple_Computer_Logo_rainbow.svg/65px-Apple_Computer_Logo_rainbow.svg.png" width="25"/> | Coverage |
 |:------------:|:-----:|:-------:|:--------:|:--------:|
 |    master    | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/master?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/master) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/master.svg) |
-|    develop   | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/develop) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) |
-| experimental | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/experimental) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
+|    develop   | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/develop) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) |
+| experimental | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/experimental) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
 
 # The Actor design pattern
 
