@@ -4,8 +4,8 @@
 
 [![Cpp Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/674022e452e84497bc0a00e7a585758f)](https://www.codacy.com/app/isndev/qb?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=isndev/qb&amp;utm_campaign=Badge_Grade)
-[![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master&subject=master)](https://github.com/isndev/qb/tree/master)
-[![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop&subject=develop)](https://github.com/isndev/qb/tree/develop)
+[![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb)
+[![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb)
 [![codecov](https://codecov.io/gh/isndev/qb/branch/master/graph/badge.svg)](https://codecov.io/gh/isndev/qb)
 [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/)
 [![Gitter](https://img.shields.io/gitter/room/isndev/qbaf.svg)](https://gitter.im/qbaf)
@@ -15,7 +15,7 @@
 The **qb** framework is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
 
 ## Why you need it
-  - *It's* Easy to use, **modular** and **painless** forget everything about multi-threading concurrency issues
+  - *It's* Easy to use, **modular** and **painless**, forget everything about multi-threading concurrency issues
   - *It's* Very fast and low-latency
   - *It's* CPU cache friendly
   - *It's* Cross-platform (Linux|Windows|macOS*)
@@ -34,7 +34,7 @@ The **qb** framework is a thin-layer multicore-optimized runtime that enable use
 |    develop   | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/develop) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) |
 | experimental | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/experimental) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
 
-# The Actor design pattern
+# The Actor Model
 
 In order to fuly take advantage of cpu cores power, we needed a way to run our code concurrently. Decades of untraceable bugs and developers depressions have shown that **threads were not the perfect solution**.
 
