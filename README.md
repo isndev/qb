@@ -4,8 +4,8 @@
 
 [![Cpp Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/674022e452e84497bc0a00e7a585758f)](https://www.codacy.com/app/isndev/qb?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=isndev/qb&amp;utm_campaign=Badge_Grade)
-[![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb)
-[![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb)
+[![Travis (.org) branch](https://img.shields.io/travis/isndev/qb/master.svg?label=master)](https://travis-ci.org/isndev/qb)
+[![Travis (.org) branch](https://img.shields.io/travis/isndev/qb/develop.svg?label=develop)](https://travis-ci.org/isndev/qb)
 [![codecov](https://codecov.io/gh/isndev/qb/branch/master/graph/badge.svg)](https://codecov.io/gh/isndev/qb)
 [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/)
 [![Gitter](https://img.shields.io/gitter/room/isndev/qbaf.svg)](https://gitter.im/qbaf)
