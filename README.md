@@ -94,7 +94,7 @@ $> cd [Build Directory Path] && make
 
 - Clone **qb** framework and cd:
 ```bash
-$> git clone git@github.com:isndev/qb.git pingpong && cd pingpong
+$> mkdir pingpong && cd pingpong && git clone git@github.com:isndev/qb.git
 ```
 - Then create CMakeLists.txt file and paste the content below
 <details close>
