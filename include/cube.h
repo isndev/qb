@@ -20,11 +20,11 @@
 
 /*!
  * @defgroup Core Core
- * @defgroup Network Network
+ * @defgroup IO IO
  * @defgroup TCP TCP
- * @ingroup Network
+ * @ingroup IO
  * @defgroup UDP UDP
- * @ingroup Network
+ * @ingroup IO
  */
 
 #endif //QB_QB_H

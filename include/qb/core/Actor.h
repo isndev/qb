@@ -565,6 +565,6 @@ namespace qb {
 
 }
 
-qb::io::stream &operator<<(qb::io::stream &os, qb::Actor const &actor);
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor);
 
 #endif //QB_ACTOR_H

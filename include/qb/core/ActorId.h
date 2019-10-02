@@ -89,6 +89,6 @@ namespace qb {
 
 }
 
-qb::io::stream &operator<<(qb::io::stream &os, qb::ActorId const &id);
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
 
 #endif //QB_ACTORID_H

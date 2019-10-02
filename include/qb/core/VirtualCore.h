@@ -43,7 +43,7 @@
 # include "Main.h"
 
 class VirtualCore;
-qb::io::stream &operator<<(qb::io::stream &os, qb::VirtualCore const &core);
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
 
 namespace qb {
 

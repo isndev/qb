@@ -33,9 +33,9 @@ namespace qb {
 #endif
 
     namespace io {
-        using stream = nanolog::NanoLogLine;
 
         namespace log {
+            using stream = nanolog::NanoLogLine;
             using Level = nanolog::LogLevel;
             /*!
              * set log level
