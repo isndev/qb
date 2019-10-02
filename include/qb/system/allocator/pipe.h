@@ -72,6 +72,10 @@ namespace qb {
                 return _end;
             }
 
+            inline std::size_t size() const {
+                return _end - _begin;
+            }
+
             inline void free_front(std::size_t const size) {
                 _begin += size;
             }

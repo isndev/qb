@@ -335,7 +335,7 @@ namespace qb {
     thread_local VirtualCore *VirtualCore::_handler = nullptr;
 }
 
-qb::io::stream &operator<<(qb::io::stream &os, qb::VirtualCore const &core) {
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core) {
     std::stringstream ss;
     ss << "VirtualCore(" << core.getIndex() << ").id(" << std::this_thread::get_id() << ")";
     os << ss.str();

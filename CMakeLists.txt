@@ -22,8 +22,8 @@ project(qb LANGUAGES CXX DESCRIPTION "C++17 Actor Framework")
 set(QB_PREFIX ${PROJECT_NAME})
 string(TOUPPER ${QB_PREFIX} QB_PREFIX_UPPER)
 set(QB_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
-set(QB_VERSION_MAJOR 0)
-set(QB_VERSION_MINOR 9)
+set(QB_VERSION_MAJOR 1)
+set(QB_VERSION_MINOR 0)
 set(QB_VERSION_PATCH 0)
 set(QB_VERSION_TWEAK 0)
 set(QB_VERSION "${QB_VERSION_MAJOR}.${QB_VERSION_MINOR}.${QB_VERSION_PATCH}.${QB_VERSION_TWEAK}")
@@ -89,8 +89,9 @@ config_compiler_and_linker()  # Defined in internal_utils.cmake.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
 
-# Network Projects
-add_subdirectory(source/network)
+# IO Projects
+add_subdirectory(source/io)
+add_subdirectory(modules/ev)
 
 #TCMALLOC only available on linux for the moment
 if (NOT WIN32 AND ${QB_PREFIX_UPPER}_USE_TCMALLOC)
