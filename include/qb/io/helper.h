@@ -23,6 +23,7 @@
 # define            QB_IO_HELPER_H_
 
 #ifdef __WIN__SYSTEM__
+#define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
 #include <WS2tcpip.h>
 #else
