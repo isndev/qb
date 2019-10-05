@@ -2102,7 +2102,7 @@ within the callback:
 \&       }
 \&     else
 \&       {
-\&         // callback was invoked, but there was some recent
+\&         // callback was invoked, but there was some recent 
 \&         // activity. simply restart the timer to time out
 \&         // after "after" seconds, which is the earliest time
 \&         // the timeout can occur.
@@ -2944,7 +2944,7 @@ as the path data is usually in memory already (except when starting the
 watcher).
 .PP
 For networked file systems, calling \f(CW\*(C`stat ()\*(C'\fR can block an indefinite
-time due to io issues, and even under good conditions, a stat call
+time due to network issues, and even under good conditions, a stat call
 often takes multiple milliseconds.
 .PP
 Therefore, it is best to avoid using \f(CW\*(C`ev_stat\*(C'\fR watchers on networked

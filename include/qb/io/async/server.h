@@ -12,14 +12,14 @@ namespace qb {
         namespace async {
 
             template<typename _Derived, typename _Session, typename _Prot>
-            class server : public async::input<server<_Derived, _Session, _Prot>, _Prot> {
+            class server : public input<server<_Derived, _Session, _Prot>, _Prot> {
             public:
-                using base_t = async::input<server<_Derived, _Session, _Prot>, _Prot>;
+                using base_t = input<server<_Derived, _Session, _Prot>, _Prot>;
                 using session_map_t = std::unordered_map<uint64_t, _Session>;
             private:
                 session_map_t _sessions;
             public:
-                server(async::listener &handler) : base_t(handler) {}
+                server() = default;
 
                 session_map_t &sessions() { return _sessions; }
 
@@ -27,12 +27,16 @@ namespace qb {
                     const auto &it = sessions().emplace(
                             std::piecewise_construct,
                             std::forward_as_tuple(new_io.ident()),
-                            std::forward_as_tuple(std::ref(this->_listener), std::ref(static_cast<_Derived &>(*this)))
+                            std::forward_as_tuple(std::ref(static_cast<_Derived &>(*this)))
                     );
-
                     it.first->second.in().set(new_io.ident());
                     it.first->second.start();
                     static_cast<_Derived &>(*this).on(it.first->second);
+                }
+
+                void stream(char const *message, std::size_t size) {
+                    for (auto &session : sessions())
+                        session.second.publish(message, size);
                 }
 
                 bool disconnected() const {

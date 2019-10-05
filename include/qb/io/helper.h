@@ -66,11 +66,20 @@ namespace           qb {
 
         class QB_API helper {
         public:
-            static sockaddr_in createAddress(uint32_t address, unsigned short port);
-            static bool close(SocketHandler sock);
-            static bool block(SocketHandler sock, bool block);
-            static bool is_blocking(SocketHandler sock);
-            static SocketStatus getErrorStatus();
+			//struct socket {
+				static sockaddr_in createAddress(uint32_t address, unsigned short port);
+				static bool close(SocketHandler sock);
+				static bool block(SocketHandler sock, bool block);
+				static bool is_blocking(SocketHandler sock);
+				static SocketStatus getErrorStatus();
+			//};
+
+			//struct file {
+			//	static int open(const char* fname, int flags);
+			//	static int close();
+			//	static int write(int fd, const char *data, std::size_t size);
+			//	static int read(int fd, char* data, std::size_t size);
+			//};
         };
 
     } // namespace io

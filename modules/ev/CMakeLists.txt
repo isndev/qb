@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.1)
 project(libev C)
 set(LIBEV_VERSION 4.27)
 set(LIBEV_VERSION_CURRENT 4)
@@ -10,9 +10,9 @@ include(CheckIncludeFile)
 include(CheckSymbolExists)
 include(CheckCSourceCompiles)
 
-if(NOT DEFINED BUILD_SHARED_LIBS)
-    option(BUILD_SHARED_LIBS "Build libev as a shared library" ON)
-endif()
+#if(NOT DEFINED BUILD_SHARED_LIBS)
+#    option(BUILD_SHARED_LIBS "Build libev as a shared library" ON)
+#endif()
 if(NOT DEFINED BUILD_STATIC_LIBS)
     option(BUILD_STATIC_LIBS "Build libev as a static library" ON)
 endif()
@@ -181,40 +181,40 @@ if(BUILD_STATIC_LIBS)
             VERSION   ${LIBEV_VERSION_CURRENT}.${LIBEV_VERSION_AGE}.${LIBEV_VERSION_REVISION}
             SOVERSION ${LIBEV_VERSION_CURRENT}
             )
-    if(BUILD_PIC_STATIC_LIBS)
-        set_target_properties(ev PROPERTIES
-                POSITION_INDEPENDENT_CODE ON
-                )
-    endif()
-
-    install(TARGETS ev ARCHIVE DESTINATION lib)
+#    if(BUILD_PIC_STATIC_LIBS)
+#        set_target_properties(ev PROPERTIES
+#                POSITION_INDEPENDENT_CODE ON
+#                )
+#    endif()
+#
+#    install(TARGETS ev ARCHIVE DESTINATION lib)
 endif()
 
-if(BUILD_SHARED_LIBS)
-    add_library(ev-shared SHARED ${LIBEV_SRCS})
-    if(WIN32)
-        target_link_libraries(ev-shared ws2_32)
-    endif()
-    set_target_properties(ev-shared PROPERTIES
-            LT_VERSION_CURRENT  ${LIBEV_VERSION_CURRENT}
-            LT_VERSION_AGE      ${LIBEV_VERSION_AGE}
-            LT_VERSION_REVISION ${LIBEV_VERSION_REVISION}
-            VERSION   ${LIBEV_VERSION_CURRENT}.${LIBEV_VERSION_AGE}.${LIBEV_VERSION_REVISION}
-            SOVERSION ${LIBEV_VERSION_CURRENT}
-            )
+#if(BUILD_SHARED_LIBS)
+#    add_library(ev-shared SHARED ${LIBEV_SRCS})
+#    if(WIN32)
+#        target_link_libraries(ev-shared ws2_32)
+#    endif()
+#    set_target_properties(ev-shared PROPERTIES
+#            LT_VERSION_CURRENT  ${LIBEV_VERSION_CURRENT}
+#            LT_VERSION_AGE      ${LIBEV_VERSION_AGE}
+#            LT_VERSION_REVISION ${LIBEV_VERSION_REVISION}
+#            VERSION   ${LIBEV_VERSION_CURRENT}.${LIBEV_VERSION_AGE}.${LIBEV_VERSION_REVISION}
+#            SOVERSION ${LIBEV_VERSION_CURRENT}
+#            )
+#
+#    if(LIBRT_NAME OR LIBM_NAME)
+#        target_link_libraries(ev-shared ${LIBRT_NAME} ${LIBM_NAME})
+#    endif()
+#
+##    create_libtool_file(ev /lib)
+#
+##    install(TARGETS ev-shared LIBRARY DESTINATION lib)
+#endif()
 
-    if(LIBRT_NAME OR LIBM_NAME)
-        target_link_libraries(ev-shared ${LIBRT_NAME} ${LIBM_NAME})
-    endif()
-
-    create_libtool_file(ev /lib)
-
-    install(TARGETS ev-shared LIBRARY DESTINATION lib)
-endif()
-
-if((BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS) AND NOT SKIP_INSTALL_HEADERS)
-    install(
-            FILES ev.h ev++.h event.h
-            DESTINATION include
-    )
-endif()
+#if((BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS) AND NOT SKIP_INSTALL_HEADERS)
+#    install(
+#            FILES ev.h ev++.h event.h
+#            DESTINATION include
+#    )
+#endif()

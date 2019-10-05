@@ -9,7 +9,10 @@ namespace qb {
     namespace io {
         namespace async {
 
-            thread_local listener listener::current;
+//            thread_local struct ev::dynamic_loop Default::loop = { EVFLAG_AUTO };
+//            thread_local listener listener::current;
+
+//            thread_local listener listener::current;
 
 //            template<typename EV_EVENT>
 //            void listener::on(EV_EVENT &event, int revents) {

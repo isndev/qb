@@ -5,6 +5,9 @@
 #ifndef QB_IO_ASYNC_LISTENER_H_
 #define QB_IO_ASYNC_LISTENER_H_
 
+#include <vector>
+#include <algorithm>
+#include <thread>
 #include <qb/utility/branch_hints.h>
 #include "event/base.h"
 
@@ -13,6 +16,9 @@ namespace qb {
         namespace async {
 
             class listener {
+            public:
+                thread_local static listener current;
+            private:
 
                 template<typename _Event, typename _Actor>
                 class RegisteredKernelEvent : public IRegisteredKernelEvent {
@@ -36,13 +42,18 @@ namespace qb {
                 std::vector<IRegisteredKernelEvent *> _registeredEvents;
 
             public:
-                thread_local static listener current;
                 listener() : _loop(EVFLAG_AUTO) {}
 
-                ~listener() {
+                void clear() {
                     for (auto it : _registeredEvents)
                         delete it;
+                    _registeredEvents.clear();
                 }
+
+                ~listener() {
+                    clear();
+                }
+
 
                 template<typename EV_EVENT>
                 void on(EV_EVENT &event, int revents) {
@@ -61,7 +72,7 @@ namespace qb {
                         revent->_event.set(std::forward<_Args>(args)...);
 
                     _registeredEvents.push_back(revent);
-                    std::cout << _registeredEvents.size() << " registered events" << std::endl;
+                    // std::cout << _registeredEvents.size() << " registered events" << std::endl;
                     return revent->_event;
                 }
 
@@ -74,6 +85,14 @@ namespace qb {
                     _loop.run(flag);
                 }
             };
+
+            inline void init() {
+                listener::current.clear();
+            }
+
+            inline void run(int flag = 0) {
+                listener::current.loop(flag);
+            }
 
         }
     }

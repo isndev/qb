@@ -17,11 +17,14 @@
 
 //#include <ev/ev.h>
 //#include <ev/ev++.h>
-//#include            <qb/io/async/listener.h>
+#include            <qb/io/async/listener.h>
 
 namespace qb {
     namespace io {
         namespace async {
+
+//            thread_local struct ev::loop_ref Default::loop = ev_loop_new(EVFLAG_AUTO);
+            thread_local listener listener::current = {};
 
 //            thread_local listener &listener::current = *new listener();
 //

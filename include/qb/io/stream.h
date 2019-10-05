@@ -84,7 +84,7 @@ namespace qb {
                 return ret;
             }
 
-            char *push(char const *data, std::size_t size) {
+            char *publish(char const *data, std::size_t size) {
                 return static_cast<char *>(std::memcpy(_out_buffer.allocate_back(size), data, size));
             }
 
@@ -106,7 +106,7 @@ namespace qb {
             int write() { return 0; }
 
 
-            char *push(char const *data, std::size_t size) {
+            char *publish(char const *data, std::size_t size) {
                 _out.write(data, size);
                 return const_cast<char *>(data);
             }
@@ -142,7 +142,7 @@ namespace qb {
                 return ret;
             }
 
-            char *push(char const *data, std::size_t size) {
+            char *publish(char const *data, std::size_t size) {
                 return static_cast<char *>(std::memcpy(_out_buffer.allocate_back(size), data, size));
             }
 
@@ -161,7 +161,7 @@ namespace qb {
             int write() { return 0; }
 
 
-            char *push(char const *data, std::size_t size) {
+            char *publish(char const *data, std::size_t size) {
                 this->_in.write(data, size);
                 return const_cast<char *>(data);
             }

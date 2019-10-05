@@ -20,10 +20,15 @@
 #include <fcntl.h>
 #include "../helper.h"
 
+#ifndef _WIN32
+
 extern "C"
 {
-    int open(char const *pathname, int flags, ...);
+	int open(char const* pathname, int flags, ...);
 }
+#else
+#include <io.h>
+#endif // !_WIN32
 
 #ifndef             QB_IO_SYS_FILE_H_
 # define            QB_IO_SYS_FILE_H_

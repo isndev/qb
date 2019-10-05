@@ -90,8 +90,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
 
 # IO Projects
-add_subdirectory(source/io)
 add_subdirectory(modules/ev)
+add_subdirectory(source/io)
 
 #TCMALLOC only available on linux for the moment
 if (NOT WIN32 AND ${QB_PREFIX_UPPER}_USE_TCMALLOC)

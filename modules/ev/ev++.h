@@ -337,10 +337,12 @@ namespace ev {
       ev_feed_fd_event (EV_AX_ fd, revents);
     }
 
-//    void feed_signal_event (int signum) EV_NOEXCEPT
-//    {
+    void feed_signal_event (int signum) EV_NOEXCEPT
+    {
+#ifdef EV_SIGNAL_ENABLE
 //      ev_feed_signal_event (EV_AX_ signum);
-//    }
+#endif
+    }
 
 #if EV_MULTIPLICITY
     struct ev_loop* EV_AX;

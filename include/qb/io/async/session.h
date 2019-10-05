@@ -20,10 +20,10 @@ namespace qb {
             public:
                 constexpr static const bool has_server = true;
 
-                session(listener &handler, _Server &server)
-                        : base_t(handler), _server(server) {}
+                session(_Server &server)
+                        : base_t(listener::current), _server(server) {}
 
-                _Server &server() {
+                inline _Server &server() {
                     return _server;
                 }
 
@@ -40,6 +40,7 @@ namespace qb {
                 using base_t = io<_Derived, _Prot>;
             public:
 
+                session() = default;
                 session(listener &handler)
                         : base_t(handler) {}
 

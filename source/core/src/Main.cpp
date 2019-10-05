@@ -16,9 +16,9 @@
  */
 
 #include <csignal>
-#include <cstring>
 #include <qb/core/Main.h>
 #include <qb/core/VirtualCore.h>
+#include <qb/io/async/listener.h>
 
 namespace qb {
 
@@ -74,6 +74,7 @@ namespace qb {
     void Main::start_thread(CoreId coreId, Main &engine) noexcept {
         VirtualCore core(coreId, engine);
         VirtualCore::_handler = &core;
+        io::async::init();
         try {
             // Init VirtualCore
             auto &core_factory = engine._actor_factories[coreId];
