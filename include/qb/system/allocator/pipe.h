@@ -107,7 +107,7 @@ namespace qb {
             }
 
             inline auto *allocate_back(std::size_t const size) {
-                if (likely(_end + size < _capacity)) {
+                if (likely(_end + size <= _capacity)) {
                     const auto save_index = _end;
                     _end += size;
                     return _data + save_index;

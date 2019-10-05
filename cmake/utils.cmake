@@ -70,8 +70,8 @@ macro(config_compiler_and_linker)
     if (MSVC)
         # Newlines inside flags variables break CMake's NMake generator.
         # TODO(vladl@google.com): Add -RTCs and -RTCu to debug builds.
-        set(cxx_base_flags "-GS -W4 -WX -wd4251 -wd4275 -nologo -J -Zi")
-        set(cxx_base_flags "${cxx_base_flags} -D_UNICODE -DUNICODE -DWIN32 -D_WIN32 -DNOMINMAX")
+        set(cxx_base_flags "-GS -W4 -wd4251 -wd4275 -nologo -J -Zi")
+        set(cxx_base_flags "${cxx_base_flags} -D_UNICODE -DUNICODE -DWIN32 -D_WIN32 -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS")
         set(cxx_base_flags "${cxx_base_flags} -DSTRICT -DWIN32_LEAN_AND_MEAN")
         set(cxx_exception_flags "-EHsc -D_HAS_EXCEPTIONS=1")
         set(cxx_no_exception_flags "-EHs-c- -D_HAS_EXCEPTIONS=0")
@@ -189,7 +189,7 @@ function(cxx_library_with_type type)
                     COMPILE_PDB_NAME "${Library_NAME}"
                     COMPILE_PDB_NAME_DEBUG "${Library_NAME}${pdb_debug_postfix}")
 
-            if (BUILD_SHARED_LIBS OR type STREQUAL "SHARED")
+            if (type STREQUAL "SHARED")
                 set_target_properties(${Library_NAME}
                         PROPERTIES
                         COMPILE_FLAGS "${Library_FLAGS}")

@@ -23,11 +23,9 @@ namespace qb {
             public:
                 constexpr static const bool has_server = false;
 
-                input() = delete;
-
                 input(input const &) = delete;
 
-                input(listener &listener)
+                input(listener &listener = listener::current)
                         : _listener(listener), _io_event(listener.registerEvent<event::io>(*this)) {}
 
                 auto &in() {
@@ -63,6 +61,8 @@ namespace qb {
                     }
                 }
 
+                bool disconnected() const { return true; }
+
 //                bool isAlive() const { return _io_event.is_active(); }
             };
 
@@ -76,11 +76,9 @@ namespace qb {
             public:
                 constexpr static const bool has_server = false;
 
-                output() = delete;
-
                 output(output const &) = delete;
 
-                output(listener &listener)
+                output(listener &listener = listener::current)
                         : _listener(listener), _io_event(listener.registerEvent<event::io>(*this)) {}
 
                 auto &out() {
@@ -92,10 +90,10 @@ namespace qb {
                     _io_event.start(_prot.out().ident(), EV_WRITE);
                 }
 
-                inline char *push(char const *data, std::size_t size) {
+                inline char *publish(char const *data, std::size_t size) {
                     if (!(_io_event.events & EV_WRITE))
                         _io_event.set(EV_WRITE);
-                    return _prot.push(data, size);
+                    return _prot.publish(data, size);
                 }
 
                 void on(event::io &event) {
@@ -120,6 +118,8 @@ namespace qb {
                     }
                 }
 
+                bool disconnected() const { return true; }
+
 //                bool isAlive() const { return _io_event.is_active(); }
             };
 
@@ -133,11 +133,9 @@ namespace qb {
             public:
                 constexpr static const bool has_server = false;
 
-                io() = delete;
-
                 io(io const &) = delete;
 
-                io(listener &listener)
+                io(listener &listener = listener::current)
                         : _listener(listener), _io_event(listener.registerEvent<event::io>(*this)) {}
 
                 auto &in() {
@@ -154,10 +152,10 @@ namespace qb {
                     _io_event.start(_prot.in().ident(), EV_READ);
                 }
 
-                inline char *push(char const *data, std::size_t size) {
+                inline char *publish(char const *data, std::size_t size) {
                     if (!(_io_event.events & EV_WRITE))
                         _io_event.set(EV_READ | EV_WRITE);
-                    return _prot.push(data, size);
+                    return _prot.publish(data, size);
                 }
 
                 void on(event::io &event) {
@@ -190,6 +188,8 @@ namespace qb {
                         }
                     }
                 }
+
+                bool disconnected() const { return true; }
 
 //                bool isAlive() const { return _io_event.is_active(); }
             };

@@ -21,23 +21,23 @@ cxx_library(NAME ${PROJECT_NAME}
         FLAGS ${cxx_default_lib}
         SOURCES "src/io-all.cpp"
         DEPENDENCIES ev)
-set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION} SOVERSION ${QB_VERSION_MAJOR})
+set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION})
 target_include_directories(${PROJECT_NAME} INTERFACE
         "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
         "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
 
-cxx_shared_library(NAME ${PROJECT_NAME}-shared
-        FLAGS ${cxx_default_lib}
-        SOURCES "src/io-all.cpp"
-        DEPENDENCIES ev-shared)
-set_target_properties(${PROJECT_NAME}-shared PROPERTIES VERSION ${QB_VERSION} SOVERSION ${QB_VERSION_MAJOR})
-target_include_directories(${PROJECT_NAME}-shared INTERFACE
-        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
-        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
+#cxx_shared_library(NAME ${PROJECT_NAME}-shared
+#        FLAGS ${cxx_default_lib}
+#        SOURCES "src/io-all.cpp"
+#        DEPENDENCIES ev-shared)
+#set_target_properties(${PROJECT_NAME}-shared PROPERTIES VERSION ${QB_VERSION} SOVERSION ${QB_VERSION_MAJOR})
+#target_include_directories(${PROJECT_NAME}-shared INTERFACE
+#        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
+#        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
 
 if (WIN32)
-    target_link_libraries(${PROJECT_NAME} ws2_32)
-    target_link_libraries(${PROJECT_NAME}-shared ws2_32)
+#    target_link_libraries(${PROJECT_NAME} ws2_32)
+#    target_link_libraries(${PROJECT_NAME}-shared ws2_32)
 endif()
 
 if (${QB_PREFIX_UPPER}_BUILD_TEST)

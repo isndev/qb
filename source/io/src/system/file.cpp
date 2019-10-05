@@ -17,8 +17,10 @@
 
 #include            <algorithm>
 #include            <qb/io/system/file.h>
-#include <cstdio>
-
+//#include <cstdio>
+//#ifdef _WIN32
+//#include <io.h>
+//#endif
 namespace           qb {
     namespace       io {
         namespace   sys {
@@ -29,31 +31,53 @@ namespace           qb {
             file::file(int fd) : _handle(fd) {}
 
             file::file(std::string const &fname, int flags)
-                    : _handle(::open(fname.c_str(), flags)) {}
+				: _handle(FD_INVALID) {
+				open(fname, flags);
+			}
 
             int file::ident() const {
                 return _handle;
             }
 
             void file::open(std::string const &fname, int flags) {
+				close();
+#ifdef _WIN32
+				_handle = ::_open(fname.c_str(), flags);
+#else
                 _handle = ::open(fname.c_str(), flags);
+#endif
             }
 
             void file::open(int fd) {
+				close();
                 _handle = fd;
             }
 
             int file::write(const char *data, std::size_t size) {
-                return ::write(_handle, data, size);
+#ifdef _WIN32
+				return ::_write(_handle, data, static_cast<unsigned int>(size));
+#else
+				return ::write(_handle, data, static_cast<unsigned int>(size));
+#endif
             }
 
             int file::read(char *data, std::size_t size) {
-                return ::read(_handle, data, size);
+#ifdef _WIN32
+				return ::_read(_handle, data, static_cast<unsigned int>(size));
+#else
+				return ::read(_handle, data, static_cast<unsigned int>(size));
+#endif
             }
 
             void file::close() {
                 if (good()) {
-                    if (::close(_handle))
+#ifdef _WIN32
+					auto ret = ::_close(_handle);
+#else
+					auto ret = ::close(_handle);
+#endif
+
+                    if (!ret)
                         _handle = FD_INVALID;
                     else
                         std::cerr << "Failed to close file" << std::endl;

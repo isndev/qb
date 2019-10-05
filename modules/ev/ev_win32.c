@@ -96,10 +96,10 @@ ev_pipe (int filedes [2])
   /* windows vista returns fantasy port numbers for sockets:
    * example for two interconnected tcp sockets:
    *
-   * (socket::unpack_sockaddr_in getsockname $sock0)[0] == 53364
-   * (socket::unpack_sockaddr_in getpeername $sock0)[0] == 53363
-   * (socket::unpack_sockaddr_in getsockname $sock1)[0] == 53363
-   * (socket::unpack_sockaddr_in getpeername $sock1)[0] == 53365
+   * (Socket::unpack_sockaddr_in getsockname $sock0)[0] == 53364
+   * (Socket::unpack_sockaddr_in getpeername $sock0)[0] == 53363
+   * (Socket::unpack_sockaddr_in getsockname $sock1)[0] == 53363
+   * (Socket::unpack_sockaddr_in getpeername $sock1)[0] == 53365
    *
    * wow! tridirectional sockets!
    *
