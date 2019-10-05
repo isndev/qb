@@ -181,11 +181,11 @@ if(BUILD_STATIC_LIBS)
             VERSION   ${LIBEV_VERSION_CURRENT}.${LIBEV_VERSION_AGE}.${LIBEV_VERSION_REVISION}
             SOVERSION ${LIBEV_VERSION_CURRENT}
             )
-#    if(BUILD_PIC_STATIC_LIBS)
-#        set_target_properties(ev PROPERTIES
-#                POSITION_INDEPENDENT_CODE ON
-#                )
-#    endif()
+    if(BUILD_PIC_STATIC_LIBS)
+        set_target_properties(ev PROPERTIES
+                POSITION_INDEPENDENT_CODE ON
+                )
+    endif()
 #
 #    install(TARGETS ev ARCHIVE DESTINATION lib)
 endif()

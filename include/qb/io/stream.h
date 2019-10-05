@@ -19,6 +19,8 @@
 # define            QB_IO_STREAM_H_
 #include <qb/system/allocator/pipe.h>
 #include "system/file.h"
+#undef min
+#undef max
 
 namespace qb {
     namespace io {

@@ -39,7 +39,7 @@ if(NOT CYGWIN)
     set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
 
-option(QB_PATH "root" ${CMAKE_CURRENT_SOURCE_DIR})
+set(QB_PATH "root" ${CMAKE_CURRENT_SOURCE_DIR})
 option("${QB_PREFIX_UPPER}_BUILD_TEST" "Build Cube Tests" OFF)
 option("${QB_PREFIX_UPPER}_BUILD_BENCHMARK" "Build Cube Benchmarks" OFF)
 option("${QB_PREFIX_UPPER}_BUILD_SAMPLE" "Build Cube Samples" OFF)
