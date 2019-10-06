@@ -73,7 +73,7 @@ EV_CPP(extern "C" {)
 #define EV_FEATURE_DATA     ((EV_FEATURES) &  2)
 #define EV_FEATURE_CONFIG   ((EV_FEATURES) &  4)
 #define EV_FEATURE_API      ((EV_FEATURES) &  8)
-#define EV_FEATURE_WATCHERS 0//((EV_FEATURES) & 16)
+#define EV_FEATURE_WATCHERS ((EV_FEATURES) & 16)
 #define EV_FEATURE_BACKENDS ((EV_FEATURES) & 32)
 #define EV_FEATURE_OS       ((EV_FEATURES) & 64)
 
@@ -94,7 +94,7 @@ EV_CPP(extern "C" {)
 #endif
 
 #ifndef EV_STAT_ENABLE
-# define EV_STAT_ENABLE EV_FEATURE_WATCHERS
+# define EV_STAT_ENABLE 0//EV_FEATURE_WATCHERS
 #endif
 
 #ifndef EV_PREPARE_ENABLE
