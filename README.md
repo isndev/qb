@@ -4,8 +4,8 @@
 
 [![Cpp Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/674022e452e84497bc0a00e7a585758f)](https://www.codacy.com/app/isndev/qb?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=isndev/qb&amp;utm_campaign=Badge_Grade)
-[![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-master&subject=master)](https://github.com/isndev/qb/tree/master)
-[![Build Status](http://server.isndev.com:61090/buildStatus/icon?job=Cube-develop&subject=develop)](https://github.com/isndev/qb/tree/develop)
+[![Travis (.org) branch](https://img.shields.io/travis/isndev/qb/master.svg?label=master)](https://travis-ci.org/isndev/qb)
+[![Travis (.org) branch](https://img.shields.io/travis/isndev/qb/develop.svg?label=develop)](https://travis-ci.org/isndev/qb)
 [![codecov](https://codecov.io/gh/isndev/qb/branch/master/graph/badge.svg)](https://codecov.io/gh/isndev/qb)
 [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/)
 [![Gitter](https://img.shields.io/gitter/room/isndev/qbaf.svg)](https://gitter.im/qbaf)
@@ -15,25 +15,26 @@
 The **qb** framework is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
 
 ## Why you need it
-  - *It's* Easy to use, **modular** and **painless** forget everything about multi-threading concurrency issues
+  - *It's* Easy to use, **modular** and **painless**, forget everything about multi-threading concurrency issues
   - *It's* Very fast and low-latency
   - *It's* CPU cache friendly
-  - *It's* Cross-platform (Linux|Windows)
+  - *It's* Cross-platform (Linux|Windows|macOS*)
   - *It's* Opensource
-
+  
+<sub>*Limited thread **affinity** because of **osx** scheduler</sub>
 ## Requirements
-  - C++17 compiler, (g++ >= 7, clang >= 4, msvc >= 19.11)
+  - C++17 compiler, (g++ >= 7, clang >= 4, msvc >= 19.11, Xcode >= 10.2)
   - (Recommended) cmake
   - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
 
 ## Build Status
-|              | linux | Windows | Coverage |
-|:------------:|:-----:|:-------:|:--------:|
-|    master    | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/master?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/master) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/master.svg) |
-|    develop   | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/develop) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) |
-| experimental | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/experimental) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
+|              | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/NewTux.svg/1000px-NewTux.svg.png" width="25"/> | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Windows_logo_-_2012_derivative.svg/50px-Windows_logo_-_2012_derivative.svg.png" width="25"/> | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Apple_Computer_Logo_rainbow.svg/65px-Apple_Computer_Logo_rainbow.svg.png" width="25"/> | Coverage |
+|:------------:|:-----:|:-------:|:--------:|:--------:|
+|    master    | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/master?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/master) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/master.svg) |
+|    develop   | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/develop) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) |
+| experimental | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/experimental) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
 
-# The Actor design pattern
+# The Actor Model
 
 In order to fuly take advantage of cpu cores power, we needed a way to run our code concurrently. Decades of untraceable bugs and developers depressions have shown that **threads were not the perfect solution**.
 
@@ -63,11 +64,37 @@ Once designed, the Actor model is scalable and parallel by default as the progra
 **qb** runtime handles all the rest and bridge the gap between parallel programming and hardware multicore complexity.
 
 # Getting Started !
-#### Example ping-pong project
+#### Start from existing **qb** sample project
+To **generate** a new ***boilerplate*** **qb** project, you can use the [qb-new-project.sh](https://github.com/isndev/qb/blob/master/script/qb-new-project.sh) script using cURL:
+
+```sh
+curl -o- https://raw.githubusercontent.com/isndev/qb/master/script/qb-new-project.sh | bash /dev/stdin [Project Name]
+```
+
+or Wget:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/isndev/qb/master/script/qb-new-project.sh | bash /dev/stdin [Project Name]
+```
+
+<sub>The script creates a new boilerplate project copied from [qb-sample-project](https://github.com/isndev/qb-sample-project) repository to a new **git** bare repository into `[Project Name]` directory.</sub>
+
+Let's compile the project !
+
+```sh
+$> cd [Project Name]
+$> cmake -DCMAKE_BUILD_TYPE=Release -B[Build Directory Path] -H[CMakeList.txt Path]
+$> cd [Build Directory Path] && make
+```
+
+<sub>**Note:** you can add otions to cmake command, `-DQB_BUILD_TEST=ON` to build tests and `-DQB_BUILD_BENCHMARK=ON` to build benchmarks.</sub>
+ 
+#### Start from scratch
+<sub>Example ping-pong project</sub>
 
 - Clone **qb** framework and cd:
 ```bash
-$> git clone git@github.com:isndev/qb.git pingpong && cd pingpong
+$> mkdir pingpong && cd pingpong && git clone git@github.com:isndev/qb.git
 ```
 - Then create CMakeLists.txt file and paste the content below
 <details close>
@@ -262,11 +289,12 @@ PingActor id(XXXXXX) received MyEvent
 ```
 Done !
 
-You want to do more, refer to the [Documentation](https://isndev.github.io/qb/)
+You want to do more, refer to the full [Documentation](https://isndev.github.io/qb/)
 
 ### Todos
-  - [ ] Make Wiki and add tuto
-  - [ ] Add VirtualCore throughput policy to manage the cpu usage (0%)
+  - [ ] Add build options section
+  - [ ] Make Wiki and add more tuto
+  - [ ] Add modules section
 
 License
 ----

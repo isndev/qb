@@ -28,6 +28,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #elif defined(_WIN32) || defined(_WIN64)
+# define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <process.h>
 #endif
@@ -43,7 +44,7 @@
 # include "Main.h"
 
 class VirtualCore;
-qb::io::stream &operator<<(qb::io::stream &os, qb::VirtualCore const &core);
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
 
 namespace qb {
 

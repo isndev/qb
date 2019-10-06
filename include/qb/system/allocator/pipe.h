@@ -72,6 +72,10 @@ namespace qb {
                 return _end;
             }
 
+            inline std::size_t size() const {
+                return _end - _begin;
+            }
+
             inline void free_front(std::size_t const size) {
                 _begin += size;
             }
@@ -103,7 +107,7 @@ namespace qb {
             }
 
             inline auto *allocate_back(std::size_t const size) {
-                if (likely(_end + size < _capacity)) {
+                if (likely(_end + size <= _capacity)) {
                     const auto save_index = _end;
                     _end += size;
                     return _data + save_index;
