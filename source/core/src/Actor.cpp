@@ -102,7 +102,7 @@ namespace qb {
     }
 }
 
-qb::io::stream &operator<<(qb::io::stream &os, qb::Actor const &actor){
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor){
     std::stringstream ss;
     ss << "Actor(" << actor.id().index() << "." << actor.id().sid() << ")";
     os << ss.str();
