@@ -642,6 +642,7 @@ namespace ev {
     {
       int active = is_active ();
       if (active) stop ();
+      (reinterpret_cast<ev_watcher_time *>(this))->at = (after);
       ev_timer_set (static_cast<ev_timer *>(this), after, repeat);
       if (active) start ();
     }

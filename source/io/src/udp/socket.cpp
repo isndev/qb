@@ -27,6 +27,11 @@ namespace           qb {
                 init();
             }
 
+            socket::socket(SocketHandler handle) :
+                    sys::socket<SocketType::UDP>() {
+                _handle = handle;
+            }
+
             unsigned short socket::getLocalPort() const {
                 if (good()) {
                     // Retrieve informations about the local end of the socket

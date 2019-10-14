@@ -6,3 +6,6 @@
 	path = modules/googletest
 	url = https://github.com/google/googletest.git
 	branch = master
+[submodule "modules/json"]
+	path = modules/json
+	url = https://github.com/nlohmann/json.git
