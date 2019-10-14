@@ -25,22 +25,24 @@ namespace qb {
 
 
             template<typename _IO_, char _SEP = '\n'>
-            class cmd : public stream<_IO_> {
+            class cmd : public _IO_ {
             public:
                 using message_type = const char *;
 
                 int getMessageSize() {
-                    auto i = this->_in_buffer.begin();
-                    while (i < this->_in_buffer.end()) {
-                        if (this->_in_buffer.data()[i] == _SEP)
-                            return i - this->_in_buffer.begin() + 1;
+                    auto &buffer = this->_in_buffer;
+                    auto i = buffer.begin();
+                    while (i < buffer.end()) {
+                        if (buffer.data()[i] == _SEP)
+                            return i - buffer.begin() + 1;
                         ++i;
                     }
                     return 0;
                 }
 
                 message_type getMessage() {
-                    return this->_in_buffer.data() + this->_in_buffer.begin();
+                    auto &buffer = this->_in_buffer;
+                    return buffer.data() + buffer.begin();
                 }
             };
 

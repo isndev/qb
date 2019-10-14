@@ -67,7 +67,7 @@ TEST(KernelEvents, BasicIO) {
 
     handler.registerEvent<qb::io::async::event::io>(actor, 0, EV_READ).start();
 
-    handler.loop(EVRUN_ONCE);
+    handler.run(EVRUN_ONCE);
     EXPECT_EQ(actor.nb_events, 1);
 }
 

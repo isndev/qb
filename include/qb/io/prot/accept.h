@@ -24,12 +24,12 @@ namespace qb {
         namespace prot {
 
             class accept {
-                tcp::listener _io;
-                tcp::socket _accepted_io;
+                io::tcp::listener _io;
+                io::tcp::socket _accepted_io;
             public:
-                using message_type = tcp::socket;
+                using message_type = io::tcp::socket;
 
-                tcp::listener &in() {
+                io::tcp::listener &in() {
                     return _io;
                 }
 
