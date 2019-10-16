@@ -35,6 +35,7 @@ namespace qb {
                 _Prot _prot;
             public:
                 constexpr static const bool has_server = false;
+                using message_type = typename _Prot::message_type;
 
                 input(input const &) = delete;
 
@@ -57,7 +58,7 @@ namespace qb {
                         if (unlikely(ret <= 0))
                             goto error;
                         while ((ret = _prot.getMessageSize()) > 0) {
-                            static_cast<_Derived &>(*this).on(_prot.getMessage(), ret);
+                            static_cast<_Derived &>(*this).on(_prot.getMessage(ret), ret);
                             _prot.flush(ret);
                         }
                     }
@@ -146,6 +147,7 @@ namespace qb {
                 _Prot _prot;
             public:
                 constexpr static const bool has_server = false;
+                using message_type = typename _Prot::message_type;
 
                 io(io const &) = delete;
 
@@ -180,7 +182,7 @@ namespace qb {
                         if (unlikely(ret <= 0))
                             goto error;
                         while ((ret = _prot.getMessageSize()) > 0) {
-                            static_cast<_Derived &>(*this).on(_prot.getMessage(), ret);
+                            static_cast<_Derived &>(*this).on(_prot.getMessage(ret), ret);
                             _prot.flush(ret);
                         }
                     }

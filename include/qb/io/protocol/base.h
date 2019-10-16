@@ -15,39 +15,36 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_PROT_CMD_H_
-# define            QB_IO_PROT_CMD_H_
+#ifndef             QB_IO_PROT_BASE_H_
+# define            QB_IO_PROT_BASE_H_
 #include "../stream.h"
 
 namespace qb {
     namespace io {
-        namespace prot {
+        namespace protocol {
 
-
-            template<typename _IO_, char _SEP = '\n'>
-            class cmd : public _IO_ {
+            template<typename _Stream, char _SEP = '\n'>
+            class Base : public _Stream {
             public:
                 using message_type = const char *;
 
                 int getMessageSize() {
-                    auto &buffer = this->_in_buffer;
-                    auto i = buffer.begin();
-                    while (i < buffer.end()) {
-                        if (buffer.data()[i] == _SEP)
-                            return i - buffer.begin() + 1;
+                    auto i = this->_in_buffer.begin();
+                    while (i < this->_in_buffer.end()) {
+                        if (this->_in_buffer.data()[i] == _SEP)
+                            return i - this->_in_buffer.begin() + 1;
                         ++i;
                     }
                     return 0;
                 }
 
                 message_type getMessage() {
-                    auto &buffer = this->_in_buffer;
-                    return buffer.data() + buffer.begin();
+                    return this->_in_buffer.data() + this->_in_buffer.begin();
                 }
             };
 
-        } // namespace prot
+        } // namespace protocol
     } // namespace io
 } // namespace qb
 
-#endif // QB_IO_PROT_CMD_H_
+#endif // QB_IO_PROT_BASE_H_

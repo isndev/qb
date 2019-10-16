@@ -15,16 +15,16 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_PROT_FILE_H
-# define            QB_IO_PROT_FILE_H
-# include "../system/file.h"
+#ifndef             QB_IO_PROT_TCP_H
+# define            QB_IO_PROT_TCP_H
+# include "../tcp/socket.h"
 # include "../stream.h"
 
 namespace qb {
     namespace io {
-        namespace prot {
+        namespace protocol {
 
-            class file : public stream<io::sys::file> {
+            class tcp : public stream<io::tcp::socket> {
             public:
                 // Derived class should define :
                 // using message_type = const char *;
@@ -32,8 +32,8 @@ namespace qb {
                 // message_type getMessage();
             };
 
-        } // namespace prot
+        } // namespace protocol
     } // namespace io
 } // namespace qb
 
-#endif // QB_IO_PROT_FILE_H
+#endif // QB_IO_PROT_TCP_H
