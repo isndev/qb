@@ -19,16 +19,16 @@
 #include <qb/io/async/listener.h>
 #include <qb/io/async/tcp/server.h>
 #include <qb/io/async/tcp/session.h>
-#include <qb/io/prot/cmd.h>
-#include <qb/io/prot/file.h>
-#include <qb/io/prot/accept.h>
+#include <qb/io/protocol/cmd.h>
+#include <qb/io/protocol/file.h>
+#include <qb/io/protocol/accept.h>
 #include <thread>
 #include <chrono>
 
 using namespace qb::io;
 
 class FileSession
-        : public async::input<FileSession, prot::cmd<prot::file>>
+        : public async::input<FileSession, protocol::cmd<protocol::file>>
         , public ostream<sys::file> {
 public:
 
@@ -63,8 +63,8 @@ TEST(Session, FromFileToStdout) {
 
 class MyServer;
 
-class MyClient : public async::tcp::session<MyClient, prot::cmd<prot::tcp>, MyServer> {
-    using base_t = async::tcp::session<MyClient, prot::cmd<prot::tcp>, MyServer>;
+class MyClient : public async::tcp::session<MyClient, protocol::cmd, MyServer> {
+    using base_t = async::tcp::session<MyClient, protocol::cmd, MyServer>;
 public:
     MyClient(MyServer &server)
             : base_t(server) {}
@@ -104,8 +104,8 @@ TEST(Session, TcpAccept) {
     t.join();
 }
 
-class TcpClient : public async::tcp::session<MyClient, prot::cmd<prot::tcp>> {
-    using base_t = async::tcp::session<MyClient, prot::cmd<tcp::socket>>;
+class TcpClient : public async::tcp::session<MyClient, protocol::cmd> {
+    using base_t = async::tcp::session<MyClient, protocol::cmd>;
 public:
 
     void on(char const *message, std::size_t size) {

@@ -157,6 +157,7 @@ namespace qb {
 
         template<typename _IO_>
         class stream<_IO_, true> : public istream<_IO_> {
+        public:
             // unused
             _IO_ &out() { return this->_in; }
             std::size_t pendingWrite() const { return 0; }

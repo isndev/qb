@@ -21,7 +21,7 @@
 
 namespace qb {
     namespace io {
-        namespace prot {
+        namespace protocol {
 
             class accept {
                 io::tcp::listener _io;
@@ -49,12 +49,12 @@ namespace qb {
 
                 int getMessageSize() { return _accepted_io.ident(); }
 
-                message_type getMessage() {
+                message_type getMessage(int) {
                     return _accepted_io;
                 }
             };
 
-        } // namespace prot
+        } // namespace protocol
     } // namespace io
 } // namespace qb
 

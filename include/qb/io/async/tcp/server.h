@@ -19,7 +19,7 @@
 #define QB_IO_ASYNC_TCP_SERVER_H
 
 #include "../io.h"
-#include "../../prot/accept.h"
+#include "../../protocol/accept.h"
 
 namespace qb {
     namespace io {
@@ -27,9 +27,9 @@ namespace qb {
             namespace tcp {
 
                 template<typename _Derived, typename _Session>
-                class server : public input<server<_Derived, _Session>, prot::accept> {
+                class server : public input<server<_Derived, _Session>, protocol::accept> {
                 public:
-                    using base_t = input<server<_Derived, _Session>, prot::accept>;
+                    using base_t = input<server<_Derived, _Session>, protocol::accept>;
                     using session_map_t = std::unordered_map<uint64_t, _Session>;
                 private:
                     session_map_t _sessions;
@@ -38,7 +38,7 @@ namespace qb {
 
                     session_map_t &sessions() { return _sessions; }
 
-                    void on(prot::accept::message_type new_io, std::size_t size) {
+                    void on(protocol::accept::message_type new_io, std::size_t size) {
                         const auto &it = sessions().emplace(
                                 std::piecewise_construct,
                                 std::forward_as_tuple(new_io.ident()),
@@ -49,9 +49,10 @@ namespace qb {
                         static_cast<_Derived &>(*this).on(it.first->second);
                     }
 
-                    void stream(char const *message, std::size_t size) {
+                    template<typename ..._Args>
+                    void stream(_Args ...args) {
                         for (auto &session : sessions())
-                            session.second.publish(message, size);
+                            session.second.publish(std::forward<_Args>(args)...);
                     }
 
                     bool disconnected() const {

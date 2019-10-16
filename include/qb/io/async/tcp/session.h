@@ -19,17 +19,19 @@
 #define QB_IO_ASYNC_TCP_SESSION_H
 
 #include "../io.h"
-#include "../../prot/tcp.h"
+#include "../../protocol/tcp.h"
 
 namespace qb {
     namespace io {
         namespace async {
             namespace tcp {
 
-                template<typename _Derived, typename _Prot, typename _Server = void>
+                template<typename _Derived,
+                         template<typename _BaseProt> typename _Prot,
+                         typename _Server = void>
                 class session
-                        : public io<_Derived, _Prot> {
-                    using base_t = io<_Derived, _Prot>;
+                        : public io<_Derived, _Prot<protocol::tcp>> {
+                    using base_t = io<_Derived, _Prot<protocol::tcp>>;
                 protected:
                     _Server &_server;
                 public:
@@ -49,10 +51,11 @@ namespace qb {
                     }
                 };
 
-                template<typename _Derived, typename _Prot>
+                template<typename _Derived,
+                         template<typename _BaseProt> typename _Prot>
                 class session<_Derived, _Prot, void>
-                        : public io<_Derived, _Prot> {
-                    using base_t = io<_Derived, _Prot>;
+                        : public io<_Derived, _Prot<protocol::tcp>> {
+                    using base_t = io<_Derived, _Prot<protocol::tcp>>;
                 public:
 
                     session() = default;

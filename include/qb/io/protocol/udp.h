@@ -23,7 +23,7 @@
 
 namespace qb {
     namespace io {
-        namespace prot {
+        namespace protocol {
 
             class udp {
             public:
@@ -134,12 +134,12 @@ namespace qb {
                     return _in_buffer.size();
                 }
 
-                message_type getMessage() {
+                message_type getMessage(int) {
                     return _message;
                 }
             };
 
-        } // namespace prot
+        } // namespace protocol
     } // namespace io
 } // namespace qb
 
