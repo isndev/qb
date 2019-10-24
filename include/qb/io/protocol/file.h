@@ -15,25 +15,25 @@
  *         limitations under the License.
  */
 
-#ifndef QB_IO_ASYNC_EVENT_FILE_H
-#define QB_IO_ASYNC_EVENT_FILE_H
-
-#include "base.h"
+#ifndef             QB_IO_PROT_FILE_H
+# define            QB_IO_PROT_FILE_H
+# include "../system/file.h"
+# include "../stream.h"
 
 namespace qb {
     namespace io {
-        namespace async {
-            namespace event {
+        namespace protocol {
 
-                struct file : base<ev::stat> {
-                    using base_t = base<ev::stat>;
+            class file : public stream<io::sys::file> {
+            public:
+                // Derived class should define :
+                // using message_type = const char *;
+                // int getMessageSize();
+                // message_type getMessage();
+            };
 
-                    file(ev::loop_ref loop) : base_t(loop) {}
-                };
+        } // namespace protocol
+    } // namespace io
+} // namespace qb
 
-            }
-        }
-    }
-}
-
-#endif //QB_IO_ASYNC_EVENT_FILE_H
+#endif // QB_IO_PROT_FILE_H

@@ -15,25 +15,25 @@
  *         limitations under the License.
  */
 
-#ifndef QB_IO_ASYNC_EVENT_FILE_H
-#define QB_IO_ASYNC_EVENT_FILE_H
-
-#include "base.h"
+#ifndef QB_FUNCTIONAL_H
+#define QB_FUNCTIONAL_H
+# include <functional>
 
 namespace qb {
-    namespace io {
-        namespace async {
-            namespace event {
 
-                struct file : base<ev::stat> {
-                    using base_t = base<ev::stat>;
+    template<typename T>
+    void _hash_combine (size_t& seed, const T& val)
+    {
+        seed ^= std::hash<T>()(val) + 0x9e3779b9 + (seed<<6) + (seed>>2);
+    }
 
-                    file(ev::loop_ref loop) : base_t(loop) {}
-                };
-
-            }
-        }
+    template<typename... Types>
+    size_t hash_combine (const Types&... args)
+    {
+        size_t seed = 0;
+        (_hash_combine(seed,args) , ... ); // create hash value with seed over all args
+        return seed;
     }
 }
 
-#endif //QB_IO_ASYNC_EVENT_FILE_H
+#endif //QB_FUNCTIONAL_H

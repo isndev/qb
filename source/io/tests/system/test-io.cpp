@@ -99,6 +99,7 @@ TEST(UDP, Blocking) {
         unsigned short from_port;
         EXPECT_FALSE(listener.read(buffer, 512, from, from_port) <= 0);
         EXPECT_EQ(std::string(buffer), "Hello Test !");
+        std::cout << "Received UDP from " << from << ":" << from_port << std::endl;
         listener.unbind();
     });
     std::this_thread::sleep_for(std::chrono::seconds(3));

@@ -15,4 +15,4 @@
 #         limitations under the License.
 #
 
-#add_subdirectory(system)
+add_subdirectory(system)

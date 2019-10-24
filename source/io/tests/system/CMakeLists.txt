@@ -16,5 +16,5 @@
 #
 
 cxx_gtest(${PROJECT_NAME}-gtest-tcp-udp "${PROJECT_NAME}" test-io.cpp)
-cxx_gtest(${PROJECT_NAME}-gtest-event "${PROJECT_NAME}" test-event.cpp)
-cxx_gtest(${PROJECT_NAME}-gtest-session "${PROJECT_NAME}" test-session.cpp)
+#cxx_gtest(${PROJECT_NAME}-gtest-event "${PROJECT_NAME}" test-event.cpp)
+#cxx_gtest(${PROJECT_NAME}-gtest-session "${PROJECT_NAME}" test-session.cpp)
