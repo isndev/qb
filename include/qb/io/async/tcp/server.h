@@ -50,7 +50,7 @@ namespace qb {
                     }
 
                     template<typename ..._Args>
-                    void stream(_Args ...args) {
+                    void stream(_Args &&...args) {
                         for (auto &session : sessions())
                             session.second.publish(std::forward<_Args>(args)...);
                     }

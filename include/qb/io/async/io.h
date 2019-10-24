@@ -105,7 +105,7 @@ namespace qb {
                 }
 
                 template <typename ..._Args>
-                inline auto publish(_Args ...args) {
+                inline auto publish(_Args &&...args) {
                     if (!(_io_event.events & EV_WRITE))
                         _io_event.set(EV_READ | EV_WRITE);
                     return _prot.publish(std::forward<_Args>(args)...);
@@ -169,7 +169,7 @@ namespace qb {
                 }
 
                 template <typename ..._Args>
-                inline auto publish(_Args ...args) {
+                inline auto publish(_Args &&...args) {
                     if (!(_io_event.events & EV_WRITE))
                         _io_event.set(EV_READ | EV_WRITE);
                     return _prot.publish(std::forward<_Args>(args)...);

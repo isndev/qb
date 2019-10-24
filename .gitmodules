@@ -9,3 +9,7 @@
 [submodule "modules/json"]
 	path = modules/json
 	url = https://github.com/nlohmann/json.git
+[submodule "modules/xml"]
+	path = modules/xml
+	url = https://github.com/zeux/pugixml.git
+	branch = master
