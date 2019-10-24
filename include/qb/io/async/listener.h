@@ -76,7 +76,7 @@ namespace qb {
                 }
 
                 template<typename _Event, typename _Actor, typename ..._Args>
-                _Event &registerEvent(_Actor &actor, _Args ...args) {
+                _Event &registerEvent(_Actor &actor, _Args &&...args) {
                     auto revent = new RegisteredKernelEvent<_Event, _Actor>(_loop, actor);
                     revent->_event.template set<listener, &listener::on<typename _Event::ev_t>>(this);
                     revent->_event._interface = revent;
