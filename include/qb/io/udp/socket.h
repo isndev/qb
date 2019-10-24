@@ -34,7 +34,9 @@ namespace           qb {
             public:
                 constexpr static const std::size_t MaxDatagramSize = 65507;
 
-                socket ();
+                socket();
+                socket(socket const &rhs) = default;
+                socket(SocketHandler handler);
 
                 unsigned short getLocalPort() const;
 

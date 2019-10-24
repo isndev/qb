@@ -21,7 +21,7 @@
 
 namespace qb {
     namespace io {
-        namespace prot {
+        namespace protocol {
 
             template<typename _Stream, char _SEP = '\n'>
             class Base : public _Stream {
@@ -43,7 +43,7 @@ namespace qb {
                 }
             };
 
-        } // namespace prot
+        } // namespace protocol
     } // namespace io
 } // namespace qb
 

@@ -107,7 +107,7 @@
 #  undef EV_USE_POLL
 #  define EV_USE_POLL 0
 # endif
-   
+
 # if HAVE_EPOLL_CTL && HAVE_SYS_EPOLL_H
 #  ifndef EV_USE_EPOLL
 #   define EV_USE_EPOLL EV_FEATURE_BACKENDS
@@ -116,7 +116,7 @@
 #  undef EV_USE_EPOLL
 #  define EV_USE_EPOLL 0
 # endif
-   
+
 # if HAVE_LINUX_AIO_ABI_H
 #  ifndef EV_USE_LINUXAIO
 #   define EV_USE_LINUXAIO EV_FEATURE_BACKENDS
@@ -125,7 +125,7 @@
 #  undef EV_USE_LINUXAIO
 #  define EV_USE_LINUXAIO 0
 # endif
-   
+
 # if HAVE_KQUEUE && HAVE_SYS_EVENT_H
 #  ifndef EV_USE_KQUEUE
 #   define EV_USE_KQUEUE EV_FEATURE_BACKENDS
@@ -134,7 +134,7 @@
 #  undef EV_USE_KQUEUE
 #  define EV_USE_KQUEUE 0
 # endif
-   
+
 # if HAVE_PORT_H && HAVE_PORT_CREATE
 #  ifndef EV_USE_PORT
 #   define EV_USE_PORT EV_FEATURE_BACKENDS
@@ -170,7 +170,7 @@
 #  undef EV_USE_EVENTFD
 #  define EV_USE_EVENTFD 0
 # endif
- 
+
 #endif
 
 /* OS X, in its infinite idiocy, actually HARDCODES
@@ -1863,7 +1863,7 @@ typedef struct
   #include "ev_wrap.h"
 
   static struct ev_loop default_loop_struct;
-  EV_API_DECL struct ev_loop *ev_default_loop_ptr = 0; /* needs to be initialised to make it a definition despite extern */
+  struct ev_loop *ev_default_loop_ptr = 0; /* needs to be initialised to make it a definition despite extern */
 
 #else
 
@@ -2359,7 +2359,7 @@ downheap (ANHE *heap, int N, int k)
 
       heap [k] = heap [c];
       ev_active (ANHE_w (heap [k])) = k;
-      
+
       k = c;
     }
 
@@ -2786,7 +2786,7 @@ ev_supported_backends (void) EV_NOEXCEPT
   if (EV_USE_LINUXAIO) flags |= EVBACKEND_LINUXAIO;
   if (EV_USE_POLL    ) flags |= EVBACKEND_POLL;
   if (EV_USE_SELECT  ) flags |= EVBACKEND_SELECT;
-  
+
   return flags;
 }
 

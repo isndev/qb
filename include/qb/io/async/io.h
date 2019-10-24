@@ -1,6 +1,19 @@
-//
-// Created by isnDev on 9/17/2019.
-//
+/*
+ * qb - C++ Actor Framework
+ * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
 
 #ifndef QB_IO_ASYNC_IO_H
 #define QB_IO_ASYNC_IO_H
@@ -22,6 +35,7 @@ namespace qb {
                 _Prot _prot;
             public:
                 constexpr static const bool has_server = false;
+                using message_type = typename _Prot::message_type;
 
                 input(input const &) = delete;
 
@@ -44,7 +58,7 @@ namespace qb {
                         if (unlikely(ret <= 0))
                             goto error;
                         while ((ret = _prot.getMessageSize()) > 0) {
-                            static_cast<_Derived &>(*this).on(_prot.getMessage(), ret);
+                            static_cast<_Derived &>(*this).on(_prot.getMessage(ret), ret);
                             _prot.flush(ret);
                         }
                     }
@@ -90,10 +104,11 @@ namespace qb {
                     _io_event.start(_prot.out().ident(), EV_WRITE);
                 }
 
-                inline char *publish(char const *data, std::size_t size) {
+                template <typename ..._Args>
+                inline auto publish(_Args &&...args) {
                     if (!(_io_event.events & EV_WRITE))
-                        _io_event.set(EV_WRITE);
-                    return _prot.publish(data, size);
+                        _io_event.set(EV_READ | EV_WRITE);
+                    return _prot.publish(std::forward<_Args>(args)...);
                 }
 
                 void on(event::io &event) {
@@ -132,6 +147,7 @@ namespace qb {
                 _Prot _prot;
             public:
                 constexpr static const bool has_server = false;
+                using message_type = typename _Prot::message_type;
 
                 io(io const &) = delete;
 
@@ -152,10 +168,11 @@ namespace qb {
                     _io_event.start(_prot.in().ident(), EV_READ);
                 }
 
-                inline char *publish(char const *data, std::size_t size) {
+                template <typename ..._Args>
+                inline auto publish(_Args &&...args) {
                     if (!(_io_event.events & EV_WRITE))
                         _io_event.set(EV_READ | EV_WRITE);
-                    return _prot.publish(data, size);
+                    return _prot.publish(std::forward<_Args>(args)...);
                 }
 
                 void on(event::io &event) {
@@ -165,7 +182,7 @@ namespace qb {
                         if (unlikely(ret <= 0))
                             goto error;
                         while ((ret = _prot.getMessageSize()) > 0) {
-                            static_cast<_Derived &>(*this).on(_prot.getMessage(), ret);
+                            static_cast<_Derived &>(*this).on(_prot.getMessage(ret), ret);
                             _prot.flush(ret);
                         }
                     }

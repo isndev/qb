@@ -17,6 +17,7 @@
 
 #include <qb/core/VirtualCore.h>
 #include <qb/system/timestamp.h>
+#include <qb/io/async/listener.h>
 
 #ifdef __APPLE__
 #include <sys/types.h>
@@ -56,9 +57,7 @@ static int pthread_setaffinity_np(pthread_t thread, size_t cpu_size,
 
 namespace qb {
     VirtualCore::VirtualCore(CoreId const id, Main &engine) noexcept
-            : _index(id)
-            , _engine(engine)
-            , _mail_box(engine.getMailBox(id)) {
+            : _index(id), _engine(engine), _mail_box(engine.getMailBox(id)) {
         _ids.reserve(std::numeric_limits<ServiceId>::max() - _nb_service);
         _event_map.reserve(128);
         for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
@@ -174,8 +173,7 @@ namespace qb {
 
     void VirtualCore::__init__actors__() const {
         // Init StaticActors
-        if (std::any_of(_actors.begin(), _actors.end(), [](auto &it) { return !it.second->onInit(); }))
-        {
+        if (std::any_of(_actors.begin(), _actors.end(), [](auto &it) { return !it.second->onInit(); })) {
             LOG_CRIT("Actor at " << *this << " failed to init");
             Main::sync_start.store(Error::BadActorInit, std::memory_order_release);
         }
@@ -188,8 +186,7 @@ namespace qb {
         do {
             std::this_thread::yield();
             ret = Main::sync_start.load(std::memory_order_acquire);
-        }
-        while (ret < total_core);
+        } while (ret < total_core);
         return ret < Error::BadInit;
     }
 
@@ -203,6 +200,9 @@ namespace qb {
                 callback.second->onCallback();
 
             __flush__();
+
+            if (io::async::listener::current.size())
+                io::async::run(EVRUN_ONCE);
 
             if (unlikely(!_actor_to_remove.empty())) {
                 // remove dead actors
@@ -225,6 +225,7 @@ namespace qb {
             LOG_INFO("" << *this << " Stopped normally");
         }
     }
+
     //!Workflow
     // Actor Management
     ActorId VirtualCore::initActor(Actor &actor, bool const is_service, bool const doInit) noexcept {
@@ -290,13 +291,13 @@ namespace qb {
     }
 
     void VirtualCore::unregisterCallback(ActorId const id) noexcept {
-        auto it =_actor_callbacks.find(id);
+        auto it = _actor_callbacks.find(id);
         if (it != _actor_callbacks.end())
             _actor_callbacks.erase(it);
     }
 
     //Event Api
-    ProxyPipe VirtualCore::getProxyPipe(ActorId const dest, ActorId const source) noexcept{
+    ProxyPipe VirtualCore::getProxyPipe(ActorId const dest, ActorId const source) noexcept {
         return {__getPipe__(dest._index), dest, source};
     }
 
@@ -330,7 +331,9 @@ namespace qb {
     //!Event Api
 
     CoreId VirtualCore::getIndex() const noexcept { return _index; }
+
     uint64_t VirtualCore::time() const noexcept { return _nanotimer; }
+
     ServiceId VirtualCore::_nb_service = 0;
     thread_local VirtualCore *VirtualCore::_handler = nullptr;
 }
