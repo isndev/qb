@@ -55,7 +55,7 @@ namespace qb {
                 }
 
                 bool enqueue(size_t const index, T const &t) {
-                    return _producers[index].enqueue(t);
+                    return _producers[index]._ringbuffer.enqueue(t);
                 }
 
                 template <bool _All = true>
