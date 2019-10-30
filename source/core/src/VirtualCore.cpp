@@ -196,7 +196,7 @@ namespace qb {
     void VirtualCore::__workflow__() {
         LOG_INFO("" << *this << " Init Success " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
         while (likely(Main::is_running)) {
-            _nanotimer = Timestamp::nano();
+            _nanotimer = 0;
             __receive__();
 
             for (const auto &callback : _actor_callbacks)
@@ -330,7 +330,10 @@ namespace qb {
     //!Event Api
 
     CoreId VirtualCore::getIndex() const noexcept { return _index; }
-    uint64_t VirtualCore::time() const noexcept { return _nanotimer; }
+    uint64_t VirtualCore::time() noexcept {
+        _nanotimer = _nanotimer ? _nanotimer : Timestamp::nano();
+        return _nanotimer;
+    }
     ServiceId VirtualCore::_nb_service = 0;
     thread_local VirtualCore *VirtualCore::_handler = nullptr;
 }

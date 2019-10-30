@@ -247,7 +247,7 @@ namespace qb {
 
     public:
         CoreId getIndex() const noexcept;
-        uint64_t time() const noexcept;
+        uint64_t time() noexcept;
     };
 
 }
