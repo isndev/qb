@@ -39,6 +39,10 @@ namespace           qb {
                 return _handle;
             }
 
+            int file::fd() const {
+                return _handle;
+            }
+
             void file::open(std::string const &fname, int flags) {
 				close();
 #ifdef _WIN32

@@ -15,27 +15,11 @@
  *         limitations under the License.
  */
 
-#ifndef QB_IO_ASYNC_EVENT_TIMER_H
-#define QB_IO_ASYNC_EVENT_TIMER_H
+#include <openssl/ssl.h>
 
-#include "base.h"
-
-namespace qb {
-    namespace io {
-        namespace async {
-            namespace event {
-
-                struct timer : base<ev::timer> {
-                    using base_t = base<ev::timer>;
-
-                    timer(ev::loop_ref loop) : base_t(loop) {}
-                };
-
-                using timeout = timer;
-
-            }
-        }
+struct OpenSSLInitializer {
+    OpenSSLInitializer() {
+        SSL_load_error_strings();
+        SSL_library_init();
     }
-}
-
-#endif //QB_IO_ASYNC_EVENT_TIMER_H
+} initializer = {};

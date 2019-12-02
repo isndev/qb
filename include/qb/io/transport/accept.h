@@ -15,13 +15,13 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_PROT_ACCEPT_H_
-# define            QB_IO_PROT_ACCEPT_H_
+#ifndef             QB_IO_TRANSPORT_ACCEPT_H_
+# define            QB_IO_TRANSPORT_ACCEPT_H_
 #include "../tcp/listener.h"
 
 namespace qb {
     namespace io {
-        namespace protocol {
+        namespace transport {
 
             class accept {
                 io::tcp::listener _io;
@@ -40,7 +40,7 @@ namespace qb {
                 }
 
                 void flush(std::size_t ) {
-                    _accepted_io.set(SOCKET_INVALID);
+                    _accepted_io = io::tcp::socket();
                 }
 
                 void close() {
@@ -54,8 +54,8 @@ namespace qb {
                 }
             };
 
-        } // namespace protocol
+        } // namespace transport
     } // namespace io
 } // namespace qb
 
-#endif // QB_IO_PROT_ACCEPT_H_
+#endif // QB_IO_TRANSPORT_ACCEPT_H_

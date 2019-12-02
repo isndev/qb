@@ -20,5 +20,10 @@
 #include "system/file.cpp"
 #include "tcp/socket.cpp"
 #include "tcp/listener.cpp"
+#ifdef QB_IO_WITH_SSL
+#include "tcp/ssl/init.cpp"
+#include "tcp/ssl/socket.cpp"
+#include "tcp/ssl/listener.cpp"
+#endif
 #include "udp/socket.cpp"
 #include "async/listener.cpp"

@@ -23,6 +23,19 @@
 
 constexpr const unsigned short port = 64322;
 
+TEST(IP, Resolving) {
+    EXPECT_EQ(qb::io::ip::Any, qb::io::ip(0, 0, 0, 0));
+    EXPECT_GT(qb::io::ip::None, qb::io::ip::Any);
+    EXPECT_LT(qb::io::ip::Any, qb::io::ip::None);
+    EXPECT_GE(qb::io::ip::None, qb::io::ip::Any);
+    EXPECT_LE(qb::io::ip::Any, qb::io::ip::None);;
+    EXPECT_EQ(qb::io::ip::None, qb::io::ip("255.255.255.255"));
+    EXPECT_EQ(qb::io::ip::LocalHost, qb::io::ip(std::string("127.0.0.1")));
+    EXPECT_EQ(qb::io::ip("localhost"), qb::io::ip(std::string("127.0.0.1")));
+    EXPECT_EQ(qb::io::ip("192.168.0.123").toString(), "192.168.0.123");
+    EXPECT_NE(qb::io::ip::None, qb::io::ip("google.com"));
+}
+
 TEST(TCP, Blocking) {
     std::thread tlistener([]() {
         qb::io::tcp::listener listener;
@@ -145,19 +158,4 @@ TEST(UDP, NonBlocking) {
 
     tlistener.join();
     tsender.join();
-}
-
-
-TEST(IP, Resolving) {
-    EXPECT_EQ(qb::io::ip::Any, qb::io::ip(0, 0, 0, 0));
-    EXPECT_EQ(qb::io::ip::None, qb::io::ip("255.255.255.255"));
-    EXPECT_EQ(qb::io::ip::LocalHost, qb::io::ip(std::string("127.0.0.1")));
-    EXPECT_NE(qb::io::ip::None, qb::io::ip("google.com"));
-    EXPECT_GT(qb::io::ip::None, qb::io::ip::Any);
-    EXPECT_LT(qb::io::ip::Any, qb::io::ip::None);
-    EXPECT_GE(qb::io::ip::None, qb::io::ip::Any);
-    EXPECT_LE(qb::io::ip::Any, qb::io::ip::None);
-    qb::io::ip ip("192.168.0.123");
-    std::cout << ip << std::endl;
-    EXPECT_EQ(ip.toString(), "192.168.0.123");
 }

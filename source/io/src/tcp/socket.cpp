@@ -39,10 +39,10 @@ namespace qb {
                     : sys::socket<SocketType::TCP>() {
             }
 
-            socket::socket(SocketHandler fd)
-                    : sys::socket<SocketType::TCP>() {
-                _handle = fd;
-            }
+//            socket::socket(SocketHandler fd)
+//                    : sys::socket<SocketType::TCP>() {
+//                _handle = fd;
+//            }
 
             unsigned short socket::getLocalPort() const {
                 if (good()) {
@@ -174,7 +174,8 @@ namespace qb {
             }
 
             int socket::read(void *data, std::size_t size) const {
-                return ::recv(_handle, static_cast<char *>(data), static_cast<int>(size), flags);
+                const auto ret = ::recv(_handle, static_cast<char *>(data), static_cast<int>(size), flags);
+                return ret ? ret : -1;
             }
 
             int socket::write(const void *data, std::size_t size) const {

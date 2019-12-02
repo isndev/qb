@@ -62,7 +62,8 @@ namespace pg
 
             accumulate_and_print(output, unit, cum, mean, q50, q99, q999, outOufBoundCount, std::chrono::duration_cast<TRatio>(maxDuration));
 
-            output  << "# Mean  " << std::setw(10) << std::chrono::duration_cast<TRatio>(mean * bucketDuration).count() << unit << std::setw(10)
+            if (std::chrono::duration_cast<TRatio>(mean * bucketDuration).count())
+                output  << "# Mean  " << std::setw(10) << std::chrono::duration_cast<TRatio>(mean * bucketDuration).count() << unit << std::setw(10)
                     << "# Q50   " <<  std::setw(10) << std::chrono::duration_cast<TRatio>(q50 * bucketDuration).count() << unit << std::setw(10)
                     << "# Q99   " <<  std::setw(10) << std::chrono::duration_cast<TRatio>(q99 * bucketDuration).count() << unit << std::setw(10)
                     << "# Q99.9 " <<  std::setw(10) << std::chrono::duration_cast<TRatio>(q999 * bucketDuration).count() << unit << std::endl;

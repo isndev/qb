@@ -20,7 +20,7 @@ project(${QB_PREFIX}-io LANGUAGES CXX VERSION ${QB_VERSION} DESCRIPTION "A simpl
 cxx_library(NAME ${PROJECT_NAME}
         FLAGS ${cxx_default_lib}
         SOURCES "src/io-all.cpp"
-        DEPENDENCIES ev)
+        DEPENDENCIES "ev " OpenSSL::SSL)
 set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION})
 target_include_directories(${PROJECT_NAME} INTERFACE
         "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
