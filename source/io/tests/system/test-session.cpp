@@ -16,30 +16,25 @@
  */
 
 #include <gtest/gtest.h>
-#include <qb/io/async/listener.h>
-#include <qb/io/async/tcp/server.h>
-#include <qb/io/async/tcp/session.h>
+#include <qb/io/async.h>
 #include <qb/io/protocol/cmd.h>
-#include <qb/io/protocol/file.h>
-#include <qb/io/protocol/accept.h>
+#include <qb/io/transport/file.h>
 #include <thread>
 #include <chrono>
 
 using namespace qb::io;
 
 class FileSession
-        : public async::input<FileSession, protocol::cmd<protocol::file>>
+        : public use<FileSession>::input<protocol::cmd<transport::file>>
         , public ostream<sys::file> {
 public:
 
-    void on(char const *message, std::size_t size) {
-        this->publish(message, size);
+    void on(message msg, std::size_t size) {
+        this->publish(msg, size);
     }
-
-    bool disconnected() const { return true; }
 };
 
-TEST(Session, FromStdinToStdout) {
+TEST(Session, DISABLED_FromStdinToStdout) {
     async::init();
 
     FileSession session;
@@ -48,6 +43,8 @@ TEST(Session, FromStdinToStdout) {
     session.start();
     async::run(EVRUN_ONCE);
 }
+
+#ifndef _WIN32
 
 TEST(Session, FromFileToStdout) {
     async::init();
@@ -61,26 +58,27 @@ TEST(Session, FromFileToStdout) {
     async::run(EVRUN_ONCE);
 }
 
+#endif
+
 class MyServer;
 
-class MyClient : public async::tcp::session<MyClient, protocol::cmd, MyServer> {
-    using base_t = async::tcp::session<MyClient, protocol::cmd, MyServer>;
+class MyClient : public use<MyClient>::tcp::client<protocol::cmd, MyServer> {
 public:
     MyClient(MyServer &server)
-            : base_t(server) {}
+            : client(server) {}
 
-    void on(char const *message, std::size_t size) {
+    void on(message msg, std::size_t size) {
         std::cout << "read " << size << " bytes" << std::endl;
     }
 };
 
-class MyServer : public async::tcp::server<MyServer, MyClient> {
-    using base_t = async::tcp::server<MyServer, MyClient>;
+class MyServer : public use<MyServer>::tcp::server<MyClient> {
 public:
 
     void on(MyClient &client) {
         std::cout << "new client connected" << std::endl;
     }
+
 };
 
 TEST(Session, TcpAccept) {
@@ -104,8 +102,7 @@ TEST(Session, TcpAccept) {
     t.join();
 }
 
-class TcpClient : public async::tcp::session<MyClient, protocol::cmd> {
-    using base_t = async::tcp::session<MyClient, protocol::cmd>;
+class TcpClient : public use<TcpClient>::tcp::client<protocol::cmd> {
 public:
 
     void on(char const *message, std::size_t size) {
@@ -132,6 +129,110 @@ TEST(Session, TcpConnect) {
         client.publish(msg, sizeof(msg));
         async::run(EVRUN_ONCE);
     });
+    async::run(EVRUN_ONCE);
+    async::run(EVRUN_ONCE);
+    t.join();
+}
+
+// secure session
+class MySecureServer;
+
+class MySecureClient : public use<MySecureClient>::tcp::ssl::client<protocol::cmd, MySecureServer> {
+public:
+    MySecureClient(MySecureServer &server)
+            : client(server) {}
+
+    void on(char const *message, std::size_t size) {
+        std::cout << "read " << size << " bytes" << std::endl;
+    }
+};
+
+void ShowCerts(SSL* ssl)
+{
+    X509 *cert;
+    char *line;
+
+    cert = SSL_get_peer_certificate(ssl); /* Get certificates (if available) */
+    if ( cert != NULL )
+    {
+        printf("Server certificates:\n");
+        line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
+        printf("Subject: %s\n", line);
+        free(line);
+        line = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0);
+        printf("Issuer: %s\n", line);
+        free(line);
+        X509_free(cert);
+    }
+    else
+        printf("No certificates.\n");
+}
+
+class MySecureServer : public use<MySecureServer>::tcp::ssl::server<MySecureClient> {
+public:
+
+    void on(MySecureClient &client) {
+        std::cout << "new client connected" << std::endl;
+
+    }
+
+};
+
+TEST(Session, SecureTcpAccept) {
+    async::init();
+
+    MySecureServer server;
+    server.in().init(tcp::ssl::create_server_context(SSLv23_server_method(), "cert.pem", "key.pem"));
+    server.in().listen(60123);
+    server.start();
+
+    std::thread t([]() {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        tcp::ssl::socket sock;
+        sock.connect("127.0.0.1", 60123);
+        const char msg[] = "hello world !\nfoo\nbar\n";
+        sock.write(msg, sizeof(msg));
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        sock.close();
+    });
+    async::run(EVRUN_ONCE);
+    async::run(EVRUN_ONCE);
+    async::run(EVRUN_ONCE);
+    async::run(EVRUN_ONCE);
+    t.join();
+}
+
+class SecureTcpClient : public use<SecureTcpClient>::tcp::ssl::client<protocol::cmd> {
+public:
+
+    void on(char const *message, std::size_t size) {
+        std::cout << "client read " << size << " bytes" << std::endl;
+    }
+
+};
+
+TEST(Session, SecureTcpConnect) {
+    async::init();
+
+    MySecureServer server;
+    server.in().init(tcp::ssl::create_server_context(SSLv23_server_method(), "cert.pem", "key.pem"));
+    server.in().listen(60123);
+    server.start();
+
+    std::thread t([]() {
+        async::init();
+        SecureTcpClient client;
+        if (SocketStatus::Done != client.in().connect("127.0.0.1", 60123)) {
+            throw std::runtime_error("could not connect");
+        }
+        client.start();
+
+        const char msg[] = "hello world !\nfoo\nbar\n";
+        client.publish(msg, sizeof(msg));
+        async::run(EVRUN_ONCE);
+    });
+    async::run(EVRUN_ONCE);
+    async::run(EVRUN_ONCE);
     async::run(EVRUN_ONCE);
     async::run(EVRUN_ONCE);
     t.join();

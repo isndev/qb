@@ -60,7 +60,7 @@ namespace           qb {
         }
 
         void ip::resolve(const std::string &address) {
-            _address = 0;
+            _address = ip::None.toInteger();
 
             if (address == "255.255.255.255") {
                 // The broadcast address needs to be handled explicitly,
@@ -76,17 +76,28 @@ namespace           qb {
                     _address = static_cast<uint32_t>(addr.s_addr);
                 } else {
                     // Not a valid address, try to convert it as a host name
-                    addrinfo hints;
-                    std::memset(&hints, 0, sizeof(hints));
-                    hints.ai_family = AF_INET;
-                    addrinfo *result = NULL;
-                    if (getaddrinfo(address.c_str(), NULL, &hints, &result) == 0) {
-                        if (result) {
-                            uint32_t newip = reinterpret_cast<sockaddr_in *>(result->ai_addr)->sin_addr.s_addr;
-                            freeaddrinfo(result);
-                            _address = newip;
+                    struct addrinfo hints;
+                    memset(&hints, 0, sizeof(hints));
+                    hints.ai_family = AF_INET; /* v4 or v6 is fine. */
+                    hints.ai_socktype = SOCK_STREAM;
+                    hints.ai_protocol = IPPROTO_TCP; /* We want a TCP socket */
+                    hints.ai_flags = AI_PASSIVE;    /* For wildcard IP address */
+
+                    /* Look up the hostname. */
+                    struct addrinfo* answer = nullptr;
+                    int err = getaddrinfo(address.c_str(), nullptr, &hints, &answer);
+                    if (!err) {
+                        struct addrinfo* rp = answer;
+                        while ( rp != nullptr) {
+                            struct sockaddr_in* a = reinterpret_cast<struct sockaddr_in*>(rp->ai_addr);
+
+                            if (a->sin_addr.s_addr) {
+                                _address = a->sin_addr.s_addr;
+                            }
+                            rp = rp->ai_next;
                         }
                     }
+                    freeaddrinfo(answer);
                 }
             }
         }

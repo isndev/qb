@@ -15,8 +15,8 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_PROT_UDP_H_
-# define            QB_IO_PROT_UDP_H_
+#ifndef             QB_IO_TRANSPORT_UDP_H_
+# define            QB_IO_TRANSPORT_UDP_H_
 # undef min
 # undef max
 # include <qb/utility/functional.h>
@@ -25,7 +25,7 @@
 
 namespace qb {
     namespace io {
-        namespace protocol {
+        namespace transport {
 
             class udp {
             public:
@@ -141,8 +141,8 @@ namespace qb {
                 }
             };
 
-        } // namespace protocol
+        } // namespace transport
     } // namespace io
 } // namespace qb
 
-#endif // QB_IO_PROT_UDP_H_
+#endif // QB_IO_TRANSPORT_UDP_H_

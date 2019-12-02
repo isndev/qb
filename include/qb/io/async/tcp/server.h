@@ -18,52 +18,63 @@
 #ifndef QB_IO_ASYNC_TCP_SERVER_H
 #define QB_IO_ASYNC_TCP_SERVER_H
 
+#include <unordered_map>
+
 #include "../io.h"
-#include "../../protocol/accept.h"
+#include "../../transport/accept.h"
+#include "../../transport/saccept.h"
 
 namespace qb {
     namespace io {
         namespace async {
             namespace tcp {
 
+                namespace internal {
+
+                    template<typename _Derived, typename _Session, typename _Prot>
+                    class server : public input<server<_Derived, _Session, _Prot>, _Prot> {
+                    public:
+                        using base_t = input<server<_Derived, _Session, _Prot>, _Prot>;
+                        using session_map_t = std::unordered_map<uint64_t, _Session>;
+                    private:
+                        session_map_t _sessions;
+                    public:
+                        server() = default;
+
+                        session_map_t &sessions() { return _sessions; }
+
+                        void on(typename _Prot::message_type new_io, std::size_t size) {
+                            const auto &it = sessions().emplace(
+                                    std::piecewise_construct,
+                                    std::forward_as_tuple(new_io.ident()),
+                                    std::forward_as_tuple(std::ref(static_cast<_Derived &>(*this)))
+                            );
+                            it.first->second.in() = new_io;
+                            it.first->second.start();
+                            static_cast<_Derived &>(*this).on(it.first->second);
+                        }
+
+                        void on(event::disconnected const &) const {
+                            throw std::runtime_error("Server had been disconnected");
+                        }
+
+                        template<typename ..._Args>
+                        void stream(_Args &&...args) {
+                            for (auto &session : sessions())
+                                session.second.publish(std::forward<_Args>(args)...);
+                        }
+
+                        void disconnected(int ident) {
+                            _sessions.erase(ident);
+                        }
+                    };
+                }
+
                 template<typename _Derived, typename _Session>
-                class server : public input<server<_Derived, _Session>, protocol::accept> {
-                public:
-                    using base_t = input<server<_Derived, _Session>, protocol::accept>;
-                    using session_map_t = std::unordered_map<uint64_t, _Session>;
-                private:
-                    session_map_t _sessions;
-                public:
-                    server() = default;
+                using server = internal::server<_Derived, _Session, transport::accept>;
 
-                    session_map_t &sessions() { return _sessions; }
-
-                    void on(protocol::accept::message_type new_io, std::size_t size) {
-                        const auto &it = sessions().emplace(
-                                std::piecewise_construct,
-                                std::forward_as_tuple(new_io.ident()),
-                                std::forward_as_tuple(std::ref(static_cast<_Derived &>(*this)))
-                        );
-                        it.first->second.in().set(new_io.ident());
-                        it.first->second.start();
-                        static_cast<_Derived &>(*this).on(it.first->second);
-                    }
-
-                    template<typename ..._Args>
-                    void stream(_Args &&...args) {
-                        for (auto &session : sessions())
-                            session.second.publish(std::forward<_Args>(args)...);
-                    }
-
-                    bool disconnected() const {
-                        throw std::runtime_error("Server had been disconnected");
-                        return true;
-                    }
-
-                    void disconnected(int ident) {
-                        _sessions.erase(ident);
-                    }
-                };
+                template<typename _Derived, typename _Session>
+                using ssl_server = internal::server<_Derived, _Session, transport::saccept>;
 
             }
         }

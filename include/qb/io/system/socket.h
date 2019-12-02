@@ -27,6 +27,9 @@ namespace           qb {
             template<SocketType _Type>
             class QB_API socket {
             protected:
+#ifdef _WIN32
+                int           _fd;
+#endif
                 SocketHandler _handle;
 
                 void init() {
@@ -58,6 +61,9 @@ namespace           qb {
                                 std::cerr << "Failed to enable broadcast on UDP socket" << std::endl;
                         }
                         _handle = handle;
+#ifdef _WIN32
+                        _fd = _open_osfhandle(handle, 0);
+#endif
                     } else {
                         throw std::runtime_error("Failed to init socket");
                     }
@@ -75,6 +81,14 @@ namespace           qb {
 
                 SocketHandler ident() const {
                     return _handle;
+                }
+
+                int fd() const {
+#ifdef _WIN32
+                    return _fd;
+#else
+                    return _handle;
+#endif
                 }
 
                 void set(SocketHandler new_handle) {

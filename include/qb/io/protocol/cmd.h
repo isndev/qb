@@ -23,8 +23,7 @@ namespace qb {
     namespace io {
         namespace protocol {
 
-
-            template<typename _IO_, char _SEP = '\n'>
+            template<typename _IO_>
             class cmd : public _IO_ {
             public:
                 using message_type = const char *;
@@ -33,7 +32,7 @@ namespace qb {
                     auto &buffer = this->_in_buffer;
                     auto i = buffer.begin();
                     while (i < buffer.end()) {
-                        if (buffer.data()[i] == _SEP)
+                        if (buffer.data()[i] == '\n')
                             return i - buffer.begin() + 1;
                         ++i;
                     }
