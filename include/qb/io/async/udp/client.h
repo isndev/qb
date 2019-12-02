@@ -15,10 +15,11 @@
  *         limitations under the License.
  */
 
-#ifndef QB_IO_ASYNC_UDP_SESSION_H
-#define QB_IO_ASYNC_UDP_SESSION_H
+#ifndef QB_IO_ASYNC_UDP_CLIENT_H
+#define QB_IO_ASYNC_UDP_CLIENT_H
 
 #include "../io.h"
+#include "../../transport/udp.h"
 
 namespace qb {
     namespace io {
@@ -28,20 +29,20 @@ namespace qb {
                 template<typename _Derived,
                          template<typename _BaseProt> typename _Prot,
                          typename _Server = void>
-                class session
-                        : public protocol::udp::identity
-                        , public _Prot<protocol::udp> {
+                class client
+                        : public transport::udp::identity
+                        , public _Prot<transport::udp> {
                     friend _Server;
                 protected:
                     _Server &_server;
                 public:
                     constexpr static const bool has_server = false;
 
-                    session(_Server &server)
+                    client(_Server &server)
                             :  _server(server) {}
 
-                    inline protocol::udp::identity &ident() {
-                        return static_cast<protocol::udp::identity &>(*this);
+                    inline transport::udp::identity &ident() {
+                        return static_cast<transport::udp::identity &>(*this);
                     }
 
                     inline _Server &server() {
@@ -56,18 +57,18 @@ namespace qb {
 
 //                template<typename _Derived, typename _Prot>
 //                class session<_Derived, _Prot, void>
-//                        : public protocol::udp::identity
+//                        : public transport::udp::identity
 //                        , public io<_Derived, _Prot> {
 //                protected:
 //                public:
 //                    constexpr static const bool has_server = false;
 
 //                    session() {
-//                        static_cast<protocol::udp::identity &>(*this) = { this->in(); }
+//                        static_cast<transport::udp::identity &>(*this) = { this->in(); }
 //                    };
 
 //                    char *publish(const char *data, std::size_t size) {
-//                        return _server.publish(static_cast<protocol::udp::identity &>(*this), data, size);
+//                        return _server.publish(static_cast<transport::udp::identity &>(*this), data, size);
 //                    }
 
 //                };
@@ -77,4 +78,4 @@ namespace qb {
     }
 }
 
-#endif //QB_IO_ASYNC_UDP_SESSION_H
+#endif //QB_IO_ASYNC_UDP_CLIENT_H

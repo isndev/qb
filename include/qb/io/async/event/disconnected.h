@@ -15,25 +15,21 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_PROT_FILE_H
-# define            QB_IO_PROT_FILE_H
-# include "../system/file.h"
-# include "../stream.h"
+#ifndef QB_IO_ASYNC_EVENT_DISCONNECTED_H
+#define QB_IO_ASYNC_EVENT_DISCONNECTED_H
 
 namespace qb {
     namespace io {
-        namespace protocol {
+        namespace async {
+            namespace event {
 
-            class file : public stream<io::sys::file> {
-            public:
-                // Derived class should define :
-                // using message_type = const char *;
-                // int getMessageSize();
-                // message_type getMessage();
-            };
+                struct disconnected {
+                    int reason;
+                };
 
-        } // namespace protocol
-    } // namespace io
-} // namespace qb
+            }
+        }
+    }
+}
 
-#endif // QB_IO_PROT_FILE_H
+#endif //QB_IO_ASYNC_EVENT_DISCONNECTED_H

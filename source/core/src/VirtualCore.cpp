@@ -115,11 +115,11 @@ namespace qb {
                 auto i = pipe.begin();
                 while (i < pipe.end()) {
                     const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
-                    if (!try_send(event))
-                        break;
+                    while (unlikely(!try_send(event)))
+                        std::this_thread::yield();
                     i += event.bucket_size;
                 }
-                pipe.reset(i);
+                pipe.reset();
             }
         }
     }
@@ -133,11 +133,11 @@ namespace qb {
                 auto i = pipe.begin();
                 while (i < pipe.end()) {
                     const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
-                    if (!try_send(event))
-                        break;
+                    while (unlikely(!try_send(event)))
+                        std::this_thread::yield();
                     i += event.bucket_size;
                 }
-                pipe.reset(i);
+                pipe.reset();
             }
         }
         return ret;
@@ -164,11 +164,11 @@ namespace qb {
 #endif
 #endif
         _actor_to_remove.reserve(_actors.size());
-
         if (!ret) {
             LOG_CRIT("" << *this << " Init Failed");
             Main::sync_start.store(Error::BadInit, std::memory_order_release);
         }
+        _nanotimer = Timestamp::nano();
     }
 
     void VirtualCore::__init__actors__() const {
@@ -193,7 +193,12 @@ namespace qb {
     void VirtualCore::__workflow__() {
         LOG_INFO("" << *this << " Init Success " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
         while (likely(Main::is_running)) {
-            _nanotimer = Timestamp::nano();
+            if (io::async::listener::current.size()) {
+                io::async::run(EVRUN_ONCE);
+                _nanotimer = io::async::listener::current.loop().now() * 1000;
+            } else
+                _nanotimer = Timestamp::nano();
+
             __receive__();
 
             for (const auto &callback : _actor_callbacks)

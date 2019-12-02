@@ -52,6 +52,7 @@ namespace           qb {
                 file(std::string const &fname, int flags = O_RDWR);
 
                 int ident() const;
+                int fd() const;
                 void open(std::string const &fname, int flags = O_RDWR);
                 void open(int fd);
                 int write(const char *data, std::size_t size);
