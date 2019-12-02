@@ -17,10 +17,21 @@
 
 project(${QB_PREFIX}-io LANGUAGES CXX VERSION ${QB_VERSION} DESCRIPTION "A simple io library")
 
-cxx_library(NAME ${PROJECT_NAME}
-        FLAGS ${cxx_default_lib}
-        SOURCES "src/io-all.cpp"
-        DEPENDENCIES "ev " OpenSSL::SSL)
+find_package(OpenSSL)
+if (OPENSSL_FOUND)
+    include_directories(${OPENSSL_INCLUDE_DIR})
+    cxx_library(NAME ${PROJECT_NAME}
+            FLAGS ${cxx_default_lib}
+            SOURCES "src/io-all.cpp"
+            DEPENDENCIES "ev " OpenSSL::SSL)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC QB_IO_WITH_SSL)
+else()
+    cxx_library(NAME ${PROJECT_NAME}
+            FLAGS ${cxx_default_lib}
+            SOURCES "src/io-all.cpp"
+            DEPENDENCIES ev)
+endif()
+
 set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION})
 target_include_directories(${PROJECT_NAME} INTERFACE
         "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
