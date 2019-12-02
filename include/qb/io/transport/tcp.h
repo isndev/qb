@@ -15,27 +15,25 @@
  *         limitations under the License.
  */
 
-#ifndef QB_IO_ASYNC_EVENT_TIMER_H
-#define QB_IO_ASYNC_EVENT_TIMER_H
-
-#include "base.h"
+#ifndef             QB_IO_TRANSPORT_TCP_H
+# define            QB_IO_TRANSPORT_TCP_H
+# include "../tcp/socket.h"
+# include "../stream.h"
 
 namespace qb {
     namespace io {
-        namespace async {
-            namespace event {
+        namespace transport {
 
-                struct timer : base<ev::timer> {
-                    using base_t = base<ev::timer>;
+            class tcp : public stream<io::tcp::socket> {
+            public:
+                // Derived class should define :
+                // using message_type = const char *;
+                // int getMessageSize();
+                // message_type getMessage();
+            };
 
-                    timer(ev::loop_ref loop) : base_t(loop) {}
-                };
+        } // namespace transport
+    } // namespace io
+} // namespace qb
 
-                using timeout = timer;
-
-            }
-        }
-    }
-}
-
-#endif //QB_IO_ASYNC_EVENT_TIMER_H
+#endif // QB_IO_TRANSPORT_TCP_H

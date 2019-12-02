@@ -42,7 +42,7 @@ namespace qb {
                         _in_buffer.allocate_back(bucket_read),
                         bucket_read
                 );
-                if (likely(ret > 0))
+                if (likely(ret >= 0))
                     _in_buffer.free_back(bucket_read - ret);
                 return ret;
             }

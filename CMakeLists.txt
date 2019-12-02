@@ -23,7 +23,7 @@ set(QB_PREFIX ${PROJECT_NAME})
 string(TOUPPER ${QB_PREFIX} QB_PREFIX_UPPER)
 set(QB_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 set(QB_VERSION_MAJOR 1)
-set(QB_VERSION_MINOR 0)
+set(QB_VERSION_MINOR 5)
 set(QB_VERSION_PATCH 0)
 set(QB_VERSION_TWEAK 0)
 set(QB_VERSION "${QB_VERSION_MAJOR}.${QB_VERSION_MINOR}.${QB_VERSION_PATCH}.${QB_VERSION_TWEAK}")
@@ -53,9 +53,10 @@ if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
 endif()
 
+set(BUILD_TESTING OFF)
 if (${QB_PREFIX_UPPER}_BUILD_TEST)
-    include(CTest)
-    enable_testing()
+#    include(CTest)
+#    enable_testing()
     if (${QB_PREFIX_UPPER}_BUILD_BENCHMARK)
         # add google benchmark module
         set(BENCHMARK_DOWNLOAD_DEPENDENCIES ON CACHE BOOL "" FORCE)
@@ -88,6 +89,12 @@ config_compiler_and_linker()  # Defined in internal_utils.cmake.
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
+
+find_package(OpenSSL)
+if (OPENSSL_FOUND)
+    include_directories(${OPENSSL_INCLUDE_DIR})
+    add_compile_definitions(QB_IO_WITH_SSL=1)
+endif()
 
 # IO Projects
 add_subdirectory(modules/ev)

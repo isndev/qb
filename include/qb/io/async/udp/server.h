@@ -19,7 +19,7 @@
 #define QB_IO_ASYNC_UDP_SERVER_H
 
 #include "../io.h"
-#include "../../protocol/udp.h"
+#include "../../transport/udp.h"
 
 namespace qb {
     namespace io {
@@ -27,10 +27,10 @@ namespace qb {
             namespace udp {
 
                 template<typename _Derived, typename _Session>
-                class server : public io<server<_Derived, _Session>, protocol::udp> {
+                class server : public io<server<_Derived, _Session>, transport::udp> {
                 public:
-                    using base_t = io<server<_Derived, _Session>, protocol::udp>;
-                    using session_map_t = std::unordered_map<protocol::udp::identity, _Session, protocol::udp::identity::hasher>;
+                    using base_t = io<server<_Derived, _Session>, transport::udp>;
+                    using session_map_t = std::unordered_map<transport::udp::identity, _Session, transport::udp::identity::hasher>;
                 private:
                     session_map_t _sessions;
                 public:
@@ -38,7 +38,7 @@ namespace qb {
 
                     session_map_t &sessions() { return _sessions; }
 
-                    void on(protocol::udp::message_type message, std::size_t size) {
+                    void on(transport::udp::message_type message, std::size_t size) {
                         auto it = _sessions.find(message.ident);
                         if (it == _sessions.end())
                         {
@@ -65,7 +65,7 @@ namespace qb {
                         return true;
                     }
 
-                    void disconnected(protocol::udp::identity ident) {
+                    void disconnected(transport::udp::identity ident) {
                         _sessions.erase(ident);
                     }
                 };

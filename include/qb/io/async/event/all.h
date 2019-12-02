@@ -19,7 +19,9 @@
 #define QB_IO_ASYNC_EVENT_ALL_H
 
 //#include "signal.h"
-#include "io.h"
 //#include "file.h"
+#include "io.h"
+#include "timer.h"
+#include "disconnected.h"
 
 #endif //QB_IO_ASYNC_EVENT_ALL_H

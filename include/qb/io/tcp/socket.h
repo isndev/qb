@@ -34,7 +34,7 @@ namespace           qb {
             public:
                 socket();
                 socket(socket const &rhs) = default;
-                socket(SocketHandler fd);
+//                socket(SocketHandler fd);
 
                 ip getRemoteAddress() const;
                 unsigned short getLocalPort() const;
