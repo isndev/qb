@@ -134,6 +134,7 @@ TEST(Session, TcpConnect) {
     t.join();
 }
 
+#ifdef QB_IO_WITH_SSL
 // secure session
 class MySecureServer;
 
@@ -237,3 +238,5 @@ TEST(Session, SecureTcpConnect) {
     async::run(EVRUN_ONCE);
     t.join();
 }
+
+#endif

@@ -90,12 +90,6 @@ config_compiler_and_linker()  # Defined in internal_utils.cmake.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
 
-find_package(OpenSSL)
-if (OPENSSL_FOUND)
-    include_directories(${OPENSSL_INCLUDE_DIR})
-    add_compile_definitions(QB_IO_WITH_SSL=1)
-endif()
-
 # IO Projects
 add_subdirectory(modules/ev)
 add_subdirectory(modules/json)
