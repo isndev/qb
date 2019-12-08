@@ -25,9 +25,13 @@
 #include "async/udp/server.h"
 #include "async/udp/client.h"
 
-//#ifdef QB_IO_WITH_SSL
-//#include "async/tcp/ssl/server"
-//#endif
+#include "transport/accept.h"
+#include "transport/tcp.h"
+
+#ifdef QB_IO_WITH_SSL
+#include "transport/saccept.h"
+#include "transport/stcp.h"
+#endif
 
 namespace qb {
     namespace io {
@@ -44,18 +48,18 @@ namespace qb {
             struct tcp {
 
                 template <typename _Client>
-                using server = async::tcp::server<_Derived, _Client>;
+                using server = async::tcp::server<_Derived, _Client, transport::accept>;
 
                 template <template<typename _Transport> typename _Protocol, typename _Server = void>
-                using client = async::tcp::client<_Derived, _Protocol, _Server>;
+                using client = async::tcp::client<_Derived, _Protocol, transport::tcp, _Server>;
 
 #ifdef QB_IO_WITH_SSL
                 struct ssl {
                     template <typename _Client>
-                    using server = async::tcp::ssl_server<_Derived, _Client>;
+                    using server = async::tcp::server<_Derived, _Client, transport::saccept>;
 
                     template <template<typename _BaseProtocol> typename _Protocol, typename _Server = void>
-                    using client = async::tcp::ssl_client<_Derived, _Protocol, _Server>;
+                    using client = async::tcp::client<_Derived, _Protocol, transport::stcp, _Server>;
                 };
 #endif
             };
@@ -75,11 +79,6 @@ namespace qb {
             using timeout = async::with_timeout<_Derived>;
 
         };
-
-        // from<_Derived>::input<protocol::cmd<type>>
-        // from<_Derived>::output<protocol::cmd<type>>
-        // from<_Derived>::tcp::server::<protocol::cmd<>>
-        // from<_Derived>::output<protocol::cmd<>>
 
     } // namespace io
 } // namespace qb

@@ -94,7 +94,7 @@ EV_CPP(extern "C" {)
 #endif
 
 #ifndef EV_STAT_ENABLE
-# define EV_STAT_ENABLE 0//EV_FEATURE_WATCHERS
+# define EV_STAT_ENABLE EV_FEATURE_WATCHERS
 #endif
 
 #ifndef EV_PREPARE_ENABLE

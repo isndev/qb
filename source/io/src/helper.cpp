@@ -83,8 +83,6 @@ namespace           qb {
 
         SocketInitializer GlobalInitializer;
 #else
-        #include                <errno.h>
-        #include                <fcntl.h>
 
         sockaddr_in helper::createAddress(uint32_t address, unsigned short port)
         {
