@@ -92,8 +92,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
 
 # IO Projects
 add_subdirectory(modules/ev)
-add_subdirectory(modules/json)
-add_subdirectory(modules/xml)
+#add_subdirectory(modules/json)
+#add_subdirectory(modules/xml)
 add_subdirectory(source/io)
 
 #TCMALLOC only available on linux for the moment

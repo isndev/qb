@@ -16,8 +16,8 @@
  */
 
 #include "helper.cpp"
-#include "ip.cpp"
 #include "system/file.cpp"
+#include "ip.cpp"
 #include "tcp/socket.cpp"
 #include "tcp/listener.cpp"
 #ifdef QB_IO_WITH_SSL

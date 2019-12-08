@@ -21,7 +21,7 @@
 #include <chrono>
 #include <qb/io/async/listener.h>
 #include <qb/io/async/event/all.h>
-#include <qb/io/tcp/listener.h>
+#include <qb/io/system/file.h>
 
 struct FakeActor {
     int nb_events = 0;
@@ -29,10 +29,10 @@ struct FakeActor {
 
     bool isAlive() { return true; }
 
-//    void on(qb::io::async::event::signal<SIGINT> const &event) {
-//        EXPECT_EQ(SIGINT, event.signum);
-//        ++nb_events;
-//    }
+    void on(qb::io::async::event::signal<SIGINT> const &event) {
+        EXPECT_EQ(SIGINT, event.signum);
+        ++nb_events;
+    }
 
     void on(qb::io::async::event::io const &event) {
         EXPECT_EQ(fd_test, event.fd);
@@ -40,51 +40,54 @@ struct FakeActor {
         ++nb_events;
     }
 
-//    void on(qb::io::async::event::file const &event) {
-//        std::cout << "st_size=" << event.attr.st_size << std::endl;
-//        ++nb_events;
-//    }
+    void on(qb::io::async::event::file const &event) {
+        std::cout << "st_size=" << event.attr.st_size << std::endl;
+        ++nb_events;
+    }
 
 };
 
-//TEST(KernelEvents, Signal) {
-//    qb::io::async::listener handler;
-//    FakeActor actor;
-//
-//    handler.registerEvent<qb::io::async::event::signal<SIGINT>>(actor).start();
-//
-//    std::thread t([]() { std::raise(SIGINT); });
-//    handler.loop(EVRUN_ONCE);
-//    EXPECT_EQ(actor.nb_events, 1);
-//    t.join();
-//}
-
-#ifndef _WIN32
-
-TEST(KernelEvents, BasicIO) {
+TEST(KernelEvents, Signal) {
     qb::io::async::listener handler;
     FakeActor actor;
 
-    handler.registerEvent<qb::io::async::event::io>(actor, 0, EV_READ).start();
+    handler.registerEvent<qb::io::async::event::signal<SIGINT>>(actor).start();
+
+    std::thread t([]() { std::raise(SIGINT); });
+    handler.run(EVRUN_ONCE);
+    EXPECT_EQ(actor.nb_events, 1);
+    t.join();
+}
+
+#ifndef _WIN32
+
+TEST(KernelEvents, File) {
+    qb::io::async::listener handler;
+    FakeActor actor;
+
+    handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", 0).start();
+
+    std::thread t([]() {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        system("echo test > test.file");
+    });
+
+    handler.run(EVRUN_ONCE);
+    EXPECT_EQ(actor.nb_events, 1);
+    t.join();
+}
+
+TEST(KernelEvents, BasicIO) {
+    qb::io::async::listener handler;
+    qb::io::sys::file f("test.file");
+    FakeActor actor;
+
+    actor.fd_test = f.fd();
+
+    handler.registerEvent<qb::io::async::event::io>(actor, f.fd(), EV_READ).start();
 
     handler.run(EVRUN_ONCE);
     EXPECT_EQ(actor.nb_events, 1);
 }
-
-//TEST(KernelEvents, File) {
-//    qb::io::async::listener handler;
-//    FakeActor actor;
-//
-//    handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", 0).start();
-//
-//    std::thread t([]() {
-//        std::this_thread::sleep_for(std::chrono::seconds(1));
-//        system("echo test > test.file");
-//    });
-//
-//    handler.loop(EVRUN_ONCE);
-//    EXPECT_EQ(actor.nb_events, 1);
-//    t.join();
-//}
 
 #endif

@@ -19,60 +19,44 @@
 #define QB_IO_ASYNC_TCP_SESSION_H
 
 #include "../io.h"
-#include "../../transport/tcp.h"
-#include "../../transport/stcp.h"
 
 namespace qb {
     namespace io {
         namespace async {
             namespace tcp {
-                namespace internal {
-
-                    template<typename _Derived,
-                            template<typename _BaseProt> typename _Prot,
-                            typename _BaseProt,
-                            typename _Server = void>
-                    class client
-                            : public io<_Derived, _Prot<_BaseProt>> {
-                        using base_t = io<_Derived, _Prot<_BaseProt>>;
-                    protected:
-                        _Server &_server;
-                    public:
-                        constexpr static const bool has_server = true;
-
-                        client(_Server &server)
-                                : _server(server) {}
-
-                        inline _Server &server() {
-                            return _server;
-                        }
-
-                    };
-
-                    template<typename _Derived,
-                            template<typename _BaseProt> typename _Prot,
-                            typename _BaseProt>
-                    class client<_Derived, _Prot, _BaseProt, void>
-                            : public io<_Derived, _Prot<_BaseProt>> {
-                        using base_t = io<_Derived, _Prot<_BaseProt>>;
-                    public:
-
-                        client() = default;
-
-                    };
-
-                }
 
                 template<typename _Derived,
                         template<typename _BaseProt> typename _Prot,
+                        typename _BaseProt,
                         typename _Server = void>
-                using client = internal::client<_Derived, _Prot, transport::tcp, _Server>;
+                class client
+                        : public io<_Derived, _Prot<_BaseProt>> {
+                    using base_t = io<_Derived, _Prot<_BaseProt>>;
+                protected:
+                    _Server &_server;
+                public:
+                    constexpr static const bool has_server = true;
+
+                    client(_Server &server)
+                            : _server(server) {}
+
+                    inline _Server &server() {
+                        return _server;
+                    }
+
+                };
 
                 template<typename _Derived,
                         template<typename _BaseProt> typename _Prot,
-                        typename _Server = void>
-                using ssl_client = internal::client<_Derived, _Prot, transport::stcp, _Server>;
+                        typename _BaseProt>
+                class client<_Derived, _Prot, _BaseProt, void>
+                        : public io<_Derived, _Prot<_BaseProt>> {
+                    using base_t = io<_Derived, _Prot<_BaseProt>>;
+                public:
 
+                    client() = default;
+
+                };
 
             }
         }

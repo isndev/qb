@@ -340,7 +340,7 @@ namespace ev {
     void feed_signal_event (int signum) EV_NOEXCEPT
     {
 #ifdef EV_SIGNAL_ENABLE
-//      ev_feed_signal_event (EV_AX_ signum);
+      ev_feed_signal_event (EV_AX_ signum);
 #endif
     }
 
