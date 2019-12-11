@@ -1,5 +1,5 @@
 language: cpp
-sudo: false
+
 notifications:
   email: false
 
@@ -15,10 +15,11 @@ cache:
 #    packages:
 #      - lcov
 
-matrix:
+jobs:
   include:
     # Clang 5.0
     - env: COMPILER=clang++-5.0 BUILD_TYPE=Debug BUILD_COVER=OFF
+      arch: amd64
       addons: &clang50
         apt:
           packages:
@@ -31,10 +32,20 @@ matrix:
               key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
 
     - env: COMPILER=clang++-5.0 BUILD_TYPE=Release BUILD_COVER=OFF
+      arch: amd64
+      addons: *clang50
+
+    - env: COMPILER=clang++-5.0 BUILD_TYPE=Debug BUILD_COVER=OFF
+      arch: arm64
+      addons: *clang50
+
+    - env: COMPILER=clang++-5.0 BUILD_TYPE=Release BUILD_COVER=OFF
+      arch: arm64
       addons: *clang50
 
     # Clang 6.0
     - env: COMPILER=clang++-6.0 BUILD_TYPE=Debug BUILD_COVER=OFF
+      arch: amd64
       addons: &clang60
         apt:
           packages:
@@ -47,10 +58,20 @@ matrix:
               key_url: 'https://apt.llvm.org/llvm-snapshot.gpg.key'
 
     - env: COMPILER=clang++-6.0 BUILD_TYPE=Release BUILD_COVER=OFF
+      arch: amd64
+      addons: *clang60
+
+    - env: COMPILER=clang++-6.0 BUILD_TYPE=Debug BUILD_COVER=OFF
+      arch: arm64
+      addons: *clang60
+
+    - env: COMPILER=clang++-6.0 BUILD_TYPE=Release BUILD_COVER=OFF
+      arch: arm64
       addons: *clang60
 
     # Clang 7.0
     - env: COMPILER=clang++-7 BUILD_TYPE=Debug BUILD_COVER=OFF
+      arch: amd64
       addons: &clang70
         apt:
           packages:
@@ -61,13 +82,23 @@ matrix:
             - llvm-toolchain-trusty-7
 
     - env: COMPILER=clang++-7 BUILD_TYPE=Release BUILD_COVER=OFF
+      arch: amd64
+      addons: *clang70
+
+    - env: COMPILER=clang++-7 BUILD_TYPE=Debug BUILD_COVER=OFF
+      arch: arm64
+      addons: *clang70
+
+    - env: COMPILER=clang++-7 BUILD_TYPE=Release BUILD_COVER=OFF
+      arch: arm64
       addons: *clang70
 
     ##########################################################################
     # GCC on Linux
     ##########################################################################
     # GCC 7
-    - env: COMPILER=g++-7 BUILD_TYPE=Debug BUILD_COVER=ON
+    - env: COMPILER=g++-7 BUILD_TYPE=Debug BUILD_COVER=OFF
+      arch: amd64
       addons: &gcc7
         apt:
           packages:
@@ -79,14 +110,52 @@ matrix:
             - ubuntu-toolchain-r-test
 
     - env: COMPILER=g++-7 BUILD_TYPE=Release BUILD_COVER=OFF
+      arch: amd64
       addons: *gcc7
 
+    - env: COMPILER=g++-7 BUILD_TYPE=Debug BUILD_COVER=OFF
+      arch: arm64
+      addons: *gcc7
+
+    - env: COMPILER=g++-7 BUILD_TYPE=Release BUILD_COVER=OFF
+      arch: arm64
+      addons: *gcc7
+
+    # GCC 8
+    - env: COMPILER=g++-8 BUILD_TYPE=Debug BUILD_COVER=ON
+      arch: amd64
+      addons: &gcc8
+        apt:
+          packages:
+            - g++-8
+            - lcov
+            - python3-dev
+            - gcovr
+          sources:
+            - ubuntu-toolchain-r-test
+
+    - env: COMPILER=g++-8 BUILD_TYPE=Release BUILD_COVER=OFF
+      arch: amd64
+      addons: *gcc8
+
+    - env: COMPILER=g++-8 BUILD_TYPE=Debug BUILD_COVER=OFF
+      arch: arm64
+      addons: *gcc8
+
+    - env: COMPILER=g++-8 BUILD_TYPE=Release BUILD_COVER=OFF
+      arch: arm64
+      addons: *gcc8
+
+    ##########################################################################
+    # XCODE on OSX
+    ##########################################################################
+    # Clang 10.2
     - env: COMPILER=clang++ BUILD_TYPE=Release BUILD_COVER=OFF
       os: osx
       osx_image: xcode10.2
       brew_packages:
         - cmake
-
+    # GCC
     - env: COMPILER=g++ BUILD_TYPE=Release BUILD_COVER=OFF
       os: osx
       osx_image: xcode10.2
