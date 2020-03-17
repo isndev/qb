@@ -18,6 +18,7 @@
 #include <qb/core/VirtualCore.h>
 #include <qb/system/timestamp.h>
 #include <qb/io/async/listener.h>
+#include <qb/event.h>
 
 #ifdef __APPLE__
 #include <sys/types.h>
@@ -102,43 +103,75 @@ namespace qb {
     }
 
     void VirtualCore::__receive__() {
+        // from same core
+        _mono_pipe.swap(_pipes.at(_index));
+        __receive_events__(_mono_pipe.data() + _mono_pipe.begin(), _mono_pipe.size());
+        _mono_pipe.reset();
+
         // global_core_events
         _mail_box.dequeue([this](CacheLine *buffer, std::size_t const nb_events) {
             __receive_events__(buffer, nb_events);
         }, _event_buffer.data(), MaxRingEvents);
     }
 
-    void VirtualCore::__flush__() noexcept {
-        for (auto &it : _pipes) {
-            auto &pipe = it.second;
-            if (pipe.end()) {
-                auto i = pipe.begin();
-                while (i < pipe.end()) {
-                    const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
-                    while (unlikely(!try_send(event)))
-                        std::this_thread::yield();
-                    i += event.bucket_size;
-                }
-                pipe.reset();
-            }
-        }
+    void VirtualCore::__receive_from__(CoreId const index) noexcept {
+        _mail_box.ringOf(index).dequeue([this](CacheLine *buffer, std::size_t const nb_events) {
+            __receive_events__(buffer, nb_events);
+        }, _event_buffer.data(), MaxRingEvents);
     }
+
+//    void VirtualCore::__flush__() noexcept {
+//        bool ret = false;
+//        for (auto &it : _pipes) {
+//            auto &pipe = it.second;
+//            if (it.first != _index && pipe.end()) {
+//                ret = true;
+//                auto i = pipe.begin();
+//                while (i < pipe.end()) {
+//                    const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
+//                    while (unlikely(!try_send(event)))
+//                        std::this_thread::yield();
+//                    i += event.bucket_size;
+//                }
+//                pipe.reset();
+//            }
+//        }
+//        return ret;
+//    }
 
     bool VirtualCore::__flush_all__() noexcept {
         bool ret = false;
         for (auto &it : _pipes) {
             auto &pipe = it.second;
-            if (pipe.end()) {
+            if (it.first != _index && pipe.end()) {
                 ret = true;
                 auto i = pipe.begin();
                 while (i < pipe.end()) {
                     const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
-                    while (unlikely(!try_send(event)))
-                        std::this_thread::yield();
+                    if (unlikely(!try_send(event))) {
+                        auto &current_lock = _engine._event_safe_deadlock[_engine._core_set.resolve(_index)];
+                        // current locked by event set to true
+                        current_lock.store(true, std::memory_order_release);
+                        while (!try_send(event)) {
+                            // entering in deadlock
+                            if (current_lock.load(std::memory_order_acquire)) {
+                                // notify to unlock dest core
+                                _engine
+                                        ._event_safe_deadlock[_engine._core_set.resolve(it.first)]
+                                        .store(false, std::memory_order_acq_rel);
+                            } else {
+                                // partial send another core is maybe in deadlock
+                                pipe.reset(i);
+                                goto end;
+                            }
+                        }
+                    }
+
                     i += event.bucket_size;
                 }
                 pipe.reset();
             }
+            end:;
         }
         return ret;
     }
@@ -200,14 +233,11 @@ namespace qb {
                 _nanotimer = Timestamp::nano();
 
             __receive__();
-
             for (const auto &callback : _actor_callbacks)
                 callback.second->onCallback();
+            __flush_all__();
 
-            __flush__();
 
-            if (io::async::listener::current.size())
-                io::async::run(EVRUN_ONCE);
 
             if (unlikely(!_actor_to_remove.empty())) {
                 // remove dead actors
@@ -257,6 +287,7 @@ namespace qb {
         }
 
         registerEvent<KillEvent>(actor);
+        registerEvent<UnregisterCallbackEvent>(actor);
         registerEvent<PingEvent>(actor);
 
         if (doInit && unlikely(!actor.onInit())) {
@@ -277,7 +308,7 @@ namespace qb {
     }
 
     void VirtualCore::removeActor(ActorId const id) noexcept {
-        unregisterCallback(id);
+        __unregisterCallback(id);
         unregisterEvents(id);
         const auto it = _actors.find(id);
         if (it != _actors.end()) {
@@ -294,11 +325,14 @@ namespace qb {
     void VirtualCore::killActor(ActorId const id) noexcept {
         _actor_to_remove.insert(id);
     }
-
-    void VirtualCore::unregisterCallback(ActorId const id) noexcept {
+    void VirtualCore::__unregisterCallback(ActorId const id) noexcept {
         auto it = _actor_callbacks.find(id);
         if (it != _actor_callbacks.end())
             _actor_callbacks.erase(it);
+    }
+
+    void VirtualCore::unregisterCallback(ActorId const id) noexcept {
+        push<UnregisterCallbackEvent>(id, id);
     }
 
     //Event Api
@@ -311,7 +345,7 @@ namespace qb {
     }
 
     void VirtualCore::send(Event const &event) noexcept {
-        if (unlikely(!try_send(event))) {
+        if (event.dest._index == _index || !try_send(event)) {
             auto &pipe = __getPipe__(event.dest._index);
             pipe.recycle(event, event.bucket_size);
         }
@@ -324,13 +358,13 @@ namespace qb {
 
     void VirtualCore::reply(Event &event) noexcept {
         std::swap(event.dest, event.source);
-        event.state[0] = 1;
+        event.state.alive = 1;
         send(event);
     }
 
     void VirtualCore::forward(ActorId const dest, Event &event) noexcept {
         event.dest = dest;
-        event.state[0] = 1;
+        event.state.alive = 1;
         send(event);
     }
     //!Event Api
