@@ -46,7 +46,9 @@ namespace qb {
 
         EventId id;
         uint16_t bucket_size;
-        std::bitset<32> state;
+        struct {
+            unsigned char a:1, b:1, c:1, d:1, e:1, f:1, g:1, alive:1;
+        } state;
         // for users
         ActorId dest;
         ActorId source;
@@ -76,10 +78,10 @@ namespace qb {
         }
 
         inline void live(bool flag) noexcept {
-            state[0] = flag;
+            state.alive = flag;
         }
 
-        inline bool isLive() const noexcept { return state[0]; }
+        inline bool isLive() const noexcept { return state.alive; }
 
         inline uint16_t bucketSize() const noexcept {
             return bucket_size;
@@ -91,6 +93,7 @@ namespace qb {
      * default registered event to kill Actor by event
      */
     struct KillEvent : public Event {};
+    struct UnregisterCallbackEvent : public Event {};
 
     enum class ActorStatus : uint32_t {
         Alive,

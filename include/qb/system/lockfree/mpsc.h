@@ -94,6 +94,10 @@ namespace qb {
                     }
                     return nb_consume;
                 }
+
+                auto &ringOf(size_t const index) {
+                    return _producers[index]._ringbuffer;
+                }
             };
 
             template<typename T, std::size_t max_size>
@@ -166,6 +170,10 @@ namespace qb {
                         nb_consume += _producers.get()[i]._ringbuffer.dequeue(func, ret, size);
                     }
                     return nb_consume;
+                }
+
+                auto &ringOf(size_t const index) {
+                    return _producers.get()[index]._ringbuffer;
                 }
             };
 

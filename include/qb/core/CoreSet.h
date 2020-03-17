@@ -30,6 +30,7 @@ namespace qb {
      */
     class CoreSet {
         friend class Main;
+        friend class VirtualCore;
 
         const std::unordered_set<CoreId>  _raw_set;
         const std::size_t       _nb_core;

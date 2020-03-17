@@ -80,7 +80,7 @@ namespace qb {
 
         fill_event(data, dest, source);
 
-        if (try_send(data))
+        if (dest._index != _index && try_send(data))
             pipe.free(data.bucket_size);
     }
 

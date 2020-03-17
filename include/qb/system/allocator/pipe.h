@@ -37,7 +37,7 @@ namespace qb {
         protected:
             std::size_t _begin;
             std::size_t _end;
-            bool flag_front;
+            bool _flag_front;
             char __padding2__[QB_LOCKFREE_CACHELINE_BYTES - (2 *sizeof(std::size_t) + sizeof(bool))];
             std::size_t _capacity;
             std::size_t _factor;
@@ -46,7 +46,7 @@ namespace qb {
         public:
             pipe() :  _begin(0)
                     , _end(0)
-                    , flag_front(false)
+                    , _flag_front(false)
                     , _capacity(_SIZE)
                     , _factor(1)
                     , _data(base_type::allocate(_SIZE)) {
@@ -96,11 +96,11 @@ namespace qb {
             inline void reset() {
                 _begin = 0;
                 _end = 0;
-                flag_front = false;
+                _flag_front = false;
             }
 
             inline void free(std::size_t const size) {
-                if (flag_front)
+                if (_flag_front)
                     _begin += size;
                 else
                     _end -= size;
@@ -152,10 +152,10 @@ namespace qb {
             inline auto allocate(std::size_t const size) {
                 if (_begin - (size + 1) < _end) {
                     _begin -= size;
-                    flag_front = true;
+                    _flag_front = true;
                     return _data + _begin;
                 }
-                flag_front = false;
+                _flag_front = false;
                 return allocate_back(size);
             }
 
@@ -198,6 +198,29 @@ namespace qb {
                 _begin = 0;
                 _end = nb_item;
                 //std::cout << "End reorder " << _begin << ":" << _end << "|" << _end - _begin;
+            }
+
+            inline void swap(pipe &pipe) {
+                std::size_t begin = pipe._begin;
+                std::size_t end = pipe._end;
+                bool flag_front = pipe._flag_front;
+                std::size_t capacity = pipe._capacity;
+                std::size_t factor = pipe._factor;
+                T *data = pipe._data;
+
+                pipe._begin = _begin;
+                pipe._end = _end;
+                pipe._flag_front = _flag_front;
+                pipe._capacity = _capacity;
+                pipe._factor = _factor;
+                pipe._data = _data;
+
+                _begin = begin;
+                _end = end;
+                _flag_front = flag_front;
+                _capacity = capacity;
+                _factor = factor;
+                _data = data;
             }
 
         };

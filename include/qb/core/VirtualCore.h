@@ -28,7 +28,10 @@
 #include <unistd.h>
 #include <pthread.h>
 #elif defined(_WIN32) || defined(_WIN64)
+#ifndef WIN32_LEAN_AND_MEAN
 # define WIN32_LEAN_AND_MEAN
+#endif // !WIN32_LEAN_AND_MEAN
+
 #include <Windows.h>
 #include <process.h>
 #endif
@@ -49,6 +52,7 @@ qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &
 namespace qb {
 
     class VirtualCore {
+        static constexpr const bool _has_mono_events = __ACCEPT_MONO_EVENTS__;
         thread_local static VirtualCore *_handler;
         static ServiceId _nb_service;
         static std::unordered_map<TypeId, ServiceId> &getServices() {
@@ -129,7 +133,7 @@ namespace qb {
             virtual void invoke(Event *data) const override final {
                 auto &event = *reinterpret_cast<_Event *>(data);
 
-                event.state[0] = 0;
+                event.state.alive = 0;
                 if (event.dest.isBroadcast()) {
                     for (const auto registered_event : _registered_events) {
                         registered_event.second->invoke(event);
@@ -145,7 +149,7 @@ namespace qb {
                     }
                 }
 
-                if (!event.state[0])
+                if (!event.state.alive)
                     event.~_Event();
             }
 
@@ -178,6 +182,7 @@ namespace qb {
         CallbackMap     _actor_callbacks;
         RemoveActorList _actor_to_remove;
         PipeMap         _pipes;
+        Pipe            _mono_pipe;
         EventBuffer     _event_buffer;
         uint64_t        _nanotimer;
         // !Members
@@ -197,7 +202,8 @@ namespace qb {
         Pipe &__getPipe__(uint32_t core) noexcept;
         void __receive_events__(CacheLine *buffer, std::size_t const nb_events);
         void __receive__();
-        void __flush__() noexcept;
+        void __receive_from__(CoreId const index) noexcept;
+//        void __flush__() noexcept;
         bool __flush_all__() noexcept;
         //!Event Management
 
@@ -225,6 +231,7 @@ namespace qb {
 
         template <typename _Actor>
         void registerCallback(_Actor &actor) noexcept;
+        void __unregisterCallback(ActorId const id) noexcept;
         void unregisterCallback(ActorId const id) noexcept;
 
     private:

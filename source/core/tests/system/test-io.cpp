@@ -19,6 +19,7 @@
 #include <qb/actor.h>
 #include <qb/main.h>
 #include <qb/system/timestamp.h>
+#include <qb/string.h>
 
 struct TestEvent : public qb::Event {};
 
@@ -49,6 +50,43 @@ public:
         LOG_WARN("TestActor will be killed at" << qb::Timestamp::nano());
     }
 };
+
+TEST(IO, STRING_TEST) {
+    const char c_str[] = "0123456789012345678901234567890123456789";
+    std::string std_str(c_str);
+
+    qb::string qb_str1(c_str);
+    qb::string qb_str2(std_str);
+    qb::string<40> qb_str3(c_str);
+    qb::string<40> qb_str4(qb_str1);
+
+    std::cout << "qb_str1(" << qb_str1.size() << ") " << qb_str1 << std::endl;
+    std::cout << "qb_str2(" << qb_str2.size() << ") " << qb_str2 << std::endl;
+    std::cout << "qb_str3(" << qb_str3.size() << ") " << qb_str3 << std::endl;
+    std::cout << "qb_str1==qb_str2(" << (qb_str1 == qb_str2) << ")" << std::endl;
+    std::cout << "qb_str1==std_str(" << (qb_str1 == std_str) << ")" << std::endl;
+    std::cout << "qb_str1==c_str  (" << (qb_str1 == c_str) << ")" << std::endl;
+    std::cout << "qb_str3==qb_str2(" << (qb_str3 == qb_str2) << ")" << std::endl;
+    std::cout << "qb_str3==std_str(" << (qb_str3 == std_str) << ")" << std::endl;
+    std::cout << "qb_str3==c_str  (" << (qb_str3 == c_str) << ")" << std::endl;
+
+    std::sort(qb_str4.begin(), qb_str4.end());
+    for (auto c : qb_str4) {
+        std::cout << c;
+    }
+
+    for (auto it = qb_str4.crbegin(); it != qb_str4.crend(); ++it) {
+        std::cout << *it;
+    }
+
+    std::cout << std::endl;
+    qb_str1 = qb_str2 = qb_str3 = qb_str4 = "end";
+    std::cout << "qb_str1(" << qb_str1.size() << ") " << sizeof(qb_str1) << std::endl;
+    std::cout << "qb_str2(" << qb_str2.size() << ") " << qb_str2 << std::endl;
+    std::cout << "qb_str3(" << qb_str3.size() << ") " << sizeof(qb_str3) << std::endl;
+    std::cout << "qb_str4(" << qb_str4.size() << ") " << qb_str4 << std::endl;
+
+}
 
 TEST(IO, BasicTestMonoCore) {
     qb::io::log::init("./test-mono-io", 128);

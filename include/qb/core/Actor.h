@@ -137,6 +137,14 @@ namespace qb {
          */
         void on(KillEvent const &event) noexcept;
 
+        /*!
+         * @brief Receiving this event will unregister the Actor's callback
+         * @param event received event
+         * @attention
+         * /!\ Do not overload this function.
+         */
+        void on(UnregisterCallbackEvent const &event) noexcept;
+
         void on(PingEvent const &event) noexcept;
 
         /*!

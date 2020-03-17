@@ -52,6 +52,7 @@ namespace qb {
         static void start_thread(CoreId coreId, Main &engine) noexcept;
     private:
         CoreSet _core_set;
+        std::vector<std::atomic<bool>> _event_safe_deadlock;
         std::vector<MPSCBuffer *> _mail_boxes;
         std::vector<std::thread>  _cores;
         std::unordered_map<CoreId, std::unordered_map<uint32_t, IActorFactory *>> _actor_factories;

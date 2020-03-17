@@ -39,6 +39,10 @@ namespace qb {
         kill();
     }
 
+    void Actor::on(UnregisterCallbackEvent const &) noexcept {
+        VirtualCore::_handler->__unregisterCallback(id());
+    }
+
     uint64_t Actor::time() const noexcept {
         return VirtualCore::_handler->time();
     }
