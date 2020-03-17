@@ -52,7 +52,6 @@ qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &
 namespace qb {
 
     class VirtualCore {
-        static constexpr const bool _has_mono_events = __ACCEPT_MONO_EVENTS__;
         thread_local static VirtualCore *_handler;
         static ServiceId _nb_service;
         static std::unordered_map<TypeId, ServiceId> &getServices() {
