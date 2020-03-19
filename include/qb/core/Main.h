@@ -41,9 +41,9 @@ namespace qb {
     class Main {
         friend class VirtualCore;
         constexpr static const uint64_t MaxRingEvents =
-                (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_CACHELINE_BYTES);
+                (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
         //////// Types
-        using MPSCBuffer = lockfree::mpsc::ringbuffer<CacheLine, MaxRingEvents, 0>;
+        using MPSCBuffer = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
 
         static std::atomic<uint64_t> sync_start;
         static bool                  is_running;

@@ -69,7 +69,7 @@ namespace qb {
         CoreId source_index = _core_set.resolve(event.source._index);
 
         return _mail_boxes[_core_set.resolve(event.dest._index)]->enqueue(source_index,
-                                                                          reinterpret_cast<const CacheLine *>(&event),
+                                                                          reinterpret_cast<const EventBucket *>(&event),
                                                                           event.bucket_size);
     }
 

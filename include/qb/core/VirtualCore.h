@@ -31,8 +31,10 @@
 #ifndef WIN32_LEAN_AND_MEAN
 # define WIN32_LEAN_AND_MEAN
 #endif // !WIN32_LEAN_AND_MEAN
-
-#include <Windows.h>
+#ifndef NOMINMAX
+# define NOMINMAX
+#endif
+#include <windows.h>
 #include <process.h>
 #endif
 
@@ -69,10 +71,10 @@ namespace qb {
         friend class Actor;
         friend class Main;
         ////////////
-        constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_CACHELINE_BYTES * 4;
+        constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_EVENT_BUCKET_BYTES;
         // Types
         using MPSCBuffer = Main::MPSCBuffer;
-        using EventBuffer = std::array<CacheLine, MaxRingEvents>;
+        using EventBuffer = std::array<EventBucket, MaxRingEvents>;
         using ActorMap = std::unordered_map<uint32_t, Actor *>;
         using CallbackMap = std::unordered_map<uint32_t, ICallback *>; // TODO: try to transform in std::vector
         using PipeMap = std::unordered_map<uint32_t, Pipe>;
@@ -199,7 +201,7 @@ namespace qb {
         void unregisterEvent(_Actor &actor) noexcept;
         void unregisterEvents(ActorId const id) noexcept;
         Pipe &__getPipe__(uint32_t core) noexcept;
-        void __receive_events__(CacheLine *buffer, std::size_t const nb_events);
+        void __receive_events__(EventBucket *buffer, std::size_t const nb_events);
         void __receive__();
         void __receive_from__(CoreId const index) noexcept;
 //        void __flush__() noexcept;

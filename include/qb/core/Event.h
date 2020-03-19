@@ -44,11 +44,18 @@ namespace qb {
         friend class ProxyPipe;
         friend struct ServiceEvent;
 
-        EventId id;
-        uint16_t bucket_size;
-        struct {
-            unsigned char a:1, b:1, c:1, d:1, e:1, f:1, g:1, alive:1;
+        mutable char magic[3] = "qb";
+        union {
+            struct {
+                unsigned char
+                        :7,
+                        alive:1;
+            };
+            unsigned char version = 0b00000000 | (QB_LOCKFREE_EVENT_BUCKET_BYTES / 16);
         } state;
+        uint16_t bucket_size;
+        EventId id;
+
         // for users
         ActorId dest;
         ActorId source;

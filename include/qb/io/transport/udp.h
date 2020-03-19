@@ -17,8 +17,6 @@
 
 #ifndef             QB_IO_TRANSPORT_UDP_H_
 # define            QB_IO_TRANSPORT_UDP_H_
-# undef min
-# undef max
 # include <qb/utility/functional.h>
 # include <qb/system/allocator/pipe.h>
 # include "../udp/socket.h"

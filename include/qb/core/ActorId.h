@@ -22,6 +22,7 @@
 # include <unordered_set>
 // include from qb
 # include <qb/utility/prefix.h>
+# include <qb/utility/build_macros.h>
 # include <qb/io.h>
 
 namespace qb {
@@ -63,7 +64,7 @@ namespace qb {
         ActorId(uint32_t const id) noexcept;
         ActorId(ActorId const &) noexcept = default;
 
-        operator const uint32_t &() const noexcept;
+        operator uint32_t () const noexcept;
 
         /*!
          * @return Service index

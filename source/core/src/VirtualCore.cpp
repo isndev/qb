@@ -92,7 +92,7 @@ namespace qb {
         return _pipes.at(core);
     }
 
-    void VirtualCore::__receive_events__(CacheLine *buffer, std::size_t const nb_events) {
+    void VirtualCore::__receive_events__(EventBucket *buffer, std::size_t const nb_events) {
         std::size_t i = 0;
         while (i < nb_events) {
             auto event = reinterpret_cast<Event *>(buffer + i);
@@ -109,13 +109,13 @@ namespace qb {
         _mono_pipe.reset();
 
         // global_core_events
-        _mail_box.dequeue([this](CacheLine *buffer, std::size_t const nb_events) {
+        _mail_box.dequeue([this](EventBucket *buffer, std::size_t const nb_events) {
             __receive_events__(buffer, nb_events);
         }, _event_buffer.data(), MaxRingEvents);
     }
 
     void VirtualCore::__receive_from__(CoreId const index) noexcept {
-        _mail_box.ringOf(index).dequeue([this](CacheLine *buffer, std::size_t const nb_events) {
+        _mail_box.ringOf(index).dequeue([this](EventBucket *buffer, std::size_t const nb_events) {
             __receive_events__(buffer, nb_events);
         }, _event_buffer.data(), MaxRingEvents);
     }
