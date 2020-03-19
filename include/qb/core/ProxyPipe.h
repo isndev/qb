@@ -22,7 +22,7 @@
 # include "Event.h"
 
 namespace qb {
-    using Pipe = allocator::pipe<CacheLine>;
+    using Pipe = allocator::pipe<EventBucket>;
 
     /*!
      * @brief Object returned by Actor::getPipe()

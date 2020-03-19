@@ -20,12 +20,10 @@
 #include <string>
 #include <iostream>
 #include <array>
+#include <qb/utility/build_macros.h>
 
 #ifndef QB_STRING_H_
 # define QB_STRING_H_
-# ifdef _WIN32
-# undef min
-# endif
 
 namespace qb {
 

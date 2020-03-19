@@ -26,7 +26,7 @@ namespace qb {
         *reinterpret_cast<uint32_t *>(this) = id;
     }
 
-    ActorId::operator const uint32_t &() const noexcept {
+    ActorId::operator uint32_t () const noexcept {
         return *reinterpret_cast<uint32_t const *>(this);
     }
 

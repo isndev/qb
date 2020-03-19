@@ -70,7 +70,7 @@ namespace qb {
             std::swap(data.id, data.service_event_id);
         }
 
-        data.bucket_size = static_cast<uint16_t>(allocator::getItemSize<T, CacheLine>());
+        data.bucket_size = static_cast<uint16_t>(allocator::getItemSize<T, EventBucket>());
     }
 
     template<typename T, typename ..._Init>
