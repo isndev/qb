@@ -203,7 +203,7 @@ namespace qb {
         Pipe &__getPipe__(uint32_t core) noexcept;
         void __receive_events__(EventBucket *buffer, std::size_t const nb_events);
         void __receive__();
-        void __receive_from__(CoreId const index) noexcept;
+//        void __receive_from__(CoreId const index) noexcept;
 //        void __flush__() noexcept;
         bool __flush_all__() noexcept;
         //!Event Management

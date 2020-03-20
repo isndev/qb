@@ -114,11 +114,11 @@ namespace qb {
         }, _event_buffer.data(), MaxRingEvents);
     }
 
-    void VirtualCore::__receive_from__(CoreId const index) noexcept {
-        _mail_box.ringOf(index).dequeue([this](EventBucket *buffer, std::size_t const nb_events) {
-            __receive_events__(buffer, nb_events);
-        }, _event_buffer.data(), MaxRingEvents);
-    }
+//    void VirtualCore::__receive_from__(CoreId const index) noexcept {
+//        _mail_box.ringOf(index).dequeue([this](EventBucket *buffer, std::size_t const nb_events) {
+//            __receive_events__(buffer, nb_events);
+//        }, _event_buffer.data(), MaxRingEvents);
+//    }
 
 //    void VirtualCore::__flush__() noexcept {
 //        bool ret = false;
