@@ -44,14 +44,13 @@ namespace qb {
         friend class ProxyPipe;
         friend struct ServiceEvent;
 
-        mutable char magic[3] = "qb";
         union {
             struct {
-                unsigned char
-                        :7,
+                uint32_t
+                        :31,
                         alive:1;
             };
-            unsigned char version = 0b00000000 | (QB_LOCKFREE_EVENT_BUCKET_BYTES / 16);
+            uint32_t version = 0x71620000 | (QB_LOCKFREE_EVENT_BUCKET_BYTES / 16);
         } state;
         uint16_t bucket_size;
         EventId id;

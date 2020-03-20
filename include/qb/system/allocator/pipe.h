@@ -32,13 +32,12 @@ namespace qb {
         }
 
         template <typename T, std::size_t _SIZE = 4096>
-        class pipe : nocopy, std::allocator<T> {
+        class QB_LOCKFREE_CACHELINE_ALIGNMENT pipe : nocopy, std::allocator<T> {
             using base_type = std::allocator<T>;
         protected:
             std::size_t _begin;
             std::size_t _end;
             bool _flag_front;
-            char __padding2__[QB_LOCKFREE_CACHELINE_BYTES - (2 *sizeof(std::size_t) + sizeof(bool))];
             std::size_t _capacity;
             std::size_t _factor;
             T *_data;
@@ -200,27 +199,8 @@ namespace qb {
                 //std::cout << "End reorder " << _begin << ":" << _end << "|" << _end - _begin;
             }
 
-            inline void swap(pipe &pipe) {
-                std::size_t begin = pipe._begin;
-                std::size_t end = pipe._end;
-                bool flag_front = pipe._flag_front;
-                std::size_t capacity = pipe._capacity;
-                std::size_t factor = pipe._factor;
-                T *data = pipe._data;
-
-                pipe._begin = _begin;
-                pipe._end = _end;
-                pipe._flag_front = _flag_front;
-                pipe._capacity = _capacity;
-                pipe._factor = _factor;
-                pipe._data = _data;
-
-                _begin = begin;
-                _end = end;
-                _flag_front = flag_front;
-                _capacity = capacity;
-                _factor = factor;
-                _data = data;
+            inline void swap(pipe &rhs) {
+                std::swap(*reinterpret_cast<CacheLine *>(this), *reinterpret_cast<CacheLine *>(&rhs));
             }
 
         };
