@@ -150,8 +150,10 @@ namespace qb {
                     }
                 }
 
-                if (!event.state.alive)
-                    event.~_Event();
+                if constexpr (!std::is_trivially_destructible_v<_Event>) {
+                    if (!event.state.alive)
+                        event.~_Event();
+                }
             }
 
             virtual void registerEvent(IRegisteredEventBase *ievent) noexcept override final {
@@ -183,6 +185,7 @@ namespace qb {
         CallbackMap     _actor_callbacks;
         RemoveActorList _actor_to_remove;
         PipeMap         _pipes;
+        Pipe            &_mono_pipe_swap;
         Pipe            _mono_pipe;
         EventBuffer     _event_buffer;
         uint64_t        _nanotimer;

@@ -65,6 +65,11 @@ namespace qb {
         data.dest = dest;
         data.source = source;
 
+        if constexpr (std::is_base_of_v<EventQOS0, T>) {
+            static_assert(std::is_trivially_destructible_v<T>,
+                    "EventQOS < 2 require to be trivially destructible");
+        }
+
         if constexpr (std::is_base_of<ServiceEvent, T>::value) {
             data.forward = source;
             std::swap(data.id, data.service_event_id);

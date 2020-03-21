@@ -20,6 +20,21 @@
 #include <qb/system/timestamp.h>
 #include <qb/string.h>
 
+struct TriviallyDestructibleEvent : public qb::Event {
+    bool b;
+    std::byte by;
+    char c;
+    double d;
+    float f;
+    char e[10];
+    std::size_t s;
+    qb::string<> str;
+};
+
+struct NonTriviallyDestructibleEvent : public TriviallyDestructibleEvent {
+    std::vector<int> vec;
+};
+
 TEST(TYPE, AllCheck) {
     std::cout << "-------- Constants --------" << std::endl;
     std::cout << "QB_LOCKFREE_CACHELINE_BYTES(" << QB_LOCKFREE_CACHELINE_BYTES << ")" << std::endl;
@@ -40,8 +55,20 @@ TEST(TYPE, AllCheck) {
     std::cout << "sizeof<Pipe>(" << sizeof(qb::Pipe) << ")" << std::endl;
     std::cout << "sizeof<ProxyPipe>(" << sizeof(qb::ProxyPipe) << ")" << std::endl;
     std::cout << "sizeof<Actor>(" << sizeof(qb::Actor) << ")" << std::endl;
-    std::cout << "sizeof<Event>(" << sizeof(qb::Event) << ")" << std::endl;
+    std::cout << "sizeof<EventQOS0>(" << sizeof(qb::EventQOS0) << ")" << std::endl;
     EXPECT_EQ(sizeof(qb::Event), 16);
+    std::cout << "is_trivially_destructible<EventQOS0>(" << std::is_trivially_destructible_v<qb::EventQOS0> << ")" << std::endl;
+    EXPECT_EQ(std::is_trivially_destructible_v<qb::EventQOS0>, 1);
+    std::cout << "sizeof<EventQOS1>(" << sizeof(qb::EventQOS1) << ")" << std::endl;
+    std::cout << "is_trivially_destructible<EventQOS1>(" << std::is_trivially_destructible_v<qb::EventQOS1> << ")" << std::endl;
+    EXPECT_EQ(std::is_trivially_destructible_v<qb::EventQOS1>, 1);
+    std::cout << "sizeof<EventQOS2>(" << sizeof(qb::EventQOS2) << ")" << std::endl;
+    std::cout << "is_trivially_destructible<EventQOS2>(" << std::is_trivially_destructible_v<qb::EventQOS2> << ")" << std::endl;
+    EXPECT_EQ(std::is_trivially_destructible_v<qb::EventQOS0>, 1);
+    std::cout << "is_trivially_destructible<TriviallyDestructibleEvent>(" << std::is_trivially_destructible_v<TriviallyDestructibleEvent> << ")" << std::endl;
+    EXPECT_EQ(std::is_trivially_destructible_v<TriviallyDestructibleEvent>, 1);
+    std::cout << "is_trivially_destructible<NonTriviallyDestructibleEvent>(" << std::is_trivially_destructible_v<NonTriviallyDestructibleEvent> << ")" << std::endl;
+    EXPECT_EQ(std::is_trivially_destructible_v<NonTriviallyDestructibleEvent>, 0);
     std::cout << "sizeof<ServiceEvent>(" << sizeof(qb::ServiceEvent) << ")" << std::endl;
 //    EXPECT_EQ(sizeof(qb::ServiceEvent), 22);
 }
