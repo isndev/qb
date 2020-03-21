@@ -58,7 +58,10 @@ static int pthread_setaffinity_np(pthread_t thread, size_t cpu_size,
 
 namespace qb {
     VirtualCore::VirtualCore(CoreId const id, Main &engine) noexcept
-            : _index(id), _engine(engine), _mail_box(engine.getMailBox(id)) {
+            : _index(id)
+            , _engine(engine)
+            , _mail_box(engine.getMailBox(id))
+            , _mono_pipe_swap(_pipes[id]) {
         _ids.reserve(std::numeric_limits<ServiceId>::max() - _nb_service);
         _event_map.reserve(128);
         for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
@@ -104,7 +107,7 @@ namespace qb {
 
     void VirtualCore::__receive__() {
         // from same core
-        _mono_pipe.swap(_pipes.at(_index));
+        _mono_pipe.swap(_mono_pipe_swap);
         __receive_events__(_mono_pipe.data() + _mono_pipe.begin(), _mono_pipe.size());
         _mono_pipe.reset();
 
@@ -148,7 +151,7 @@ namespace qb {
                 auto i = pipe.begin();
                 while (i < pipe.end()) {
                     const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
-                    if (unlikely(!try_send(event))) {
+                    if (!try_send(event) && event.state.qos) {
                         auto &current_lock = _engine._event_safe_deadlock[_engine._core_set.resolve(_index)];
                         // current locked by event set to true
                         current_lock.store(true, std::memory_order_release);
@@ -232,10 +235,10 @@ namespace qb {
             } else
                 _nanotimer = Timestamp::nano();
 
+            __flush_all__();
             __receive__();
             for (const auto &callback : _actor_callbacks)
                 callback.second->onCallback();
-            __flush_all__();
 
 
 

@@ -42,15 +42,19 @@ namespace qb {
         friend class VirtualCore;
         friend class Actor;
         friend class ProxyPipe;
+        friend struct EventQOS0;
         friend struct ServiceEvent;
 
         union {
             struct {
                 uint32_t
-                        :31,
-                        alive:1;
+                        :16,
+                        :8,
+                        alive:1,
+                        qos:2,
+                        factor:5;
             };
-            uint32_t version = 0x71620000 | (QB_LOCKFREE_EVENT_BUCKET_BYTES / 16);
+            uint8_t prot[4] = {'q','b','\0', 4 | ((QB_LOCKFREE_EVENT_BUCKET_BYTES / 16) << 3) };
         } state;
         uint16_t bucket_size;
         EventId id;
@@ -62,8 +66,16 @@ namespace qb {
     public:
         Event() noexcept = default;
 
+        inline uint8_t getQOS() const noexcept { return state.qos; }
         inline ActorId getDestination() const noexcept { return dest; }
         inline ActorId getSource() const noexcept { return source; }
+    };
+
+    using EventQOS2 = Event;
+    using EventQOS1 = Event;
+
+    struct EventQOS0 : public Event {
+        EventQOS0() { state.qos = 0; }
     };
 
     /*!
