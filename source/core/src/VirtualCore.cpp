@@ -230,7 +230,7 @@ namespace qb {
         LOG_INFO("" << *this << " Init Success " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
         while (likely(Main::is_running)) {
             if (io::async::listener::current.size()) {
-                io::async::run(EVRUN_ONCE);
+                io::async::run(EVRUN_NOWAIT);
                 _nanotimer = io::async::listener::current.loop().now() * 1000;
             } else
                 _nanotimer = Timestamp::nano();
@@ -239,8 +239,6 @@ namespace qb {
             __receive__();
             for (const auto &callback : _actor_callbacks)
                 callback.second->onCallback();
-
-
 
             if (unlikely(!_actor_to_remove.empty())) {
                 // remove dead actors
