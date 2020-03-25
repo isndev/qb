@@ -16,6 +16,7 @@
 #
 
 add_subdirectory(system)
+add_subdirectory(unit)
 if (${QB_PREFIX_UPPER}_BUILD_BENCHMARK)
     add_subdirectory(benchmark)
 endif()

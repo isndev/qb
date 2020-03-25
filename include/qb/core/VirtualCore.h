@@ -19,7 +19,7 @@
 #define QB_CORE_H
 # include <iostream>
 # include <vector>
-# include <unordered_map>
+# include <unordered_set>
 # include <thread>
 
 #if defined(unix) || defined(__unix) || defined(__unix__)
@@ -40,8 +40,10 @@
 
 // include from qb
 # include <qb/system/timestamp.h>
+# include <qb/system/container/unordered_map.h>
 # include <qb/system/allocator/pipe.h>
 # include <qb/system/lockfree/mpsc.h>
+# include <qb/system/event/router.h>
 # include "ICallback.h"
 # include "ProxyPipe.h"
 # include "Event.h"
@@ -56,8 +58,8 @@ namespace qb {
     class VirtualCore {
         thread_local static VirtualCore *_handler;
         static ServiceId _nb_service;
-        static std::unordered_map<TypeId, ServiceId> &getServices() {
-            static std::unordered_map<TypeId , ServiceId> service_ids;
+        static qb::unordered_map<TypeId, ServiceId> &getServices() {
+            static qb::unordered_map<TypeId , ServiceId> service_ids;
             return service_ids;
         }
 
@@ -75,103 +77,11 @@ namespace qb {
         // Types
         using MPSCBuffer = Main::MPSCBuffer;
         using EventBuffer = std::array<EventBucket, MaxRingEvents>;
-        using ActorMap = std::unordered_map<uint32_t, Actor *>;
-        using CallbackMap = std::unordered_map<uint32_t, ICallback *>; // TODO: try to transform in std::vector
-        using PipeMap = std::unordered_map<uint32_t, Pipe>;
-        using RemoveActorList = std::unordered_set<uint32_t>;
+        using ActorMap = qb::unordered_map<ActorId, Actor *>;
+        using CallbackMap = qb::unordered_map<ActorId, ICallback *>; // TODO: try to transform in std::vector
+        using PipeMap = qb::unordered_map<CoreId, Pipe>;
+        using RemoveActorList = qb::unordered_set<ActorId>;
         using AvailableIdList = std::unordered_set<ServiceId>;
-
-        class IRegisteredEventBase {
-        public:
-            virtual ~IRegisteredEventBase() noexcept {}
-            virtual uint32_t id() const noexcept = 0;
-        };
-
-        class IEventhandler {
-        public:
-            virtual ~IEventhandler() noexcept {}
-            virtual void invoke(Event *data) const = 0;
-            virtual void registerEvent(IRegisteredEventBase *iRegisteredEvent) noexcept = 0;
-            virtual void unregisterEvent(ActorId const id) noexcept = 0;
-        };
-
-        template<typename _Event>
-        class EventHandler : public IEventhandler {
-            friend VirtualCore;
-
-            class IRegisteredEvent : public IRegisteredEventBase {
-            public:
-                virtual ~IRegisteredEvent() noexcept {}
-                virtual void invoke(_Event &data) const = 0;
-                virtual uint32_t id() const noexcept = 0;
-            };
-
-            template<typename _Actor>
-            class RegisteredEvent : public IRegisteredEvent {
-                _Actor &_actor;
-            public:
-                explicit RegisteredEvent(_Actor &actor) noexcept
-                        : _actor(actor) {}
-
-                virtual void invoke(_Event &event) const override final {
-                    if (likely(_actor.isAlive()))
-                        _actor.on(event);
-                }
-
-                virtual uint32_t id() const noexcept override final {
-                    return _actor.id();
-                }
-            };
-
-            std::unordered_map<uint32_t, IRegisteredEvent *> _registered_events;
-
-            EventHandler() = default;
-            ~EventHandler() noexcept {
-                for (auto revent : _registered_events)
-                    delete revent.second;
-            }
-
-            virtual void invoke(Event *data) const override final {
-                auto &event = *reinterpret_cast<_Event *>(data);
-
-                event.state.alive = 0;
-                if (event.dest.isBroadcast()) {
-                    for (const auto registered_event : _registered_events) {
-                        registered_event.second->invoke(event);
-                    }
-                } else {
-                    const auto it = _registered_events.find(event.dest);
-                    if (likely(it != _registered_events.cend()))
-                        it->second->invoke(event);
-                    else {
-                        LOG_WARN("Failed Event"
-                                         << " [Source](" << event.source << ")"
-                                         << " [Dest](" << event.dest << ") NOT FOUND");
-                    }
-                }
-
-                if constexpr (!std::is_trivially_destructible_v<_Event>) {
-                    if (!event.state.alive)
-                        event.~_Event();
-                }
-            }
-
-            virtual void registerEvent(IRegisteredEventBase *ievent) noexcept override final {
-                auto it = _registered_events.find(ievent->id());
-                if (it != _registered_events.end())
-                    unregisterEvent(ievent->id());
-                _registered_events.insert({ievent->id(), static_cast<IRegisteredEvent *>(ievent)});
-            }
-            virtual void unregisterEvent(ActorId const id) noexcept override final {
-                auto it = _registered_events.find(id);
-                if (it != _registered_events.end()) {
-                    delete it->second;
-                    _registered_events.erase(it);
-                }
-            }
-        };
-
-        using EventMap = std::unordered_map<uint32_t, IEventhandler *>;
 
         //!Types
     private:
@@ -179,9 +89,9 @@ namespace qb {
         const CoreId   _index;
         Main           &_engine;
         MPSCBuffer     &_mail_box;
+        router::memh<Event>   _router;
         AvailableIdList _ids;
         ActorMap        _actors;
-        EventMap        _event_map;
         CallbackMap     _actor_callbacks;
         RemoveActorList _actor_to_remove;
         PipeMap         _pipes;
@@ -203,11 +113,10 @@ namespace qb {
         template<typename _Event, typename _Actor>
         void unregisterEvent(_Actor &actor) noexcept;
         void unregisterEvents(ActorId const id) noexcept;
-        Pipe &__getPipe__(uint32_t core) noexcept;
+        Pipe &__getPipe__(CoreId core) noexcept;
         void __receive_events__(EventBucket *buffer, std::size_t const nb_events);
         void __receive__();
 //        void __receive_from__(CoreId const index) noexcept;
-//        void __flush__() noexcept;
         bool __flush_all__() noexcept;
         //!Event Management
 

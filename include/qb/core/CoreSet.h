@@ -19,7 +19,7 @@
 # define QB_CORESET_H
 # include <cstdint>
 # include <vector>
-# include <unordered_set>
+# include <qb/system/container/unordered_set.h>
 
 namespace qb {
 
@@ -32,7 +32,7 @@ namespace qb {
         friend class Main;
         friend class VirtualCore;
 
-        const std::unordered_set<CoreId>  _raw_set;
+        const qb::unordered_set<CoreId>  _raw_set;
         const std::size_t       _nb_core;
         std::vector<CoreId>    _set;
         std::size_t             _size;
@@ -44,9 +44,9 @@ namespace qb {
     public:
         CoreSet() = delete;
         CoreSet(CoreSet const &) = default;
-        explicit CoreSet(std::unordered_set<CoreId> const &set) noexcept;
+        explicit CoreSet(qb::unordered_set<CoreId> const &set) noexcept;
 
-        const std::unordered_set<CoreId> &raw() const noexcept;
+        const qb::unordered_set<CoreId> &raw() const noexcept;
 
         static CoreSet build(uint32_t const nb_core = std::thread::hardware_concurrency()) noexcept;
     };

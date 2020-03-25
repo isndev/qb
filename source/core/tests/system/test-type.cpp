@@ -36,6 +36,7 @@ struct NonTriviallyDestructibleEvent : public TriviallyDestructibleEvent {
 };
 
 TEST(TYPE, AllCheck) {
+
     std::cout << "-------- Constants --------" << std::endl;
     std::cout << "QB_LOCKFREE_CACHELINE_BYTES(" << QB_LOCKFREE_CACHELINE_BYTES << ")" << std::endl;
     std::cout << "QB_LOCKFREE_EVENT_BUCKET_BYTES(" << QB_LOCKFREE_EVENT_BUCKET_BYTES << ")" << std::endl;

@@ -24,31 +24,19 @@ namespace qb {
 
     template<typename _Event, typename _Actor>
     void VirtualCore::registerEvent(_Actor &actor) noexcept {
-        using handler_type = EventHandler<_Event>;
-        using event_type = typename handler_type::template RegisteredEvent<_Actor>;
-        auto ievent = new event_type(actor);
-        auto it = _event_map.find(qb::type_id<_Event>());
-        if (it == _event_map.end())
-            _event_map.insert({qb::type_id<_Event>(), new handler_type{}}).first->second->registerEvent(ievent);
-        else
-            it->second->registerEvent(ievent);
+        _router.subscribe<_Event>(actor);
     }
 
     template<typename _Event, typename _Actor>
     void VirtualCore::unregisterEvent(_Actor &actor) noexcept {
-        auto it = _event_map.find(qb::type_id<_Event>());
-        if (it != _event_map.end()) {
-            it->second->unregisterEvent(actor.id());
-        } else {
-            LOG_WARN("" << *this << "Failed to unregister event");
-        }
+        _router.unsubscribe<_Event>(actor);
     }
 
     template<typename _Actor, typename ..._Init>
     _Actor *VirtualCore::addReferencedActor(_Init &&...init) noexcept {
         auto actor = new _Actor(std::forward<_Init>(init)...);
         actor->id_type = type_id<_Actor>();
-        if (appendActor(*actor, std::is_base_of<Service, _Actor>::value, true) != ActorId::NotFound)
+        if (appendActor(*actor, std::is_base_of<Service, _Actor>::value, true).is_valid())
             return actor;
         return nullptr;
     };
@@ -61,7 +49,7 @@ namespace qb {
     // Event API
     template <typename T>
     inline void VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) const noexcept {
-        data.id = type_id<T>();
+        data.id = data.template type_to_id<T>();
         data.dest = dest;
         data.source = source;
 
