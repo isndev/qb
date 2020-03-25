@@ -38,8 +38,12 @@ namespace qb {
         return _index;
     }
 
-    bool ActorId::isBroadcast() const noexcept {
+    bool ActorId::is_broadcast() const noexcept {
         return _id == BroadcastSid;
+    }
+
+    bool ActorId::is_valid() const noexcept {
+        return *this != NotFound;
     }
 }
 

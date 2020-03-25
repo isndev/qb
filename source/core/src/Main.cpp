@@ -47,7 +47,7 @@ namespace qb {
         __init__();
     }
 
-    Main::Main(std::unordered_set<CoreId> const &core_set) noexcept
+    Main::Main(qb::unordered_set<CoreId> const &core_set) noexcept
             : _core_set (core_set)
             , _event_safe_deadlock(_core_set.getNbCore())
             , _mail_boxes(_core_set.getSize())

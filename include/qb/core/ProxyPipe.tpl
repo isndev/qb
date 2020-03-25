@@ -26,7 +26,7 @@ namespace qb {
     T &ProxyPipe::push(_Args &&...args) const noexcept {
         constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, EventBucket>();
         auto &data = pipe->template allocate_back<T>(std::forward<_Args>(args)...);
-        data.id = type_id<T>();
+        data.id = data.template type_to_id<T>();
         data.dest = dest;
         data.source = source;
         if constexpr (std::is_base_of<ServiceEvent, T>::value) {
@@ -45,7 +45,7 @@ namespace qb {
         auto &data = *(new(reinterpret_cast<T *>(pipe->allocate_back(size))) T(
                 std::forward<_Args>(args)...));
 
-        data.id = type_id<T>();
+        data.id = data.template type_to_id<T>();
         data.dest = dest;
         data.source = source;
         if constexpr (std::is_base_of<ServiceEvent, T>::value) {

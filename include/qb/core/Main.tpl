@@ -47,7 +47,7 @@ namespace qb {
     template<typename _Actor, typename ..._Args>
     Main::CoreBuilder &Main::CoreBuilder::addActor(_Args &&...args) noexcept {
         auto id = _main.template addActor<_Actor, _Args...>(_index, std::forward<_Args>(args)...);
-        if (id == ActorId::NotFound)
+        if (!id.is_valid())
             _valid = false;
 
         _ret_ids.push_back(id);

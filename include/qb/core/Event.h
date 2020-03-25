@@ -21,6 +21,7 @@
 # include <bitset>
 // include from qb
 # include "ActorId.h"
+# include "ICallback.h"
 
 namespace qb {
 
@@ -44,7 +45,20 @@ namespace qb {
         friend class ProxyPipe;
         friend struct EventQOS0;
         friend struct ServiceEvent;
+    public:
+        using id_handler_type = ActorId;
 
+#ifdef NDEBUG
+        using id_type = EventId;
+        template<typename T>
+        constexpr static id_type type_to_id() { return static_cast<id_type>(reinterpret_cast<std::size_t>(&qb::type<T>::id)); }
+#else
+        using id_type = const char *;
+        template<typename T>
+        constexpr static id_type type_to_id() { return typeid(T).name(); }
+#endif
+
+    private:
         union {
             struct {
                 uint32_t
@@ -57,18 +71,20 @@ namespace qb {
             uint8_t prot[4] = {'q','b','\0', 4 | ((QB_LOCKFREE_EVENT_BUCKET_BYTES / 16) << 3) };
         } state;
         uint16_t bucket_size;
-        EventId id;
-
+        id_type id;
         // for users
-        ActorId dest;
-        ActorId source;
+        id_handler_type dest;
+        id_handler_type source;
 
     public:
+
         Event() noexcept = default;
 
+        inline bool is_alive() const noexcept { return state.alive; }
+        inline id_type getID() const noexcept { return id; }
         inline uint8_t getQOS() const noexcept { return state.qos; }
-        inline ActorId getDestination() const noexcept { return dest; }
-        inline ActorId getSource() const noexcept { return source; }
+        inline id_handler_type getDestination() const noexcept { return dest; }
+        inline id_handler_type getSource() const noexcept { return source; }
     };
 
     using EventQOS2 = Event;
@@ -86,8 +102,8 @@ namespace qb {
      * Section in construction
      */
     struct ServiceEvent : public Event {
-        ActorId forward;
-        EventId service_event_id;
+        id_handler_type forward;
+        id_type service_event_id;
 
         inline void received() noexcept {
             std::swap(dest, forward);
@@ -111,7 +127,9 @@ namespace qb {
      * default registered event to kill Actor by event
      */
     struct KillEvent : public Event {};
-    struct UnregisterCallbackEvent : public Event {};
+    struct UnregisterCallbackEvent : public Event {
+        ICallback *callback;
+    };
 
     enum class ActorStatus : uint32_t {
         Alive,

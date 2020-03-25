@@ -20,7 +20,8 @@
 # include <limits>
 # include <cstdint>
 # include <unordered_set>
-// include from qb
+ // include from qb
+# include <qb/system/container/unordered_set.h>
 # include <qb/utility/prefix.h>
 # include <qb/utility/build_macros.h>
 # include <qb/io.h>
@@ -75,7 +76,15 @@ namespace qb {
          */
         CoreId index() const noexcept;
 
-        bool isBroadcast() const noexcept;
+        /*!
+         * @return true if ActorId is a Core broadcast id
+        */
+        bool is_broadcast() const noexcept;
+
+        /*!
+         * @return true if ActorId is valid
+        */
+        bool is_valid() const noexcept;
     };
 
     class BroadcastId : public ActorId {
@@ -85,9 +94,17 @@ namespace qb {
             : ActorId(BroadcastSid, static_cast<CoreId>(core_id)) {}
     };
 
-    using CoreIds = std::unordered_set<CoreId>;
-    using ActorIds = std::unordered_set<uint32_t>;
+    using CoreIds = qb::unordered_set<CoreId>;
+    using ActorIds = std::unordered_set<ActorId>;
 
+}
+
+namespace std {
+    template<> struct hash<qb::ActorId> {
+        std::size_t operator()(qb::ActorId const &val) const noexcept {
+            return static_cast<uint32_t>(val);
+        }
+    };
 }
 
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);

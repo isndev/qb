@@ -19,7 +19,7 @@
 
 namespace qb {
 
-    CoreSet::CoreSet(std::unordered_set <CoreId> const &set) noexcept
+    CoreSet::CoreSet(qb::unordered_set <CoreId> const &set) noexcept
             : _raw_set(set)
             ,_nb_core(set.size())
             , _size(*std::max_element(set.cbegin(), set.cend()) + 1) {
@@ -41,12 +41,12 @@ namespace qb {
         return _nb_core;
     }
 
-    const std::unordered_set<CoreId> &CoreSet::raw() const noexcept {
+    const qb::unordered_set<CoreId> &CoreSet::raw() const noexcept {
         return _raw_set;
     }
 
     CoreSet CoreSet::build(uint32_t const nb_core) noexcept {
-        std::unordered_set<CoreId> set;
+        qb::unordered_set<CoreId> set;
         for (CoreId i = 0; i < nb_core; ++i)
             set.insert(i);
         return CoreSet{std::move(set)};

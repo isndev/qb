@@ -19,7 +19,7 @@
 # define QB_ACTOR_H
 # include <vector>
 # include <map>
-# include <unordered_map>
+# include <qb/system/container/unordered_map.h>
 # include <utility>
 # include <tuple>
 // include from qb
@@ -111,7 +111,7 @@ namespace qb {
          * @}
          */
 
-    protected:
+    public:
         /*!
          * @name Registered Event
          * @{
@@ -232,6 +232,10 @@ namespace qb {
          * @return true if Actor is alive else false
          */
         bool isAlive() const noexcept;
+
+        bool is_alive() const noexcept {
+            return _alive;
+        }
 
         /*!
          * @}
@@ -408,7 +412,7 @@ namespace qb {
         inline uint32_t is(uint32_t const id) const noexcept { return id == type_id<_Type>(); }
 
         template<typename _Type>
-        inline uint32_t is(RequireEvent const &event) const noexcept { return event.type == type_id<_Type>(); }
+        inline uint32_t is(RequireEvent const &event) const noexcept { return event.type == Event::type_to_id<_Type>(); }
 
         template<typename ..._Actors>
         bool require() const noexcept;

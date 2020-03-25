@@ -63,7 +63,6 @@ namespace qb {
             , _mail_box(engine.getMailBox(id))
             , _mono_pipe_swap(_pipes[id]) {
         _ids.reserve(std::numeric_limits<ServiceId>::max() - _nb_service);
-        _event_map.reserve(128);
         for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
             _ids.insert(static_cast<ServiceId>(i));
         }
@@ -72,8 +71,6 @@ namespace qb {
     }
 
     VirtualCore::~VirtualCore() noexcept {
-        for (auto it : _event_map)
-            delete it.second;
         for (auto it : _actors)
             delete it.second;
     }
@@ -86,12 +83,10 @@ namespace qb {
 
     // Event Management
     void VirtualCore::unregisterEvents(ActorId const id) noexcept {
-        for (auto handler : _event_map)
-            handler.second->unregisterEvent(id);
-
+        _router.unsubscribe(id);
     }
 
-    Pipe &VirtualCore::__getPipe__(uint32_t core) noexcept {
+    Pipe &VirtualCore::__getPipe__(CoreId core) noexcept {
         return _pipes.at(core);
     }
 
@@ -100,7 +95,8 @@ namespace qb {
         while (i < nb_events) {
             auto event = reinterpret_cast<Event *>(buffer + i);
             // Todo : secure this
-            _event_map.at(event->id)->invoke(event);
+            event->state.alive = 0;
+            _router.route(*event);
             i += event->bucket_size;
         }
     }
@@ -121,25 +117,6 @@ namespace qb {
 //        _mail_box.ringOf(index).dequeue([this](EventBucket *buffer, std::size_t const nb_events) {
 //            __receive_events__(buffer, nb_events);
 //        }, _event_buffer.data(), MaxRingEvents);
-//    }
-
-//    void VirtualCore::__flush__() noexcept {
-//        bool ret = false;
-//        for (auto &it : _pipes) {
-//            auto &pipe = it.second;
-//            if (it.first != _index && pipe.end()) {
-//                ret = true;
-//                auto i = pipe.begin();
-//                while (i < pipe.end()) {
-//                    const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
-//                    while (unlikely(!try_send(event)))
-//                        std::this_thread::yield();
-//                    i += event.bucket_size;
-//                }
-//                pipe.reset();
-//            }
-//        }
-//        return ret;
 //    }
 
     bool VirtualCore::__flush_all__() noexcept {
@@ -273,14 +250,14 @@ namespace qb {
             }
         } else {
             auto id = actor.id();
-            if (id != ActorId::NotFound)
+            if (id.is_valid())
                 _ids.extract(id.sid());
             else
                 id = __generate_id__();
 
             actor.__set_id(id);
             // Number of actors attends to its limit in this core
-            if (id == ActorId::NotFound) {
+            if (!id.is_valid()) {
                 _ids.insert(static_cast<ServiceId>(id.sid()));
                 delete &actor;
                 return ActorId::NotFound;
@@ -300,7 +277,7 @@ namespace qb {
     }
 
     ActorId VirtualCore::appendActor(Actor &actor, bool const is_service, bool const doInit) noexcept {
-        if (initActor(actor, is_service, doInit) != ActorId::NotFound) {
+        if (initActor(actor, is_service, doInit).is_valid()) {
             _actors.insert({actor.id(), &actor});
             LOG_DEBUG("New " << actor);
             return actor.id();

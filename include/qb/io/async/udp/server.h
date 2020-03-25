@@ -30,7 +30,7 @@ namespace qb {
                 class server : public io<server<_Derived, _Session>, transport::udp> {
                 public:
                     using base_t = io<server<_Derived, _Session>, transport::udp>;
-                    using session_map_t = std::unordered_map<transport::udp::identity, _Session, transport::udp::identity::hasher>;
+                    using session_map_t = qb::unordered_map<transport::udp::identity, _Session, transport::udp::identity::hasher>;
                 private:
                     session_map_t _sessions;
                 public:
