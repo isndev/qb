@@ -19,7 +19,6 @@
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/type_traits.h>
 #include <qb/utility/branch_hints.h>
-#include <robin_hood/src/include/robin_hood.h>
 
 #ifndef QB_EVENT_ROUTER_H
 #define QB_EVENT_ROUTER_H

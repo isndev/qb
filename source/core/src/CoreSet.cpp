@@ -23,14 +23,13 @@ namespace qb {
             : _raw_set(set)
             ,_nb_core(set.size())
             , _size(*std::max_element(set.cbegin(), set.cend()) + 1) {
-        _set.resize(_size);
-        CoreId idx = 0;
+        uint8_t idx = 0;
         for (auto id : set)
             _set[id] = idx++;
     }
 
     CoreId CoreSet::resolve(std::size_t const id) const noexcept {
-        return _set[id];
+        return _set.at(id);
     }
 
     std::size_t CoreSet::getSize() const noexcept {

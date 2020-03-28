@@ -33,9 +33,10 @@ namespace qb {
         friend class VirtualCore;
 
         const qb::unordered_set<CoreId>  _raw_set;
-        const std::size_t       _nb_core;
-        std::vector<CoreId>    _set;
-        std::size_t             _size;
+        const std::size_t        _nb_core;
+        const std::size_t              _size;
+        std::array<uint8_t, 256> _set;
+
 
         CoreId resolve(std::size_t const id) const noexcept;
         std::size_t getSize() const noexcept;
