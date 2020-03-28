@@ -78,8 +78,8 @@ namespace qb {
         using MPSCBuffer = Main::MPSCBuffer;
         using EventBuffer = std::array<EventBucket, MaxRingEvents>;
         using ActorMap = qb::unordered_map<ActorId, Actor *>;
-        using CallbackMap = qb::unordered_map<ActorId, ICallback *>; // TODO: try to transform in std::vector
-        using PipeMap = qb::unordered_map<CoreId, Pipe>;
+        using CallbackMap = qb::unordered_map<ActorId, ICallback *>;
+        using PipeMap = std::vector<Pipe>;
         using RemoveActorList = qb::unordered_set<ActorId>;
         using AvailableIdList = std::unordered_set<ServiceId>;
 
@@ -87,16 +87,17 @@ namespace qb {
     private:
         // Members
         const CoreId   _index;
+        const CoreId   _resolved_index;
         Main           &_engine;
         MPSCBuffer     &_mail_box;
+        PipeMap         _pipes;
         router::memh<Event>   _router;
+        Pipe            &_mono_pipe_swap;
+        Pipe            _mono_pipe;
         AvailableIdList _ids;
         ActorMap        _actors;
         CallbackMap     _actor_callbacks;
         RemoveActorList _actor_to_remove;
-        PipeMap         _pipes;
-        Pipe            &_mono_pipe_swap;
-        Pipe            _mono_pipe;
         EventBuffer     _event_buffer;
         uint64_t        _nanotimer;
         // !Members

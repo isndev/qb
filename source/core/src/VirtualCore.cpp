@@ -59,15 +59,15 @@ static int pthread_setaffinity_np(pthread_t thread, size_t cpu_size,
 namespace qb {
     VirtualCore::VirtualCore(CoreId const id, Main &engine) noexcept
             : _index(id)
+            , _resolved_index(engine._core_set.resolve(id))
             , _engine(engine)
             , _mail_box(engine.getMailBox(id))
-            , _mono_pipe_swap(_pipes[id]) {
+            , _pipes(engine.getNbCore())
+            , _mono_pipe_swap(_pipes[_resolved_index]) {
         _ids.reserve(std::numeric_limits<ServiceId>::max() - _nb_service);
         for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
             _ids.insert(static_cast<ServiceId>(i));
         }
-        for (auto cid : engine._core_set.raw())
-            _pipes[cid];
     }
 
     VirtualCore::~VirtualCore() noexcept {
@@ -87,14 +87,14 @@ namespace qb {
     }
 
     Pipe &VirtualCore::__getPipe__(CoreId core) noexcept {
-        return _pipes.at(core);
+        return _pipes[_engine._core_set.resolve(core)];
     }
 
     void VirtualCore::__receive_events__(EventBucket *buffer, std::size_t const nb_events) {
         std::size_t i = 0;
         while (i < nb_events) {
             auto event = reinterpret_cast<Event *>(buffer + i);
-            // Todo : secure this
+
             event->state.alive = 0;
             _router.route(*event);
             i += event->bucket_size;
@@ -121,15 +121,15 @@ namespace qb {
 
     bool VirtualCore::__flush_all__() noexcept {
         bool ret = false;
-        for (auto &it : _pipes) {
-            auto &pipe = it.second;
-            if (it.first != _index && pipe.end()) {
+        auto in = 0u;
+        for (auto &pipe : _pipes) {
+            if (in != _resolved_index && pipe.end()) {
                 ret = true;
                 auto i = pipe.begin();
                 while (i < pipe.end()) {
                     const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
                     if (!try_send(event) && event.state.qos) {
-                        auto &current_lock = _engine._event_safe_deadlock[_engine._core_set.resolve(_index)];
+                        auto &current_lock = _engine._event_safe_deadlock[_resolved_index];
                         // current locked by event set to true
                         current_lock.store(true, std::memory_order_release);
                         while (!try_send(event)) {
@@ -137,7 +137,7 @@ namespace qb {
                             if (current_lock.load(std::memory_order_acquire)) {
                                 // notify to unlock dest core
                                 _engine
-                                        ._event_safe_deadlock[_engine._core_set.resolve(it.first)]
+                                        ._event_safe_deadlock[_engine._core_set.resolve(event.dest._index)]
                                         .store(false, std::memory_order_acq_rel);
                             } else {
                                 // partial send another core is maybe in deadlock
@@ -152,6 +152,7 @@ namespace qb {
                 pipe.reset();
             }
             end:;
+            ++in;
         }
         return ret;
     }

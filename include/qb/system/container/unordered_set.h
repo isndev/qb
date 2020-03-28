@@ -18,18 +18,16 @@
 
 #ifndef QB_UNORDERED_SET_H
 #define QB_UNORDERED_SET_H
-# include <robin_hood/src/include/robin_hood.h>
+# include <unordered_set>
+# include <ska/unordered_map.hpp>
 
 namespace qb {
 
-    template <typename Key, typename Hash = robin_hood::hash<Key>, typename KeyEqual = std::equal_to<Key>, size_t MaxLoadFactor100 = 80>
-    using unordered_flat_set = robin_hood::unordered_flat_set<Key, Hash, KeyEqual, MaxLoadFactor100>;
+    template <typename T, typename H = std::hash<T>, typename E = std::equal_to<T>, typename A = std::allocator<T> >
+    using unordered_flat_set = ska::flat_hash_set<T, H, E, A>;
 
-    template <typename Key, typename Hash = robin_hood::hash<Key>, typename KeyEqual = std::equal_to<Key>, size_t MaxLoadFactor100 = 80>
-    using unordered_node_set = robin_hood::unordered_node_set<Key, Hash, KeyEqual, MaxLoadFactor100>;
-
-    template <typename Key, typename Hash = robin_hood::hash<Key>, typename KeyEqual = std::equal_to<Key>, size_t MaxLoadFactor100 = 80>
-    using unordered_set = robin_hood::unordered_set<Key, Hash, KeyEqual, MaxLoadFactor100>;
+    template <typename T, typename H = std::hash<T>, typename E = std::equal_to<T>, typename A = std::allocator<T> >
+    using unordered_set = ska::unordered_set<T, H, E, A>;
 
 } // namespace qb
 

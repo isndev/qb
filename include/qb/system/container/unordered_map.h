@@ -18,21 +18,16 @@
 
 #ifndef QB_UNORDERED_MAP_H
 #define QB_UNORDERED_MAP_H
-# include <robin_hood/src/include/robin_hood.h>
+# include <unordered_map>
+# include <ska/unordered_map.hpp>
 
 namespace qb {
 
-    template <typename Key, typename T, typename Hash = robin_hood::hash<Key>,
-            typename KeyEqual = std::equal_to<Key>, size_t MaxLoadFactor100 = 80>
-    using unordered_flat_map = robin_hood::unordered_flat_map<Key, T, Hash, KeyEqual, MaxLoadFactor100>;
+    template <typename Key, typename T, typename H = std::hash<Key>, typename E = std::equal_to<Key>, typename A = std::allocator<std::pair<Key, T> >>
+    using unordered_flat_map = ska::flat_hash_map<Key, T, H, E, A>;
 
-    template <typename Key, typename T, typename Hash = robin_hood::hash<Key>,
-            typename KeyEqual = std::equal_to<Key>, size_t MaxLoadFactor100 = 80>
-    using unordered_node_map = robin_hood::unordered_node_map<Key, T, Hash, KeyEqual, MaxLoadFactor100>;
-
-    template <typename Key, typename T, typename Hash = robin_hood::hash<Key>,
-            typename KeyEqual = std::equal_to<Key>, size_t MaxLoadFactor100 = 80>
-    using unordered_map = robin_hood::unordered_map<Key, T, Hash, KeyEqual, MaxLoadFactor100>;
+    template <typename Key, typename T, typename H = std::hash<Key>, typename E = std::equal_to<Key>, typename A = std::allocator<std::pair<const Key, T> >>
+    using unordered_map = ska::unordered_map<Key, T, H, E, A>;
 
 } // namespace qb
 

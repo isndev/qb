@@ -127,9 +127,7 @@ namespace qb {
      * default registered event to kill Actor by event
      */
     struct KillEvent : public Event {};
-    struct UnregisterCallbackEvent : public Event {
-        ICallback *callback;
-    };
+    struct UnregisterCallbackEvent : public Event {};
 
     enum class ActorStatus : uint32_t {
         Alive,

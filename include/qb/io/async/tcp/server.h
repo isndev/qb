@@ -31,7 +31,7 @@ namespace qb {
                 class server : public input<server<_Derived, _Session, _Prot>, _Prot> {
                 public:
                     using base_t = input<server<_Derived, _Session, _Prot>, _Prot>;
-                    using session_map_t = qb::unordered_map<uint64_t, _Session>;
+                    using session_map_t = std::unordered_map<uint64_t, _Session>;
                 private:
                     session_map_t _sessions;
                 public:
