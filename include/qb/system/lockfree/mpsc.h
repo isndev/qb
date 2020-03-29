@@ -95,6 +95,15 @@ namespace qb {
                     return nb_consume;
                 }
 
+                template <typename Func>
+                size_t consume_all(Func const &func) {
+                    size_t nb_consume = 0;
+                    for (auto &producer : _producers) {
+                        nb_consume += producer._ringbuffer.consume_all(func);
+                    }
+                    return nb_consume;
+                }
+
                 auto &ringOf(size_t const index) {
                     return _producers[index]._ringbuffer;
                 }
@@ -168,6 +177,15 @@ namespace qb {
                     size_t nb_consume = 0;
                     for (size_t i = 0; i < _nb_producer; ++i) {
                         nb_consume += _producers.get()[i]._ringbuffer.dequeue(func, ret, size);
+                    }
+                    return nb_consume;
+                }
+
+                template <typename Func>
+                size_t consume_all(Func const &func) {
+                    size_t nb_consume = 0;
+                    for (size_t i = 0; i < _nb_producer; ++i) {
+                        nb_consume += _producers.get()[i]._ringbuffer.consume_all(func);
                     }
                     return nb_consume;
                 }
