@@ -89,16 +89,19 @@ namespace qb {
         const CoreId   _index;
         const CoreId   _resolved_index;
         Main           &_engine;
+        // event reception
         MPSCBuffer     &_mail_box;
-        PipeMap         _pipes;
         router::memh<Event>   _router;
-        Pipe            &_mono_pipe_swap;
-        Pipe            _mono_pipe;
+        // actors management
         AvailableIdList _ids;
         ActorMap        _actors;
         CallbackMap     _actor_callbacks;
         RemoveActorList _actor_to_remove;
-        EventBuffer     _event_buffer;
+        // event flush
+        PipeMap         _pipes;
+        Pipe            &_mono_pipe_swap;
+        Pipe            _mono_pipe;
+        // --- loop timer
         uint64_t        _nanotimer;
         // !Members
 
