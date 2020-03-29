@@ -107,9 +107,9 @@ namespace qb {
         __receive_events__(_mono_pipe.data() + _mono_pipe.begin(), _mono_pipe.size());
         _mono_pipe.reset();
         // global_core_events
-        _mail_box.consume_all([this](EventBucket *buffer, std::size_t const nb_events) {
-           __receive_events__(buffer, nb_events);
-        });
+        _mail_box.dequeue([this](EventBucket *buffer, std::size_t const nb_events) {
+            __receive_events__(buffer, nb_events);
+        }, _event_buffer.data(), MaxRingEvents);
     }
 
 //    void VirtualCore::__receive_from__(CoreId const index) noexcept {

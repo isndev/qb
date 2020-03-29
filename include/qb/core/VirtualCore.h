@@ -92,16 +92,17 @@ namespace qb {
         // event reception
         MPSCBuffer     &_mail_box;
         router::memh<Event>   _router;
+        // event flush
+        PipeMap         _pipes;
+        Pipe            &_mono_pipe_swap;
+        Pipe            _mono_pipe;
         // actors management
         AvailableIdList _ids;
         ActorMap        _actors;
         CallbackMap     _actor_callbacks;
         RemoveActorList _actor_to_remove;
-        // event flush
-        PipeMap         _pipes;
-        Pipe            &_mono_pipe_swap;
-        Pipe            _mono_pipe;
         // --- loop timer
+        EventBuffer     _event_buffer;
         uint64_t        _nanotimer;
         // !Members
 
