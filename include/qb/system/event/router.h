@@ -198,14 +198,14 @@ namespace qb {
 
             template<typename _Handler>
             void subscribe(_Handler &handler) noexcept {
-                const auto it = _subscribed_handlers.find(handler.id());
+                const auto &it = _subscribed_handlers.find(handler.id());
                 if (it != _subscribed_handlers.cend())
                     delete &it->second;
                 _subscribed_handlers.insert({handler.id(), *new HandlerResolver<_Handler>(handler)});
             }
 
             void unsubscribe(_HandlerId const &id) noexcept {
-                auto it = _subscribed_handlers.find(id);
+                const auto &it = _subscribed_handlers.find(id);
                 if (it != _subscribed_handlers.end()) {
                     delete &it->second;
                     _subscribed_handlers.erase(it);
@@ -255,12 +255,19 @@ namespace qb {
             }
 
             void route(_RawEvent &event) {
+                // /!\ Why do not not protecting this ?
+                // because a dynamic event pushed and not registred
+                // has 100% risk of leaking memory
+                // Todo : may be should add a define to prevent user from this
+                // const auto &it = _registered_events.find(event.getID());
+                // if (likely(it != _registered_events.cend()))
+                //    it->second.resolve(event);
                 _registered_events.at(event.getID()).resolve(_handler, event);
             }
 
             template<typename _Event>
             void subscribe() {
-                auto it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+                const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
                 if (it == _registered_events.cend()) {
                     _registered_events.insert({_RawEvent::template type_to_id<_Event>(), *new EventResolver<_Event>});
                 }
@@ -268,7 +275,7 @@ namespace qb {
 
             template<typename _Event>
             void unsubscribe() {
-                auto it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+                const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
                 if (it != _registered_events.cend()) {
                     delete &it->second;
                     _registered_events.erase(it);
@@ -326,13 +333,14 @@ namespace qb {
                     delete &it.second;
             }
 
-            void route(_RawEvent &event) {
+            void route(_RawEvent &event) const {
+                // /!\ Look notice in of mesh router above
                 _registered_events.at(event.getID()).resolve(event);
             }
 
             template<typename _Event>
             void subscribe(_Handler &handler) {
-                auto it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+                const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
                 if (it == _registered_events.cend()) {
                     auto &resolver = *new EventResolver<_Event>;
                     resolver.subscribe(handler);
@@ -401,13 +409,14 @@ namespace qb {
                     delete &it.second;
             }
 
-            void route(_RawEvent &event) {
+            void route(_RawEvent &event) const {
+                // /!\ Look notice in of mesh router above
                 _registered_events.at(event.getID()).resolve(event);
             }
 
             template<typename _Event, typename _Handler>
             void subscribe(_Handler &handler) {
-                auto it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+                const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
                 if (it == _registered_events.cend()) {
                     auto &resolver = *new EventResolver<_Event>;
                     resolver.subscribe(handler);

@@ -13,7 +13,19 @@
 	path = modules/xml
 	url = https://github.com/zeux/pugixml.git
 	branch = master
+[submodule "modules/robin_hood"]
+	path = modules/robin_hood
+	url = https://github.com/martinus/robin-hood-hashing.git
+	branch = master
+[submodule "modules/tsl"]
+	path = modules/tsl
+	url = https://github.com/Tessil/hopscotch-map.git
+	branch = master
 [submodule "modules/ska"]
 	path = modules/ska
-	url = https://github.com/skarupke/flat_hash_map.git
+	url = https://github.com/isndev/flat_hash_map.git
+	branch = master
+[submodule "modules/ska_hash"]
+	path = modules/ska_hash
+	url = https://github.com/isndev/flat_hash_map.git
 	branch = master
