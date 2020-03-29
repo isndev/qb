@@ -31,7 +31,7 @@ namespace qb {
                 class server : public input<server<_Derived, _Session, _Prot>, _Prot> {
                 public:
                     using base_t = input<server<_Derived, _Session, _Prot>, _Prot>;
-                    using session_map_t = std::unordered_map<uint64_t, _Session>;
+                    using session_map_t = qb::unordered_map<uint64_t, _Session>;
                 private:
                     session_map_t _sessions;
                 public:
@@ -41,9 +41,8 @@ namespace qb {
 
                     void on(typename _Prot::message_type new_io, std::size_t size) {
                         const auto &it = sessions().emplace(
-                                std::piecewise_construct,
-                                std::forward_as_tuple(new_io.ident()),
-                                std::forward_as_tuple(std::ref(static_cast<_Derived &>(*this)))
+                                new_io.ident(),
+                                std::ref(static_cast<_Derived &>(*this))
                         );
                         it.first->second.in() = new_io;
                         it.first->second.start();

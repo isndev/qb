@@ -19,15 +19,15 @@
 #ifndef QB_UNORDERED_MAP_H
 #define QB_UNORDERED_MAP_H
 # include <unordered_map>
-# include <ska/unordered_map.hpp>
+# include <ska_hash/unordered_map.hpp>
 
 namespace qb {
 
-    template <typename Key, typename T, typename H = std::hash<Key>, typename E = std::equal_to<Key>, typename A = std::allocator<std::pair<Key, T> >>
-    using unordered_flat_map = ska::flat_hash_map<Key, T, H, E, A>;
+    template<typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<const K, V>>>
+    using unordered_flat_map = ska::flat_hash_map<K, V, H, E, A>;
 
-    template <typename Key, typename T, typename H = std::hash<Key>, typename E = std::equal_to<Key>, typename A = std::allocator<std::pair<const Key, T> >>
-    using unordered_map = ska::unordered_map<Key, T, H, E, A>;
+    template<typename K, typename V, typename H = std::hash<K>, typename E = std::equal_to<K>, typename A = std::allocator<std::pair<const K, V>>>
+    using unordered_map = ska::unordered_map<K, V, H, E, A>;
 
 } // namespace qb
 

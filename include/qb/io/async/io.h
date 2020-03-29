@@ -84,7 +84,7 @@ namespace qb {
                 _Prot _prot;
             public:
                 constexpr static const bool has_server = false;
-                using message = typename _Prot::message_type;
+                using IOMessage = typename _Prot::message_type;
 
                 input() = default;
                 input(input const &) = delete;
@@ -195,7 +195,7 @@ namespace qb {
                 _Prot _prot;
             public:
                 constexpr static const bool has_server = false;
-                using message = typename _Prot::message_type;
+                using IOMessage = typename _Prot::message_type;
 
                 io() = default;
                 io(io const &) = delete;
