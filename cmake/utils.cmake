@@ -141,11 +141,11 @@ macro(config_compiler_and_linker)
 
     # For building the cube libraries.
     set(cxx_strict "${cxx_default} ${cxx_strict_flags}")
-    if (${QB_PREFIX_UPPER}_WITH_RTTI)
+#    if (${QB_PREFIX_UPPER}_WITH_RTTI)
         set(cxx_default_lib "${cxx_default} ${cxx_strict_flags}")
-    else ()
-        set(cxx_default_lib "${cxx_default} ${cxx_strict_flags} ${cxx_no_rtti_flags}")
-    endif ()
+#    else ()
+#        set(cxx_default_lib "${cxx_default} ${cxx_strict_flags} ${cxx_no_rtti_flags}")
+#    endif ()
 endmacro()
 
 # Defines the cube & cube_main libraries.  User tests should link
