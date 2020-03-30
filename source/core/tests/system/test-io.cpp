@@ -27,7 +27,7 @@ class TestActor : public qb::Actor
 {
 public:
     TestActor() {
-        EXPECT_EQ(static_cast<uint32_t>(id()), 0u);
+        EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         LOG_DEBUG("TestActor had been constructed");
     }
 
@@ -60,32 +60,34 @@ TEST(IO, STRING_TEST) {
     qb::string<40> qb_str3(c_str);
     qb::string<40> qb_str4(qb_str1);
 
-    std::cout << "qb_str1(" << qb_str1.size() << ") " << qb_str1 << std::endl;
-    std::cout << "qb_str2(" << qb_str2.size() << ") " << qb_str2 << std::endl;
-    std::cout << "qb_str3(" << qb_str3.size() << ") " << qb_str3 << std::endl;
-    std::cout << "qb_str1==qb_str2(" << (qb_str1 == qb_str2) << ")" << std::endl;
-    std::cout << "qb_str1==std_str(" << (qb_str1 == std_str) << ")" << std::endl;
-    std::cout << "qb_str1==c_str  (" << (qb_str1 == c_str) << ")" << std::endl;
-    std::cout << "qb_str3==qb_str2(" << (qb_str3 == qb_str2) << ")" << std::endl;
-    std::cout << "qb_str3==std_str(" << (qb_str3 == std_str) << ")" << std::endl;
-    std::cout << "qb_str3==c_str  (" << (qb_str3 == c_str) << ")" << std::endl;
+    EXPECT_EQ(qb_str1.size(), 30u);
+    EXPECT_EQ(qb_str2.size(), 30u);
+    EXPECT_EQ(qb_str3.size(), 40u);
+    EXPECT_TRUE(qb_str1 == qb_str2);
+    EXPECT_FALSE(qb_str1 == std_str);
+    EXPECT_FALSE(qb_str1 == c_str);
+    EXPECT_FALSE(qb_str3 == qb_str2);
+    EXPECT_TRUE(qb_str3 == std_str);
 
     std::sort(qb_str4.begin(), qb_str4.end());
+    std::string tmp;
     for (auto c : qb_str4) {
-        std::cout << c;
+        tmp += c;
     }
-
+    EXPECT_TRUE(tmp == "000111222333444555666777888999");
+    tmp.clear();
     for (auto it = qb_str4.crbegin(); it != qb_str4.crend(); ++it) {
-        std::cout << *it;
+        tmp += *it;
     }
-
+    EXPECT_TRUE(tmp == "999888777666555444333222111000");
     std::cout << std::endl;
     qb_str1 = qb_str2 = qb_str3 = qb_str4 = "end";
-    std::cout << "qb_str1(" << qb_str1.size() << ") " << sizeof(qb_str1) << std::endl;
-    std::cout << "qb_str2(" << qb_str2.size() << ") " << qb_str2 << std::endl;
-    std::cout << "qb_str3(" << qb_str3.size() << ") " << sizeof(qb_str3) << std::endl;
-    std::cout << "qb_str4(" << qb_str4.size() << ") " << qb_str4 << std::endl;
-
+    EXPECT_TRUE(qb_str1.size() == qb_str2.size());
+    EXPECT_TRUE(qb_str2.size() == qb_str3.size());
+    EXPECT_TRUE(qb_str3.size() == qb_str4.size());
+    EXPECT_TRUE(qb_str1 == qb_str2);
+    EXPECT_TRUE(qb_str2 == qb_str3);
+    EXPECT_TRUE(qb_str3 == qb_str4);
 }
 
 TEST(IO, BasicTestMonoCore) {
