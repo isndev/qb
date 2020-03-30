@@ -179,7 +179,7 @@ public:
 
 };
 
-TEST(Session, SecureTcpAccept) {
+TEST(Session, DISABLED_SecureTcpAccept) {
     async::init();
 
     MySecureServer server;
@@ -212,7 +212,7 @@ public:
 
 };
 
-TEST(Session, SecureTcpConnect) {
+TEST(Session, DISABLED_SecureTcpConnect) {
     async::init();
 
     MySecureServer server;
