@@ -300,6 +300,12 @@ namespace nanolog
 		return *this;
 	}
 
+    NanoLogLine& NanoLogLine::operator<<(std::string_view const & arg)
+    {
+        encode_c_string(arg.data(), arg.length());
+        return *this;
+    }
+
 	NanoLogLine& NanoLogLine::operator<<(int32_t arg)
 	{
 		encode < int32_t >(arg, TupleIndex < int32_t, SupportedTypes >::value);
