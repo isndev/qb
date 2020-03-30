@@ -31,15 +31,34 @@ namespace qb {
         auto it = _core_set.raw().find(index);
         ActorId id = ActorId::NotFound;
         if (!Main::is_running && it != _core_set.raw().end()) {
-            if constexpr (std::is_base_of<Service, _Actor>::value)
-                id = ActorId(_Actor::ServiceIndex, index);
-            else
-                id = ActorId(generated_sid++, index);
-            auto fac = _actor_factories[index].find(id);
-            if (fac == _actor_factories[index].end())
-                _actor_factories[index].insert({id, new TActorFactory<_Actor, _Args...>(id, std::forward<_Args>(args)...)});
-            else
-                id = ActorId::NotFound;
+            auto &initializer = _core_initializers[index];
+            if constexpr (std::is_base_of<Service, _Actor>::value) {
+                if (initializer._registered_services.find(_Actor::ServiceIndex)
+                    == initializer._registered_services.end()) {
+                    initializer._registered_services.insert(_Actor::ServiceIndex);
+                    id = ActorId(_Actor::ServiceIndex, index);
+                } else {
+                    LOG_CRIT("[Start Sequence] Failed to add Service Actor(" << typeid(_Actor).name() << ")"
+                    << " in Core(" << index << ")"
+                    << " : Already registered");
+                    return id;
+                }
+            } else {
+                if (unlikely(initializer._next_id == std::numeric_limits<ServiceId>::max())) {
+                    LOG_CRIT("[Start Sequence] Failed to add Actor(" << typeid(_Actor).name() << ")"
+                    << " in Core(" << index << ")"
+                    << " : Max number of Actors reached");
+                    return id;
+                }
+                id = ActorId(initializer._next_id++, index);
+            }
+            initializer._actor_factories.push_back(
+                    new TActorFactory<_Actor, _Args...>(id, std::forward<_Args>(args)...)
+            );
+        } else {
+            LOG_CRIT("[Start Sequence] Failed to add Actor(" << typeid(_Actor).name() << ")"
+            << " in Core(" << index << ")"
+            << " : Engine is running or Core does not exist");
         }
         return id;
     }

@@ -22,6 +22,23 @@
 
 namespace qb {
 
+    Actor::Actor() noexcept {
+        __set_id(VirtualCore::_handler->__generate_id__());
+
+        registerEvent<KillEvent>(*this);
+        registerEvent<UnregisterCallbackEvent>(*this);
+        registerEvent<PingEvent>(*this);
+    }
+
+    Actor::Actor(ActorId const id) noexcept {
+        __set_id(id);
+
+        registerEvent<KillEvent>(*this);
+        registerEvent<UnregisterCallbackEvent>(*this);
+        registerEvent<PingEvent>(*this);
+    }
+
+
     void Actor::__set_id(ActorId const &id) noexcept {
         static_cast<ActorId &>(*this) = id;
     }
@@ -47,7 +64,7 @@ namespace qb {
         return VirtualCore::_handler->time();
     }
 
-    bool Actor::isAlive() const noexcept{
+    bool Actor::is_alive() const noexcept{
         return _alive;
     }
 
@@ -57,6 +74,10 @@ namespace qb {
 
     CoreId Actor::getIndex() const noexcept {
         return VirtualCore::_handler->getIndex();
+    }
+
+    std::string_view Actor::getName() const noexcept {
+        return name;
     }
 
     void Actor::unregisterCallback() const noexcept {
@@ -104,11 +125,15 @@ namespace qb {
     bool Actor::try_send(Event const &event) const noexcept {
         return VirtualCore::_handler->try_send(event);
     }
+
+    Service::Service(ServiceId const sid)
+        : Actor(ActorId(sid, VirtualCore::_handler->getIndex()))
+    {}
 }
 
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor){
     std::stringstream ss;
-    ss << "Actor(" << actor.id().index() << "." << actor.id().sid() << ")";
+    ss << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << ")";
     os << ss.str();
     return os;
 }

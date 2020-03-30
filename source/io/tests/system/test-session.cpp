@@ -29,7 +29,7 @@ class FileSession
         , public ostream<sys::file> {
 public:
 
-    void on(message msg, std::size_t size) {
+    void on(IOMessage msg, std::size_t size) {
         this->publish(msg, size);
     }
 };
@@ -67,7 +67,7 @@ public:
     MyClient(MyServer &server)
             : client(server) {}
 
-    void on(message msg, std::size_t size) {
+    void on(IOMessage msg, std::size_t size) {
         std::cout << "read " << size << " bytes" << std::endl;
     }
 };

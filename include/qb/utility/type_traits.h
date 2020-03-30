@@ -251,4 +251,8 @@ struct has_member_type_##Type                                                   
 : public std::integral_constant<bool, HasMemberType_##Type<T>::RESULT>            \
 { };
 
+CREATE_MEMBER_CHECKS(is_alive);
+CREATE_MEMBER_CHECKS(is_broadcast);
+CREATE_MEMBER_CHECKS(is_valid);
+
 #endif //QB_TYPE_TRAITS_H

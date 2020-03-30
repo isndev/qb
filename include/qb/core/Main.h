@@ -31,6 +31,15 @@ namespace qb {
     class VirtualCore;
     class IActorFactory;
 
+    struct CoreInitializer {
+        ServiceId _next_id;
+        qb::unordered_set<ServiceId> _registered_services;
+        std::vector<IActorFactory *> _actor_factories;
+
+        CoreInitializer() = default;
+        ~CoreInitializer() noexcept;
+    };
+
     /*!
      * @class Main core/Main.h qb/main.h
      * @ingroup Core
@@ -47,7 +56,6 @@ namespace qb {
 
         static std::atomic<uint64_t> sync_start;
         static bool                  is_running;
-        static ServiceId             generated_sid;
         static void onSignal(int signal);
         static void start_thread(CoreId coreId, Main &engine) noexcept;
     private:
@@ -55,7 +63,7 @@ namespace qb {
         std::vector<std::atomic<bool>> _event_safe_deadlock;
         std::vector<MPSCBuffer *> _mail_boxes;
         std::vector<std::thread>  _cores;
-        qb::unordered_map<CoreId, qb::unordered_map<uint32_t, IActorFactory *>> _actor_factories;
+        qb::unordered_map<CoreId, CoreInitializer> _core_initializers;
 
         void __init__() noexcept;
         bool send(Event const &event) const noexcept;

@@ -23,10 +23,6 @@
 #ifndef QB_EVENT_ROUTER_H
 #define QB_EVENT_ROUTER_H
 
-CREATE_MEMBER_CHECKS(is_alive);
-CREATE_MEMBER_CHECKS(is_broadcast);
-CREATE_MEMBER_CHECKS(is_valid);
-
 namespace qb {
     namespace router {
 //        struct EventExample {
@@ -289,7 +285,7 @@ namespace qb {
             }
         };
 
-        template<typename _RawEvent, typename _Handler = void>
+        template<typename _RawEvent, bool _CleanEvent = true, typename _Handler = void>
         class memh {
         public:
             using _EventId = typename _RawEvent::id_type;
@@ -314,7 +310,7 @@ namespace qb {
 
                 void resolve(_RawEvent &event) final {
                     auto &revent = reinterpret_cast<_Event &>(event);
-                    semh<_Event, _Handler>::template route<true>(revent);
+                    semh<_Event, _Handler>::template route<_CleanEvent>(revent);
                 }
 
                 void unsubscribe(_HandlerId const &id) final {
@@ -352,7 +348,9 @@ namespace qb {
 
             template<typename _Event>
             void unsubscribe(_Handler &handler) const {
-                _registered_events.at(_RawEvent::template type_to_id<_Event>()).unsubscribe(handler.id());
+                auto const &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+                if (it != _registered_events.cend())
+                    it->second.unsubscribe(handler.id());
             }
 
             void unsubscribe(_Handler const &handler) const {
@@ -366,8 +364,8 @@ namespace qb {
             }
         };
 
-        template<typename _RawEvent>
-        class memh<_RawEvent, void> {
+        template<typename _RawEvent, bool _CleanEvent>
+        class memh<_RawEvent, _CleanEvent, void> {
         public:
             using _EventId = typename _RawEvent::id_type;
             using _HandlerId = typename _RawEvent::id_handler_type;
@@ -390,7 +388,7 @@ namespace qb {
 
                 void resolve(_RawEvent &event) const final {
                     auto &revent = reinterpret_cast<_Event &>(event);
-                    semh<_Event>::template route<true>(revent);
+                    semh<_Event>::template route<_CleanEvent>(revent);
                 }
 
                 void unsubscribe(typename _RawEvent::id_handler_type const &id) final {
@@ -428,7 +426,9 @@ namespace qb {
 
             template<typename _Event, typename _Handler>
             void unsubscribe(_Handler const &handler) const {
-                _registered_events.at(_RawEvent::template type_to_id<_Event>()).unsubscribe(handler.id());
+                auto const &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+                if (it != _registered_events.cend())
+                    it->second.unsubscribe(handler.id());
             }
 
             template<typename _Handler>

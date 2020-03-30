@@ -36,10 +36,23 @@ namespace qb {
     _Actor *VirtualCore::addReferencedActor(_Init &&...init) noexcept {
         auto actor = new _Actor(std::forward<_Init>(init)...);
         actor->id_type = type_id<_Actor>();
+        actor->name = typeid(_Actor).name();
         if (appendActor(*actor, std::is_base_of<Service, _Actor>::value, true).is_valid())
             return actor;
         return nullptr;
     };
+
+    template <typename _ServiceActor>
+    _ServiceActor *VirtualCore::getService() const noexcept {
+        const auto &it = _actors.find( ActorId(_ServiceActor::ServiceIndex, _index));
+        if (it == _actors.end()) {
+            LOG_CRIT("Failed to get Service[" << typeid(_ServiceActor).name() << "]" <<
+            " in Core(" << _index << ")" <<
+            " : does not exist");
+            return nullptr;
+        }
+        return dynamic_cast<_ServiceActor *>(it->second);
+    }
 
     template <typename _Actor>
     void VirtualCore::registerCallback(_Actor &actor) noexcept {

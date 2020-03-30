@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <thread>
 #include <qb/utility/branch_hints.h>
+#include <qb/utility/type_traits.h>
 #include "event/base.h"
 
 namespace qb {
@@ -46,7 +47,10 @@ namespace qb {
                             : _actor(actor), _event(loop) {}
 
                     virtual void invoke() override final {
-//                        if (likely(_actor.isAlive()))
+                        if constexpr (has_member_func_is_alive<_Actor>::value) {
+                            if (likely(_actor.is_alive()))
+                                _actor.on(_event);
+                        } else
                             _actor.on(_event);
                     }
                 };
@@ -85,7 +89,6 @@ namespace qb {
                         revent->_event.set(std::forward<_Args>(args)...);
 
                     _registeredEvents.push_back(revent);
-                    // std::cout << _registeredEvents.size() << " registered events" << std::endl;
                     return revent->_event;
                 }
 

@@ -36,9 +36,7 @@ class TestActorDependency
     qb::Main::CoreBuilder::ActorIdList const _ids;
 public:
     explicit TestActorDependency(qb::Main::CoreBuilder::ActorIdList const &ids = {})
-            : _ids(std::move(ids)) {}
-
-    virtual bool onInit() override final {
+            : _ids(std::move(ids)) {
         if (!_ids.size()) {
             registerEvent<qb::RequireEvent>(*this);
             require<TestActor>();
@@ -47,7 +45,6 @@ public:
                 push<qb::KillEvent>(id);
             kill();
         }
-        return true;
     }
 
     uint32_t counter = 0;

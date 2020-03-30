@@ -84,6 +84,11 @@ namespace qb {
         return {VirtualCore::getServices()[type_id<Tag>()], index};
     }
 
+    template <typename _ServiceActor>
+    _ServiceActor *Actor::getService() const noexcept {
+        return VirtualCore::_handler->getService<_ServiceActor>();
+    }
+
     template<typename _Event, typename ..._Args>
     Actor::EventBuilder &Actor::EventBuilder::push(_Args &&...args) noexcept {
         dest_pipe.push<_Event>(std::forward<_Args>(args)...);
