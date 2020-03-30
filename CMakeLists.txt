@@ -54,8 +54,8 @@ endif()
 
 set(BUILD_TESTING OFF)
 if (${QB_PREFIX_UPPER}_BUILD_TEST)
-#    include(CTest)
-#    enable_testing()
+    include(CTest)
+    enable_testing()
     if (${QB_PREFIX_UPPER}_BUILD_BENCHMARK)
         # add google benchmark module
         set(BENCHMARK_DOWNLOAD_DEPENDENCIES ON CACHE BOOL "" FORCE)
