@@ -29,11 +29,7 @@ public:
     explicit ConsumerActor(qb::ActorIds const ids = {})
             : _idList(ids)
     {
-    }
-
-    virtual bool onInit() override final {
         registerEvent<Event>(*this);
-        return true;
     }
 
     void on(Event &event) {

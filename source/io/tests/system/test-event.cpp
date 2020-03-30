@@ -27,7 +27,7 @@ struct FakeActor {
     int nb_events = 0;
     int fd_test = 0;
 
-    bool isAlive() { return true; }
+    bool is_alive() { return true; }
 
     void on(qb::io::async::event::signal<SIGINT> const &event) {
         EXPECT_EQ(SIGINT, event.signum);

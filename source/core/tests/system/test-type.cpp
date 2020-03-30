@@ -36,7 +36,6 @@ struct NonTriviallyDestructibleEvent : public TriviallyDestructibleEvent {
 };
 
 TEST(TYPE, AllCheck) {
-    std::cout << "sizeof<std::size_t>(" << sizeof(std::array<uint8_t, 255>) << ")" << std::endl;
     std::cout << "-------- Constants --------" << std::endl;
     std::cout << "QB_LOCKFREE_CACHELINE_BYTES(" << QB_LOCKFREE_CACHELINE_BYTES << ")" << std::endl;
     std::cout << "QB_LOCKFREE_EVENT_BUCKET_BYTES(" << QB_LOCKFREE_EVENT_BUCKET_BYTES << ")" << std::endl;
@@ -57,7 +56,9 @@ TEST(TYPE, AllCheck) {
     std::cout << "sizeof<ProxyPipe>(" << sizeof(qb::ProxyPipe) << ")" << std::endl;
     std::cout << "sizeof<Actor>(" << sizeof(qb::Actor) << ")" << std::endl;
     std::cout << "sizeof<EventQOS0>(" << sizeof(qb::EventQOS0) << ")" << std::endl;
+#ifdef NDEBUG
     EXPECT_EQ(sizeof(qb::Event), 16);
+#endif
     std::cout << "is_trivially_destructible<EventQOS0>(" << std::is_trivially_destructible_v<qb::EventQOS0> << ")" << std::endl;
     EXPECT_EQ(std::is_trivially_destructible_v<qb::EventQOS0>, 1);
     std::cout << "sizeof<EventQOS1>(" << sizeof(qb::EventQOS1) << ")" << std::endl;

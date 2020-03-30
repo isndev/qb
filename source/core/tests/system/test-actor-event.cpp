@@ -58,17 +58,14 @@ class TestActorReceiver
     uint32_t       _count;
 public:
     explicit TestActorReceiver(uint32_t const max_events)
-        : _max_events(max_events), _count(0) {}
+        : _max_events(max_events), _count(0) {
+        registerEvent<TestEvent>(*this);
+        registerEvent<RemovedEvent>(*this);
+        unregisterEvent<RemovedEvent>(*this);
+    }
 
     ~TestActorReceiver() {
         EXPECT_EQ(_count, _max_events);
-    }
-
-    virtual bool onInit() override final {
-      registerEvent<TestEvent>(*this);
-      registerEvent<RemovedEvent>(*this);
-      unregisterEvent<RemovedEvent>(*this);
-      return true;
     }
 
     void on(TestEvent const &event) {

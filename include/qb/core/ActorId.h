@@ -44,6 +44,7 @@ namespace qb {
         friend class Main;
         friend class VirtualCore;
         friend class Actor;
+        friend class Service;
 
         ServiceId _id;
         CoreId _index;

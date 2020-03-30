@@ -64,7 +64,7 @@ namespace qb {
             , _mail_box(engine.getMailBox(id))
             , _pipes(engine.getNbCore())
             , _mono_pipe_swap(_pipes[_resolved_index]) {
-        _ids.reserve(std::numeric_limits<ServiceId>::max() - _nb_service);
+//        _ids.reserve(std::numeric_limits<ServiceId>::max() - _nb_service);
         for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
             _ids.insert(static_cast<ServiceId>(i));
         }
@@ -242,34 +242,9 @@ namespace qb {
     //!Workflow
     // Actor Management
     ActorId VirtualCore::initActor(Actor &actor, bool const is_service, bool const doInit) noexcept {
-        if (is_service) {
-            actor._index = _index;
-            if (_actors.find(actor.id()) != _actors.end()) {
-                delete &actor;
-                return ActorId::NotFound;
-            }
-        } else {
-            auto id = actor.id();
-            if (id.is_valid())
-                _ids.extract(id.sid());
-            else
-                id = __generate_id__();
-
-            actor.__set_id(id);
-            // Number of actors attends to its limit in this core
-            if (!id.is_valid()) {
-                _ids.insert(static_cast<ServiceId>(id.sid()));
-                delete &actor;
-                return ActorId::NotFound;
-            }
-        }
-
-        registerEvent<KillEvent>(actor);
-        registerEvent<UnregisterCallbackEvent>(actor);
-        registerEvent<PingEvent>(actor);
-
         if (doInit && unlikely(!actor.onInit())) {
             removeActor(actor.id());
+
             return ActorId::NotFound;
         }
 
@@ -278,8 +253,13 @@ namespace qb {
 
     ActorId VirtualCore::appendActor(Actor &actor, bool const is_service, bool const doInit) noexcept {
         if (initActor(actor, is_service, doInit).is_valid()) {
-            _actors.insert({actor.id(), &actor});
-            LOG_DEBUG("New " << actor);
+            if (_actors.find(actor.id()) == _actors.end()) {
+                _actors.insert({actor.id(), &actor});
+                LOG_DEBUG("New " << actor);
+            } else {
+                LOG_CRIT("Error Cannot add Service Actor multiple times" << actor);
+                return ActorId::NotFound;
+            }
             return actor.id();
         }
         return ActorId::NotFound;

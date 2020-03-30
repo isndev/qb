@@ -40,12 +40,11 @@ if(NOT CYGWIN)
 endif()
 
 set(QB_PATH "root" ${CMAKE_CURRENT_SOURCE_DIR})
-option("${QB_PREFIX_UPPER}_BUILD_TEST" "Build Cube Tests" OFF)
-option("${QB_PREFIX_UPPER}_BUILD_BENCHMARK" "Build Cube Benchmarks" OFF)
-option("${QB_PREFIX_UPPER}_BUILD_SAMPLE" "Build Cube Samples" OFF)
-option("${QB_PREFIX_UPPER}_BUILD_DOC" "Build Cube Documentation" OFF)
+option("${QB_PREFIX_UPPER}_BUILD_TEST" "Build qb Tests" OFF)
+option("${QB_PREFIX_UPPER}_BUILD_BENCHMARK" "Build qb Benchmarks" OFF)
+option("${QB_PREFIX_UPPER}_BUILD_SAMPLE" "Build qb Samples" OFF)
+option("${QB_PREFIX_UPPER}_BUILD_DOC" "Build qb Documentation" OFF)
 option("${QB_PREFIX_UPPER}_WITH_LOG" "Enable nanolog" ON)
-option("${QB_PREFIX_UPPER}_WITH_RTTI" "Build with RTTI" ON)
 option("${QB_PREFIX_UPPER}_WITH_TCMALLOC" "TCMalloc is ennabled" OFF)
 
 #default build type to Release
@@ -111,18 +110,11 @@ if (NOT WIN32 AND ${QB_PREFIX_UPPER}_USE_TCMALLOC)
     endif()
 endif()
 
-# Cube Main Library
+# qb Main Library
 add_subdirectory(source/core)
 
 # Generate Documentation
 add_subdirectory(docs)
-
-if(${QB_PREFIX_UPPER}_WITH_RTTI)
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries with RTTI")
-else()
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries without RTTI")
-    set(${QB_PREFIX_UPPER}_CXX_FLAGS "${${QB_PREFIX_UPPER}_CXX_FLAGS} ${cxx_no_rtti_flags}")
-endif()
 
 if(QB_MODULE_PATH)
     qb_load_modules(${QB_MODULE_PATH})

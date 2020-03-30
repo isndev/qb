@@ -33,6 +33,7 @@ namespace qb {
 
     class VirtualCore;
     class ActorProxy;
+    class Service;
 
     /*!
      * @class Actor core/Actor.h qb/actor.h
@@ -48,7 +49,9 @@ namespace qb {
     {
         friend class VirtualCore;
         friend class ActorProxy;
+        friend class Service;
 
+        const char * name = "unnamed";
         mutable bool _alive = true;
         std::uint32_t id_type;
         void __set_id(ActorId const &id) noexcept;
@@ -59,6 +62,8 @@ namespace qb {
          */
         template<typename _Type>
         bool require_type() const noexcept;
+
+        Actor(ActorId const id) noexcept;
     protected:
         /*!
          * @private
@@ -77,7 +82,7 @@ namespace qb {
 
         /*!
          */
-        Actor() noexcept = default;
+        Actor() noexcept;
 
         /*!
          */
@@ -99,7 +104,7 @@ namespace qb {
          * @attention
          * /!\ If initialization has failed DerivedActor will not be added to the engine
          */
-        virtual bool onInit() = 0;
+        virtual bool onInit() { return true; };
 
     public:
         /*!
@@ -194,16 +199,22 @@ namespace qb {
          */
 
         /*!
-         * Get current ActorId
+         * Get ActorId
          * @return ActorId
          */
         ActorId id() const noexcept { return *this; }
 
         /*!
-         * Get current core index
+         * Get core index
          * @return core index
          */
         CoreId getIndex() const noexcept;
+
+        /*!
+         * Get derived class name
+         * @return name as string_view
+        */
+        std::string_view getName() const noexcept;
 
         /*!
          * @brief Get current time
@@ -228,14 +239,17 @@ namespace qb {
         static ActorId getServiceId(CoreId const index) noexcept;
 
         /*!
+         * @brief Get direct access to ServiceActor* in same core
+         * @return ptr to _ServiceActor else nullptr if not registered in core
+         */
+        template <typename _ServiceActor>
+        _ServiceActor *getService() const noexcept;
+
+        /*!
          * @brief Check if Actor is alive
          * @return true if Actor is alive else false
          */
-        bool isAlive() const noexcept;
-
-        bool is_alive() const noexcept {
-            return _alive;
-        }
+        bool is_alive() const noexcept;
 
         /*!
          * @}
@@ -504,7 +518,10 @@ namespace qb {
      * @class Service
      * @brief internal
      */
-    class Service {};
+    class Service : public Actor {
+    public:
+        Service(ServiceId const sid);
+    };
 
     /*!
      * @class ServiceActor actor.h qb/actor.h
@@ -517,14 +534,13 @@ namespace qb {
      * Inherited Service Actors are unique per VirtualCore.
      */
     template <typename Tag>
-    class ServiceActor : public Service, public Actor {
+    class ServiceActor : public Service {
         friend class Main;
+        friend class VirtualCore;
         static const ServiceId ServiceIndex;
     public:
 
-        ServiceActor() {
-            __set_id(ServiceIndex, 0);
-        }
+        ServiceActor() : Service(ServiceIndex) {}
     };
 
     class IActorFactory {
@@ -542,8 +558,9 @@ namespace qb {
         void setType(Actor &actor) {
             actor.id_type = type_id<_Type>();
         }
-        void setId(Actor &actor, ActorId const id) {
-            actor.__set_id(id);
+        template <typename _Type>
+        void setName(Actor &actor) {
+            actor.name = typeid(_Type).name();
         }
     };
 
@@ -561,7 +578,7 @@ namespace qb {
         Actor *create_impl(std::index_sequence<Is...>) {
             auto actor = new _Actor(std::get<Is>(_parameters)...);
             setType<_Actor>(*actor);
-            setId(*actor, _id);
+            setName<_Actor>(*actor);
             return actor;
         }
 

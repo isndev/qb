@@ -19,7 +19,7 @@
 #define QB_CORE_H
 # include <iostream>
 # include <vector>
-# include <unordered_set>
+# include <set>
 # include <thread>
 
 #if defined(unix) || defined(__unix) || defined(__unix__)
@@ -71,6 +71,7 @@ namespace qb {
         };
 
         friend class Actor;
+        friend class Service;
         friend class Main;
         ////////////
         constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_EVENT_BUCKET_BYTES;
@@ -81,7 +82,7 @@ namespace qb {
         using CallbackMap = qb::unordered_map<ActorId, ICallback *>;
         using PipeMap = std::vector<Pipe>;
         using RemoveActorList = qb::unordered_set<ActorId>;
-        using AvailableIdList = std::unordered_set<ServiceId>;
+        using AvailableIdList = std::set<ServiceId>;
 
         //!Types
     private:
@@ -136,7 +137,6 @@ namespace qb {
         ActorId initActor(Actor &actor, bool const is_service, bool const doInit) noexcept;
         ActorId appendActor(Actor &actor, bool const is_service, bool const doInit = false) noexcept;
         void removeActor(ActorId const id) noexcept;
-
         //!Actor Management
 
         void start();
@@ -145,6 +145,10 @@ namespace qb {
     private:
         template<typename _Actor, typename ..._Init>
         _Actor *addReferencedActor(_Init &&...init) noexcept;
+        template <typename _ServiceActor>
+        _ServiceActor *getService() const noexcept;
+
+
         void killActor(ActorId const id) noexcept;
 
         template <typename _Actor>

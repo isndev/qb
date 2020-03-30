@@ -22,6 +22,12 @@
 
 namespace qb {
 
+    CoreInitializer::~CoreInitializer() noexcept
+    {
+        for (auto factory : _actor_factories)
+            delete factory;
+    }
+
     void Main::onSignal(int signal) {
         io::cout() << "Received signal(" << signal << ") will stop the engine" << std::endl;
         is_running = false;
@@ -32,10 +38,10 @@ namespace qb {
         for (auto core_id : _core_set._raw_set) {
             const auto nb_producers = _core_set.getNbCore();
             _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(nb_producers);
+            _core_initializers[core_id]._next_id = VirtualCore::_nb_service + 1;
         }
         sync_start.store(0, std::memory_order_release);
         is_running = false;
-        generated_sid = VirtualCore::_nb_service + 1;
         LOG_INFO("[MAIN] Init with " << getNbCore() << " cores");
     }
 
@@ -60,9 +66,6 @@ namespace qb {
             if (mailbox)
                 delete mailbox;
         }
-        for (auto &actor_factory : _actor_factories)
-            for (auto factory : actor_factory.second)
-                delete factory.second;
     }
 
     bool Main::send(Event const &event) const noexcept {
@@ -79,7 +82,7 @@ namespace qb {
         io::async::init();
         try {
             // Init VirtualCore
-            auto &core_factory = engine._actor_factories[coreId];
+            auto &core_factory = engine._core_initializers[coreId]._actor_factories;
             core.__init__();
             if (!core_factory.size()) {
                 LOG_CRIT("" << core << " Started with 0 Actor");
@@ -88,13 +91,14 @@ namespace qb {
             }
             else if (std::any_of(core_factory.begin(), core_factory.end(),
                     [&core](auto it) {
-                        return !core.appendActor(*it.second->create(), it.second->isService());
+                        return !core.appendActor(*it->create(), it->isService()).is_valid();
                     }))
             {
                 LOG_CRIT("Actor at " << core << " failed to init");
                 Main::sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
-            }
-            core.__init__actors__();
+            } else
+                core.__init__actors__();
+            core_factory.clear();
             if (!core.__wait__all__cores__ready())
                 return;
             core.__workflow__();
@@ -159,7 +163,6 @@ namespace qb {
 
     std::atomic<uint64_t> Main::sync_start(0);
     bool Main::is_running(false);
-    ServiceId Main::generated_sid = 0;
 
     Main::CoreBuilder::CoreBuilder(CoreBuilder const &rhs) noexcept
             : _index(rhs._index)

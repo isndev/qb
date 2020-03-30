@@ -39,13 +39,9 @@ public:
             : _idList(ids)
             , _max_events(max)
     {
-    }
-
-    virtual bool onInit() override final {
         registerEvent<Event>(*this);
         for (auto to : _idList)
             send<Event>(to, id());
-        return true;
     }
 
     void on(Event &event) {

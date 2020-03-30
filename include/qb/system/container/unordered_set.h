@@ -25,9 +25,13 @@ namespace qb {
 
     template<typename T, typename H = std::hash<T>, typename E = std::equal_to<T>, typename A = std::allocator<T>>
     using unordered_flat_set = ska::flat_hash_set<T, H, E, A>;
-
+#ifdef NDEBUG
     template<typename T, typename H = std::hash<T>, typename E = std::equal_to<T>, typename A = std::allocator<T>>
     using unordered_set = ska::unordered_set<T, H, E, A>;
+#else
+    template<typename T, typename H = std::hash<T>, typename E = std::equal_to<T>, typename A = std::allocator<T>>
+    using unordered_set = std::unordered_set<T, H, E, A>;
+#endif
 
 } // namespace qb
 
