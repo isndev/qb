@@ -426,7 +426,7 @@ namespace qb {
         inline uint32_t is(uint32_t const id) const noexcept { return id == type_id<_Type>(); }
 
         template<typename _Type>
-        inline uint32_t is(RequireEvent const &event) const noexcept { return event.type == Event::type_to_id<_Type>(); }
+        inline uint32_t is(RequireEvent const &event) const noexcept { return event.type == type_id<_Type>(); }
 
         template<typename ..._Actors>
         bool require() const noexcept;
