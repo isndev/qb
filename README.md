@@ -32,17 +32,19 @@ The **qb** framework is a thin-layer multicore-optimized runtime that enable use
 
 ## Current development
 #### qb Version 2
-- Is globally faster
-- Introduces event **QOS** (quality of service) strategies
-- Adds a new way to manage **inputs/outputs** and **external** communications
-- Works on **arm** architectures
-- Adds more **samples** and tutorials
-- Official benchmarks vs other frameworks
-- and more
-#### qb UAML Tool
+- *It's* globally faster
+- *It's* introducing new event **QOS** (quality of service) strategies
+- *It's* adding a new way to manage **inputs/outputs** and **external** communications
+- *It's* working on **arm** architectures
+- *It's* adding more **samples** and tutorials
+- *It's* releasing official benchmarks
+- *and more...*
+#### qb UAML* Tool
 - **Design** and **generate** your software architecture using **qb UMAL Tool**
-#### qb Live Analyser Tool
-- **Monitor**, **analyse** and **debug** by connecting your software to **qb Live Analyser Tool**
+
+<sub>*Unified Actor Modeling Language</sub>
+#### qb Visual Analyser Tool
+- **Monitor**, **analyse** and **debug** your software by connecting it to **qb Visual Analyser Tool**
 
 # The Actor Model
 
