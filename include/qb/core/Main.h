@@ -19,7 +19,8 @@
 #define QB_MAIN_H
 # include <iostream>
 # include <vector>
-# include <unordered_map>
+# include <qb/system/container/unordered_map.h>
+# include <thread>
 // include from qb
 # include <qb/system/lockfree/mpsc.h>
 # include "Event.h"
@@ -28,6 +29,16 @@
 namespace qb {
 
     class VirtualCore;
+    class IActorFactory;
+
+    struct CoreInitializer {
+        ServiceId _next_id;
+        qb::unordered_set<ServiceId> _registered_services;
+        std::vector<IActorFactory *> _actor_factories;
+
+        CoreInitializer() = default;
+        ~CoreInitializer() noexcept;
+    };
 
     /*!
      * @class Main core/Main.h qb/main.h
@@ -39,23 +50,26 @@ namespace qb {
     class Main {
         friend class VirtualCore;
         constexpr static const uint64_t MaxRingEvents =
-                (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_CACHELINE_BYTES);
+                (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
         //////// Types
-        using MPSCBuffer = lockfree::mpsc::ringbuffer<CacheLine, MaxRingEvents, 0>;
+        using MPSCBuffer = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
 
         static std::atomic<uint64_t> sync_start;
         static bool                  is_running;
         static void onSignal(int signal);
-
+        static void start_thread(CoreId coreId, Main &engine) noexcept;
     private:
         CoreSet _core_set;
+        std::vector<std::atomic<bool>> _event_safe_deadlock;
         std::vector<MPSCBuffer *> _mail_boxes;
-        std::unordered_map<uint8_t, VirtualCore *> _cores;
+        std::vector<std::thread>  _cores;
+        qb::unordered_map<CoreId, CoreInitializer> _core_initializers;
 
-        void __init__();
-        bool send(Event const &event) const;
-        MPSCBuffer &getMailBox(uint8_t const id) const;
-        std::size_t getNbCore() const;
+        void __init__() noexcept;
+        bool send(Event const &event) const noexcept;
+        bool broadcast(Event const &event) const noexcept;
+        MPSCBuffer &getMailBox(CoreId const id) const noexcept;
+        CoreId getNbCore() const noexcept;
     public:
 
         /*!
@@ -68,12 +82,12 @@ namespace qb {
         private:
             friend class Main;
 
-            const uint16_t _index;
+            const CoreId _index;
             Main &_main;
             ActorIdList _ret_ids;
             bool _valid;
 
-            CoreBuilder(Main &main, uint16_t const index)
+            CoreBuilder(Main &main, CoreId const index) noexcept
                     : _index(index)
                     , _main(main)
                     , _valid(true)
@@ -81,7 +95,7 @@ namespace qb {
 
             CoreBuilder() = delete;
         public:
-            CoreBuilder(CoreBuilder const &rhs);
+            CoreBuilder(CoreBuilder const &rhs) noexcept;
 
             /*!
              * @brief Create new _Actor
@@ -102,21 +116,23 @@ namespace qb {
              * This function is not available when the engine is running.
              */
             template<typename _Actor, typename ..._Args>
-            CoreBuilder &addActor(_Args &&...args);
+            CoreBuilder &addActor(_Args &&...args) noexcept;
 
-            bool valid() const;
-            operator bool() const;
+            bool valid() const noexcept;
+            operator bool() const noexcept;
 
             /*!
              * @brief Get list of created ActorId by the CoreBuilder
              * @return Created ActorId list
              */
-            ActorIdList const &idList() const;
+            ActorIdList const &idList() const noexcept;
         };
 
+        using ActorIds = CoreBuilder::ActorIdList;
+
         Main() = delete;
-        explicit Main(CoreSet const &core_set);
-        explicit Main(std::unordered_set<uint8_t> const &core_set);
+        explicit Main(CoreSet const &core_set) noexcept;
+        explicit Main(qb::unordered_set<CoreId> const &core_set) noexcept;
         ~Main();
 
         /*!
@@ -125,23 +141,23 @@ namespace qb {
          * @note
          * If async = false the main thread will by used by a VirtualCore engine.
          */
-        void start(bool async = true) const;
+        void start(bool async = true);
 
-        static bool hasError();
+        static bool hasError() noexcept;
 
         /*!
          * @brief Stop the engine
          * @note
          * Same effect as receiving SIGINT Signal.
          */
-        static void stop();
+        static void stop() noexcept;
 
         /*!
          * @brief Wait until engine terminates
          * @note
          * You can not avoid calling this function even if main has started with async=false.
          */
-        void join() const;
+        void join();
 
     public:
 
@@ -161,7 +177,7 @@ namespace qb {
          * This function is not available when the engine is running.
          */
         template<typename _Actor, typename ..._Args>
-        ActorId addActor(std::size_t index, _Args &&...args);
+        ActorId addActor(std::size_t index, _Args &&...args) noexcept;
 
         /*!
          * @brief Get CoreBuilder from index
@@ -175,7 +191,7 @@ namespace qb {
          * // builder1 != builder2
          * @endcode
          */
-        CoreBuilder core(uint16_t const index);
+        CoreBuilder core(CoreId const index) noexcept;
 
     };
 

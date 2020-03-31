@@ -32,13 +32,12 @@ namespace qb {
         }
 
         template <typename T, std::size_t _SIZE = 4096>
-        class pipe : nocopy, std::allocator<T> {
+        class QB_LOCKFREE_CACHELINE_ALIGNMENT pipe : nocopy, std::allocator<T> {
             using base_type = std::allocator<T>;
         protected:
             std::size_t _begin;
             std::size_t _end;
-            bool flag_front;
-            char __padding2__[QB_LOCKFREE_CACHELINE_BYTES - (2 *sizeof(std::size_t) + sizeof(bool))];
+            bool _flag_front;
             std::size_t _capacity;
             std::size_t _factor;
             T *_data;
@@ -46,7 +45,7 @@ namespace qb {
         public:
             pipe() :  _begin(0)
                     , _end(0)
-                    , flag_front(false)
+                    , _flag_front(false)
                     , _capacity(_SIZE)
                     , _factor(1)
                     , _data(base_type::allocate(_SIZE)) {
@@ -72,6 +71,10 @@ namespace qb {
                 return _end;
             }
 
+            inline std::size_t size() const {
+                return _end - _begin;
+            }
+
             inline void free_front(std::size_t const size) {
                 _begin += size;
             }
@@ -92,18 +95,18 @@ namespace qb {
             inline void reset() {
                 _begin = 0;
                 _end = 0;
-                flag_front = false;
+                _flag_front = false;
             }
 
             inline void free(std::size_t const size) {
-                if (flag_front)
+                if (_flag_front)
                     _begin += size;
                 else
                     _end -= size;
             }
 
             inline auto *allocate_back(std::size_t const size) {
-                if (likely(_end + size < _capacity)) {
+                if (likely(_end + size <= _capacity)) {
                     const auto save_index = _end;
                     _end += size;
                     return _data + save_index;
@@ -148,10 +151,10 @@ namespace qb {
             inline auto allocate(std::size_t const size) {
                 if (_begin - (size + 1) < _end) {
                     _begin -= size;
-                    flag_front = true;
+                    _flag_front = true;
                     return _data + _begin;
                 }
-                flag_front = false;
+                _flag_front = false;
                 return allocate_back(size);
             }
 
@@ -194,6 +197,10 @@ namespace qb {
                 _begin = 0;
                 _end = nb_item;
                 //std::cout << "End reorder " << _begin << ":" << _end << "|" << _end - _begin;
+            }
+
+            inline void swap(pipe &rhs) {
+                std::swap(*reinterpret_cast<CacheLine *>(this), *reinterpret_cast<CacheLine *>(&rhs));
             }
 
         };

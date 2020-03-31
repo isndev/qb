@@ -6,3 +6,15 @@
 	path = modules/googletest
 	url = https://github.com/google/googletest.git
 	branch = master
+[submodule "modules/json"]
+	path = modules/json
+	url = https://github.com/nlohmann/json.git
+	branch = master
+[submodule "modules/xml"]
+	path = modules/xml
+	url = https://github.com/zeux/pugixml.git
+	branch = master
+[submodule "modules/ska_hash"]
+	path = modules/ska_hash
+	url = https://github.com/isndev/flat_hash_map.git
+	branch = master

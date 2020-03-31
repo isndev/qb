@@ -22,95 +22,118 @@
 
 namespace qb {
 
-    Actor::Actor() {
-        _event_map.reserve(64);
-        registerEvent<Event>(*this);
+    Actor::Actor() noexcept {
+        __set_id(VirtualCore::_handler->__generate_id__());
+
         registerEvent<KillEvent>(*this);
+        registerEvent<UnregisterCallbackEvent>(*this);
+        registerEvent<PingEvent>(*this);
     }
 
-    Actor::~Actor() {
-        for (const auto &revent : _event_map)
-            delete revent.second;
+    Actor::Actor(ActorId const id) noexcept {
+        __set_id(id);
+
+        registerEvent<KillEvent>(*this);
+        registerEvent<UnregisterCallbackEvent>(*this);
+        registerEvent<PingEvent>(*this);
     }
 
-    void Actor::on(Event *event) const {
-        // TODO: secure this if event not registred
-        // branch fetch find
-        _event_map.at(event->id)->invoke(event);
-    }
 
-    void Actor::__set_id(ActorId const &id) {
+    void Actor::__set_id(ActorId const &id) noexcept {
         static_cast<ActorId &>(*this) = id;
     }
 
-    void Actor::__set_id(uint16_t const sid, uint16_t const cid) {
+    void Actor::__set_id(ServiceId const sid, CoreId const cid) noexcept {
         static_cast<ActorId &>(*this) = {sid, cid};
     }
 
-    void Actor::on(Event const &event) {
-        LOG_WARN << *this << " received removed event[" << event.id << "]";
+    void Actor::on(PingEvent const &event) noexcept {
+        if (event.type == id_type)
+            send<RequireEvent>(event.source, event.type, ActorStatus::Alive);
     }
 
-    void Actor::on(KillEvent const &) {
+    void Actor::on(KillEvent const &) noexcept {
         kill();
     }
 
-    uint64_t Actor::time() const {
-        return _handler->time();
+    void Actor::on(UnregisterCallbackEvent const &) noexcept {
+        VirtualCore::_handler->__unregisterCallback(id());
     }
 
-    bool Actor::isAlive() const {
+    uint64_t Actor::time() const noexcept {
+        return VirtualCore::_handler->time();
+    }
+
+    bool Actor::is_alive() const noexcept{
         return _alive;
     }
 
-    ProxyPipe Actor::getPipe(ActorId const dest) const {
-        return _handler->getProxyPipe(dest, id());
+    ProxyPipe Actor::getPipe(ActorId const dest) const noexcept {
+        return VirtualCore::_handler->getProxyPipe(dest, id());
     }
 
-    uint16_t Actor::getIndex() const {
-        return _handler->getIndex();
+    CoreId Actor::getIndex() const noexcept {
+        return VirtualCore::_handler->getIndex();
     }
 
-    void Actor::unregisterCallback() const {
-        _handler->unregisterCallback(id());
+    std::string_view Actor::getName() const noexcept {
+        return name;
     }
 
-    void Actor::kill() const {
+    void Actor::unregisterCallback() const noexcept {
+        VirtualCore::_handler->unregisterCallback(id());
+    }
+
+    void Actor::kill() const noexcept {
         _alive = false;
-        _handler->killActor(id());
+        VirtualCore::_handler->killActor(id());
     }
 
-    Actor::EventBuilder::EventBuilder(ProxyPipe const &pipe)
-        : dest_pipe(pipe) {}
+    Actor::EventBuilder::EventBuilder(ProxyPipe const &pipe) noexcept
+            : dest_pipe(pipe) {}
 
-    Actor::EventBuilder Actor::to(ActorId const dest) const {
+    Actor::EventBuilder Actor::to(ActorId const dest) const noexcept {
         return {getPipe(dest)};
     }
 
-    void Actor::reply(Event &event) const {
-        _handler->reply(event);
+    void Actor::reply(Event &event) const noexcept {
+        if (unlikely(event.dest.is_broadcast())) {
+            LOG_WARN("" << *this << " failed to reply broadcast event");
+            return;
+        }
+        VirtualCore::_handler->reply(event);
     }
 
-    void Actor::forward(ActorId const dest, Event &event) const {
-        _handler->forward(dest, event);
+    void Actor::forward(ActorId const dest, Event &event) const noexcept {
+        event.source = id();
+        if (unlikely(event.dest.is_broadcast())) {
+            LOG_WARN("" << *this << " failed to forward broadcast event");
+            return;
+        }
+        VirtualCore::_handler->forward(dest, event);
     }
 
-    void Actor::send(Event const &event) const {
-        _handler->send(event);
+    // OpenApi : internal future use
+    void Actor::send(Event const &event) const noexcept {
+        VirtualCore::_handler->send(event);
     }
 
-    void Actor::push(Event const &event) const {
-        _handler->push(event);
+    void Actor::push(Event const &event) const noexcept {
+        VirtualCore::_handler->push(event);
     }
 
-    bool Actor::try_send(Event const &event) const {
-        return _handler->try_send(event);
+    bool Actor::try_send(Event const &event) const noexcept {
+        return VirtualCore::_handler->try_send(event);
     }
+
+    Service::Service(ServiceId const sid)
+        : Actor(ActorId(sid, VirtualCore::_handler->getIndex()))
+    {}
 }
 
-qb::io::stream &operator<<(qb::io::stream &os, qb::Actor const &actor){
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor){
     std::stringstream ss;
-    ss << "Actor(" << actor.id().index() << "." << actor.id().sid() << ")";
+    ss << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << ")";
     os << ss.str();
     return os;
 }

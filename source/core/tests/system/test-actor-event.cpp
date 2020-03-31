@@ -57,23 +57,15 @@ class TestActorReceiver
     const uint32_t _max_events;
     uint32_t       _count;
 public:
-    TestActorReceiver(uint32_t const max_events)
-        : _max_events(max_events), _count(0) {}
+    explicit TestActorReceiver(uint32_t const max_events)
+        : _max_events(max_events), _count(0) {
+        registerEvent<TestEvent>(*this);
+        registerEvent<RemovedEvent>(*this);
+        unregisterEvent<RemovedEvent>(*this);
+    }
 
     ~TestActorReceiver() {
         EXPECT_EQ(_count, _max_events);
-    }
-
-    virtual bool onInit() override final {
-      registerEvent<TestEvent>(*this);
-      registerEvent<RemovedEvent>(*this);
-      unregisterEvent<RemovedEvent>(*this);
-      return true;
-    }
-
-    void on(qb::Event &) {
-        kill();
-        _count = _max_events;
     }
 
     void on(TestEvent const &event) {
@@ -81,6 +73,8 @@ public:
         if (++_count >= _max_events)
             kill();
     }
+
+    void on(RemovedEvent const &){}
 };
 
 class BaseSender {
@@ -165,18 +159,6 @@ struct AllocatedPipePushActor : public BaseActorSender<AllocatedPipePushActor>
     }
 };
 
-struct RemovedEventActor : public BaseActorSender<RemovedEventActor>
-{
-    RemovedEventActor(uint32_t const max_events, qb::ActorId const to)
-            : BaseActorSender(max_events, to) {
-        _count = _max_events - 1;
-    }
-    void doSend() {
-        getPipe(_to).push<RemovedEvent>();
-        kill();
-    }
-};
-
 #ifdef NDEBUG
 constexpr uint32_t MAX_ACTORS = 1024u;
 constexpr uint32_t MAX_EVENTS = 1024u;
@@ -221,19 +203,64 @@ protected:
     virtual void TearDown() {}
 };
 
+template <typename ActorSender>
+class ActorEventBroadcastMono : public testing::Test
+{
+protected:
+    qb::Main main;
+    ActorEventBroadcastMono() : main({0}) {}
+    virtual void SetUp() {
+        main.addActor<ActorSender>(0, MAX_EVENTS, qb::BroadcastId(0));
+        for (auto i = 0u; i < MAX_ACTORS; ++i) {
+            main.addActor<TestActorReceiver>(0, MAX_EVENTS);
+        }
+    }
+    virtual void TearDown() {}
+};
+
+template <typename ActorSender>
+class ActorEventBroadcastMulti : public testing::Test
+{
+protected:
+    const uint32_t max_core;
+    qb::Main main;
+    ActorEventBroadcastMulti()
+            : max_core(std::thread::hardware_concurrency())
+            , main(qb::CoreSet::build(max_core))
+    {}
+
+    virtual void SetUp() {
+        for (auto i = 0u; i < max_core; ++i)
+        {
+            main.addActor<ActorSender>(i, MAX_EVENTS, qb::BroadcastId((i + 1) % max_core));
+            for (auto j = 0u; j < MAX_ACTORS; ++j) {
+                main.addActor<TestActorReceiver>(((i + 1) % max_core), MAX_EVENTS);
+            }
+        }
+    }
+    virtual void TearDown() {}
+};
+
 typedef testing::Types <
         BasicPushActor,
         BasicSendActor,
         EventBuilderPushActor,
         PipePushActor,
-        AllocatedPipePushActor,
-        RemovedEventActor
+        AllocatedPipePushActor
         > Implementations;
 
 TYPED_TEST_SUITE(ActorEventMono, Implementations);
+TYPED_TEST_SUITE(ActorEventBroadcastMono, Implementations);
 TYPED_TEST_SUITE(ActorEventMulti, Implementations);
+TYPED_TEST_SUITE(ActorEventBroadcastMulti, Implementations);
 
 TYPED_TEST(ActorEventMono, SendEvents) {
+    this->main.start();
+    this->main.join();
+    EXPECT_FALSE(this->main.hasError());
+}
+
+TYPED_TEST(ActorEventBroadcastMono, SendEvents) {
     this->main.start();
     this->main.join();
     EXPECT_FALSE(this->main.hasError());
@@ -244,4 +271,106 @@ TYPED_TEST(ActorEventMulti, SendEvents) {
     this->main.start();
     this->main.join();
     EXPECT_FALSE(this->main.hasError());
+}
+
+TYPED_TEST(ActorEventBroadcastMulti, SendEvents) {
+    EXPECT_GT(this->max_core, 1u);
+    this->main.start();
+    this->main.join();
+    EXPECT_FALSE(this->main.hasError());
+}
+
+struct EventForward : public TestEvent {};
+
+class TestSendReply : public qb::Actor
+{
+    const qb::ActorId _to;
+    uint32_t counter = 0;
+public:
+    explicit TestSendReply(qb::ActorId const to)
+        : _to(to) {}
+
+    ~TestSendReply() {
+        EXPECT_EQ(counter, 2u);
+    }
+
+    virtual bool onInit() override final {
+        EXPECT_NE(static_cast<uint32_t>(id()), 0u);
+
+        registerEvent<TestEvent>(*this);
+        registerEvent<EventForward>(*this);
+
+        if (_to.index()) {
+            push<TestEvent>(qb::BroadcastId(_to.index()));
+            push<EventForward>(qb::BroadcastId(_to.index()));
+        }
+        push<TestEvent>(_to);
+        push<EventForward>(_to);
+
+        return true;
+    }
+
+    void on(TestEvent &event) {
+        ++counter;
+        EXPECT_TRUE(event.checkSum());
+    }
+
+    void on(EventForward &event) {
+        ++counter;
+        EXPECT_TRUE(event.checkSum());
+        push<qb::KillEvent>(qb::BroadcastId(_to.index()));
+        kill();
+    }
+};
+
+class TestReceiveReply : public qb::Actor
+{
+    uint32_t counter = 0;
+public:
+    TestReceiveReply() = default;
+
+    ~TestReceiveReply() {
+        if (id().index())
+            EXPECT_EQ(counter, 4u);
+        else
+            EXPECT_EQ(counter, 2u);
+    }
+
+    virtual bool onInit() override final {
+        EXPECT_NE(static_cast<uint32_t>(id()), 0u);
+        registerEvent<TestEvent>(*this);
+        registerEvent<EventForward>(*this);
+        return true;
+    }
+
+    void on(TestEvent &event) {
+        EXPECT_TRUE(event.checkSum());
+        reply(event);
+        ++counter;
+    }
+
+    void on(EventForward &event) {
+        EXPECT_TRUE(event.checkSum());
+        forward(event.getSource(), event);
+        ++counter;
+    }
+};
+
+
+TEST(ActorEventMono, PushReplyForward) {
+    qb::Main main({0});
+
+    main.addActor<TestSendReply>(0, main.addActor<TestReceiveReply>(0));
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+}
+
+TEST(ActorEventMulti, PushReplyForward) {
+    qb::Main main({0, 1});
+
+    main.addActor<TestSendReply>(0, main.addActor<TestReceiveReply>(1));
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
 }

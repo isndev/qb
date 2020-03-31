@@ -20,20 +20,20 @@
 #include <qb/main.h>
 
 struct TinyEvent : qb::Event {
-    uint64_t x;
-    explicit TinyEvent(uint64_t y) : x(y) {}
+    uint64_t _ttl;
+    explicit TinyEvent(uint64_t y) : _ttl(y) {}
 };
 
 struct BigEvent : qb::Event {
-    uint64_t x;
+    uint64_t _ttl;
     uint64_t padding[127];
-    explicit BigEvent(uint64_t y) : x(y), padding() {}
+    explicit BigEvent(uint64_t y) : _ttl(y), padding() {}
 };
 
 struct DynamicEvent : qb::Event {
-    uint64_t x;
+    uint64_t _ttl;
     std::vector<int> vec;
-    explicit DynamicEvent(uint64_t y) : x(y), vec(512, 8) {}
+    explicit DynamicEvent(uint64_t y) : _ttl(y), vec(512, 8) {}
 };
 
 template<typename EventTrait>
@@ -49,7 +49,7 @@ public:
     bool onInit() override final {
         registerEvent<EventTrait>(*this);
         if (actor_to_send)
-            push<EventTrait>(actor_to_send, 0);
+            push<EventTrait>(actor_to_send, 0u);
         return true;
     }
 
@@ -63,37 +63,59 @@ public:
     }
 };
 
-template<typename EventTrait>
-static void BM_PINGPONG_MONO_CORE(benchmark::State& state) {
-    for (auto _ : state) {
-        state.PauseTiming();
-        qb::Main main({0});
-
-        const auto max_events = state.range(0);
-        const auto nb_actor = state.range(1);
-        for (int i = 0; i < nb_actor; ++i) {
-            main.addActor<ActorPong<EventTrait>>(0, max_events, main.addActor<ActorPong<EventTrait>>(0, max_events));
-        }
-
-        state.ResumeTiming();
-        main.start(false);
+template<typename TestEvent>
+class PongActor : public qb::Actor {
+public:
+    virtual bool onInit() override final {
+        registerEvent<TestEvent>(*this);
+        return true;
     }
-}
 
-BENCHMARK_TEMPLATE(BM_PINGPONG_MONO_CORE, TinyEvent)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_PINGPONG_MONO_CORE, BigEvent)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_PINGPONG_MONO_CORE, DynamicEvent)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
+    void on(TestEvent &event) {
+        --event._ttl;
+        reply(event);
+    }
+
+};
+
+template<typename TestEvent>
+class PingActor : public qb::Actor {
+    const uint64_t max_sends;
+    const qb::ActorId actor_to_send;
+public:
+    PingActor(uint64_t const max, qb::ActorId const id)
+            : max_sends(max), actor_to_send(id) {}
+    ~PingActor() = default;
+
+    virtual bool onInit() override final {
+        registerEvent<TestEvent>(*this);
+        send<TestEvent>(actor_to_send, max_sends);
+        return true;
+    }
+
+    void on(TestEvent &event) {
+        if (event._ttl)
+            reply(event);
+        else {
+            kill();
+            send<qb::KillEvent>(event.getSource());
+        }
+    }
+};
 
 template<typename EventTrait>
-static void BM_PINGPONG_DUAL_CORE(benchmark::State& state) {
+static void BM_PINGPONG(benchmark::State& state) {
     for (auto _ : state) {
         state.PauseTiming();
-        qb::Main main({0, 2});
-
-        const auto max_events = state.range(0);
-        const auto nb_actor = state.range(1);
+        const auto nb_core = static_cast<uint32_t>(state.range(0));
+        qb::Main main(qb::CoreSet::build(nb_core));
+        const auto max_events = state.range(1);
+        const auto nb_actor = state.range(2) / nb_core;
         for (int i = 0; i < nb_actor; ++i) {
-            main.addActor<ActorPong<EventTrait>>(0, max_events, main.addActor<ActorPong<EventTrait>>(2, max_events));
+            for (auto j = 0u; j < nb_core; ++j) {
+                main.addActor<PingActor<EventTrait>>(j, max_events,
+                                                     main.addActor<PongActor<EventTrait>>(((j + 1) % nb_core)));
+            }
         }
 
         main.start();
@@ -102,32 +124,20 @@ static void BM_PINGPONG_DUAL_CORE(benchmark::State& state) {
     }
 }
 
-BENCHMARK_TEMPLATE(BM_PINGPONG_DUAL_CORE, TinyEvent)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_PINGPONG_DUAL_CORE, BigEvent)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_PINGPONG_DUAL_CORE, DynamicEvent)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
-
-template<typename EventTrait>
-static void BM_PINGPONG_QUAD_CORE(benchmark::State& state) {
-    for (auto _ : state) {
-        state.PauseTiming();
-        qb::Main main({0, 1, 2, 3});
-
-        const auto max_events = state.range(0);
-        const auto nb_actor = state.range(1) / 2;
-        for (int i = 0; i < nb_actor; ++i) {
-            main.addActor<ActorPong<EventTrait>>(0, max_events, main.addActor<ActorPong<EventTrait>>(2, max_events));
-            main.addActor<ActorPong<EventTrait>>(1, max_events, main.addActor<ActorPong<EventTrait>>(3, max_events));
-        }
-
-        main.start();
-        state.ResumeTiming();
-        main.join();
-    }
-}
-
-BENCHMARK_TEMPLATE(BM_PINGPONG_QUAD_CORE, TinyEvent)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_PINGPONG_QUAD_CORE, BigEvent)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_PINGPONG_QUAD_CORE, DynamicEvent)->Ranges({{8, 8<<10}, {8, 1024}})->Unit(benchmark::kMillisecond);
-
+BENCHMARK_TEMPLATE(BM_PINGPONG, TinyEvent)
+        ->RangeMultiplier(2)
+        ->Ranges({{1, std::thread::hardware_concurrency()}, {4096, 8<<10}, {512, 1024}})
+        ->ArgNames({"NB_CORE", "NB_PING_PER_ACTOR", "NB_ACTOR"})
+        ->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_PINGPONG, BigEvent)
+        ->RangeMultiplier(2)
+        ->Ranges({{1, std::thread::hardware_concurrency()}, {4096, 8<<10}, {512, 1024}})
+        ->ArgNames({"NB_CORE", "NB_PING_PER_ACTOR", "NB_ACTOR"})
+        ->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_PINGPONG, DynamicEvent)
+        ->RangeMultiplier(2)
+        ->Ranges({{1, std::thread::hardware_concurrency()}, {4096, 8<<10}, {512, 1024}})
+        ->ArgNames({"NB_CORE", "NB_PING_PER_ACTOR", "NB_ACTOR"})
+        ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();

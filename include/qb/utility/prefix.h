@@ -20,6 +20,7 @@
 
 /* this file defines the following macros:
    QB_LOCKFREE_CACHELINE_BYTES: size of a cache line
+   QB_LOCKFREE_EVENT_BUCKET_BYTES: size of a event partition
    QB_LOCKFREE_PTR_COMPRESSION: use tag/pointer compression to utilize parts
                                    of the virtual address space as tag (at least 16bit)
    QB_LOCKFREE_DCAS_ALIGNMENT:  symbol used for aligning structs at cache line
@@ -27,10 +28,12 @@
 */
 
 #define QB_LOCKFREE_CACHELINE_BYTES 64
+#define QB_LOCKFREE_EVENT_BUCKET_BYTES 64
 
 #ifdef _MSC_VER
 
 #define QB_LOCKFREE_CACHELINE_ALIGNMENT __declspec(align(QB_LOCKFREE_CACHELINE_BYTES))
+#define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT __declspec(align(QB_LOCKFREE_EVENT_BUCKET_BYTES))
 
 #if defined(_M_IX86)
 #define QB_LOCKFREE_DCAS_ALIGNMENT
@@ -44,6 +47,7 @@
 #ifdef __GNUC__
 
 #define QB_LOCKFREE_CACHELINE_ALIGNMENT alignas(QB_LOCKFREE_CACHELINE_BYTES)
+#define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT alignas(QB_LOCKFREE_EVENT_BUCKET_BYTES)
 //__attribute__((aligned(QB_LOCKFREE_CACHELINE_BYTES)))
 
 #if defined(__i386__) || defined(__ppc__)
@@ -58,7 +62,11 @@
 #endif /* __GNUC__ */
 
 struct QB_LOCKFREE_CACHELINE_ALIGNMENT CacheLine {
-    uint32_t __raw__[16];
+    uint32_t __raw__[QB_LOCKFREE_CACHELINE_BYTES / sizeof(uint32_t)];
+};
+
+struct QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT EventBucket {
+    uint32_t __raw__[QB_LOCKFREE_EVENT_BUCKET_BYTES / sizeof(uint32_t)];
 };
 
 #endif /* QB_UTILS_PREFIX_H */

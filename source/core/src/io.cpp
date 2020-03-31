@@ -32,6 +32,7 @@ qb::io::cout::~cout() {
     std::cout << ss.str() << std::flush;
 }
 
+#ifdef QB_LOGGER
 struct LogInitializer {
     static LogInitializer initializer;
     LogInitializer() {
@@ -45,4 +46,4 @@ struct LogInitializer {
 };
 
 LogInitializer LogInitializer::initializer = {};
-
+#endif

@@ -25,21 +25,48 @@
 namespace qb {
     class Main;
 
-    template<typename _Actor, typename ..._Init>
-    ActorId Main::addActor(std::size_t index, _Init &&...init) {
-        auto it = _cores.find(static_cast<uint8_t >(index));
-        if (!Main::is_running && it != _cores.end()) {
-            return it->second-> template addActor<_Actor, _Init...>
-                    (std::forward<_Init>(init)...);
+    template<typename _Actor, typename ..._Args>
+    ActorId Main::addActor(std::size_t cid, _Args &&...args) noexcept {
+        const auto index = static_cast<CoreId>(cid);
+        auto it = _core_set.raw().find(index);
+        ActorId id = ActorId::NotFound;
+        if (!Main::is_running && it != _core_set.raw().end()) {
+            auto &initializer = _core_initializers[index];
+            if constexpr (std::is_base_of<Service, _Actor>::value) {
+                if (initializer._registered_services.find(_Actor::ServiceIndex)
+                    == initializer._registered_services.end()) {
+                    initializer._registered_services.insert(_Actor::ServiceIndex);
+                    id = ActorId(_Actor::ServiceIndex, index);
+                } else {
+                    LOG_CRIT("[Start Sequence] Failed to add Service Actor(" << typeid(_Actor).name() << ")"
+                    << " in Core(" << index << ")"
+                    << " : Already registered");
+                    return id;
+                }
+            } else {
+                if (unlikely(initializer._next_id == std::numeric_limits<ServiceId>::max())) {
+                    LOG_CRIT("[Start Sequence] Failed to add Actor(" << typeid(_Actor).name() << ")"
+                    << " in Core(" << index << ")"
+                    << " : Max number of Actors reached");
+                    return id;
+                }
+                id = ActorId(initializer._next_id++, index);
+            }
+            initializer._actor_factories.push_back(
+                    new TActorFactory<_Actor, _Args...>(id, std::forward<_Args>(args)...)
+            );
+        } else {
+            LOG_CRIT("[Start Sequence] Failed to add Actor(" << typeid(_Actor).name() << ")"
+            << " in Core(" << index << ")"
+            << " : Engine is running or Core does not exist");
         }
-
-        return ActorId::NotFound;
+        return id;
     }
 
     template<typename _Actor, typename ..._Args>
-    Main::CoreBuilder &Main::CoreBuilder::addActor(_Args &&...args) {
+    Main::CoreBuilder &Main::CoreBuilder::addActor(_Args &&...args) noexcept {
         auto id = _main.template addActor<_Actor, _Args...>(_index, std::forward<_Args>(args)...);
-        if (id == ActorId::NotFound)
+        if (!id.is_valid())
             _valid = false;
 
         _ret_ids.push_back(id);

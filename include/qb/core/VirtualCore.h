@@ -19,7 +19,7 @@
 #define QB_CORE_H
 # include <iostream>
 # include <vector>
-# include <unordered_map>
+# include <set>
 # include <thread>
 
 #if defined(unix) || defined(__unix) || defined(__unix__)
@@ -28,33 +28,40 @@
 #include <unistd.h>
 #include <pthread.h>
 #elif defined(_WIN32) || defined(_WIN64)
-#include <Windows.h>
+#ifndef WIN32_LEAN_AND_MEAN
+# define WIN32_LEAN_AND_MEAN
+#endif // !WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+# define NOMINMAX
+#endif
+#include <windows.h>
 #include <process.h>
 #endif
 
 // include from qb
 # include <qb/system/timestamp.h>
+# include <qb/system/container/unordered_map.h>
 # include <qb/system/allocator/pipe.h>
 # include <qb/system/lockfree/mpsc.h>
+# include <qb/system/event/router.h>
 # include "ICallback.h"
 # include "ProxyPipe.h"
 # include "Event.h"
 # include "Actor.h"
 # include "Main.h"
 
-# define SERVICE_ACTOR_INDEX 10000
-
 class VirtualCore;
-qb::io::stream &operator<<(qb::io::stream &os, qb::VirtualCore const &core);
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
 
 namespace qb {
 
     class VirtualCore {
-		static uint16_t _nb_service;
-		static std::unordered_map<uint32_t, uint16_t> &getServices() {
-			static std::unordered_map<uint32_t, uint16_t> service_ids;
-			return service_ids;
-		}
+        thread_local static VirtualCore *_handler;
+        static ServiceId _nb_service;
+        static qb::unordered_map<TypeId, ServiceId> &getServices() {
+            static qb::unordered_map<TypeId , ServiceId> service_ids;
+            return service_ids;
+        }
 
         enum Error : uint64_t {
             BadInit = (1 << 9),
@@ -64,63 +71,72 @@ namespace qb {
         };
 
         friend class Actor;
+        friend class Service;
         friend class Main;
         ////////////
-        constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_CACHELINE_BYTES * 4;
+        constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_EVENT_BUCKET_BYTES;
         // Types
         using MPSCBuffer = Main::MPSCBuffer;
-        using EventBuffer = std::array<CacheLine, MaxRingEvents>;
-        using ActorMap = std::unordered_map<uint32_t, Actor *>;
-        using CallbackMap = std::unordered_map<uint32_t, ICallback *>; // TODO: try to transform in std::vector
-        using PipeMap = std::unordered_map<uint32_t, Pipe>;
-        using RemoveActorList = std::unordered_set<uint32_t>;
-        using AvailableIdList = std::unordered_set<uint16_t>;
+        using EventBuffer = std::array<EventBucket, MaxRingEvents>;
+        using ActorMap = qb::unordered_map<ActorId, Actor *>;
+        using CallbackMap = qb::unordered_map<ActorId, ICallback *>;
+        using PipeMap = std::vector<Pipe>;
+        using RemoveActorList = qb::unordered_set<ActorId>;
+        using AvailableIdList = std::set<ServiceId>;
+
         //!Types
     private:
         // Members
-        const uint8_t   _index;
+        const CoreId   _index;
+        const CoreId   _resolved_index;
         Main           &_engine;
+        // event reception
         MPSCBuffer     &_mail_box;
+        router::memh<Event>   _router;
+        // event flush
+        PipeMap         _pipes;
+        Pipe            &_mono_pipe_swap;
+        Pipe            _mono_pipe;
+        // actors management
         AvailableIdList _ids;
         ActorMap        _actors;
         CallbackMap     _actor_callbacks;
         RemoveActorList _actor_to_remove;
-        PipeMap         _pipes;
+        // --- loop timer
         EventBuffer     _event_buffer;
-        std::thread     _thread;
-        uint64_t        _nano_timer;
+        uint64_t        _nanotimer;
         // !Members
 
         VirtualCore() = delete;
-        VirtualCore(uint8_t const id, Main &engine);
+        VirtualCore(CoreId const id, Main &engine) noexcept;
+		~VirtualCore() noexcept;
 
-        ActorId __generate_id__();
+        ActorId __generate_id__() noexcept;
 
         // Event Management
-        Pipe &__getPipe__(uint32_t core);
-        void __receive_events__(CacheLine *buffer, std::size_t const nb_events);
+        template<typename _Event, typename _Actor>
+        void registerEvent(_Actor &actor) noexcept;
+        template<typename _Event, typename _Actor>
+        void unregisterEvent(_Actor &actor) noexcept;
+        void unregisterEvents(ActorId const id) noexcept;
+        Pipe &__getPipe__(CoreId core) noexcept;
+        void __receive_events__(EventBucket *buffer, std::size_t const nb_events);
         void __receive__();
-        void __flush__();
-        bool __flush_all__();
+//        void __receive_from__(CoreId const index) noexcept;
+        bool __flush_all__() noexcept;
         //!Event Management
 
         // Workflow
-        void __init__actors__() const;
         void __init__();
-        bool __wait__all__cores__ready();
-        void __updateTime__();
-        void __spawn__();
+        void __init__actors__() const;
+        bool __wait__all__cores__ready() noexcept;
+        void __workflow__();
         //!Workflow
 
         // Actor Management
-        template<typename _Actor>
-        bool initActor(_Actor * const actor, bool doinit);
-        void addActor(Actor *actor);
-        void removeActor(ActorId const id);
-
-        template<typename _Actor, typename ..._Init>
-        ActorId addActor(_Init &&...init);
-
+        ActorId initActor(Actor &actor, bool const is_service, bool const doInit) noexcept;
+        ActorId appendActor(Actor &actor, bool const is_service, bool const doInit = false) noexcept;
+        void removeActor(ActorId const id) noexcept;
         //!Actor Management
 
         void start();
@@ -128,37 +144,40 @@ namespace qb {
 
     private:
         template<typename _Actor, typename ..._Init>
-        _Actor *addReferencedActor(_Init &&...init);
+        _Actor *addReferencedActor(_Init &&...init) noexcept;
+        template <typename _ServiceActor>
+        _ServiceActor *getService() const noexcept;
 
-        void killActor(ActorId const id);
+
+        void killActor(ActorId const id) noexcept;
 
         template <typename _Actor>
-        void registerCallback(_Actor &actor);
-        void unregisterCallback(ActorId const id);
+        void registerCallback(_Actor &actor) noexcept;
+        void __unregisterCallback(ActorId const id) noexcept;
+        void unregisterCallback(ActorId const id) noexcept;
 
     private:
         // Event Api
-        ProxyPipe getProxyPipe(ActorId const dest, ActorId const source);
-        bool try_send(Event const &event) const;
-        void send(Event const &event);
-        Event &push(Event const &event);
-        void reply(Event &event);
-        void forward(ActorId const dest, Event &event);
+        ProxyPipe getProxyPipe(ActorId const dest, ActorId const source) noexcept;
+        bool try_send(Event const &event) const noexcept;
+        void send(Event const &event) noexcept;
+        Event &push(Event const &event) noexcept;
+        void reply(Event &event) noexcept;
+        void forward(ActorId const dest, Event &event) noexcept;
 
         template <typename T>
-        inline void fill_event(T &data, ActorId const dest, ActorId const source) const;
+        inline void fill_event(T &data, ActorId const dest, ActorId const source) const noexcept;
         template<typename T, typename ..._Init>
-        void send(ActorId const dest, ActorId const source, _Init &&...init);
+        void send(ActorId const dest, ActorId const source, _Init &&...init) noexcept;
         template<typename T, typename ..._Init>
-        T &push(ActorId const dest, ActorId const source, _Init &&...init);
+        void broadcast(ActorId const source, _Init &&...init) noexcept;
         template<typename T, typename ..._Init>
-        void fast_push(ActorId const dest, ActorId const source, _Init &&...init);
+        T &push(ActorId const dest, ActorId const source, _Init &&...init) noexcept;
         //!Event Api
 
     public:
-        uint16_t getIndex() const;
-        uint64_t time() const;
-
+        CoreId getIndex() const noexcept;
+        uint64_t time() const noexcept;
     };
 
 }

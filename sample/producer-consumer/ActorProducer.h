@@ -44,8 +44,8 @@ public:
 
     // will call this function before adding Actor
     virtual bool onInit() override final {
-        registerCallback(*this);// each core loop will call onCallback
-        return true;            // init ok, MyActor will be added
+        registerCallback(*this); // each core loop will call onCallback
+        return true;                 // init ok, MyActor will be added
     }
 
     // will call this function each core loop

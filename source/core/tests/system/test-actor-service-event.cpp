@@ -58,14 +58,11 @@ class BaseActorSender
 protected:
     qb::ActorId _to;
 public:
-    BaseActorSender()= default;
-
-    virtual bool onInit() override final {
-      registerEvent<TestEvent>(*this);
-      _to = getServiceId<MyTag>((getIndex() + 1) % std::thread::hardware_concurrency());
-      if (!getIndex())
-          static_cast<Derived &>(*this).doSend();
-      return true;
+    BaseActorSender()
+        : _to(getServiceId<MyTag>((getIndex() + 1) % std::thread::hardware_concurrency())) {
+        registerEvent<TestEvent>(*this);
+        if (!getIndex())
+            static_cast<Derived &>(*this).doSend();
     }
 
     void on(TestEvent const &event) {

@@ -30,7 +30,7 @@ namespace qb {
      */
     class ICallback {
     public:
-        virtual ~ICallback() {}
+        virtual ~ICallback() noexcept {}
 
         virtual void onCallback() = 0;
     };

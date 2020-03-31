@@ -19,9 +19,12 @@
 # define QB_ACTOR_H
 # include <vector>
 # include <map>
-# include <unordered_map>
+# include <qb/system/container/unordered_map.h>
+# include <utility>
+# include <tuple>
 // include from qb
 # include <qb/utility/nocopy.h>
+# include <qb/utility/type_traits.h>
 # include "ICallback.h"
 # include "ProxyPipe.h"
 # include "Event.h"
@@ -29,6 +32,8 @@
 namespace qb {
 
     class VirtualCore;
+    class ActorProxy;
+    class Service;
 
     /*!
      * @class Actor core/Actor.h qb/actor.h
@@ -43,45 +48,32 @@ namespace qb {
             , ActorId
     {
         friend class VirtualCore;
+        friend class ActorProxy;
+        friend class Service;
 
-        class IRegisteredEvent {
-        public:
-            virtual ~IRegisteredEvent() {}
-            virtual void invoke(Event *data) const = 0;
-        };
-
-        template<typename _Event, typename _Actor>
-        class RegisteredEvent : public IRegisteredEvent {
-            _Actor &_actor;
-        public:
-            explicit RegisteredEvent(_Actor &actor)
-                    : _actor(actor) {}
-
-            virtual void invoke(Event *data) const override final {
-                auto &event = *reinterpret_cast<_Event *>(data);
-                if (likely(_actor.isAlive()))
-                    _actor.on(event);
-                if (!event.state[0])
-                    event.~_Event();
-            }
-        };
-
-        void on(Event *event) const;
-
+        const char * name = "unnamed";
         mutable bool _alive = true;
-        VirtualCore * _handler = nullptr;
-        std::unordered_map<uint32_t, IRegisteredEvent const *> _event_map;
-        void __set_id(ActorId const &id);
+        std::uint32_t id_type;
+        void __set_id(ActorId const &id) noexcept;
+
+        /*!
+         * @private
+         * @tparam _Type
+         */
+        template<typename _Type>
+        bool require_type() const noexcept;
+
+        Actor(ActorId const id) noexcept;
     protected:
         /*!
          * @private
          */
-        void __set_id(uint16_t const sid, uint16_t const cid);
+        void __set_id(ServiceId const sid, CoreId const cid) noexcept;
         /*!
          * @private
          */
         template <typename Tag>
-        static uint16_t registerIndex();
+        static ServiceId registerIndex() noexcept;
 
         /*!
          * @name Construction/Destruction
@@ -90,11 +82,11 @@ namespace qb {
 
         /*!
          */
-        Actor();
+        Actor() noexcept;
 
         /*!
          */
-        virtual ~Actor();
+        virtual ~Actor() noexcept = default;
 
         /*!
          * @brief DerivedActor should implement this method
@@ -112,41 +104,23 @@ namespace qb {
          * @attention
          * /!\ If initialization has failed DerivedActor will not be added to the engine
          */
-        virtual bool onInit() = 0;
+        virtual bool onInit() { return true; };
 
     public:
         /*!
          * Kill the Actor
          */
-        void kill() const;
+        void kill() const noexcept;
 
         /*!
          * @}
          */
 
-    protected:
+    public:
         /*!
          * @name Registered Event
          * @{
          */
-
-        /*!
-         * @brief Called when received unregistered event
-         * @param event received event
-         * @details
-         * This event can be overloaded by DerivedActor.\n
-         * example:
-         * @code
-         * // onInit()
-         * registerEvent<qb::Event>(*this);
-         * // DerivedActor should also define the event callback
-         * void on(qb::Event &event) {
-         *   // do something before killing actor
-         *   kill();
-         * }
-         * @endcode
-         */
-        void on(Event const &event);
 
         /*!
          * @brief Receiving this event will kill the Actor
@@ -166,7 +140,17 @@ namespace qb {
          * @attention
          * /!\ Do not forget to call kill on overloaded function.
          */
-        void on(KillEvent const &event);
+        void on(KillEvent const &event) noexcept;
+
+        /*!
+         * @brief Receiving this event will unregister the Actor's callback
+         * @param event received event
+         * @attention
+         * /!\ Do not overload this function.
+         */
+        void on(UnregisterCallbackEvent const &event) noexcept;
+
+        void on(PingEvent const &event) noexcept;
 
         /*!
          * @}
@@ -183,9 +167,9 @@ namespace qb {
             ProxyPipe dest_pipe;
 
             EventBuilder() = delete;
-            EventBuilder(ProxyPipe const &pipe);
+            EventBuilder(ProxyPipe const &pipe) noexcept;
         public:
-            EventBuilder(EventBuilder const &rhs) = default;
+            EventBuilder(EventBuilder const &rhs) noexcept = default;
 
             /*!
              * @brief Send a new ordered event
@@ -206,7 +190,7 @@ namespace qb {
              * @endcode
              */
             template<typename _Event, typename ..._Args>
-            EventBuilder &push(_Args &&...args);
+            EventBuilder &push(_Args &&...args) noexcept;
         };
 
         /*!
@@ -215,22 +199,22 @@ namespace qb {
          */
 
         /*!
-         * Get current ActorId
+         * Get ActorId
          * @return ActorId
          */
-        ActorId id() const { return *this; }
+        ActorId id() const noexcept { return *this; }
 
         /*!
-         * Get current core index
+         * Get core index
          * @return core index
          */
-        uint16_t getIndex() const;
+        CoreId getIndex() const noexcept;
 
         /*!
-         * @private
-         */
-        template <typename T>
-        static ActorId getServiceId(uint16_t const index);
+         * Get derived class name
+         * @return name as string_view
+        */
+        std::string_view getName() const noexcept;
 
         /*!
          * @brief Get current time
@@ -246,13 +230,26 @@ namespace qb {
          * @endcode
          * To get precise time use NanoTimestamp.
          */
-        uint64_t time() const;
+        uint64_t time() const noexcept;
+
+        /*!
+         * @private
+         */
+        template <typename T>
+        static ActorId getServiceId(CoreId const index) noexcept;
+
+        /*!
+         * @brief Get direct access to ServiceActor* in same core
+         * @return ptr to _ServiceActor else nullptr if not registered in core
+         */
+        template <typename _ServiceActor>
+        _ServiceActor *getService() const noexcept;
 
         /*!
          * @brief Check if Actor is alive
          * @return true if Actor is alive else false
          */
-        bool isAlive() const;
+        bool is_alive() const noexcept;
 
         /*!
          * @}
@@ -290,7 +287,7 @@ namespace qb {
          * @endcode
          */
         template <typename _Actor>
-        void registerCallback(_Actor &actor) const;
+        void registerCallback(_Actor &actor) const noexcept;
 
         /*!
          * @brief Unregister actor callback
@@ -302,12 +299,12 @@ namespace qb {
          * @endcode
          */
         template <typename _Actor>
-        void unregisterCallback(_Actor &actor) const;
+        void unregisterCallback(_Actor &actor) const noexcept;
 
         /*!
          * @private
          */
-        void unregisterCallback() const;
+        void unregisterCallback() const noexcept;
 
 
         /*!
@@ -331,7 +328,7 @@ namespace qb {
          * @endcode
          */
         template<typename _Event, typename _Actor>
-        void registerEvent(_Actor &actor);
+        void registerEvent(_Actor &actor) const noexcept;
 
         /*!
          * @brief Actor will stop listening _Event
@@ -344,14 +341,14 @@ namespace qb {
          * @endcode
          */
         template<typename _Event, typename _Actor>
-        void unregisterEvent(_Actor &actor);
+        void unregisterEvent(_Actor &actor) const noexcept;
 
         /*!
          * @private
          * @tparam _Event
          */
         template<typename _Event>
-        void unregisterEvent();
+        void unregisterEvent() const noexcept;
 
         /*!
          * @brief Get EventBuilder for ActorId destination
@@ -374,7 +371,7 @@ namespace qb {
          * // builder1 == builder2 -> true
          * @endcode
          */
-        EventBuilder to(ActorId const dest) const;
+        EventBuilder to(ActorId const dest) const noexcept;
 
         /*!
          * @brief Send a new ordered event
@@ -399,7 +396,7 @@ namespace qb {
          * /!\ We recommend to non advanced users to use only this function to send events.
          */
         template<typename _Event, typename ..._Args>
-        _Event &push(ActorId const &dest, _Args &&...args) const;
+        _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 
         /*!
          * @brief Send a new unordered event
@@ -423,7 +420,19 @@ namespace qb {
          * /!\ We recommend to non advanced users to not use this function to send events.
          */
         template<typename _Event, typename ..._Args>
-        void send(ActorId const &dest, _Args &&...args) const;
+        void send(ActorId const &dest, _Args &&...args) const noexcept;
+
+        template<typename _Type>
+        inline uint32_t is(uint32_t const id) const noexcept { return id == type_id<_Type>(); }
+
+        template<typename _Type>
+        inline uint32_t is(RequireEvent const &event) const noexcept { return event.type == type_id<_Type>(); }
+
+        template<typename ..._Actors>
+        bool require() const noexcept;
+
+        template<typename _Event, typename ..._Args>
+        void broadcast(_Args &&...args) const noexcept;
 
         /*!
          * @brief Reply an event
@@ -440,7 +449,7 @@ namespace qb {
          * @note
          * Replying an event is faster than pushing a new one.
          */
-        void reply(Event &event) const;
+        void reply(Event &event) const noexcept;
 
         /*!
          * @brief Forward an event
@@ -458,25 +467,12 @@ namespace qb {
          * @note
          * Forwarding an event is faster than pushing a new one.
          */
-        void forward(ActorId const dest, Event &event) const;
+        void forward(ActorId const dest, Event &event) const noexcept;
 
-        /*!
-         * @private
-         * @param event
-         */
-        void send(Event const &event) const;
-
-        /*!
-         * @private
-         * @param event
-         */
-        void push(Event const &event) const;
-
-        /*!
-         * @private
-         * @param event
-         */
-        bool try_send(Event const &event) const;
+        // OpenApi : used for module
+         void send(Event const &event) const noexcept;
+         void push(Event const &event) const noexcept;
+         bool try_send(Event const &event) const noexcept;
 
         /*!
          * @brief Get access to unidirectional out events pipe
@@ -487,7 +483,7 @@ namespace qb {
          * Actor API allows to retrieve a ProxyPipe to a desired Actor.\n
          * more details on ProxyPipe section
          */
-        ProxyPipe getPipe(ActorId const dest) const;
+        ProxyPipe getPipe(ActorId const dest) const noexcept;
 
         /*!
          * @brief Create new referenced _Actor
@@ -522,7 +518,10 @@ namespace qb {
      * @class Service
      * @brief internal
      */
-    class Service {};
+    class Service : public Actor {
+    public:
+        Service(ServiceId const sid);
+    };
 
     /*!
      * @class ServiceActor actor.h qb/actor.h
@@ -535,16 +534,66 @@ namespace qb {
      * Inherited Service Actors are unique per VirtualCore.
      */
     template <typename Tag>
-    class ServiceActor : public Service, public Actor {
-        static const uint16_t ServiceIndex;
+    class ServiceActor : public Service {
+        friend class Main;
+        friend class VirtualCore;
+        static const ServiceId ServiceIndex;
     public:
-        ServiceActor() {
-            __set_id(ServiceIndex, 0);
+
+        ServiceActor() : Service(ServiceIndex) {}
+    };
+
+    class IActorFactory {
+    public:
+        virtual ~IActorFactory(){}
+        virtual Actor *create() = 0;
+        virtual bool isService() const = 0;
+    };
+
+    class ActorProxy
+    {
+    protected:
+        ActorProxy() = default;
+        template <typename _Type>
+        void setType(Actor &actor) {
+            actor.id_type = type_id<_Type>();
+        }
+        template <typename _Type>
+        void setName(Actor &actor) {
+            actor.name = typeid(_Type).name();
         }
     };
 
+    template <typename _Actor, typename ..._Args>
+    class TActorFactory : public IActorFactory, public ActorProxy {
+        ActorId _id;
+        std::tuple<typename remove_reference_if<_Args,
+                std::is_trivially_copyable<std::remove_reference_t<std::remove_all_extents_t<_Args>>>::value>::type...> _parameters;
+    public:
+        TActorFactory(ActorId const id, _Args &&...args)
+            : _id(id), _parameters(std::forward<_Args>(args)...)
+        {}
+
+        template<std::size_t... Is>
+        Actor *create_impl(std::index_sequence<Is...>) {
+            auto actor = new _Actor(std::get<Is>(_parameters)...);
+            setType<_Actor>(*actor);
+            setName<_Actor>(*actor);
+            return actor;
+        }
+
+        Actor *create() {
+            return create_impl(std::index_sequence_for<_Args...>{});
+        }
+
+        virtual bool isService() const {
+            return std::is_base_of<Service, _Actor>::value;
+        }
+    };
+
+
 }
 
-qb::io::stream &operator<<(qb::io::stream &os, qb::Actor const &actor);
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor);
 
 #endif //QB_ACTOR_H

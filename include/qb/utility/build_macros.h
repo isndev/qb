@@ -30,7 +30,7 @@
 #define NOMINMAX
 #endif
 
-#elif defined(__linux__) || defined(__unix) || defined(__unix__)
+#elif defined(__linux__) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
 // Linux
 #define __LINUX__SYSTEM__
 #else
@@ -62,10 +62,16 @@
 // No specific directive needed for static build
 #define QB_API
 #endif
+#define QB_UNUSED_VAR
 #else
 // Other platforms don't need to define anything
-    #define QB_GET
-    #define QB_API
+#define QB_GET
+#define QB_API
+    #ifdef __clang__
+        #define QB_UNUSED_VAR __attribute__((unused))
+    #else
+        #define QB_UNUSED_VAR
+    #endif
 #endif
 
 #endif
