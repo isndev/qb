@@ -5,10 +5,8 @@
 [![Cpp Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/674022e452e84497bc0a00e7a585758f)](https://www.codacy.com/app/isndev/qb?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=isndev/qb&amp;utm_campaign=Badge_Grade)
 [![Travis (.org) branch](https://img.shields.io/travis/isndev/qb/master.svg?label=master)](https://travis-ci.org/isndev/qb)
-[![Travis (.org) branch](https://img.shields.io/travis/isndev/qb/develop.svg?label=develop)](https://travis-ci.org/isndev/qb)
 [![codecov](https://codecov.io/gh/isndev/qb/branch/master/graph/badge.svg)](https://codecov.io/gh/isndev/qb)
 [![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/)
-[![Gitter](https://img.shields.io/gitter/room/isndev/qbaf.svg)](https://gitter.im/qbaf)
 
 **qb** provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors.
 
@@ -31,8 +29,20 @@ The **qb** framework is a thin-layer multicore-optimized runtime that enable use
 |              | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/NewTux.svg/1000px-NewTux.svg.png" width="25"/> | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Windows_logo_-_2012_derivative.svg/50px-Windows_logo_-_2012_derivative.svg.png" width="25"/> | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Apple_Computer_Logo_rainbow.svg/65px-Apple_Computer_Logo_rainbow.svg.png" width="25"/> | Coverage |
 |:------------:|:-----:|:-------:|:--------:|:--------:|
 |    master    | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/master?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/master) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/master.svg) |
-|    develop   | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/develop?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/develop) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=develop)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/develop.svg) |
-| experimental | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/experimental?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/experimental) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=experimental)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/experimental.svg) |
+
+## Current development
+#### qb Version 2
+- Is globally faster
+- Introduces event **QOS** (quality of service) strategies
+- Adds a new way to manage **inputs/outputs** and **external** communications
+- Works on **arm** architectures
+- Adds more **samples** and tutorials
+- Official benchmarks vs other frameworks
+- and more
+#### qb UAML Tool
+- **Design** and **generate** your software architecture using **qb UMAL Tool**
+#### qb Live Analyser Tool
+- **Monitor**, **analyse** and **debug** by connecting your software to **qb Live Analyser Tool**
 
 # The Actor Model
 
@@ -291,14 +301,9 @@ Done !
 
 You want to do more, refer to the full [Documentation](https://isndev.github.io/qb/)
 
-### Todos
-  - [ ] Add build options section
-  - [ ] Make Wiki and add more tuto
-  - [ ] Add modules section
-
 License
 ----
 
 ![GitHub](https://img.shields.io/github/license/isndev/qb.svg)
 
-**isndev** Free Software, Hell Yeah!
+**[isndev.com](https://isndev.com)** Free Software, Hell Yeah!
