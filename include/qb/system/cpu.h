@@ -26,7 +26,10 @@
 #include <fstream>
 #include <regex>
 #elif defined(_WIN32) || defined(_WIN64)
-#define NOMINMAX
+#ifndef NOMINMAX
+# define NOMINMAX
+#endif
+# define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
 

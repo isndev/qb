@@ -89,8 +89,12 @@ elseif(NOT CMAKE_COMPILER_IS_GNUCXX)
     message(FATAL_ERROR "Compiler is not GNU gcc! Aborting...")
 endif()
 
-set(COVERAGE_COMPILER_FLAGS "-g --coverage -fprofile-arcs -ftest-coverage"
+set(COVERAGE_COMPILER_FLAGS "-g -fprofile-arcs -ftest-coverage"
         CACHE INTERNAL "")
+
+if (GNU)
+    set(COVERAGE_COMPILER_FLAGS "${COVERAGE_COMPILER_FLAGS} --coverage")
+endif()
 
 set(CMAKE_CXX_FLAGS_COVERAGE
         ${COVERAGE_COMPILER_FLAGS}
@@ -219,7 +223,6 @@ function(SETUP_TARGET_FOR_COVERAGE_GCOVR_XML)
         list(APPEND GCOVR_EXCLUDES "-e")
         list(APPEND GCOVR_EXCLUDES "${EXCLUDE_REPLACED}")
     endforeach()
-    message(STATUS "exclude : ${GCOVR_EXCLUDES}")
     add_custom_target(${Coverage_NAME}
             # Run tests
             ${Coverage_EXECUTABLE} ${Coverage_EXECUTABLE_ARGS}

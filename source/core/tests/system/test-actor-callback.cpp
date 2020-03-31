@@ -19,8 +19,6 @@
 #include <qb/actor.h>
 #include <qb/main.h>
 
-struct UnregisterCallbackEvent : public qb::Event {};
-
 class TestActor
         : public qb::Actor
         , public qb::ICallback
@@ -30,7 +28,12 @@ class TestActor
 public:
     TestActor() = delete;
     explicit TestActor(uint64_t const max_loop)
-      : _max_loop(max_loop), _count_loop(0) {}
+      : _max_loop(max_loop), _count_loop(0) {
+        if (_max_loop)
+            registerCallback(*this);
+        else
+            kill();
+    }
 
     ~TestActor() {
         if (_max_loop == 1000) {
@@ -38,26 +41,13 @@ public:
         }
     }
 
-    virtual bool onInit() override final {
-        registerEvent<UnregisterCallbackEvent>(*this);
-        if (_max_loop)
-            registerCallback(*this);
-        else
-            kill();
-        return true;
-    }
-
     virtual void onCallback() override final {
         if (_max_loop == 10000)
-            push<UnregisterCallbackEvent>(id());
+            unregisterCallback();
         if (++_count_loop >= _max_loop)
             kill();
     }
 
-    void on(UnregisterCallbackEvent &) {
-        unregisterCallback(*this);
-        push<qb::KillEvent>(id());
-    }
 };
 
 TEST(CallbackActor, ShouldNotCallOnCallbackIfNotRegistred) {
@@ -81,7 +71,7 @@ TEST(CallbackActor, ShouldCallOnCallbackIfRegistred) {
 TEST(CallbackActor, ShouldNotCallOnCallbackAnymoreIfUnregistred) {
     qb::Main main({0});
 
-    main.addActor<TestActor>(0, 10000);
+    main.addActor<TestActor>(0, 1000);
 
     main.start(false);
     EXPECT_FALSE(main.hasError());

@@ -20,6 +20,7 @@
 
 #include <exception>
 #include <chrono>
+#include <ctime>
 #if defined(__APPLE__)
 #include <mach/mach.h>
 #include <mach/mach_time.h>
@@ -29,8 +30,15 @@
 #elif defined(unix) || defined(__unix) || defined(__unix__)
 #include <time.h>
 #elif defined(_WIN32) || defined(_WIN64)
+#ifndef WIN32_LEAN_AND_MEAN
+# define WIN32_LEAN_AND_MEAN
+#endif // !WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+# define NOMINMAX
+#endif
 #include <windows.h>
 #endif
+#include <thread>
 
 namespace qb {
 
@@ -284,95 +292,16 @@ namespace qb {
 
 
         static uint64_t epoch() noexcept { return 0; }
-        static uint64_t utc()  {
-#if defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
-            struct timespec timestamp;
-            if (clock_gettime(CLOCK_REALTIME, &timestamp) != 0)
-                throw std::runtime_error("Cannot get value of CLOCK_REALTIME timer!");
-            return (timestamp.tv_sec * 1000000000) + timestamp.tv_nsec;
-#elif defined(_WIN32) || defined(_WIN64)
-            FILETIME ft;
-            GetSystemTimePreciseAsFileTime(&ft);
-
-            ULARGE_INTEGER result;
-            result.LowPart = ft.dwLowDateTime;
-            result.HighPart = ft.dwHighDateTime;
-            return (result.QuadPart - 116444736000000000ull) * 100;
-#endif
-        }
-        static uint64_t local() {
-#if defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
-            uint64_t timestamp = utc();
-
-            // Adjust UTC time with local timezone offset
-            struct tm local;
-            time_t seconds = timestamp / (1000000000);
-            if (localtime_r(&seconds, &local) != &local)
-                throw std::runtime_error("Cannot convert CLOCK_REALTIME time to local date & time structure!");
-            return timestamp + (local.tm_gmtoff * 1000000000);
-#elif defined(_WIN32) || defined(_WIN64)
-            FILETIME ft;
-            GetSystemTimePreciseAsFileTime(&ft);
-
-            FILETIME ft_local;
-            if (!FileTimeToLocalFileTime(&ft, &ft_local))
-                throw std::runtime_error("Cannot convert UTC file time to local file time structure!");
-
-            ULARGE_INTEGER result;
-            result.LowPart = ft_local.dwLowDateTime;
-            result.HighPart = ft_local.dwHighDateTime;
-            return (result.QuadPart - 116444736000000000ull) * 100;
-#endif
-        }
         static uint64_t nano() {
-#if defined(__APPLE__)
-            static mach_timebase_info_data_t info;
-            static uint64_t bias = Internals::PrepareTimebaseInfo(info);
-            return ((mach_absolute_time() - bias) * info.numer) / info.denom;
-#elif defined(unix) || defined(__unix) || defined(__unix__)
-            // old implementation
-            //        struct timespec tetimestamp = {0};
-            //    if (clock_gettime(CLOCK_MONOTONIC, &timestamp) != 0)
-            //        throw std::runtime_error("Cannot get value of CLOCK_MONOTONIC timer!");
-            //    return (timestamp.tv_sec * 1000000000) + timestamp.tv_nsec;
-            return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-#elif defined(_WIN32) || defined(_WIN64)
-            static uint64_t offset = 0;
-            static LARGE_INTEGER first = { 0 };
-            static LARGE_INTEGER frequency = { 0 };
-            static bool initialized = false;
-            static bool qpc = true;
+			// Store system time and steady time on first call
+            static const std::chrono::time_point<std::chrono::system_clock> clk_system_start = std::chrono::system_clock::now();
+            static const std::chrono::time_point<std::chrono::steady_clock> clk_steady_start = std::chrono::steady_clock::now();
 
-            if (!initialized)
-            {
-                // Calculate timestamp offset
-                FILETIME timestamp;
-                GetSystemTimePreciseAsFileTime(&timestamp);
-
-                ULARGE_INTEGER result;
-                result.LowPart = timestamp.dwLowDateTime;
-                result.HighPart = timestamp.dwHighDateTime;
-
-                // Convert 01.01.1601 to 01.01.1970
-                result.QuadPart -= 116444736000000000ll;
-                offset = result.QuadPart * 100;
-
-                // Setup performance counter
-                qpc = QueryPerformanceFrequency(&frequency) && QueryPerformanceCounter(&first);
-
-                initialized = true;
-            }
-
-            if (qpc)
-            {
-                LARGE_INTEGER timestamp = { 0 };
-                QueryPerformanceCounter(&timestamp);
-                timestamp.QuadPart -= first.QuadPart;
-                return offset + timestamp.QuadPart /  frequency.QuadPart * 1000000000;
-            }
-            else
-                return offset;
-#endif
+			// Nano timestamp is (system_start + (steady_now - steady_start))
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    clk_system_start.time_since_epoch() +
+                    (std::chrono::steady_clock::now().time_since_epoch() - clk_steady_start.time_since_epoch())
+            ).count();
         }
         static uint64_t rdts() {
 #if defined(_MSC_VER)
@@ -385,6 +314,8 @@ namespace qb {
         unsigned hi, lo;
         __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
         return ((uint64_t) lo) | (((uint64_t) hi) << 32);
+#else
+        return 0;
 #endif
         }
 
@@ -400,7 +331,7 @@ namespace qb {
     public:
         using Timestamp::Timestamp;
 
-        UtcTimestamp() : Timestamp(Timestamp::utc()) {}
+        UtcTimestamp() : Timestamp(Timestamp::nano()) {}
         UtcTimestamp(const Timestamp& timestamp) : Timestamp(timestamp) {}
     };
 
@@ -409,7 +340,7 @@ namespace qb {
     public:
         using Timestamp::Timestamp;
 
-        LocalTimestamp() : Timestamp(Timestamp::local()) {}
+        LocalTimestamp() : Timestamp(Timestamp::nano()) {}
         LocalTimestamp(const Timestamp& timestamp) : Timestamp(timestamp) {}
     };
 
@@ -434,4 +365,4 @@ namespace qb {
 }
 // namespace qb
 
-#endif //FEATURES_TIMESTAMP_H
+#endif

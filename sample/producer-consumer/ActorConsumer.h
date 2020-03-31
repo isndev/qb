@@ -17,6 +17,7 @@
 
 #include <vector>
 #include <qb/actor.h>
+#include <qb/system/timestamp.h>
 #include "MyEvent.h"
 
 #ifndef ACTORCONSUMER_H_
@@ -34,7 +35,7 @@ class ActorConsumer
     }
 
 public:
-    ActorConsumer() = default;             // default constructor
+    ActorConsumer() = default;                 // default constructor
     ~ActorConsumer() = default;
 
     // will call this function before adding MyActor
@@ -42,14 +43,14 @@ public:
         registerEvent<MyEvent>(*this);     // will listen MyEvent
         registerCallback(*this);           // each core loop will call onCallback
         reset_timer();
-        return true;                       // init ok, MyActor will be added
+        return true;                           // init ok, MyActor will be added
     }
 
     // will call this function each core loop
     virtual void onCallback() override final {
         if (time() > timer) {
-            //qb::io::cout() << "Consumer(" << id() << ") received " << counter << "/s" << std::endl;
-            LOG_INFO << "Consumer(" << id() << ") received " << counter << "/s";
+            // qb::io::cout() << "Consumer(" << id() << ") received " << counter << "/s" << std::endl;
+            LOG_INFO("Consumer(" << id() << ") received " << counter << "/s");
             reset_timer();
             counter = 0;
         }

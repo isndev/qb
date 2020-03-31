@@ -19,11 +19,19 @@
 # define QB_ACTORID_H
 # include <limits>
 # include <cstdint>
-// include from qb
+# include <unordered_set>
+ // include from qb
+# include <qb/system/container/unordered_set.h>
 # include <qb/utility/prefix.h>
+# include <qb/utility/build_macros.h>
 # include <qb/io.h>
 
 namespace qb {
+
+    using CoreId = uint16_t;
+    using ServiceId = uint16_t;
+    using TypeId = uint16_t;
+    using EventId = TypeId;
 
     /*!
      * @class ActorId core/ActorId.h qb/actorid.h
@@ -36,41 +44,70 @@ namespace qb {
         friend class Main;
         friend class VirtualCore;
         friend class Actor;
+        friend class Service;
 
-        uint16_t _id;
-        uint16_t _index;
+        ServiceId _id;
+        CoreId _index;
 
-        ActorId(uint16_t const id, uint16_t const index);
+    protected:
+        ActorId(ServiceId const id, CoreId const index) noexcept;
     public:
         static constexpr uint32_t NotFound = 0;
+        static constexpr ServiceId BroadcastSid = (std::numeric_limits<ServiceId>::max)();
 
         /*!
          * ActorId() == ActorId::NotFound
          */
-        ActorId();
+        ActorId() noexcept;
         /*!
          * @private
          * internal function
          */
-        ActorId(uint32_t const id);
-        ActorId(ActorId const &) = default;
+        ActorId(uint32_t const id) noexcept;
+        ActorId(ActorId const &) noexcept = default;
 
-        operator const uint32_t &() const;
-        bool operator!=(ActorId const rhs) const;
-        bool operator!=(uint32_t const rhs) const;
+        operator uint32_t () const noexcept;
 
         /*!
          * @return Service index
          */
-        uint16_t sid() const;
+        ServiceId sid() const noexcept;
         /*!
          * @return VirtualCore index
          */
-        uint16_t index() const;
+        CoreId index() const noexcept;
+
+        /*!
+         * @return true if ActorId is a Core broadcast id
+        */
+        bool is_broadcast() const noexcept;
+
+        /*!
+         * @return true if ActorId is valid
+        */
+        bool is_valid() const noexcept;
     };
+
+    class BroadcastId : public ActorId {
+    public:
+        BroadcastId() = delete;
+        explicit BroadcastId(uint32_t const core_id) noexcept
+            : ActorId(BroadcastSid, static_cast<CoreId>(core_id)) {}
+    };
+
+    using CoreIds = qb::unordered_set<CoreId>;
+    using ActorIds = std::unordered_set<ActorId>;
 
 }
 
-qb::io::stream &operator<<(qb::io::stream &os, qb::ActorId const &id);
+namespace std {
+    template<> struct hash<qb::ActorId> {
+        std::size_t operator()(qb::ActorId const &val) const noexcept {
+            return static_cast<uint32_t>(val);
+        }
+    };
+}
+
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
 
 #endif //QB_ACTORID_H

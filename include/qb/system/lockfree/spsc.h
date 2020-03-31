@@ -174,6 +174,42 @@ namespace qb {
                         return output_count;
                     }
 
+                    template <typename _Func>
+                    size_t consume_all(_Func const & functor, T * internal_buffer, size_t max_size)
+                    {
+                        const size_t write_index = write_index_.load(std::memory_order_acquire);
+                        const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
+
+                        const size_t avail = read_available(write_index, read_index, max_size);
+
+                        if (avail == 0)
+                            return 0;
+
+                        const size_t output_count = avail;
+
+                        size_t new_read_index = read_index + output_count;
+
+                        if (read_index + output_count > max_size) {
+                            /* copy data in two sections */
+                            const size_t count0 = max_size - read_index;
+                            const size_t count1 = output_count - count0;
+
+                            functor(internal_buffer + read_index, count0);
+                            functor(internal_buffer, count1);
+
+                            new_read_index -= max_size;
+                        } else {
+                            functor(internal_buffer + read_index, output_count);
+
+                            if (new_read_index == max_size)
+                                new_read_index = 0;
+                        }
+
+                        read_index_.store(new_read_index, std::memory_order_release);
+                        return output_count;
+                    }
+
+
                     const T& front(const T * internal_buffer) const
                     {
                         const size_t read_index = read_index_.load(std::memory_order_relaxed); // only written from pop thread
@@ -233,6 +269,11 @@ namespace qb {
                         func(ret, nb_consume);
                     return nb_consume;
                 }
+
+                template <typename Func>
+                inline size_t consume_all(Func const &func) noexcept {
+                    return internal::ringbuffer<T>::consume_all(func, array_.data(), max_size);
+                }
             };
 
             template<typename T>
@@ -270,6 +311,11 @@ namespace qb {
                     if (nb_consume)
                         func(ret, nb_consume);
                     return nb_consume;
+                }
+
+                template <typename Func>
+                inline size_t consume_all(Func const &func) noexcept {
+                    return internal::ringbuffer<T>::consume_all(func, array_.get(), max_size_);
                 }
             };
 

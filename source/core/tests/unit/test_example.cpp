@@ -16,7 +16,7 @@
  */
 
 #include <gtest/gtest.h>
-#include <qb/actor.h>
+#include <qb/main.h>
 
 TEST(Example, StartEngine) {
   qb::Main main({0});

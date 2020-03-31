@@ -18,12 +18,16 @@
 #ifndef QB_LOCKFREE_MPSC_H
 #define QB_LOCKFREE_MPSC_H
 # include <mutex>
+# include <chrono>
 # include "spsc.h"
 # include "spinlock.h"
 
 namespace qb {
     namespace lockfree {
         namespace mpsc {
+
+            using Clock = std::chrono::high_resolution_clock;
+            using Nanoseconds = std::chrono::nanoseconds;
 
             template<typename T, std::size_t max_size, size_t nb_producer = 0>
             class ringbuffer
@@ -51,7 +55,7 @@ namespace qb {
                 }
 
                 bool enqueue(size_t const index, T const &t) {
-                    return _producers[index].enqueue(t);
+                    return _producers[index]._ringbuffer.enqueue(t);
                 }
 
                 template <bool _All = true>
@@ -60,14 +64,14 @@ namespace qb {
                 }
 
                 size_t enqueue(T const &t) {
-                    const size_t index = Timestamp::rdts() % nb_producer;
+                    const size_t index = Clock::now().time_since_epoch().count() % nb_producer;
                     std::lock_guard<SpinLock> lock(_producers[index].lock);
                     return _producers[index]._ringbuffer.enqueue(t);
                 }
 
                 template <bool _All = true>
                 size_t enqueue(T const *t, size_t const size) {
-                    const size_t index = Timestamp::rdts() % nb_producer;
+                    const size_t index = Clock::now().time_since_epoch().count() % nb_producer;
                     std::lock_guard<SpinLock> lock(_producers[index].lock);
                     return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
                 }
@@ -89,6 +93,19 @@ namespace qb {
                         nb_consume += producer._ringbuffer.dequeue(func, ret, size);
                     }
                     return nb_consume;
+                }
+
+                template <typename Func>
+                size_t consume_all(Func const &func) {
+                    size_t nb_consume = 0;
+                    for (auto &producer : _producers) {
+                        nb_consume += producer._ringbuffer.consume_all(func);
+                    }
+                    return nb_consume;
+                }
+
+                auto &ringOf(size_t const index) {
+                    return _producers[index]._ringbuffer;
                 }
             };
 
@@ -124,7 +141,7 @@ namespace qb {
                 }
 
                 bool enqueue(size_t const index, T const &t) {
-                    return _producers.get()[index].enqueue(t);
+                    return _producers.get()[index]._ringbuffer.enqueue(t);
                 }
 
                 template <bool _All = true>
@@ -133,14 +150,14 @@ namespace qb {
                 }
 
                 size_t enqueue(T const &t) {
-                    const size_t index = Timestamp::rdts() % _nb_producer;
+                    const size_t index = Clock::now().time_since_epoch().count() % _nb_producer;
                     std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
                     return _producers.get()[index]._ringbuffer.enqueue(t);
                 }
 
                 template <bool _All = true>
                 size_t enqueue(T const *t, size_t const size) {
-                    const size_t index = Timestamp::rdts() % _nb_producer;
+                    const size_t index = Clock::now().time_since_epoch().count() % _nb_producer;
                     std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
                     return _producers.get()[index]._ringbuffer.template enqueue<_All>(t, size);
                 }
@@ -162,6 +179,19 @@ namespace qb {
                         nb_consume += _producers.get()[i]._ringbuffer.dequeue(func, ret, size);
                     }
                     return nb_consume;
+                }
+
+                template <typename Func>
+                size_t consume_all(Func const &func) {
+                    size_t nb_consume = 0;
+                    for (size_t i = 0; i < _nb_producer; ++i) {
+                        nb_consume += _producers.get()[i]._ringbuffer.consume_all(func);
+                    }
+                    return nb_consume;
+                }
+
+                auto &ringOf(size_t const index) {
+                    return _producers.get()[index]._ringbuffer;
                 }
             };
 

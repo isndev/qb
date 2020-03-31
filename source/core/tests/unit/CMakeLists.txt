@@ -15,4 +15,4 @@
 #         limitations under the License.
 #
 
-cxx_gtest(${PROJECT_NAME}-gtest-unit-example "${PROJECT_NAME}" test_example.cpp)
+cxx_gtest(${PROJECT_NAME}-gtest-unit-event-router "${PROJECT_NAME}" test-event-router.cpp)

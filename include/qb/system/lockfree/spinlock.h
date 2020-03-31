@@ -20,7 +20,6 @@
 # include <atomic>
 # include <qb/system/timestamp.h>
 
-
 namespace qb {
     namespace lockfree {
 

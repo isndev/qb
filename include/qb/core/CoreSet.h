@@ -19,7 +19,7 @@
 # define QB_CORESET_H
 # include <cstdint>
 # include <vector>
-# include <unordered_set>
+# include <qb/system/container/unordered_set.h>
 
 namespace qb {
 
@@ -30,22 +30,26 @@ namespace qb {
      */
     class CoreSet {
         friend class Main;
+        friend class VirtualCore;
 
-        const std::unordered_set<uint8_t>  _raw_set;
-        const std::size_t       _nb_core;
-        std::vector<uint8_t>    _set;
-        std::size_t             _size;
+        const qb::unordered_set<CoreId>  _raw_set;
+        const std::size_t        _nb_core;
+        const std::size_t              _size;
+        std::array<uint8_t, 256> _set;
 
-        uint8_t resolve(std::size_t const id) const;
-        std::size_t getSize() const;
-        std::size_t getNbCore() const;
+
+        CoreId resolve(std::size_t const id) const noexcept;
+        std::size_t getSize() const noexcept;
+        std::size_t getNbCore() const noexcept;
 
     public:
         CoreSet() = delete;
         CoreSet(CoreSet const &) = default;
-        explicit CoreSet(std::unordered_set<uint8_t> const &set);
+        explicit CoreSet(qb::unordered_set<CoreId> const &set) noexcept;
 
-        static CoreSet build(uint32_t const nb_core = std::thread::hardware_concurrency());
+        const qb::unordered_set<CoreId> &raw() const noexcept;
+
+        static CoreSet build(uint32_t const nb_core = std::thread::hardware_concurrency()) noexcept;
     };
 
 } // namespace qb
