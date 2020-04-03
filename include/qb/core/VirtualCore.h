@@ -87,24 +87,36 @@ namespace qb {
         //!Types
     private:
         // Members
-        const CoreId   _index;
-        const CoreId   _resolved_index;
+        const CoreId    _index;
+        const CoreId    _resolved_index;
         Main           &_engine;
         // event reception
         MPSCBuffer     &_mail_box;
+        EventBuffer    &_event_buffer;
         router::memh<Event>   _router;
         // event flush
         PipeMap         _pipes;
-        Pipe            &_mono_pipe_swap;
-        Pipe            _mono_pipe;
+        Pipe           &_mono_pipe_swap;
+        Pipe           &_mono_pipe;
         // actors management
         AvailableIdList _ids;
         ActorMap        _actors;
         CallbackMap     _actor_callbacks;
         RemoveActorList _actor_to_remove;
-        // --- loop timer
-        EventBuffer     _event_buffer;
-        uint64_t        _nanotimer;
+        // --- loop
+        bool             _is_low_latency; // default no wait
+        struct {
+            uint64_t _nb_event_io = 0;
+            uint64_t _nb_event_received = 0;
+            uint64_t _nb_event_sent = 0;
+            uint64_t _sleep_count = 0;
+            uint64_t _nanotimer = 0;
+
+            inline void reset() {
+                _sleep_count += (_nb_event_sent + _nb_event_received + _nb_event_io) << 3;
+                _nb_event_io = _nb_event_received = _nb_event_sent = _nanotimer = 0;
+            }
+        } _metrics;
         // !Members
 
         VirtualCore() = delete;
@@ -174,7 +186,8 @@ namespace qb {
         template<typename T, typename ..._Init>
         T &push(ActorId const dest, ActorId const source, _Init &&...init) noexcept;
         //!Event Api
-
+        // IO strategy
+        void setLowLatency(bool state) noexcept;
     public:
         CoreId getIndex() const noexcept;
         uint64_t time() const noexcept;

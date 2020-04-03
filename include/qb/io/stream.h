@@ -29,6 +29,7 @@ namespace qb {
             _IO_ _in;
             qb::allocator::pipe<char> _in_buffer;
         public:
+            using input_io_type = _IO_;
 
             _IO_ &in() {
                 return _in;
@@ -63,6 +64,7 @@ namespace qb {
             _IO_ _out;
             qb::allocator::pipe<char> _out_buffer;
         public:
+            using output_io_type = _IO_;
 
             _IO_ &out() {
                 return _out;
@@ -99,6 +101,7 @@ namespace qb {
         protected:
             _IO_ _out;
         public:
+            using output_io_type = _IO_;
 
             // unused
             _IO_ &out() { return _out; }
@@ -121,6 +124,7 @@ namespace qb {
         protected:
             qb::allocator::pipe<char> _out_buffer;
         public:
+            using output_io_type = _IO_;
 
             _IO_ &out() {
                 return this->_in;
@@ -156,6 +160,8 @@ namespace qb {
         template<typename _IO_>
         class stream<_IO_, true> : public istream<_IO_> {
         public:
+            using output_io_type = _IO_;
+
             // unused
             _IO_ &out() { return this->_in; }
             std::size_t pendingWrite() const { return 0; }

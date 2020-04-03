@@ -27,6 +27,7 @@ namespace qb {
                 io::tcp::ssl::listener _io;
                 io::tcp::ssl::socket _accepted_io;
             public:
+                using input_io_type = io::tcp::ssl::listener;
                 using message_type = io::tcp::ssl::socket;
 
                 io::tcp::ssl::listener &in() {
