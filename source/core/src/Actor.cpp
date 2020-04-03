@@ -43,10 +43,6 @@ namespace qb {
         static_cast<ActorId &>(*this) = id;
     }
 
-    void Actor::__set_id(ServiceId const sid, CoreId const cid) noexcept {
-        static_cast<ActorId &>(*this) = {sid, cid};
-    }
-
     void Actor::on(PingEvent const &event) noexcept {
         if (event.type == id_type)
             send<RequireEvent>(event.source, event.type, ActorStatus::Alive);
@@ -62,6 +58,10 @@ namespace qb {
 
     uint64_t Actor::time() const noexcept {
         return VirtualCore::_handler->time();
+    }
+
+    void Actor::setCoreLowLatency(bool state) const noexcept {
+        VirtualCore::_handler->setLowLatency(state);
     }
 
     bool Actor::is_alive() const noexcept{

@@ -68,10 +68,6 @@ namespace qb {
         /*!
          * @private
          */
-        void __set_id(ServiceId const sid, CoreId const cid) noexcept;
-        /*!
-         * @private
-         */
         template <typename Tag>
         static ServiceId registerIndex() noexcept;
 
@@ -244,6 +240,8 @@ namespace qb {
          */
         template <typename _ServiceActor>
         _ServiceActor *getService() const noexcept;
+
+        void setCoreLowLatency(bool state) const noexcept;
 
         /*!
          * @brief Check if Actor is alive

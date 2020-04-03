@@ -1,6 +1,6 @@
 #
 # qb - C++ Actor Framework
-# Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+# Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,22 @@
 #         limitations under the License.
 #
 
-add_subdirectory(starter)
-add_subdirectory(pingpong)
-add_subdirectory(producer-consumer)
-add_subdirectory(tcp)
+# CMakeLists.txt file
+cmake_minimum_required(VERSION 3.10)
+project(qb-sample-server-text)
+
+# qb minimum requirements
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(SOURCE
+        src/ServerActor.cpp
+        src/Session.cpp
+        main.cpp)
+
+add_executable(${PROJECT_NAME} ${SOURCE})
+# Add include directory
+target_include_directories(${PROJECT_NAME} PRIVATE include)
+
+# Link project with qb-core library
+target_link_libraries(${PROJECT_NAME} qb-core)

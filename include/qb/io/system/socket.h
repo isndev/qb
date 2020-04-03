@@ -117,8 +117,13 @@ namespace           qb {
 
                 void close() {
                     if (good()) {
-                        if(helper::close(_handle))
+#ifdef _WIN32
+                        if (!_close(_fd))
                             _handle = SOCKET_INVALID;
+#else
+                        if (helper::close(_handle))
+                            _handle = SOCKET_INVALID;
+#endif
                         else
                             std::cerr << "Failed to close socket" << std::endl;
                     }

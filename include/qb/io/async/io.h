@@ -54,7 +54,7 @@ namespace qb {
                 }
 
                 void updateTimeout() {
-                    _last_activity = this->_async_event.loop.now() + _timeout;
+                    _last_activity = this->_async_event.loop.now();
                 }
 
                 void setTimeout(double timeout) {
@@ -85,11 +85,12 @@ namespace qb {
             public:
                 constexpr static const bool has_server = false;
                 using IOMessage = typename _Prot::message_type;
+                using input_io_type = typename _Prot::input_io_type;
 
                 input() = default;
                 input(input const &) = delete;
 
-                auto &in() {
+                input_io_type &in() {
                     return _prot.in();
                 }
 
@@ -123,8 +124,8 @@ namespace qb {
                             static_cast<_Derived &>(*this).on(_prot.getMessage(ret), ret);
                             _prot.flush(ret);
                         }
+                        return;
                     }
-                    return;
                     error:
                     disconnect();
                 }
@@ -136,11 +137,12 @@ namespace qb {
                 _Prot _prot;
             public:
                 constexpr static const bool has_server = false;
+                using output_io_type = typename _Prot::output_io_type;
 
                 output() = default;
                 output(output const &) = delete;
 
-                auto &out() {
+                output_io_type &out() {
                     return _prot.out();
                 }
 
@@ -152,7 +154,7 @@ namespace qb {
                 template <typename ..._Args>
                 inline auto publish(_Args &&...args) {
                     if (!(this->_async_event.events & EV_WRITE))
-                        this->_async_event.set(EV_READ | EV_WRITE);
+                        this->_async_event.set(EV_WRITE);
                     return _prot.publish(std::forward<_Args>(args)...);
                 }
 
@@ -178,12 +180,13 @@ namespace qb {
                             goto error;
                         if (!_prot.pendingWrite()) {
                             event.stop();
+                            event.set(EV_READ);
                             if constexpr (has_method_on<_Derived, void, event::eos>::value) {
                                 static_cast<_Derived &>(*this).on(event::eos{});
                             }
                         }
+                        return;
                     }
-                    return;
                     error:
                     disconnect();
                 }
@@ -195,16 +198,18 @@ namespace qb {
                 _Prot _prot;
             public:
                 constexpr static const bool has_server = false;
+                using input_io_type = typename _Prot::input_io_type;
+                using output_io_type = typename _Prot::output_io_type;
                 using IOMessage = typename _Prot::message_type;
 
                 io() = default;
                 io(io const &) = delete;
 
-                auto &in() {
+                input_io_type &in() {
                     return _prot.in();
                 }
 
-                auto &out() {
+                output_io_type &out() {
                     return _prot.out();
                 }
 
@@ -252,7 +257,7 @@ namespace qb {
                             goto error;
                         if (!_prot.pendingWrite()) {
                             event.set(EV_READ);
-                            if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
+                            if constexpr (has_method_on<_Derived, void, event::eos>::value) {
                                 static_cast<_Derived &>(*this).on(event::eos{});
                             }
                         }

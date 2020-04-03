@@ -27,6 +27,7 @@ namespace qb {
                 io::tcp::listener _io;
                 io::tcp::socket _accepted_io;
             public:
+                using input_io_type = io::tcp::listener;
                 using message_type = io::tcp::socket;
 
                 io::tcp::listener &in() {

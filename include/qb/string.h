@@ -27,10 +27,30 @@
 
 namespace qb {
 
+    namespace internal {
+        template <std::size_t _Size
+                , bool fill8 = (_Size <= std::numeric_limits<uint8_t>::max())
+                , bool fill16 = (_Size <= std::numeric_limits<uint16_t>::max())>
+        struct best_size {
+            using type = std::size_t;
+        };
+
+        template <std::size_t _Size>
+        struct best_size<_Size, true, true> {
+            using type = uint8_t;
+        };
+
+        template <std::size_t _Size>
+        struct best_size<_Size, false, true> {
+            using type = uint16_t;
+        };
+    }
+
     template <std::size_t _Size = 30>
     class string : public std::array<char, _Size + 1> {
         using base_t = std::array<char, _Size + 1>;
-        unsigned char _size = 0;
+        using size_type = typename internal::best_size<_Size + 1>::type;
+        size_type _size = 0;
     public:
 
         string() noexcept
@@ -44,7 +64,7 @@ namespace qb {
 
         string &assign(char const *rhs, std::size_t size) noexcept {
             *base_t::begin() = '\0';
-            _size = static_cast<unsigned char>(std::min(size, static_cast<std::size_t>(_Size)));
+            _size = static_cast<size_type>(std::min(size, static_cast<std::size_t>(_Size)));
             strncat(base_t::data(), rhs, _size);
             return *this;
         }

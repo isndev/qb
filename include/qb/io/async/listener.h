@@ -57,6 +57,7 @@ namespace qb {
 
                 ev::dynamic_loop _loop;
                 std::vector<IRegisteredKernelEvent *> _registeredEvents;
+                std::size_t _nb_invoked_events;
 
             public:
                 listener() : _loop(EVFLAG_AUTO) {}
@@ -77,6 +78,7 @@ namespace qb {
                     auto &w = *reinterpret_cast<event::base<EV_EVENT> *>(&event);
                     w._revents = revents;
                     w._interface->invoke();
+                    ++_nb_invoked_events;
                 }
 
                 template<typename _Event, typename _Actor, typename ..._Args>
@@ -102,7 +104,12 @@ namespace qb {
                 }
 
                 inline void run(int flag = 0) {
+                    _nb_invoked_events = 0;
                     _loop.run(flag);
+                }
+
+                inline std::size_t getNbInvokedEvent() const {
+                    return _nb_invoked_events;
                 }
 
                 inline std::size_t size() const {
@@ -114,8 +121,9 @@ namespace qb {
                 listener::current.clear();
             }
 
-            inline void run(int flag = 0) {
+            inline std::size_t run(int flag = 0) {
                 listener::current.run(flag);
+                return listener::current.getNbInvokedEvent();
             }
 
         }

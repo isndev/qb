@@ -62,9 +62,12 @@ namespace qb {
             , _resolved_index(engine._core_set.resolve(id))
             , _engine(engine)
             , _mail_box(engine.getMailBox(id))
+            , _event_buffer(*new EventBuffer())
             , _pipes(engine.getNbCore())
-            , _mono_pipe_swap(_pipes[_resolved_index]) {
-//        _ids.reserve(std::numeric_limits<ServiceId>::max() - _nb_service);
+            , _mono_pipe_swap(_pipes[_resolved_index])
+            , _mono_pipe(*new Pipe())
+            , _is_low_latency(true) {
+
         for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
             _ids.insert(static_cast<ServiceId>(i));
         }
@@ -73,6 +76,8 @@ namespace qb {
     VirtualCore::~VirtualCore() noexcept {
         for (auto it : _actors)
             delete it.second;
+        delete &_event_buffer;
+        delete &_mono_pipe;
     }
 
     ActorId VirtualCore::__generate_id__() noexcept {
@@ -97,6 +102,7 @@ namespace qb {
 
             event->state.alive = 0;
             _router.route(*event);
+            ++_metrics._nb_event_received;
             i += event->bucket_size;
         }
     }
@@ -145,7 +151,7 @@ namespace qb {
                             }
                         }
                     }
-
+                    ++_metrics._nb_event_sent;
                     i += event.bucket_size;
                 }
                 pipe.reset();
@@ -181,7 +187,6 @@ namespace qb {
             LOG_CRIT("" << *this << " Init Failed");
             Main::sync_start.store(Error::BadInit, std::memory_order_release);
         }
-        _nanotimer = Timestamp::nano();
     }
 
     void VirtualCore::__init__actors__() const {
@@ -206,18 +211,22 @@ namespace qb {
     void VirtualCore::__workflow__() {
         LOG_INFO("" << *this << " Init Success " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
         while (likely(Main::is_running)) {
-            if (io::async::listener::current.size()) {
-                io::async::run(EVRUN_NOWAIT);
-                _nanotimer = io::async::listener::current.loop().now() * 1000;
-            } else
-                _nanotimer = Timestamp::nano();
-
+            // core has io
+            if (io::async::listener::current.size())
+                _metrics._nb_event_io = io::async::run(EVRUN_NOWAIT);
+            // send core events
             __flush_all__();
+            // receive core events
             __receive__();
+            // check if reception killed actors
+            if (unlikely(!_actor_to_remove.empty()))
+                goto removeActors;
+            // call registered actor callbacks
             for (const auto &callback : _actor_callbacks)
                 callback.second->onCallback();
-
+            // check if callbacks killed actors
             if (unlikely(!_actor_to_remove.empty())) {
+                removeActors:
                 // remove dead actors
                 for (auto const &actor : _actor_to_remove)
                     removeActor(actor);
@@ -226,6 +235,13 @@ namespace qb {
                     break;
                 }
             }
+            if (!_is_low_latency) {
+                if (likely(_metrics._sleep_count)) --_metrics._sleep_count;
+                else
+                    std::this_thread::sleep_for(std::chrono::nanoseconds(1));
+            }
+            // reset metrics
+            _metrics.reset();
         }
         // receive and flush residual events
         do {
@@ -233,7 +249,7 @@ namespace qb {
         } while (__flush_all__());
 
         if (!Main::is_running) {
-            LOG_INFO("" << *this << " Stopped by user leave " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
+            LOG_INFO("" << *this << " Stopped by user " << static_cast<uint32_t>(_actors.size()) << " actor(s) left");
         } else {
             LOG_INFO("" << *this << " Stopped normally");
         }
@@ -327,9 +343,13 @@ namespace qb {
     }
     //!Event Api
 
+    void VirtualCore::setLowLatency(bool state) noexcept {
+        _is_low_latency = state;
+    }
+
     CoreId VirtualCore::getIndex() const noexcept { return _index; }
 
-    uint64_t VirtualCore::time() const noexcept { return _nanotimer; }
+    uint64_t VirtualCore::time() const noexcept { return _metrics._nanotimer ? _metrics._nanotimer : Timestamp::nano(); }
 
     ServiceId VirtualCore::_nb_service = 0;
     thread_local VirtualCore *VirtualCore::_handler = nullptr;
