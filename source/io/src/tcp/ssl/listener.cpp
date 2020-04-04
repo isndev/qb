@@ -17,29 +17,23 @@
 
 #include <qb/io/tcp/ssl/listener.h>
 
-namespace qb {
-    namespace io {
-        namespace tcp {
-            namespace ssl {
+namespace qb::io::tcp::ssl {
 
-                listener::listener() : _ctx(nullptr) {}
+    listener::listener() : _ctx(nullptr) {}
 
-                listener::~listener() {
-                    if (_ctx)
-                        SSL_CTX_free(_ctx);
-                }
+    listener::~listener() {
+        if (_ctx)
+            SSL_CTX_free(_ctx);
+    }
 
-                void listener::init(SSL_CTX *ctx) { _ctx = ctx; }
+    void listener::init(SSL_CTX *ctx) { _ctx = ctx; }
 
-                SocketStatus listener::accept(ssl::socket &socket) {
-                    if (tcp::listener::accept(socket) == SocketStatus::Done) {
-                        socket.init(SSL_new(_ctx));
-                        return SocketStatus::Done;
-                    }
-                    return SocketStatus::Error;
-                }
+    SocketStatus listener::accept(ssl::socket &socket) {
+        if (tcp::listener::accept(socket) == SocketStatus::Done) {
+            socket.init(SSL_new(_ctx));
+            return SocketStatus::Done;
+        }
+        return SocketStatus::Error;
+    }
 
-            } // namespace ssl
-        } // namespace tcp
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::tcp::ssl

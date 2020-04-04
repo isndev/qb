@@ -45,16 +45,15 @@ namespace qb {
      */
     class Actor
             : nocopy
-            , ActorId
     {
         friend class VirtualCore;
         friend class ActorProxy;
         friend class Service;
 
         const char * name = "unnamed";
+        ActorId _id;
         mutable bool _alive = true;
-        std::uint32_t id_type;
-        void __set_id(ActorId const &id) noexcept;
+        std::uint32_t id_type = 0u;
 
         /*!
          * @private
@@ -63,7 +62,7 @@ namespace qb {
         template<typename _Type>
         bool require_type() const noexcept;
 
-        Actor(ActorId const id) noexcept;
+        explicit Actor(ActorId id) noexcept;
     protected:
         /*!
          * @private
@@ -162,9 +161,9 @@ namespace qb {
             friend class Actor;
             ProxyPipe dest_pipe;
 
-            EventBuilder() = delete;
-            EventBuilder(ProxyPipe const &pipe) noexcept;
+            explicit EventBuilder(ProxyPipe const &pipe) noexcept;
         public:
+            EventBuilder() = delete;
             EventBuilder(EventBuilder const &rhs) noexcept = default;
 
             /*!
@@ -198,7 +197,7 @@ namespace qb {
          * Get ActorId
          * @return ActorId
          */
-        ActorId id() const noexcept { return *this; }
+        ActorId id() const noexcept { return _id; }
 
         /*!
          * Get core index
@@ -232,7 +231,7 @@ namespace qb {
          * @private
          */
         template <typename T>
-        static ActorId getServiceId(CoreId const index) noexcept;
+        static ActorId getServiceId(CoreId index) noexcept;
 
         /*!
          * @brief Get direct access to ServiceActor* in same core
@@ -369,7 +368,7 @@ namespace qb {
          * // builder1 == builder2 -> true
          * @endcode
          */
-        EventBuilder to(ActorId const dest) const noexcept;
+        EventBuilder to(ActorId dest) const noexcept;
 
         /*!
          * @brief Send a new ordered event
@@ -421,10 +420,10 @@ namespace qb {
         void send(ActorId const &dest, _Args &&...args) const noexcept;
 
         template<typename _Type>
-        inline uint32_t is(uint32_t const id) const noexcept { return id == type_id<_Type>(); }
+        inline bool is(uint32_t const id) const noexcept { return id == type_id<_Type>(); }
 
         template<typename _Type>
-        inline uint32_t is(RequireEvent const &event) const noexcept { return event.type == type_id<_Type>(); }
+        inline bool is(RequireEvent const &event) const noexcept { return event.type == type_id<_Type>(); }
 
         template<typename ..._Actors>
         bool require() const noexcept;
@@ -465,7 +464,7 @@ namespace qb {
          * @note
          * Forwarding an event is faster than pushing a new one.
          */
-        void forward(ActorId const dest, Event &event) const noexcept;
+        void forward(ActorId dest, Event &event) const noexcept;
 
         // OpenApi : used for module
          void send(Event const &event) const noexcept;
@@ -481,7 +480,7 @@ namespace qb {
          * Actor API allows to retrieve a ProxyPipe to a desired Actor.\n
          * more details on ProxyPipe section
          */
-        ProxyPipe getPipe(ActorId const dest) const noexcept;
+        ProxyPipe getPipe(ActorId dest) const noexcept;
 
         /*!
          * @brief Create new referenced _Actor
@@ -518,7 +517,7 @@ namespace qb {
      */
     class Service : public Actor {
     public:
-        Service(ServiceId const sid);
+        explicit Service(ServiceId sid);
     };
 
     /*!
@@ -534,6 +533,7 @@ namespace qb {
     template <typename Tag>
     class ServiceActor : public Service {
         friend class Main;
+        friend class CoreInitializer;
         friend class VirtualCore;
         static const ServiceId ServiceIndex;
     public:
@@ -543,9 +543,9 @@ namespace qb {
 
     class IActorFactory {
     public:
-        virtual ~IActorFactory(){}
+        virtual ~IActorFactory() = default;
         virtual Actor *create() = 0;
-        virtual bool isService() const = 0;
+        [[nodiscard]] virtual bool isService() const = 0;
     };
 
     class ActorProxy
@@ -568,7 +568,7 @@ namespace qb {
         std::tuple<typename remove_reference_if<_Args,
                 std::is_trivially_copyable<std::remove_reference_t<std::remove_all_extents_t<_Args>>>::value>::type...> _parameters;
     public:
-        TActorFactory(ActorId const id, _Args &&...args)
+        explicit TActorFactory(ActorId const id, _Args &&...args)
             : _id(id), _parameters(std::forward<_Args>(args)...)
         {}
 
@@ -580,11 +580,11 @@ namespace qb {
             return actor;
         }
 
-        Actor *create() {
+        Actor *create() final {
             return create_impl(std::index_sequence_for<_Args...>{});
         }
 
-        virtual bool isService() const {
+        [[nodiscard]] bool isService() const final {
             return std::is_base_of<Service, _Actor>::value;
         }
     };

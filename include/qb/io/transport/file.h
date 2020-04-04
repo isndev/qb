@@ -20,20 +20,16 @@
 # include "../system/file.h"
 # include "../stream.h"
 
-namespace qb {
-    namespace io {
-        namespace transport {
+namespace qb::io::transport {
 
-            class file : public stream<io::sys::file> {
-            public:
-                // Derived class should define :
-                // using message_type = const char *;
-                // int getMessageSize();
-                // message_type getMessage();
-            };
+    class file : public stream<io::sys::file> {
+    public:
+        // Derived class should define :
+        // using message_type = const char *;
+        // int getMessageSize();
+        // message_type getMessage();
+    };
 
-        } // namespace transport
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::transport
 
 #endif // QB_IO_TRANSPORT_FILE_H

@@ -20,7 +20,6 @@
 #include "../shared/TestProducer.h"
 #include "../shared/TestConsumer.h"
 #include "../shared/TestEvent.h"
-#include "../shared/TestLatency.h"
 
 template <typename Event>
 static void BM_Unicast_Latency(benchmark::State& state) {
@@ -28,14 +27,14 @@ static void BM_Unicast_Latency(benchmark::State& state) {
         const auto nb_events = state.range(0);
         const auto nb_actor = state.range(1);
         const auto nb_core = static_cast<uint32_t>(state.range(2));
-        qb::Main  main(qb::CoreSet::build(nb_core));
+        qb::Main  main;
 
-        qb::ActorIds ids = {};
+        qb::ActorIdList ids = {};
         for (auto i = 0; i < nb_actor; ++i) {
             const auto coreid = (i % (nb_core - (nb_core > 1))) + (nb_core > 1);
-            ids = {main.addActor<ConsumerActor<Event>>(coreid, qb::ActorIds(ids))};
+            ids = {main.addActor<ConsumerActor<Event>>(coreid, qb::ActorIdList(ids))};
         }
-        main.addActor<ProducerActor<Event>>(0, qb::ActorIds(ids), nb_events);
+        main.addActor<ProducerActor<Event>>(0, qb::ActorIdList(ids), nb_events);
 
         main.start(false);
         main.join();

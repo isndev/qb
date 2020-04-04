@@ -29,7 +29,7 @@ public:
     PingActor() = default; // PingActor requires PongActor Actor
 
     // /!\ the engine will call this function before adding PingPongActor
-    bool onInit() override final {
+    bool onInit() final {
         registerEvent<qb::RequireEvent>(*this); // id dependency
         require<PongActor>(); // require PongActor id
 

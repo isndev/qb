@@ -41,7 +41,8 @@ namespace qb {
      * ActorId is a composition of a Service Index (sid) and VirtualCore Index (index).
      */
     class ActorId {
-        friend class Main;
+        friend class CoreInitializer;
+        friend class SharedCoreCommunication;
         friend class VirtualCore;
         friend class Actor;
         friend class Service;
@@ -50,7 +51,7 @@ namespace qb {
         CoreId _index;
 
     protected:
-        ActorId(ServiceId const id, CoreId const index) noexcept;
+        ActorId(ServiceId id, CoreId index) noexcept;
     public:
         static constexpr uint32_t NotFound = 0;
         static constexpr ServiceId BroadcastSid = (std::numeric_limits<ServiceId>::max)();
@@ -63,8 +64,8 @@ namespace qb {
          * @private
          * internal function
          */
-        ActorId(uint32_t const id) noexcept;
-        ActorId(ActorId const &) noexcept = default;
+        ActorId(uint32_t id) noexcept;
+        ActorId(ActorId const &) = default;
 
         operator uint32_t () const noexcept;
 
@@ -96,7 +97,8 @@ namespace qb {
     };
 
     using CoreIds = qb::unordered_set<CoreId>;
-    using ActorIds = std::unordered_set<ActorId>;
+    using ActorIdList = std::vector<ActorId>;
+    using ActorIdSet = std::unordered_set<ActorId>;
 
 }
 

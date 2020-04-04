@@ -20,16 +20,17 @@
 #include "ClientActor.h"
 
 int main(int argc, char *argv[]) {
+    // default connection
     std::string ip = "127.0.0.1";
     uint16_t port = 60123;
-    // usage: ./qb-sample-server-text [IFACE] [PORT]
+    // usage: ./qb-sample-client-text [IP] [PORT]
     if (argc > 1)
         ip = argv[1];
     if (argc > 2)
         port = std::atoi(argv[2]);
 
-    qb::Main main({3, 1});
-    main.addActor<CmdActor>(1, main.addActor<ClientActor>(3, ip, port));
+    qb::Main main; // use core 2 and 3
+    main.addActor<CmdActor>(2, main.addActor<ClientActor>(3, ip, port));
 
     main.start(false);
     main.join();

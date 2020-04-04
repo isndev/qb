@@ -26,7 +26,7 @@ int main (int, char *argv[]) {
 
     // configure the Engine
     // Note : I will use only the core 0 and 1
-    qb::Main main({0, 1});
+    qb::Main main;
 
     // Build Pong Actor to core 0
     main.addActor<PongActor>(0); // default constructed

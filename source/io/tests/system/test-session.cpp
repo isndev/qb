@@ -64,7 +64,7 @@ class MyServer;
 
 class MyClient : public use<MyClient>::tcp::client<protocol::cmd, MyServer> {
 public:
-    MyClient(MyServer &server)
+    explicit MyClient(MyServer &server)
             : client(server) {}
 
     void on(IOMessage msg, std::size_t size) {
@@ -140,7 +140,7 @@ class MySecureServer;
 
 class MySecureClient : public use<MySecureClient>::tcp::ssl::client<protocol::cmd, MySecureServer> {
 public:
-    MySecureClient(MySecureServer &server)
+    explicit MySecureClient(MySecureServer &server)
             : client(server) {}
 
     void on(char const *message, std::size_t size) {
@@ -154,13 +154,13 @@ void ShowCerts(SSL* ssl)
     char *line;
 
     cert = SSL_get_peer_certificate(ssl); /* Get certificates (if available) */
-    if ( cert != NULL )
+    if ( cert != nullptr )
     {
         printf("Server certificates:\n");
-        line = X509_NAME_oneline(X509_get_subject_name(cert), 0, 0);
+        line = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
         printf("Subject: %s\n", line);
         free(line);
-        line = X509_NAME_oneline(X509_get_issuer_name(cert), 0, 0);
+        line = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
         printf("Issuer: %s\n", line);
         free(line);
         X509_free(cert);

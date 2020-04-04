@@ -39,7 +39,7 @@ struct TestEvent : public qb::Event
         });
     }
 
-    bool checkSum() const {
+    [[nodiscard]] bool checkSum() const {
         auto ret = true;
         if (has_extra_data) {
             ret = !memcmp(_data, reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent), sizeof(_data));
@@ -64,7 +64,7 @@ public:
         unregisterEvent<RemovedEvent>(*this);
     }
 
-    ~TestActorReceiver() {
+    ~TestActorReceiver() final {
         EXPECT_EQ(_count, _max_events);
     }
 
@@ -100,12 +100,12 @@ public:
     BaseActorSender(uint32_t const max_events, qb::ActorId const to)
             : BaseSender(max_events, to) {}
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         registerCallback(*this);
         return true;
     }
 
-    virtual void onCallback() override final {
+    void onCallback() final {
         static_cast<Derived &>(*this).doSend();
         if (++_count >= _max_events)
             kill();
@@ -172,13 +172,13 @@ class ActorEventMono : public testing::Test
 {
 protected:
     qb::Main main;
-    ActorEventMono() : main({0}) {}
-    virtual void SetUp() {
+    ActorEventMono() = default;
+    void SetUp() final {
         for (auto i = 0u; i < MAX_ACTORS; ++i) {
             main.addActor<ActorSender>(0, MAX_EVENTS, main.addActor<TestActorReceiver>(0, MAX_EVENTS));
         }
     }
-    virtual void TearDown() {}
+    void TearDown() final {}
 };
 
 template <typename ActorSender>
@@ -189,10 +189,9 @@ protected:
     qb::Main main;
     ActorEventMulti()
             : max_core(std::thread::hardware_concurrency())
-            , main(qb::CoreSet::build(max_core))
     {}
 
-    virtual void SetUp() {
+    void SetUp() final {
         for (auto i = 0u; i < max_core; ++i)
         {
             for (auto j = 0u; j < MAX_ACTORS; ++j) {
@@ -200,7 +199,7 @@ protected:
             }
         }
     }
-    virtual void TearDown() {}
+    void TearDown() final {}
 };
 
 template <typename ActorSender>
@@ -208,14 +207,14 @@ class ActorEventBroadcastMono : public testing::Test
 {
 protected:
     qb::Main main;
-    ActorEventBroadcastMono() : main({0}) {}
-    virtual void SetUp() {
+    ActorEventBroadcastMono() = default;
+    void SetUp() final {
         main.addActor<ActorSender>(0, MAX_EVENTS, qb::BroadcastId(0));
         for (auto i = 0u; i < MAX_ACTORS; ++i) {
             main.addActor<TestActorReceiver>(0, MAX_EVENTS);
         }
     }
-    virtual void TearDown() {}
+    void TearDown() final {}
 };
 
 template <typename ActorSender>
@@ -226,10 +225,9 @@ protected:
     qb::Main main;
     ActorEventBroadcastMulti()
             : max_core(std::thread::hardware_concurrency())
-            , main(qb::CoreSet::build(max_core))
     {}
 
-    virtual void SetUp() {
+    void SetUp() final {
         for (auto i = 0u; i < max_core; ++i)
         {
             main.addActor<ActorSender>(i, MAX_EVENTS, qb::BroadcastId((i + 1) % max_core));
@@ -238,7 +236,7 @@ protected:
             }
         }
     }
-    virtual void TearDown() {}
+    void TearDown() final {}
 };
 
 typedef testing::Types <
@@ -290,11 +288,11 @@ public:
     explicit TestSendReply(qb::ActorId const to)
         : _to(to) {}
 
-    ~TestSendReply() {
+    ~TestSendReply() final {
         EXPECT_EQ(counter, 2u);
     }
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
 
         registerEvent<TestEvent>(*this);
@@ -336,7 +334,7 @@ public:
             EXPECT_EQ(counter, 2u);
     }
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         registerEvent<TestEvent>(*this);
         registerEvent<EventForward>(*this);
@@ -358,7 +356,7 @@ public:
 
 
 TEST(ActorEventMono, PushReplyForward) {
-    qb::Main main({0});
+    qb::Main main;
 
     main.addActor<TestSendReply>(0, main.addActor<TestReceiveReply>(0));
     main.start(false);
@@ -367,7 +365,7 @@ TEST(ActorEventMono, PushReplyForward) {
 }
 
 TEST(ActorEventMulti, PushReplyForward) {
-    qb::Main main({0, 1});
+    qb::Main main;
 
     main.addActor<TestSendReply>(0, main.addActor<TestReceiveReply>(1));
     main.start(false);

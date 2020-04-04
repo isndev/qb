@@ -31,11 +31,11 @@ public:
         LOG_DEBUG("TestActor had been constructed");
     }
 
-    ~TestActor() {
+    ~TestActor() final {
         LOG_CRIT("TestActor id dead");
     }
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         LOG_VERB("TestActor had been initialized at" << qb::Timestamp::nano());
         registerEvent<TestEvent>(*this);
@@ -93,7 +93,7 @@ TEST(IO, STRING_TEST) {
 TEST(IO, BasicTestMonoCore) {
     qb::io::log::init("./test-mono-io", 128);
     qb::io::log::setLevel(qb::io::log::Level::DEBUG);
-    qb::Main main({0});
+    qb::Main main;
 
     LOG_INFO("Broadcast id=" << qb::BroadcastId(0));
     main.addActor<TestActor>(0);
@@ -113,7 +113,7 @@ TEST(IO, BasicTestMultiCore) {
     const auto max_core = std::thread::hardware_concurrency();
 
     EXPECT_GT(max_core, 1u);
-    qb::Main main(qb::CoreSet::build(max_core));
+    qb::Main main;
 
     for (auto i = 0u; i < max_core; ++i)
         main.addActor<TestActor>(i);

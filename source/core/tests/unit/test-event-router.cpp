@@ -22,18 +22,18 @@ struct ActorId  {
     uint32_t _id;
 
     ActorId() = default;
-    ActorId(uint32_t id) : _id(id) {}
+    explicit ActorId(uint32_t id) noexcept : _id(id) {}
 
-    operator uint32_t () const { return _id; }
+    explicit operator uint32_t () const noexcept { return _id; }
 
-    bool is_valid() const { return _id != 0; }
-    bool is_broadcast() const { return _id == std::numeric_limits<uint32_t>::max(); }
+    [[nodiscard]] bool is_valid() const noexcept { return _id != 0; }
+    [[nodiscard]] bool is_broadcast() const noexcept { return _id == std::numeric_limits<uint32_t>::max(); }
     bool operator==(ActorId const &rhs) const noexcept { return _id == rhs._id; }
 
     static const ActorId broadcastId;
 };
 
-const ActorId ActorId::broadcastId = {std::numeric_limits<uint32_t>::max()};
+const ActorId ActorId::broadcastId = ActorId{std::numeric_limits<uint32_t>::max()};
 
 namespace std {
     template<> struct hash<::ActorId> {
@@ -65,9 +65,9 @@ struct RawEvent {
     id_handler_type source;
     bool alive = true;
 
-    id_type getID() const noexcept { return id; }
-    bool is_alive() const noexcept { return alive; }
-    id_handler_type getDestination() const noexcept { return dest; }
+    [[nodiscard]] id_type getID() const noexcept { return id; }
+    [[nodiscard]] bool is_alive() const noexcept { return alive; }
+    [[nodiscard]] id_handler_type getDestination() const noexcept { return dest; }
 };
 
 struct TestEvent : public RawEvent {
@@ -113,20 +113,21 @@ void reset_all_event_counts() {
 struct FakeActor {
     ActorId _id;
 
-    FakeActor(uint32_t id) : _id(id) {}
+    explicit FakeActor(uint32_t id) : _id(id) {}
     FakeActor(FakeActor const &) = delete;
 
-    ActorId id() const {
+    [[nodiscard]] ActorId id() const {
         return _id;
     }
 
-    bool is_alive() const noexcept { return true; }
+    [[nodiscard]] bool is_alive() const noexcept { return true; }
+
     void on(TestEvent &event) {
-        ++event._count;
+        ++TestEvent::_count;
     }
 
     void on(TestConstEvent const &event) const {
-        ++event._count;
+        ++TestConstEvent::_count;
     }
 
     void on(TestDestroyEvent const &event) const {}
@@ -168,7 +169,7 @@ void Test_SEMH(std::size_t expected_count) {
     _Event::_count = 0;
     for (auto i = 0; i < 1024; ++i) {
         for (auto j = 1; j < 4; ++j) {
-            event.dest = j;
+            event.dest = ActorId(j);
             semhRouter.template route<_CleanEvent>(event);
         }
         event.dest = ActorId::broadcastId;
@@ -234,7 +235,7 @@ void Test_MEMH(std::size_t expected_count) {
     _Event::_count = 0;
     for (auto i = 0; i < 1024; ++i) {
         for (auto j = 1; j < 6; ++j) {
-            event.dest = j;
+            event.dest = ActorId(j);
             memhRouter.route(event);
         }
         event.dest = ActorId::broadcastId;

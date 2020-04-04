@@ -20,118 +20,113 @@
 #ifndef             QB_IO_SYS_SOCKET_H_
 # define            QB_IO_SYS_SOCKET_H_
 
-namespace           qb {
-    namespace       io {
-        namespace   sys {
+namespace qb::io::sys {
 
-            template<SocketType _Type>
-            class QB_API socket {
-            protected:
+    template<SocketType _Type>
+    class QB_API socket {
+    protected:
 #ifdef _WIN32
-                int           _fd;
+        int           _fd{};
 #endif
-                SocketHandler _handle;
+        SocketHandler _handle;
 
-                void init() {
-                    if (!good()) {
-                        SocketHandler handle;
-                        if constexpr (_Type == SocketType::TCP)
-                            handle = ::socket(PF_INET, SOCK_STREAM, 0);
-                        else
-                            handle = ::socket(PF_INET, SOCK_DGRAM, 0);
-                        init(handle);
+        void init() {
+            if (!good()) {
+                SocketHandler handle;
+                if constexpr (_Type == SocketType::TCP)
+                    handle = ::socket(PF_INET, SOCK_STREAM, 0);
+                else
+                    handle = ::socket(PF_INET, SOCK_DGRAM, 0);
+                init(handle);
+            }
+        }
+
+        void init(SocketHandler handle) {
+            if (!good() && (handle != SOCKET_INVALID)) {
+                if constexpr (_Type == SocketType::TCP) {
+                    // Disable the Nagle algorithm (i.e. removes buffering of TCP packets)
+                    int yes = 1;
+                    if (setsockopt(handle, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char *>(&yes),
+                                   sizeof(yes)) == -1) {
+                        std::cerr << "Failed to set socket option \"TCP_NODELAY\" ; "
+                                  << "all your TCP packets will be buffered" << std::endl;
                     }
+                } else {
+                    // Enable broadcast by default for UDP Sockets
+                    int yes = 1;
+                    if (setsockopt(handle, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<char *>(&yes),
+                                   sizeof(yes)) == -1)
+                        std::cerr << "Failed to enable broadcast on UDP socket" << std::endl;
                 }
-
-                void init(SocketHandler handle) {
-                    if (!good() && (handle != SOCKET_INVALID)) {
-                        if constexpr (_Type == SocketType::TCP) {
-                            // Disable the Nagle algorithm (i.e. removes buffering of TCP packets)
-                            int yes = 1;
-                            if (setsockopt(handle, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char *>(&yes),
-                                           sizeof(yes)) == -1) {
-                                std::cerr << "Failed to set socket option \"TCP_NODELAY\" ; "
-                                          << "all your TCP packets will be buffered" << std::endl;
-                            }
-                        } else {
-                            // Enable broadcast by default for UDP Sockets
-                            int yes = 1;
-                            if (setsockopt(handle, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<char *>(&yes),
-                                           sizeof(yes)) == -1)
-                                std::cerr << "Failed to enable broadcast on UDP socket" << std::endl;
-                        }
-                        _handle = handle;
+                _handle = handle;
 #ifdef _WIN32
-                        _fd = _open_osfhandle(handle, 0);
+                _fd = _open_osfhandle(handle, 0);
 #endif
-                    } else {
-                        throw std::runtime_error("Failed to init socket");
-                    }
-                }
+            } else {
+                throw std::runtime_error("Failed to init socket");
+            }
+        }
 
-            public:
-                constexpr static const SocketType type = _Type;
+    public:
+        constexpr static const SocketType type = _Type;
 
-                socket()
-                        : _handle(SOCKET_INVALID)
-                {}
+        socket()
+                : _handle(SOCKET_INVALID)
+        {}
 
-                ~socket() {
-                }
+        ~socket() = default;
 
-                SocketHandler ident() const {
-                    return _handle;
-                }
+        [[nodiscard]] SocketHandler ident() const {
+            return _handle;
+        }
 
-                int fd() const {
+        [[nodiscard]] int fd() const {
 #ifdef _WIN32
-                    return _fd;
+            return _fd;
 #else
-                    return _handle;
+            return _handle;
 #endif
-                }
+        }
 
-                void set(SocketHandler new_handle) {
-                    _handle = new_handle;
-                }
+        void set(SocketHandler new_handle) {
+            _handle = new_handle;
+        }
 
-                int setBlocking(bool new_state) const {
-                    return helper::block(_handle, new_state);
-                }
+        int setBlocking(bool new_state) const {
+            return helper::block(_handle, new_state);
+        }
 
-                bool isBlocking() const {
-                    return helper::is_blocking(_handle);
-                }
+        [[nodiscard]] bool isBlocking() const {
+            return helper::is_blocking(_handle);
+        }
 
-                bool setReceiveBufferSize(int size) const {
-                    return setsockopt(_handle, SOL_SOCKET, SO_RCVBUF, &size, sizeof(int)) != -1;
-                }
+        bool setReceiveBufferSize(int size) const {
+            return setsockopt(_handle, SOL_SOCKET, SO_RCVBUF, &size, sizeof(int)) != -1;
+        }
 
-                bool setSendBufferSize(int size) const {
-                    return setsockopt(_handle, SOL_SOCKET, SO_SNDBUF, &size, sizeof(int)) != -1;
-                }
+        bool setSendBufferSize(int size) const {
+            return setsockopt(_handle, SOL_SOCKET, SO_SNDBUF, &size, sizeof(int)) != -1;
+        }
 
-                bool good() const {
-                    return _handle != SOCKET_INVALID;
-                }
+        [[nodiscard]] bool good() const {
+            return _handle != SOCKET_INVALID;
+        }
 
-                void close() {
-                    if (good()) {
+        void close() {
+            if (good()) {
 #ifdef _WIN32
-                        if (!_close(_fd))
+                if (!_close(_fd))
                             _handle = SOCKET_INVALID;
 #else
-                        if (helper::close(_handle))
-                            _handle = SOCKET_INVALID;
+                if (helper::close(_handle))
+                    _handle = SOCKET_INVALID;
 #endif
-                        else
-                            std::cerr << "Failed to close socket" << std::endl;
-                    }
-                }
-            };
+                else
+                    std::cerr << "Failed to close socket" << std::endl;
+            }
+        }
+    };
 
-        } // namespace sys
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::sys
 
 #endif // QB_IO_SYS_SOCKET_H_

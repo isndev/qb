@@ -50,11 +50,11 @@ class ActorPong : public qb::Actor {
     const qb::ActorId actor_to_send;
 
 public:
-    ActorPong(uint64_t const max, qb::ActorId const id = qb::ActorId())
+    explicit ActorPong(uint64_t const max, qb::ActorId const id = qb::ActorId())
             : max_sends(max)
             , actor_to_send(id) {}
 
-    bool onInit() override final {
+    bool onInit() final {
         registerEvent<EventTrait>(*this);
         if (actor_to_send)
             push<EventTrait>(actor_to_send, 0u);
@@ -74,7 +74,7 @@ public:
 template<typename TestEvent>
 class PongActor : public qb::Actor {
 public:
-    virtual bool onInit() override final {
+    bool onInit() final {
         registerEvent<TestEvent>(*this);
         return true;
     }
@@ -93,9 +93,9 @@ class PingActor : public qb::Actor {
 public:
     PingActor(uint64_t const max, qb::ActorId const id)
             : max_sends(max), actor_to_send(id) {}
-    ~PingActor() = default;
+    ~PingActor() final = default;
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         registerEvent<TestEvent>(*this);
         send<TestEvent>(actor_to_send, max_sends);
         return true;
@@ -116,7 +116,7 @@ static void BM_PINGPONG(benchmark::State& state) {
     for (auto _ : state) {
         state.PauseTiming();
         const auto nb_core = static_cast<uint32_t>(state.range(2));
-        qb::Main main(qb::CoreSet::build(nb_core));
+        qb::Main main;
         const auto max_events = state.range(1);
         const auto nb_actor = std::thread::hardware_concurrency() * 2 * state.range(0);
         for (int i = nb_actor; i > 0;) {
@@ -135,19 +135,19 @@ static void BM_PINGPONG(benchmark::State& state) {
 
 BENCHMARK_TEMPLATE(BM_PINGPONG, TinyEvent)
         ->RangeMultiplier(2)
-        ->Ranges({{1, 64}, {1 << SHIFT_NB_EVENT, 1 << SHIFT_NB_EVENT}, {1, std::thread::hardware_concurrency()}})
+        ->Ranges({{1, 64}, {1u << SHIFT_NB_EVENT, 1u << SHIFT_NB_EVENT}, {1u, std::thread::hardware_concurrency()}})
         ->ArgNames({"NB_PING_ACTOR", "NB_PING", "NB_CORE"})
         ->Iterations(MAX_BENCHMARK_ITERATION)
         ->Unit(benchmark::kMillisecond);
 BENCHMARK_TEMPLATE(BM_PINGPONG, BigEvent)
         ->RangeMultiplier(2)
-        ->Ranges({{1, 64}, {1 << SHIFT_NB_EVENT, 1 << SHIFT_NB_EVENT}, {1, std::thread::hardware_concurrency()}})
+        ->Ranges({{1, 64}, {1u << SHIFT_NB_EVENT, 1u << SHIFT_NB_EVENT}, {1u, std::thread::hardware_concurrency()}})
         ->ArgNames({"NB_PING_ACTOR", "NB_PING", "NB_CORE"})
         ->Iterations(MAX_BENCHMARK_ITERATION)
         ->Unit(benchmark::kMillisecond);
 BENCHMARK_TEMPLATE(BM_PINGPONG, DynamicEvent)
         ->RangeMultiplier(2)
-        ->Ranges({{1, 64}, {1 << SHIFT_NB_EVENT, 1 << SHIFT_NB_EVENT}, {1, std::thread::hardware_concurrency()}})
+        ->Ranges({{1, 64}, {1u << SHIFT_NB_EVENT, 1u << SHIFT_NB_EVENT}, {1u, std::thread::hardware_concurrency()}})
         ->ArgNames({"NB_PING_ACTOR", "NB_PING", "NB_CORE"})
         ->Iterations(MAX_BENCHMARK_ITERATION)
         ->Unit(benchmark::kMillisecond);

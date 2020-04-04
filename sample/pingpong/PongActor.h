@@ -30,7 +30,7 @@ public:
     PongActor() = default;
 
     // /!\ the engine will call this function before adding PongActor
-    bool onInit() override final {
+    bool onInit() final {
         registerEvent<MyEvent>(*this);         // will just listen MyEvent
 
         return true;                           // init ok

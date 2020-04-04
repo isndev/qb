@@ -20,20 +20,14 @@
 
 #include "base.h"
 
-namespace qb {
-    namespace io {
-        namespace async {
-            namespace event {
+namespace qb::io::async::event {
 
-                struct io : base<ev::io> {
-                    using base_t = base<ev::io>;
+    struct io : base<ev::io> {
+        using base_t = base<ev::io>;
 
-                    io(ev::loop_ref loop) : base_t(loop) {}
-                };
+        explicit io(ev::loop_ref loop) : base_t(loop) {}
+    };
 
-            }
-        }
-    }
-}
+} // namespace qb::io::async::event
 
 #endif //QB_IO_ASYNC_EVENT_IO_H

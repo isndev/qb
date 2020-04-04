@@ -24,11 +24,14 @@
 class CmdActor
         : public qb::Actor
         , public qb::ICallback {
+    // const event pipe to client actor
     const qb::ProxyPipe _client_pipe;
 public:
     CmdActor() = delete;
-    CmdActor(qb::ActorId clientId) noexcept;
+    // constructor
+    explicit CmdActor(qb::ActorId clientId) noexcept;
 
+    // called each core loop
     void onCallback() final;
 };
 

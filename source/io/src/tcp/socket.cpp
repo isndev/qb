@@ -31,157 +31,151 @@ namespace {
 #endif
 }
 
-namespace qb {
-    namespace io {
-        namespace tcp {
+namespace qb::io::tcp {
 
-            socket::socket()
-                    : sys::socket<SocketType::TCP>() {
-            }
+    socket::socket()
+            : sys::socket<SocketType::TCP>() {
+    }
 
 //            socket::socket(SocketHandler fd)
 //                    : sys::socket<SocketType::TCP>() {
 //                _handle = fd;
 //            }
 
-            unsigned short socket::getLocalPort() const {
-                if (good()) {
-                    // Retrieve informations about the local end of the socket
-                    sockaddr_in address;
-                    AddrLength size = sizeof(address);
-                    if (getsockname(_handle, reinterpret_cast<sockaddr *>(&address), &size) != -1) {
-                        return ntohs(address.sin_port);
-                    }
-                }
+    unsigned short socket::getLocalPort() const {
+        if (good()) {
+            // Retrieve informations about the local end of the socket
+            sockaddr_in address;
+            AddrLength size = sizeof(address);
+            if (getsockname(_handle, reinterpret_cast<sockaddr *>(&address), &size) != -1) {
+                return ntohs(address.sin_port);
+            }
+        }
 
-                // We failed to retrieve the port
-                return 0;
+        // We failed to retrieve the port
+        return 0;
+    }
+
+    ip socket::getRemoteAddress() const {
+        if (good()) {
+            // Retrieve informations about the remote end of the socket
+            sockaddr_in address;
+            AddrLength size = sizeof(address);
+            if (getpeername(_handle, reinterpret_cast<sockaddr *>(&address), &size) != -1) {
+                return ip(ntohl(address.sin_addr.s_addr));
+            }
+        }
+
+        // We failed to retrieve the address
+        return ip::None;
+    }
+
+    unsigned short socket::getRemotePort() const {
+        if (good()) {
+            // Retrieve informations about the remote end of the socket
+            sockaddr_in address;
+            AddrLength size = sizeof(address);
+            if (getpeername(_handle, reinterpret_cast<sockaddr *>(&address), &size) != -1) {
+                return ntohs(address.sin_port);
+            }
+        }
+
+        // We failed to retrieve the port
+        return 0;
+    }
+
+    SocketStatus socket::connect(const ip &remoteAddress, unsigned short remotePort, int timeout) {
+        // Disconnect the socket if it is already connected
+        disconnect();
+
+        // Create the internal socket if it doesn't exist
+        init();
+
+        // Create the remote address
+        sockaddr_in address = helper::createAddress(remoteAddress.toInteger(), remotePort);
+
+        if (!timeout) {
+            // ----- We're not using a timeout: just try to connect -----
+
+            // Connect the socket
+            if (::connect(_handle, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == -1)
+                return helper::getErrorStatus();
+
+            // Connection succeeded
+            return SocketStatus::Done;
+        } else {
+            // ----- We're using a timeout: we'll need a few tricks to make it work -----
+
+            // Save the previous blocking state
+            bool blocking = isBlocking();
+
+            // Switch to non-blocking to enable our connection timeout
+            if (blocking)
+                setBlocking(false);
+
+            // Try to connect to the remote address
+            if (::connect(_handle, reinterpret_cast<sockaddr *>(&address), sizeof(address)) >= 0) {
+                // We got instantly connected! (it may no happen a lot...)
+                setBlocking(blocking);
+                return SocketStatus::Done;
             }
 
-            ip socket::getRemoteAddress() const {
-                if (good()) {
-                    // Retrieve informations about the remote end of the socket
-                    sockaddr_in address;
-                    AddrLength size = sizeof(address);
-                    if (getpeername(_handle, reinterpret_cast<sockaddr *>(&address), &size) != -1) {
-                        return ip(ntohl(address.sin_addr.s_addr));
+            // Get the error status
+            SocketStatus status = helper::getErrorStatus();
+
+            // If we were in non-blocking mode, return immediately
+            if (!blocking)
+                return status;
+
+            // Otherwise, wait until something happens to our socket (success, timeout or error)
+            if (status == SocketStatus::NotReady) {
+                // Setup the selector
+                fd_set selector;
+                FD_ZERO(&selector);
+                FD_SET(_handle, &selector);
+
+                // Setup the timeout
+                timeval time { timeout, 0 };
+
+                // Wait for something to write on our socket (which means that the connection request has returned)
+                if (select(static_cast<int>(_handle + 1), NULL, &selector, NULL, &time) > 0) {
+                    // At this point the connection may have been either accepted or refused.
+                    // To know whether it's a success or a failure, we must check the address of the connected peer
+                    if (getRemoteAddress() != ip::None) {
+                        // Connection accepted
+                        status = SocketStatus::Done;
+                    } else {
+                        // Connection refused
+                        status = helper::getErrorStatus();
                     }
-                }
-
-                // We failed to retrieve the address
-                return ip::None;
-            }
-
-            unsigned short socket::getRemotePort() const {
-                if (good()) {
-                    // Retrieve informations about the remote end of the socket
-                    sockaddr_in address;
-                    AddrLength size = sizeof(address);
-                    if (getpeername(_handle, reinterpret_cast<sockaddr *>(&address), &size) != -1) {
-                        return ntohs(address.sin_port);
-                    }
-                }
-
-                // We failed to retrieve the port
-                return 0;
-            }
-
-            SocketStatus socket::connect(const ip &remoteAddress, unsigned short remotePort, int timeout) {
-                // Disconnect the socket if it is already connected
-                disconnect();
-
-                // Create the internal socket if it doesn't exist
-                init();
-
-                // Create the remote address
-                sockaddr_in address = helper::createAddress(remoteAddress.toInteger(), remotePort);
-
-                if (!timeout) {
-                    // ----- We're not using a timeout: just try to connect -----
-
-                    // Connect the socket
-                    if (::connect(_handle, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == -1)
-                        return helper::getErrorStatus();
-
-                    // Connection succeeded
-                    return SocketStatus::Done;
                 } else {
-                    // ----- We're using a timeout: we'll need a few tricks to make it work -----
-
-                    // Save the previous blocking state
-                    bool blocking = isBlocking();
-
-                    // Switch to non-blocking to enable our connection timeout
-                    if (blocking)
-                        setBlocking(false);
-
-                    // Try to connect to the remote address
-                    if (::connect(_handle, reinterpret_cast<sockaddr *>(&address), sizeof(address)) >= 0) {
-                        // We got instantly connected! (it may no happen a lot...)
-                        setBlocking(blocking);
-                        return SocketStatus::Done;
-                    }
-
-                    // Get the error status
-                    SocketStatus status = helper::getErrorStatus();
-
-                    // If we were in non-blocking mode, return immediately
-                    if (!blocking)
-                        return status;
-
-                    // Otherwise, wait until something happens to our socket (success, timeout or error)
-                    if (status == SocketStatus::NotReady) {
-                        // Setup the selector
-                        fd_set selector;
-                        FD_ZERO(&selector);
-                        FD_SET(_handle, &selector);
-
-                        // Setup the timeout
-                        timeval time;
-                        time.tv_sec = timeout;
-                        time.tv_usec = 0;
-
-                        // Wait for something to write on our socket (which means that the connection request has returned)
-                        if (select(static_cast<int>(_handle + 1), NULL, &selector, NULL, &time) > 0) {
-                            // At this point the connection may have been either accepted or refused.
-                            // To know whether it's a success or a failure, we must check the address of the connected peer
-                            if (getRemoteAddress() != ip::None) {
-                                // Connection accepted
-                                status = SocketStatus::Done;
-                            } else {
-                                // Connection refused
-                                status = helper::getErrorStatus();
-                            }
-                        } else {
-                            // Failed to connect before timeout is over
-                            status = helper::getErrorStatus();
-                        }
-                    }
-
-                    // Switch back to blocking mode
-                    setBlocking(true);
-
-                    return status;
+                    // Failed to connect before timeout is over
+                    status = helper::getErrorStatus();
                 }
             }
 
-            void socket::disconnect() {
-                // Close the socket
-                if (good()) {
-                    close();
-                    _handle = SOCKET_INVALID;
-                }
-            }
+            // Switch back to blocking mode
+            setBlocking(true);
 
-            int socket::read(void *data, std::size_t size) const {
-                const auto ret = ::recv(_handle, static_cast<char *>(data), static_cast<int>(size), flags);
-                return ret ? ret : -1;
-            }
+            return status;
+        }
+    }
 
-            int socket::write(const void *data, std::size_t size) const {
-                return ::send(_handle, static_cast<const char *>(data), static_cast<int>(size), flags);
-            }
+    void socket::disconnect() {
+        // Close the socket
+        if (good()) {
+            close();
+            _handle = SOCKET_INVALID;
+        }
+    }
 
-        } // namespace tcp
-    } // namespace io
-} // namespace qb
+    int socket::read(void *data, std::size_t size) const {
+        const auto ret = ::recv(_handle, static_cast<char *>(data), static_cast<int>(size), flags);
+        return ret ? ret : -1;
+    }
+
+    int socket::write(const void *data, std::size_t size) const {
+        return ::send(_handle, static_cast<const char *>(data), static_cast<int>(size), flags);
+    }
+
+} // namespace qb::io::tcp

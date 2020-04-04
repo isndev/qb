@@ -35,7 +35,7 @@ qb::io::cout::~cout() {
 #ifdef QB_LOGGER
 struct LogInitializer {
     static LogInitializer initializer;
-    LogInitializer() {
+    LogInitializer() noexcept {
         qb::io::log::init("./qb", 512);
 #ifdef NDEBUG
         qb::io::log::setLevel(qb::io::log::Level::INFO);

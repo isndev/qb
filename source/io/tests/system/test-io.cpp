@@ -28,7 +28,7 @@ TEST(IP, Resolving) {
     EXPECT_GT(qb::io::ip::None, qb::io::ip::Any);
     EXPECT_LT(qb::io::ip::Any, qb::io::ip::None);
     EXPECT_GE(qb::io::ip::None, qb::io::ip::Any);
-    EXPECT_LE(qb::io::ip::Any, qb::io::ip::None);;
+    EXPECT_LE(qb::io::ip::Any, qb::io::ip::None);
     EXPECT_EQ(qb::io::ip::None, qb::io::ip("255.255.255.255"));
     EXPECT_EQ(qb::io::ip::LocalHost, qb::io::ip(std::string("127.0.0.1")));
     EXPECT_EQ(qb::io::ip("localhost"), qb::io::ip(std::string("127.0.0.1")));

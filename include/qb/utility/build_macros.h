@@ -15,7 +15,7 @@
  *         limitations under the License.
  */
 
-#include                <errno.h>
+#include                <cerrno>
 #include                <cstdint>
 
 #ifndef            QB_BUILD_MACROS_H_

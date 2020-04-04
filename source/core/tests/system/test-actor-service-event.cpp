@@ -39,7 +39,7 @@ struct TestEvent : public qb::Event
         });
     }
 
-    bool checkSum() const {
+    [[nodiscard]] bool checkSum() const {
         auto ret = true;
         if (has_extra_data) {
             ret = !memcmp(_data, reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent), sizeof(_data));
@@ -119,16 +119,15 @@ protected:
     qb::Main main;
     ActorEventMulti()
             : max_core(std::thread::hardware_concurrency())
-            , main(qb::CoreSet::build(max_core))
     {}
 
-    virtual void SetUp() {
+    void SetUp() final {
         for (auto i = 0u; i < max_core; ++i)
         {
             main.addActor<ActorSender>(i);
         }
     }
-    virtual void TearDown() {}
+    void TearDown() final {}
 };
 
 typedef testing::Types <

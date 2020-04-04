@@ -57,7 +57,7 @@ static int pthread_setaffinity_np(pthread_t thread, size_t cpu_size,
 
 
 namespace qb {
-    VirtualCore::VirtualCore(CoreId const id, Main &engine) noexcept
+    VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexcept
             : _index(id)
             , _resolved_index(engine._core_set.resolve(id))
             , _engine(engine)
@@ -81,9 +81,9 @@ namespace qb {
     }
 
     ActorId VirtualCore::__generate_id__() noexcept {
-        if (!_ids.size())
-            return ActorId::NotFound;
-        return ActorId(_ids.extract(_ids.begin()).value(), _index);
+        return _ids.empty() ?
+               ActorId(ActorId::NotFound) :
+               ActorId(_ids.extract(_ids.begin()).value(), _index);
     }
 
     // Event Management
@@ -103,6 +103,7 @@ namespace qb {
             event->state.alive = 0;
             _router.route(*event);
             ++_metrics._nb_event_received;
+            _metrics._nb_bucket_received += event->bucket_size;
             i += event->bucket_size;
         }
     }
@@ -133,11 +134,14 @@ namespace qb {
                 auto i = pipe.begin();
                 while (i < pipe.end()) {
                     const auto &event = *reinterpret_cast<const Event *>(pipe.data() + i);
+                    ++_metrics._nb_event_sent_try;
                     if (!try_send(event) && event.state.qos) {
+                        ++_metrics._nb_event_sent_try;
                         auto &current_lock = _engine._event_safe_deadlock[_resolved_index];
                         // current locked by event set to true
                         current_lock.store(true, std::memory_order_release);
                         while (!try_send(event)) {
+                            ++_metrics._nb_event_sent_try;
                             // entering in deadlock
                             if (current_lock.load(std::memory_order_acquire)) {
                                 // notify to unlock dest core
@@ -152,6 +156,7 @@ namespace qb {
                         }
                     }
                     ++_metrics._nb_event_sent;
+                    _metrics._nb_bucket_sent += event.bucket_size;
                     i += event.bucket_size;
                 }
                 pipe.reset();
@@ -236,7 +241,7 @@ namespace qb {
                 }
             }
             if (!_is_low_latency) {
-                if (likely(_metrics._sleep_count)) --_metrics._sleep_count;
+                if (likely(_metrics._sleep_count > 0)) --_metrics._sleep_count;
                 else
                     std::this_thread::sleep_for(std::chrono::nanoseconds(1));
             }
@@ -257,7 +262,7 @@ namespace qb {
 
     //!Workflow
     // Actor Management
-    ActorId VirtualCore::initActor(Actor &actor, bool const is_service, bool const doInit) noexcept {
+    ActorId VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
         if (doInit && unlikely(!actor.onInit())) {
             removeActor(actor.id());
 
@@ -267,8 +272,8 @@ namespace qb {
         return actor.id();
     }
 
-    ActorId VirtualCore::appendActor(Actor &actor, bool const is_service, bool const doInit) noexcept {
-        if (initActor(actor, is_service, doInit).is_valid()) {
+    ActorId VirtualCore::appendActor(Actor &actor, bool const doInit) noexcept {
+        if (initActor(actor, doInit).is_valid()) {
             if (_actors.find(actor.id()) == _actors.end()) {
                 _actors.insert({actor.id(), &actor});
                 LOG_DEBUG("New " << actor);
@@ -360,4 +365,4 @@ qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &
     ss << "VirtualCore(" << core.getIndex() << ").id(" << std::this_thread::get_id() << ")";
     os << ss.str();
     return os;
-};
+}

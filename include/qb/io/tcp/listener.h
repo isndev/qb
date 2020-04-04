@@ -20,32 +20,26 @@
 #ifndef             QB_IO_TCP_LISTENER_H_
 # define            QB_IO_TCP_LISTENER_H_
 
-namespace qb {
-    namespace io {
-        namespace tcp {
+namespace qb::io::tcp {
 
-            /*!
-             * @class listener tcp/listener.h qb/io/tcp/listener.h
-             * @ingroup TCP
-             */
-            class QB_API listener
-                    : public socket {
-            public:
-                listener();
+    /*!
+     * @class listener tcp/listener.h qb/io/tcp/listener.h
+     * @ingroup TCP
+     */
+    class QB_API listener
+            : public socket {
+    public:
+        listener();
 
-                listener(listener const &) = delete;
+        listener(listener const &) = delete;
 
-                ~listener();
+        ~listener();
 
-                unsigned short getLocalPort() const;
+        SocketStatus listen(unsigned short port, const ip &address = ip::Any);
 
-                SocketStatus listen(unsigned short port, const ip &address = ip::Any);
+        SocketStatus accept(socket &socket);
+    };
 
-                SocketStatus accept(socket &socket);
-            };
-
-        } // namespace tcp
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::tcp
 
 #endif // QB_IO_TCP_LISTENER_H_

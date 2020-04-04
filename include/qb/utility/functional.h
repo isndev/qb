@@ -24,7 +24,7 @@ namespace qb {
     template<typename T>
     void _hash_combine (size_t& seed, const T& val)
     {
-        seed ^= std::hash<T>()(val) + 0x9e3779b9 + (seed<<6) + (seed>>2);
+        seed ^= std::hash<T>()(val) + 0x9e3779b9 + (seed << 6u) + (seed >> 2u);
     }
 
     template<typename... Types>

@@ -29,27 +29,26 @@ namespace qb {
      * @brief Main initializer
      */
     class CoreSet {
-        friend class Main;
+        friend class SharedCoreCommunication;
         friend class VirtualCore;
 
-        const qb::unordered_set<CoreId>  _raw_set;
-        const std::size_t        _nb_core;
-        const std::size_t              _size;
+        qb::unordered_set<CoreId>_raw_set;
+        std::size_t              _nb_core;
+        std::size_t              _size;
         std::array<uint8_t, 256> _set;
 
 
-        CoreId resolve(std::size_t const id) const noexcept;
-        std::size_t getSize() const noexcept;
-        std::size_t getNbCore() const noexcept;
+        [[nodiscard]] CoreId resolve(std::size_t id) const noexcept;
+        [[nodiscard]] std::size_t getSize() const noexcept;
+        [[nodiscard]] std::size_t getNbCore() const noexcept;
 
     public:
-        CoreSet() = delete;
+        CoreSet() = default;
         CoreSet(CoreSet const &) = default;
         explicit CoreSet(qb::unordered_set<CoreId> const &set) noexcept;
 
-        const qb::unordered_set<CoreId> &raw() const noexcept;
-
-        static CoreSet build(uint32_t const nb_core = std::thread::hardware_concurrency()) noexcept;
+        [[nodiscard]] const qb::unordered_set<CoreId> &raw() const noexcept;
+        static CoreSet build(uint32_t nb_core = std::thread::hardware_concurrency()) noexcept;
     };
 
 } // namespace qb

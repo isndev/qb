@@ -24,7 +24,7 @@
 
 extern "C"
 {
-	int open(char const* pathname, int flags, ...);
+int open(char const* pathname, int flags, ...);
 }
 #else
 #include <io.h>
@@ -33,39 +33,35 @@ extern "C"
 #ifndef             QB_IO_SYS_FILE_H_
 # define            QB_IO_SYS_FILE_H_
 
-namespace           qb {
-    namespace       io {
-        namespace   sys {
+namespace qb::io::sys {
 
-            /*!
-            * @class file sys/file.h qb/io/sys/file.h
-            * @ingroup SYS
-            */
-            class QB_API file {
-                int _handle;
+    /*!
+    * @class file sys/file.h qb/io/sys/file.h
+    * @ingroup SYS
+    */
+    class QB_API file {
+        int _handle;
 
-            public:
+    public:
 
-                file();
-                file(file const &) = default;
-                file(int fd);
-                file(std::string const &fname, int flags = O_RDWR);
+        file();
+        file(file const &) = default;
+        explicit file(int fd);
+        explicit file(std::string const &fname, int flags = O_RDWR);
 
-                int ident() const;
-                int fd() const;
-                void open(std::string const &fname, int flags = O_RDWR);
-                void open(int fd);
-                int write(const char *data, std::size_t size);
-                int read(char *data, std::size_t size);
-                void close();
-                bool good() const;
+        [[nodiscard]] int ident() const;
+        [[nodiscard]] int fd() const;
+        [[nodiscard]] bool good() const;
+        void open(std::string const &fname, int flags = O_RDWR);
+        void open(int fd);
+        int write(const char *data, std::size_t size);
+        int read(char *data, std::size_t size);
+        void close();
 
-                // unused
-                void setBlocking(bool) {}
-            };
+        // unused
+        [[maybe_unused]] void setBlocking(bool) {}
+    };
 
-        } // namespace sys
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::sys
 
 #endif // QB_IO_SYS_FILE_H_

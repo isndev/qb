@@ -18,14 +18,20 @@
 #include <iostream>
 #include "CmdActor.h"
 
+// constructor
 CmdActor::CmdActor(qb::ActorId client_id) noexcept
     : _client_pipe(getPipe(client_id)) {
+    // register callback
     registerCallback(*this);
 }
 
+// called each core loop
 void CmdActor::onCallback() {
     std::string cmd;
+    // /!\ blocking core, but it's ok for the example
+    // CmdActor is alone in its core
     std::getline(std::cin, cmd);
+    // push line to client actor
     _client_pipe.push<CommandEvent>()
         .message = cmd;
 }

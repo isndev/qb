@@ -23,10 +23,10 @@
 template <typename Event>
 class ConsumerActor
         : public qb::Actor {
-    const qb::ActorIds _idList;
+    const qb::ActorIdList _idList;
 public:
 
-    explicit ConsumerActor(qb::ActorIds const ids = {})
+    explicit ConsumerActor(qb::ActorIdList const &ids = {})
             : _idList(ids)
     {
         registerEvent<Event>(*this);

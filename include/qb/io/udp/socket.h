@@ -21,37 +21,33 @@
 #ifndef             QB_IO_UDP_SOCKET_H_
 # define            QB_IO_UDP_SOCKET_H_
 
-namespace           qb {
-    namespace       io {
-        namespace   udp {
+namespace qb::io::udp {
 
-            /*!
-             * @class socket udp/socket.h qb/io/udp/socket.h
-             * @ingroup UDP
-             */
-            class QB_API socket
-                : public sys::socket<SocketType::UDP> {
-            public:
-                constexpr static const std::size_t MaxDatagramSize = 65507;
+    /*!
+     * @class socket udp/socket.h qb/io/udp/socket.h
+     * @ingroup UDP
+     */
+    class QB_API socket
+            : public sys::socket<SocketType::UDP> {
+    public:
+        constexpr static const std::size_t MaxDatagramSize = 65507;
 
-                socket();
-                socket(socket const &rhs) = default;
-                socket(SocketHandler handler);
+        socket();
+        socket(socket const &rhs) = default;
+        explicit socket(SocketHandler handler);
 
-                unsigned short getLocalPort() const;
+        [[nodiscard]] unsigned short getLocalPort() const;
 
-                SocketStatus bind(unsigned short port, const ip &address = ip::Any);
+        SocketStatus bind(unsigned short port, const ip &address = ip::Any);
 
-                void unbind();
+        void unbind();
 
-                int write(const void *data, std::size_t size, const ip &remoteAddress, unsigned short remotePort) const;
+        int write(const void *data, std::size_t size, const ip &remoteAddress, unsigned short remotePort) const;
 
-                int read(void *data, std::size_t size, ip &remoteAddress, unsigned short &remotePort) const;
+        int read(void *data, std::size_t size, ip &remoteAddress, unsigned short &remotePort) const;
 
-            };
+    };
 
-        } // namespace udp
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::udp
 
 #endif // QB_IO_UDP_SOCKET_H_

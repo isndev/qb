@@ -33,23 +33,23 @@ class ActorProducer
     std::uniform_int_distribution<int> _random_number;
 public:
     ActorProducer() = delete;  // delete default constructor
-    ActorProducer(std::vector<qb::ActorId> const &ids) // constructor with parameters
+    explicit ActorProducer(std::vector<qb::ActorId> const &ids) // constructor with parameters
         : _consumerIds(ids)
         , _rand_dev()
         , _generator(_rand_dev())
         , _random_number(0, static_cast<int>(ids.size() - 1))
     {}
 
-    ~ActorProducer() = default;
+    ~ActorProducer() final = default;
 
     // will call this function before adding Actor
-    virtual bool onInit() override final {
+    bool onInit() final {
         registerCallback(*this); // each core loop will call onCallback
         return true;                 // init ok, MyActor will be added
     }
 
     // will call this function each core loop
-    virtual void onCallback() override final {
+    void onCallback() final {
         to(_consumerIds[_random_number(_generator)]).push<MyEvent>();
     }
 };

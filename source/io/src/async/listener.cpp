@@ -15,31 +15,8 @@
  *         limitations under the License.
  */
 
-//#include <ev/ev.h>
-//#include <ev/ev++.h>
 #include            <qb/io/async/listener.h>
 
-namespace qb {
-    namespace io {
-        namespace async {
-
-//            thread_local struct ev::loop_ref Default::loop = ev_loop_new(EVFLAG_AUTO);
-            thread_local listener listener::current = {};
-
-//            thread_local listener &listener::current = *new listener();
-//
-//            listener::listener() : _loop(EVFLAG_AUTO) {}
-//
-//            listener::~listener() {
-//                for (auto it : _registeredEvents)
-//                    delete it;
-//            }
-//
-//            void listener::unregisterEvent(IRegisteredKernelEvent *kevent) {
-//                _registeredEvents.erase(std::find(std::begin(_registeredEvents), std::end(_registeredEvents), kevent));
-//                delete kevent;
-//            }
-
-        } // namespace async
-    } // namespace io
-} // namespace qb
+namespace qb::io::async {
+    thread_local listener listener::current = {};
+} // namespace qb::io::async

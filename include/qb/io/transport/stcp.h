@@ -20,20 +20,16 @@
 # include "../tcp/ssl/socket.h"
 # include "../stream.h"
 
-namespace qb {
-    namespace io {
-        namespace transport {
+namespace qb::io::transport {
 
-        class stcp : public stream<io::tcp::ssl::socket> {
-            public:
-                // Derived class should define :
-                // using message_type = const char *;
-                // int getMessageSize();
-                // message_type getMessage();
-            };
+    class stcp : public stream<io::tcp::ssl::socket> {
+    public:
+        // Derived class should define :
+        // using message_type = const char *;
+        // int getMessageSize();
+        // message_type getMessage();
+    };
 
-        } // namespace transport
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::transport
 
 #endif // QB_IO_TRANSPORT_STCP_H

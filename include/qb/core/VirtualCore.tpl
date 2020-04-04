@@ -37,7 +37,7 @@ namespace qb {
         auto actor = new _Actor(std::forward<_Init>(init)...);
         actor->id_type = type_id<_Actor>();
         actor->name = typeid(_Actor).name();
-        if (appendActor(*actor, std::is_base_of<Service, _Actor>::value, true).is_valid())
+        if (appendActor(*actor, true).is_valid())
             return actor;
         return nullptr;
     };

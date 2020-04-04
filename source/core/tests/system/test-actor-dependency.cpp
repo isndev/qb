@@ -25,7 +25,7 @@ class TestActor : public qb::Actor
 {
 public:
     TestActor() = default;
-    virtual bool onInit() override final {
+    bool onInit() final {
         return true;
     }
 };
@@ -33,10 +33,10 @@ public:
 class TestActorDependency
         : public qb::Actor
 {
-    qb::Main::CoreBuilder::ActorIdList const _ids;
+    qb::ActorIdList const _ids;
 public:
-    explicit TestActorDependency(qb::Main::CoreBuilder::ActorIdList const &ids = {})
-            : _ids(std::move(ids)) {
+    explicit TestActorDependency(qb::ActorIdList const &ids = {})
+            : _ids(ids) {
         if (!_ids.size()) {
             registerEvent<qb::RequireEvent>(*this);
             require<TestActor>();
@@ -59,9 +59,9 @@ public:
 };
 
 TEST(ActorDependency, GetActorIdDependencyFromAddActorAtStart) {
-    qb::Main main({0, 1});
+    qb::Main main;
 
-    qb::Main::CoreBuilder::ActorIdList list;
+    qb::ActorIdList list;
     for (auto i = 0u; i < MAX_ACTOR; ++i) {
         list.push_back(main.addActor<TestActor>(0));
     }
@@ -73,9 +73,9 @@ TEST(ActorDependency, GetActorIdDependencyFromAddActorAtStart) {
 }
 
 TEST(ActorDependency, GetActorIdDependencyFromCoreBuilderAtStart) {
-    qb::Main main({0, 1});
+    qb::Main main;
 
-    auto builder = main.core(0);
+    auto builder = main.core(0).builder();
     for (auto i = 0u; i < MAX_ACTOR; ++i) {
         builder.addActor<TestActor>();
     }
@@ -87,9 +87,9 @@ TEST(ActorDependency, GetActorIdDependencyFromCoreBuilderAtStart) {
 }
 
 TEST(ActorDependency, GetActorIdDependencyFromRequireEvent) {
-    qb::Main main({0, 1});
+    qb::Main main;
 
-    auto builder = main.core(0);
+    auto builder = main.core(0).builder();
     for (auto i = 0u; i < MAX_ACTOR; ++i) {
         builder.addActor<TestActor>();
     }

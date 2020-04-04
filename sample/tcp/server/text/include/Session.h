@@ -32,7 +32,8 @@ class Session
         Undefined // should never hapen
     };
 public:
-    Session(ServerActor &server);
+    Session() = delete;
+    explicit Session(ServerActor &server);
 
     // client is receiving a new message
     void on(IOMessage msg, std::size_t size);

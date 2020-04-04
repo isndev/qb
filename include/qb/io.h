@@ -57,7 +57,7 @@ namespace qb {
              *      CRIT };
              * @endcode
              */
-            void init(std::string const &file_path, uint32_t const roll_MB = 128);
+            void init(std::string const &file_path, uint32_t roll_MB = 128);
         }
 
         /*!
