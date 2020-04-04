@@ -72,11 +72,12 @@ namespace qb {
 
         friend class Actor;
         friend class Service;
+        friend class CoreInitializer;
         friend class Main;
         ////////////
         constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_EVENT_BUCKET_BYTES;
         // Types
-        using MPSCBuffer = Main::MPSCBuffer;
+        using MPSCBuffer = SharedCoreCommunication::MPSCBuffer;
         using EventBuffer = std::array<EventBucket, MaxRingEvents>;
         using ActorMap = qb::unordered_map<ActorId, Actor *>;
         using CallbackMap = qb::unordered_map<ActorId, ICallback *>;
@@ -89,7 +90,7 @@ namespace qb {
         // Members
         const CoreId    _index;
         const CoreId    _resolved_index;
-        Main           &_engine;
+        SharedCoreCommunication           &_engine;
         // event reception
         MPSCBuffer     &_mail_box;
         EventBuffer    &_event_buffer;
@@ -108,19 +109,28 @@ namespace qb {
         struct {
             uint64_t _nb_event_io = 0;
             uint64_t _nb_event_received = 0;
+            uint64_t _nb_bucket_received = 0;
+            uint64_t _nb_event_sent_try = 0;
             uint64_t _nb_event_sent = 0;
+            uint64_t _nb_bucket_sent = 0;
             uint64_t _sleep_count = 0;
             uint64_t _nanotimer = 0;
 
             inline void reset() {
                 _sleep_count += (_nb_event_sent + _nb_event_received + _nb_event_io) << 3;
-                _nb_event_io = _nb_event_received = _nb_event_sent = _nanotimer = 0;
+                _nb_event_io =
+                _nb_event_received =
+                _nb_bucket_received =
+                _nb_event_sent_try =
+                _nb_event_sent =
+                _nb_bucket_sent =
+                _nanotimer = 0;
             }
         } _metrics;
         // !Members
 
         VirtualCore() = delete;
-        VirtualCore(CoreId const id, Main &engine) noexcept;
+        VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexcept;
 		~VirtualCore() noexcept;
 
         ActorId __generate_id__() noexcept;
@@ -146,13 +156,10 @@ namespace qb {
         //!Workflow
 
         // Actor Management
-        ActorId initActor(Actor &actor, bool const is_service, bool const doInit) noexcept;
-        ActorId appendActor(Actor &actor, bool const is_service, bool const doInit = false) noexcept;
-        void removeActor(ActorId const id) noexcept;
+        ActorId initActor(Actor &actor, bool doInit) noexcept;
+        ActorId appendActor(Actor &actor, bool doInit = false) noexcept;
+        void removeActor(ActorId id) noexcept;
         //!Actor Management
-
-        void start();
-        void join();
 
     private:
         template<typename _Actor, typename ..._Init>

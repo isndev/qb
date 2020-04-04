@@ -19,44 +19,40 @@
 # define            QB_IO_TRANSPORT_SACCEPT_H_
 #include "../tcp/ssl/listener.h"
 
-namespace qb {
-    namespace io {
-        namespace transport {
+namespace qb::io::transport {
 
-            class saccept {
-                io::tcp::ssl::listener _io;
-                io::tcp::ssl::socket _accepted_io;
-            public:
-                using input_io_type = io::tcp::ssl::listener;
-                using message_type = io::tcp::ssl::socket;
+    class saccept {
+        io::tcp::ssl::listener _io;
+        io::tcp::ssl::socket _accepted_io;
+    public:
+        using input_io_type = io::tcp::ssl::listener;
+        using message_type = io::tcp::ssl::socket;
 
-                io::tcp::ssl::listener &in() {
-                    return _io;
-                }
+        io::tcp::ssl::listener &in() {
+            return _io;
+        }
 
-                int read() {
-                    if (_io.accept(_accepted_io) == io::SocketStatus::Done)
-                        return _accepted_io.ident();
-                    return -1;
-                }
+        int read() {
+            if (_io.accept(_accepted_io) == io::SocketStatus::Done)
+                return _accepted_io.ident();
+            return -1;
+        }
 
-                void flush(std::size_t ) {
-                    _accepted_io = io::tcp::ssl::socket();
-                }
+        void flush(std::size_t ) {
+            _accepted_io = io::tcp::ssl::socket();
+        }
 
-                void close() {
-                    _io.close();
-                }
+        void close() {
+            _io.close();
+        }
 
-                int getMessageSize() { return _accepted_io.ident(); }
+        int getMessageSize() { return _accepted_io.ident(); }
 
-                message_type getMessage(int) {
-                    return _accepted_io;
-                }
-            };
+        message_type getMessage(int) {
+            return _accepted_io;
+        }
+    };
 
-        } // namespace transport
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::transport
 
 #endif // QB_IO_TRANSPORT_SACCEPT_H_

@@ -18,16 +18,10 @@
 #ifndef QB_IO_ASYNC_EVENT_EOS_H
 #define QB_IO_ASYNC_EVENT_EOS_H
 
-namespace qb {
-    namespace io {
-        namespace async {
-            namespace event {
+namespace qb::io::async::event {
 
-                struct eos {};
+    struct eos {};
 
-            }
-        }
-    }
 }
 
 #endif //QB_IO_ASYNC_EVENT_EOS_H

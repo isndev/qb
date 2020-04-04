@@ -27,14 +27,14 @@ int main (int, char *argv[]) {
 
     // configure the Core
     // Note : I will use only the core 0 and 1
-    qb::Main main({0, 1});
+    qb::Main main;
 
     // First way to add actors at start
     main.addActor<MyActor>(0); // in VirtualCore id=0, default constructed
     main.addActor<MyActor>(1, 1337, 7331); // in VirtualCore id=1, constructed with parameters
 
     // Other way to add actors retrieving core builder
-    main.core(0)
+    main.core(0).builder()
             .addActor<MyActor>()
             .addActor<MyActor>(1337, 7331);
 

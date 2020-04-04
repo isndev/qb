@@ -20,31 +20,27 @@
 
 #include <ev/ev++.h>
 
-namespace qb {
-    namespace io {
-        namespace async {
+namespace qb::io::async {
 
-            class IRegisteredKernelEvent {
-            public:
-                virtual ~IRegisteredKernelEvent() {}
+    class IRegisteredKernelEvent {
+    public:
+        virtual ~IRegisteredKernelEvent() = default;
 
-                virtual void invoke() = 0;
-            };
+        virtual void invoke() = 0;
+    };
 
-            namespace event {
+    namespace event {
 
-                template<typename _EV_EVENT>
-                struct base : public _EV_EVENT {
-                    using ev_t = _EV_EVENT;
-                    IRegisteredKernelEvent *_interface;
-                    int _revents;
+        template<typename _EV_EVENT>
+        struct base : public _EV_EVENT {
+            using ev_t = _EV_EVENT;
+            IRegisteredKernelEvent *_interface;
+            unsigned int _revents;
 
-                    base(ev::loop_ref loop) : _EV_EVENT(loop), _interface(nullptr), _revents(0) {}
-                };
+            explicit base(ev::loop_ref loop) : _EV_EVENT(loop), _interface(nullptr), _revents(0u) {}
+        };
 
-            }
-        }
-    }
-}
+    } // namespace event
+} // namespace qb::io::async
 
 #endif //QB_IO_ASYNC_EVENT_BASE_H

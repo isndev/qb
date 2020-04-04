@@ -25,14 +25,14 @@
 struct MyEvent
         : public qb::Event // /!\ should inherit from qb event
 {
-    int data; // trivial data
+    int data = 0; // trivial data
     std::vector<int> container; // dynamic data
     // std::string str; /!\ avoid using stl string
     // instead use fixed cstring
     // or compile with old ABI '-D_GLIBCXX_USE_CXX11_ABI=0'
 
     MyEvent() = default;
-    MyEvent(int param)
+    explicit MyEvent(int param)
         : data(param) {}
 };
 
@@ -42,12 +42,12 @@ class MyActor
 {
 public:
     MyActor() = default;         // default constructor
-    MyActor(int, int ) {}        // constructor with parameters
+    MyActor(int, int ) noexcept {};        // constructor with parameters
 
-    ~MyActor() {}
+    ~MyActor() final = default;
 
     // will call this function before adding MyActor
-    virtual bool onInit() override final {
+    bool onInit() final {
         registerEvent<MyEvent>(*this);     // will listen MyEvent
         registerCallback(*this);           // each core loop will call onCallback
 
@@ -64,7 +64,7 @@ public:
     }
 
     // will call this function each core loop
-    virtual void onCallback() override final {
+    void onCallback() final {
         // ...
     }
 

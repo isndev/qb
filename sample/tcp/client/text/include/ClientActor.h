@@ -28,6 +28,7 @@ class ClientActor
     : public qb::Actor
     , public qb::io::use<ClientActor>::tcp::client<qb::io::protocol::cmd> {
 
+    // connect function
     bool connect();
 
     const std::string _ip;
@@ -36,20 +37,25 @@ class ClientActor
 public:
 
     ClientActor() = delete;
+    // constructor
     ClientActor(std::string const& ip, uint16_t port) noexcept;
 
+    // override Actor initialization
     bool onInit() final;
 
-    // new message received
+    // io events
+    // new message received from remote
     void on(IOMessage message, std::size_t size);
-    // client is disconnected
+    // client is being disconnected
     void on(qb::io::async::event::disconnected const& event);
+    // !io events
 
-    // new message from command actor
+    // core events
+    // new message from CommandActor
     void on(CommandEvent & event);
-
-    // retry session connected
+    // retry connection event
     void on(RetryConnectEvent const& event);
+    // !core events
 };
 
 #endif //QB_SAMPLE_PROJECT_CLIENTACTOR_H

@@ -16,17 +16,16 @@
  */
 
 #include <gtest/gtest.h>
-#include <qb/actor.h>
 #include <qb/main.h>
 
 class TestActor : public qb::Actor
 {
     bool keep_live = false;
-    bool throw_except;
+    bool throw_except = false;
 public:
     TestActor() = default;
-    TestActor(bool live, bool except = false) : keep_live(live), throw_except(except) {}
-    virtual bool onInit() override final {
+    explicit TestActor(bool live, bool except = false) : keep_live(live), throw_except(except) {}
+    bool onInit() final {
         if (throw_except)
             throw std::runtime_error("Test Exception Error");
 
@@ -37,7 +36,7 @@ public:
 };
 
 TEST(Main, StartMonoCoreShouldAbortIfNoActor) {
-    qb::Main main({0});
+    qb::Main main;
 
     main.start();
     main.join();
@@ -50,20 +49,20 @@ TEST(Main, StartMultiCoreShouldAbortIfNoActor) {
     const auto fail_core = std::rand() % max_core;
 
     EXPECT_GT(max_core, 1u);
-    qb::Main main(qb::CoreSet::build(max_core));
+    qb::Main main;
 
     for (auto i = 0u; i < max_core; ++i) {
-        if (i != fail_core)
             main.addActor<TestActor>(i);
     }
 
+    main.core(fail_core).clear();
     main.start();
     main.join();
     EXPECT_TRUE(main.hasError());
 }
 
 TEST(Main, StartMonoCoreShouldAbortIfNoExistingCore) {
-    qb::Main main({255});
+    qb::Main main;
 
     main.addActor<TestActor>(255, true);
 
@@ -73,7 +72,7 @@ TEST(Main, StartMonoCoreShouldAbortIfNoExistingCore) {
 }
 
 TEST(Main, StartMonoCoreShouldAbortIfCoreHasThrownException) {
-    qb::Main main({0});
+    qb::Main main;
 
     main.addActor<TestActor>(0, true, true);
 
@@ -83,7 +82,7 @@ TEST(Main, StartMonoCoreShouldAbortIfCoreHasThrownException) {
 }
 
 TEST(Main, StartMonoCoreWithNoError) {
-    qb::Main main({0});
+    qb::Main main;
 
     main.addActor<TestActor>(0);
     main.start();
@@ -95,7 +94,7 @@ TEST(Main, StartMultiCoreWithNoError) {
     const auto max_core = std::thread::hardware_concurrency();
 
     EXPECT_GT(max_core, 1u);
-    qb::Main main(qb::CoreSet::build(max_core));
+    qb::Main main;
 
     for (auto i = 0u; i < max_core; ++i)
         main.addActor<TestActor>(i);
@@ -106,7 +105,7 @@ TEST(Main, StartMultiCoreWithNoError) {
 }
 
 TEST(Main, StopMonoCoreWithNoError) {
-    qb::Main main({0});
+    qb::Main main;
 
     main.addActor<TestActor>(0, true);
     main.start();
@@ -119,7 +118,7 @@ TEST(Main, StopMultiCoreWithNoError) {
     const auto max_core = std::thread::hardware_concurrency();
 
     EXPECT_GT(max_core, 1u);
-    qb::Main main(qb::CoreSet::build(max_core));
+    qb::Main main;
 
     for (auto i = 0u; i < max_core; ++i)
         main.addActor<TestActor>(i, true);

@@ -21,31 +21,25 @@
 #ifndef             QB_IO_TCP_SSL_LISTENER_H_
 # define            QB_IO_TCP_SSL_LISTENER_H_
 
-namespace qb {
-    namespace io {
-        namespace tcp {
-            namespace ssl {
+namespace qb::io::tcp::ssl {
 
-                /*!
-                 * @class listener tcp/listener.h qb/io/tcp/listener.h
-                 * @ingroup TCP
-                 */
-                class QB_API listener
-                    : public tcp::listener {
-                    SSL_CTX *_ctx;
-                public:
-                    listener();
-                    listener(listener const &) = delete;
+    /*!
+     * @class listener tcp/listener.h qb/io/tcp/ssl/listener.h
+     * @ingroup TCP
+     */
+    class QB_API listener
+            : public tcp::listener {
+        SSL_CTX *_ctx;
+    public:
+        listener();
+        listener(listener const &) = delete;
 
-                    ~listener();
+        ~listener();
 
-                    void init(SSL_CTX *ctx);
-                    SocketStatus accept(ssl::socket &socket);
-                };
+        void init(SSL_CTX *ctx);
+        SocketStatus accept(ssl::socket &socket);
+    };
 
-            } // namespace ssl
-        } // namespace tcp
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::tcp::ssl
 
 #endif // QB_IO_TCP_SSL_LISTENER_H_

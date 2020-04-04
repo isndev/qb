@@ -39,7 +39,7 @@ namespace qb {
      * @brief Event base class
      */
     class Event {
-        friend class Main;
+        friend class SharedCoreCommunication;
         friend class VirtualCore;
         friend class Actor;
         friend class ProxyPipe;

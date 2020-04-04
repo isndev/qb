@@ -35,13 +35,13 @@ public:
             kill();
     }
 
-    ~TestActor() {
+    ~TestActor() final {
         if (_max_loop == 1000) {
             EXPECT_EQ(_count_loop, _max_loop);
         }
     }
 
-    virtual void onCallback() override final {
+    void onCallback() final {
         if (_max_loop == 10000)
             unregisterCallback();
         if (++_count_loop >= _max_loop)
@@ -51,7 +51,7 @@ public:
 };
 
 TEST(CallbackActor, ShouldNotCallOnCallbackIfNotRegistred) {
-    qb::Main main({0});
+    qb::Main main;
 
     main.addActor<TestActor>(0, 0);
 
@@ -60,7 +60,7 @@ TEST(CallbackActor, ShouldNotCallOnCallbackIfNotRegistred) {
 }
 
 TEST(CallbackActor, ShouldCallOnCallbackIfRegistred) {
-    qb::Main main({0});
+    qb::Main main;
 
     main.addActor<TestActor>(0, 1000);
 
@@ -69,7 +69,7 @@ TEST(CallbackActor, ShouldCallOnCallbackIfRegistred) {
 }
 
 TEST(CallbackActor, ShouldNotCallOnCallbackAnymoreIfUnregistred) {
-    qb::Main main({0});
+    qb::Main main;
 
     main.addActor<TestActor>(0, 1000);
 

@@ -30,9 +30,10 @@ struct LightEvent : public qb::Event {
 
     LightEvent()
         : _timepoint(std::chrono::high_resolution_clock::now())
+        , _ttl(0)
     {}
 
-    LightEvent(uint32_t const ttl)
+    explicit LightEvent(uint32_t const ttl)
         : _timepoint(std::chrono::high_resolution_clock::now())
         , _ttl(ttl)
     {}
@@ -50,13 +51,13 @@ struct TestEvent : public qb::Event
         __init__();
     }
 
-    TestEvent(uint32_t const ttl) {
+    explicit TestEvent(uint32_t const ttl) {
         __init__();
         _ttl = ttl;
     }
 
 
-    bool checkSum() const {
+    [[nodiscard]] bool checkSum() const {
         auto ret = true;
         if (has_extra_data) {
             ret = !memcmp(_data, reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent), sizeof(_data));

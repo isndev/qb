@@ -25,17 +25,17 @@ template <typename Event>
 class ProducerActor
         : public qb::Actor
 {
-    const qb::ActorIds _idList;
+    const qb::ActorIdList _idList;
     uint64_t _max_events;
     pg::latency<1000 * 1000, 900000> _latency;
 
 public:
 
-    ~ProducerActor() {
+    ~ProducerActor() final {
         _latency.generate<std::ostream, std::chrono::nanoseconds>(std::cout, "ns");
     }
 
-    ProducerActor(qb::ActorIds const ids, uint64_t const max)
+    ProducerActor(qb::ActorIdList const &ids, uint64_t const max)
             : _idList(ids)
             , _max_events(max)
     {

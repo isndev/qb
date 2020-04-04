@@ -23,7 +23,7 @@
 
 class PongActor : public qb::Actor {
 public:
-    virtual bool onInit() override final {
+    bool onInit() final {
         registerEvent<LightEvent>(*this);
         return true;
     }
@@ -38,11 +38,11 @@ public:
 class PingActor : public qb::Actor {
     pg::latency<1000 * 1000, 900000> _latency;
 public:
-    ~PingActor() {
+    ~PingActor() final {
         _latency.generate<std::ostream, std::chrono::nanoseconds>(std::cout, "ns");
     }
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         registerEvent<qb::RequireEvent>(*this);
         registerEvent<LightEvent>(*this);
         require<PongActor>();
@@ -119,7 +119,7 @@ static void BM_Reference_Multi_PingPong_Latency(benchmark::State& state) {
 
 static void BM_Mono_PingPong_Latency(benchmark::State& state) {
     for (auto _ : state) {
-        qb::Main  main({0});
+        qb::Main  main;
 
         main.addActor<PingActor>(0);
         main.addActor<PongActor>(0);
@@ -131,7 +131,7 @@ static void BM_Mono_PingPong_Latency(benchmark::State& state) {
 
 static void BM_Multi_PingPong_Latency(benchmark::State& state) {
     for (auto _ : state) {
-        qb::Main  main({0, 1});
+        qb::Main  main;
 
         main.addActor<PingActor>(0);
         main.addActor<PongActor>(1);

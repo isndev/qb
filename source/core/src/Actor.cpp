@@ -22,25 +22,20 @@
 
 namespace qb {
 
-    Actor::Actor() noexcept {
-        __set_id(VirtualCore::_handler->__generate_id__());
-
+    Actor::Actor() noexcept
+            : _id(VirtualCore::_handler->__generate_id__())
+    {
         registerEvent<KillEvent>(*this);
         registerEvent<UnregisterCallbackEvent>(*this);
         registerEvent<PingEvent>(*this);
     }
 
-    Actor::Actor(ActorId const id) noexcept {
-        __set_id(id);
-
+    Actor::Actor(ActorId const id) noexcept
+            : _id(id)
+    {
         registerEvent<KillEvent>(*this);
         registerEvent<UnregisterCallbackEvent>(*this);
         registerEvent<PingEvent>(*this);
-    }
-
-
-    void Actor::__set_id(ActorId const &id) noexcept {
-        static_cast<ActorId &>(*this) = id;
     }
 
     void Actor::on(PingEvent const &event) noexcept {
@@ -93,7 +88,7 @@ namespace qb {
             : dest_pipe(pipe) {}
 
     Actor::EventBuilder Actor::to(ActorId const dest) const noexcept {
-        return {getPipe(dest)};
+        return EventBuilder{getPipe(dest)};
     }
 
     void Actor::reply(Event &event) const noexcept {

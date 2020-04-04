@@ -18,91 +18,87 @@
 #include            <algorithm>
 #include            <qb/io/udp/socket.h>
 
-namespace           qb {
-    namespace       io {
-        namespace   udp {
+namespace qb::io::udp {
 
-            socket::socket() :
-                    sys::socket<SocketType::UDP>() {
-                init();
+    socket::socket() :
+            sys::socket<SocketType::UDP>() {
+        init();
+    }
+
+    socket::socket(SocketHandler handle) :
+            sys::socket<SocketType::UDP>() {
+        _handle = handle;
+    }
+
+    unsigned short socket::getLocalPort() const {
+        if (good()) {
+            // Retrieve informations about the local end of the socket
+            sockaddr_in address;
+            AddrLength size = sizeof(address);
+            if (getsockname(_handle, reinterpret_cast<sockaddr *>(&address), &size) != -1) {
+                return ntohs(address.sin_port);
             }
+        }
 
-            socket::socket(SocketHandler handle) :
-                    sys::socket<SocketType::UDP>() {
-                _handle = handle;
-            }
+        // We failed to retrieve the port
+        return 0;
+    }
 
-            unsigned short socket::getLocalPort() const {
-                if (good()) {
-                    // Retrieve informations about the local end of the socket
-                    sockaddr_in address;
-                    AddrLength size = sizeof(address);
-                    if (getsockname(_handle, reinterpret_cast<sockaddr *>(&address), &size) != -1) {
-                        return ntohs(address.sin_port);
-                    }
-                }
+    SocketStatus socket::bind(unsigned short port, const ip &address) {
 
-                // We failed to retrieve the port
-                return 0;
-            }
+        // Create the internal socket if it doesn't exist
+        init();
 
-            SocketStatus socket::bind(unsigned short port, const ip &address) {
+        // Check if the address is valid
+        if ((address == ip::None))
+            return SocketStatus::Error;
 
-                // Create the internal socket if it doesn't exist
-                init();
+        // Bind the socket
+        sockaddr_in addr = helper::createAddress(address.toInteger(), port);
+        if (::bind(_handle, reinterpret_cast<sockaddr *>(&addr), sizeof(addr))) {
+            std::cerr << "Failed to bind socket to port " << port << std::endl;
+            return SocketStatus::Error;
+        }
 
-                // Check if the address is valid
-                if ((address == ip::None))
-                    return SocketStatus::Error;
+        return SocketStatus::Done;
+    }
 
-                // Bind the socket
-                sockaddr_in addr = helper::createAddress(address.toInteger(), port);
-                if (::bind(_handle, reinterpret_cast<sockaddr *>(&addr), sizeof(addr))) {
-                    std::cerr << "Failed to bind socket to port " << port << std::endl;
-                    return SocketStatus::Error;
-                }
+    void socket::unbind() {
+        // Simply close the socket
+        close();
+    }
 
-                return SocketStatus::Done;
-            }
+    int socket::write(const void *data, std::size_t size, const ip &remoteAddress, unsigned short remotePort) const {
 
-            void socket::unbind() {
-                // Simply close the socket
-                close();
-            }
+        // Build the target address
+        sockaddr_in address = helper::createAddress(remoteAddress.toInteger(), remotePort);
 
-            int socket::write(const void *data, std::size_t size, const ip &remoteAddress, unsigned short remotePort) const {
+        // Send the data (unlike TCP, all the data is always sent in one call)
+        return sendto(_handle, static_cast<const char *>(data), static_cast<int>(size), 0,
+                      reinterpret_cast<sockaddr *>(&address), sizeof(address));
+    }
 
-                // Build the target address
-                sockaddr_in address = helper::createAddress(remoteAddress.toInteger(), remotePort);
+    int socket::read(void *data, std::size_t size, ip &remoteAddress, unsigned short &remotePort) const {
+        // First clear the variables to fill
+        remoteAddress = ip();
+        remotePort = 0;
 
-                // Send the data (unlike TCP, all the data is always sent in one call)
-                return sendto(_handle, static_cast<const char *>(data), static_cast<int>(size), 0,
-                                  reinterpret_cast<sockaddr *>(&address), sizeof(address));
-            }
+        // Data that will be filled with the other computer's address
+        sockaddr_in address = helper::createAddress(INADDR_ANY, 0);
 
-            int socket::read(void *data, std::size_t size, ip &remoteAddress, unsigned short &remotePort) const {
-                // First clear the variables to fill
-                remoteAddress = ip();
-                remotePort = 0;
+        // Receive a chunk of bytes
+        AddrLength addressSize = sizeof(address);
+        const int sizeReceived = recvfrom(_handle, static_cast<char *>(data), static_cast<int>(size), 0,
+                                          reinterpret_cast<sockaddr *>(&address), &addressSize);
 
-                // Data that will be filled with the other computer's address
-                sockaddr_in address = helper::createAddress(INADDR_ANY, 0);
+        // Check for errors
+        if (sizeReceived >= 0) {
+            // Fill the sender informations
+            remoteAddress = ip(ntohl(address.sin_addr.s_addr));
+            remotePort = ntohs(address.sin_port);
+        }
 
-                // Receive a chunk of bytes
-                AddrLength addressSize = sizeof(address);
-                const int sizeReceived = recvfrom(_handle, static_cast<char *>(data), static_cast<int>(size), 0,
-                                            reinterpret_cast<sockaddr *>(&address), &addressSize);
+        return sizeReceived;
+    }
 
-                // Check for errors
-                if (sizeReceived >= 0) {
-                    // Fill the sender informations
-                    remoteAddress = ip(ntohl(address.sin_addr.s_addr));
-                    remotePort = ntohs(address.sin_port);
-                }
-
-                return sizeReceived;
-            }
-
-        } // namespace udp
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::udp

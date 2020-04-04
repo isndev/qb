@@ -38,54 +38,43 @@
 #include <fcntl.h>
 #endif
 
-namespace           qb {
-    namespace       io {
+namespace qb::io {
 
-        enum SocketType {
-            TCP,
-            UDP
-        };
+	enum SocketType {
+		TCP,
+		UDP
+	};
 
-        enum SocketStatus
-        {
-            Done,
-            NotReady,
-            Partial,
-            Disconnected,
-            Error
-        };
+	enum SocketStatus
+	{
+		Done,
+		NotReady,
+		Partial,
+		Disconnected,
+		Error
+	};
 
 #ifdef      __WIN__SYSTEM__
-        typedef            SOCKET      SocketHandler;
+	typedef            SOCKET      SocketHandler;
         typedef            int         AddrLength;
         constexpr static const SocketHandler SOCKET_INVALID = INVALID_SOCKET;
         constexpr static const int FD_INVALID = -1;
 #else
-        typedef            int         SocketHandler;
-        typedef            socklen_t   AddrLength;
-        constexpr static const SocketHandler SOCKET_INVALID = -1;
-        constexpr static const int FD_INVALID = -1;
+	typedef            int         SocketHandler;
+	typedef            socklen_t   AddrLength;
+	constexpr static const SocketHandler SOCKET_INVALID = -1;
+	constexpr static const int FD_INVALID = -1;
 #endif
 
-        class QB_API helper {
-        public:
-			//struct socket {
-				static sockaddr_in createAddress(uint32_t address, unsigned short port);
-				static bool close(SocketHandler sock);
-				static bool block(SocketHandler sock, bool block);
-				static bool is_blocking(SocketHandler sock);
-				static SocketStatus getErrorStatus();
-			//};
+	class QB_API helper {
+	public:
+		static sockaddr_in createAddress(uint32_t address, unsigned short port);
+		static bool close(SocketHandler sock);
+		static bool block(SocketHandler sock, bool block);
+		static bool is_blocking(SocketHandler sock);
+		static SocketStatus getErrorStatus();
+	};
 
-			//struct file {
-			//	static int open(const char* fname, int flags);
-			//	static int close();
-			//	static int write(int fd, const char *data, std::size_t size);
-			//	static int read(int fd, char* data, std::size_t size);
-			//};
-        };
-
-    } // namespace io
 } // namespace qb
 
 #endif // QB_IO_HELPER_H_

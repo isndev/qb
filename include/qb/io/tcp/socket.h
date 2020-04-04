@@ -21,37 +21,33 @@
 #ifndef             QB_IO_TCP_SOCKET_H_
 # define            QB_IO_TCP_SOCKET_H_
 
-namespace           qb {
-    namespace       io {
-        namespace   tcp {
+namespace qb::io::tcp {
 
-            /*!
-             * @class socket tcp/socket.h qb/io/tcp/socket.h
-             * @ingroup TCP
-             */
-            class QB_API socket
-                : public sys::socket<SocketType::TCP> {
-            public:
-                socket();
-                socket(socket const &rhs) = default;
+    /*!
+     * @class socket tcp/socket.h qb/io/tcp/socket.h
+     * @ingroup TCP
+     */
+    class QB_API socket
+            : public sys::socket<SocketType::TCP> {
+    public:
+        socket();
+        socket(socket const &rhs) = default;
 //                socket(SocketHandler fd);
 
-                ip getRemoteAddress() const;
-                unsigned short getLocalPort() const;
-                unsigned short getRemotePort() const;
+        [[nodiscard]] ip getRemoteAddress() const;
+        [[nodiscard]] unsigned short getLocalPort() const;
+        [[nodiscard]] unsigned short getRemotePort() const;
 
-                SocketStatus connect(const ip &remoteAddress, unsigned short remotePort, int timeout = 0);
-                void disconnect();
+        SocketStatus connect(const ip &remoteAddress, unsigned short remotePort, int timeout = 0);
+        void disconnect();
 
-                int read(void *data, std::size_t size) const;
-                int write(const void *data, std::size_t size) const;
+        int read(void *data, std::size_t size) const;
+        int write(const void *data, std::size_t size) const;
 
-            private:
-                friend class listener;
-            };
+    private:
+        friend class listener;
+    };
 
-        } // namespace tcp
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::tcp
 
 #endif // QB_IO_TCP_SOCKET_H_

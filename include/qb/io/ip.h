@@ -22,45 +22,43 @@
 #ifndef             QB_IO_IP_H_
 #define             QB_IO_IP_H_
 
-namespace           qb {
-    namespace       io {
+namespace qb::io {
 
-        /*!
-         * @class ip ip.h qb/io/ip.h
-         * @ingroup IO
-         */
-        class QB_API ip {
-            uint32_t     _address;
+    /*!
+     * @class ip ip.h qb/io/ip.h
+     * @ingroup IO
+     */
+    class QB_API ip {
+        uint32_t     _address;
 
-            void resolve(const std::string& address);
-            friend QB_API bool operator <(const ip& left, const ip& right);
-        public:
-            ip();
-            ip(const std::string& address);
-            ip(const char* address);
-            ip(uint8_t byte0, uint8_t byte1, uint8_t byte2, uint8_t byte3);
-            explicit ip(uint32_t address);
+        void resolve(const std::string& address) noexcept;
+        friend QB_API bool operator <(const ip& left, const ip& right);
+    public:
+        ip() noexcept;
+        ip(const std::string& address) noexcept;
+        ip(const char* address) noexcept;
+        ip(uint8_t byte0, uint8_t byte1, uint8_t byte2, uint8_t byte3) noexcept;
+        explicit ip(uint32_t address) noexcept;
 
-            std::string toString() const;
-            uint32_t toInteger() const;
+        [[nodiscard]] std::string toString() const;
+        [[nodiscard]] uint32_t toInteger() const;
 
-            static const ip None;
-            static const ip Any;
-            static const ip LocalHost;
+        static const ip None;
+        static const ip Any;
+        static const ip LocalHost;
 
 
-        };
+    };
 
-        QB_API bool operator ==(const ip& left, const ip& right);
-        QB_API bool operator !=(const ip& left, const ip& right);
-        QB_API bool operator <(const ip& left, const ip& right);
-        QB_API bool operator >(const ip& left, const ip& right);
-        QB_API bool operator <=(const ip& left, const ip& right);
-        QB_API bool operator >=(const ip& left, const ip& right);
-        QB_API std::istream& operator >>(std::istream& stream, ip& address);
-        QB_API std::ostream& operator <<(std::ostream& stream, const ip& address);
+    QB_API bool operator ==(const ip& left, const ip& right);
+    QB_API bool operator !=(const ip& left, const ip& right);
+    QB_API bool operator <(const ip& left, const ip& right);
+    QB_API bool operator >(const ip& left, const ip& right);
+    QB_API bool operator <=(const ip& left, const ip& right);
+    QB_API bool operator >=(const ip& left, const ip& right);
+    QB_API std::istream& operator >>(std::istream& stream, ip& address);
+    QB_API std::ostream& operator <<(std::ostream& stream, const ip& address);
 
-    } // namespace io
-} // namespace qb
+} // namespace qb::io
 
 #endif // QB_IO_IP_H_

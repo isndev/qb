@@ -33,7 +33,7 @@ public:
         kill();
     }
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         EXPECT_EQ(this, getService<TestServiceActor>());
         return _ret_init;
     }
@@ -44,7 +44,7 @@ struct CheckServiceActor : public qb::Actor {
         EXPECT_NE(nullptr, getService<TestServiceActor>());
     }
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         EXPECT_NE(nullptr, getService<TestServiceActor>());
         kill();
         return true;
@@ -62,7 +62,7 @@ public:
         kill();
     }
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         return _ret_init;
     }
 };
@@ -77,7 +77,7 @@ public:
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
     }
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         auto actor = addRefActor<TestActor>(_ret_init);
 
         kill();
@@ -86,7 +86,7 @@ public:
 };
 
 TEST(AddActor, EngineShouldAbortIfActorFailedToInitAtStart) {
-    qb::Main main({0});
+    qb::Main main;
 
     main.addActor<TestActor>(0, false);
 
@@ -95,7 +95,7 @@ TEST(AddActor, EngineShouldAbortIfActorFailedToInitAtStart) {
 }
 
 TEST(AddActor, ShouldReturnValidActorIdAtStart) {
-    qb::Main main({0});
+    qb::Main main;
 
     auto id = main.addActor<TestServiceActor>(0, true);
     main.addActor<CheckServiceActor>(0);
@@ -106,7 +106,7 @@ TEST(AddActor, ShouldReturnValidActorIdAtStart) {
 }
 
 TEST(AddActor, ShouldReturnValidServiceActorIdAtStart) {
-    qb::Main main({0});
+    qb::Main main;
 
     auto id = main.addActor<TestServiceActor>(0, true);
     EXPECT_EQ(static_cast<uint32_t>(id), 1u);
@@ -116,18 +116,23 @@ TEST(AddActor, ShouldReturnValidServiceActorIdAtStart) {
 }
 
 TEST(AddActorUsingCoreBuilder, ShouldNotAddActorOnBadCoreIndex) {
-    qb::Main main({0});
+    qb::Main main;
 
-    auto builder = main.core(1)
-            .addActor<TestActor>(true);
-    main.start(false);
-    EXPECT_TRUE(main.hasError());
+    EXPECT_THROW(main.core(256).addActor<TestActor>(true), std::range_error);
+}
+
+TEST(AddActorUsingCoreBuilder, ShouldNotAddActorWhenEngineIsRunning) {
+    qb::Main main;
+
+    main.core(0).addActor<TestActor>(true);
+    main.start();
+    EXPECT_THROW(main.core(0).addActor<TestActor>(true), std::runtime_error);
 }
 
 TEST(AddActorUsingCoreBuilder, ShouldRetrieveValidOrderedActorIdList) {
-    qb::Main main({0});
+    qb::Main main;
 
-    auto builder = main.core(0)
+    auto builder = main.core(0).builder()
             .addActor<TestServiceActor>(true)
             .addActor<TestActor>(true);
     EXPECT_TRUE(static_cast<bool>(builder));
@@ -144,7 +149,7 @@ TEST(AddActorUsingCoreBuilder, ShouldRetrieveValidOrderedActorIdList) {
 }
 
 TEST(AddReferencedActor, ShouldReturnNullptrIfActorFailedToInit) {
-    qb::Main main({0});
+    qb::Main main;
 
     main.addActor<TestRefActor>(0, false);
     main.start(false);
@@ -152,7 +157,7 @@ TEST(AddReferencedActor, ShouldReturnNullptrIfActorFailedToInit) {
 }
 
 TEST(AddReferencedActor, ShouldReturnActorPtrOnSucess) {
-    qb::Main main({0});
+    qb::Main main;
 
     main.addActor<TestRefActor>(0, true);
     main.start(false);
@@ -164,7 +169,7 @@ class TestKillSenderActor : public qb::Actor
 public:
     TestKillSenderActor() = default;
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         push<qb::KillEvent>(id());
         push<qb::KillEvent>(qb::BroadcastId(1));
@@ -177,17 +182,17 @@ class TestKillActor : public qb::Actor
 public:
     TestKillActor() = default;
 
-    virtual bool onInit() override final {
+    bool onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         return true;
     }
 };
 
 TEST(KillActor, UsingEvent) {
-    qb::Main main({0, 1});
+    qb::Main main;
 
     main.addActor<TestKillSenderActor>(0);
-    auto builder = main.core(1);
+    auto builder = main.core(1).builder();
     for (auto i = 0u; i < 1024; ++i)
         builder.addActor<TestKillActor>();
     main.start(false);

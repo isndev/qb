@@ -68,7 +68,7 @@ namespace qb {
          *
          * @return
          */
-        inline ActorId getDestination() const noexcept {
+        [[nodiscard]] inline ActorId getDestination() const noexcept {
             return dest;
         }
 
@@ -76,7 +76,7 @@ namespace qb {
          *
          * @return
          */
-        inline ActorId getSource() const noexcept {
+        [[nodiscard]] inline ActorId getSource() const noexcept {
             return source;
         }
 

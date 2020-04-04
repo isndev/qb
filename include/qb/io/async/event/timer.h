@@ -20,22 +20,16 @@
 
 #include "base.h"
 
-namespace qb {
-    namespace io {
-        namespace async {
-            namespace event {
+namespace qb::io::async::event {
 
-                struct timer : base<ev::timer> {
-                    using base_t = base<ev::timer>;
+    struct timer : base<ev::timer> {
+        using base_t = base<ev::timer>;
 
-                    timer(ev::loop_ref loop) : base_t(loop) {}
-                };
+        explicit timer(ev::loop_ref loop) : base_t(loop) {}
+    };
 
-                using timeout = timer;
+    using timeout = timer;
 
-            }
-        }
-    }
-}
+} // namespace qb::io::async
 
 #endif //QB_IO_ASYNC_EVENT_TIMER_H

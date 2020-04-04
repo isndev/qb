@@ -28,16 +28,148 @@
 
 namespace qb {
 
+    class Main;
     class VirtualCore;
     class IActorFactory;
 
-    struct CoreInitializer {
+    class CoreInitializer : nocopy {
+        friend class Main;
+        friend class VirtualCore;
+    public:
+        /*!
+         * @class ActorBuilder core/Main.h qb/main.h
+         * @brief Helper to build Actors in VirtualCore
+         */
+        class ActorBuilder {
+        public:
+            using ActorIdList = std::vector<ActorId>;
+        private:
+            friend class CoreInitializer;
+
+            CoreInitializer &_initializer;
+            ActorIdList _ret_ids;
+            bool _valid;
+
+            explicit ActorBuilder(CoreInitializer &initializer) noexcept;
+        public:
+            ActorBuilder() = delete;
+            ActorBuilder(ActorBuilder const &rhs) = default;
+
+            /*!
+             * @brief Create new _Actor
+             * @tparam _Actor DerivedActor type
+             * @param args arguments to forward to the constructor of the _Actor
+             * @return itself
+             * @details
+             * create new _Actor on attached VirtualCore, function can be chained.\n
+             * example:
+             * @code
+             * auto builder = main.core(0).builder(); // get actor builder of CoreInitializer  0
+             * builder.addActor<MyActor>(param1, param2)
+             *        .addActor<MyActor>(param1, param2)
+             *        // ...
+             *        ;
+             * @endcode
+             * @attention
+             * This function is not available while engine is running.
+             */
+            template<typename _Actor, typename ..._Args>
+            ActorBuilder &addActor(_Args &&...args) noexcept;
+
+            [[nodiscard]] bool valid() const noexcept;
+            explicit operator bool() const noexcept;
+
+            /*!
+             * @brief Get list of created ActorId by the ActorBuilder
+             * @return Created ActorId list
+             */
+            [[nodiscard]] ActorIdList idList() const noexcept;
+        };
+    private:
+
+
+        const CoreId _index;
         ServiceId _next_id;
+        bool _low_latency;
+
         qb::unordered_set<ServiceId> _registered_services;
         std::vector<IActorFactory *> _actor_factories;
+//        CoreSet _restricted_communication; future use
 
-        CoreInitializer() = default;
+    public:
+        CoreInitializer() = delete;
+        explicit CoreInitializer(CoreId index);
         ~CoreInitializer() noexcept;
+
+        void clear() noexcept;
+
+        /*!
+         * @brief Create new _Actor
+         * @tparam _Actor DerivedActor type
+         * @param index VirtualCore index
+         * @param args arguments to forward to the constructor of the _Actor
+         * @return ActorId of the created _Actor
+         * @details
+         * create new _Actor on VirtualCore index.\n
+         * example:
+         * @code
+         * auto id = main.core(0).addActor<MyActor>(param1, param2);
+         * @endcode
+         * @attention
+         * This function is not available while engine is running.
+         */
+        template<typename _Actor, typename ..._Args>
+        ActorId addActor(_Args &&...args) noexcept;
+
+        /*!
+         * @brief Get ActorBuilder from CoreIntializer
+         * @return ActorBuilder
+         * @attention
+         * @code
+         * auto builder1 = main.core(0).builder();
+         * auto builder2 = main.core(0).builder();
+         * // even both elements build the same VirtualCore
+         * // builder1 != builder2
+         * @endcode
+         */
+        ActorBuilder builder() noexcept;
+
+        /*!
+         * @brief Start the engine
+         * @param async has blocking execution
+         * @note
+         * If async = false the main thread will by used by a VirtualCore engine.
+         */
+        CoreInitializer &setLowLatency(bool state) noexcept;
+        [[nodiscard]] bool isLowLatency() const noexcept;
+
+    };
+
+    class SharedCoreCommunication : nocopy {
+        friend class VirtualCore;
+        constexpr static const uint64_t MaxRingEvents =
+                (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
+        //////// Types
+        using MPSCBuffer = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
+
+        const CoreSet _core_set;
+        std::vector<std::atomic<bool>> _event_safe_deadlock;
+        std::vector<MPSCBuffer *> _mail_boxes;
+    public:
+        SharedCoreCommunication() = delete;
+        explicit SharedCoreCommunication(qb::unordered_set<CoreId> const &set) noexcept;
+
+        ~SharedCoreCommunication() noexcept;
+
+        [[nodiscard]] bool send(Event const &event) const noexcept;
+        [[nodiscard]] MPSCBuffer &getMailBox(CoreId id) const noexcept;
+        [[nodiscard]] CoreId getNbCore() const noexcept;
+    };
+
+    struct CoreSpawnerParameter {
+        const CoreId id;
+        CoreInitializer &initializer;
+        SharedCoreCommunication &shared_com;
     };
 
     /*!
@@ -57,82 +189,20 @@ namespace qb {
         static std::atomic<uint64_t> sync_start;
         static bool                  is_running;
         static void onSignal(int signal);
-        static void start_thread(CoreId coreId, Main &engine) noexcept;
+        static void start_thread(CoreSpawnerParameter const &params) noexcept;
+
     private:
-        CoreSet _core_set;
-        std::vector<std::atomic<bool>> _event_safe_deadlock;
-        std::vector<MPSCBuffer *> _mail_boxes;
+
         std::vector<std::thread>  _cores;
+        // Core Factory
         qb::unordered_map<CoreId, CoreInitializer> _core_initializers;
+        SharedCoreCommunication *_shared_com = nullptr;
 
-        void __init__() noexcept;
-        bool send(Event const &event) const noexcept;
-        bool broadcast(Event const &event) const noexcept;
-        MPSCBuffer &getMailBox(CoreId const id) const noexcept;
-        CoreId getNbCore() const noexcept;
+
     public:
+        using ActorIdList = CoreInitializer::ActorBuilder::ActorIdList;
 
-        /*!
-         * @class CoreBuilder core/Main.h qb/main.h
-         * @brief Helper to build Actors in VirtualCore
-         */
-        class CoreBuilder {
-        public:
-            using ActorIdList = std::vector<ActorId>;
-        private:
-            friend class Main;
-
-            const CoreId _index;
-            Main &_main;
-            ActorIdList _ret_ids;
-            bool _valid;
-
-            CoreBuilder(Main &main, CoreId const index) noexcept
-                    : _index(index)
-                    , _main(main)
-                    , _valid(true)
-            {}
-
-            CoreBuilder() = delete;
-        public:
-            CoreBuilder(CoreBuilder const &rhs) noexcept;
-
-            /*!
-             * @brief Create new _Actor
-             * @tparam _Actor DerivedActor type
-             * @param args arguments to forward to the constructor of the _Actor
-             * @return itself
-             * @details
-             * create new _Actor on attached VirtualCore, function can be chained.\n
-             * example:
-             * @code
-             * auto builder = main.core(0); // get builder of VirtualCore id 0
-             * builder.addActor<MyActor>(param1, param2)
-             *        .addActor<MyActor>(param1, param2)
-             *        // ...
-             *        ;
-             * @endcode
-             * @attention
-             * This function is not available when the engine is running.
-             */
-            template<typename _Actor, typename ..._Args>
-            CoreBuilder &addActor(_Args &&...args) noexcept;
-
-            bool valid() const noexcept;
-            operator bool() const noexcept;
-
-            /*!
-             * @brief Get list of created ActorId by the CoreBuilder
-             * @return Created ActorId list
-             */
-            ActorIdList const &idList() const noexcept;
-        };
-
-        using ActorIds = CoreBuilder::ActorIdList;
-
-        Main() = delete;
-        explicit Main(CoreSet const &core_set) noexcept;
-        explicit Main(qb::unordered_set<CoreId> const &core_set) noexcept;
+        Main() noexcept;
         ~Main();
 
         /*!
@@ -154,8 +224,6 @@ namespace qb {
 
         /*!
          * @brief Wait until engine terminates
-         * @note
-         * You can not avoid calling this function even if main has started with async=false.
          */
         void join();
 
@@ -174,24 +242,26 @@ namespace qb {
          * auto id = addActor<MyActor>(0, param1, param2);
          * @endcode
          * @attention
-         * This function is not available when the engine is running.
+         * This function is not available while engine is running.
          */
         template<typename _Actor, typename ..._Args>
-        ActorId addActor(std::size_t index, _Args &&...args) noexcept;
+        ActorId addActor(std::size_t index, _Args &&...args);
 
         /*!
-         * @brief Get CoreBuilder from index
+         * @brief Get CoreIntializer from index
          * @param index VirtualCore index
-         * @return CoreBuilder
+         * @return CoreInitializer &
          * @attention
          * @code
-         * auto builder1 = main.core(0);
-         * auto builder2 = main.core(0);
-         * // even both elements build the same VirtualCore
-         * // builder1 != builder2
+         * auto &initializer1 = main.core(0);
+         * auto &initializer2 = main.core(0);
+         * // initializer1 == initializer2
+         * // Core initializers are not copyable
          * @endcode
+         * @attention
+         * This function is not available while engine is running.
          */
-        CoreBuilder core(CoreId const index) noexcept;
+        CoreInitializer &core(CoreId index);
 
     };
 

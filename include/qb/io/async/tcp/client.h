@@ -20,47 +20,41 @@
 
 #include "../io.h"
 
-namespace qb {
-    namespace io {
-        namespace async {
-            namespace tcp {
+namespace qb::io::async::tcp {
 
-                template<typename _Derived,
-                        template<typename _BaseProt> typename _Prot,
-                        typename _BaseProt,
-                        typename _Server = void>
-                class client
-                        : public io<_Derived, _Prot<_BaseProt>> {
-                    using base_t = io<_Derived, _Prot<_BaseProt>>;
-                protected:
-                    _Server &_server;
-                public:
-                    constexpr static const bool has_server = true;
+    template<typename _Derived,
+            template<typename _BaseProt> typename _Prot,
+            typename _BaseProt,
+            typename _Server = void>
+    class client
+            : public io<_Derived, _Prot<_BaseProt>> {
+        using base_t = io<_Derived, _Prot<_BaseProt>>;
+    protected:
+        _Server &_server;
+    public:
+        constexpr static const bool has_server = true;
 
-                    client(_Server &server)
-                            : _server(server) {}
+        explicit client(_Server &server)
+                : _server(server) {}
 
-                    inline _Server &server() {
-                        return _server;
-                    }
-
-                };
-
-                template<typename _Derived,
-                        template<typename _BaseProt> typename _Prot,
-                        typename _BaseProt>
-                class client<_Derived, _Prot, _BaseProt, void>
-                        : public io<_Derived, _Prot<_BaseProt>> {
-                    using base_t = io<_Derived, _Prot<_BaseProt>>;
-                public:
-
-                    client() = default;
-
-                };
-
-            }
+        inline _Server &server() {
+            return _server;
         }
-    }
-}
+
+    };
+
+    template<typename _Derived,
+            template<typename _BaseProt> typename _Prot,
+            typename _BaseProt>
+    class client<_Derived, _Prot, _BaseProt, void>
+            : public io<_Derived, _Prot<_BaseProt>> {
+        using base_t = io<_Derived, _Prot<_BaseProt>>;
+    public:
+
+        client() = default;
+
+    };
+
+} // namespace qb::io::async::tcp
 
 #endif //QB_IO_ASYNC_TCP_SESSION_H

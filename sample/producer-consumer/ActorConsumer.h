@@ -27,8 +27,8 @@ class ActorConsumer
         : public qb::Actor     // /!\ should inherit from qb actor
         , public qb::ICallback // (optional) required to register actor callback
 {
-    uint64_t timer;
-    uint64_t counter;
+    uint64_t timer = 0;
+    uint64_t counter = 0;
 
     void reset_timer() {
         timer = time() + qb::Timestamp::seconds(1).nanoseconds();
@@ -36,10 +36,10 @@ class ActorConsumer
 
 public:
     ActorConsumer() = default;                 // default constructor
-    ~ActorConsumer() = default;
+    ~ActorConsumer() final = default;
 
     // will call this function before adding MyActor
-    virtual bool onInit() override final {
+    bool onInit() final {
         registerEvent<MyEvent>(*this);     // will listen MyEvent
         registerCallback(*this);           // each core loop will call onCallback
         reset_timer();
@@ -47,7 +47,7 @@ public:
     }
 
     // will call this function each core loop
-    virtual void onCallback() override final {
+    void onCallback() final {
         if (time() > timer) {
              qb::io::cout() << "Consumer(" << id() << ") received " << counter << "/s" << std::endl;
 //            LOG_INFO("Consumer(" << id() << ") received " << counter << "/s");

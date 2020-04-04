@@ -20,15 +20,14 @@
 #include "../shared/TestProducer.h"
 #include "../shared/TestConsumer.h"
 #include "../shared/TestEvent.h"
-#include "../shared/TestLatency.h"
 
 template <typename Event>
 static void BM_Unicast_Latency(benchmark::State& state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main  main({0, 1});
+        qb::Main  main;
 
-        main.addActor<ProducerActor<Event>>(0, qb::ActorIds{main.addActor<ConsumerActor<Event>>(1)}, nb_events);
+        main.addActor<ProducerActor<Event>>(0, qb::ActorIdList{main.addActor<ConsumerActor<Event>>(1)}, nb_events);
 
         main.start(false);
         main.join();
@@ -39,12 +38,12 @@ template <typename Event>
 static void BM_Pipeline_Latency(benchmark::State& state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main  main({0, 1, 2, 3});
+        qb::Main  main;
 
         main.addActor<ProducerActor<Event>>(0,
-                qb::ActorIds{main.addActor<ConsumerActor<Event>>(1,
-                        qb::ActorIds{main.addActor<ConsumerActor<Event>>(2,
-                                qb::ActorIds{main.addActor<ConsumerActor<Event>>(3)})})},
+                qb::ActorIdList{main.addActor<ConsumerActor<Event>>(1,
+                        qb::ActorIdList{main.addActor<ConsumerActor<Event>>(2,
+                                qb::ActorIdList{main.addActor<ConsumerActor<Event>>(3)})})},
                 nb_events);
 
         main.start(false);
@@ -56,12 +55,12 @@ template <typename Event>
 static void BM_Pipeline_Shared_Latency(benchmark::State& state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main  main({0, 1});
+        qb::Main  main;
 
         main.addActor<ProducerActor<Event>>(0,
-                qb::ActorIds{main.addActor<ConsumerActor<Event>>(1,
-                        qb::ActorIds{main.addActor<ConsumerActor<Event>>(1,
-                                qb::ActorIds{main.addActor<ConsumerActor<Event>>(1)})})},
+                qb::ActorIdList{main.addActor<ConsumerActor<Event>>(1,
+                        qb::ActorIdList{main.addActor<ConsumerActor<Event>>(1,
+                                qb::ActorIdList{main.addActor<ConsumerActor<Event>>(1)})})},
                                             nb_events);
 
         main.start(false);
@@ -73,10 +72,10 @@ template <typename Event>
 static void BM_Multicast_Latency(benchmark::State& state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main  main({0, 1, 2, 3});
+        qb::Main  main;
 
         main.addActor<ProducerActor<Event>>(0,
-                qb::ActorIds
+                qb::ActorIdList
                 { main.addActor<ConsumerActor<Event>>(1),
                   main.addActor<ConsumerActor<Event>>(2),
                   main.addActor<ConsumerActor<Event>>(3)
@@ -91,14 +90,15 @@ template <typename Event>
 static void BM_Multicast_Shared_Latency(benchmark::State& state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main  main({0, 1});
+        qb::Main  main;
 
-        main.addActor<ProducerActor<Event>>(0,
-                                            qb::ActorIds
-                                                    { main.addActor<ConsumerActor<Event>>(1),
-                                                      main.addActor<ConsumerActor<Event>>(1),
-                                                      main.addActor<ConsumerActor<Event>>(1)
-                                                    }, nb_events);
+        main.core(0).addActor<ProducerActor<Event>>(
+                main.core(1)
+                        .builder()
+                        .template addActor<ConsumerActor<Event>>()
+                        .template addActor<ConsumerActor<Event>>()
+                        .template addActor<ConsumerActor<Event>>()
+                        .idList(), nb_events);
 
         main.start(false);
         main.join();
@@ -109,13 +109,13 @@ template <typename Event>
 static void BM_Diamond_Latency(benchmark::State& state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main  main({0, 1, 2, 3});
+        qb::Main  main;
 
         auto id_end = main.addActor<ConsumerActor<Event>>(3);
         main.addActor<ProducerActor<Event>>(0,
-                                            qb::ActorIds{
-                                                    main.addActor<ConsumerActor<Event>>(1, qb::ActorIds{id_end}),
-                                                    main.addActor<ConsumerActor<Event>>(2, qb::ActorIds{id_end})
+                                            qb::ActorIdList{
+                                                    main.addActor<ConsumerActor<Event>>(1, qb::ActorIdList{id_end}),
+                                                    main.addActor<ConsumerActor<Event>>(2, qb::ActorIdList{id_end})
                                             }, nb_events);
 
         main.start(false);
@@ -127,13 +127,13 @@ template <typename Event>
 static void BM_Diamond_Shared_Latency(benchmark::State& state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main  main({0, 1, 2});
+        qb::Main  main;
 
         auto id_end = main.addActor<ConsumerActor<Event>>(2);
         main.addActor<ProducerActor<Event>>(0,
-                                            qb::ActorIds{
-                                                    main.addActor<ConsumerActor<Event>>(1, qb::ActorIds{id_end}),
-                                                    main.addActor<ConsumerActor<Event>>(1, qb::ActorIds{id_end})
+                                            qb::ActorIdList{
+                                                    main.addActor<ConsumerActor<Event>>(1, qb::ActorIdList{id_end}),
+                                                    main.addActor<ConsumerActor<Event>>(1, qb::ActorIdList{id_end})
                                             }, nb_events);
 
         main.start(false);

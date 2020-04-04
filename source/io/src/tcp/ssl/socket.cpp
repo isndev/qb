@@ -73,7 +73,7 @@ namespace qb {
                             default:
                                 disconnect();
                                 return -1;
-                        };
+                        }
                     }
                     _connected = true;
                     return 1;

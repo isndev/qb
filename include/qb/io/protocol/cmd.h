@@ -19,34 +19,30 @@
 # define            QB_IO_PROT_CMD_H_
 #include "../stream.h"
 
-namespace qb {
-    namespace io {
-        namespace protocol {
+namespace qb::io::protocol {
 
-            template<typename _IO_>
-            class cmd : public _IO_ {
-            public:
-                using message_type = const char *;
+    template<typename _IO_>
+    class cmd : public _IO_ {
+    public:
+        using message_type = const char *;
 
-                int getMessageSize() {
-                    auto &buffer = this->_in_buffer;
-                    auto i = buffer.begin();
-                    while (i < buffer.end()) {
-                        if (buffer.data()[i] == '\n')
-                            return i - buffer.begin() + 1;
-                        ++i;
-                    }
-                    return 0;
-                }
+        int getMessageSize() {
+            auto &buffer = this->_in_buffer;
+            auto i = buffer.begin();
+            while (i < buffer.end()) {
+                if (buffer.data()[i] == '\n')
+                    return i - buffer.begin() + 1;
+                ++i;
+            }
+            return 0;
+        }
 
-                message_type getMessage(int) {
-                    auto &buffer = this->_in_buffer;
-                    return buffer.data() + buffer.begin();
-                }
-            };
+        message_type getMessage(int) {
+            auto &buffer = this->_in_buffer;
+            return buffer.data() + buffer.begin();
+        }
+    };
 
-        } // namespace protocol
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::protocol
 
 #endif // QB_IO_PROT_CMD_H_

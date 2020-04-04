@@ -22,51 +22,45 @@
 
 #include "../io.h"
 
-namespace qb {
-    namespace io {
-        namespace async {
-            namespace tcp {
+namespace qb::io::async::tcp {
 
-                template<typename _Derived, typename _Session, typename _Prot>
-                class server : public input<server<_Derived, _Session, _Prot>, _Prot> {
-                public:
-                    using base_t = input<server<_Derived, _Session, _Prot>, _Prot>;
-                    using session_map_t = qb::unordered_map<uint64_t, _Session>;
-                private:
-                    session_map_t _sessions;
-                public:
-                    server() = default;
+    template<typename _Derived, typename _Session, typename _Prot>
+    class server : public input<server<_Derived, _Session, _Prot>, _Prot> {
+    public:
+        using base_t = input<server<_Derived, _Session, _Prot>, _Prot>;
+        using session_map_t = qb::unordered_map<uint64_t, _Session>;
+    private:
+        session_map_t _sessions;
+    public:
+        server() = default;
 
-                    session_map_t &sessions() { return _sessions; }
+        session_map_t &sessions() { return _sessions; }
 
-                    void on(typename _Prot::message_type new_io, std::size_t size) {
-                        const auto &it = sessions().emplace(
-                                new_io.ident(),
-                                std::ref(static_cast<_Derived &>(*this))
-                        );
-                        it.first->second.in() = new_io;
-                        it.first->second.start();
-                        static_cast<_Derived &>(*this).on(it.first->second);
-                    }
-
-                    void on(event::disconnected const &) const {
-                        throw std::runtime_error("Server had been disconnected");
-                    }
-
-                    template<typename ..._Args>
-                    void stream(_Args &&...args) {
-                        for (auto &session : sessions())
-                            session.second.publish(std::forward<_Args>(args)...);
-                    }
-
-                    void disconnected(int ident) {
-                        _sessions.erase(ident);
-                    }
-                };
-
-            }
+        void on(typename _Prot::message_type new_io, std::size_t size) {
+            const auto &it = sessions().emplace(
+                    new_io.ident(),
+                    std::ref(static_cast<_Derived &>(*this))
+            );
+            it.first->second.in() = new_io;
+            it.first->second.start();
+            static_cast<_Derived &>(*this).on(it.first->second);
         }
-    }
-}
+
+        void on(event::disconnected const &) const {
+            throw std::runtime_error("Server had been disconnected");
+        }
+
+        template<typename ..._Args>
+        void stream(_Args &&...args) {
+            for (auto &session : sessions())
+                session.second.publish(std::forward<_Args>(args)...);
+        }
+
+        void disconnected(int ident) {
+            _sessions.erase(static_cast<uint64_t>(ident));
+        }
+    };
+
+} // namespace qb::io::async::tcp
 
 #endif //QB_IO_ASYNC_TCP_SERVER_H

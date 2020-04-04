@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
     if (argc > 2)
         port = std::atoi(argv[2]);
 
-    qb::Main main({ 0 });
+    qb::Main main;
     main.core(0)
         .addActor<ServerActor>(iface, port);
 

@@ -18,18 +18,12 @@
 #ifndef QB_IO_ASYNC_EVENT_DISCONNECTED_H
 #define QB_IO_ASYNC_EVENT_DISCONNECTED_H
 
-namespace qb {
-    namespace io {
-        namespace async {
-            namespace event {
+namespace qb::io::async::event {
 
-                struct disconnected {
-                    int reason;
-                };
+    struct disconnected {
+        int reason = 0;
+    };
 
-            }
-        }
-    }
 }
 
 #endif //QB_IO_ASYNC_EVENT_DISCONNECTED_H
