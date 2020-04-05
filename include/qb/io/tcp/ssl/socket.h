@@ -23,7 +23,7 @@
 
 namespace qb::io::tcp::ssl {
 
-SSL_CTX *create_client_context(SSL_METHOD *method);
+SSL_CTX *create_client_context(const SSL_METHOD *method);
 SSL_CTX *create_server_context(const SSL_METHOD *method, std::string const &cert_path,
                                std::string const &key_path);
 
@@ -37,19 +37,20 @@ class QB_API socket : public tcp::socket {
     SSL *_ssl_handle;
     bool _connected;
 
-    void init(SSL *handle);
+    int handCheck();
 
 public:
     socket();
     socket(socket const &rhs) = default;
 
-    [[nodiscard]] SSL *ssl() const;
-    int handCheck();
+    void init(SSL *handle);
     SocketStatus connect(const ip &remoteAddress, unsigned short remotePort, int timeout = 0);
     void disconnect();
+
     int read(void *data, std::size_t size);
     int write(const void *data, std::size_t size);
 
+    [[nodiscard]] SSL *ssl() const;
 private:
     friend class ssl::listener;
 };

@@ -63,22 +63,32 @@ TEST(Session, FromFileToStdout) {
 class MyServer;
 
 class MyClient : public use<MyClient>::tcp::client<protocol::cmd, MyServer> {
+    std::size_t message_count = 0u;
 public:
     explicit MyClient(MyServer &server)
             : client(server) {}
 
-    void on(IOMessage msg, std::size_t size) {
-        std::cout << "read " << size << " bytes" << std::endl;
+    ~MyClient() {
+        EXPECT_EQ(message_count, 4u);
+    }
+
+    void on(IOMessage , std::size_t size) {
+        EXPECT_EQ(size, 4u);
+        ++message_count;
     }
 };
 
 class MyServer : public use<MyServer>::tcp::server<MyClient> {
+    std::size_t connection_count = 0u;
 public:
 
-    void on(MyClient &client) {
-        std::cout << "new client connected" << std::endl;
+    ~MyServer() {
+        EXPECT_EQ(connection_count, 1u);
     }
 
+    void on(MyClient &) {
+        ++connection_count;
+    }
 };
 
 TEST(Session, TcpAccept) {
@@ -89,24 +99,21 @@ TEST(Session, TcpAccept) {
     server.start();
 
     std::thread t([]() {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
         tcp::socket sock;
         sock.connect("127.0.0.1", 60123);
-        const char msg[] = "hello world !\nfoo\nbar\n";
+        const char msg[] = "isn\ndev\nfoo\nbar\n";
         sock.write(msg, sizeof(msg));
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        sock.close();
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        sock.disconnect();
     });
-    async::run(EVRUN_ONCE);
-    async::run(EVRUN_ONCE);
+    for (auto i = 0; i < 5; ++i)
+        async::run(EVRUN_ONCE);
     t.join();
 }
 
 class TcpClient : public use<TcpClient>::tcp::client<protocol::cmd> {
 public:
-
-    void on(char const *message, std::size_t size) {
-        std::cout << "client read " << size << " bytes" << std::endl;
+    void on(char const *, std::size_t size) {
     }
 };
 
@@ -125,12 +132,14 @@ TEST(Session, TcpConnect) {
         }
         client.start();
 
-        const char msg[] = "hello world !\nfoo\nbar\n";
+        const char msg[] = "isn\ndev\nfoo\nbar\n";
         client.publish(msg, sizeof(msg));
         async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        client.in().disconnect();
     });
-    async::run(EVRUN_ONCE);
-    async::run(EVRUN_ONCE);
+    for (auto i = 0; i < 5; ++i)
+        async::run(EVRUN_ONCE);
     t.join();
 }
 
@@ -139,12 +148,18 @@ TEST(Session, TcpConnect) {
 class MySecureServer;
 
 class MySecureClient : public use<MySecureClient>::tcp::ssl::client<protocol::cmd, MySecureServer> {
+    std::size_t message_count = 0u;
 public:
     explicit MySecureClient(MySecureServer &server)
             : client(server) {}
 
-    void on(char const *message, std::size_t size) {
-        std::cout << "read " << size << " bytes" << std::endl;
+    ~MySecureClient() {
+        EXPECT_EQ(message_count, 4u);
+    }
+
+    void on(char const *, std::size_t size) {
+        EXPECT_EQ(size, 4u);
+        ++message_count;
     }
 };
 
@@ -163,6 +178,7 @@ void ShowCerts(SSL* ssl)
         line = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
         printf("Issuer: %s\n", line);
         free(line);
+        printf("Version: %ld\n", X509_get_version(cert));
         X509_free(cert);
     }
     else
@@ -170,11 +186,15 @@ void ShowCerts(SSL* ssl)
 }
 
 class MySecureServer : public use<MySecureServer>::tcp::ssl::server<MySecureClient> {
+    std::size_t connection_count = 0u;
 public:
 
-    void on(MySecureClient &client) {
-        std::cout << "new client connected" << std::endl;
+    ~MySecureServer() {
+        EXPECT_EQ(connection_count, 1u);
+    }
 
+    void on(MySecureClient &) {
+        ++connection_count;
     }
 
 };
@@ -191,24 +211,20 @@ TEST(Session, SecureTcpAccept) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         tcp::ssl::socket sock;
         sock.connect("127.0.0.1", 60123);
-        const char msg[] = "hello world !\nfoo\nbar\n";
-        sock.write(msg, sizeof(msg));
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        sock.close();
+        const char msg[] = "isn\ndev\nfoo\nbar\n";
+        while (!sock.write(msg, sizeof(msg)));
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        sock.disconnect();
     });
-    async::run(EVRUN_ONCE);
-    async::run(EVRUN_ONCE);
-    async::run(EVRUN_ONCE);
+    for (auto i = 0; i < 5; ++i)
+        async::run(EVRUN_ONCE);
     t.join();
 }
 
 class SecureTcpClient : public use<SecureTcpClient>::tcp::ssl::client<protocol::cmd> {
 public:
-
-    void on(char const *message, std::size_t size) {
-        std::cout << "client read " << size << " bytes" << std::endl;
+    void on(char const *, std::size_t size) {
     }
-
 };
 
 TEST(Session, SecureTcpConnect) {
@@ -221,19 +237,28 @@ TEST(Session, SecureTcpConnect) {
 
     std::thread t([]() {
         async::init();
-        SecureTcpClient client;
-        if (SocketStatus::Done != client.in().connect("127.0.0.1", 60123)) {
-            throw std::runtime_error("could not connect");
-        }
-        client.start();
+        // try another method for client
+        auto ctx = tcp::ssl::create_client_context(TLS_client_method());
+        {
+            SecureTcpClient client;
+            // optional init with custom SSL * handler
+            client.in().init(SSL_new(ctx));
+            if (SocketStatus::Done != client.in().connect("127.0.0.1", 60123)) {
+                throw std::runtime_error("could not connect");
+            }
+            ShowCerts(client.in().ssl());
+            client.start();
 
-        const char msg[] = "hello world !\nfoo\nbar\n";
-        client.publish(msg, sizeof(msg));
-        async::run(EVRUN_ONCE);
+            const char msg[] = "isn\ndev\nfoo\nbar\n";
+            client.publish(msg, sizeof(msg));
+            async::run(EVRUN_ONCE);
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+            client.in().disconnect();
+        }
+        SSL_CTX_free(ctx);
     });
-    async::run(EVRUN_ONCE);
-    async::run(EVRUN_ONCE);
-    async::run(EVRUN_ONCE);
+    for (auto i = 0; i < 5; ++i)
+        async::run(EVRUN_ONCE);
     t.join();
 }
 

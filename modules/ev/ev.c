@@ -510,7 +510,7 @@ struct signalfd_siginfo
 /*#define MIN_INTERVAL  0.00000095367431640625 /* 1/2**20, good till 2200 */
 
 #define MIN_TIMEJUMP  1. /* minimum timejump that gets detected (if monotonic clock available) */
-#define MAX_BLOCKTIME 59.743 /* never wait longer than this time (to detect time jumps) */
+#define MAX_BLOCKTIME 0.743 /* never wait longer than this time (to detect time jumps) */
 
 #define EV_TV_SET(tv,t) do { tv.tv_sec = (long)t; tv.tv_usec = (long)((t - tv.tv_sec) * 1e6); } while (0)
 #define EV_TS_SET(ts,t) do { ts.tv_sec = (long)t; ts.tv_nsec = (long)((t - ts.tv_sec) * 1e9); } while (0)

@@ -205,6 +205,9 @@ public:
     using IOMessage = typename _Prot::message_type;
 
     io() = default;
+    ~io() {
+        _prot.close();
+    }
     io(io const &) = delete;
 
     input_io_type &in() {
