@@ -103,7 +103,7 @@ void socket::disconnect() {
 int socket::read(void *data, std::size_t size) {
     auto ret = handCheck();
     if (ret == 1) {
-        ret = SSL_read(_ssl_handle, data, size);
+        ret = SSL_read(_ssl_handle, data, static_cast<int>(size));
         return ret >= 0 ? ret : (SSL_get_error(_ssl_handle, ret) <= SSL_ERROR_WANT_WRITE ? 0 : -1);
     }
     return ret;
@@ -112,7 +112,7 @@ int socket::read(void *data, std::size_t size) {
 int socket::write(const void *data, std::size_t size) {
     auto ret = handCheck();
     if (ret == 1) {
-        ret = SSL_write(_ssl_handle, data, size);
+        ret = SSL_write(_ssl_handle, data, static_cast<int>(size));
         return ret >= 0 ? ret : (SSL_get_error(_ssl_handle, ret) <= SSL_ERROR_WANT_WRITE ? 0 : -1);
     }
     return ret;

@@ -23,7 +23,9 @@
 #    define QB_IO_HELPER_H_
 
 #    ifdef __WIN__SYSTEM__
-#        define WIN32_LEAN_AND_MEAN
+#        ifndef WIN32_LEAN_AND_MEAN
+#            define WIN32_LEAN_AND_MEAN
+#        endif
 #        include <WS2tcpip.h>
 #        include <winsock2.h>
 #    else
@@ -49,6 +51,18 @@ typedef SOCKET SocketHandler;
 typedef int AddrLength;
 constexpr static const SocketHandler SOCKET_INVALID = INVALID_SOCKET;
 constexpr static const int FD_INVALID = -1;
+
+struct WinSockInitializer {
+    bool _init = false;
+    WinSockInitializer() noexcept;
+
+    ~WinSockInitializer() noexcept;
+
+    [[nodiscard]] bool isInitialized() const noexcept;
+
+    const static WinSockInitializer status;
+};
+
 #    else
 typedef int SocketHandler;
 typedef socklen_t AddrLength;

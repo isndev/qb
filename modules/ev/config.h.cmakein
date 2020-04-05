@@ -25,6 +25,7 @@
 #cmakedefine HAVE_FLOOR 1
 #cmakedefine EV_USE_SELECT 1
 #cmakedefine EV_SELECT_IS_WINSOCKET 1
+#cmakedefine EV_USE_WSASOCKET 1
 
 #define PACKAGE "@CMAKE_PROJECT_NAME@"
 #define VERSION "@LIBEV_VERSION@"
