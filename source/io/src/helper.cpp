@@ -72,7 +72,9 @@ namespace qb::io {
         }
 
         ~SocketInitializer() noexcept {
-            WSACleanup();
+#ifndef QB_IO_WITH_SSL
+                WSACleanup();
+#endif
         }
     };
 
