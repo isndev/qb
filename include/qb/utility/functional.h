@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,23 +17,21 @@
 
 #ifndef QB_FUNCTIONAL_H
 #define QB_FUNCTIONAL_H
-# include <functional>
+#include <functional>
 
 namespace qb {
 
-    template<typename T>
-    void _hash_combine (size_t& seed, const T& val)
-    {
-        seed ^= std::hash<T>()(val) + 0x9e3779b9 + (seed << 6u) + (seed >> 2u);
-    }
-
-    template<typename... Types>
-    size_t hash_combine (const Types&... args)
-    {
-        size_t seed = 0;
-        (_hash_combine(seed,args) , ... ); // create hash value with seed over all args
-        return seed;
-    }
+template <typename T>
+void _hash_combine(size_t &seed, const T &val) {
+    seed ^= std::hash<T>()(val) + 0x9e3779b9 + (seed << 6u) + (seed >> 2u);
 }
 
-#endif //QB_FUNCTIONAL_H
+template <typename... Types>
+size_t hash_combine(const Types &... args) {
+    size_t seed = 0;
+    (_hash_combine(seed, args), ...); // create hash value with seed over all args
+    return seed;
+}
+} // namespace qb
+
+#endif // QB_FUNCTIONAL_H

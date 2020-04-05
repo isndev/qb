@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,38 +15,37 @@
  *         limitations under the License.
  */
 
-#include            "../ip.h"
-#include            "../system/socket.h"
+#include "../ip.h"
+#include "../system/socket.h"
 
-#ifndef             QB_IO_TCP_SOCKET_H_
-# define            QB_IO_TCP_SOCKET_H_
+#ifndef QB_IO_TCP_SOCKET_H_
+#    define QB_IO_TCP_SOCKET_H_
 
 namespace qb::io::tcp {
 
-    /*!
-     * @class socket tcp/socket.h qb/io/tcp/socket.h
-     * @ingroup TCP
-     */
-    class QB_API socket
-            : public sys::socket<SocketType::TCP> {
-    public:
-        socket();
-        socket(socket const &rhs) = default;
-//                socket(SocketHandler fd);
+/*!
+ * @class socket tcp/socket.h qb/io/tcp/socket.h
+ * @ingroup TCP
+ */
+class QB_API socket : public sys::socket<SocketType::TCP> {
+public:
+    socket() = default;
+    socket(socket const &rhs) = default;
+    //                socket(SocketHandler fd);
 
-        [[nodiscard]] ip getRemoteAddress() const;
-        [[nodiscard]] unsigned short getLocalPort() const;
-        [[nodiscard]] unsigned short getRemotePort() const;
+    [[nodiscard]] ip getRemoteAddress() const;
+    [[nodiscard]] unsigned short getLocalPort() const;
+    [[nodiscard]] unsigned short getRemotePort() const;
 
-        SocketStatus connect(const ip &remoteAddress, unsigned short remotePort, int timeout = 0);
-        void disconnect();
+    SocketStatus connect(const ip &remoteAddress, unsigned short remotePort, int timeout = 0);
+    void disconnect();
 
-        int read(void *data, std::size_t size) const;
-        int write(const void *data, std::size_t size) const;
+    int read(void *data, std::size_t size) const;
+    int write(const void *data, std::size_t size) const;
 
-    private:
-        friend class listener;
-    };
+private:
+    friend class listener;
+};
 
 } // namespace qb::io::tcp
 

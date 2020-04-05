@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,52 +15,50 @@
  *         limitations under the License.
  */
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include "../helper.h"
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #ifndef _WIN32
 
-extern "C"
-{
-int open(char const* pathname, int flags, ...);
+extern "C" {
+int open(char const *pathname, int flags, ...);
 }
 #else
-#include <io.h>
+#    include <io.h>
 #endif // !_WIN32
 
-#ifndef             QB_IO_SYS_FILE_H_
-# define            QB_IO_SYS_FILE_H_
+#ifndef QB_IO_SYS_FILE_H_
+#    define QB_IO_SYS_FILE_H_
 
 namespace qb::io::sys {
 
-    /*!
-    * @class file sys/file.h qb/io/sys/file.h
-    * @ingroup SYS
-    */
-    class QB_API file {
-        int _handle;
+/*!
+ * @class file sys/file.h qb/io/sys/file.h
+ * @ingroup SYS
+ */
+class QB_API file {
+    int _handle;
 
-    public:
+public:
+    file();
+    file(file const &) = default;
+    explicit file(int fd);
+    explicit file(std::string const &fname, int flags = O_RDWR);
 
-        file();
-        file(file const &) = default;
-        explicit file(int fd);
-        explicit file(std::string const &fname, int flags = O_RDWR);
+    [[nodiscard]] int ident() const;
+    [[nodiscard]] int fd() const;
+    [[nodiscard]] bool good() const;
+    void open(std::string const &fname, int flags = O_RDWR);
+    void open(int fd);
+    int write(const char *data, std::size_t size);
+    int read(char *data, std::size_t size);
+    void close();
 
-        [[nodiscard]] int ident() const;
-        [[nodiscard]] int fd() const;
-        [[nodiscard]] bool good() const;
-        void open(std::string const &fname, int flags = O_RDWR);
-        void open(int fd);
-        int write(const char *data, std::size_t size);
-        int read(char *data, std::size_t size);
-        void close();
-
-        // unused
-        [[maybe_unused]] void setBlocking(bool) {}
-    };
+    // unused
+    [[maybe_unused]] void setBlocking(bool) {}
+};
 
 } // namespace qb::io::sys
 

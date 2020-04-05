@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,33 +15,33 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_PROT_CMD_H_
-# define            QB_IO_PROT_CMD_H_
+#ifndef QB_IO_PROT_CMD_H_
+#define QB_IO_PROT_CMD_H_
 #include "../stream.h"
 
 namespace qb::io::protocol {
 
-    template<typename _IO_>
-    class cmd : public _IO_ {
-    public:
-        using message_type = const char *;
+template <typename _IO_>
+class cmd : public _IO_ {
+public:
+    using message_type = const char *;
 
-        int getMessageSize() {
-            auto &buffer = this->_in_buffer;
-            auto i = buffer.begin();
-            while (i < buffer.end()) {
-                if (buffer.data()[i] == '\n')
-                    return i - buffer.begin() + 1;
-                ++i;
-            }
-            return 0;
+    int getMessageSize() {
+        auto &buffer = this->_in_buffer;
+        auto i = buffer.begin();
+        while (i < buffer.end()) {
+            if (buffer.data()[i] == '\n')
+                return i - buffer.begin() + 1;
+            ++i;
         }
+        return 0;
+    }
 
-        message_type getMessage(int) {
-            auto &buffer = this->_in_buffer;
-            return buffer.data() + buffer.begin();
-        }
-    };
+    message_type getMessage(int) {
+        auto &buffer = this->_in_buffer;
+        return buffer.data() + buffer.begin();
+    }
+};
 
 } // namespace qb::io::protocol
 

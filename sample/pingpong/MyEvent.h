@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,15 @@
  */
 
 // MyEvent.h
-#include <vector>
 #include <qb/event.h>
+#include <vector>
 #ifndef MYEVENT_H_
-# define MYEVENT_H_
+#    define MYEVENT_H_
 // Event example
 struct MyEvent
-        : public qb::Event // /!\ should inherit from qb event
+    : public qb::Event // /!\ should inherit from qb event
 {
-    int data; // trivial data
+    int data;                   // trivial data
     std::vector<int> container; // dynamic data
     // /!\ an event must never store an address of it own data
     // /!\ ex : int *ptr = &data;

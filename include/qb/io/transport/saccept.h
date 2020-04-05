@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,43 +15,46 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_TRANSPORT_SACCEPT_H_
-# define            QB_IO_TRANSPORT_SACCEPT_H_
+#ifndef QB_IO_TRANSPORT_SACCEPT_H_
+#define QB_IO_TRANSPORT_SACCEPT_H_
 #include "../tcp/ssl/listener.h"
 
 namespace qb::io::transport {
 
-    class saccept {
-        io::tcp::ssl::listener _io;
-        io::tcp::ssl::socket _accepted_io;
-    public:
-        using input_io_type = io::tcp::ssl::listener;
-        using message_type = io::tcp::ssl::socket;
+class saccept {
+    io::tcp::ssl::listener _io;
+    io::tcp::ssl::socket _accepted_io;
 
-        io::tcp::ssl::listener &in() {
-            return _io;
-        }
+public:
+    using input_io_type = io::tcp::ssl::listener;
+    using message_type = io::tcp::ssl::socket;
 
-        int read() {
-            if (_io.accept(_accepted_io) == io::SocketStatus::Done)
-                return _accepted_io.ident();
-            return -1;
-        }
+    io::tcp::ssl::listener &in() {
+        return _io;
+    }
 
-        void flush(std::size_t ) {
-            _accepted_io = io::tcp::ssl::socket();
-        }
+    int read() {
+        if (_io.accept(_accepted_io) == io::SocketStatus::Done)
+            return _accepted_io.ident();
+        return -1;
+    }
 
-        void close() {
-            _io.close();
-        }
+    void flush(std::size_t) {
+        _accepted_io = io::tcp::ssl::socket();
+    }
 
-        int getMessageSize() { return _accepted_io.ident(); }
+    void close() {
+        _io.close();
+    }
 
-        message_type getMessage(int) {
-            return _accepted_io;
-        }
-    };
+    int getMessageSize() {
+        return _accepted_io.ident();
+    }
+
+    message_type getMessage(int) {
+        return _accepted_io;
+    }
+};
 
 } // namespace qb::io::transport
 

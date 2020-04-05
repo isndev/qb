@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,69 +15,68 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_ASYNC_H_
-# define            QB_IO_ASYNC_H_
+#ifndef QB_IO_ASYNC_H_
+#define QB_IO_ASYNC_H_
 
-#include "async/io.h"
 #include "async/event/all.h"
-#include "async/tcp/server.h"
+#include "async/io.h"
 #include "async/tcp/client.h"
-#include "async/udp/server.h"
+#include "async/tcp/server.h"
 #include "async/udp/client.h"
+#include "async/udp/server.h"
 
 #include "transport/accept.h"
 #include "transport/tcp.h"
 
 #ifdef QB_IO_WITH_SSL
-#include "transport/saccept.h"
-#include "transport/stcp.h"
+#    include "transport/saccept.h"
+#    include "transport/stcp.h"
 #endif
 
 namespace qb::io {
 
-    template <typename _Derived>
-    struct use {
-        template <typename _Protocol>
-        using input = async::input<_Derived, _Protocol>;
-        template <typename _Protocol>
-        using output = async::output<_Derived, _Protocol>;
-        template <typename _Protocol>
-        using io = async::io<_Derived, _Protocol>;
+template <typename _Derived>
+struct use {
+    template <typename _Protocol>
+    using input = async::input<_Derived, _Protocol>;
+    template <typename _Protocol>
+    using output = async::output<_Derived, _Protocol>;
+    template <typename _Protocol>
+    using io = async::io<_Derived, _Protocol>;
 
-        struct tcp {
+    struct tcp {
 
-            template <typename _Client>
-            using server = async::tcp::server<_Derived, _Client, transport::accept>;
+        template <typename _Client>
+        using server = async::tcp::server<_Derived, _Client, transport::accept>;
 
-            template <template<typename _Transport> typename _Protocol, typename _Server = void>
-            using client = async::tcp::client<_Derived, _Protocol, transport::tcp, _Server>;
-
-#ifdef QB_IO_WITH_SSL
-            struct ssl {
-                template <typename _Client>
-                using server = async::tcp::server<_Derived, _Client, transport::saccept>;
-
-                template <template<typename _BaseProtocol> typename _Protocol, typename _Server = void>
-                using client = async::tcp::client<_Derived, _Protocol, transport::stcp, _Server>;
-            };
-#endif
-        };
-
-        struct udp {
-
-            template <typename _Client>
-            using server = async::udp::server<_Derived, _Client>;
-
-            template <template<typename _BaseProtocol> typename _Protocol, typename _Server = void>
-            using client = async::udp::client<_Derived, _Protocol, _Server>;
+        template <template <typename _Transport> typename _Protocol, typename _Server = void>
+        using client = async::tcp::client<_Derived, _Protocol, transport::tcp, _Server>;
 
 #ifdef QB_IO_WITH_SSL
-#endif
+        struct ssl {
+            template <typename _Client>
+            using server = async::tcp::server<_Derived, _Client, transport::saccept>;
+
+            template <template <typename _BaseProtocol> typename _Protocol, typename _Server = void>
+            using client = async::tcp::client<_Derived, _Protocol, transport::stcp, _Server>;
         };
-
-        using timeout = async::with_timeout<_Derived>;
-
+#endif
     };
+
+    struct udp {
+
+        template <typename _Client>
+        using server = async::udp::server<_Derived, _Client>;
+
+        template <template <typename _BaseProtocol> typename _Protocol, typename _Server = void>
+        using client = async::udp::client<_Derived, _Protocol, _Server>;
+
+#ifdef QB_IO_WITH_SSL
+#endif
+    };
+
+    using timeout = async::with_timeout<_Derived>;
+};
 } // namespace qb::io
 
 #endif // QB_IO_ASYNC_H_

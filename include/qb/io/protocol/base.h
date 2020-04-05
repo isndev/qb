@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,36 +15,36 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_PROT_BASE_H_
-# define            QB_IO_PROT_BASE_H_
+#ifndef QB_IO_PROT_BASE_H_
+#define QB_IO_PROT_BASE_H_
 #include "../stream.h"
 
 namespace qb {
-    namespace io {
-        namespace protocol {
+namespace io {
+namespace protocol {
 
-            template<typename _Stream, char _SEP = '\n'>
-            class Base : public _Stream {
-            public:
-                using message_type = const char *;
+template <typename _Stream, char _SEP = '\n'>
+class Base : public _Stream {
+public:
+    using message_type = const char *;
 
-                int getMessageSize() {
-                    auto i = this->_in_buffer.begin();
-                    while (i < this->_in_buffer.end()) {
-                        if (this->_in_buffer.data()[i] == _SEP)
-                            return i - this->_in_buffer.begin() + 1;
-                        ++i;
-                    }
-                    return 0;
-                }
+    int getMessageSize() {
+        auto i = this->_in_buffer.begin();
+        while (i < this->_in_buffer.end()) {
+            if (this->_in_buffer.data()[i] == _SEP)
+                return i - this->_in_buffer.begin() + 1;
+            ++i;
+        }
+        return 0;
+    }
 
-                message_type getMessage() {
-                    return this->_in_buffer.data() + this->_in_buffer.begin();
-                }
-            };
+    message_type getMessage() {
+        return this->_in_buffer.data() + this->_in_buffer.begin();
+    }
+};
 
-        } // namespace protocol
-    } // namespace io
+} // namespace protocol
+} // namespace io
 } // namespace qb
 
 #endif // QB_IO_PROT_BASE_H_

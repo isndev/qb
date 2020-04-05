@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,30 +15,30 @@
  *         limitations under the License.
  */
 
-#include            "../listener.h"
-#include            "socket.h"
+#include "../listener.h"
+#include "socket.h"
 
-#ifndef             QB_IO_TCP_SSL_LISTENER_H_
-# define            QB_IO_TCP_SSL_LISTENER_H_
+#ifndef QB_IO_TCP_SSL_LISTENER_H_
+#    define QB_IO_TCP_SSL_LISTENER_H_
 
 namespace qb::io::tcp::ssl {
 
-    /*!
-     * @class listener tcp/listener.h qb/io/tcp/ssl/listener.h
-     * @ingroup TCP
-     */
-    class QB_API listener
-            : public tcp::listener {
-        SSL_CTX *_ctx;
-    public:
-        listener();
-        listener(listener const &) = delete;
+/*!
+ * @class listener tcp/listener.h qb/io/tcp/ssl/listener.h
+ * @ingroup TCP
+ */
+class QB_API listener : public tcp::listener {
+    SSL_CTX *_ctx;
 
-        ~listener();
+public:
+    listener();
+    listener(listener const &) = delete;
 
-        void init(SSL_CTX *ctx);
-        SocketStatus accept(ssl::socket &socket);
-    };
+    ~listener();
+
+    void init(SSL_CTX *ctx);
+    SocketStatus accept(ssl::socket &socket);
+};
 
 } // namespace qb::io::tcp::ssl
 

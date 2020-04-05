@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,39 +22,33 @@
 
 namespace qb::io::async::tcp {
 
-    template<typename _Derived,
-            template<typename _BaseProt> typename _Prot,
-            typename _BaseProt,
-            typename _Server = void>
-    class client
-            : public io<_Derived, _Prot<_BaseProt>> {
-        using base_t = io<_Derived, _Prot<_BaseProt>>;
-    protected:
-        _Server &_server;
-    public:
-        constexpr static const bool has_server = true;
+template <typename _Derived, template <typename _BaseProt> typename _Prot, typename _BaseProt,
+          typename _Server = void>
+class client : public io<_Derived, _Prot<_BaseProt>> {
+    using base_t = io<_Derived, _Prot<_BaseProt>>;
 
-        explicit client(_Server &server)
-                : _server(server) {}
+protected:
+    _Server &_server;
 
-        inline _Server &server() {
-            return _server;
-        }
+public:
+    constexpr static const bool has_server = true;
 
-    };
+    explicit client(_Server &server)
+        : _server(server) {}
 
-    template<typename _Derived,
-            template<typename _BaseProt> typename _Prot,
-            typename _BaseProt>
-    class client<_Derived, _Prot, _BaseProt, void>
-            : public io<_Derived, _Prot<_BaseProt>> {
-        using base_t = io<_Derived, _Prot<_BaseProt>>;
-    public:
+    inline _Server &server() {
+        return _server;
+    }
+};
 
-        client() = default;
+template <typename _Derived, template <typename _BaseProt> typename _Prot, typename _BaseProt>
+class client<_Derived, _Prot, _BaseProt, void> : public io<_Derived, _Prot<_BaseProt>> {
+    using base_t = io<_Derived, _Prot<_BaseProt>>;
 
-    };
+public:
+    client() = default;
+};
 
 } // namespace qb::io::async::tcp
 
-#endif //QB_IO_ASYNC_TCP_SESSION_H
+#endif // QB_IO_ASYNC_TCP_SESSION_H

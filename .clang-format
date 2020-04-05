@@ -13,5 +13,6 @@ AlignEscapedNewlines: Left
 AllowShortFunctionsOnASingleLine: Empty
 AlwaysBreakTemplateDeclarations: true
 BreakConstructorInitializers: BeforeComma
+BreakInheritanceList: BeforeComma
 IndentPPDirectives: AfterHash
-PointerAlignment: Left
+PointerAlignment: Right

@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,15 @@
 #include <gtest/gtest.h>
 #include <qb/main.h>
 
-class TestActor : public qb::Actor
-{
+class TestActor : public qb::Actor {
     bool keep_live = false;
     bool throw_except = false;
+
 public:
     TestActor() = default;
-    explicit TestActor(bool live, bool except = false) : keep_live(live), throw_except(except) {}
+    explicit TestActor(bool live, bool except = false)
+        : keep_live(live)
+        , throw_except(except) {}
     bool onInit() final {
         if (throw_except)
             throw std::runtime_error("Test Exception Error");
@@ -52,7 +54,7 @@ TEST(Main, StartMultiCoreShouldAbortIfNoActor) {
     qb::Main main;
 
     for (auto i = 0u; i < max_core; ++i) {
-            main.addActor<TestActor>(i);
+        main.addActor<TestActor>(i);
     }
 
     main.core(fail_core).clear();

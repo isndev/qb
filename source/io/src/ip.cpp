@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,126 +15,123 @@
  *         limitations under the License.
  */
 
-#include            <qb/io/ip.h>
-#include            <qb/io/helper.h>
+#include <qb/io/helper.h>
+#include <qb/io/ip.h>
 
 namespace qb::io {
 
-    const ip ip::None(INADDR_NONE);
-    const ip ip::Any(0, 0, 0, 0);
-    const ip ip::LocalHost(127, 0, 0, 1);
+const ip ip::None(INADDR_NONE);
+const ip ip::Any(0, 0, 0, 0);
+const ip ip::LocalHost(127, 0, 0, 1);
 
-    ip::ip() noexcept :
-            _address(INADDR_NONE) {
-    }
+ip::ip() noexcept
+    : _address(INADDR_NONE) {}
 
-    ip::ip(const std::string &address) noexcept :
-            _address(0) {
-        resolve(address);
-    }
+ip::ip(const std::string &address) noexcept
+    : _address(0) {
+    resolve(address);
+}
 
-    ip::ip(const char *address) noexcept :
-            _address(0) {
-        resolve(address);
-    }
+ip::ip(const char *address) noexcept
+    : _address(0) {
+    resolve(address);
+}
 
-    ip::ip(uint8_t const byte0, uint8_t const byte1, uint8_t const byte2, uint8_t const byte3) noexcept :
-            _address(htonl((byte0 << 24) | (byte1 << 16) | (byte2 << 8) | byte3)) {
-    }
+ip::ip(uint8_t const byte0, uint8_t const byte1, uint8_t const byte2, uint8_t const byte3) noexcept
+    : _address(htonl((byte0 << 24) | (byte1 << 16) | (byte2 << 8) | byte3)) {}
 
-    ip::ip(uint32_t const address) noexcept :
-            _address(htonl(address)) {
-    }
+ip::ip(uint32_t const address) noexcept
+    : _address(htonl(address)) {}
 
-    std::string ip::toString() const {
-        char buffer[32];
-        in_addr address;
-        address.s_addr = _address;
-        inet_ntop(AF_INET, &address, buffer, 32);
-        return {buffer};
-    }
+std::string ip::toString() const {
+    char buffer[32];
+    in_addr address;
+    address.s_addr = _address;
+    inet_ntop(AF_INET, &address, buffer, 32);
+    return {buffer};
+}
 
-    uint32_t ip::toInteger() const {
-        return ntohl(_address);
-    }
+uint32_t ip::toInteger() const {
+    return ntohl(_address);
+}
 
-    void ip::resolve(const std::string &address) noexcept {
-        _address = ip::None.toInteger();
+void ip::resolve(const std::string &address) noexcept {
+    _address = ip::None.toInteger();
 
-        if (address == "255.255.255.255") {
-            // The broadcast address needs to be handled explicitly,
-            // because it is also the value returned by inet_addr on error
-            _address = INADDR_BROADCAST;
-        } else if (address == "0.0.0.0") {
-            _address = INADDR_ANY;
+    if (address == "255.255.255.255") {
+        // The broadcast address needs to be handled explicitly,
+        // because it is also the value returned by inet_addr on error
+        _address = INADDR_BROADCAST;
+    } else if (address == "0.0.0.0") {
+        _address = INADDR_ANY;
+    } else {
+        // Try to convert the address as a byte representation ("xxx.xxx.xxx.xxx")
+        in_addr addr;
+
+        if (inet_pton(AF_INET, address.c_str(), &addr)) {
+            _address = static_cast<uint32_t>(addr.s_addr);
         } else {
-            // Try to convert the address as a byte representation ("xxx.xxx.xxx.xxx")
-            in_addr addr;
+            // Not a valid address, try to convert it as a host name
+            struct addrinfo hints;
+            memset(&hints, 0, sizeof(hints));
+            hints.ai_family = AF_INET; /* v4 or v6 is fine. */
+            hints.ai_socktype = SOCK_STREAM;
+            hints.ai_protocol = IPPROTO_TCP; /* We want a TCP socket */
+            hints.ai_flags = AI_PASSIVE;     /* For wildcard IP address */
 
-            if (inet_pton(AF_INET, address.c_str(), &addr)) {
-                _address = static_cast<uint32_t>(addr.s_addr);
-            } else {
-                // Not a valid address, try to convert it as a host name
-                struct addrinfo hints;
-                memset(&hints, 0, sizeof(hints));
-                hints.ai_family = AF_INET; /* v4 or v6 is fine. */
-                hints.ai_socktype = SOCK_STREAM;
-                hints.ai_protocol = IPPROTO_TCP; /* We want a TCP socket */
-                hints.ai_flags = AI_PASSIVE;    /* For wildcard IP address */
+            /* Look up the hostname. */
+            struct addrinfo *answer = nullptr;
+            int err = getaddrinfo(address.c_str(), nullptr, &hints, &answer);
+            if (!err) {
+                struct addrinfo *rp = answer;
+                while (rp != nullptr) {
+                    struct sockaddr_in *a = reinterpret_cast<struct sockaddr_in *>(rp->ai_addr);
 
-                /* Look up the hostname. */
-                struct addrinfo* answer = nullptr;
-                int err = getaddrinfo(address.c_str(), nullptr, &hints, &answer);
-                if (!err) {
-                    struct addrinfo* rp = answer;
-                    while ( rp != nullptr) {
-                        struct sockaddr_in* a = reinterpret_cast<struct sockaddr_in*>(rp->ai_addr);
-
-                        if (a->sin_addr.s_addr) {
-                            _address = a->sin_addr.s_addr;
-                        }
-                        rp = rp->ai_next;
+                    if (a->sin_addr.s_addr) {
+                        _address = a->sin_addr.s_addr;
                     }
+                    rp = rp->ai_next;
                 }
-                freeaddrinfo(answer);
             }
+            freeaddrinfo(answer);
         }
     }
+}
 
-    bool operator==(const ip &left, const ip &right) {
-        return !(left < right) && !(right < left);
-    }
+bool operator==(const ip &left, const ip &right) {
+    return !(left < right) && !(right < left);
+}
 
-    bool operator!=(const ip &left, const ip &right) {
-        return !(left == right);
-    }
+bool operator!=(const ip &left, const ip &right) {
+    return !(left == right);
+}
 
-    bool operator<(const ip &left, const ip &right) {
-        return left._address < right._address;
-    }
+bool operator<(const ip &left, const ip &right) {
+    return left._address < right._address;
+}
 
-    bool operator>(const ip &left, const ip &right) {
-        return right < left;
-    }
+bool operator>(const ip &left, const ip &right) {
+    return right < left;
+}
 
-    bool operator<=(const ip &left, const ip &right) {
-        return !(right < left);
-    }
+bool operator<=(const ip &left, const ip &right) {
+    return !(right < left);
+}
 
-    bool operator>=(const ip &left, const ip &right) {
-        return !(left < right);
-    }
+bool operator>=(const ip &left, const ip &right) {
+    return !(left < right);
+}
 
-    std::istream &operator>>(std::istream &stream, ip &address) {
-        std::string str;
-        stream >> str;
-        address = ip(str);
+std::istream &operator>>(std::istream &stream, ip &address) {
+    std::string str;
+    stream >> str;
+    address = ip(str);
 
-        return stream;
-    }
+    return stream;
+}
 
-    std::ostream &operator<<(std::ostream &stream, const ip &address) {
-        return stream << address.toString();
-    }
+std::ostream &operator<<(std::ostream &stream, const ip &address) {
+    return stream << address.toString();
+}
 
 } // namespace qb::io

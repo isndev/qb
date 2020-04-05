@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,35 +19,35 @@
 
 namespace qb {
 
-    CoreSet::CoreSet(qb::unordered_set <CoreId> const &set) noexcept
-            : _raw_set(set)
-            , _nb_core(set.size())
-            , _size(*std::max_element(set.cbegin(), set.cend()) + 1u) {
-        uint8_t idx = 0;
-        for (auto id : set)
-            _set[id] = idx++;
-    }
-
-    CoreId CoreSet::resolve(std::size_t id) const noexcept {
-        return _set.at(id);
-    }
-
-    std::size_t CoreSet::getSize() const noexcept {
-        return _size;
-    }
-
-    std::size_t CoreSet::getNbCore() const noexcept {
-        return _nb_core;
-    }
-
-    const qb::unordered_set<CoreId> &CoreSet::raw() const noexcept {
-        return _raw_set;
-    }
-
-    CoreSet CoreSet::build(uint32_t const nb_core) noexcept {
-        qb::unordered_set<CoreId> set;
-        for (CoreId i = 0; i < nb_core; ++i)
-            set.insert(i);
-        return CoreSet{set};
-    }
+CoreSet::CoreSet(qb::unordered_set<CoreId> const &set) noexcept
+    : _raw_set(set)
+    , _nb_core(set.size())
+    , _size(*std::max_element(set.cbegin(), set.cend()) + 1u) {
+    uint8_t idx = 0;
+    for (auto id : set)
+        _set[id] = idx++;
 }
+
+CoreId CoreSet::resolve(std::size_t id) const noexcept {
+    return _set.at(id);
+}
+
+std::size_t CoreSet::getSize() const noexcept {
+    return _size;
+}
+
+std::size_t CoreSet::getNbCore() const noexcept {
+    return _nb_core;
+}
+
+const qb::unordered_set<CoreId> &CoreSet::raw() const noexcept {
+    return _raw_set;
+}
+
+CoreSet CoreSet::build(uint32_t const nb_core) noexcept {
+    qb::unordered_set<CoreId> set;
+    for (CoreId i = 0; i < nb_core; ++i)
+        set.insert(i);
+    return CoreSet{set};
+}
+} // namespace qb

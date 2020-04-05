@@ -6,12 +6,12 @@
 #include <qb/string.h>
 
 #ifndef QB_CMDEVENT_H
-#define QB_CMDEVENT_H
+#    define QB_CMDEVENT_H
 
 struct CommandEvent : public qb::Event {
     qb::string<4077> message;
 };
 
-//static_assert(sizeof(CommandEvent) != 4096)
+// static_assert(sizeof(CommandEvent) != 4096)
 
-#endif //QB_CMDEVENT_H
+#endif // QB_CMDEVENT_H

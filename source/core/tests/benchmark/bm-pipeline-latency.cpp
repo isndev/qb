@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,19 @@
  *         limitations under the License.
  */
 
-#include <benchmark/benchmark.h>
-#include <qb/main.h>
-#include "../shared/TestProducer.h"
 #include "../shared/TestConsumer.h"
 #include "../shared/TestEvent.h"
+#include "../shared/TestProducer.h"
+#include <benchmark/benchmark.h>
+#include <qb/main.h>
 
 template <typename Event>
-static void BM_Unicast_Latency(benchmark::State& state) {
+static void BM_Unicast_Latency(benchmark::State &state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
         const auto nb_actor = state.range(1);
         const auto nb_core = static_cast<uint32_t>(state.range(2));
-        qb::Main  main;
+        qb::Main main;
 
         qb::ActorIdList ids = {};
         for (auto i = 0; i < nb_actor; ++i) {
@@ -41,7 +41,7 @@ static void BM_Unicast_Latency(benchmark::State& state) {
     }
 }
 
-static void CustomArguments(benchmark::internal::Benchmark* b) {
+static void CustomArguments(benchmark::internal::Benchmark *b) {
     auto nb_core = std::thread::hardware_concurrency();
     for (auto i = 1u; i <= nb_core; i *= 2) {
         for (int j = i - 1; j <= static_cast<int>(nb_core * 10); j *= 10) {
@@ -54,8 +54,9 @@ static void CustomArguments(benchmark::internal::Benchmark* b) {
 
 // Register the function as a benchmark
 BENCHMARK_TEMPLATE(BM_Unicast_Latency, LightEvent)
-        ->Apply(CustomArguments)
-        ->ArgNames({"NB_EVENTS", "NB_ACTORS", "NB_CORE"})
-        ->Unit(benchmark::kMillisecond);;
+    ->Apply(CustomArguments)
+    ->ArgNames({"NB_EVENTS", "NB_ACTORS", "NB_CORE"})
+    ->Unit(benchmark::kMillisecond);
+
 
 BENCHMARK_MAIN();

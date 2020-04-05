@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,254 +18,258 @@
 #ifndef QB_IO_ASYNC_IO_H
 #define QB_IO_ASYNC_IO_H
 
-#include <qb/utility/type_traits.h>
-#include "listener.h"
-#include "event/io.h"
-#include "event/eos.h"
 #include "event/disconnected.h"
+#include "event/eos.h"
+#include "event/io.h"
 #include "event/timer.h"
+#include "listener.h"
+#include <qb/utility/type_traits.h>
 
 GENERATE_HAS_METHOD(on)
 
 namespace qb::io::async {
 
-    template <typename _Derived, typename _EV_EVENT>
-    class base {
-    protected:
-        _EV_EVENT &_async_event;
-        base() : _async_event(listener::current.registerEvent<_EV_EVENT>(static_cast<_Derived &>(*this))) {}
-        ~base() {
-            listener::current.unregisterEvent(_async_event._interface);
-        }
-    };
+template <typename _Derived, typename _EV_EVENT>
+class base {
+protected:
+    _EV_EVENT &_async_event;
+    base()
+        : _async_event(listener::current.registerEvent<_EV_EVENT>(static_cast<_Derived &>(*this))) {
+    }
+    ~base() {
+        listener::current.unregisterEvent(_async_event._interface);
+    }
+};
 
-    template <typename _Derived>
-    class with_timeout : public base<with_timeout<_Derived>, event::timer> {
-        double _timeout;
-        double _last_activity;
-    public:
-        explicit with_timeout(double timeout = 3)
-                : _timeout(timeout)
-                , _last_activity(0.) {
-            if (timeout > 0.)
-                this->_async_event.start(_timeout);
-        }
+template <typename _Derived>
+class with_timeout : public base<with_timeout<_Derived>, event::timer> {
+    double _timeout;
+    double _last_activity;
 
-        void updateTimeout() {
+public:
+    explicit with_timeout(double timeout = 3)
+        : _timeout(timeout)
+        , _last_activity(0.) {
+        if (timeout > 0.)
+            this->_async_event.start(_timeout);
+    }
+
+    void updateTimeout() {
+        _last_activity = this->_async_event.loop.now();
+    }
+
+    void setTimeout(double timeout) {
+        _timeout = timeout;
+        if (_timeout) {
             _last_activity = this->_async_event.loop.now();
-        }
-
-        void setTimeout(double timeout) {
-            _timeout = timeout;
-            if (_timeout) {
-                _last_activity = this->_async_event.loop.now();
-                this->_async_event.set(_timeout);
-                this->_async_event.start();
-            } else
-                this->_async_event.stop();
-        }
-
-        void on(event::timer &event) {
-            const ev_tstamp after = _last_activity - event.loop.now() + _timeout;
-
-            if (after < 0.)
-                static_cast<_Derived &>(*this).on(event);
-            else {
-                this->_async_event.set(after);
-                this->_async_event.start();
-            }
-        }
-    };
-
-    template<typename _Derived, typename _Prot>
-    class input : public base<input<_Derived, _Prot>, event::io> {
-        _Prot _prot;
-    public:
-        constexpr static const bool has_server = false;
-        using IOMessage = typename _Prot::message_type;
-        using input_io_type = typename _Prot::input_io_type;
-
-        input() = default;
-        input(input const &) = delete;
-
-        input_io_type &in() {
-            return _prot.in();
-        }
-
-        void start() {
-            _prot.in().setBlocking(false);
-            this->_async_event.start(_prot.in().fd(), EV_READ);
-        }
-
-        void disconnect(int reason = 0) {
+            this->_async_event.set(_timeout);
+            this->_async_event.start();
+        } else
             this->_async_event.stop();
+    }
 
-            if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
-                event::disconnected e;
-                e.reason = reason;
-                static_cast<_Derived &>(*this).on(e);
+    void on(event::timer &event) {
+        const ev_tstamp after = _last_activity - event.loop.now() + _timeout;
+
+        if (after < 0.)
+            static_cast<_Derived &>(*this).on(event);
+        else {
+            this->_async_event.set(after);
+            this->_async_event.start();
+        }
+    }
+};
+
+template <typename _Derived, typename _Prot>
+class input : public base<input<_Derived, _Prot>, event::io> {
+    _Prot _prot;
+
+public:
+    constexpr static const bool has_server = false;
+    using IOMessage = typename _Prot::message_type;
+    using input_io_type = typename _Prot::input_io_type;
+
+    input() = default;
+    input(input const &) = delete;
+
+    input_io_type &in() {
+        return _prot.in();
+    }
+
+    void start() {
+        _prot.in().setBlocking(false);
+        this->_async_event.start(_prot.in().fd(), EV_READ);
+    }
+
+    void disconnect(int reason = 0) {
+        this->_async_event.stop();
+
+        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
+            event::disconnected e;
+            e.reason = reason;
+            static_cast<_Derived &>(*this).on(e);
+        }
+        const auto ident = _prot.in().ident();
+        _prot.close();
+        if constexpr (_Derived::has_server) {
+            static_cast<_Derived &>(*this).server().disconnected(ident);
+        }
+    }
+
+    void on(event::io const &event) {
+        auto ret = 0;
+        if (likely(event._revents & EV_READ)) {
+            ret = _prot.read();
+            if (unlikely(ret < 0))
+                goto error;
+            while ((ret = _prot.getMessageSize()) > 0) {
+                static_cast<_Derived &>(*this).on(_prot.getMessage(ret), ret);
+                _prot.flush(ret);
             }
-            const auto ident = _prot.in().ident();
-            _prot.close();
-            if constexpr (_Derived::has_server) {
-                static_cast<_Derived &>(*this).server().disconnected(ident);
-            }
+            return;
         }
+    error:
+        disconnect();
+    }
+};
 
-        void on(event::io const &event) {
-            auto ret = 0;
-            if (likely(event._revents & EV_READ)) {
-                ret = _prot.read();
-                if (unlikely(ret < 0))
-                    goto error;
-                while ((ret = _prot.getMessageSize()) > 0) {
-                    static_cast<_Derived &>(*this).on(_prot.getMessage(ret), ret);
-                    _prot.flush(ret);
-                }
-                return;
-            }
-            error:
-            disconnect();
+template <typename _Derived, typename _Prot>
+class output : public base<output<_Derived, _Prot>, event::io> {
+    _Prot _prot;
+
+public:
+    constexpr static const bool has_server = false;
+    using output_io_type = typename _Prot::output_io_type;
+
+    output() = default;
+    output(output const &) = delete;
+
+    output_io_type &out() {
+        return _prot.out();
+    }
+
+    void start() {
+        _prot.in().setBlocking(false);
+        this->_async_event.start(_prot.out().fd(), EV_WRITE);
+    }
+
+    template <typename... _Args>
+    inline auto publish(_Args &&... args) {
+        if (!(this->_async_event.events & EV_WRITE))
+            this->_async_event.set(EV_WRITE);
+        return _prot.publish(std::forward<_Args>(args)...);
+    }
+
+    void disconnect(int reason = 0) {
+        this->_async_event.stop();
+        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
+            event::disconnected e;
+            e.reason = reason;
+            static_cast<_Derived &>(*this).on(e);
         }
-
-    };
-
-    template<typename _Derived, typename _Prot>
-    class output : public base<output<_Derived, _Prot>, event::io> {
-        _Prot _prot;
-    public:
-        constexpr static const bool has_server = false;
-        using output_io_type = typename _Prot::output_io_type;
-
-        output() = default;
-        output(output const &) = delete;
-
-        output_io_type &out() {
-            return _prot.out();
+        const auto ident = _prot.in().ident();
+        _prot.close();
+        if constexpr (_Derived::has_server) {
+            static_cast<_Derived &>(*this).server().disconnected(ident);
         }
+    }
 
-        void start() {
-            _prot.in().setBlocking(false);
-            this->_async_event.start(_prot.out().fd(), EV_WRITE);
-        }
-
-        template <typename ..._Args>
-        inline auto publish(_Args &&...args) {
-            if (!(this->_async_event.events & EV_WRITE))
-                this->_async_event.set(EV_WRITE);
-            return _prot.publish(std::forward<_Args>(args)...);
-        }
-
-        void disconnect(int reason = 0) {
-            this->_async_event.stop();
-            if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
-                event::disconnected e;
-                e.reason = reason;
-                static_cast<_Derived &>(*this).on(e);
-            }
-            const auto ident = _prot.in().ident();
-            _prot.close();
-            if constexpr (_Derived::has_server) {
-                static_cast<_Derived &>(*this).server().disconnected(ident);
-            }
-        }
-
-        void on(event::io &event) {
-            auto ret = 0;
-            if (likely(event._revents & EV_WRITE)) {
-                ret = _prot.write();
-                if (unlikely(ret < 0))
-                    goto error;
-                if (!_prot.pendingWrite()) {
-                    event.stop();
-                    event.set(EV_READ);
-                    if constexpr (has_method_on<_Derived, void, event::eos>::value) {
-                        static_cast<_Derived &>(*this).on(event::eos{});
-                    }
-                }
-                return;
-            }
-            error:
-            disconnect();
-        }
-
-    };
-
-    template<typename _Derived, typename _Prot>
-    class io : public base<io<_Derived, _Prot>, event::io> {
-        _Prot _prot;
-    public:
-        constexpr static const bool has_server = false;
-        using input_io_type = typename _Prot::input_io_type;
-        using output_io_type = typename _Prot::output_io_type;
-        using IOMessage = typename _Prot::message_type;
-
-        io() = default;
-        io(io const &) = delete;
-
-        input_io_type &in() {
-            return _prot.in();
-        }
-
-        output_io_type &out() {
-            return _prot.out();
-        }
-
-        void start() {
-            _prot.in().setBlocking(false);
-            _prot.out() = _prot.in();
-            this->_async_event.start(_prot.in().fd(), EV_READ);
-        }
-
-        template <typename ..._Args>
-        inline auto publish(_Args &&...args) {
-            if (!(this->_async_event.events & EV_WRITE))
-                this->_async_event.set(EV_READ | EV_WRITE);
-            return _prot.publish(std::forward<_Args>(args)...);
-        }
-
-        void disconnect(int reason = 0) {
-            this->_async_event.stop();
-            if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
-                event::disconnected e;
-                e.reason = reason;
-                static_cast<_Derived &>(*this).on(e);
-            }
-            const auto ident = _prot.in().ident();
-            _prot.close();
-            if constexpr (_Derived::has_server) {
-                static_cast<_Derived &>(*this).server().disconnected(ident);
-            }
-        }
-
-        void on(event::io &event) {
-            auto ret = 0;
-            if (event._revents & EV_READ) {
-                ret = _prot.read();
-                if (unlikely(ret < 0))
-                    goto error;
-                while ((ret = _prot.getMessageSize()) > 0) {
-                    static_cast<_Derived &>(*this).on(_prot.getMessage(ret), ret);
-                    _prot.flush(ret);
-                }
-            }
-            if (event._revents & EV_WRITE) {
-                ret = _prot.write();
-                if (unlikely(ret < 0))
-                    goto error;
-                if (!_prot.pendingWrite()) {
-                    event.set(EV_READ);
-                    if constexpr (has_method_on<_Derived, void, event::eos>::value) {
-                        static_cast<_Derived &>(*this).on(event::eos{});
-                    }
+    void on(event::io &event) {
+        auto ret = 0;
+        if (likely(event._revents & EV_WRITE)) {
+            ret = _prot.write();
+            if (unlikely(ret < 0))
+                goto error;
+            if (!_prot.pendingWrite()) {
+                event.stop();
+                event.set(EV_READ);
+                if constexpr (has_method_on<_Derived, void, event::eos>::value) {
+                    static_cast<_Derived &>(*this).on(event::eos{});
                 }
             }
             return;
-            error:
-            disconnect();
         }
-    };
+    error:
+        disconnect();
+    }
+};
+
+template <typename _Derived, typename _Prot>
+class io : public base<io<_Derived, _Prot>, event::io> {
+    _Prot _prot;
+
+public:
+    constexpr static const bool has_server = false;
+    using input_io_type = typename _Prot::input_io_type;
+    using output_io_type = typename _Prot::output_io_type;
+    using IOMessage = typename _Prot::message_type;
+
+    io() = default;
+    io(io const &) = delete;
+
+    input_io_type &in() {
+        return _prot.in();
+    }
+
+    output_io_type &out() {
+        return _prot.out();
+    }
+
+    void start() {
+        _prot.in().setBlocking(false);
+        _prot.out() = _prot.in();
+        this->_async_event.start(_prot.in().fd(), EV_READ);
+    }
+
+    template <typename... _Args>
+    inline auto publish(_Args &&... args) {
+        if (!(this->_async_event.events & EV_WRITE))
+            this->_async_event.set(EV_READ | EV_WRITE);
+        return _prot.publish(std::forward<_Args>(args)...);
+    }
+
+    void disconnect(int reason = 0) {
+        this->_async_event.stop();
+        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
+            event::disconnected e;
+            e.reason = reason;
+            static_cast<_Derived &>(*this).on(e);
+        }
+        const auto ident = _prot.in().ident();
+        _prot.close();
+        if constexpr (_Derived::has_server) {
+            static_cast<_Derived &>(*this).server().disconnected(ident);
+        }
+    }
+
+    void on(event::io &event) {
+        auto ret = 0;
+        if (event._revents & EV_READ) {
+            ret = _prot.read();
+            if (unlikely(ret < 0))
+                goto error;
+            while ((ret = _prot.getMessageSize()) > 0) {
+                static_cast<_Derived &>(*this).on(_prot.getMessage(ret), ret);
+                _prot.flush(ret);
+            }
+        }
+        if (event._revents & EV_WRITE) {
+            ret = _prot.write();
+            if (unlikely(ret < 0))
+                goto error;
+            if (!_prot.pendingWrite()) {
+                event.set(EV_READ);
+                if constexpr (has_method_on<_Derived, void, event::eos>::value) {
+                    static_cast<_Derived &>(*this).on(event::eos{});
+                }
+            }
+        }
+        return;
+    error:
+        disconnect();
+    }
+};
 
 } // namespace qb::io::async
 
-#endif //QB_IO_ASYNC_IO_H
+#endif // QB_IO_ASYNC_IO_H

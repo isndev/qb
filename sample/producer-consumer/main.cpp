@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,11 @@
  *         limitations under the License.
  */
 
-#include <qb/main.h>
-#include "ActorProducer.h"
 #include "ActorConsumer.h"
+#include "ActorProducer.h"
+#include <qb/main.h>
 
-int main (int, char *argv[]) {
+int main(int, char *argv[]) {
     // (optional) initialize the logger
     qb::io::log::init(argv[0]); // filepath
     qb::io::log::setLevel(qb::io::log::Level::INFO);
@@ -45,8 +45,8 @@ int main (int, char *argv[]) {
         return 1;
 
     qb::io::cout() << "Program is running Ctrl-C to stop" << std::endl;
-    main.start();  // start the engine asynchronously
-    main.join();   // Wait for the running engine
+    main.start(); // start the engine asynchronously
+    main.join();  // Wait for the running engine
     qb::io::cout() << "Program has stopped" << std::endl;
     return 0;
 }

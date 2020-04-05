@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,20 +15,20 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_TRANSPORT_FILE_H
-# define            QB_IO_TRANSPORT_FILE_H
-# include "../system/file.h"
-# include "../stream.h"
+#ifndef QB_IO_TRANSPORT_FILE_H
+#define QB_IO_TRANSPORT_FILE_H
+#include "../stream.h"
+#include "../system/file.h"
 
 namespace qb::io::transport {
 
-    class file : public stream<io::sys::file> {
-    public:
-        // Derived class should define :
-        // using message_type = const char *;
-        // int getMessageSize();
-        // message_type getMessage();
-    };
+class file : public stream<io::sys::file> {
+public:
+    // Derived class should define :
+    // using message_type = const char *;
+    // int getMessageSize();
+    // message_type getMessage();
+};
 
 } // namespace qb::io::transport
 

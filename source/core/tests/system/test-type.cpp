@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,32 +17,34 @@
 
 #include <gtest/gtest.h>
 #include <qb/main.h>
-#include <qb/system/timestamp.h>
 #include <qb/string.h>
+#include <qb/system/timestamp.h>
 
 struct TriviallyDestructibleEvent : public qb::Event {
-    bool b;
-    std::byte by;
-    char c;
-    double d;
-    float f;
+    bool b{};
+    std::byte by{};
+    char c{};
+    double d{};
+    float f{};
     char e[10];
-    std::size_t s;
-    qb::string<> str;
+    std::size_t s{};
+    qb::string<> str{};
 };
 
 struct NonTriviallyDestructibleEvent : public TriviallyDestructibleEvent {
-    std::vector<int> vec;
+    std::vector<int> vec{};
 };
 
 TEST(TYPE, AllCheck) {
     std::cout << "-------- Constants --------" << std::endl;
     std::cout << "QB_LOCKFREE_CACHELINE_BYTES(" << QB_LOCKFREE_CACHELINE_BYTES << ")" << std::endl;
-    std::cout << "QB_LOCKFREE_EVENT_BUCKET_BYTES(" << QB_LOCKFREE_EVENT_BUCKET_BYTES << ")" << std::endl;
+    std::cout << "QB_LOCKFREE_EVENT_BUCKET_BYTES(" << QB_LOCKFREE_EVENT_BUCKET_BYTES << ")"
+              << std::endl;
     std::cout << "QB_MAX_EVENT_SIZE(" << std::numeric_limits<uint16_t>::max() << ")" << std::endl;
     std::cout << "--------   Types   --------" << std::endl;
-	std::cout << "sizeof<std::size_t>(" << sizeof(std::size_t) << ")" << std::endl;
-    std::cout << "sizeof<std::allocator>(" << sizeof(std::allocator<EventBucket>) << ")" << std::endl;
+    std::cout << "sizeof<std::size_t>(" << sizeof(std::size_t) << ")" << std::endl;
+    std::cout << "sizeof<std::allocator>(" << sizeof(std::allocator<EventBucket>) << ")"
+              << std::endl;
     std::cout << "sizeof<CoreId>(" << sizeof(qb::CoreId) << ")" << std::endl;
     EXPECT_EQ(sizeof(qb::CoreId), 2);
     std::cout << "sizeof<ActorId>(" << sizeof(qb::ActorId) << ")" << std::endl;
@@ -59,18 +61,24 @@ TEST(TYPE, AllCheck) {
 #ifdef NDEBUG
     EXPECT_EQ(sizeof(qb::Event), 16);
 #endif
-    std::cout << "is_trivially_destructible<EventQOS0>(" << std::is_trivially_destructible_v<qb::EventQOS0> << ")" << std::endl;
+    std::cout << "is_trivially_destructible<EventQOS0>("
+              << std::is_trivially_destructible_v<qb::EventQOS0> << ")" << std::endl;
     EXPECT_EQ(std::is_trivially_destructible_v<qb::EventQOS0>, 1);
     std::cout << "sizeof<EventQOS1>(" << sizeof(qb::EventQOS1) << ")" << std::endl;
-    std::cout << "is_trivially_destructible<EventQOS1>(" << std::is_trivially_destructible_v<qb::EventQOS1> << ")" << std::endl;
+    std::cout << "is_trivially_destructible<EventQOS1>("
+              << std::is_trivially_destructible_v<qb::EventQOS1> << ")" << std::endl;
     EXPECT_EQ(std::is_trivially_destructible_v<qb::EventQOS1>, 1);
     std::cout << "sizeof<EventQOS2>(" << sizeof(qb::EventQOS2) << ")" << std::endl;
-    std::cout << "is_trivially_destructible<EventQOS2>(" << std::is_trivially_destructible_v<qb::EventQOS2> << ")" << std::endl;
+    std::cout << "is_trivially_destructible<EventQOS2>("
+              << std::is_trivially_destructible_v<qb::EventQOS2> << ")" << std::endl;
     EXPECT_EQ(std::is_trivially_destructible_v<qb::EventQOS0>, 1);
-    std::cout << "is_trivially_destructible<TriviallyDestructibleEvent>(" << std::is_trivially_destructible_v<TriviallyDestructibleEvent> << ")" << std::endl;
+    std::cout << "is_trivially_destructible<TriviallyDestructibleEvent>("
+              << std::is_trivially_destructible_v<TriviallyDestructibleEvent> << ")" << std::endl;
     EXPECT_EQ(std::is_trivially_destructible_v<TriviallyDestructibleEvent>, 1);
-    std::cout << "is_trivially_destructible<NonTriviallyDestructibleEvent>(" << std::is_trivially_destructible_v<NonTriviallyDestructibleEvent> << ")" << std::endl;
+    std::cout << "is_trivially_destructible<NonTriviallyDestructibleEvent>("
+              << std::is_trivially_destructible_v<NonTriviallyDestructibleEvent> << ")"
+              << std::endl;
     EXPECT_EQ(std::is_trivially_destructible_v<NonTriviallyDestructibleEvent>, 0);
     std::cout << "sizeof<ServiceEvent>(" << sizeof(qb::ServiceEvent) << ")" << std::endl;
-//    EXPECT_EQ(sizeof(qb::ServiceEvent), 22);
+    //    EXPECT_EQ(sizeof(qb::ServiceEvent), 22);
 }

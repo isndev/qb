@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,49 +15,48 @@
  *         limitations under the License.
  */
 
-#include            <iostream>
-#include            <string>
-#include            <qb/utility/build_macros.h>
+#include <iostream>
+#include <qb/utility/build_macros.h>
+#include <string>
 
-#ifndef             QB_IO_IP_H_
-#define             QB_IO_IP_H_
+#ifndef QB_IO_IP_H_
+#    define QB_IO_IP_H_
 
 namespace qb::io {
 
-    /*!
-     * @class ip ip.h qb/io/ip.h
-     * @ingroup IO
-     */
-    class QB_API ip {
-        uint32_t     _address;
+/*!
+ * @class ip ip.h qb/io/ip.h
+ * @ingroup IO
+ */
+class QB_API ip {
+    uint32_t _address;
 
-        void resolve(const std::string& address) noexcept;
-        friend QB_API bool operator <(const ip& left, const ip& right);
-    public:
-        ip() noexcept;
-        ip(const std::string& address) noexcept;
-        ip(const char* address) noexcept;
-        ip(uint8_t byte0, uint8_t byte1, uint8_t byte2, uint8_t byte3) noexcept;
-        explicit ip(uint32_t address) noexcept;
+    void resolve(const std::string &address) noexcept;
+    friend QB_API bool operator<(const ip &left, const ip &right);
 
-        [[nodiscard]] std::string toString() const;
-        [[nodiscard]] uint32_t toInteger() const;
+public:
+    ip() noexcept;
+    ip(const std::string &address) noexcept;
+    ip(const char *address) noexcept;
+    ip(uint8_t byte0, uint8_t byte1, uint8_t byte2, uint8_t byte3) noexcept;
+    explicit ip(uint32_t address) noexcept;
 
-        static const ip None;
-        static const ip Any;
-        static const ip LocalHost;
+    [[nodiscard]] std::string toString() const;
+    [[nodiscard]] uint32_t toInteger() const;
 
+    static const ip None;
+    static const ip Any;
+    static const ip LocalHost;
+};
 
-    };
-
-    QB_API bool operator ==(const ip& left, const ip& right);
-    QB_API bool operator !=(const ip& left, const ip& right);
-    QB_API bool operator <(const ip& left, const ip& right);
-    QB_API bool operator >(const ip& left, const ip& right);
-    QB_API bool operator <=(const ip& left, const ip& right);
-    QB_API bool operator >=(const ip& left, const ip& right);
-    QB_API std::istream& operator >>(std::istream& stream, ip& address);
-    QB_API std::ostream& operator <<(std::ostream& stream, const ip& address);
+QB_API bool operator==(const ip &left, const ip &right);
+QB_API bool operator!=(const ip &left, const ip &right);
+QB_API bool operator<(const ip &left, const ip &right);
+QB_API bool operator>(const ip &left, const ip &right);
+QB_API bool operator<=(const ip &left, const ip &right);
+QB_API bool operator>=(const ip &left, const ip &right);
+QB_API std::istream &operator>>(std::istream &stream, ip &address);
+QB_API std::ostream &operator<<(std::ostream &stream, const ip &address);
 
 } // namespace qb::io
 

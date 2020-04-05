@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,10 @@
  *         limitations under the License.
  */
 
-#include            <qb/io/async/listener.h>
+#include <qb/io/async/listener.h>
 
 namespace qb::io::async {
-    thread_local listener listener::current = {};
+
+thread_local listener listener::current = {};
+
 } // namespace qb::io::async

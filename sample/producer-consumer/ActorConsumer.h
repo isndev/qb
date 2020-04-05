@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,17 +15,17 @@
  *         limitations under the License.
  */
 
-#include <vector>
+#include "MyEvent.h"
 #include <qb/actor.h>
 #include <qb/system/timestamp.h>
-#include "MyEvent.h"
+#include <vector>
 
 #ifndef ACTORCONSUMER_H_
-# define ACTORCONSUMER_H_
+#    define ACTORCONSUMER_H_
 
 class ActorConsumer
-        : public qb::Actor     // /!\ should inherit from qb actor
-        , public qb::ICallback // (optional) required to register actor callback
+    : public qb::Actor     // /!\ should inherit from qb actor
+    , public qb::ICallback // (optional) required to register actor callback
 {
     uint64_t timer = 0;
     uint64_t counter = 0;
@@ -35,22 +35,22 @@ class ActorConsumer
     }
 
 public:
-    ActorConsumer() = default;                 // default constructor
+    ActorConsumer() = default; // default constructor
     ~ActorConsumer() final = default;
 
     // will call this function before adding MyActor
     bool onInit() final {
-        registerEvent<MyEvent>(*this);     // will listen MyEvent
-        registerCallback(*this);           // each core loop will call onCallback
+        registerEvent<MyEvent>(*this); // will listen MyEvent
+        registerCallback(*this);       // each core loop will call onCallback
         reset_timer();
-        return true;                           // init ok, MyActor will be added
+        return true; // init ok, MyActor will be added
     }
 
     // will call this function each core loop
     void onCallback() final {
         if (time() > timer) {
-             qb::io::cout() << "Consumer(" << id() << ") received " << counter << "/s" << std::endl;
-//            LOG_INFO("Consumer(" << id() << ") received " << counter << "/s");
+            qb::io::cout() << "Consumer(" << id() << ") received " << counter << "/s" << std::endl;
+            //            LOG_INFO("Consumer(" << id() << ") received " << counter << "/s");
             reset_timer();
             counter = 0;
         }

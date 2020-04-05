@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,37 +15,37 @@
  *         limitations under the License.
  */
 
-#include <vector>
-#include <random>
-#include <qb/actor.h>
 #include "MyEvent.h"
+#include <qb/actor.h>
+#include <random>
+#include <vector>
 
 #ifndef ACTORPRODUCER_H_
-# define ACTORPRODUCER_H_
+#    define ACTORPRODUCER_H_
 
 class ActorProducer
-        : public qb::Actor     // /!\ should inherit from qb actor
-        , public qb::ICallback // (optional) required to register actor callback
+    : public qb::Actor     // /!\ should inherit from qb actor
+    , public qb::ICallback // (optional) required to register actor callback
 {
     std::vector<qb::ActorId> const &_consumerIds;
-    std::random_device          _rand_dev;
-    std::mt19937                _generator;
+    std::random_device _rand_dev;
+    std::mt19937 _generator;
     std::uniform_int_distribution<int> _random_number;
+
 public:
-    ActorProducer() = delete;  // delete default constructor
+    ActorProducer() = delete;                                   // delete default constructor
     explicit ActorProducer(std::vector<qb::ActorId> const &ids) // constructor with parameters
         : _consumerIds(ids)
         , _rand_dev()
         , _generator(_rand_dev())
-        , _random_number(0, static_cast<int>(ids.size() - 1))
-    {}
+        , _random_number(0, static_cast<int>(ids.size() - 1)) {}
 
     ~ActorProducer() final = default;
 
     // will call this function before adding Actor
     bool onInit() final {
         registerCallback(*this); // each core loop will call onCallback
-        return true;                 // init ok, MyActor will be added
+        return true;             // init ok, MyActor will be added
     }
 
     // will call this function each core loop

@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,15 +20,16 @@
 #include <qb/main.h>
 
 class TestActor
-        : public qb::Actor
-        , public qb::ICallback
-{
+    : public qb::Actor
+    , public qb::ICallback {
     const uint64_t _max_loop;
     uint64_t _count_loop;
+
 public:
     TestActor() = delete;
     explicit TestActor(uint64_t const max_loop)
-      : _max_loop(max_loop), _count_loop(0) {
+        : _max_loop(max_loop)
+        , _count_loop(0) {
         if (_max_loop)
             registerCallback(*this);
         else
@@ -47,7 +48,6 @@ public:
         if (++_count_loop >= _max_loop)
             kill();
     }
-
 };
 
 TEST(CallbackActor, ShouldNotCallOnCallbackIfNotRegistred) {

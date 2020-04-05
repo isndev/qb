@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,19 +18,20 @@
 #ifndef QB_SAMPLE_PROJECT_SESSION_H
 #define QB_SAMPLE_PROJECT_SESSION_H
 
-# include <qb/io/async.h>
-# include <qb/io/protocol/cmd.h>
+#include <qb/io/async.h>
+#include <qb/io/protocol/cmd.h>
 
 class ServerActor;
 class Session
-        : public qb::io::use<Session>::tcp::client<qb::io::protocol::cmd, ServerActor>
-        , public qb::io::use<Session>::timeout {
+    : public qb::io::use<Session>::tcp::client<qb::io::protocol::cmd, ServerActor>
+    , public qb::io::use<Session>::timeout {
     // clean way to identify why client is disconnected
     enum DisconnectedReason : int {
         ByUser = 0,
         ByTimeout,
         Undefined // should never hapen
     };
+
 public:
     Session() = delete;
     explicit Session(ServerActor &server);
@@ -40,10 +41,9 @@ public:
     // client is receiving timeout
     void on(qb::io::async::event::timeout &event);
     // client write buffer is empty
-    void on(qb::io::async::event::eos const &){}
+    void on(qb::io::async::event::eos const &) {}
     // client is being disconnected
     void on(qb::io::async::event::disconnected const &event);
-
 };
 
-#endif //QB_SAMPLE_PROJECT_SESSION_H
+#endif // QB_SAMPLE_PROJECT_SESSION_H

@@ -15,8 +15,8 @@
  *         limitations under the License.
  */
 
-#include <iostream>
 #include "CmdActor.h"
+#include <iostream>
 
 // constructor
 CmdActor::CmdActor(qb::ActorId client_id) noexcept
@@ -32,6 +32,5 @@ void CmdActor::onCallback() {
     // CmdActor is alone in its core
     std::getline(std::cin, cmd);
     // push line to client actor
-    _client_pipe.push<CommandEvent>()
-        .message = cmd;
+    _client_pipe.push<CommandEvent>().message = cmd;
 }

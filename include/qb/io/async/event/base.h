@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,25 +22,28 @@
 
 namespace qb::io::async {
 
-    class IRegisteredKernelEvent {
-    public:
-        virtual ~IRegisteredKernelEvent() = default;
+class IRegisteredKernelEvent {
+public:
+    virtual ~IRegisteredKernelEvent() = default;
 
-        virtual void invoke() = 0;
-    };
+    virtual void invoke() = 0;
+};
 
-    namespace event {
+namespace event {
 
-        template<typename _EV_EVENT>
-        struct base : public _EV_EVENT {
-            using ev_t = _EV_EVENT;
-            IRegisteredKernelEvent *_interface;
-            unsigned int _revents;
+template <typename _EV_EVENT>
+struct base : public _EV_EVENT {
+    using ev_t = _EV_EVENT;
+    IRegisteredKernelEvent *_interface;
+    int _revents;
 
-            explicit base(ev::loop_ref loop) : _EV_EVENT(loop), _interface(nullptr), _revents(0u) {}
-        };
+    explicit base(ev::loop_ref loop)
+        : _EV_EVENT(loop)
+        , _interface(nullptr)
+        , _revents(0) {}
+};
 
-    } // namespace event
+} // namespace event
 } // namespace qb::io::async
 
-#endif //QB_IO_ASYNC_EVENT_BASE_H
+#endif // QB_IO_ASYNC_EVENT_BASE_H

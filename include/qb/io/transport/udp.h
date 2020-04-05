@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,132 +15,125 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_TRANSPORT_UDP_H_
-# define            QB_IO_TRANSPORT_UDP_H_
-# include <qb/utility/functional.h>
-# include <qb/system/allocator/pipe.h>
-# include "../udp/socket.h"
+#ifndef QB_IO_TRANSPORT_UDP_H_
+#define QB_IO_TRANSPORT_UDP_H_
+#include "../udp/socket.h"
+#include <qb/system/allocator/pipe.h>
+#include <qb/utility/functional.h>
 
-namespace qb {
-    namespace io {
-        namespace transport {
+namespace qb::io::transport {
 
-            class udp {
-            public:
-                struct identity {
-                    struct hasher {
-                        std::size_t operator() (const identity& id) const {
-                            return hash_combine(id._ip.toInteger(),
-                                                id._port);
-                        }
-                    };
+class udp {
+public:
+    struct identity {
+        struct hasher {
+            std::size_t operator()(const identity &id) const noexcept {
+                return hash_combine(id._ip.toInteger(), id._port);
+            }
+        };
 
-                    ip _ip;
-                    uint16_t _port;
+        ip _ip;
+        uint16_t _port;
 
-                    bool operator==(identity const &rhs) const {
-                        return _ip == rhs._ip && _port == rhs._port;
-                    }
-                };
+        bool operator==(identity const &rhs) const noexcept {
+            return _ip == rhs._ip && _port == rhs._port;
+        }
+    };
 
-                struct message_type {
-                    udp::identity ident;
-                    const char *data;
-                };
+    struct message_type {
+        udp::identity ident;
+        const char *data;
+    };
 
-            protected:
-                io::udp::socket _io;
-                qb::allocator::pipe<char> _in_buffer;
-                qb::allocator::pipe<char> _out_buffer;
-            private:
-                message_type _message;
+protected:
+    io::udp::socket _io;
+    qb::allocator::pipe<char> _in_buffer;
+    qb::allocator::pipe<char> _out_buffer;
 
-                struct pushed_message {
-                    udp::identity ident;
-                    int size;
-                };
+private:
+    message_type _message;
 
-                pushed_message _pushed_message;
-            public:
+    struct pushed_message {
+        udp::identity ident;
+        int size;
+    };
 
-                // in section
-                io::udp::socket &in() {
-                    return _io;
-                }
+    pushed_message _pushed_message;
 
-                auto &buffer() {
-                    return _in_buffer;
-                }
+public:
+    // in section
+    io::udp::socket &in() {
+        return _io;
+    }
 
-                int read() {
-                    _in_buffer.reset();
-                    const auto ret = _io.read(
-                            _in_buffer.allocate_back(io::udp::socket::MaxDatagramSize)
-                            , io::udp::socket::MaxDatagramSize
-                            , _message.ident._ip
-                            , _message.ident._port);
-                    if (qb::likely(ret > 0))
-                        _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
-                    return ret;
-                }
+    auto &buffer() {
+        return _in_buffer;
+    }
 
-                void flush(std::size_t size) {
-                    _in_buffer.free_front(size);
-                    if (!_in_buffer.size())
-                        _in_buffer.reset();
-                }
-                // out sections
-                io::udp::socket &out() {
-                    return _io;
-                }
+    int read() {
+        _in_buffer.reset();
+        const auto ret =
+            _io.read(_in_buffer.allocate_back(io::udp::socket::MaxDatagramSize),
+                     io::udp::socket::MaxDatagramSize, _message.ident._ip, _message.ident._port);
+        if (qb::likely(ret > 0))
+            _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
+        return ret;
+    }
 
-                std::size_t pendingWrite() const {
-                    return _out_buffer.size();
-                }
+    void flush(std::size_t size) {
+        _in_buffer.free_front(size);
+        if (!_in_buffer.size())
+            _in_buffer.reset();
+    }
+    // out sections
+    io::udp::socket &out() {
+        return _io;
+    }
 
-                int write() {
-                    if (!_pushed_message.size) {
-                        _pushed_message = *reinterpret_cast<pushed_message *>(_out_buffer.data() + _out_buffer.begin());
-                        _out_buffer.free_front(sizeof(pushed_message));
-                    }
+    [[nodiscard]] std::size_t pendingWrite() const {
+        return _out_buffer.size();
+    }
 
-                    const auto ret = this->_io.write(
-                            _out_buffer.data() + _out_buffer.begin(),
-                            std::min(_pushed_message.size, static_cast<int>(io::udp::socket::MaxDatagramSize)),
-                            _pushed_message.ident._ip,
-                            _pushed_message.ident._port
-                    );
-                    if (qb::likely(ret > 0)) {
-                        _pushed_message.size -= ret;
-                        _out_buffer.reset(_out_buffer.begin() + ret);
-                    }
-                    return ret;
-                }
+    int write() {
+        if (!_pushed_message.size) {
+            _pushed_message =
+                *reinterpret_cast<pushed_message const *>(_out_buffer.data() + _out_buffer.begin());
+            _out_buffer.free_front(sizeof(pushed_message));
+        }
 
-                char *publish(udp::identity const &to, char const *data, std::size_t size) {
-                    auto &m = _out_buffer.allocate_back<pushed_message>();
-                    m.ident = to;
-                    m.size = size;
+        const auto ret = this->_io.write(
+            _out_buffer.data() + _out_buffer.begin(),
+            std::min(_pushed_message.size, static_cast<int>(io::udp::socket::MaxDatagramSize)),
+            _pushed_message.ident._ip, _pushed_message.ident._port);
+        if (qb::likely(ret > 0)) {
+            _pushed_message.size -= ret;
+            _out_buffer.reset(_out_buffer.begin() + ret);
+        }
+        return ret;
+    }
 
-                    return static_cast<char *>(std::memcpy(_out_buffer.allocate_back(size), data, size));
-                }
+    char *publish(udp::identity const &to, char const *data, std::size_t size) {
+        auto &m = _out_buffer.allocate_back<pushed_message>();
+        m.ident = to;
+        m.size = size;
 
-                void close() {
-                    _io.close();
-                }
+        return static_cast<char *>(std::memcpy(_out_buffer.allocate_back(size), data, size));
+    }
 
-                int getMessageSize() {
-                    _message.data = _in_buffer.data() + _in_buffer.begin();
-                    return _in_buffer.size();
-                }
+    void close() {
+        _io.close();
+    }
 
-                message_type getMessage(int) {
-                    return _message;
-                }
-            };
+    int getMessageSize() {
+        _message.data = _in_buffer.data() + _in_buffer.begin();
+        return _in_buffer.size();
+    }
 
-        } // namespace transport
-    } // namespace io
-} // namespace qb
+    message_type getMessage(int) {
+        return _message;
+    }
+};
+
+} // namespace qb::io::transport
 
 #endif // QB_IO_TRANSPORT_UDP_H_

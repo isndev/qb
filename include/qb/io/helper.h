@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,66 +15,56 @@
  *         limitations under the License.
  */
 
-#include            <cstring>
-#include            <iostream>
-#include            <qb/utility/build_macros.h>
+#include <cstring>
+#include <iostream>
+#include <qb/utility/build_macros.h>
 
-#ifndef             QB_IO_HELPER_H_
-# define            QB_IO_HELPER_H_
+#ifndef QB_IO_HELPER_H_
+#    define QB_IO_HELPER_H_
 
-#ifdef __WIN__SYSTEM__
-#define WIN32_LEAN_AND_MEAN
-#include <winsock2.h>
-#include <WS2tcpip.h>
-#else
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <errno.h>
-#include <fcntl.h>
-#endif
+#    ifdef __WIN__SYSTEM__
+#        define WIN32_LEAN_AND_MEAN
+#        include <WS2tcpip.h>
+#        include <winsock2.h>
+#    else
+#        include <arpa/inet.h>
+#        include <errno.h>
+#        include <fcntl.h>
+#        include <netdb.h>
+#        include <netinet/in.h>
+#        include <netinet/tcp.h>
+#        include <sys/socket.h>
+#        include <sys/types.h>
+#        include <unistd.h>
+#    endif
 
 namespace qb::io {
 
-	enum SocketType {
-		TCP,
-		UDP
-	};
+enum SocketType { TCP, UDP };
 
-	enum SocketStatus
-	{
-		Done,
-		NotReady,
-		Partial,
-		Disconnected,
-		Error
-	};
+enum SocketStatus { Done, NotReady, Partial, Disconnected, Error };
 
-#ifdef      __WIN__SYSTEM__
-	typedef            SOCKET      SocketHandler;
-        typedef            int         AddrLength;
-        constexpr static const SocketHandler SOCKET_INVALID = INVALID_SOCKET;
-        constexpr static const int FD_INVALID = -1;
-#else
-	typedef            int         SocketHandler;
-	typedef            socklen_t   AddrLength;
-	constexpr static const SocketHandler SOCKET_INVALID = -1;
-	constexpr static const int FD_INVALID = -1;
-#endif
+#    ifdef __WIN__SYSTEM__
+typedef SOCKET SocketHandler;
+typedef int AddrLength;
+constexpr static const SocketHandler SOCKET_INVALID = INVALID_SOCKET;
+constexpr static const int FD_INVALID = -1;
+#    else
+typedef int SocketHandler;
+typedef socklen_t AddrLength;
+constexpr static const SocketHandler SOCKET_INVALID = -1;
+constexpr static const int FD_INVALID = -1;
+#    endif
 
-	class QB_API helper {
-	public:
-		static sockaddr_in createAddress(uint32_t address, unsigned short port);
-		static bool close(SocketHandler sock);
-		static bool block(SocketHandler sock, bool block);
-		static bool is_blocking(SocketHandler sock);
-		static SocketStatus getErrorStatus();
-	};
+class QB_API helper {
+public:
+    static sockaddr_in createAddress(uint32_t address, unsigned short port);
+    static bool close(SocketHandler sock);
+    static bool block(SocketHandler sock, bool block);
+    static bool is_blocking(SocketHandler sock);
+    static SocketStatus getErrorStatus();
+};
 
-} // namespace qb
+} // namespace qb::io
 
 #endif // QB_IO_HELPER_H_

@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,38 +15,37 @@
  *         limitations under the License.
  */
 
-#include            "../ip.h"
-#include            "../system/socket.h"
+#include "../ip.h"
+#include "../system/socket.h"
 
-#ifndef             QB_IO_UDP_SOCKET_H_
-# define            QB_IO_UDP_SOCKET_H_
+#ifndef QB_IO_UDP_SOCKET_H_
+#    define QB_IO_UDP_SOCKET_H_
 
 namespace qb::io::udp {
 
-    /*!
-     * @class socket udp/socket.h qb/io/udp/socket.h
-     * @ingroup UDP
-     */
-    class QB_API socket
-            : public sys::socket<SocketType::UDP> {
-    public:
-        constexpr static const std::size_t MaxDatagramSize = 65507;
+/*!
+ * @class socket udp/socket.h qb/io/udp/socket.h
+ * @ingroup UDP
+ */
+class QB_API socket : public sys::socket<SocketType::UDP> {
+public:
+    constexpr static const std::size_t MaxDatagramSize = 65507;
 
-        socket();
-        socket(socket const &rhs) = default;
-        explicit socket(SocketHandler handler);
+    socket();
+    socket(socket const &rhs) = default;
+    explicit socket(SocketHandler handler);
 
-        [[nodiscard]] unsigned short getLocalPort() const;
+    [[nodiscard]] unsigned short getLocalPort() const;
 
-        SocketStatus bind(unsigned short port, const ip &address = ip::Any);
+    SocketStatus bind(unsigned short port, const ip &address = ip::Any);
 
-        void unbind();
+    void unbind();
 
-        int write(const void *data, std::size_t size, const ip &remoteAddress, unsigned short remotePort) const;
+    int write(const void *data, std::size_t size, const ip &remoteAddress,
+              unsigned short remotePort) const;
 
-        int read(void *data, std::size_t size, ip &remoteAddress, unsigned short &remotePort) const;
-
-    };
+    int read(void *data, std::size_t size, ip &remoteAddress, unsigned short &remotePort) const;
+};
 
 } // namespace qb::io::udp
 

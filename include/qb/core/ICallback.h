@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,21 +20,21 @@
 
 namespace qb {
 
-    /*!
-     * @interface ICallback core/ICallback.h qb/icallback.h
-     * @ingroup Core
-     * @brief Actor callback interface
-     * @details
-     * DerivedActor must inherit from this interface
-     * to register loop callback
-     */
-    class ICallback {
-    public:
-        virtual ~ICallback() = default;
+/*!
+ * @interface ICallback core/ICallback.h qb/icallback.h
+ * @ingroup Core
+ * @brief Actor callback interface
+ * @details
+ * DerivedActor must inherit from this interface
+ * to register loop callback
+ */
+class ICallback {
+public:
+    virtual ~ICallback() = default;
 
-        virtual void onCallback() = 0;
-    };
+    virtual void onCallback() = 0;
+};
 
 } // namespace qb
 
-#endif //QB_ICALLBACK_H
+#endif // QB_ICALLBACK_H

@@ -15,14 +15,14 @@
  *         limitations under the License.
  */
 
+#include "event/CommandEvent.h"
+#include "event/RetryConnectEvent.h"
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <qb/io/protocol/cmd.h>
-#include "event/CommandEvent.h"
-#include "event/RetryConnectEvent.h"
 
 #ifndef QB_SAMPLE_PROJECT_CLIENTACTOR_H
-#define QB_SAMPLE_PROJECT_CLIENTACTOR_H
+#    define QB_SAMPLE_PROJECT_CLIENTACTOR_H
 
 class ClientActor
     : public qb::Actor
@@ -35,10 +35,9 @@ class ClientActor
     const uint16_t _port;
 
 public:
-
     ClientActor() = delete;
     // constructor
-    ClientActor(std::string const& ip, uint16_t port) noexcept;
+    ClientActor(std::string ip, uint16_t port) noexcept;
 
     // override Actor initialization
     bool onInit() final;
@@ -47,15 +46,15 @@ public:
     // new message received from remote
     void on(IOMessage message, std::size_t size);
     // client is being disconnected
-    void on(qb::io::async::event::disconnected const& event);
+    void on(qb::io::async::event::disconnected const &event);
     // !io events
 
     // core events
     // new message from CommandActor
-    void on(CommandEvent & event);
+    void on(CommandEvent &event);
     // retry connection event
-    void on(RetryConnectEvent const& event);
+    void on(RetryConnectEvent const &event);
     // !core events
 };
 
-#endif //QB_SAMPLE_PROJECT_CLIENTACTOR_H
+#endif // QB_SAMPLE_PROJECT_CLIENTACTOR_H

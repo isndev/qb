@@ -15,17 +15,18 @@
  *         limitations under the License.
  */
 
-#include <qb/actor.h>
 #include "event/CommandEvent.h"
+#include <qb/actor.h>
 
 #ifndef QB_SAMPLE_PROJECT_CMDACTOR_H
-#define QB_SAMPLE_PROJECT_CMDACTOR_H
+#    define QB_SAMPLE_PROJECT_CMDACTOR_H
 
 class CmdActor
-        : public qb::Actor
-        , public qb::ICallback {
+    : public qb::Actor
+    , public qb::ICallback {
     // const event pipe to client actor
     const qb::ProxyPipe _client_pipe;
+
 public:
     CmdActor() = delete;
     // constructor
@@ -35,4 +36,4 @@ public:
     void onCallback() final;
 };
 
-#endif //QB_SAMPLE_PROJECT_CMDACTOR_H
+#endif // QB_SAMPLE_PROJECT_CMDACTOR_H
