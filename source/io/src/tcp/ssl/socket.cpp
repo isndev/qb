@@ -19,7 +19,7 @@
 
 namespace qb::io::tcp::ssl {
 
-SSL_CTX *create_client_context(SSL_METHOD *method) {
+SSL_CTX *create_client_context(const SSL_METHOD *method) {
     return method ? SSL_CTX_new(method) : nullptr;
 }
 
@@ -43,9 +43,7 @@ error:
 
 void socket::init(SSL *handle) {
     _ssl_handle = handle;
-    SSL_set_fd(_ssl_handle, ident());
     _connected = false;
-    SSL_set_accept_state(handle);
 }
 
 socket::socket()
@@ -80,14 +78,15 @@ SocketStatus socket::connect(const ip &remoteAddress, unsigned short remotePort,
     auto ret = tcp::socket::connect(remoteAddress, remotePort, timeout);
     if (ret != SocketStatus::Done)
         return ret;
-    _ssl_handle = SSL_new(SSL_CTX_new(SSLv23_client_method()));
+    if (!_ssl_handle)
+        _ssl_handle = SSL_new(SSL_CTX_new(SSLv23_client_method()));
     if (!_ssl_handle) {
         tcp::socket::disconnect();
         return SocketStatus::Error;
     }
     SSL_set_fd(_ssl_handle, ident());
     SSL_set_connect_state(_ssl_handle);
-    return handCheck() == 1 ? SocketStatus::Done : SocketStatus::Error;
+    return handCheck() < 0 ? SocketStatus::Error : SocketStatus::Done;
 }
 
 void socket::disconnect() {

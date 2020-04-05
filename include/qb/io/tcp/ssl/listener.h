@@ -38,6 +38,8 @@ public:
 
     void init(SSL_CTX *ctx);
     SocketStatus accept(ssl::socket &socket);
+
+    [[nodiscard]] SSL_CTX *ssl() const;
 };
 
 } // namespace qb::io::tcp::ssl

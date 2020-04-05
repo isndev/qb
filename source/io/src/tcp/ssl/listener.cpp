@@ -34,9 +34,15 @@ void listener::init(SSL_CTX *ctx) {
 SocketStatus listener::accept(ssl::socket &socket) {
     if (tcp::listener::accept(socket) == SocketStatus::Done) {
         socket.init(SSL_new(_ctx));
+        SSL_set_fd(socket.ssl(), socket.ident());
+        SSL_set_accept_state(socket.ssl());
         return SocketStatus::Done;
     }
     return SocketStatus::Error;
+}
+
+SSL_CTX *listener::ssl() const {
+    return _ctx;
 }
 
 } // namespace qb::io::tcp::ssl

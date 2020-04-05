@@ -34,9 +34,10 @@ struct FakeActor {
         ++nb_events;
     }
 
-    void on(qb::io::async::event::io const &event) {
+    void on(qb::io::async::event::io &event) {
         EXPECT_EQ(fd_test, event.fd);
         EXPECT_EQ(true, event._revents & EV_READ);
+        event.stop();
         ++nb_events;
     }
 
@@ -62,7 +63,8 @@ TEST(KernelEvents, Signal) {
     handler.registerEvent<qb::io::async::event::signal<SIGINT>>(actor).start();
 
     std::thread t([]() { std::raise(SIGINT); });
-    handler.run(EVRUN_ONCE);
+    for (auto i = 0; i < 10 && !actor.nb_events; ++i)
+        handler.run(EVRUN_ONCE);
     EXPECT_EQ(actor.nb_events, 1);
     t.join();
 }
@@ -73,8 +75,8 @@ TEST(KernelEvents, Timer) {
 
     handler.registerEvent<qb::io::async::event::timer>(actor, 1, 1).start();
 
-    handler.run(EVRUN_ONCE);
-    handler.run(EVRUN_ONCE);
+    for (auto i = 0; i < 10 && actor.nb_events < 2; ++i)
+        handler.run(EVRUN_ONCE);
     EXPECT_EQ(actor.nb_events, 2);
 }
 
@@ -85,11 +87,11 @@ TEST(KernelEvents, File) {
     handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", 0).start();
 
     std::thread t([]() {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
         system("echo test > test.file");
     });
 
-    handler.run(EVRUN_ONCE);
+    for (auto i = 0; i < 10 && !actor.nb_events; ++i)
+        handler.run(EVRUN_ONCE);
     EXPECT_EQ(actor.nb_events, 1);
     t.join();
 }
@@ -105,7 +107,8 @@ TEST(KernelEvents, BasicIO) {
 
     handler.registerEvent<qb::io::async::event::io>(actor, f.fd(), EV_READ).start();
 
-    handler.run(EVRUN_ONCE);
+    for (auto i = 0; i < 10 && !actor.nb_events; ++i)
+        handler.run(EVRUN_ONCE);
     EXPECT_EQ(actor.nb_events, 1);
 }
 
