@@ -56,6 +56,15 @@ namespace nanolog
         NanoLogLine& operator<<(std::string const & arg);
         NanoLogLine& operator<<(std::string_view const & arg);
 
+//        Todo: :( remake this
+//        template <typename T>
+//        NanoLogLine& operator<<(T const &data) {
+//            std::ostringstream os;
+//            *this << os << data;
+//
+//            return *this;
+//        }
+
         template < size_t N >
         NanoLogLine& operator<<(const char (&arg)[N])
         {
@@ -162,11 +171,11 @@ namespace nanolog
 
 #define NANO_LOG(LEVEL) nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
 #ifdef QB_LOGGER
-#define LOG_DEBUG(X) nanolog::is_logged(nanolog::LogLevel::DEBUG) && NANO_LOG(nanolog::LogLevel::DEBUG) << X
-#define LOG_VERB(X) nanolog::is_logged(nanolog::LogLevel::VERBOSE) && NANO_LOG(nanolog::LogLevel::VERBOSE) << X
-#define LOG_INFO(X) nanolog::is_logged(nanolog::LogLevel::INFO) && NANO_LOG(nanolog::LogLevel::INFO) << X
-#define LOG_WARN(X) nanolog::is_logged(nanolog::LogLevel::WARN) && NANO_LOG(nanolog::LogLevel::WARN) << X
-#define LOG_CRIT(X) nanolog::is_logged(nanolog::LogLevel::CRIT) && NANO_LOG(nanolog::LogLevel::CRIT) << X
+#define LOG_DEBUG(X) (void)(nanolog::is_logged(nanolog::LogLevel::DEBUG) && NANO_LOG(nanolog::LogLevel::DEBUG) << X)
+#define LOG_VERB(X) (void)(nanolog::is_logged(nanolog::LogLevel::VERBOSE) && NANO_LOG(nanolog::LogLevel::VERBOSE) << X)
+#define LOG_INFO(X) (void)(nanolog::is_logged(nanolog::LogLevel::INFO) && NANO_LOG(nanolog::LogLevel::INFO) << X)
+#define LOG_WARN(X) (void)(nanolog::is_logged(nanolog::LogLevel::WARN) && NANO_LOG(nanolog::LogLevel::WARN) << X)
+#define LOG_CRIT(X) (void)(nanolog::is_logged(nanolog::LogLevel::CRIT) && NANO_LOG(nanolog::LogLevel::CRIT) << X)
 #else
 #define LOG_DEBUG(X)
 #define LOG_VERB(X)

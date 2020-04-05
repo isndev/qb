@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,13 +21,13 @@
 
 struct Tag {};
 
-class TestServiceActor : public qb::ServiceActor<Tag>
-{
+class TestServiceActor : public qb::ServiceActor<Tag> {
     bool _ret_init;
+
 public:
     TestServiceActor() = delete;
     explicit TestServiceActor(bool init)
-            : _ret_init(init) {
+        : _ret_init(init) {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         EXPECT_EQ(nullptr, getService<TestServiceActor>());
         kill();
@@ -51,13 +51,13 @@ struct CheckServiceActor : public qb::Actor {
     }
 };
 
-class TestActor : public qb::Actor
-{
+class TestActor : public qb::Actor {
     bool _ret_init;
+
 public:
     TestActor() = delete;
     explicit TestActor(bool init)
-      : _ret_init(init) {
+        : _ret_init(init) {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         kill();
     }
@@ -67,13 +67,13 @@ public:
     }
 };
 
-class TestRefActor : public qb::Actor
-{
+class TestRefActor : public qb::Actor {
     bool _ret_init;
+
 public:
     TestRefActor() = delete;
     explicit TestRefActor(bool init)
-            : _ret_init(init) {
+        : _ret_init(init) {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
     }
 
@@ -132,9 +132,8 @@ TEST(AddActorUsingCoreBuilder, ShouldNotAddActorWhenEngineIsRunning) {
 TEST(AddActorUsingCoreBuilder, ShouldRetrieveValidOrderedActorIdList) {
     qb::Main main;
 
-    auto builder = main.core(0).builder()
-            .addActor<TestServiceActor>(true)
-            .addActor<TestActor>(true);
+    auto builder =
+        main.core(0).builder().addActor<TestServiceActor>(true).addActor<TestActor>(true);
     EXPECT_TRUE(static_cast<bool>(builder));
     EXPECT_EQ(builder.idList().size(), 2u);
     EXPECT_EQ(static_cast<uint32_t>(builder.idList()[0]), 1u);
@@ -164,8 +163,7 @@ TEST(AddReferencedActor, ShouldReturnActorPtrOnSucess) {
     EXPECT_FALSE(main.hasError());
 }
 
-class TestKillSenderActor : public qb::Actor
-{
+class TestKillSenderActor : public qb::Actor {
 public:
     TestKillSenderActor() = default;
 
@@ -177,8 +175,7 @@ public:
     }
 };
 
-class TestKillActor : public qb::Actor
-{
+class TestKillActor : public qb::Actor {
 public:
     TestKillActor() = default;
 

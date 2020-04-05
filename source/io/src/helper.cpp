@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,123 +15,116 @@
  *         limitations under the License.
  */
 
-#include            <qb/io/helper.h>
+#include <qb/io/helper.h>
 
 namespace qb::io {
 #ifdef __WIN__SYSTEM__
 
-    sockaddr_in helper::createAddress(uint32_t address, unsigned short port)
-    {
-        sockaddr_in addr;
-        std::memset(&addr, 0, sizeof(addr));
-        addr.sin_addr.s_addr = htonl(address);
-        addr.sin_family      = AF_INET;
-        addr.sin_port        = htons(port);
+sockaddr_in helper::createAddress(uint32_t address, unsigned short port) {
+    sockaddr_in addr;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sin_addr.s_addr = htonl(address);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
 
-        return addr;
+    return addr;
+}
+
+bool helper::close(SocketHandler socket) {
+    return !closesocket(socket);
+}
+
+bool helper::block(SocketHandler socket, bool block) {
+    unsigned long new_state = static_cast<unsigned long>(!block);
+    return !ioctlsocket(socket, FIONBIO, &new_state);
+}
+
+SocketStatus helper::getErrorStatus() {
+    const auto err = WSAGetLastError();
+    switch (err) {
+    case WSAEWOULDBLOCK:
+        return SocketStatus::NotReady;
+    case WSAEALREADY:
+        return SocketStatus::NotReady;
+    case WSAECONNABORTED:
+    case WSAECONNRESET:
+    case WSAETIMEDOUT:
+    case WSAENETRESET:
+    case WSAENOTCONN:
+        return SocketStatus::Disconnected;
+    case WSAEISCONN:
+        return SocketStatus::Done; // when connecting a non-blocking socket
+    default:
+        return SocketStatus::Error;
+    }
+}
+
+bool helper::is_blocking(SocketHandler) {
+    return true;
+}
+
+struct SocketInitializer {
+    SocketInitializer() noexcept {
+        WSADATA InitData;
+        WSAStartup(MAKEWORD(2, 2), &InitData);
     }
 
-    bool helper::close(SocketHandler socket) {
-        return !closesocket(socket);
+    ~SocketInitializer() noexcept {
+#    ifndef QB_IO_WITH_SSL
+        WSACleanup();
+#    endif
     }
+};
 
-    bool helper::block(SocketHandler socket, bool block) {
-        unsigned long new_state = static_cast<unsigned long>(!block);
-        return !ioctlsocket(socket, FIONBIO, &new_state);
-    }
-
-    SocketStatus helper::getErrorStatus() {
-		const auto err = WSAGetLastError();
-        switch (err) {
-            case WSAEWOULDBLOCK:
-                return SocketStatus::NotReady;
-            case WSAEALREADY:
-                return SocketStatus::NotReady;
-            case WSAECONNABORTED:
-            case WSAECONNRESET:
-            case WSAETIMEDOUT:
-            case WSAENETRESET:
-            case WSAENOTCONN:
-                return SocketStatus::Disconnected;
-            case WSAEISCONN:
-                return SocketStatus::Done; // when connecting a non-blocking socket
-            default:
-                return SocketStatus::Error;
-        }
-    }
-
-    bool helper::is_blocking(SocketHandler)
-    {
-        return true;
-    }
-
-    struct SocketInitializer {
-        SocketInitializer() noexcept {
-            WSADATA InitData;
-            WSAStartup(MAKEWORD(2, 2), &InitData);
-        }
-
-        ~SocketInitializer() noexcept {
-#ifndef QB_IO_WITH_SSL
-                WSACleanup();
-#endif
-        }
-    };
-
-    SocketInitializer GlobalInitializer;
+SocketInitializer GlobalInitializer;
 #else
 
-    sockaddr_in helper::createAddress(uint32_t address, unsigned short port)
-    {
-        sockaddr_in addr;
-        std::memset(&addr, 0, sizeof(addr));
-        addr.sin_addr.s_addr = htonl(address);
-        addr.sin_family      = AF_INET;
-        addr.sin_port        = htons(port);
+sockaddr_in helper::createAddress(uint32_t address, unsigned short port) {
+    sockaddr_in addr;
+    std::memset(&addr, 0, sizeof(addr));
+    addr.sin_addr.s_addr = htonl(address);
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
 
-        return addr;
+    return addr;
+}
+
+bool helper::close(SocketHandler sock) {
+    return !::close(sock);
+}
+
+bool helper::block(SocketHandler sock, bool newst) {
+    int status = fcntl(sock, F_GETFL);
+
+    return (newst ? fcntl(sock, F_SETFL, status & ~O_NONBLOCK) != -1
+                  : fcntl(sock, F_SETFL, status | O_NONBLOCK) != -1);
+}
+
+SocketStatus helper::getErrorStatus() {
+    if ((errno == EAGAIN) || (errno == EINPROGRESS))
+        return SocketStatus::NotReady;
+
+    switch (errno) {
+    case EWOULDBLOCK:
+        return SocketStatus::NotReady;
+    case ECONNABORTED:
+    case ECONNRESET:
+    case ETIMEDOUT:
+    case ENETRESET:
+    case ENOTCONN:
+    case EPIPE:
+        return SocketStatus::Disconnected;
+    default:
+        return SocketStatus::Error;
     }
+}
 
-    bool helper::close(SocketHandler sock)
-    {
-        return !::close(sock);
-    }
+bool helper::is_blocking(SocketHandler sock) {
+    int status = fcntl(sock, F_GETFL);
 
-    bool helper::block(SocketHandler sock, bool newst)
-    {
-        int    status = fcntl(sock, F_GETFL);
-
-        return (newst ?
-                fcntl(sock, F_SETFL, status & ~O_NONBLOCK) != -1 :
-                fcntl(sock, F_SETFL, status | O_NONBLOCK) != -1);
-    }
-
-    SocketStatus helper::getErrorStatus()
-    {
-        if ((errno == EAGAIN) || (errno == EINPROGRESS))
-            return SocketStatus::NotReady;
-
-        switch (errno)
-        {
-            case EWOULDBLOCK:  return SocketStatus::NotReady;
-            case ECONNABORTED:
-            case ECONNRESET:
-            case ETIMEDOUT:
-            case ENETRESET:
-            case ENOTCONN:
-            case EPIPE:        return SocketStatus::Disconnected;
-            default:           return SocketStatus::Error;
-        }
-    }
-
-    bool helper::is_blocking(SocketHandler sock)
-    {
-        int    status = fcntl(sock, F_GETFL);
-
-        return !(status & O_NONBLOCK);
-    }
+    return !(status & O_NONBLOCK);
+}
 
 #endif
 
 } // namespace qb::io
-

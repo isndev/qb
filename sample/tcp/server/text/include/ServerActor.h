@@ -16,10 +16,10 @@
  */
 
 #ifndef QB_SAMPLE_PROJECT_SERVERACTOR_H
-# define QB_SAMPLE_PROJECT_SERVERACTOR_H
-# include <qb/actor.h>
-# include <qb/io/async.h>
-# include "Session.h"
+#define QB_SAMPLE_PROJECT_SERVERACTOR_H
+#include "Session.h"
+#include <qb/actor.h>
+#include <qb/io/async.h>
 
 class Session;
 class ServerActor
@@ -31,18 +31,16 @@ class ServerActor
 
 public:
     ServerActor() = delete;
-    ServerActor(std::string const& iface, uint16_t port) noexcept;
-
+    ServerActor(std::string iface, uint16_t port) noexcept;
 
     // override Actor Initialization
     bool onInit() final;
 
     // events
     // Called from qb::io on new session connected
-    void on(Session& session);
+    void on(Session &session);
     // Called from qb::io on server disconnected
-    void on(qb::io::async::event::disconnected const&);
-
+    void on(qb::io::async::event::disconnected const &);
 };
 
-#endif //QB_SAMPLE_PROJECT_SERVERACTOR_H
+#endif // QB_SAMPLE_PROJECT_SERVERACTOR_H

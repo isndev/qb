@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,34 +18,39 @@
 #include <qb/core/ActorId.h>
 
 namespace qb {
-    ActorId::ActorId() noexcept : _id(0), _index(0) {}
-    ActorId::ActorId(ServiceId id, CoreId index) noexcept
-            : _id(id), _index(index) {}
+ActorId::ActorId() noexcept
+    : _id(0)
+    , _index(0) {}
 
-    ActorId::ActorId(uint32_t id) noexcept {
-        *reinterpret_cast<uint32_t *>(this) = id;
-    }
+ActorId::ActorId(ServiceId id, CoreId index) noexcept
+    : _id(id)
+    , _index(index) {}
 
-    ActorId::operator uint32_t () const noexcept {
-        return *reinterpret_cast<uint32_t const *>(this);
-    }
-
-    ServiceId ActorId::sid() const noexcept {
-        return _id;
-    }
-
-    CoreId ActorId::index() const noexcept {
-        return _index;
-    }
-
-    bool ActorId::is_broadcast() const noexcept {
-        return _id == BroadcastSid;
-    }
-
-    bool ActorId::is_valid() const noexcept {
-        return *this != NotFound;
-    }
+ActorId::ActorId(uint32_t id) noexcept {
+    *reinterpret_cast<uint32_t *>(this) = id;
 }
+
+ActorId::operator uint32_t() const noexcept {
+    return *reinterpret_cast<uint32_t const *>(this);
+}
+
+ServiceId ActorId::sid() const noexcept {
+    return _id;
+}
+
+CoreId ActorId::index() const noexcept {
+    return _index;
+}
+
+bool ActorId::is_broadcast() const noexcept {
+    return _id == BroadcastSid;
+}
+
+bool ActorId::is_valid() const noexcept {
+    return static_cast<uint32_t>(*this) != NotFound;
+}
+
+} // namespace qb
 
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id) {
     std::stringstream ss;

@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,14 @@
  */
 
 // PingActor.h file
-#include <qb/actor.h>
 #include "MyEvent.h"
+#include <qb/actor.h>
 #ifndef PINGACTOR_H_
-# define PINGACTOR_H_
+#    define PINGACTOR_H_
 
 class PongActor;
 class PingActor
-        : public qb::Actor // /!\ should inherit from qb actor
+    : public qb::Actor // /!\ should inherit from qb actor
 {
 public:
     PingActor() = default; // PingActor requires PongActor Actor
@@ -31,17 +31,18 @@ public:
     // /!\ the engine will call this function before adding PingPongActor
     bool onInit() final {
         registerEvent<qb::RequireEvent>(*this); // id dependency
-        require<PongActor>(); // require PongActor id
+        require<PongActor>();                   // require PongActor id
 
-        return true;                           // init ok
+        return true; // init ok
     }
 
     void on(qb::RequireEvent const &event) {
         if (is<PongActor>(event.type)) {
-            registerEvent<MyEvent>(*this);              // will listen MyEvent
-            auto &e = push<MyEvent>(event.getSource()); // push MyEvent to PongActor and keep a reference to the event
-            e.data = 1337;                              // set trivial data
-            e.container.push_back(7331);                // set dynamic data
+            registerEvent<MyEvent>(*this); // will listen MyEvent
+            auto &e = push<MyEvent>(
+                event.getSource()); // push MyEvent to PongActor and keep a reference to the event
+            e.data = 1337;          // set trivial data
+            e.container.push_back(7331); // set dynamic data
             // debug print
             qb::io::cout() << "PingActor id(" << id() << ") has sent MyEvent" << std::endl;
         }

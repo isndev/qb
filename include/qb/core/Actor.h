@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,343 +16,166 @@
  */
 
 #ifndef QB_ACTOR_H
-# define QB_ACTOR_H
-# include <vector>
-# include <map>
-# include <qb/system/container/unordered_map.h>
-# include <utility>
-# include <tuple>
+#define QB_ACTOR_H
+#include <map>
+#include <tuple>
+#include <utility>
+#include <vector>
 // include from qb
-# include <qb/utility/nocopy.h>
-# include <qb/utility/type_traits.h>
-# include "ICallback.h"
-# include "ProxyPipe.h"
-# include "Event.h"
+#include "Event.h"
+#include "ICallback.h"
+#include "ProxyPipe.h"
+#include <qb/system/container/unordered_map.h>
+#include <qb/utility/nocopy.h>
+#include <qb/utility/type_traits.h>
 
 namespace qb {
 
-    class VirtualCore;
-    class ActorProxy;
-    class Service;
+class VirtualCore;
+class ActorProxy;
+class Service;
+
+/*!
+ * @class Actor core/Actor.h qb/actor.h
+ * @ingroup Core
+ * @brief Actor base class
+ * @details
+ * The Actor sends event messages to be received by another Actor, which is then treated by an Event
+ * handler.\n All UserActors should inherit from Actor class.
+ */
+class Actor : nocopy {
+    friend class VirtualCore;
+    friend class ActorProxy;
+    friend class Service;
+
+    const char *name = "unnamed";
+    ActorId _id;
+    mutable bool _alive = true;
+    std::uint32_t id_type = 0u;
 
     /*!
-     * @class Actor core/Actor.h qb/actor.h
-     * @ingroup Core
-     * @brief Actor base class
-     * @details
-     * The Actor sends event messages to be received by another Actor, which is then treated by an Event handler.\n
-     * All UserActors should inherit from Actor class.
+     * @private
+     * @tparam _Type
      */
-    class Actor
-            : nocopy
-    {
-        friend class VirtualCore;
-        friend class ActorProxy;
-        friend class Service;
+    template <typename _Type>
+    bool require_type() const noexcept;
 
-        const char * name = "unnamed";
-        ActorId _id;
-        mutable bool _alive = true;
-        std::uint32_t id_type = 0u;
+    explicit Actor(ActorId id) noexcept;
 
-        /*!
-         * @private
-         * @tparam _Type
-         */
-        template<typename _Type>
-        bool require_type() const noexcept;
+protected:
+    /*!
+     * @private
+     */
+    template <typename Tag>
+    static ServiceId registerIndex() noexcept;
 
-        explicit Actor(ActorId id) noexcept;
-    protected:
-        /*!
-         * @private
-         */
-        template <typename Tag>
-        static ServiceId registerIndex() noexcept;
+    /*!
+     * @name Construction/Destruction
+     * @{
+     */
 
-        /*!
-         * @name Construction/Destruction
-         * @{
-         */
+    /*!
+     */
+    Actor() noexcept;
 
-        /*!
-         */
-        Actor() noexcept;
+    /*!
+     */
+    virtual ~Actor() noexcept = default;
 
-        /*!
-         */
-        virtual ~Actor() noexcept = default;
+    /*!
+     * @brief DerivedActor should implement this method
+     * @return true on init success then false
+     * @details
+     * example:
+     * @code
+     * virtual bool onInit() {
+     *   // register events and callback here
+     *   // can also create actors
+     *   // ...
+     *   return true
+     * }
+     * @endcode
+     * @attention
+     * /!\ If initialization has failed DerivedActor will not be added to the engine
+     */
+    virtual bool onInit() {
+        return true;
+    };
 
-        /*!
-         * @brief DerivedActor should implement this method
-         * @return true on init success then false
-         * @details
-         * example:
-         * @code
-         * virtual bool onInit() {
-         *   // register events and callback here
-         *   // can also create actors
-         *   // ...
-         *   return true
-         * }
-         * @endcode
-         * @attention
-         * /!\ If initialization has failed DerivedActor will not be added to the engine
-         */
-        virtual bool onInit() { return true; };
+public:
+    /*!
+     * Kill the Actor
+     */
+    void kill() const noexcept;
 
-    public:
-        /*!
-         * Kill the Actor
-         */
-        void kill() const noexcept;
+    /*!
+     * @}
+     */
 
-        /*!
-         * @}
-         */
+public:
+    /*!
+     * @name Registered Event
+     * @{
+     */
 
-    public:
-        /*!
-         * @name Registered Event
-         * @{
-         */
+    /*!
+     * @brief Receiving this event will kill the Actor
+     * @param event received event
+     * @details
+     * This event can be overloaded by DerivedActor.\n
+     * example:
+     * @code
+     * // ...
+     * registerEvent<qb::KillEvent>(*this);
+     * // DerivedActor should also define the event callback
+     * void on(qb::KillEvent &event) {
+     *   // do something before killing actor
+     *   kill();
+     * }
+     * @endcode
+     * @attention
+     * /!\ Do not forget to call kill on overloaded function.
+     */
+    void on(KillEvent const &event) noexcept;
 
-        /*!
-         * @brief Receiving this event will kill the Actor
-         * @param event received event
-         * @details
-         * This event can be overloaded by DerivedActor.\n
-         * example:
-         * @code
-         * // ...
-         * registerEvent<qb::KillEvent>(*this);
-         * // DerivedActor should also define the event callback
-         * void on(qb::KillEvent &event) {
-         *   // do something before killing actor
-         *   kill();
-         * }
-         * @endcode
-         * @attention
-         * /!\ Do not forget to call kill on overloaded function.
-         */
-        void on(KillEvent const &event) noexcept;
+    /*!
+     * @brief Receiving this event will unregister the Actor's callback
+     * @param event received event
+     * @attention
+     * /!\ Do not overload this function.
+     */
+    void on(UnregisterCallbackEvent const &event) noexcept;
 
-        /*!
-         * @brief Receiving this event will unregister the Actor's callback
-         * @param event received event
-         * @attention
-         * /!\ Do not overload this function.
-         */
-        void on(UnregisterCallbackEvent const &event) noexcept;
+    void on(PingEvent const &event) noexcept;
 
-        void on(PingEvent const &event) noexcept;
+    /*!
+     * @}
+     */
 
-        /*!
-         * @}
-         */
+public:
+    /*!
+     * @class EventBuilder core/ActorId.h qb/actor.h
+     * @brief Helper to build Events
+     */
+    class EventBuilder {
+        friend class Actor;
+        ProxyPipe dest_pipe;
+
+        explicit EventBuilder(ProxyPipe const &pipe) noexcept;
 
     public:
+        EventBuilder() = delete;
+        EventBuilder(EventBuilder const &rhs) noexcept = default;
 
         /*!
-         * @class EventBuilder core/ActorId.h qb/actor.h
-         * @brief Helper to build Events
-         */
-        class EventBuilder {
-            friend class Actor;
-            ProxyPipe dest_pipe;
-
-            explicit EventBuilder(ProxyPipe const &pipe) noexcept;
-        public:
-            EventBuilder() = delete;
-            EventBuilder(EventBuilder const &rhs) noexcept = default;
-
-            /*!
-             * @brief Send a new ordered event
-             * @tparam _Event DerivedEvent type
-             * @param args arguments to forward to the constructor of the _Event
-             * @return Current EventBuilder
-             * @details
-             * EventBuilder is given by Actor::to function.\n
-             * This function can be chained.\n
-             * All events pushed will be received ordered by push order.\n
-             * example:
-             * @code
-             * to(destId)
-             * .push<MyEvent1>()
-             * .push<MyEvent2>(param1, param2)
-             * // ...
-             * ;
-             * @endcode
-             */
-            template<typename _Event, typename ..._Args>
-            EventBuilder &push(_Args &&...args) noexcept;
-        };
-
-        /*!
-         * @name Public Accessors
-         * @{
-         */
-
-        /*!
-         * Get ActorId
-         * @return ActorId
-         */
-        ActorId id() const noexcept { return _id; }
-
-        /*!
-         * Get core index
-         * @return core index
-         */
-        CoreId getIndex() const noexcept;
-
-        /*!
-         * Get derived class name
-         * @return name as string_view
-        */
-        std::string_view getName() const noexcept;
-
-        /*!
-         * @brief Get current time
-         * @return nano timestamp since epoch
-         * @details
-         * @note
-         * This value is optimized and updated each VirtualCore loop.
-         * @code
-         * // ...
-         * auto t1 = time();
-         * // ... some heavy calculation
-         * assert(t1 == time()); // true - will not assert
-         * @endcode
-         * To get precise time use NanoTimestamp.
-         */
-        uint64_t time() const noexcept;
-
-        /*!
-         * @private
-         */
-        template <typename T>
-        static ActorId getServiceId(CoreId index) noexcept;
-
-        /*!
-         * @brief Get direct access to ServiceActor* in same core
-         * @return ptr to _ServiceActor else nullptr if not registered in core
-         */
-        template <typename _ServiceActor>
-        _ServiceActor *getService() const noexcept;
-
-        void setCoreLowLatency(bool state) const noexcept;
-
-        /*!
-         * @brief Check if Actor is alive
-         * @return true if Actor is alive else false
-         */
-        bool is_alive() const noexcept;
-
-        /*!
-         * @}
-         */
-
-        /*!
-         * @name Public Member Functions
-         * This part describes how to manage Actor loop callback, events registration,
-         * several ways to send events and create referenced actors.
-         * @{
-         */
-
-        /*!
-         * @brief Register a looped callback
-         * @param actor reference of DerivedActor
-         * @details
-         * The registered callback will be called each VirtualCore loop.\n
-         * _Actor must inherit and implement ICallback interface.\n
-         * example:
-         * @code
-         * class MyActor
-         * : public qb::Actor
-         * , public qb::ICallback
-         * {
-         *   virtual bool onInit() {
-         *     registerCallback(*this);
-         *   }
-         * // ...
-         *   virtual void onCallback() override final {
-         *     // do something
-         *   }
-         * }
-         * // ...
-         * }
-         * @endcode
-         */
-        template <typename _Actor>
-        void registerCallback(_Actor &actor) const noexcept;
-
-        /*!
-         * @brief Unregister actor callback
-         * @param actor reference of DerivedActor
-         * @details
-         * example:
-         * @code
-         * unregisterCallback(*this);
-         * @endcode
-         */
-        template <typename _Actor>
-        void unregisterCallback(_Actor &actor) const noexcept;
-
-        /*!
-         * @private
-         */
-        void unregisterCallback() const noexcept;
-
-
-        /*!
-         * @brief Actor will listen on new _Event
+         * @brief Send a new ordered event
          * @tparam _Event DerivedEvent type
-         * @param actor reference of DerivedActor
+         * @param args arguments to forward to the constructor of the _Event
+         * @return Current EventBuilder
          * @details
-         * example:
-         * @code
-         * virtual bool onInit() {
-         *   registerEvent<MyEvent>(*this);
-         *   // ...
-         * }
-         * @endcode
-         * @note
-         * _Actor must define the callback event function.
-         * @code
-         * void on(MyEvent &event) {
-         *   // do something
-         * }
-         * @endcode
-         */
-        template<typename _Event, typename _Actor>
-        void registerEvent(_Actor &actor) const noexcept;
-
-        /*!
-         * @brief Actor will stop listening _Event
-         * @tparam _Event DerivedEvent type
-         * @param actor reference of DerivedActor
-         * @details
-         * example:
-         * @code
-         * unregisterEvent<MyEvent>(*this);
-         * @endcode
-         */
-        template<typename _Event, typename _Actor>
-        void unregisterEvent(_Actor &actor) const noexcept;
-
-        /*!
-         * @private
-         * @tparam _Event
-         */
-        template<typename _Event>
-        void unregisterEvent() const noexcept;
-
-        /*!
-         * @brief Get EventBuilder for ActorId destination
-         * @param dest ActorId destination
-         * @return EventBuilder
-         * @details
-         * A way to push chained events to destination Actor.\n
+         * EventBuilder is given by Actor::to function.\n
+         * This function can be chained.\n
+         * All events pushed will be received ordered by push order.\n
          * example:
          * @code
          * to(destId)
@@ -361,237 +184,423 @@ namespace qb {
          * // ...
          * ;
          * @endcode
-         * @attention
-         * @code
-         * auto builder1 = main.to(sameid);
-         * auto builder2 = main.to(sameid);
-         * // builder1 == builder2 -> true
-         * @endcode
          */
-        EventBuilder to(ActorId dest) const noexcept;
-
-        /*!
-         * @brief Send a new ordered event
-         * @tparam _Event DerivedEvent type
-         * @param dest destination ActorId
-         * @param args arguments to forward to the constructor of the _Event
-         * @return a reference to the constructed _Event to send
-         * @details
-         * All events pushed to same actors id in context will be received ordered by push order.\n
-         * example:
-         * @code
-         * // ...
-         * auto &e = push<MyEvent>(id_1); // (1) first push
-         * e.some_data = 1337; // set my event data without using constructor
-         * push<MyEvent>(id_2, param2); // (2) id_2 != id_1 /!\ possible to be received before (1)
-         * push<MyEvent>(id_1, param3); // (3) Guaranteed to be received after (1)
-         * // ...
-         * @endcode
-         * @note
-         * Pushed events are sent at the end of the core loop.
-         * @attention
-         * /!\ We recommend to non advanced users to use only this function to send events.
-         */
-        template<typename _Event, typename ..._Args>
-        _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
-
-        /*!
-         * @brief Send a new unordered event
-         * @tparam _Event DerivedEvent type
-         * @param dest destination ActorId
-         * @param args arguments to forward to the constructor of the _Event
-         * @details
-         * All events sent using send function are not guaranteed to be received in order.\n
-         * example:
-         * @code
-         * // ...
-         * send<MyEvent>(id_1, param1); // (1)
-         * send<MyEvent>(id_1, param2); // (2)
-         * send<MyEvent>(id_1, param3); // (3)
-         * // Actor with id_1 will receive events in random order
-         * // ...
-         * @endcode
-         * @note
-         * send may be faster than push in some cases.
-         * @attention
-         * /!\ We recommend to non advanced users to not use this function to send events.
-         */
-        template<typename _Event, typename ..._Args>
-        void send(ActorId const &dest, _Args &&...args) const noexcept;
-
-        template<typename _Type>
-        inline bool is(uint32_t const id) const noexcept { return id == type_id<_Type>(); }
-
-        template<typename _Type>
-        inline bool is(RequireEvent const &event) const noexcept { return event.type == type_id<_Type>(); }
-
-        template<typename ..._Actors>
-        bool require() const noexcept;
-
-        template<typename _Event, typename ..._Args>
-        void broadcast(_Args &&...args) const noexcept;
-
-        /*!
-         * @brief Reply an event
-         * @param event any received event
-         * @details
-         * example:
-         * @code
-         * // ...
-         * void on(MyEvent &event) {
-         *   // do something...
-         *   reply(event);
-         * }
-         * @endcode
-         * @note
-         * Replying an event is faster than pushing a new one.
-         */
-        void reply(Event &event) const noexcept;
-
-        /*!
-         * @brief Forward an event
-         * @param dest destination ActorId
-         * @param event any received event
-         * @details
-         * example:
-         * @code
-         * // ...
-         * void on(MyEvent &event) {
-         *   // do something...
-         *   forward(id_1, event);
-         * }
-         * @endcode
-         * @note
-         * Forwarding an event is faster than pushing a new one.
-         */
-        void forward(ActorId dest, Event &event) const noexcept;
-
-        // OpenApi : used for module
-         void send(Event const &event) const noexcept;
-         void push(Event const &event) const noexcept;
-         bool try_send(Event const &event) const noexcept;
-
-        /*!
-         * @brief Get access to unidirectional out events pipe
-         * @param dest destination ActorId
-         * @return destination ProxyPipe
-         * @details
-         * If you want to send several events to same Actor or push dynamic sized events,\n
-         * Actor API allows to retrieve a ProxyPipe to a desired Actor.\n
-         * more details on ProxyPipe section
-         */
-        ProxyPipe getPipe(ActorId dest) const noexcept;
-
-        /*!
-         * @brief Create new referenced _Actor
-         * @tparam _Actor DerivedActor type
-         * @param args arguments to forward to the constructor of the _Actor
-         * @return _Actor * on success or nullptr on failure
-         * @details
-         * create and initialize new _Actor on same VirtualCore as the callee Actor.\n
-         * example:
-         * @code
-         * auto actor = addRefActor<MyActor>(param1, param2);
-         * if (actor) {
-         *   // actor was created and pushed to the engine
-         * }
-         * @endcode
-         * @note
-         * Referenced actors can be used as a normal C++ class,
-         * the parent Actor can make direct calls to created actors "on" functions.\n
-         * This is very useful to limit the number of events managed by the engine
-         * then improve global performance.
-         */
-        template<typename _Actor, typename ..._Args>
-        _Actor *addRefActor(_Args &&...args) const;
-
-        /*!
-         * @}
-         */
-
+        template <typename _Event, typename... _Args>
+        EventBuilder &push(_Args &&... args) noexcept;
     };
 
     /*!
-     * @class Service
-     * @brief internal
+     * @name Public Accessors
+     * @{
      */
-    class Service : public Actor {
-    public:
-        explicit Service(ServiceId sid);
-    };
 
     /*!
-     * @class ServiceActor actor.h qb/actor.h
-     * @ingroup Core
-     * @brief SingletonActor base class
-     * @tparam Tag is a uniq struct Tag
+     * Get ActorId
+     * @return ActorId
+     */
+    ActorId id() const noexcept {
+        return _id;
+    }
+
+    /*!
+     * Get core index
+     * @return core index
+     */
+    CoreId getIndex() const noexcept;
+
+    /*!
+     * Get derived class name
+     * @return name as string_view
+     */
+    std::string_view getName() const noexcept;
+
+    /*!
+     * @brief Get current time
+     * @return nano timestamp since epoch
      * @details
-     * ServiceActor is a special actor where DerivedActor
-     * must define a unique service index by Tag.\n
-     * Inherited Service Actors are unique per VirtualCore.
+     * @note
+     * This value is optimized and updated each VirtualCore loop.
+     * @code
+     * // ...
+     * auto t1 = time();
+     * // ... some heavy calculation
+     * assert(t1 == time()); // true - will not assert
+     * @endcode
+     * To get precise time use NanoTimestamp.
      */
-    template <typename Tag>
-    class ServiceActor : public Service {
-        friend class Main;
-        friend class CoreInitializer;
-        friend class VirtualCore;
-        static const ServiceId ServiceIndex;
-    public:
+    uint64_t time() const noexcept;
 
-        ServiceActor() : Service(ServiceIndex) {}
-    };
+    /*!
+     * @private
+     */
+    template <typename T>
+    static ActorId getServiceId(CoreId index) noexcept;
 
-    class IActorFactory {
-    public:
-        virtual ~IActorFactory() = default;
-        virtual Actor *create() = 0;
-        [[nodiscard]] virtual bool isService() const = 0;
-    };
+    /*!
+     * @brief Get direct access to ServiceActor* in same core
+     * @return ptr to _ServiceActor else nullptr if not registered in core
+     */
+    template <typename _ServiceActor>
+    _ServiceActor *getService() const noexcept;
 
-    class ActorProxy
-    {
-    protected:
-        ActorProxy() = default;
-        template <typename _Type>
-        void setType(Actor &actor) {
-            actor.id_type = type_id<_Type>();
-        }
-        template <typename _Type>
-        void setName(Actor &actor) {
-            actor.name = typeid(_Type).name();
-        }
-    };
+    void setCoreLowLatency(bool state) const noexcept;
 
-    template <typename _Actor, typename ..._Args>
-    class TActorFactory : public IActorFactory, public ActorProxy {
-        ActorId _id;
-        std::tuple<typename remove_reference_if<_Args,
-                std::is_trivially_copyable<std::remove_reference_t<std::remove_all_extents_t<_Args>>>::value>::type...> _parameters;
-    public:
-        explicit TActorFactory(ActorId const id, _Args &&...args)
-            : _id(id), _parameters(std::forward<_Args>(args)...)
-        {}
+    /*!
+     * @brief Check if Actor is alive
+     * @return true if Actor is alive else false
+     */
+    bool is_alive() const noexcept;
 
-        template<std::size_t... Is>
-        Actor *create_impl(std::index_sequence<Is...>) {
-            auto actor = new _Actor(std::get<Is>(_parameters)...);
-            setType<_Actor>(*actor);
-            setName<_Actor>(*actor);
-            return actor;
-        }
+    /*!
+     * @}
+     */
 
-        Actor *create() final {
-            return create_impl(std::index_sequence_for<_Args...>{});
-        }
+    /*!
+     * @name Public Member Functions
+     * This part describes how to manage Actor loop callback, events registration,
+     * several ways to send events and create referenced actors.
+     * @{
+     */
 
-        [[nodiscard]] bool isService() const final {
-            return std::is_base_of<Service, _Actor>::value;
-        }
-    };
+    /*!
+     * @brief Register a looped callback
+     * @param actor reference of DerivedActor
+     * @details
+     * The registered callback will be called each VirtualCore loop.\n
+     * _Actor must inherit and implement ICallback interface.\n
+     * example:
+     * @code
+     * class MyActor
+     * : public qb::Actor
+     * , public qb::ICallback
+     * {
+     *   virtual bool onInit() {
+     *     registerCallback(*this);
+     *   }
+     * // ...
+     *   virtual void onCallback() override final {
+     *     // do something
+     *   }
+     * }
+     * // ...
+     * }
+     * @endcode
+     */
+    template <typename _Actor>
+    void registerCallback(_Actor &actor) const noexcept;
 
+    /*!
+     * @brief Unregister actor callback
+     * @param actor reference of DerivedActor
+     * @details
+     * example:
+     * @code
+     * unregisterCallback(*this);
+     * @endcode
+     */
+    template <typename _Actor>
+    void unregisterCallback(_Actor &actor) const noexcept;
 
-}
+    /*!
+     * @private
+     */
+    void unregisterCallback() const noexcept;
+
+    /*!
+     * @brief Actor will listen on new _Event
+     * @tparam _Event DerivedEvent type
+     * @param actor reference of DerivedActor
+     * @details
+     * example:
+     * @code
+     * virtual bool onInit() {
+     *   registerEvent<MyEvent>(*this);
+     *   // ...
+     * }
+     * @endcode
+     * @note
+     * _Actor must define the callback event function.
+     * @code
+     * void on(MyEvent &event) {
+     *   // do something
+     * }
+     * @endcode
+     */
+    template <typename _Event, typename _Actor>
+    void registerEvent(_Actor &actor) const noexcept;
+
+    /*!
+     * @brief Actor will stop listening _Event
+     * @tparam _Event DerivedEvent type
+     * @param actor reference of DerivedActor
+     * @details
+     * example:
+     * @code
+     * unregisterEvent<MyEvent>(*this);
+     * @endcode
+     */
+    template <typename _Event, typename _Actor>
+    void unregisterEvent(_Actor &actor) const noexcept;
+
+    /*!
+     * @private
+     * @tparam _Event
+     */
+    template <typename _Event>
+    void unregisterEvent() const noexcept;
+
+    /*!
+     * @brief Get EventBuilder for ActorId destination
+     * @param dest ActorId destination
+     * @return EventBuilder
+     * @details
+     * A way to push chained events to destination Actor.\n
+     * example:
+     * @code
+     * to(destId)
+     * .push<MyEvent1>()
+     * .push<MyEvent2>(param1, param2)
+     * // ...
+     * ;
+     * @endcode
+     * @attention
+     * @code
+     * auto builder1 = main.to(sameid);
+     * auto builder2 = main.to(sameid);
+     * // builder1 == builder2 -> true
+     * @endcode
+     */
+    EventBuilder to(ActorId dest) const noexcept;
+
+    /*!
+     * @brief Send a new ordered event
+     * @tparam _Event DerivedEvent type
+     * @param dest destination ActorId
+     * @param args arguments to forward to the constructor of the _Event
+     * @return a reference to the constructed _Event to send
+     * @details
+     * All events pushed to same actors id in context will be received ordered by push order.\n
+     * example:
+     * @code
+     * // ...
+     * auto &e = push<MyEvent>(id_1); // (1) first push
+     * e.some_data = 1337; // set my event data without using constructor
+     * push<MyEvent>(id_2, param2); // (2) id_2 != id_1 /!\ possible to be received before (1)
+     * push<MyEvent>(id_1, param3); // (3) Guaranteed to be received after (1)
+     * // ...
+     * @endcode
+     * @note
+     * Pushed events are sent at the end of the core loop.
+     * @attention
+     * /!\ We recommend to non advanced users to use only this function to send events.
+     */
+    template <typename _Event, typename... _Args>
+    _Event &push(ActorId const &dest, _Args &&... args) const noexcept;
+
+    /*!
+     * @brief Send a new unordered event
+     * @tparam _Event DerivedEvent type
+     * @param dest destination ActorId
+     * @param args arguments to forward to the constructor of the _Event
+     * @details
+     * All events sent using send function are not guaranteed to be received in order.\n
+     * example:
+     * @code
+     * // ...
+     * send<MyEvent>(id_1, param1); // (1)
+     * send<MyEvent>(id_1, param2); // (2)
+     * send<MyEvent>(id_1, param3); // (3)
+     * // Actor with id_1 will receive events in random order
+     * // ...
+     * @endcode
+     * @note
+     * send may be faster than push in some cases.
+     * @attention
+     * /!\ We recommend to non advanced users to not use this function to send events.
+     */
+    template <typename _Event, typename... _Args>
+    void send(ActorId const &dest, _Args &&... args) const noexcept;
+
+    template <typename _Type>
+    inline bool is(uint32_t const id) const noexcept {
+        return id == type_id<_Type>();
+    }
+
+    template <typename _Type>
+    inline bool is(RequireEvent const &event) const noexcept {
+        return event.type == type_id<_Type>();
+    }
+
+    template <typename... _Actors>
+    bool require() const noexcept;
+
+    template <typename _Event, typename... _Args>
+    void broadcast(_Args &&... args) const noexcept;
+
+    /*!
+     * @brief Reply an event
+     * @param event any received event
+     * @details
+     * example:
+     * @code
+     * // ...
+     * void on(MyEvent &event) {
+     *   // do something...
+     *   reply(event);
+     * }
+     * @endcode
+     * @note
+     * Replying an event is faster than pushing a new one.
+     */
+    void reply(Event &event) const noexcept;
+
+    /*!
+     * @brief Forward an event
+     * @param dest destination ActorId
+     * @param event any received event
+     * @details
+     * example:
+     * @code
+     * // ...
+     * void on(MyEvent &event) {
+     *   // do something...
+     *   forward(id_1, event);
+     * }
+     * @endcode
+     * @note
+     * Forwarding an event is faster than pushing a new one.
+     */
+    void forward(ActorId dest, Event &event) const noexcept;
+
+    // OpenApi : used for module
+    void send(Event const &event) const noexcept;
+    void push(Event const &event) const noexcept;
+    bool try_send(Event const &event) const noexcept;
+
+    /*!
+     * @brief Get access to unidirectional out events pipe
+     * @param dest destination ActorId
+     * @return destination ProxyPipe
+     * @details
+     * If you want to send several events to same Actor or push dynamic sized events,\n
+     * Actor API allows to retrieve a ProxyPipe to a desired Actor.\n
+     * more details on ProxyPipe section
+     */
+    ProxyPipe getPipe(ActorId dest) const noexcept;
+
+    /*!
+     * @brief Create new referenced _Actor
+     * @tparam _Actor DerivedActor type
+     * @param args arguments to forward to the constructor of the _Actor
+     * @return _Actor * on success or nullptr on failure
+     * @details
+     * create and initialize new _Actor on same VirtualCore as the callee Actor.\n
+     * example:
+     * @code
+     * auto actor = addRefActor<MyActor>(param1, param2);
+     * if (actor) {
+     *   // actor was created and pushed to the engine
+     * }
+     * @endcode
+     * @note
+     * Referenced actors can be used as a normal C++ class,
+     * the parent Actor can make direct calls to created actors "on" functions.\n
+     * This is very useful to limit the number of events managed by the engine
+     * then improve global performance.
+     */
+    template <typename _Actor, typename... _Args>
+    _Actor *addRefActor(_Args &&... args) const;
+
+    /*!
+     * @}
+     */
+};
+
+/*!
+ * @class Service
+ * @brief internal
+ */
+class Service : public Actor {
+public:
+    explicit Service(ServiceId sid);
+};
+
+/*!
+ * @class ServiceActor actor.h qb/actor.h
+ * @ingroup Core
+ * @brief SingletonActor base class
+ * @tparam Tag is a uniq struct Tag
+ * @details
+ * ServiceActor is a special actor where DerivedActor
+ * must define a unique service index by Tag.\n
+ * Inherited Service Actors are unique per VirtualCore.
+ */
+template <typename Tag>
+class ServiceActor : public Service {
+    friend class Main;
+    friend class CoreInitializer;
+    friend class VirtualCore;
+    static const ServiceId ServiceIndex;
+
+public:
+    ServiceActor()
+        : Service(ServiceIndex) {}
+};
+
+class IActorFactory {
+public:
+    virtual ~IActorFactory() = default;
+    virtual Actor *create() = 0;
+    [[nodiscard]] virtual bool isService() const = 0;
+};
+
+class ActorProxy {
+protected:
+    ActorProxy() = default;
+    template <typename _Type>
+    void setType(Actor &actor) {
+        actor.id_type = type_id<_Type>();
+    }
+    template <typename _Type>
+    void setName(Actor &actor) {
+        actor.name = typeid(_Type).name();
+    }
+};
+
+template <typename _Actor, typename... _Args>
+class TActorFactory
+    : public IActorFactory
+    , public ActorProxy {
+    ActorId _id;
+    std::tuple<
+        typename remove_reference_if<_Args, std::is_trivially_copyable<std::remove_reference_t<
+                                                std::remove_all_extents_t<_Args>>>::value>::type...>
+        _parameters;
+
+public:
+    explicit TActorFactory(ActorId const id, _Args &&... args)
+        : _id(id)
+        , _parameters(std::forward<_Args>(args)...) {}
+
+    template <std::size_t... Is>
+    Actor *create_impl(std::index_sequence<Is...>) {
+        auto actor = new _Actor(std::get<Is>(_parameters)...);
+        setType<_Actor>(*actor);
+        setName<_Actor>(*actor);
+        return actor;
+    }
+
+    Actor *create() final {
+        return create_impl(std::index_sequence_for<_Args...>{});
+    }
+
+    [[nodiscard]] bool isService() const final {
+        return std::is_base_of<Service, _Actor>::value;
+    }
+};
+
+} // namespace qb
 
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor);
 
-#endif //QB_ACTOR_H
+#endif // QB_ACTOR_H

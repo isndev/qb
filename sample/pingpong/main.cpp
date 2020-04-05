@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,11 @@
  */
 
 // main.cpp file
-#include <qb/main.h>
 #include "PingActor.h"
 #include "PongActor.h"
+#include <qb/main.h>
 
-int main (int, char *argv[]) {
+int main(int, char *argv[]) {
     // (optional) initialize the qb logger
     qb::io::log::init(argv[0]); // filename
 
@@ -33,8 +33,8 @@ int main (int, char *argv[]) {
     // Build Ping Actor to core 1 with Pong ActorId as parameter
     main.addActor<PingActor>(1); // constructed with parameters
 
-    main.start();  // start the engine asynchronously
-    main.join();   // wait for the running engine
+    main.start(); // start the engine asynchronously
+    main.join();  // wait for the running engine
     // if all my actors had been destroyed then it will release the wait
     return 0;
 }

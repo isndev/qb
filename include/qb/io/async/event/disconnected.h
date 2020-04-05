@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,10 +20,10 @@
 
 namespace qb::io::async::event {
 
-    struct disconnected {
-        int reason = 0;
-    };
+struct disconnected {
+    int reason = 0;
+};
 
-}
+} // namespace qb::io::async::event
 
-#endif //QB_IO_ASYNC_EVENT_DISCONNECTED_H
+#endif // QB_IO_ASYNC_EVENT_DISCONNECTED_H

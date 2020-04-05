@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,51 +15,45 @@
  *         limitations under the License.
  */
 
-#include            <openssl/ssl.h>
-#include            "../socket.h"
+#include "../socket.h"
+#include <openssl/ssl.h>
 
-#ifndef             QB_IO_TCP_SSL_SOCKET_H_
-# define            QB_IO_TCP_SSL_SOCKET_H_
+#ifndef QB_IO_TCP_SSL_SOCKET_H_
+#    define QB_IO_TCP_SSL_SOCKET_H_
 
-namespace           qb {
-    namespace       io {
-        namespace   tcp {
-            namespace ssl {
+namespace qb::io::tcp::ssl {
 
-                SSL_CTX *create_client_context(SSL_METHOD *method);
-                SSL_CTX *create_server_context(const SSL_METHOD * method, std::string const &cert_path, std::string const &key_path);
+SSL_CTX *create_client_context(SSL_METHOD *method);
+SSL_CTX *create_server_context(const SSL_METHOD *method, std::string const &cert_path,
+                               std::string const &key_path);
 
-                class listener;
+class listener;
 
-                /*!
-                 * @class socket tcp/ssl/socket.h qb/io/tcp/ssl/socket.h
-                 * @ingroup TCP
-                 */
-                class QB_API socket
-                    : public tcp::socket {
-                    SSL *_ssl_handle;
-                    bool _connected;
+/*!
+ * @class socket tcp/ssl/socket.h qb/io/tcp/ssl/socket.h
+ * @ingroup TCP
+ */
+class QB_API socket : public tcp::socket {
+    SSL *_ssl_handle;
+    bool _connected;
 
-                    void init(SSL *handle);
+    void init(SSL *handle);
 
-                public:
-                    socket();
-                    socket(socket const &rhs) = default;
+public:
+    socket();
+    socket(socket const &rhs) = default;
 
-                    SSL *ssl() const;
-                    int handCheck();
-                    SocketStatus connect(const ip &remoteAddress, unsigned short remotePort, int timeout = 0);
-                    void disconnect();
-                    int read(void *data, std::size_t size);
-                    int write(const void *data, std::size_t size);
+    [[nodiscard]] SSL *ssl() const;
+    int handCheck();
+    SocketStatus connect(const ip &remoteAddress, unsigned short remotePort, int timeout = 0);
+    void disconnect();
+    int read(void *data, std::size_t size);
+    int write(const void *data, std::size_t size);
 
-                private:
-                    friend class ssl::listener;
-                };
+private:
+    friend class ssl::listener;
+};
 
-            } // namsepace ssl
-        } // namespace tcp
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::tcp::ssl
 
 #endif // QB_IO_TCP_SSL_SOCKET_H_

@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,14 @@
  *         limitations under the License.
  */
 
-#include <iostream>
-#include "Session.h"
 #include "ServerActor.h"
+#include "Session.h"
+#include <iostream>
+#include <utility>
 
-ServerActor::ServerActor(std::string const& iface, uint16_t port) noexcept
-    : _iface(iface), _port(port) {
+ServerActor::ServerActor(std::string iface, uint16_t port) noexcept
+    : _iface(std::move(iface))
+    , _port(port) {
     setCoreLowLatency(false);
 }
 
@@ -37,12 +39,13 @@ bool ServerActor::onInit() {
 }
 
 // Called from qb::io on new session connected
-void ServerActor::on(Session& session) {
-    std::cout << "Session(" << session.in().ident() << ") ip(" << session.in().getRemoteAddress() << ") connected" << std::endl;
+void ServerActor::on(Session &session) {
+    std::cout << "Session(" << session.in().ident() << ") ip(" << session.in().getRemoteAddress()
+              << ") connected" << std::endl;
 }
 
 // Called from qb::io on server disconnected
-void ServerActor::on(qb::io::async::event::disconnected const&) {
+void ServerActor::on(qb::io::async::event::disconnected const &) {
     // kill ServerActor
     kill();
 }

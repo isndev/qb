@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,53 +15,50 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_PROT_JSON_H_
-# define            QB_IO_PROT_JSON_H_
-# include <qb/modules/json/single_include/nlohmann/json.hpp>
-# include "../stream.h"
+#ifndef QB_IO_PROT_JSON_H_
+#define QB_IO_PROT_JSON_H_
+#include "../stream.h"
+#include <qb/modules/json/single_include/nlohmann/json.hpp>
 
 namespace qb {
-    namespace io {
-        namespace protocol {
+namespace io {
+namespace protocol {
 
-            template<typename _IO_>
-            class json : public _IO_ {
-            public:
-                using _IO_::publish;
-                struct message_type {
-                    const char *data;
-                    nlohmann::json json;
-                };
+template <typename _IO_>
+class json : public _IO_ {
+public:
+    using _IO_::publish;
+    struct message_type {
+        const char *data;
+        nlohmann::json json;
+    };
 
-                int getMessageSize() {
-                    auto &buffer = this->_in_buffer;
-                    auto i = buffer.begin();
-                    while (i < buffer.end()) {
-                        if (buffer.data()[i] == '\0')
-                            return i - buffer.begin() + 1;
-                        ++i;
-                    }
-                    return 0;
-                }
+    int getMessageSize() {
+        auto &buffer = this->_in_buffer;
+        auto i = buffer.begin();
+        while (i < buffer.end()) {
+            if (buffer.data()[i] == '\0')
+                return i - buffer.begin() + 1;
+            ++i;
+        }
+        return 0;
+    }
 
-                message_type getMessage(int size) {
-                    auto &buffer = this->_in_buffer;
-                    auto data = buffer.data() + buffer.begin();
+    message_type getMessage(int size) {
+        auto &buffer = this->_in_buffer;
+        auto data = buffer.data() + buffer.begin();
 
-                    return {
-                            data,
-                            nlohmann::json::parse(std::string_view(data, size - 1), nullptr, false)
-                    };
-                }
+        return {data, nlohmann::json::parse(std::string_view(data, size - 1), nullptr, false)};
+    }
 
-                char *publish(nlohmann::json const &message) {
-                    const auto to_str = message.dump();
-                    return static_cast<_IO_ &>(*this).publish(to_str.c_str(), to_str.size() + 1);
-                }
-            };
+    char *publish(nlohmann::json const &message) {
+        const auto to_str = message.dump();
+        return static_cast<_IO_ &>(*this).publish(to_str.c_str(), to_str.size() + 1);
+    }
+};
 
-        } // namespace protocol
-    } // namespace io
+} // namespace protocol
+} // namespace io
 } // namespace qb
 
 #endif // QB_IO_PROT_JSON_H_

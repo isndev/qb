@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,25 +15,21 @@
  *         limitations under the License.
  */
 
-#ifndef             QB_IO_TRANSPORT_TCP_H
-# define            QB_IO_TRANSPORT_TCP_H
-# include "../tcp/socket.h"
-# include "../stream.h"
+#ifndef QB_IO_TRANSPORT_TCP_H
+#define QB_IO_TRANSPORT_TCP_H
+#include "../stream.h"
+#include "../tcp/socket.h"
 
-namespace qb {
-    namespace io {
-        namespace transport {
+namespace qb::io::transport {
 
-            class tcp : public stream<io::tcp::socket> {
-            public:
-                // Derived class should define :
-                // using message_type = const char *;
-                // int getMessageSize();
-                // message_type getMessage();
-            };
+class tcp : public stream<io::tcp::socket> {
+public:
+    // Derived class should define :
+    // using message_type = const char *;
+    // int getMessageSize();
+    // message_type getMessage();
+};
 
-        } // namespace transport
-    } // namespace io
-} // namespace qb
+} // namespace qb::io::transport
 
 #endif // QB_IO_TRANSPORT_TCP_H

@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,23 +19,23 @@
 #define QB_UTILS_BRANCH_HINTS_H
 
 namespace qb {
-    /** \brief hint for the branch prediction */
-    inline bool likely(bool expr) {
+/** \brief hint for the branch prediction */
+inline bool likely(bool expr) {
 #ifdef __GNUC__
-        return __builtin_expect(expr, true);
+    return __builtin_expect(expr, true);
 #else
-        return expr;
+    return expr;
 #endif
-    }
+}
 
-    /** \brief hint for the branch prediction */
-    inline bool unlikely(bool expr) {
+/** \brief hint for the branch prediction */
+inline bool unlikely(bool expr) {
 #ifdef __GNUC__
-        return __builtin_expect(expr, false);
+    return __builtin_expect(expr, false);
 #else
-        return expr;
+    return expr;
 #endif
-    }
+}
 
 } /* namespace qb */
 

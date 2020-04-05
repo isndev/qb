@@ -15,9 +15,9 @@
  *         limitations under the License.
  */
 
-#include <qb/main.h>
-#include "CmdActor.h"
 #include "ClientActor.h"
+#include "CmdActor.h"
+#include <qb/main.h>
 
 int main(int argc, char *argv[]) {
     // default connection

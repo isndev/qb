@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,13 @@
  */
 
 // PongActor.h file
-#include <qb/actor.h>
 #include "MyEvent.h"
+#include <qb/actor.h>
 #ifndef PONGACTOR_H_
-# define PONGACTOR_H_
+#    define PONGACTOR_H_
 
 class PongActor
-        : public qb::Actor // /!\ should inherit from qb actor
+    : public qb::Actor // /!\ should inherit from qb actor
 {
 public:
     // /!\ never call any qb::Actor functions in constructor
@@ -31,9 +31,9 @@ public:
 
     // /!\ the engine will call this function before adding PongActor
     bool onInit() final {
-        registerEvent<MyEvent>(*this);         // will just listen MyEvent
+        registerEvent<MyEvent>(*this); // will just listen MyEvent
 
-        return true;                           // init ok
+        return true; // init ok
     }
     // will call this function when PongActor receives MyEvent
     void on(MyEvent &event) {

@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,41 +16,41 @@
  */
 
 #ifndef QB_CORESET_H
-# define QB_CORESET_H
-# include <cstdint>
-# include <vector>
-# include <qb/system/container/unordered_set.h>
+#define QB_CORESET_H
+#include "ActorId.h"
+#include <cstdint>
+#include <qb/system/container/unordered_set.h>
+#include <vector>
 
 namespace qb {
 
-    /*!
-     * @class CoreSet core/CoreSet.h qb/coreset.h
-     * @ingroup Core
-     * @brief Main initializer
-     */
-    class CoreSet {
-        friend class SharedCoreCommunication;
-        friend class VirtualCore;
+/*!
+ * @class CoreSet core/CoreSet.h qb/coreset.h
+ * @ingroup Core
+ * @brief Main initializer
+ */
+class CoreSet {
+    friend class SharedCoreCommunication;
+    friend class VirtualCore;
 
-        qb::unordered_set<CoreId>_raw_set;
-        std::size_t              _nb_core;
-        std::size_t              _size;
-        std::array<uint8_t, 256> _set;
+    const qb::unordered_set<CoreId> _raw_set;
+    const std::size_t _nb_core;
+    const std::size_t _size;
+    std::array<uint8_t, 256> _set;
 
+    [[nodiscard]] CoreId resolve(std::size_t id) const noexcept;
+    [[nodiscard]] std::size_t getSize() const noexcept;
+    [[nodiscard]] std::size_t getNbCore() const noexcept;
 
-        [[nodiscard]] CoreId resolve(std::size_t id) const noexcept;
-        [[nodiscard]] std::size_t getSize() const noexcept;
-        [[nodiscard]] std::size_t getNbCore() const noexcept;
+public:
+    CoreSet() = delete;
+    CoreSet(CoreSet const &) = default;
+    explicit CoreSet(qb::unordered_set<CoreId> const &set) noexcept;
 
-    public:
-        CoreSet() = default;
-        CoreSet(CoreSet const &) = default;
-        explicit CoreSet(qb::unordered_set<CoreId> const &set) noexcept;
-
-        [[nodiscard]] const qb::unordered_set<CoreId> &raw() const noexcept;
-        static CoreSet build(uint32_t nb_core = std::thread::hardware_concurrency()) noexcept;
-    };
+    [[nodiscard]] const qb::unordered_set<CoreId> &raw() const noexcept;
+    static CoreSet build(uint32_t nb_core = std::thread::hardware_concurrency()) noexcept;
+};
 
 } // namespace qb
 
-#endif //QB_CORESET_H
+#endif // QB_CORESET_H

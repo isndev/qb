@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,17 +18,26 @@
 #include <gtest/gtest.h>
 #include <qb/system/event/router.h>
 
-struct ActorId  {
+struct ActorId {
     uint32_t _id;
 
     ActorId() = default;
-    explicit ActorId(uint32_t id) noexcept : _id(id) {}
+    explicit ActorId(uint32_t id) noexcept
+        : _id(id) {}
 
-    explicit operator uint32_t () const noexcept { return _id; }
+    explicit operator uint32_t() const noexcept {
+        return _id;
+    }
 
-    [[nodiscard]] bool is_valid() const noexcept { return _id != 0; }
-    [[nodiscard]] bool is_broadcast() const noexcept { return _id == std::numeric_limits<uint32_t>::max(); }
-    bool operator==(ActorId const &rhs) const noexcept { return _id == rhs._id; }
+    [[nodiscard]] bool is_valid() const noexcept {
+        return _id != 0;
+    }
+    [[nodiscard]] bool is_broadcast() const noexcept {
+        return _id == std::numeric_limits<uint32_t>::max();
+    }
+    bool operator==(ActorId const &rhs) const noexcept {
+        return _id == rhs._id;
+    }
 
     static const ActorId broadcastId;
 };
@@ -36,14 +45,15 @@ struct ActorId  {
 const ActorId ActorId::broadcastId = ActorId{std::numeric_limits<uint32_t>::max()};
 
 namespace std {
-    template<> struct hash<::ActorId> {
-        std::size_t operator()(ActorId const &val) const noexcept {
-            return static_cast<uint32_t>(val);
-        }
-    };
-}
+template <>
+struct hash<::ActorId> {
+    std::size_t operator()(ActorId const &val) const noexcept {
+        return static_cast<uint32_t>(val);
+    }
+};
+} // namespace std
 
-template<typename T>
+template <typename T>
 struct type {
     constexpr static void id() {}
 };
@@ -54,20 +64,29 @@ struct RawEvent {
     using id_type = const char *;
     using id_handler_type = ActorId;
 
-//    template<typename T>
-//    constexpr static id_type type_to_id() { return static_cast<id_type>(reinterpret_cast<std::size_t>(&type<T>::id)); }
+    //    template<typename T>
+    //    constexpr static id_type type_to_id() { return
+    //    static_cast<id_type>(reinterpret_cast<std::size_t>(&type<T>::id)); }
 
-    template<typename T>
-    constexpr static id_type type_to_id() { return typeid(T).name(); }
+    template <typename T>
+    constexpr static id_type type_to_id() {
+        return typeid(T).name();
+    }
 
     id_type id = "RawEvent";
-    id_handler_type dest;
-    id_handler_type source;
+    id_handler_type dest{};
+    id_handler_type source{};
     bool alive = true;
 
-    [[nodiscard]] id_type getID() const noexcept { return id; }
-    [[nodiscard]] bool is_alive() const noexcept { return alive; }
-    [[nodiscard]] id_handler_type getDestination() const noexcept { return dest; }
+    [[nodiscard]] id_type getID() const noexcept {
+        return id;
+    }
+    [[nodiscard]] bool is_alive() const noexcept {
+        return alive;
+    }
+    [[nodiscard]] id_handler_type getDestination() const noexcept {
+        return dest;
+    }
 };
 
 struct TestEvent : public RawEvent {
@@ -99,7 +118,6 @@ struct TestDestroyEvent : public RawEvent {
     }
 };
 
-
 std::size_t TestEvent::_count = 0;
 std::size_t TestConstEvent::_count = 0;
 std::size_t TestDestroyEvent::_count = 0;
@@ -113,14 +131,17 @@ void reset_all_event_counts() {
 struct FakeActor {
     ActorId _id;
 
-    explicit FakeActor(uint32_t id) : _id(id) {}
+    explicit FakeActor(uint32_t id)
+        : _id(id) {}
     FakeActor(FakeActor const &) = delete;
 
     [[nodiscard]] ActorId id() const {
         return _id;
     }
 
-    [[nodiscard]] bool is_alive() const noexcept { return true; }
+    [[nodiscard]] bool is_alive() const noexcept {
+        return true;
+    }
 
     void on(TestEvent &event) {
         ++TestEvent::_count;
@@ -212,7 +233,6 @@ TEST(EventRouting, MESH) {
     Test_MESH<TestDestroyEvent, false>(0);
 }
 
-
 template <typename _Event, bool _CleanEvent = true, typename _Handler = void>
 void Test_MEMH(std::size_t expected_count) {
     std::remove_const_t<_Event> event;
@@ -243,7 +263,6 @@ void Test_MEMH(std::size_t expected_count) {
     }
     EXPECT_EQ(_Event::_count, expected_count);
 }
-
 
 TEST(EventRouting, MEMH) {
     Test_MEMH<TestEvent>(4096);

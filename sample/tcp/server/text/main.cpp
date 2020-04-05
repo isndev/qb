@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
  *         limitations under the License.
  */
 
-#include <qb/main.h>
 #include "ServerActor.h"
+#include <qb/main.h>
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     // default listenning
     std::string iface = "127.0.0.1";
     uint16_t port = 60123;
@@ -29,8 +29,7 @@ int main(int argc, char* argv[]) {
         port = std::atoi(argv[2]);
 
     qb::Main main;
-    main.core(0)
-        .addActor<ServerActor>(iface, port);
+    main.core(0).addActor<ServerActor>(iface, port);
 
     main.start(false);
     main.join();

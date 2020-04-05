@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,93 +15,88 @@
  *         limitations under the License.
  */
 
-#include            <sys/epoll.h>
-#include            <exception>
-#include            <qb/utility/branch_hints.h>
-#include            "../helper.h"
+#include "../helper.h"
+#include <exception>
+#include <qb/utility/branch_hints.h>
+#include <sys/epoll.h>
 
 #ifdef __WIN__SYSTEM__
-#error "epoll is not available on windows"
+#    error "epoll is not available on windows"
 #endif
 
-#ifndef             QB_IO_EPOLL_H
-#define             QB_IO_EPOLL_H
+#ifndef QB_IO_EPOLL_H
+#    define QB_IO_EPOLL_H
 
-namespace           qb {
-    namespace       io {
-        namespace   epoll {
+namespace qb {
+namespace io {
+namespace epoll {
 
-            class Proxy {
-            protected:
-                int _epoll;
-            public:
-                Proxy() = default;
+class Proxy {
+protected:
+    int _epoll;
 
-                Proxy(const int epoll)
-                        : _epoll(epoll) {
-                }
+public:
+    Proxy() = default;
 
-            public:
+    Proxy(const int epoll)
+        : _epoll(epoll) {}
 
-                using item_type = epoll_event;
+public:
+    using item_type = epoll_event;
 
-                Proxy(Proxy const &) = default;
+    Proxy(Proxy const &) = default;
 
-                inline int
-                ctl(item_type &item) const {
-                    return epoll_ctl(_epoll, EPOLL_CTL_MOD, item.data.fd, &item);
-                }
+    inline int ctl(item_type &item) const {
+        return epoll_ctl(_epoll, EPOLL_CTL_MOD, item.data.fd, &item);
+    }
 
-                inline int
-                add(item_type &item) const {
-                    return epoll_ctl(_epoll, EPOLL_CTL_ADD, item.data.fd, &item);
-                }
+    inline int add(item_type &item) const {
+        return epoll_ctl(_epoll, EPOLL_CTL_ADD, item.data.fd, &item);
+    }
 
-                inline int
-                remove(item_type const &item) {
-                    return epoll_ctl(_epoll, EPOLL_CTL_DEL, item.data.fd, nullptr);
-                }
-            };
+    inline int remove(item_type const &item) {
+        return epoll_ctl(_epoll, EPOLL_CTL_DEL, item.data.fd, nullptr);
+    }
+};
 
-            /*!
-             * @class Poller epoll.h qb/io/epoll.h
-             * @ingroup IO
-             * @note Available only on Linux >= 2.6
-             * @tparam _MAX_EVENTS
-             */
-            template<std::size_t _MAX_EVENTS = 4096>
-            class Poller
-                    : public Proxy {
-                epoll_event _epvts[_MAX_EVENTS];
-            public:
-                Poller()
-                        : Proxy(epoll_create(_MAX_EVENTS)) {
-                    if (unlikely(_epoll < 0))
-                        throw std::runtime_error("failed to init epoll::Poller");
-                }
+/*!
+ * @class Poller epoll.h qb/io/epoll.h
+ * @ingroup IO
+ * @note Available only on Linux >= 2.6
+ * @tparam _MAX_EVENTS
+ */
+template <std::size_t _MAX_EVENTS = 4096>
+class Poller : public Proxy {
+    epoll_event _epvts[_MAX_EVENTS];
 
-                Poller(Poller const &) = delete;
+public:
+    Poller()
+        : Proxy(epoll_create(_MAX_EVENTS)) {
+        if (unlikely(_epoll < 0))
+            throw std::runtime_error("failed to init epoll::Poller");
+    }
 
-                ~Poller() {
-                    ::close(_epoll);
-                }
+    Poller(Poller const &) = delete;
 
-                template<typename _Func>
-                inline void
-                wait(_Func const &func, int const timeout = 0) {
-                    const int ret = epoll_wait(_epoll, _epvts, _MAX_EVENTS, timeout);
-                    if (unlikely(ret < 0)) {
-                        std::cerr << "epoll::Poller polling has failed " << std::endl;
-                        return;
-                    }
-                    for (int i = 0; i < ret; ++i) {
-                        func(_epvts[i]);
-                    }
-                }
-            };
+    ~Poller() {
+        ::close(_epoll);
+    }
 
-        } // namespace epoll
-    } // namespace io
+    template <typename _Func>
+    inline void wait(_Func const &func, int const timeout = 0) {
+        const int ret = epoll_wait(_epoll, _epvts, _MAX_EVENTS, timeout);
+        if (unlikely(ret < 0)) {
+            std::cerr << "epoll::Poller polling has failed " << std::endl;
+            return;
+        }
+        for (int i = 0; i < ret; ++i) {
+            func(_epvts[i]);
+        }
+    }
+};
+
+} // namespace epoll
+} // namespace io
 } // namespace qb
 
 #endif // QB_IO_EPOLL_H

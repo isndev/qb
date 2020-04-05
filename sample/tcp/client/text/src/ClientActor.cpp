@@ -15,13 +15,14 @@
  *         limitations under the License.
  */
 
-#include <string_view>
 #include "ClientActor.h"
+#include <string_view>
+#include <utility>
 
 // constructor
-ClientActor::ClientActor(std::string const& ip, uint16_t port) noexcept
-    : _ip(ip), _port(port)
-{
+ClientActor::ClientActor(std::string ip, uint16_t port) noexcept
+    : _ip(std::move(ip))
+    , _port(port) {
     // core will sleep if no activity
     setCoreLowLatency(false);
     // register events
@@ -55,7 +56,7 @@ void ClientActor::on(IOMessage message, std::size_t size) {
 }
 
 // on disconnect received command event
-void ClientActor::on(CommandEvent & event) {
+void ClientActor::on(CommandEvent &event) {
     // cmd protocol should be ended by newline char
     event.message[event.message.size()] = '\n';
     // publish message to remote server
@@ -63,12 +64,12 @@ void ClientActor::on(CommandEvent & event) {
 }
 
 // retry connection event
-void ClientActor::on(RetryConnectEvent const& event) {
+void ClientActor::on(RetryConnectEvent const &event) {
     connect();
 }
 
 // called when client has been disconnected
-void ClientActor::on(qb::io::async::event::disconnected const&) {
+void ClientActor::on(qb::io::async::event::disconnected const &) {
     // push event to retry connection
     push<RetryConnectEvent>(id());
 }

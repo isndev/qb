@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,66 +16,67 @@
  */
 
 #ifndef QB_TYPES_H
-# define QB_TYPES_H
+#define QB_TYPES_H
 
-# include <iostream>
-# include <sstream>
-# include <mutex>
-# include <utility>
-# include <type_traits>
-# include <nanolog/nanolog.h>
+#include <iostream>
+#include <mutex>
+#include <nanolog/nanolog.h>
+#include <sstream>
+#include <type_traits>
+#include <utility>
 
 namespace qb {
 #ifdef NDEBUG
-    constexpr static bool debug = false;
+constexpr static bool debug = false;
 #else
-    constexpr static bool debug = true;
+constexpr static bool debug = true;
 #endif
 
-    namespace io {
+namespace io {
 
-        namespace log {
-            using stream = nanolog::NanoLogLine;
-            using Level = nanolog::LogLevel;
-            /*!
-             * set log level
-             * @param qb::io::log::Level
-             */
-            void setLevel(Level lvl);
-            /*!
-             * @brief init logger
-             * @details
-             * @param file_path logfile path name
-             * @param roll_MB Max roll file size in MB
-             * @code
-             * enum class LogLevel : uint8_t {
-             *      DEBUG,
-             *      VERBOSE,
-             *      INFO,
-             *      WARN,
-             *      ERROR,
-             *      CRIT };
-             * @endcode
-             */
-            void init(std::string const &file_path, uint32_t roll_MB = 128);
-        }
+namespace log {
+using stream = nanolog::NanoLogLine;
+using Level = nanolog::LogLevel;
+/*!
+ * set log level
+ * @param qb::io::log::Level
+ */
+void setLevel(Level lvl);
+/*!
+ * @brief init logger
+ * @details
+ * @param file_path logfile path name
+ * @param roll_MB Max roll file size in MB
+ * @code
+ * enum class LogLevel : uint8_t {
+ *      DEBUG,
+ *      VERBOSE,
+ *      INFO,
+ *      WARN,
+ *      ERROR,
+ *      CRIT };
+ * @endcode
+ */
+void init(std::string const &file_path, uint32_t roll_MB = 128);
+} // namespace log
 
-        /*!
-         * @class cout
-         * @brief thread safe print in std::cout
-         * @details
-         * example:
-         * @code
-         * qb::cout() << ... ;
-         * @endcode
-         * @note prefer using logger than print
-         */
-        class cout {
-            static std::mutex io_lock;
-            std::stringstream ss;
-        public:
-            cout() = default;
-            cout(cout const &) = delete;
+/*!
+ * @class cout
+ * @brief thread safe print in std::cout
+ * @details
+ * example:
+ * @code
+ * qb::cout() << ... ;
+ * @endcode
+ * @note prefer using logger than print
+ */
+class cout {
+    static std::mutex io_lock;
+    std::stringstream ss;
+
+public:
+    cout() = default;
+    cout(cout const &) = delete;
             ~cout();
 
             template<typename T>

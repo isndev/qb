@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,12 @@
 #include <gtest/gtest.h>
 #include <qb/actor.h>
 #include <qb/main.h>
-#include <qb/system/timestamp.h>
 #include <qb/string.h>
+#include <qb/system/timestamp.h>
 
 struct TestEvent : public qb::Event {};
 
-class TestActor : public qb::Actor
-{
+class TestActor : public qb::Actor {
 public:
     TestActor() {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);

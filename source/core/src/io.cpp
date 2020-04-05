@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,11 +37,11 @@ struct LogInitializer {
     static LogInitializer initializer;
     LogInitializer() noexcept {
         qb::io::log::init("./qb", 512);
-#ifdef NDEBUG
+#    ifdef NDEBUG
         qb::io::log::setLevel(qb::io::log::Level::INFO);
-#else
+#    else
         qb::io::log::setLevel(qb::io::log::Level::DEBUG);
-#endif
+#    endif
     }
 };
 

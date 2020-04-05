@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,12 +19,12 @@
 #define QB_UTILS_NOCOPY_H
 
 namespace qb {
-    struct nocopy {
-        nocopy() = default;
-        nocopy(nocopy const &) = delete;
-        nocopy(nocopy const &&) = delete;
-        nocopy &operator=(nocopy const &) = delete;
-    };
-}
+struct nocopy {
+    nocopy() = default;
+    nocopy(nocopy const &) = delete;
+    nocopy(nocopy const &&) = delete;
+    nocopy &operator=(nocopy const &) = delete;
+};
+} // namespace qb
 
-#endif //QB_UTILS_NOCOPY_H
+#endif // QB_UTILS_NOCOPY_H

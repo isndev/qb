@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,7 @@
 
 constexpr uint32_t MAX_ACTOR = 2048;
 
-class TestActor : public qb::Actor
-{
+class TestActor : public qb::Actor {
 public:
     TestActor() = default;
     bool onInit() final {
@@ -30,14 +29,13 @@ public:
     }
 };
 
-class TestActorDependency
-        : public qb::Actor
-{
+class TestActorDependency : public qb::Actor {
     qb::ActorIdList const _ids;
+
 public:
     explicit TestActorDependency(qb::ActorIdList const &ids = {})
-            : _ids(ids) {
-        if (!_ids.size()) {
+        : _ids(ids) {
+        if (_ids.empty()) {
             registerEvent<qb::RequireEvent>(*this);
             require<TestActor>();
         } else {

@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,42 +18,38 @@
 #ifndef QB_IO_ASYNC_UDP_CLIENT_H
 #define QB_IO_ASYNC_UDP_CLIENT_H
 
-#include "../io.h"
 #include "../../transport/udp.h"
+#include "../io.h"
 
-namespace qb {
-    namespace io {
-        namespace async {
-            namespace udp {
+namespace qb::io::async::udp {
 
-                template<typename _Derived,
-                         template<typename _BaseProt> typename _Prot,
-                         typename _Server = void>
-                class client
-                        : public transport::udp::identity
-                        , public _Prot<transport::udp> {
-                    friend _Server;
-                protected:
-                    _Server &_server;
-                public:
-                    constexpr static const bool has_server = false;
+template <typename _Derived, template <typename _BaseProt> typename _Prot, typename _Server = void>
+class client
+    : public transport::udp::identity
+    , public _Prot<transport::udp> {
+    friend _Server;
 
-                    client(_Server &server)
-                            :  _server(server) {}
+protected:
+    _Server &_server;
 
-                    inline transport::udp::identity &ident() {
-                        return static_cast<transport::udp::identity &>(*this);
-                    }
+public:
+    constexpr static const bool has_server = false;
 
-                    inline _Server &server() {
-                        return _server;
-                    }
+    explicit client(_Server &server)
+        : _server(server) {}
 
-                    char *publish(const char *data, std::size_t size) {
-                        return _server.publish(ident(), data, size);
-                    }
+    inline transport::udp::identity &ident() {
+        return static_cast<transport::udp::identity &>(*this);
+    }
 
-                };
+    inline _Server &server() {
+        return _server;
+    }
+
+    char *publish(const char *data, std::size_t size) {
+        return _server.publish(ident(), data, size);
+    }
+};
 
 //                template<typename _Derived, typename _Prot>
 //                class session<_Derived, _Prot, void>
@@ -68,14 +64,12 @@ namespace qb {
 //                    };
 
 //                    char *publish(const char *data, std::size_t size) {
-//                        return _server.publish(static_cast<transport::udp::identity &>(*this), data, size);
+//                        return _server.publish(static_cast<transport::udp::identity &>(*this),
+//                        data, size);
 //                    }
 
 //                };
 
-            }
-        }
-    }
-}
+} // namespace qb::io::async::udp
 
-#endif //QB_IO_ASYNC_UDP_CLIENT_H
+#endif // QB_IO_ASYNC_UDP_CLIENT_H

@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,12 +15,12 @@
  *         limitations under the License.
  */
 
-#include <qb/main.h>
 #include "MyActor.h"
+#include <qb/main.h>
 
-int main (int, char *argv[]) {
+int main(int, char *argv[]) {
     // (optional) initialize the logger
-    qb::io::log::init(argv[0]); // filepath
+    qb::io::log::init(argv[0]);                      // filepath
     qb::io::log::setLevel(qb::io::log::Level::WARN); // log only warning, error an critical
     // usage
     LOG_INFO("I will not be logged :(");
@@ -30,16 +30,14 @@ int main (int, char *argv[]) {
     qb::Main main;
 
     // First way to add actors at start
-    main.addActor<MyActor>(0); // in VirtualCore id=0, default constructed
+    main.addActor<MyActor>(0);             // in VirtualCore id=0, default constructed
     main.addActor<MyActor>(1, 1337, 7331); // in VirtualCore id=1, constructed with parameters
 
     // Other way to add actors retrieving core builder
-    main.core(0).builder()
-            .addActor<MyActor>()
-            .addActor<MyActor>(1337, 7331);
+    main.core(0).builder().addActor<MyActor>().addActor<MyActor>(1337, 7331);
 
-    main.start();  // start the engine asynchronously
-    main.join();   // Wait for the running engine
+    main.start(); // start the engine asynchronously
+    main.join();  // Wait for the running engine
     // if all my actors had been destroyed then it will release the wait !
     return 0;
 }

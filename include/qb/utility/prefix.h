@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,33 +32,33 @@
 
 #ifdef _MSC_VER
 
-#define QB_LOCKFREE_CACHELINE_ALIGNMENT __declspec(align(QB_LOCKFREE_CACHELINE_BYTES))
-#define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT __declspec(align(QB_LOCKFREE_EVENT_BUCKET_BYTES))
+#    define QB_LOCKFREE_CACHELINE_ALIGNMENT __declspec(align(QB_LOCKFREE_CACHELINE_BYTES))
+#    define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT __declspec(align(QB_LOCKFREE_EVENT_BUCKET_BYTES))
 
-#if defined(_M_IX86)
-#define QB_LOCKFREE_DCAS_ALIGNMENT
-#elif defined(_M_X64) || defined(_M_IA64)
-#define QB_LOCKFREE_PTR_COMPRESSION 1
-#define QB_LOCKFREE_DCAS_ALIGNMENT __declspec(align(16))
-#endif
+#    if defined(_M_IX86)
+#        define QB_LOCKFREE_DCAS_ALIGNMENT
+#    elif defined(_M_X64) || defined(_M_IA64)
+#        define QB_LOCKFREE_PTR_COMPRESSION 1
+#        define QB_LOCKFREE_DCAS_ALIGNMENT __declspec(align(16))
+#    endif
 
 #endif /* _MSC_VER */
 
 #ifdef __GNUC__
 
-#define QB_LOCKFREE_CACHELINE_ALIGNMENT alignas(QB_LOCKFREE_CACHELINE_BYTES)
-#define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT alignas(QB_LOCKFREE_EVENT_BUCKET_BYTES)
+#    define QB_LOCKFREE_CACHELINE_ALIGNMENT alignas(QB_LOCKFREE_CACHELINE_BYTES)
+#    define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT alignas(QB_LOCKFREE_EVENT_BUCKET_BYTES)
 //__attribute__((aligned(QB_LOCKFREE_CACHELINE_BYTES)))
 
-#if defined(__i386__) || defined(__ppc__)
-#define QB_LOCKFREE_DCAS_ALIGNMENT
-#elif defined(__x86_64__)
-#define QB_LOCKFREE_PTR_COMPRESSION 1
-#define QB_LOCKFREE_DCAS_ALIGNMENT __attribute__((aligned(16)))
-#elif defined(__alpha__)
-#define QB_LOCKFREE_PTR_COMPRESSION 1
-#define QB_LOCKFREE_DCAS_ALIGNMENT
-#endif
+#    if defined(__i386__) || defined(__ppc__)
+#        define QB_LOCKFREE_DCAS_ALIGNMENT
+#    elif defined(__x86_64__)
+#        define QB_LOCKFREE_PTR_COMPRESSION 1
+#        define QB_LOCKFREE_DCAS_ALIGNMENT __attribute__((aligned(16)))
+#    elif defined(__alpha__)
+#        define QB_LOCKFREE_PTR_COMPRESSION 1
+#        define QB_LOCKFREE_DCAS_ALIGNMENT
+#    endif
 #endif /* __GNUC__ */
 
 struct QB_LOCKFREE_CACHELINE_ALIGNMENT CacheLine {
