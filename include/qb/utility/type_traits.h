@@ -233,5 +233,6 @@ struct has_member {
 CREATE_MEMBER_CHECKS(is_alive);
 CREATE_MEMBER_CHECKS(is_broadcast);
 CREATE_MEMBER_CHECKS(is_valid);
+CREATE_MEMBER_CHECKS(disconnect);
 
 #endif // QB_TYPE_TRAITS_H

@@ -199,7 +199,6 @@ TEST(Session, SecureTcpAccept) {
     async::run(EVRUN_ONCE);
     async::run(EVRUN_ONCE);
     async::run(EVRUN_ONCE);
-    async::run(EVRUN_ONCE);
     t.join();
 }
 
@@ -232,7 +231,6 @@ TEST(Session, SecureTcpConnect) {
         client.publish(msg, sizeof(msg));
         async::run(EVRUN_ONCE);
     });
-    async::run(EVRUN_ONCE);
     async::run(EVRUN_ONCE);
     async::run(EVRUN_ONCE);
     async::run(EVRUN_ONCE);

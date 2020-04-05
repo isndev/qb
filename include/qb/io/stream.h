@@ -51,7 +51,10 @@ public:
 
     void close() {
         _in_buffer.reset();
-        _in.close();
+        if constexpr (has_member_func_disconnect<_IO_>::value)
+            _in.disconnect();
+        else
+            _in.close();
     }
 };
 
@@ -88,7 +91,10 @@ public:
 
     void close() {
         _out_buffer.reset();
-        _out.close();
+        if constexpr (has_member_func_disconnect<_IO_>::value)
+            _out.disconnect();
+        else
+            _out.close();
     }
 };
 
