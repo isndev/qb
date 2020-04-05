@@ -26,7 +26,7 @@ using namespace qb::io;
 
 class FileSession
         : public use<FileSession>::input<protocol::cmd<transport::file>>
-        , public ostream<sys::file> {
+                , public ostream<sys::file> {
 public:
 
     void on(IOMessage msg, std::size_t size) {
@@ -179,7 +179,7 @@ public:
 
 };
 
-TEST(Session, DISABLED_SecureTcpAccept) {
+TEST(Session, SecureTcpAccept) {
     async::init();
 
     MySecureServer server;
@@ -212,7 +212,7 @@ public:
 
 };
 
-TEST(Session, DISABLED_SecureTcpConnect) {
+TEST(Session, SecureTcpConnect) {
     async::init();
 
     MySecureServer server;
