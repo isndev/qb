@@ -41,11 +41,15 @@ struct FakeActor {
     }
 
     void on(qb::io::async::event::file const &event) {
+#ifdef _WIN32
+        EXPECT_EQ(event.attr.st_size, 7);
+#else
         EXPECT_EQ(event.attr.st_size, 5);
+#endif // _WIN32
         ++nb_events;
     }
 
-    void on(qb::io::async::event::timer const &event) {
+    void on(qb::io::async::event::timer const &) {
         ++nb_events;
     }
 
@@ -74,8 +78,6 @@ TEST(KernelEvents, Timer) {
     EXPECT_EQ(actor.nb_events, 2);
 }
 
-#ifndef _WIN32
-
 TEST(KernelEvents, File) {
     qb::io::async::listener handler;
     FakeActor actor;
@@ -91,6 +93,8 @@ TEST(KernelEvents, File) {
     EXPECT_EQ(actor.nb_events, 1);
     t.join();
 }
+
+#ifndef _WIN32
 
 TEST(KernelEvents, BasicIO) {
     qb::io::async::listener handler;

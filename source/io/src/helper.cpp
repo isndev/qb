@@ -63,20 +63,24 @@ bool helper::is_blocking(SocketHandler) {
     return true;
 }
 
-struct SocketInitializer {
-    SocketInitializer() noexcept {
-        WSADATA InitData;
-        WSAStartup(MAKEWORD(2, 2), &InitData);
-    }
+WinSockInitializer::WinSockInitializer() noexcept
+    : _init(true) {
+    WSADATA InitData;
+    WSAStartup(MAKEWORD(2, 2), &InitData);
+}
 
-    ~SocketInitializer() noexcept {
+WinSockInitializer::~WinSockInitializer() noexcept {
 #    ifndef QB_IO_WITH_SSL
-        WSACleanup();
+    WSACleanup();
 #    endif
-    }
-};
+}
 
-SocketInitializer GlobalInitializer;
+bool WinSockInitializer::isInitialized() const noexcept {
+    return _init;
+}
+
+const WinSockInitializer WinSockInitializer::status{};
+// GlobalInitializer = {};
 #else
 
 sockaddr_in helper::createAddress(uint32_t address, unsigned short port) {

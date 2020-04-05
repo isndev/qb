@@ -20,6 +20,7 @@
 
 #include "event/base.h"
 #include <algorithm>
+#include <qb/io/helper.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 #include <thread>
@@ -59,8 +60,13 @@ private:
     std::size_t _nb_invoked_events = 0;
 
 public:
-    listener() noexcept
-        : _loop(EVFLAG_AUTO) {}
+    listener()
+        : _loop(EVFLAG_AUTO) {
+#ifdef _WIN32
+        if (!WinSockInitializer::status.isInitialized())
+            throw std::runtime_error("Winsock2 is not initialized");
+#endif
+    }
 
     void clear() {
         for (auto it : _registeredEvents)

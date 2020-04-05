@@ -59,6 +59,7 @@ if(WIN32)
     set(HAVE_SELECT 1)
     set(EV_USE_SELECT 1)
     set(EV_SELECT_IS_WINSOCKET 1)
+#    set(EV_USE_WSASOCKET 1)
 endif()
 
 check_symbol_exists(clock_gettime time.h HAVE_CLOCK_GETTIME)
