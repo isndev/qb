@@ -40,7 +40,7 @@ The **qb** framework is a thin-layer multicore-optimized runtime that enable use
 - *It's* releasing official benchmarks
 - *and more...*
 #### qb UAML* Tool
-- **Design** and **generate** your software architecture using **qb UMAL Tool**
+- **Design** and **generate** your software architecture using **qb UAML Tool**
 
 <sub>*Unified Actor Modeling Language</sub>
 #### qb Visual Analyser Tool
