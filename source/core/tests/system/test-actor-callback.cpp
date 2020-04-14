@@ -42,7 +42,8 @@ public:
         }
     }
 
-    void onCallback() final {
+    void
+    onCallback() final {
         if (_max_loop == 10000)
             unregisterCallback();
         if (++_count_loop >= _max_loop)

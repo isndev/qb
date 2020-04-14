@@ -19,31 +19,31 @@
 #define QB_PROXYPIPE_H
 #include "ActorId.h"
 #include "Event.h"
-#include <qb/system/allocator/pipe.h>
 
 namespace qb {
-using Pipe = allocator::pipe<EventBucket>;
 
 /*!
  * @brief Object returned by Actor::getPipe()
- * @class ProxyPipe ProxyPipe.h qb/actor.h
+ * @class Pipe Pipe.h qb/actor.h
  * @details
  * to define
  */
-class ProxyPipe {
-    Pipe *pipe;
+class Pipe {
+    friend class VirtualCore;
+
+    VirtualPipe *pipe;
     ActorId dest;
     ActorId source;
 
-public:
-    ProxyPipe() noexcept = default;
-    ProxyPipe(ProxyPipe const &) noexcept = default;
-    ProxyPipe &operator=(ProxyPipe const &) noexcept = default;
-
-    ProxyPipe(Pipe &i_pipe, ActorId i_dest, ActorId i_source) noexcept
+    Pipe(VirtualPipe &i_pipe, ActorId i_dest, ActorId i_source) noexcept
         : pipe(&i_pipe)
         , dest(i_dest)
         , source(i_source) {}
+
+public:
+    Pipe() = delete;
+    Pipe(Pipe const &) = default;
+    Pipe &operator=(Pipe const &) = default;
 
     /*!
      *
@@ -70,7 +70,8 @@ public:
      *
      * @return
      */
-    [[nodiscard]] inline ActorId getDestination() const noexcept {
+    [[nodiscard]] inline ActorId
+    getDestination() const noexcept {
         return dest;
     }
 
@@ -78,10 +79,13 @@ public:
      *
      * @return
      */
-    [[nodiscard]] inline ActorId getSource() const noexcept {
+    [[nodiscard]] inline ActorId
+    getSource() const noexcept {
         return source;
     }
 };
+
+using pipe = Pipe;
 
 } // namespace qb
 

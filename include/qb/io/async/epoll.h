@@ -46,15 +46,18 @@ public:
 
     Proxy(Proxy const &) = default;
 
-    inline int ctl(item_type &item) const {
+    inline int
+    ctl(item_type &item) const {
         return epoll_ctl(_epoll, EPOLL_CTL_MOD, item.data.fd, &item);
     }
 
-    inline int add(item_type &item) const {
+    inline int
+    add(item_type &item) const {
         return epoll_ctl(_epoll, EPOLL_CTL_ADD, item.data.fd, &item);
     }
 
-    inline int remove(item_type const &item) {
+    inline int
+    remove(item_type const &item) {
         return epoll_ctl(_epoll, EPOLL_CTL_DEL, item.data.fd, nullptr);
     }
 };
@@ -83,7 +86,8 @@ public:
     }
 
     template <typename _Func>
-    inline void wait(_Func const &func, int const timeout = 0) {
+    inline void
+    wait(_Func const &func, int const timeout = 0) {
         const int ret = epoll_wait(_epoll, _epvts, _MAX_EVENTS, timeout);
         if (unlikely(ret < 0)) {
             std::cerr << "epoll::Poller polling has failed " << std::endl;

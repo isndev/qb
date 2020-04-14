@@ -25,7 +25,7 @@ class CmdActor
     : public qb::Actor
     , public qb::ICallback {
     // const event pipe to client actor
-    const qb::ProxyPipe _client_pipe;
+    const qb::Pipe _client_pipe;
 
 public:
     CmdActor() = delete;

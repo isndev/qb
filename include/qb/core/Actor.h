@@ -24,7 +24,7 @@
 // include from qb
 #include "Event.h"
 #include "ICallback.h"
-#include "ProxyPipe.h"
+#include "Pipe.h"
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/nocopy.h>
 #include <qb/utility/type_traits.h>
@@ -40,8 +40,8 @@ class Service;
  * @ingroup Core
  * @brief Actor base class
  * @details
- * The Actor sends event messages to be received by another Actor, which is then treated by an Event
- * handler.\n All UserActors should inherit from Actor class.
+ * The Actor sends event messages to be received by another Actor, which is then treated
+ * by an Event handler.\n All UserActors should inherit from Actor class.
  */
 class Actor : nocopy {
     friend class VirtualCore;
@@ -98,7 +98,8 @@ protected:
      * @attention
      * /!\ If initialization has failed DerivedActor will not be added to the engine
      */
-    virtual bool onInit() {
+    virtual bool
+    onInit() {
         return true;
     };
 
@@ -128,7 +129,7 @@ public:
      * // ...
      * registerEvent<qb::KillEvent>(*this);
      * // DerivedActor should also define the event callback
-     * void on(qb::KillEvent &event) {
+     * void on(qb::KillEvent const &event) {
      *   // do something before killing actor
      *   kill();
      * }
@@ -137,6 +138,28 @@ public:
      * /!\ Do not forget to call kill on overloaded function.
      */
     void on(KillEvent const &event) noexcept;
+
+    /*!
+     * @brief Receiving signal
+     * @param event received event
+     * @details
+     * This event can be overloaded by DerivedActor.\n
+     * example:
+     * @code
+     * // ...
+     * registerEvent<qb::SignalEvent>(*this);
+     * // DerivedActor should also define the event callback
+     * // ex : default behaviour
+     * void on(qb::SignalEvent const &event) {
+     *   // do something before killing actor
+     *   if (event.signum == SIGINT)
+     *      kill();
+     * }
+     * @endcode
+     * @attention
+     * /!\ by default has same behaviour than KillEvent.
+     */
+    void on(SignalEvent const &event) noexcept;
 
     /*!
      * @brief Receiving this event will unregister the Actor's callback
@@ -159,9 +182,9 @@ public:
      */
     class EventBuilder {
         friend class Actor;
-        ProxyPipe dest_pipe;
+        Pipe dest_pipe;
 
-        explicit EventBuilder(ProxyPipe const &pipe) noexcept;
+        explicit EventBuilder(Pipe const &pipe) noexcept;
 
     public:
         EventBuilder() = delete;
@@ -198,7 +221,8 @@ public:
      * Get ActorId
      * @return ActorId
      */
-    ActorId id() const noexcept {
+    ActorId
+    id() const noexcept {
         return _id;
     }
 
@@ -379,14 +403,14 @@ public:
      * @param args arguments to forward to the constructor of the _Event
      * @return a reference to the constructed _Event to send
      * @details
-     * All events pushed to same actors id in context will be received ordered by push order.\n
-     * example:
+     * All events pushed to same actors id in context will be received ordered by push
+     * order.\n example:
      * @code
      * // ...
      * auto &e = push<MyEvent>(id_1); // (1) first push
      * e.some_data = 1337; // set my event data without using constructor
-     * push<MyEvent>(id_2, param2); // (2) id_2 != id_1 /!\ possible to be received before (1)
-     * push<MyEvent>(id_1, param3); // (3) Guaranteed to be received after (1)
+     * push<MyEvent>(id_2, param2); // (2) id_2 != id_1 /!\ possible to be received
+     * before (1) push<MyEvent>(id_1, param3); // (3) Guaranteed to be received after (1)
      * // ...
      * @endcode
      * @note
@@ -422,12 +446,14 @@ public:
     void send(ActorId const &dest, _Args &&... args) const noexcept;
 
     template <typename _Type>
-    inline bool is(uint32_t const id) const noexcept {
+    inline bool
+    is(uint32_t const id) const noexcept {
         return id == type_id<_Type>();
     }
 
     template <typename _Type>
-    inline bool is(RequireEvent const &event) const noexcept {
+    inline bool
+    is(RequireEvent const &event) const noexcept {
         return event.type == type_id<_Type>();
     }
 
@@ -480,13 +506,13 @@ public:
     /*!
      * @brief Get access to unidirectional out events pipe
      * @param dest destination ActorId
-     * @return destination ProxyPipe
+     * @return destination Pipe
      * @details
      * If you want to send several events to same Actor or push dynamic sized events,\n
-     * Actor API allows to retrieve a ProxyPipe to a desired Actor.\n
-     * more details on ProxyPipe section
+     * Actor API allows to retrieve a Pipe to a desired Actor.\n
+     * more details on Pipe section
      */
-    ProxyPipe getPipe(ActorId dest) const noexcept;
+    Pipe getPipe(ActorId dest) const noexcept;
 
     /*!
      * @brief Create new referenced _Actor
@@ -558,11 +584,13 @@ class ActorProxy {
 protected:
     ActorProxy() = default;
     template <typename _Type>
-    void setType(Actor &actor) {
+    void
+    setType(Actor &actor) {
         actor.id_type = type_id<_Type>();
     }
     template <typename _Type>
-    void setName(Actor &actor) {
+    void
+    setName(Actor &actor) {
         actor.name = typeid(_Type).name();
     }
 };
@@ -572,9 +600,9 @@ class TActorFactory
     : public IActorFactory
     , public ActorProxy {
     ActorId _id;
-    std::tuple<
-        typename remove_reference_if<_Args, std::is_trivially_copyable<std::remove_reference_t<
-                                                std::remove_all_extents_t<_Args>>>::value>::type...>
+    std::tuple<typename remove_reference_if<
+        _Args, std::is_trivially_copyable<std::remove_reference_t<
+                   std::remove_all_extents_t<_Args>>>::value>::type...>
         _parameters;
 
 public:
@@ -583,21 +611,28 @@ public:
         , _parameters(std::forward<_Args>(args)...) {}
 
     template <std::size_t... Is>
-    Actor *create_impl(std::index_sequence<Is...>) {
+    Actor *
+    create_impl(std::index_sequence<Is...>) {
         auto actor = new _Actor(std::get<Is>(_parameters)...);
         setType<_Actor>(*actor);
         setName<_Actor>(*actor);
         return actor;
     }
 
-    Actor *create() final {
+    Actor *
+    create() final {
         return create_impl(std::index_sequence_for<_Args...>{});
     }
 
-    [[nodiscard]] bool isService() const final {
+    [[nodiscard]] bool
+    isService() const final {
         return std::is_base_of<Service, _Actor>::value;
     }
 };
+
+using actor = Actor;
+template <typename Tag>
+using service_actor = ServiceActor<Tag>;
 
 } // namespace qb
 

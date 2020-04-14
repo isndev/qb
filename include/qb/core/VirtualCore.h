@@ -43,7 +43,7 @@
 #include "Event.h"
 #include "ICallback.h"
 #include "Main.h"
-#include "ProxyPipe.h"
+#include "Pipe.h"
 #include <qb/system/allocator/pipe.h>
 #include <qb/system/container/unordered_map.h>
 #include <qb/system/event/router.h>
@@ -51,7 +51,7 @@
 #include <qb/system/timestamp.h>
 
 namespace qb {
-    class VirtualCore;
+class VirtualCore;
 }
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
 
@@ -60,11 +60,13 @@ namespace qb {
 class VirtualCore {
     thread_local static VirtualCore *_handler;
     static ServiceId _nb_service;
-    static qb::unordered_map<TypeId, ServiceId> &getServices() {
+    static qb::unordered_map<TypeId, ServiceId> &
+    getServices() {
         static qb::unordered_map<TypeId, ServiceId> service_ids;
         return service_ids;
     }
 
+public:
     enum Error : uint64_t {
         BadInit = (1u << 9u),
         NoActor = (1u << 10u),
@@ -72,6 +74,7 @@ class VirtualCore {
         ExceptionThrown = (1u << 12u)
     };
 
+private:
     friend class Actor;
     friend class Service;
     friend class CoreInitializer;
@@ -84,7 +87,7 @@ class VirtualCore {
     using EventBuffer = std::array<EventBucket, MaxRingEvents>;
     using ActorMap = qb::unordered_map<ActorId, Actor *>;
     using CallbackMap = qb::unordered_map<ActorId, ICallback *>;
-    using PipeMap = std::vector<Pipe>;
+    using PipeMap = std::vector<VirtualPipe>;
     using RemoveActorList = qb::unordered_set<ActorId>;
     using AvailableIdList = std::set<ServiceId>;
 
@@ -100,8 +103,8 @@ private:
     router::memh<Event> _router;
     // event flush
     PipeMap _pipes;
-    Pipe &_mono_pipe_swap;
-    Pipe &_mono_pipe;
+    VirtualPipe &_mono_pipe_swap;
+    VirtualPipe &_mono_pipe;
     // actors management
     AvailableIdList _ids;
     ActorMap _actors;
@@ -110,20 +113,22 @@ private:
     // --- loop
     bool _is_low_latency; // default no wait
     struct {
+        uint64_t _sleep_count = 0;
         uint64_t _nb_event_io = 0;
         uint64_t _nb_event_received = 0;
         uint64_t _nb_bucket_received = 0;
         uint64_t _nb_event_sent_try = 0;
         uint64_t _nb_event_sent = 0;
         uint64_t _nb_bucket_sent = 0;
-        uint64_t _sleep_count = 0;
         uint64_t _nanotimer = 0;
 
-        inline void reset() {
-            _sleep_count += (_nb_event_sent + _nb_event_received + _nb_event_io) << 3u;
-            _nb_event_io = _nb_event_received = _nb_bucket_received = _nb_event_sent_try =
-                _nb_event_sent = _nb_bucket_sent = _nanotimer = 0u;
+        inline void
+        reset() {
+            *this = {};
+            //*this = {_sleep_count +
+            //         ((_nb_event_sent + _nb_event_received + _nb_event_io) << 3u)};
         }
+
     } _metrics;
     // !Members
 
@@ -138,7 +143,7 @@ private:
     template <typename _Event, typename _Actor>
     void unregisterEvent(_Actor &actor) noexcept;
     void unregisterEvents(ActorId id) noexcept;
-    Pipe &__getPipe__(CoreId core) noexcept;
+    VirtualPipe &__getPipe__(CoreId core) noexcept;
     void __receive_events__(EventBucket *buffer, std::size_t nb_events);
     void __receive__();
     //        void __receive_from__(CoreId const index) noexcept;
@@ -146,9 +151,8 @@ private:
     //! Event Management
 
     // Workflow
-    void __init__();
-    void __init__actors__() const;
-    bool __wait__all__cores__ready() noexcept;
+    bool __init__(CoreIdSet const &cores);
+    bool __init__actors__() const;
     void __workflow__();
     //! Workflow
 
@@ -173,7 +177,7 @@ private:
 
 private:
     // Event Api
-    ProxyPipe getProxyPipe(ActorId dest, ActorId source) noexcept;
+    Pipe getProxyPipe(ActorId dest, ActorId source) noexcept;
     [[nodiscard]] bool try_send(Event const &event) const noexcept;
     void send(Event const &event) noexcept;
     Event &push(Event const &event) noexcept;
@@ -181,7 +185,7 @@ private:
     void forward(ActorId dest, Event &event) noexcept;
 
     template <typename T>
-    inline void fill_event(T &data, ActorId dest, ActorId source) const noexcept;
+    static inline void fill_event(T &data, ActorId dest, ActorId source) noexcept;
     template <typename T, typename... _Init>
     void send(ActorId dest, ActorId source, _Init &&... init) noexcept;
     template <typename T, typename... _Init>

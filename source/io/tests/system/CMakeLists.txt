@@ -17,11 +17,9 @@
 
 cxx_gtest(${PROJECT_NAME}-gtest-event "${PROJECT_NAME}" test-event.cpp)
 cxx_gtest(${PROJECT_NAME}-gtest-tcp-udp "${PROJECT_NAME}" test-io.cpp)
-cxx_gtest(${PROJECT_NAME}-gtest-session "${PROJECT_NAME}" test-session.cpp)
+
+cxx_gtest(${PROJECT_NAME}-gtest-session-text "${PROJECT_NAME}" test-session-text.cpp)
+
 if (OPENSSL_FOUND)
-    add_custom_target(
-            copy_certificate
-            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/ssl/key.pem  ${CMAKE_CURRENT_SOURCE_DIR}/ssl/cert.pem ${CMAKE_CURRENT_BINARY_DIR}
-    )
-    add_dependencies(${PROJECT_NAME}-gtest-session copy_certificate)
+    file(COPY ${QB_SSL_RESOURCES} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 endif()

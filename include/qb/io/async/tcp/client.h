@@ -20,33 +20,70 @@
 
 #include "../io.h"
 
+CREATE_MEMBER_CHECK(Protocol);
+
 namespace qb::io::async::tcp {
 
-template <typename _Derived, template <typename _BaseProt> typename _Prot, typename _BaseProt,
-          typename _Server = void>
-class client : public io<_Derived, _Prot<_BaseProt>> {
-    using base_t = io<_Derived, _Prot<_BaseProt>>;
-
+template <typename _Derived, typename _Transport, typename _Server = void>
+class client
+    : public io<_Derived>
+    , _Transport {
+    using base_t = io<_Derived>;
+    friend base_t;
+public:
+    using base_t::publish;
+    using _Transport::in;
+    using _Transport::out;
+    using _Transport::transport;
 protected:
     _Server &_server;
 
 public:
+    using IOServer = _Server;
     constexpr static const bool has_server = true;
 
+    client() = delete;
     explicit client(_Server &server)
-        : _server(server) {}
+        : _server(server) {
+        if constexpr (has_member_Protocol<_Derived>::value) {
+            if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
+                this->template switch_protocol<typename _Derived::Protocol>(
+                        static_cast<_Derived &>(*this));
+            }
+        }
+    }
 
-    inline _Server &server() {
+    inline _Server &
+    server() {
         return _server;
+    }
+
+    inline uint64_t
+    ident() noexcept {
+        return static_cast<_Derived &>(*this).transport().ident();
     }
 };
 
-template <typename _Derived, template <typename _BaseProt> typename _Prot, typename _BaseProt>
-class client<_Derived, _Prot, _BaseProt, void> : public io<_Derived, _Prot<_BaseProt>> {
-    using base_t = io<_Derived, _Prot<_BaseProt>>;
-
+template <typename _Derived, typename _Transport>
+class client<_Derived, _Transport, void>
+    : public io<_Derived>
+    , _Transport {
+    using base_t = io<_Derived>;
+    friend base_t;
 public:
-    client() = default;
+    using base_t::publish;
+    using _Transport::in;
+    using _Transport::out;
+    using _Transport::transport;
+public:
+    client() noexcept {
+        if constexpr (has_member_Protocol<_Derived>::value) {
+            if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
+                this->template switch_protocol<typename _Derived::Protocol>(
+                        static_cast<_Derived &>(*this));
+            }
+        }
+    }
 };
 
 } // namespace qb::io::async::tcp

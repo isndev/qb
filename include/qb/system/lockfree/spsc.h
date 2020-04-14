@@ -33,9 +33,11 @@ namespace internal {
 template <typename T>
 class ringbuffer : public nocopy {
     typedef std::size_t size_t;
-    constexpr static const int padding_size = QB_LOCKFREE_CACHELINE_BYTES - sizeof(size_t);
+    constexpr static const int padding_size =
+        QB_LOCKFREE_CACHELINE_BYTES - sizeof(size_t);
     std::atomic<size_t> write_index_;
-    char padding1[padding_size]{}; /* force read_index and write_index to different cache lines */
+    char padding1[padding_size]{}; /* force read_index and write_index to different cache
+                                      lines */
     std::atomic<size_t> read_index_;
 
 protected:
@@ -43,14 +45,16 @@ protected:
         : write_index_(0)
         , read_index_(0) {}
 
-    static size_t next_index(size_t arg, size_t const max_size) {
+    static size_t
+    next_index(size_t arg, size_t const max_size) {
         size_t ret = arg + 1;
         while (unlikely(ret >= max_size))
             ret -= max_size;
         return ret;
     }
 
-    static size_t read_available(size_t write_index, size_t read_index, size_t const max_size) {
+    static size_t
+    read_available(size_t write_index, size_t read_index, size_t const max_size) {
         if (write_index >= read_index)
             return write_index - read_index;
 
@@ -58,28 +62,32 @@ protected:
         return ret;
     }
 
-    static size_t write_available(size_t write_index, size_t read_index, size_t const max_size) {
+    static size_t
+    write_available(size_t write_index, size_t read_index, size_t const max_size) {
         size_t ret = read_index - write_index - 1;
         if (write_index >= read_index)
             ret += max_size;
         return ret;
     }
 
-    [[nodiscard]] size_t read_available(size_t const max_size) const {
+    [[nodiscard]] size_t
+    read_available(size_t const max_size) const {
         size_t write_index = write_index_.load(std::memory_order_acquire);
         const size_t read_index = read_index_.load(std::memory_order_relaxed);
         return read_available(write_index, read_index, max_size);
     }
 
-    [[nodiscard]] size_t write_available(size_t const max_size) const {
+    [[nodiscard]] size_t
+    write_available(size_t const max_size) const {
         size_t write_index = write_index_.load(std::memory_order_relaxed);
         const size_t read_index = read_index_.load(std::memory_order_acquire);
         return write_available(write_index, read_index, max_size);
     }
 
-    bool enqueue(T const &t, T *buffer, size_t const max_size) {
-        const size_t write_index =
-            write_index_.load(std::memory_order_relaxed); // only written from enqueue thread
+    bool
+    enqueue(T const &t, T *buffer, size_t const max_size) {
+        const size_t write_index = write_index_.load(
+            std::memory_order_relaxed); // only written from enqueue thread
         const size_t next = next_index(write_index, max_size);
 
         if (next == read_index_.load(std::memory_order_acquire))
@@ -93,10 +101,11 @@ protected:
     }
 
     template <bool _All>
-    size_t enqueue(const T *input_buffer, size_t input_count, T *internal_buffer,
-                   size_t const max_size) {
-        const size_t write_index =
-            write_index_.load(std::memory_order_relaxed); // only written from push thread
+    size_t
+    enqueue(const T *input_buffer, size_t input_count, T *internal_buffer,
+            size_t const max_size) {
+        const size_t write_index = write_index_.load(
+            std::memory_order_relaxed); // only written from push thread
         const size_t read_index = read_index_.load(std::memory_order_acquire);
         const size_t avail = write_available(write_index, read_index, max_size);
 
@@ -132,8 +141,9 @@ protected:
         return input_count;
     }
 
-    size_t dequeue(T *output_buffer, size_t output_count, T *internal_buffer,
-                   size_t const max_size) {
+    size_t
+    dequeue(T *output_buffer, size_t output_count, T *internal_buffer,
+            size_t const max_size) {
         const size_t write_index = write_index_.load(std::memory_order_acquire);
         const size_t read_index =
             read_index_.load(std::memory_order_relaxed); // only written from pop thread
@@ -157,7 +167,8 @@ protected:
 
             new_read_index -= max_size;
         } else {
-            std::memcpy(output_buffer, internal_buffer + read_index, output_count * sizeof(T));
+            std::memcpy(output_buffer, internal_buffer + read_index,
+                        output_count * sizeof(T));
 
             if (new_read_index == max_size)
                 new_read_index = 0;
@@ -168,7 +179,8 @@ protected:
     }
 
     template <typename _Func>
-    size_t consume_all(_Func const &functor, T *internal_buffer, size_t max_size) {
+    size_t
+    consume_all(_Func const &functor, T *internal_buffer, size_t max_size) {
         const size_t write_index = write_index_.load(std::memory_order_acquire);
         const size_t read_index =
             read_index_.load(std::memory_order_relaxed); // only written from pop thread
@@ -202,26 +214,30 @@ protected:
         return output_count;
     }
 
-    const T &front(const T *internal_buffer) const {
+    const T &
+    front(const T *internal_buffer) const {
         const size_t read_index =
             read_index_.load(std::memory_order_relaxed); // only written from pop thread
         return *(internal_buffer + read_index);
     }
 
-    T &front(T *internal_buffer) {
+    T &
+    front(T *internal_buffer) {
         const size_t read_index =
             read_index_.load(std::memory_order_relaxed); // only written from pop thread
         return *(internal_buffer + read_index);
     }
 
 public:
-    bool empty() {
+    bool
+    empty() {
         return empty(write_index_.load(std::memory_order_relaxed),
                      read_index_.load(std::memory_order_relaxed));
     }
 
 private:
-    bool empty(size_t write_index, size_t read_index) {
+    bool
+    empty(size_t write_index, size_t read_index) {
         return write_index == read_index;
     }
 };
@@ -235,25 +251,31 @@ class ringbuffer : public internal::ringbuffer<T> {
     std::array<T, max_size> array_;
 
 public:
-    inline bool enqueue(T const &t) noexcept {
+    inline bool
+    enqueue(T const &t) noexcept {
         return internal::ringbuffer<T>::enqueue(t, array_.data(), max_size);
     }
 
-    inline bool dequeue(T *ret) noexcept {
+    inline bool
+    dequeue(T *ret) noexcept {
         return internal::ringbuffer<T>::dequeue(ret, 1, array_.data(), max_size);
     }
 
     template <bool _All = true>
-    inline size_t enqueue(T const *t, size_t size) noexcept {
-        return internal::ringbuffer<T>::template enqueue<_All>(t, size, array_.data(), max_size);
+    inline size_t
+    enqueue(T const *t, size_t size) noexcept {
+        return internal::ringbuffer<T>::template enqueue<_All>(t, size, array_.data(),
+                                                               max_size);
     }
 
-    inline size_t dequeue(T *ret, size_t size) noexcept {
+    inline size_t
+    dequeue(T *ret, size_t size) noexcept {
         return internal::ringbuffer<T>::dequeue(ret, size, array_.data(), max_size);
     }
 
     template <typename Func>
-    inline size_t dequeue(Func const &func, T *ret, size_t size) noexcept {
+    inline size_t
+    dequeue(Func const &func, T *ret, size_t size) noexcept {
         const size_t nb_consume =
             internal::ringbuffer<T>::dequeue(ret, size, array_.data(), max_size);
         if (nb_consume)
@@ -262,7 +284,8 @@ public:
     }
 
     template <typename Func>
-    inline size_t consume_all(Func const &func) noexcept {
+    inline size_t
+    consume_all(Func const &func) noexcept {
         return internal::ringbuffer<T>::consume_all(func, array_.data(), max_size);
     }
 };
@@ -279,20 +302,25 @@ public:
         : max_size_(max_size + 1)
         , array_(new T[max_size + 1]) {}
 
-    inline bool enqueue(T const &t) noexcept {
+    inline bool
+    enqueue(T const &t) noexcept {
         return internal::ringbuffer<T>::enqueue(t, array_.get(), max_size_);
     }
 
-    inline bool dequeue(T *ret) noexcept {
+    inline bool
+    dequeue(T *ret) noexcept {
         return internal::ringbuffer<T>::dequeue(ret, 1, array_.get(), max_size_);
     }
 
     template <bool _All = true>
-    inline size_t enqueue(T const *t, size_t size) noexcept {
-        return internal::ringbuffer<T>::template enqueue<_All>(t, size, array_.get(), max_size_);
+    inline size_t
+    enqueue(T const *t, size_t size) noexcept {
+        return internal::ringbuffer<T>::template enqueue<_All>(t, size, array_.get(),
+                                                               max_size_);
     }
 
-    inline size_t dequeue(T *ret, size_t size) noexcept {
+    inline size_t
+    dequeue(T *ret, size_t size) noexcept {
         return internal::ringbuffer<T>::dequeue(ret, size, array_.get(), max_size_);
     }
 

@@ -34,25 +34,30 @@ ActorId::operator uint32_t() const noexcept {
     return *reinterpret_cast<uint32_t const *>(this);
 }
 
-ServiceId ActorId::sid() const noexcept {
+ServiceId
+ActorId::sid() const noexcept {
     return _id;
 }
 
-CoreId ActorId::index() const noexcept {
+CoreId
+ActorId::index() const noexcept {
     return _index;
 }
 
-bool ActorId::is_broadcast() const noexcept {
+bool
+ActorId::is_broadcast() const noexcept {
     return _id == BroadcastSid;
 }
 
-bool ActorId::is_valid() const noexcept {
+bool
+ActorId::is_valid() const noexcept {
     return static_cast<uint32_t>(*this) != NotFound;
 }
 
 } // namespace qb
 
-qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id) {
+qb::io::log::stream &
+operator<<(qb::io::log::stream &os, qb::ActorId const &id) {
     std::stringstream ss;
     ss << id.index() << "." << id.sid();
     os << ss.str();

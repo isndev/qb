@@ -20,7 +20,8 @@
 
 namespace qb {
 /** \brief hint for the branch prediction */
-inline bool likely(bool expr) {
+inline bool
+likely(bool expr) {
 #ifdef __GNUC__
     return __builtin_expect(expr, true);
 #else
@@ -29,7 +30,8 @@ inline bool likely(bool expr) {
 }
 
 /** \brief hint for the branch prediction */
-inline bool unlikely(bool expr) {
+inline bool
+unlikely(bool expr) {
 #ifdef __GNUC__
     return __builtin_expect(expr, false);
 #else

@@ -34,12 +34,12 @@ public:
     listener();
     listener(listener const &) = delete;
 
-    ~listener();
+    ~listener() noexcept;
 
-    void init(SSL_CTX *ctx);
-    SocketStatus accept(ssl::socket &socket);
+    void init(SSL_CTX *ctx) noexcept;
+    SocketStatus accept(ssl::socket &socket) const noexcept;
 
-    [[nodiscard]] SSL_CTX *ssl() const;
+    [[nodiscard]] SSL_CTX *ssl() const noexcept;
 };
 
 } // namespace qb::io::tcp::ssl

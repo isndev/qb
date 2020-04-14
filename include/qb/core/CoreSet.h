@@ -32,6 +32,7 @@ namespace qb {
 class CoreSet {
     friend class SharedCoreCommunication;
     friend class VirtualCore;
+    friend class Main;
 
     const qb::unordered_set<CoreId> _raw_set;
     const std::size_t _nb_core;
@@ -48,7 +49,8 @@ public:
     explicit CoreSet(qb::unordered_set<CoreId> const &set) noexcept;
 
     [[nodiscard]] const qb::unordered_set<CoreId> &raw() const noexcept;
-    static CoreSet build(uint32_t nb_core = std::thread::hardware_concurrency()) noexcept;
+    static CoreSet
+    build(uint32_t nb_core = std::thread::hardware_concurrency()) noexcept;
 };
 
 } // namespace qb

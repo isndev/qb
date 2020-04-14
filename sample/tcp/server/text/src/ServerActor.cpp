@@ -22,16 +22,15 @@
 
 ServerActor::ServerActor(std::string iface, uint16_t port) noexcept
     : _iface(std::move(iface))
-    , _port(port) {
-    setCoreLowLatency(false);
-}
+    , _port(port) {}
 
 // Actor initialization
-bool ServerActor::onInit() {
-    if (qb::io::SocketStatus::Done == in().listen(_port, _iface)) {
-        std::cout << "Server started listening on " << _iface << ":" << _port << std::endl;
-        // register io to qb::io::listener
-        start();
+bool
+ServerActor::onInit() {
+    if (qb::io::SocketStatus::Done == transport().listen(_port, _iface)) {
+        std::cout << "Server started listening on " << _iface << ":" << _port
+                  << std::endl;
+        start(); // register io to qb::io::listener
         return true;
     }
 
@@ -39,13 +38,14 @@ bool ServerActor::onInit() {
 }
 
 // Called from qb::io on new session connected
-void ServerActor::on(Session &session) {
-    std::cout << "Session(" << session.in().ident() << ") ip(" << session.in().getRemoteAddress()
-              << ") connected" << std::endl;
+void
+ServerActor::on(Session &session) {
+    std::cout << "Session(" << session.transport().ident() << ") "
+              << "ip(" << session.transport().getRemoteAddress() << ") connected" << std::endl;
 }
 
 // Called from qb::io on server disconnected
-void ServerActor::on(qb::io::async::event::disconnected const &) {
-    // kill ServerActor
-    kill();
+void
+ServerActor::on(qb::io::async::event::disconnected const &) {
+    kill(); // kill ServerActor
 }

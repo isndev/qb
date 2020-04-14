@@ -17,11 +17,13 @@
 
 #include <qb/io.h>
 
-void qb::io::log::init(std::string const &file_path, uint32_t const roll_MB) {
+void
+qb::io::log::init(std::string const &file_path, uint32_t const roll_MB) {
     nanolog::initialize(nanolog::GuaranteedLogger(), file_path, roll_MB);
 }
 
-void qb::io::log::setLevel(io::log::Level lvl) {
+void
+qb::io::log::setLevel(io::log::Level lvl) {
     nanolog::set_log_level(lvl);
 }
 

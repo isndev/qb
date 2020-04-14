@@ -20,7 +20,8 @@
 #include "PongActor.h"
 #include <qb/main.h>
 
-int main(int, char *argv[]) {
+int
+main(int, char *argv[]) {
     // (optional) initialize the qb logger
     qb::io::log::init(argv[0]); // filename
 

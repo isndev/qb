@@ -33,7 +33,8 @@ public:
         kill();
     }
 
-    bool onInit() final {
+    bool
+    onInit() final {
         EXPECT_EQ(this, getService<TestServiceActor>());
         return _ret_init;
     }
@@ -44,7 +45,8 @@ struct CheckServiceActor : public qb::Actor {
         EXPECT_NE(nullptr, getService<TestServiceActor>());
     }
 
-    bool onInit() final {
+    bool
+    onInit() final {
         EXPECT_NE(nullptr, getService<TestServiceActor>());
         kill();
         return true;
@@ -62,7 +64,8 @@ public:
         kill();
     }
 
-    bool onInit() final {
+    bool
+    onInit() final {
         return _ret_init;
     }
 };
@@ -77,7 +80,8 @@ public:
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
     }
 
-    bool onInit() final {
+    bool
+    onInit() final {
         auto actor = addRefActor<TestActor>(_ret_init);
 
         kill();
@@ -133,7 +137,8 @@ TEST(AddActorUsingCoreBuilder, ShouldRetrieveValidOrderedActorIdList) {
     qb::Main main;
 
     auto builder =
-        main.core(0).builder().addActor<TestServiceActor>(true).addActor<TestActor>(true);
+        main.core(0).builder().addActor<TestServiceActor>(true).addActor<TestActor>(
+            true);
     EXPECT_TRUE(static_cast<bool>(builder));
     EXPECT_EQ(builder.idList().size(), 2u);
     EXPECT_EQ(static_cast<uint32_t>(builder.idList()[0]), 1u);
@@ -167,7 +172,8 @@ class TestKillSenderActor : public qb::Actor {
 public:
     TestKillSenderActor() = default;
 
-    bool onInit() final {
+    bool
+    onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         push<qb::KillEvent>(id());
         push<qb::KillEvent>(qb::BroadcastId(1));
@@ -179,7 +185,8 @@ class TestKillActor : public qb::Actor {
 public:
     TestKillActor() = default;
 
-    bool onInit() final {
+    bool
+    onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         return true;
     }

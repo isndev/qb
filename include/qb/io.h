@@ -77,15 +77,16 @@ class cout {
 public:
     cout() = default;
     cout(cout const &) = delete;
-            ~cout();
+    ~cout();
 
-            template<typename T>
-            inline std::stringstream &operator<<(T const &data)  {
-                ss << data;
-                return ss;
-            }
-        };
+    template <typename T>
+    inline std::stringstream &
+    operator<<(T const &data) {
+        ss << data;
+        return ss;
     }
-}
+};
+} // namespace io
+} // namespace qb
 
-#endif //QB_TYPES_H
+#endif // QB_TYPES_H

@@ -23,7 +23,7 @@ set(QB_PREFIX ${PROJECT_NAME})
 string(TOUPPER ${QB_PREFIX} QB_PREFIX_UPPER)
 set(QB_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 set(QB_VERSION_MAJOR 1)
-set(QB_VERSION_MINOR 5)
+set(QB_VERSION_MINOR 8)
 set(QB_VERSION_PATCH 0)
 set(QB_VERSION_TWEAK 0)
 set(QB_VERSION "${QB_VERSION_MAJOR}.${QB_VERSION_MINOR}.${QB_VERSION_PATCH}.${QB_VERSION_TWEAK}")
@@ -39,7 +39,7 @@ if(NOT CYGWIN)
     set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
 
-set(QB_PATH "root" ${CMAKE_CURRENT_SOURCE_DIR})
+set(QB_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 option("${QB_PREFIX_UPPER}_BUILD_TEST" "Build qb Tests" OFF)
 option("${QB_PREFIX_UPPER}_BUILD_BENCHMARK" "Build qb Benchmarks" OFF)
 option("${QB_PREFIX_UPPER}_BUILD_SAMPLE" "Build qb Samples" OFF)
@@ -89,11 +89,12 @@ config_compiler_and_linker()  # Defined in internal_utils.cmake.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
 
-# IO Projects
-add_subdirectory(modules/ev)
-#add_subdirectory(modules/json)
-#add_subdirectory(modules/xml)
-add_subdirectory(source/io)
+# (optional) some modules require openssl
+find_package(OpenSSL)
+if(OPENSSL_FOUND)
+    #used for tests
+    set(${QB_PREFIX_UPPER}_SSL_RESOURCES ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/key.pem ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/cert.pem)
+endif()
 
 #TCMALLOC only available on linux for the moment
 if (NOT WIN32 AND ${QB_PREFIX_UPPER}_USE_TCMALLOC)
@@ -101,20 +102,25 @@ if (NOT WIN32 AND ${QB_PREFIX_UPPER}_USE_TCMALLOC)
     find_package(Gperftools)
     if (GPERFTOOLS_FOUND)
         message(STATUS "INFO: Will build ${QB_PREFIX} libraries with tcmalloc")
-            if (GNU)
-                set(${QB_PREFIX_UPPER}_CXX_FLAGS "-flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
-            endif ()
+        if (GNU)
+            set(${QB_PREFIX_UPPER}_CXX_FLAGS "-flto -fno-builtin-malloc -fno-builtin-calloc -fno-builtin-realloc -fno-builtin-free")
+        endif ()
         link_libraries(${name} unwind)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${${QB_PREFIX_UPPER}_CXX_FLAGS}")
         link_libraries(${GPERFTOOLS_TCMALLOC})
     endif()
 endif()
 
-# qb Main Library
+# qb io libraries
+add_subdirectory(modules/ev)
+add_subdirectory(source/io)
+# qb core library
 add_subdirectory(source/core)
-
 # Generate Documentation
 add_subdirectory(docs)
+
+# load default modules
+qb_load_modules(${QB_PATH}/qb-module)
 
 if(QB_MODULE_PATH)
     qb_load_modules(${QB_MODULE_PATH})

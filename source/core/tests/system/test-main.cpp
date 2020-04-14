@@ -17,6 +17,8 @@
 
 #include <gtest/gtest.h>
 #include <qb/main.h>
+#include <qb/actor.h>
+#include <csignal>
 
 class TestActor : public qb::Actor {
     bool keep_live = false;
@@ -27,13 +29,22 @@ public:
     explicit TestActor(bool live, bool except = false)
         : keep_live(live)
         , throw_except(except) {}
-    bool onInit() final {
+    bool
+    onInit() final {
         if (throw_except)
             throw std::runtime_error("Test Exception Error");
 
         if (!keep_live)
             kill();
+        registerEvent<qb::SignalEvent>(*this);
         return true;
+    }
+
+    void on(qb::SignalEvent const &event) {
+        if (event.signum == SIGINT)
+            kill();
+        if (event.signum == SIGABRT)
+            kill();
     }
 };
 
@@ -127,6 +138,22 @@ TEST(Main, StopMultiCoreWithNoError) {
 
     main.start();
     main.stop();
+    main.join();
+    EXPECT_FALSE(main.hasError());
+}
+
+TEST(Main, StopMultiCoreWithCustomSignal) {
+    const auto max_core = std::thread::hardware_concurrency();
+
+    EXPECT_GT(max_core, 1u);
+    qb::Main main;
+
+    for (auto i = 0u; i < max_core; ++i)
+        main.addActor<TestActor>(i, true);
+
+    qb::Main::registerSignal(SIGABRT);
+    main.start();
+    std::raise(SIGABRT);
     main.join();
     EXPECT_FALSE(main.hasError());
 }

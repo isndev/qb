@@ -31,5 +31,8 @@ add_executable(${PROJECT_NAME} ${SOURCE})
 # Add include directory
 target_include_directories(${PROJECT_NAME} PRIVATE include)
 
-# Link project with qb-core library
-target_link_libraries(${PROJECT_NAME} qb-core)
+# Link project with qb libraries
+target_link_libraries(${PROJECT_NAME}
+        qb-core
+        qbm-protocol-text
+        )

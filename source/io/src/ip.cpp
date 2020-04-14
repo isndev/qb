@@ -37,13 +37,15 @@ ip::ip(const char *address) noexcept
     resolve(address);
 }
 
-ip::ip(uint8_t const byte0, uint8_t const byte1, uint8_t const byte2, uint8_t const byte3) noexcept
+ip::ip(uint8_t const byte0, uint8_t const byte1, uint8_t const byte2,
+       uint8_t const byte3) noexcept
     : _address(htonl((byte0 << 24) | (byte1 << 16) | (byte2 << 8) | byte3)) {}
 
 ip::ip(uint32_t const address) noexcept
     : _address(htonl(address)) {}
 
-std::string ip::toString() const {
+std::string
+ip::toString() const {
     char buffer[32];
     in_addr address;
     address.s_addr = _address;
@@ -51,11 +53,13 @@ std::string ip::toString() const {
     return {buffer};
 }
 
-uint32_t ip::toInteger() const {
+uint32_t
+ip::toInteger() const {
     return ntohl(_address);
 }
 
-void ip::resolve(const std::string &address) noexcept {
+void
+ip::resolve(const std::string &address) noexcept {
     _address = ip::None.toInteger();
 
     if (address == "255.255.255.255") {
@@ -85,7 +89,8 @@ void ip::resolve(const std::string &address) noexcept {
             if (!err) {
                 struct addrinfo *rp = answer;
                 while (rp != nullptr) {
-                    struct sockaddr_in *a = reinterpret_cast<struct sockaddr_in *>(rp->ai_addr);
+                    struct sockaddr_in *a =
+                        reinterpret_cast<struct sockaddr_in *>(rp->ai_addr);
 
                     if (a->sin_addr.s_addr) {
                         _address = a->sin_addr.s_addr;
@@ -98,31 +103,38 @@ void ip::resolve(const std::string &address) noexcept {
     }
 }
 
-bool operator==(const ip &left, const ip &right) {
+bool
+operator==(const ip &left, const ip &right) {
     return !(left < right) && !(right < left);
 }
 
-bool operator!=(const ip &left, const ip &right) {
+bool
+operator!=(const ip &left, const ip &right) {
     return !(left == right);
 }
 
-bool operator<(const ip &left, const ip &right) {
+bool
+operator<(const ip &left, const ip &right) {
     return left._address < right._address;
 }
 
-bool operator>(const ip &left, const ip &right) {
+bool
+operator>(const ip &left, const ip &right) {
     return right < left;
 }
 
-bool operator<=(const ip &left, const ip &right) {
+bool
+operator<=(const ip &left, const ip &right) {
     return !(right < left);
 }
 
-bool operator>=(const ip &left, const ip &right) {
+bool
+operator>=(const ip &left, const ip &right) {
     return !(left < right);
 }
 
-std::istream &operator>>(std::istream &stream, ip &address) {
+std::istream &
+operator>>(std::istream &stream, ip &address) {
     std::string str;
     stream >> str;
     address = ip(str);
@@ -130,7 +142,8 @@ std::istream &operator>>(std::istream &stream, ip &address) {
     return stream;
 }
 
-std::ostream &operator<<(std::ostream &stream, const ip &address) {
+std::ostream &
+operator<<(std::ostream &stream, const ip &address) {
     return stream << address.toString();
 }
 

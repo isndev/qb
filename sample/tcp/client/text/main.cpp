@@ -19,7 +19,8 @@
 #include "CmdActor.h"
 #include <qb/main.h>
 
-int main(int argc, char *argv[]) {
+int
+main(int argc, char *argv[]) {
     // default connection
     std::string ip = "127.0.0.1";
     uint16_t port = 60123;

@@ -32,7 +32,6 @@ class listener {
 public:
     thread_local static listener current;
 
-private:
     template <typename _Event, typename _Actor>
     class RegisteredKernelEvent : public IRegisteredKernelEvent {
         friend class listener;
@@ -46,7 +45,8 @@ private:
             : _actor(actor)
             , _event(loop) {}
 
-        void invoke() final {
+        void
+        invoke() final {
             if constexpr (has_member_func_is_alive<_Actor>::value) {
                 if (likely(_actor.is_alive()))
                     _actor.on(_event);
@@ -55,20 +55,17 @@ private:
         }
     };
 
+private:
     ev::dynamic_loop _loop;
     std::vector<IRegisteredKernelEvent *> _registeredEvents;
     std::size_t _nb_invoked_events = 0;
 
 public:
     listener()
-        : _loop(EVFLAG_AUTO) {
-#ifdef _WIN32
-        if (!WinSockInitializer::status.isInitialized())
-            throw std::runtime_error("Winsock2 is not initialized");
-#endif
-    }
+        : _loop(EVFLAG_AUTO) {}
 
-    void clear() {
+    void
+    clear() {
         for (auto it : _registeredEvents)
             delete it;
         _registeredEvents.clear();
@@ -79,7 +76,8 @@ public:
     }
 
     template <typename EV_EVENT>
-    void on(EV_EVENT &event, int revents) {
+    void
+    on(EV_EVENT &event, int revents) {
         auto &w = *reinterpret_cast<event::base<EV_EVENT> *>(&event);
         w._revents = revents;
         w._interface->invoke();
@@ -87,9 +85,11 @@ public:
     }
 
     template <typename _Event, typename _Actor, typename... _Args>
-    _Event &registerEvent(_Actor &actor, _Args &&... args) {
+    _Event &
+    registerEvent(_Actor &actor, _Args &&... args) {
         auto revent = new RegisteredKernelEvent<_Event, _Actor>(_loop, actor);
-        revent->_event.template set<listener, &listener::on<typename _Event::ev_t>>(this);
+        revent->_event.template set<listener, &listener::on<typename _Event::ev_t>>(
+            this);
         revent->_event._interface = revent;
 
         if constexpr (sizeof...(_Args) > 0)
@@ -99,35 +99,46 @@ public:
         return revent->_event;
     }
 
-    void unregisterEvent(IRegisteredKernelEvent *kevent) {
-        _registeredEvents.erase(
-            std::find(std::begin(_registeredEvents), std::end(_registeredEvents), kevent));
+    void
+    unregisterEvent(IRegisteredKernelEvent *kevent) {
+        _registeredEvents.erase(std::find(std::begin(_registeredEvents),
+                                          std::end(_registeredEvents), kevent));
         delete kevent;
     }
 
-    [[nodiscard]] inline ev::loop_ref loop() const {
+    [[nodiscard]] inline ev::loop_ref
+    loop() const {
         return _loop;
     }
 
-    inline void run(int flag = 0) {
+    inline void
+    run(int flag = 0) {
         _nb_invoked_events = 0;
         _loop.run(flag);
     }
 
-    [[nodiscard]] inline std::size_t getNbInvokedEvent() const {
+    [[nodiscard]] inline std::size_t
+    getNbInvokedEvent() const {
         return _nb_invoked_events;
     }
 
-    [[nodiscard]] inline std::size_t size() const {
+    [[nodiscard]] inline std::size_t
+    size() const {
         return _registeredEvents.size();
     }
 };
 
-inline void init() {
+inline void
+init() {
+#ifdef _WIN32
+    if (!WinSockInitializer::status.isInitialized())
+        throw std::runtime_error("Winsock2 is not initialized");
+#endif
     listener::current.clear();
 }
 
-inline std::size_t run(int flag = 0) {
+inline std::size_t
+run(int flag = 0) {
     listener::current.run(flag);
     return listener::current.getNbInvokedEvent();
 }

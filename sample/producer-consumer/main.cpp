@@ -19,7 +19,8 @@
 #include "ActorProducer.h"
 #include <qb/main.h>
 
-int main(int, char *argv[]) {
+int
+main(int, char *argv[]) {
     // (optional) initialize the logger
     qb::io::log::init(argv[0]); // filepath
     qb::io::log::setLevel(qb::io::log::Level::INFO);

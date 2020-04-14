@@ -207,12 +207,13 @@ function(cxx_library_with_type type)
                 if(${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm")
                     set(threads_spec ${threads_spec} atomic)
                 endif()
-                target_link_libraries(${Library_NAME} PUBLIC ${threads_spec})
+#                target_link_libraries(${Library_NAME} PUBLIC ${threads_spec})
+                set(Library_DEPENDENCIES "${Library_DEPENDENCIES} ${threads_spec}")
             endif ()
             if (Library_DEPENDENCIES)
                 string(REPLACE " " ";" LIB_LIST ${Library_DEPENDENCIES})
                 foreach (lib ${LIB_LIST})
-                    if (${Library_SOURCES})
+                    if (Library_SOURCES)
                         target_link_libraries(${Library_NAME} ${lib})
                     else ()
                         target_link_libraries(${Library_NAME} INTERFACE ${lib})
@@ -269,11 +270,11 @@ function(qb_register_module)
         if (NOT ${Module_FLAGS})
             set(Module_FLAGS ${cxx_default_lib})
         endif ()
-        if (${Module_SOURCES})
+        if (Module_SOURCES)
             cxx_library_with_type(STATIC
                     NAME ${Module_NAME}
                     FLAGS "${Module_FLAGS}"
-                    SOURCES ${Module_SOURCES}
+                    SOURCES "${Module_SOURCES}"
                     DEPENDENCIES ${QB_PREFIX}-core ${Module_DEPENDENCIES})
 #            target_link_libraries(${Module_NAME} ${QB_PREFIX}-core ${Module_DEPENDENCIES})
         else ()
@@ -306,6 +307,7 @@ function(qb_load_modules path)
     SUBDIRLIST(list ${path})
 
     foreach (subdir ${list})
+        message(${path}/${subdir})
         add_subdirectory(${path}/${subdir} ${CMAKE_CURRENT_BINARY_DIR}/qb-module/${subdir})
     endforeach ()
     include_directories(path)
@@ -384,7 +386,7 @@ endfunction()
 # creates a named test target that depends on the given libs and is
 # built from the given source files.
 function(cxx_gtest name libs)
-    cxx_test_with_flags("${name}" "" "${libs} gtest gtest_main"
+    cxx_test_with_flags("${name}" "" "gtest gtest_main ${libs}"
             ${ARGN})
 endfunction()
 

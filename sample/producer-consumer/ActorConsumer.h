@@ -30,7 +30,8 @@ class ActorConsumer
     uint64_t timer = 0;
     uint64_t counter = 0;
 
-    void reset_timer() {
+    void
+    reset_timer() {
         timer = time() + qb::Timestamp::seconds(1).nanoseconds();
     }
 
@@ -39,7 +40,8 @@ public:
     ~ActorConsumer() final = default;
 
     // will call this function before adding MyActor
-    bool onInit() final {
+    bool
+    onInit() final {
         registerEvent<MyEvent>(*this); // will listen MyEvent
         registerCallback(*this);       // each core loop will call onCallback
         reset_timer();
@@ -47,17 +49,21 @@ public:
     }
 
     // will call this function each core loop
-    void onCallback() final {
+    void
+    onCallback() final {
         if (time() > timer) {
-            qb::io::cout() << "Consumer(" << id() << ") received " << counter << "/s" << std::endl;
-            //            LOG_INFO("Consumer(" << id() << ") received " << counter << "/s");
+            qb::io::cout() << "Consumer(" << id() << ") received " << counter << "/s"
+                           << std::endl;
+            //            LOG_INFO("Consumer(" << id() << ") received " << counter <<
+            //            "/s");
             reset_timer();
             counter = 0;
         }
     }
 
     // will call this function when MyActor received MyEvent
-    void on(MyEvent const &) {
+    void
+    on(MyEvent const &) {
         ++counter;
     }
 };

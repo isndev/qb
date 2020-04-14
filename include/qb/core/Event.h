@@ -18,6 +18,7 @@
 #ifndef QB_EVENT_H
 #define QB_EVENT_H
 #include <bitset>
+#include <qb/system/allocator/pipe.h>
 #include <utility>
 // include from qb
 #include "ActorId.h"
@@ -27,11 +28,13 @@ namespace qb {
 
 template <typename T>
 struct type {
-    constexpr static void id() {}
+    constexpr static void
+    id() {}
 };
 
 template <typename T>
-constexpr TypeId type_id() {
+constexpr TypeId
+type_id() {
     return static_cast<TypeId>(reinterpret_cast<std::size_t>(&type<T>::id));
 }
 
@@ -44,7 +47,7 @@ class Event {
     friend class SharedCoreCommunication;
     friend class VirtualCore;
     friend class Actor;
-    friend class ProxyPipe;
+    friend class Pipe;
     friend struct EventQOS0;
     friend struct ServiceEvent;
 
@@ -54,13 +57,15 @@ public:
 #ifdef NDEBUG
     using id_type = EventId;
     template <typename T>
-    constexpr static id_type type_to_id() {
+    constexpr static id_type
+    type_to_id() {
         return static_cast<id_type>(reinterpret_cast<std::size_t>(&qb::type<T>::id));
     }
 #else
     using id_type = const char *;
     template <typename T>
-    constexpr static id_type type_to_id() {
+    constexpr static id_type
+    type_to_id() {
         return typeid(T).name();
     }
 #endif
@@ -70,7 +75,8 @@ private:
         struct {
             uint32_t : 16, : 8, alive : 1, qos : 2, factor : 5;
         };
-        uint8_t prot[4] = {'q', 'b', '\0', 4 | ((QB_LOCKFREE_EVENT_BUCKET_BYTES / 16) << 3)};
+        uint8_t prot[4] = {'q', 'b', '\0',
+                           4 | ((QB_LOCKFREE_EVENT_BUCKET_BYTES / 16) << 3)};
     } state;
     uint16_t bucket_size;
     id_type id;
@@ -81,23 +87,29 @@ private:
 public:
     Event() = default;
 
-    [[nodiscard]] inline bool is_alive() const noexcept {
+    [[nodiscard]] inline bool
+    is_alive() const noexcept {
         return state.alive;
     }
-    [[nodiscard]] inline id_type getID() const noexcept {
+    [[nodiscard]] inline id_type
+    getID() const noexcept {
         return id;
     }
-    [[nodiscard]] inline uint8_t getQOS() const noexcept {
+    [[nodiscard]] inline uint8_t
+    getQOS() const noexcept {
         return state.qos;
     }
-    [[nodiscard]] inline id_handler_type getDestination() const noexcept {
+    [[nodiscard]] inline id_handler_type
+    getDestination() const noexcept {
         return dest;
     }
-    [[nodiscard]] inline id_handler_type getSource() const noexcept {
+    [[nodiscard]] inline id_handler_type
+    getSource() const noexcept {
         return source;
     }
-    [[nodiscard]] inline std::size_t getSize() const noexcept {
-        return bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES;
+    [[nodiscard]] inline std::size_t
+    getSize() const noexcept {
+        return static_cast<std::size_t>(bucket_size) * QB_LOCKFREE_EVENT_BUCKET_BYTES;
     }
 };
 
@@ -121,13 +133,15 @@ struct ServiceEvent : public Event {
     id_handler_type forward;
     id_type service_event_id;
 
-    inline void received() noexcept {
+    inline void
+    received() noexcept {
         std::swap(dest, forward);
         std::swap(id, service_event_id);
         live(true);
     }
 
-    inline void live(bool flag) noexcept {
+    inline void
+    live(bool flag) noexcept {
         state.alive = flag;
     }
 };
@@ -138,6 +152,9 @@ struct ServiceEvent : public Event {
  */
 struct KillEvent : public Event {};
 struct UnregisterCallbackEvent : public Event {};
+struct SignalEvent : public Event {
+    int signum;
+};
 
 enum class ActorStatus : uint32_t { Alive, Dead };
 
@@ -157,7 +174,8 @@ struct RequireEvent : public Event {
     const uint32_t type;
     const ActorStatus status;
 
-    explicit RequireEvent(uint32_t const actor_type, ActorStatus const actor_status) noexcept
+    explicit RequireEvent(uint32_t const actor_type,
+                          ActorStatus const actor_status) noexcept
         : type(actor_type)
         , status(actor_status) {}
 };
@@ -191,6 +209,10 @@ struct FillEvent : public WithData<_Args...> {
     explicit FillEvent(_Args &&... args)
         : base_t(std::forward<_Args>(args)...) {}
 };
+
+using VirtualPipe = allocator::pipe<EventBucket>;
+using event = Event;
+using service_event = ServiceEvent;
 
 } // namespace qb
 

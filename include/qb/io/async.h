@@ -38,45 +38,52 @@ namespace qb::io {
 template <typename _Derived>
 struct use {
     template <typename _Protocol>
-    using input = async::input<_Derived, _Protocol>;
+    using input = async::input<_Derived>;
     template <typename _Protocol>
-    using output = async::output<_Derived, _Protocol>;
+    using output = async::output<_Derived>;
     template <typename _Protocol>
-    using io = async::io<_Derived, _Protocol>;
+    using io = async::io<_Derived>;
 
     struct tcp {
 
         template <typename _Client>
         using server = async::tcp::server<_Derived, _Client, transport::accept>;
 
-        template <template <typename _Transport> typename _Protocol, typename _Server = void>
-        using client = async::tcp::client<_Derived, _Protocol, transport::tcp, _Server>;
+        template <typename _Server = void>
+        using client = async::tcp::client<_Derived, transport::tcp, _Server>;
 
 #ifdef QB_IO_WITH_SSL
         struct ssl {
             template <typename _Client>
             using server = async::tcp::server<_Derived, _Client, transport::saccept>;
 
-            template <template <typename _BaseProtocol> typename _Protocol, typename _Server = void>
-            using client = async::tcp::client<_Derived, _Protocol, transport::stcp, _Server>;
+            template <typename _Server = void>
+            using client =
+                async::tcp::client<_Derived, transport::stcp, _Server>;
         };
 #endif
     };
 
     struct udp {
 
-        template <typename _Client>
-        using server = async::udp::server<_Derived, _Client>;
+        using server = async::udp::server<_Derived>;
+        using client = async::udp::client<_Derived>;
 
-        template <template <typename _BaseProtocol> typename _Protocol, typename _Server = void>
-        using client = async::udp::client<_Derived, _Protocol, _Server>;
+//        template <typename _Client>
+//        using server = async::udp::server<_Derived, _Client>;
+//
+//        template <template <typename _BaseProtocol> typename _Protocol,
+//                  typename _Server = void>
+//        using client = async::udp::client<_Derived, _Protocol, _Server>;
 
 #ifdef QB_IO_WITH_SSL
+        // Todo: implement dtls
 #endif
     };
 
     using timeout = async::with_timeout<_Derived>;
 };
+
 } // namespace qb::io
 
 #endif // QB_IO_ASYNC_H_

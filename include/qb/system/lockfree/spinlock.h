@@ -34,15 +34,18 @@ public:
     SpinLock &operator=(const SpinLock &) = delete;
     SpinLock &operator=(SpinLock &&) = default;
 
-    bool locked() noexcept {
+    bool
+    locked() noexcept {
         return _lock.load(std::memory_order_acquire);
     }
 
-    bool trylock() noexcept {
+    bool
+    trylock() noexcept {
         return !_lock.exchange(true, std::memory_order_acquire);
     }
 
-    bool trylock(int64_t spin) noexcept {
+    bool
+    trylock(int64_t spin) noexcept {
         // Try to acquire spin-lock at least one time
         do {
             if (trylock())
@@ -53,7 +56,8 @@ public:
         return false;
     }
 
-    bool trylock_for(const Timespan &timespan) noexcept {
+    bool
+    trylock_for(const Timespan &timespan) noexcept {
         // Calculate a finish timestamp
         Timestamp finish = NanoTimestamp() + timespan;
 
@@ -67,16 +71,19 @@ public:
         return false;
     }
 
-    bool trylock_until(const UtcTimestamp &timestamp) noexcept {
+    bool
+    trylock_until(const UtcTimestamp &timestamp) noexcept {
         return trylock_for(timestamp - UtcTimestamp());
     }
 
-    void lock() noexcept {
+    void
+    lock() noexcept {
         while (_lock.exchange(true, std::memory_order_acquire))
             ;
     }
 
-    void unlock() noexcept {
+    void
+    unlock() noexcept {
         _lock.store(false, std::memory_order_release);
     }
 

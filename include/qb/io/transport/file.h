@@ -24,9 +24,15 @@ namespace qb::io::transport {
 
 class file : public stream<io::sys::file> {
 public:
+
+    [[nodiscard]] int
+    write() {
+        return 0;
+    }
+
     // Derived class should define :
     // using message_type = const char *;
-    // int getMessageSize();
+    // std::size_t getMessageSize();
     // message_type getMessage();
 };
 

@@ -26,8 +26,8 @@ class tcp : public stream<io::tcp::socket> {
 public:
     // Derived class should define :
     // using message_type = const char *;
-    // int getMessageSize();
-    // message_type getMessage();
+    // std::size_t getMessageSize() final;
+    // void onMessage() final;
 };
 
 } // namespace qb::io::transport

@@ -33,15 +33,16 @@ public:
     socket(socket const &rhs) = default;
     //                socket(SocketHandler fd);
 
-    [[nodiscard]] ip getRemoteAddress() const;
-    [[nodiscard]] unsigned short getLocalPort() const;
-    [[nodiscard]] unsigned short getRemotePort() const;
+    [[nodiscard]] ip getRemoteAddress() const noexcept;
+    [[nodiscard]] unsigned short getLocalPort() const noexcept;
+    [[nodiscard]] unsigned short getRemotePort() const noexcept;
 
-    SocketStatus connect(const ip &remoteAddress, unsigned short remotePort, int timeout = 0);
-    void disconnect();
+    SocketStatus connect(const ip &remoteAddress, unsigned short remotePort,
+                         int timeout = 0);
+    void disconnect() noexcept;
 
-    int read(void *data, std::size_t size) const;
-    int write(const void *data, std::size_t size) const;
+    int read(void *data, std::size_t size) const noexcept;
+    int write(const void *data, std::size_t size) const noexcept;
 
 private:
     friend class listener;

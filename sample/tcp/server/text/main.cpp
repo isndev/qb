@@ -18,7 +18,8 @@
 #include "ServerActor.h"
 #include <qb/main.h>
 
-int main(int argc, char *argv[]) {
+int
+main(int argc, char *argv[]) {
     // default listenning
     std::string iface = "127.0.0.1";
     uint16_t port = 60123;
@@ -29,7 +30,10 @@ int main(int argc, char *argv[]) {
         port = std::atoi(argv[2]);
 
     qb::Main main;
-    main.core(0).addActor<ServerActor>(iface, port);
+    main.core(0)                             // index 0
+        .setLowLatency(false)                // low latency not required for sample
+        .setAffinity({1})                    // attach to physical core id 1
+        .addActor<ServerActor>(iface, port); // add ServerActor
 
     main.start(false);
     main.join();

@@ -59,14 +59,16 @@ public:
         : max_sends(max)
         , actor_to_send(id) {}
 
-    bool onInit() final {
+    bool
+    onInit() final {
         registerEvent<EventTrait>(*this);
         if (actor_to_send)
             push<EventTrait>(actor_to_send, 0u);
         return true;
     }
 
-    void on(EventTrait &event) const {
+    void
+    on(EventTrait &event) const {
         if (event.x >= max_sends)
             kill();
         if (event.x <= max_sends) {
@@ -79,12 +81,14 @@ public:
 template <typename TestEvent>
 class PongActor : public qb::Actor {
 public:
-    bool onInit() final {
+    bool
+    onInit() final {
         registerEvent<TestEvent>(*this);
         return true;
     }
 
-    void on(TestEvent &event) {
+    void
+    on(TestEvent &event) {
         --event._ttl;
         reply(event);
     }
@@ -101,13 +105,15 @@ public:
         , actor_to_send(id) {}
     ~PingActor() final = default;
 
-    bool onInit() final {
+    bool
+    onInit() final {
         registerEvent<TestEvent>(*this);
         send<TestEvent>(actor_to_send, max_sends);
         return true;
     }
 
-    void on(TestEvent &event) {
+    void
+    on(TestEvent &event) {
         if (event._ttl)
             reply(event);
         else {
@@ -118,7 +124,8 @@ public:
 };
 
 template <typename EventTrait>
-static void BM_PINGPONG(benchmark::State &state) {
+static void
+BM_PINGPONG(benchmark::State &state) {
     for (auto _ : state) {
         state.PauseTiming();
         const auto nb_core = static_cast<uint32_t>(state.range(2));
@@ -128,7 +135,8 @@ static void BM_PINGPONG(benchmark::State &state) {
         for (int i = nb_actor; i > 0;) {
             for (auto j = 0u; j < nb_core && i > 0; ++j) {
                 main.addActor<PingActor<EventTrait>>(
-                    j, max_events, main.addActor<PongActor<EventTrait>>(((j + 1) % nb_core)));
+                    j, max_events,
+                    main.addActor<PongActor<EventTrait>>(((j + 1) % nb_core)));
                 --i;
             }
         }

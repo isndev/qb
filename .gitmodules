@@ -18,3 +18,7 @@
 	path = modules/ska_hash
 	url = https://github.com/isndev/flat_hash_map.git
 	branch = master
+[submodule "modules/http"]
+	path = modules/http
+	url = https://github.com/nodejs/http-parser.git
+	branch = master

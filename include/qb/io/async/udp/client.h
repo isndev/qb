@@ -23,52 +23,24 @@
 
 namespace qb::io::async::udp {
 
-template <typename _Derived, template <typename _BaseProt> typename _Prot, typename _Server = void>
+template <typename _Derived>
 class client
-    : public transport::udp::identity
-    , public _Prot<transport::udp> {
-    friend _Server;
+    : public io<_Derived>
+    , public transport::udp {
 
-protected:
-    _Server &_server;
 
 public:
     constexpr static const bool has_server = false;
 
-    explicit client(_Server &server)
-        : _server(server) {}
-
-    inline transport::udp::identity &ident() {
-        return static_cast<transport::udp::identity &>(*this);
-    }
-
-    inline _Server &server() {
-        return _server;
-    }
-
-    char *publish(const char *data, std::size_t size) {
-        return _server.publish(ident(), data, size);
+    client() noexcept {
+        if constexpr (has_member_Protocol<_Derived>::value) {
+            if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
+                this->template switch_protocol<typename _Derived::Protocol>(
+                        static_cast<_Derived &>(*this));
+            }
+        }
     }
 };
-
-//                template<typename _Derived, typename _Prot>
-//                class session<_Derived, _Prot, void>
-//                        : public transport::udp::identity
-//                        , public io<_Derived, _Prot> {
-//                protected:
-//                public:
-//                    constexpr static const bool has_server = false;
-
-//                    session() {
-//                        static_cast<transport::udp::identity &>(*this) = { this->in(); }
-//                    };
-
-//                    char *publish(const char *data, std::size_t size) {
-//                        return _server.publish(static_cast<transport::udp::identity &>(*this),
-//                        data, size);
-//                    }
-
-//                };
 
 } // namespace qb::io::async::udp
 

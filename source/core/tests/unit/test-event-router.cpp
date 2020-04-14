@@ -29,13 +29,16 @@ struct ActorId {
         return _id;
     }
 
-    [[nodiscard]] bool is_valid() const noexcept {
+    [[nodiscard]] bool
+    is_valid() const noexcept {
         return _id != 0;
     }
-    [[nodiscard]] bool is_broadcast() const noexcept {
+    [[nodiscard]] bool
+    is_broadcast() const noexcept {
         return _id == std::numeric_limits<uint32_t>::max();
     }
-    bool operator==(ActorId const &rhs) const noexcept {
+    bool
+    operator==(ActorId const &rhs) const noexcept {
         return _id == rhs._id;
     }
 
@@ -47,7 +50,8 @@ const ActorId ActorId::broadcastId = ActorId{std::numeric_limits<uint32_t>::max(
 namespace std {
 template <>
 struct hash<::ActorId> {
-    std::size_t operator()(ActorId const &val) const noexcept {
+    std::size_t
+    operator()(ActorId const &val) const noexcept {
         return static_cast<uint32_t>(val);
     }
 };
@@ -55,7 +59,8 @@ struct hash<::ActorId> {
 
 template <typename T>
 struct type {
-    constexpr static void id() {}
+    constexpr static void
+    id() {}
 };
 
 struct RawEvent {
@@ -69,7 +74,8 @@ struct RawEvent {
     //    static_cast<id_type>(reinterpret_cast<std::size_t>(&type<T>::id)); }
 
     template <typename T>
-    constexpr static id_type type_to_id() {
+    constexpr static id_type
+    type_to_id() {
         return typeid(T).name();
     }
 
@@ -78,13 +84,16 @@ struct RawEvent {
     id_handler_type source{};
     bool alive = true;
 
-    [[nodiscard]] id_type getID() const noexcept {
+    [[nodiscard]] id_type
+    getID() const noexcept {
         return id;
     }
-    [[nodiscard]] bool is_alive() const noexcept {
+    [[nodiscard]] bool
+    is_alive() const noexcept {
         return alive;
     }
-    [[nodiscard]] id_handler_type getDestination() const noexcept {
+    [[nodiscard]] id_handler_type
+    getDestination() const noexcept {
         return dest;
     }
 };
@@ -122,7 +131,8 @@ std::size_t TestEvent::_count = 0;
 std::size_t TestConstEvent::_count = 0;
 std::size_t TestDestroyEvent::_count = 0;
 
-void reset_all_event_counts() {
+void
+reset_all_event_counts() {
     TestEvent::_count = 0;
     TestConstEvent::_count = 0;
     TestDestroyEvent::_count = 0;
@@ -135,27 +145,33 @@ struct FakeActor {
         : _id(id) {}
     FakeActor(FakeActor const &) = delete;
 
-    [[nodiscard]] ActorId id() const {
+    [[nodiscard]] ActorId
+    id() const {
         return _id;
     }
 
-    [[nodiscard]] bool is_alive() const noexcept {
+    [[nodiscard]] bool
+    is_alive() const noexcept {
         return true;
     }
 
-    void on(TestEvent &event) {
+    void
+    on(TestEvent &event) {
         ++TestEvent::_count;
     }
 
-    void on(TestConstEvent const &event) const {
+    void
+    on(TestConstEvent const &event) const {
         ++TestConstEvent::_count;
     }
 
-    void on(TestDestroyEvent const &event) const {}
+    void
+    on(TestDestroyEvent const &event) const {}
 };
 
 template <typename _Event, bool _CleanEvent = true>
-void Test_SESH(std::size_t expected_count) {
+void
+Test_SESH(std::size_t expected_count) {
     _Event event;
     FakeActor actor(1);
 
@@ -174,7 +190,8 @@ TEST(EventRouting, SESH) {
 }
 
 template <typename _Event, typename _Handler = void, bool _CleanEvent = true>
-void Test_SEMH(std::size_t expected_count) {
+void
+Test_SEMH(std::size_t expected_count) {
     std::remove_const_t<_Event> event;
     FakeActor actor1(1);
     FakeActor actor2(2);
@@ -211,7 +228,8 @@ TEST(EventRouting, SEMH) {
 }
 
 template <typename _Event, bool _CleanEvent = true>
-void Test_MESH(std::size_t expected_count) {
+void
+Test_MESH(std::size_t expected_count) {
     std::remove_const_t<_Event> event;
     FakeActor actor1(1);
 
@@ -234,7 +252,8 @@ TEST(EventRouting, MESH) {
 }
 
 template <typename _Event, bool _CleanEvent = true, typename _Handler = void>
-void Test_MEMH(std::size_t expected_count) {
+void
+Test_MEMH(std::size_t expected_count) {
     std::remove_const_t<_Event> event;
     FakeActor actor1(1);
     FakeActor actor2(2);

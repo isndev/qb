@@ -19,11 +19,12 @@
 
 namespace qb::io::tcp {
 
-listener::~listener() {
+listener::~listener() noexcept {
     close();
 }
 
-SocketStatus listener::listen(unsigned short port, const ip &address) {
+SocketStatus
+listener::listen(unsigned short port, const ip &address) {
     // Close the socket if it is already bound
     close();
 
@@ -32,7 +33,8 @@ SocketStatus listener::listen(unsigned short port, const ip &address) {
 
 #ifdef __LINUX__SYSTEM__
     int Yes = 1;
-    setsockopt(_handle, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&Yes), sizeof(Yes));
+    setsockopt(_handle, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&Yes),
+               sizeof(Yes));
 #endif
     // Check if the address is valid
     if ((address == ip::None)) {
@@ -61,17 +63,20 @@ SocketStatus listener::listen(unsigned short port, const ip &address) {
     return SocketStatus::Done;
 }
 
-SocketStatus listener::accept(socket &sock) {
+SocketStatus
+listener::accept(socket &sock) const noexcept {
     // Make sure that we're listening
-    if (!good()) {
-        std::cerr << "Failed to accept a new connection, the socket is not listening" << std::endl;
+    if (!is_open()) {
+        std::cerr << "Failed to accept a new connection, the socket is not listening"
+                  << std::endl;
         return SocketStatus::Error;
     }
 
     // Accept a new connection
     sockaddr_in address;
     AddrLength length = sizeof(address);
-    SocketHandler remote = ::accept(_handle, reinterpret_cast<sockaddr *>(&address), &length);
+    SocketHandler remote =
+        ::accept(_handle, reinterpret_cast<sockaddr *>(&address), &length);
 
     // Check for errors
     if (remote == SOCKET_INVALID)

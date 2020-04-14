@@ -31,9 +31,10 @@ ClientActor::ClientActor(std::string ip, uint16_t port) noexcept
 }
 
 // function to connect to remote server
-bool ClientActor::connect() {
+bool
+ClientActor::connect() {
     // try connect
-    if (qb::io::SocketStatus::Done == in().connect(_ip, _port)) {
+    if (qb::io::SocketStatus::Done == transport().connect(_ip, _port)) {
         start(); // register io to listener
         return true;
     }
@@ -44,32 +45,37 @@ bool ClientActor::connect() {
 }
 
 // Actor initialization override
-bool ClientActor::onInit() {
+bool
+ClientActor::onInit() {
     // engine will not start if connection fails first time
     return connect();
 }
 
 // received new message from remote
-void ClientActor::on(IOMessage message, std::size_t size) {
+void
+ClientActor::on(IOMessage message) {
     // print received message
-    std::cout << "Received: " << std::string_view(message, size);
+    std::cout << "Received (" << message.size << "): " << message.text << std::endl;
 }
 
 // on disconnect received command event
-void ClientActor::on(CommandEvent &event) {
+void
+ClientActor::on(CommandEvent &event) {
     // cmd protocol should be ended by newline char
-    event.message[event.message.size()] = '\n';
+    //    event.message[event.message.size()] = '\n';
     // publish message to remote server
-    publish(event.message.c_str(), event.message.size() + 1);
+    publish(event.message.c_str(), event.message.size());
 }
 
 // retry connection event
-void ClientActor::on(RetryConnectEvent const &event) {
+void
+ClientActor::on(RetryConnectEvent const &event) {
     connect();
 }
 
 // called when client has been disconnected
-void ClientActor::on(qb::io::async::event::disconnected const &) {
+void
+ClientActor::on(qb::io::async::event::disconnected const &) {
     // push event to retry connection
     push<RetryConnectEvent>(id());
 }

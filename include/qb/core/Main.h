@@ -32,6 +32,8 @@ class Main;
 class VirtualCore;
 class IActorFactory;
 
+constexpr const CoreId NoAffinity = std::numeric_limits<CoreId>::max();
+
 class CoreInitializer : nocopy {
     friend class Main;
     friend class VirtualCore;
@@ -67,9 +69,8 @@ public:
          * create new _Actor on attached VirtualCore, function can be chained.\n
          * example:
          * @code
-         * auto builder = main.core(0).builder(); // get actor builder of CoreInitializer  0
-         * builder.addActor<MyActor>(param1, param2)
-         *        .addActor<MyActor>(param1, param2)
+         * auto builder = main.core(0).builder(); // get actor builder of CoreInitializer
+         * 0 builder.addActor<MyActor>(param1, param2) .addActor<MyActor>(param1, param2)
          *        // ...
          *        ;
          * @endcode
@@ -92,6 +93,7 @@ public:
 private:
     const CoreId _index;
     ServiceId _next_id;
+    qb::unordered_set<CoreId> _affinity;
     bool _low_latency;
 
     qb::unordered_set<ServiceId> _registered_services;
@@ -108,7 +110,6 @@ public:
     /*!
      * @brief Create new _Actor
      * @tparam _Actor DerivedActor type
-     * @param index VirtualCore index
      * @param args arguments to forward to the constructor of the _Actor
      * @return ActorId of the created _Actor
      * @details
@@ -137,17 +138,29 @@ public:
     ActorBuilder builder() noexcept;
 
     /*!
-     * @brief Start the engine
-     * @param async has blocking execution
+     * @brief Set VirtualCore affinity
+     * @param cores list of physical cores to be used
      * @note
-     * If async = false the main thread will by used by a VirtualCore engine.
+     * by default affinity is on VirtualCore index
      */
-    CoreInitializer &setLowLatency(bool state) noexcept;
+    CoreInitializer &setAffinity(CoreIdSet const &cores = {}) noexcept;
+
+    /*!
+     * @brief Set VirtualCore low latency (default = true)
+     * @param state
+     * @note
+     * If true then used core will never sleep depends on usage
+     */
+    CoreInitializer &setLowLatency(bool state = true) noexcept;
+
+    [[nodiscard]] CoreId getIndex() const noexcept;
+    [[nodiscard]] CoreIdSet const &getAffinity() const noexcept;
     [[nodiscard]] bool isLowLatency() const noexcept;
 };
 
 class SharedCoreCommunication : nocopy {
     friend class VirtualCore;
+    friend class Main;
     constexpr static const uint64_t MaxRingEvents =
         (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
     //////// Types
@@ -172,6 +185,7 @@ struct CoreSpawnerParameter {
     const CoreId id;
     CoreInitializer &initializer;
     SharedCoreCommunication &shared_com;
+    std::atomic<uint64_t> &sync_start;
 };
 
 /*!
@@ -188,22 +202,27 @@ class Main {
     //////// Types
     using MPSCBuffer = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
 
-    static std::atomic<uint64_t> sync_start;
-    static bool is_running;
-    static void onSignal(int signal);
+    static std::vector<Main *> _instances;
+    static std::mutex _instances_lock;
+
+    std::atomic<uint64_t> _sync_start;
+    static void onSignal(int signal) noexcept;
     static void start_thread(CoreSpawnerParameter const &params) noexcept;
+    static bool __wait__all__cores__ready(std::size_t nb_core,
+                                          std::atomic<uint64_t> &sync_start) noexcept;
 
 private:
     std::vector<std::thread> _cores;
     // Core Factory
     qb::unordered_map<CoreId, CoreInitializer> _core_initializers;
-    SharedCoreCommunication *_shared_com = nullptr;
+    SharedCoreCommunication *_shared_com;
+    bool _is_running;
 
 public:
     using ActorIdList = CoreInitializer::ActorBuilder::ActorIdList;
 
     Main() noexcept;
-    ~Main();
+    ~Main() noexcept;
 
     /*!
      * @brief Start the engine
@@ -211,9 +230,9 @@ public:
      * @note
      * If async = false the main thread will by used by a VirtualCore engine.
      */
-    void start(bool async = true);
+    void start(bool async = true) noexcept;
 
-    static bool hasError() noexcept;
+    bool hasError() const noexcept;
 
     /*!
      * @brief Stop the engine
@@ -244,7 +263,7 @@ public:
      * This function is not available while engine is running.
      */
     template <typename _Actor, typename... _Args>
-    ActorId addActor(std::size_t index, _Args &&... args);
+    ActorId addActor(CoreId index, _Args &&... args);
 
     /*!
      * @brief Get CoreIntializer from index
@@ -261,7 +280,29 @@ public:
      * This function is not available while engine is running.
      */
     CoreInitializer &core(CoreId index);
+
+    /*!
+     * @brief Register signal for all engines
+     * @param signum Signal number
+     * @note
+     * Signal SIGINT is registered by default
+     * This signal is used to kill all Actors
+     * @code
+     */
+    static void registerSignal(int signum) noexcept;
+    /*!
+     * @brief Unregister signal for all engines
+     * @param signum Signal number
+     */
+    static void unregisterSignal(int signum) noexcept;
+    /*!
+     * @brief Ignore process signal
+     * @param signum Signal number
+     */
+    static void ignoreSignal(int signum) noexcept;
 };
+
+using engine = Main;
 
 } // namespace qb
 

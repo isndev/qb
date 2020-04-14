@@ -25,13 +25,14 @@ socket::socket()
     init();
 }
 
-socket::socket(SocketHandler handle)
+socket::socket(SocketHandler handle) noexcept
     : sys::socket<SocketType::UDP>() {
     _handle = handle;
 }
 
-unsigned short socket::getLocalPort() const {
-    if (good()) {
+unsigned short
+socket::getLocalPort() const noexcept {
+    if (is_open()) {
         // Retrieve informations about the local end of the socket
         sockaddr_in address;
         AddrLength size = sizeof(address);
@@ -44,7 +45,8 @@ unsigned short socket::getLocalPort() const {
     return 0;
 }
 
-SocketStatus socket::bind(unsigned short port, const ip &address) {
+SocketStatus
+socket::bind(unsigned short port, const ip &address) {
 
     // Create the internal socket if it doesn't exist
     init();
@@ -63,13 +65,15 @@ SocketStatus socket::bind(unsigned short port, const ip &address) {
     return SocketStatus::Done;
 }
 
-void socket::unbind() {
+void
+socket::unbind() noexcept {
     // Simply close the socket
     close();
 }
 
-int socket::write(const void *data, std::size_t size, const ip &remoteAddress,
-                  unsigned short remotePort) const {
+int
+socket::write(const void *data, std::size_t size, const ip &remoteAddress,
+              unsigned short remotePort) const noexcept {
 
     // Build the target address
     sockaddr_in address = helper::createAddress(remoteAddress.toInteger(), remotePort);
@@ -79,8 +83,9 @@ int socket::write(const void *data, std::size_t size, const ip &remoteAddress,
                   reinterpret_cast<sockaddr *>(&address), sizeof(address));
 }
 
-int socket::read(void *data, std::size_t size, ip &remoteAddress,
-                 unsigned short &remotePort) const {
+int
+socket::read(void *data, std::size_t size, ip &remoteAddress,
+             unsigned short &remotePort) const noexcept {
     // First clear the variables to fill
     remoteAddress = ip();
     remotePort = 0;
@@ -90,8 +95,9 @@ int socket::read(void *data, std::size_t size, ip &remoteAddress,
 
     // Receive a chunk of bytes
     AddrLength addressSize = sizeof(address);
-    const int sizeReceived = recvfrom(_handle, static_cast<char *>(data), static_cast<int>(size), 0,
-                                      reinterpret_cast<sockaddr *>(&address), &addressSize);
+    const int sizeReceived =
+        recvfrom(_handle, static_cast<char *>(data), static_cast<int>(size), 0,
+                 reinterpret_cast<sockaddr *>(&address), &addressSize);
 
     // Check for errors
     if (sizeReceived >= 0) {

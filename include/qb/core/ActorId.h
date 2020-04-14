@@ -97,16 +97,24 @@ public:
         : ActorId(BroadcastSid, static_cast<CoreId>(core_id)) {}
 };
 
-using CoreIds = qb::unordered_set<CoreId>;
+using CoreIdSet = qb::unordered_set<CoreId>;
 using ActorIdList = std::vector<ActorId>;
 using ActorIdSet = std::unordered_set<ActorId>;
+using core_id = CoreId;
+using service_id = ServiceId;
+using actor_id = ActorId;
+using broadcast_id = BroadcastId;
+using actor_id_list = ActorIdList;
+using actor_is_set = ActorIdSet;
+using core_id_set = CoreIdSet;
 
 } // namespace qb
 
 namespace std {
 template <>
 struct hash<qb::ActorId> {
-    std::size_t operator()(qb::ActorId const &val) const noexcept {
+    std::size_t
+    operator()(qb::ActorId const &val) const noexcept {
         return static_cast<uint32_t>(val);
     }
 };

@@ -33,8 +33,9 @@ class ActorProducer
     std::uniform_int_distribution<int> _random_number;
 
 public:
-    ActorProducer() = delete;                                   // delete default constructor
-    explicit ActorProducer(std::vector<qb::ActorId> const &ids) // constructor with parameters
+    ActorProducer() = delete; // delete default constructor
+    explicit ActorProducer(
+        std::vector<qb::ActorId> const &ids) // constructor with parameters
         : _consumerIds(ids)
         , _rand_dev()
         , _generator(_rand_dev())
@@ -43,13 +44,15 @@ public:
     ~ActorProducer() final = default;
 
     // will call this function before adding Actor
-    bool onInit() final {
+    bool
+    onInit() final {
         registerCallback(*this); // each core loop will call onCallback
         return true;             // init ok, MyActor will be added
     }
 
     // will call this function each core loop
-    void onCallback() final {
+    void
+    onCallback() final {
         to(_consumerIds[_random_number(_generator)]).push<MyEvent>();
     }
 };

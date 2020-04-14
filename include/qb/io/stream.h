@@ -17,25 +17,49 @@
 
 #ifndef QB_IO_STREAM_H_
 #define QB_IO_STREAM_H_
-#include "system/file.h"
 #include <qb/system/allocator/pipe.h>
+#include <qb/utility/type_traits.h>
 
 namespace qb::io {
 
 template <typename _IO_>
 class istream {
-protected:
-    _IO_ _in;
-    qb::allocator::pipe<char> _in_buffer;
-
 public:
     using input_io_type = _IO_;
+    using input_buffer_type = qb::allocator::pipe<char>;
 
-    _IO_ &in() {
+protected:
+    _IO_ _in;
+    input_buffer_type _in_buffer;
+
+public:
+    ~istream() noexcept {
+        close();
+    }
+
+    [[nodiscard]] _IO_ &
+    transport() noexcept {
         return _in;
     }
 
-    int read() {
+    [[nodiscard]] const _IO_ &
+    transport() const noexcept {
+        return _in;
+    }
+
+    [[nodiscard]] input_buffer_type &
+    in() noexcept {
+        return _in_buffer;
+    }
+
+    [[nodiscard]] std::size_t
+    pendingRead() const noexcept {
+        return _in_buffer.size();
+    }
+
+    template <typename Available = void>
+    [[nodiscard]] int
+    read(std::enable_if_t<has_method_read<_IO_, int, char *, std::size_t>::value, Available> * = nullptr) noexcept {
         static constexpr const std::size_t bucket_read = 4096;
         const auto ret = _in.read(_in_buffer.allocate_back(bucket_read), bucket_read);
         if (likely(ret >= 0))
@@ -43,13 +67,21 @@ public:
         return ret;
     }
 
-    void flush(std::size_t size) {
+    void
+    flush(std::size_t size) noexcept {
         _in_buffer.free_front(size);
-        if (!_in_buffer.size())
-            _in_buffer.reset();
     }
 
-    void close() {
+    void
+    eof() noexcept {
+        if (!_in_buffer.size())
+            _in_buffer.reset();
+        else
+            _in_buffer.reorder();
+    }
+
+    void
+    close() noexcept {
         _in_buffer.reset();
         if constexpr (has_member_func_disconnect<_IO_>::value)
             _in.disconnect();
@@ -58,38 +90,65 @@ public:
     }
 };
 
-template <typename _IO_, bool _IsFile = std::is_same_v<_IO_, sys::file>>
+template <typename _IO_>
 class ostream {
-protected:
-    _IO_ _out;
-    qb::allocator::pipe<char> _out_buffer;
-
 public:
     using output_io_type = _IO_;
+    using output_buffer_type = qb::allocator::pipe<char>;
 
-    _IO_ &out() {
+protected:
+    _IO_ _out;
+    output_buffer_type _out_buffer;
+
+public:
+    ~ostream() noexcept {
+        close();
+    }
+
+    [[nodiscard]] _IO_ &
+    transport() noexcept {
         return _out;
     }
 
-    [[nodiscard]] std::size_t pendingWrite() const {
+    [[nodiscard]] const _IO_ &
+    transport() const noexcept {
+        return _out;
+    }
+
+    [[nodiscard]] output_buffer_type &
+    out() noexcept {
+        return _out_buffer;
+    }
+
+    [[nodiscard]] std::size_t
+    pendingWrite() const noexcept {
         return _out_buffer.size();
     }
 
-    int write() {
-        static constexpr const std::size_t bucket_write = 2048;
-        const auto ret = _out.write(_out_buffer.data() + _out_buffer.begin(),
-                                    std::min(_out_buffer.size(), bucket_write));
+    template <typename Available = void>
+    [[nodiscard]] int
+    write(std::enable_if_t<has_method_write<_IO_, int, const char *, std::size_t>::value, Available> * = nullptr) noexcept {
+        const auto ret = _out.write(_out_buffer.begin(), _out_buffer.size());
+
         if (likely(ret > 0)) {
-            _out_buffer.reset(_out_buffer.begin() + ret);
+            if (ret != _out_buffer.size()) {
+                _out_buffer.free_front(ret);
+                _out_buffer.reorder();
+            } else
+                _out_buffer.reset();
         }
+
         return ret;
     }
 
-    char *publish(char const *data, std::size_t size) {
-        return static_cast<char *>(std::memcpy(_out_buffer.allocate_back(size), data, size));
+    char *
+    publish(char const *data, std::size_t size) noexcept {
+        return static_cast<char *>(
+            std::memcpy(_out_buffer.allocate_back(size), data, size));
     }
 
-    void close() {
+    void
+    close() noexcept {
         _out_buffer.reset();
         if constexpr (has_member_func_disconnect<_IO_>::value)
             _out.disconnect();
@@ -99,90 +158,50 @@ public:
 };
 
 template <typename _IO_>
-class ostream<_IO_, true> {
-protected:
-    _IO_ _out;
-
-public:
-    using output_io_type = _IO_;
-
-    // unused
-    _IO_ &out() {
-        return _out;
-    }
-    [[nodiscard]] std::size_t pendingWrite() const {
-        return 0;
-    }
-    int write() {
-        return 0;
-    }
-
-    char *publish(char const *data, std::size_t size) {
-        _out.write(data, size);
-        return const_cast<char *>(data);
-    }
-
-    void close() {
-        _out.close();
-    }
-};
-
-template <typename _IO_, bool _IsFile = std::is_same_v<_IO_, sys::file>>
 struct stream : public istream<_IO_> {
-protected:
-    qb::allocator::pipe<char> _out_buffer;
-
 public:
     using output_io_type = _IO_;
+    using output_buffer_type = qb::allocator::pipe<char>;
+    constexpr static const bool has_reset_on_pending_read = false;
 
-    _IO_ &out() {
-        return this->_in;
+protected:
+    output_buffer_type _out_buffer;
+
+public:
+    [[nodiscard]] output_buffer_type &
+    out() noexcept {
+        return _out_buffer;
     }
 
-    [[nodiscard]] std::size_t pendingWrite() const {
+    [[nodiscard]] std::size_t
+    pendingWrite() const noexcept {
         return _out_buffer.size();
     }
 
-    int write() {
-        static constexpr const std::size_t bucket_write = 2048;
-        const auto ret = this->_in.write(_out_buffer.data() + _out_buffer.begin(),
-                                         std::min(_out_buffer.size(), bucket_write));
+    template <typename Available = void>
+    [[nodiscard]] int
+    write(std::enable_if_t<has_method_write<_IO_, int, const char *, std::size_t>::value, Available> * = nullptr) noexcept {
+        const auto ret = this->_in.write(_out_buffer.begin(), _out_buffer.size());
         if (likely(ret > 0)) {
-            _out_buffer.reset(_out_buffer.begin() + ret);
+            if (ret != _out_buffer.size()) {
+                _out_buffer.free_front(ret);
+                _out_buffer.reorder();
+            } else
+                _out_buffer.reset();
         }
         return ret;
     }
 
-    char *publish(char const *data, std::size_t size) {
-        return static_cast<char *>(std::memcpy(_out_buffer.allocate_back(size), data, size));
+    char *
+    publish(char const *data, std::size_t size) noexcept {
+        return static_cast<char *>(
+            std::memcpy(_out_buffer.allocate_back(size), data, size));
     }
 
-    void close() {
+    void
+    close() noexcept {
         _out_buffer.reset();
         static_cast<istream<_IO_> &>(*this).close();
-        this->_in_buffer.reset();
-    }
-};
-
-template <typename _IO_>
-class stream<_IO_, true> : public istream<_IO_> {
-public:
-    using output_io_type = _IO_;
-
-    // unused
-    _IO_ &out() {
-        return this->_in;
-    }
-    [[nodiscard]] std::size_t pendingWrite() const {
-        return 0;
-    }
-    int write() {
-        return 0;
-    }
-
-    char *publish(char const *data, std::size_t size) {
-        this->_in.write(data, size);
-        return const_cast<char *>(data);
     }
 };
 

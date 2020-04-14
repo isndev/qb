@@ -30,7 +30,8 @@
 #            define NOMINMAX
 #        endif
 
-#    elif defined(__linux__) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
+#    elif defined(__linux__) || defined(__unix) || defined(__unix__) || \
+        defined(__APPLE__)
 // Linux
 #        define __LINUX__SYSTEM__
 #    else

@@ -54,7 +54,8 @@ public:
 
     ~Timespan() noexcept = default;
 
-    Timespan &operator=(int64_t duration) noexcept {
+    Timespan &
+    operator=(int64_t duration) noexcept {
         _duration = duration;
         return *this;
     }
@@ -62,160 +63,209 @@ public:
     Timespan &operator=(Timespan &&) noexcept = default;
 
     // Timespan offset operations
-    Timespan operator+() const {
+    Timespan
+    operator+() const {
         return Timespan(+_duration);
     }
-    Timespan operator-() const {
+    Timespan
+    operator-() const {
         return Timespan(-_duration);
     }
-    Timespan &operator+=(int64_t offset) noexcept {
+    Timespan &
+    operator+=(int64_t offset) noexcept {
         _duration += offset;
         return *this;
     }
-    Timespan &operator+=(const Timespan &offset) noexcept {
+    Timespan &
+    operator+=(const Timespan &offset) noexcept {
         _duration += offset.total();
         return *this;
     }
-    Timespan &operator-=(int64_t offset) noexcept {
+    Timespan &
+    operator-=(int64_t offset) noexcept {
         _duration -= offset;
         return *this;
     }
-    Timespan &operator-=(const Timespan &offset) noexcept {
+    Timespan &
+    operator-=(const Timespan &offset) noexcept {
         _duration -= offset.total();
         return *this;
     }
 
-    friend Timespan operator+(const Timespan &timespan, int64_t offset) noexcept {
+    friend Timespan
+    operator+(const Timespan &timespan, int64_t offset) noexcept {
         return Timespan(timespan.total() + offset);
     }
-    friend Timespan operator+(int64_t offset, const Timespan &timespan) noexcept {
+    friend Timespan
+    operator+(int64_t offset, const Timespan &timespan) noexcept {
         return Timespan(offset + timespan.total());
     }
-    friend Timespan operator+(const Timespan &timespan1, const Timespan &timespan2) noexcept {
+    friend Timespan
+    operator+(const Timespan &timespan1, const Timespan &timespan2) noexcept {
         return Timespan(timespan1.total() + timespan2.total());
     }
-    friend Timespan operator-(const Timespan &timespan, int64_t offset) noexcept {
+    friend Timespan
+    operator-(const Timespan &timespan, int64_t offset) noexcept {
         return Timespan(timespan.total() - offset);
     }
-    friend Timespan operator-(int64_t offset, const Timespan &timespan) noexcept {
+    friend Timespan
+    operator-(int64_t offset, const Timespan &timespan) noexcept {
         return Timespan(offset - timespan.total());
     }
-    friend Timespan operator-(const Timespan &timespan1, const Timespan &timespan2) noexcept {
+    friend Timespan
+    operator-(const Timespan &timespan1, const Timespan &timespan2) noexcept {
         return Timespan(timespan1.total() - timespan2.total());
     }
 
     // Timespan comparison
-    friend bool operator==(const Timespan &timespan, int64_t offset) noexcept {
+    friend bool
+    operator==(const Timespan &timespan, int64_t offset) noexcept {
         return timespan.total() == offset;
     }
-    friend bool operator==(int64_t offset, const Timespan &timespan) noexcept {
+    friend bool
+    operator==(int64_t offset, const Timespan &timespan) noexcept {
         return offset == timespan.total();
     }
-    friend bool operator==(const Timespan &timespan1, const Timespan &timespan2) noexcept {
+    friend bool
+    operator==(const Timespan &timespan1, const Timespan &timespan2) noexcept {
         return timespan1.total() == timespan2.total();
     }
-    friend bool operator!=(const Timespan &timespan, int64_t offset) noexcept {
+    friend bool
+    operator!=(const Timespan &timespan, int64_t offset) noexcept {
         return timespan.total() != offset;
     }
-    friend bool operator!=(int64_t offset, const Timespan &timespan) noexcept {
+    friend bool
+    operator!=(int64_t offset, const Timespan &timespan) noexcept {
         return offset != timespan.total();
     }
-    friend bool operator!=(const Timespan &timespan1, const Timespan &timespan2) noexcept {
+    friend bool
+    operator!=(const Timespan &timespan1, const Timespan &timespan2) noexcept {
         return timespan1.total() != timespan2.total();
     }
-    friend bool operator>(const Timespan &timespan, int64_t offset) noexcept {
+    friend bool
+    operator>(const Timespan &timespan, int64_t offset) noexcept {
         return timespan.total() > offset;
     }
-    friend bool operator>(int64_t offset, const Timespan &timespan) noexcept {
+    friend bool
+    operator>(int64_t offset, const Timespan &timespan) noexcept {
         return offset > timespan.total();
     }
-    friend bool operator>(const Timespan &timespan1, const Timespan &timespan2) noexcept {
+    friend bool
+    operator>(const Timespan &timespan1, const Timespan &timespan2) noexcept {
         return timespan1.total() > timespan2.total();
     }
-    friend bool operator<(const Timespan &timespan, int64_t offset) noexcept {
+    friend bool
+    operator<(const Timespan &timespan, int64_t offset) noexcept {
         return timespan.total() < offset;
     }
-    friend bool operator<(int64_t offset, const Timespan &timespan) noexcept {
+    friend bool
+    operator<(int64_t offset, const Timespan &timespan) noexcept {
         return offset < timespan.total();
     }
-    friend bool operator<(const Timespan &timespan1, const Timespan &timespan2) noexcept {
+    friend bool
+    operator<(const Timespan &timespan1, const Timespan &timespan2) noexcept {
         return timespan1.total() < timespan2.total();
     }
-    friend bool operator>=(const Timespan &timespan, int64_t offset) noexcept {
+    friend bool
+    operator>=(const Timespan &timespan, int64_t offset) noexcept {
         return timespan.total() >= offset;
     }
-    friend bool operator>=(int64_t offset, const Timespan &timespan) noexcept {
+    friend bool
+    operator>=(int64_t offset, const Timespan &timespan) noexcept {
         return offset >= timespan.total();
     }
-    friend bool operator>=(const Timespan &timespan1, const Timespan &timespan2) noexcept {
+    friend bool
+    operator>=(const Timespan &timespan1, const Timespan &timespan2) noexcept {
         return timespan1.total() >= timespan2.total();
     }
-    friend bool operator<=(const Timespan &timespan, int64_t offset) noexcept {
+    friend bool
+    operator<=(const Timespan &timespan, int64_t offset) noexcept {
         return timespan.total() <= offset;
     }
-    friend bool operator<=(int64_t offset, const Timespan &timespan) noexcept {
+    friend bool
+    operator<=(int64_t offset, const Timespan &timespan) noexcept {
         return offset <= timespan.total();
     }
-    friend bool operator<=(const Timespan &timespan1, const Timespan &timespan2) noexcept {
+    friend bool
+    operator<=(const Timespan &timespan1, const Timespan &timespan2) noexcept {
         return timespan1.total() <= timespan2.total();
     }
 
-    [[nodiscard]] std::chrono::duration<int64_t, std::nano> chrono() const noexcept {
+    [[nodiscard]] std::chrono::duration<int64_t, std::nano>
+    chrono() const noexcept {
         return std::chrono::nanoseconds(_duration);
     }
 
     template <class Rep, class Period>
-    static Timespan chrono(const std::chrono::duration<Rep, Period> &duration) noexcept {
-        return Timespan(std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count());
+    static Timespan
+    chrono(const std::chrono::duration<Rep, Period> &duration) noexcept {
+        return Timespan(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count());
     }
 
-    [[nodiscard]] int64_t days() const noexcept {
+    [[nodiscard]] int64_t
+    days() const noexcept {
         return _duration / (24 * 60 * 60 * 1000000000ll);
     }
-    [[nodiscard]] int64_t hours() const noexcept {
+    [[nodiscard]] int64_t
+    hours() const noexcept {
         return _duration / (60 * 60 * 1000000000ll);
     }
-    [[nodiscard]] int64_t minutes() const noexcept {
+    [[nodiscard]] int64_t
+    minutes() const noexcept {
         return _duration / (60 * 1000000000ll);
     }
-    [[nodiscard]] int64_t seconds() const noexcept {
+    [[nodiscard]] int64_t
+    seconds() const noexcept {
         return _duration / 1000000000;
     }
-    [[nodiscard]] int64_t milliseconds() const noexcept {
+    [[nodiscard]] int64_t
+    milliseconds() const noexcept {
         return _duration / 1000000;
     }
-    [[nodiscard]] int64_t microseconds() const noexcept {
+    [[nodiscard]] int64_t
+    microseconds() const noexcept {
         return _duration / 1000;
     }
-    [[nodiscard]] int64_t nanoseconds() const noexcept {
+    [[nodiscard]] int64_t
+    nanoseconds() const noexcept {
         return _duration;
     }
-    [[nodiscard]] int64_t total() const noexcept {
+    [[nodiscard]] int64_t
+    total() const noexcept {
         return _duration;
     }
 
-    static Timespan days(int64_t days) noexcept {
+    static Timespan
+    days(int64_t days) noexcept {
         return Timespan(days * 24 * 60 * 60 * 1000000000ll);
     }
-    static Timespan hours(int64_t hours) noexcept {
+    static Timespan
+    hours(int64_t hours) noexcept {
         return Timespan(hours * 60 * 60 * 1000000000ll);
     }
-    static Timespan minutes(int64_t minutes) noexcept {
+    static Timespan
+    minutes(int64_t minutes) noexcept {
         return Timespan(minutes * 60 * 1000000000ll);
     }
-    static Timespan seconds(int64_t seconds) noexcept {
+    static Timespan
+    seconds(int64_t seconds) noexcept {
         return Timespan(seconds * 1000000000);
     }
-    static Timespan milliseconds(int64_t milliseconds) noexcept {
+    static Timespan
+    milliseconds(int64_t milliseconds) noexcept {
         return Timespan(milliseconds * 1000000);
     }
-    static Timespan microseconds(int64_t microseconds) noexcept {
+    static Timespan
+    microseconds(int64_t microseconds) noexcept {
         return Timespan(microseconds * 1000);
     }
-    static Timespan nanoseconds(int64_t nanoseconds) noexcept {
+    static Timespan
+    nanoseconds(int64_t nanoseconds) noexcept {
         return Timespan(nanoseconds);
     }
-    static Timespan zero() noexcept {
+    static Timespan
+    zero() noexcept {
         return Timespan(0);
     }
 
@@ -234,7 +284,8 @@ public:
     Timestamp(Timestamp &&) noexcept = default;
     ~Timestamp() noexcept = default;
 
-    Timestamp &operator=(uint64_t timestamp) noexcept {
+    Timestamp &
+    operator=(uint64_t timestamp) noexcept {
         _timestamp = timestamp;
         return *this;
     }
@@ -242,184 +293,234 @@ public:
     Timestamp &operator=(Timestamp &&) noexcept = default;
 
     // Timestamp offset operations
-    Timestamp &operator+=(int64_t offset) noexcept {
+    Timestamp &
+    operator+=(int64_t offset) noexcept {
         _timestamp += offset;
         return *this;
     }
-    Timestamp &operator+=(const Timespan &offset) noexcept {
+    Timestamp &
+    operator+=(const Timespan &offset) noexcept {
         _timestamp += offset.total();
         return *this;
     }
 
-    Timestamp &operator-=(int64_t offset) noexcept {
+    Timestamp &
+    operator-=(int64_t offset) noexcept {
         _timestamp -= offset;
         return *this;
     }
-    Timestamp &operator-=(const Timespan &offset) noexcept {
+    Timestamp &
+    operator-=(const Timespan &offset) noexcept {
         _timestamp -= offset.total();
         return *this;
     }
 
-    friend Timestamp operator+(const Timestamp &timestamp, int64_t offset) noexcept {
+    friend Timestamp
+    operator+(const Timestamp &timestamp, int64_t offset) noexcept {
         return Timestamp(timestamp.total() + offset);
     }
-    friend Timestamp operator+(int64_t offset, const Timestamp &timestamp) noexcept {
+    friend Timestamp
+    operator+(int64_t offset, const Timestamp &timestamp) noexcept {
         return Timestamp(offset + timestamp.total());
     }
-    friend Timestamp operator+(const Timestamp &timestamp, const Timespan &offset) noexcept {
+    friend Timestamp
+    operator+(const Timestamp &timestamp, const Timespan &offset) noexcept {
         return Timestamp(timestamp.total() + offset.total());
     }
-    friend Timestamp operator+(const Timespan &offset, const Timestamp &timestamp) noexcept {
+    friend Timestamp
+    operator+(const Timespan &offset, const Timestamp &timestamp) noexcept {
         return Timestamp(offset.total() + timestamp.total());
     }
 
-    friend Timestamp operator-(const Timestamp &timestamp, int64_t offset) noexcept {
+    friend Timestamp
+    operator-(const Timestamp &timestamp, int64_t offset) noexcept {
         return Timestamp(timestamp.total() - offset);
     }
-    friend Timestamp operator-(int64_t offset, const Timestamp &timestamp) noexcept {
+    friend Timestamp
+    operator-(int64_t offset, const Timestamp &timestamp) noexcept {
         return Timestamp(offset - timestamp.total());
     }
-    friend Timestamp operator-(const Timestamp &timestamp, const Timespan &offset) noexcept {
+    friend Timestamp
+    operator-(const Timestamp &timestamp, const Timespan &offset) noexcept {
         return Timestamp(timestamp.total() - offset.total());
     }
-    friend Timestamp operator-(const Timespan &offset, const Timestamp &timestamp) noexcept {
+    friend Timestamp
+    operator-(const Timespan &offset, const Timestamp &timestamp) noexcept {
         return Timestamp(offset.total() - timestamp.total());
     }
 
-    friend Timespan operator-(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
+    friend Timespan
+    operator-(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
         return Timespan(timestamp1.total() - timestamp2.total());
     }
 
     // Timestamp comparison
-    friend bool operator==(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
+    friend bool
+    operator==(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
         return timestamp1.total() == timestamp2;
     }
-    friend bool operator==(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator==(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1 == timestamp2.total();
     }
-    friend bool operator==(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator==(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1.total() == timestamp2.total();
     }
 
-    friend bool operator!=(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
+    friend bool
+    operator!=(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
         return timestamp1.total() != timestamp2;
     }
-    friend bool operator!=(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator!=(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1 != timestamp2.total();
     }
-    friend bool operator!=(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator!=(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1.total() != timestamp2.total();
     }
 
-    friend bool operator>(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
+    friend bool
+    operator>(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
         return timestamp1.total() > timestamp2;
     }
-    friend bool operator>(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator>(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1 > timestamp2.total();
     }
-    friend bool operator>(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator>(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1.total() > timestamp2.total();
     }
 
-    friend bool operator<(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
+    friend bool
+    operator<(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
         return timestamp1.total() < timestamp2;
     }
-    friend bool operator<(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator<(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1 < timestamp2.total();
     }
-    friend bool operator<(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator<(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1.total() < timestamp2.total();
     }
 
-    friend bool operator>=(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
+    friend bool
+    operator>=(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
         return timestamp1.total() >= timestamp2;
     }
-    friend bool operator>=(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator>=(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1 >= timestamp2.total();
     }
-    friend bool operator>=(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator>=(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1.total() >= timestamp2.total();
     }
 
-    friend bool operator<=(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
+    friend bool
+    operator<=(const Timestamp &timestamp1, uint64_t timestamp2) noexcept {
         return timestamp1.total() <= timestamp2;
     }
-    friend bool operator<=(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator<=(uint64_t timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1 <= timestamp2.total();
     }
-    friend bool operator<=(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
+    friend bool
+    operator<=(const Timestamp &timestamp1, const Timestamp &timestamp2) noexcept {
         return timestamp1.total() <= timestamp2.total();
     }
 
-    [[nodiscard]] std::chrono::time_point<std::chrono::system_clock, std::chrono::duration<uint64_t, std::nano>>
+    [[nodiscard]] std::chrono::time_point<std::chrono::system_clock,
+                                          std::chrono::duration<uint64_t, std::nano>>
     chrono() const noexcept {
         return std::chrono::time_point<std::chrono::system_clock>() +
                std::chrono::nanoseconds(_timestamp);
     }
     template <class Clock, class Duration>
-    static Timestamp chrono(const std::chrono::time_point<Clock, Duration> &time_point) noexcept {
-        return Timestamp(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(time_point.time_since_epoch())
-                .count());
+    static Timestamp
+    chrono(const std::chrono::time_point<Clock, Duration> &time_point) noexcept {
+        return Timestamp(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                             time_point.time_since_epoch())
+                             .count());
     }
 
-    [[nodiscard]] uint64_t days() const noexcept {
+    [[nodiscard]] uint64_t
+    days() const noexcept {
         return _timestamp / (24 * 60 * 60 * 1000000000ull);
     }
-    [[nodiscard]] uint64_t hours() const noexcept {
+    [[nodiscard]] uint64_t
+    hours() const noexcept {
         return _timestamp / (60 * 60 * 1000000000ull);
     }
-    [[nodiscard]] uint64_t minutes() const noexcept {
+    [[nodiscard]] uint64_t
+    minutes() const noexcept {
         return _timestamp / (60 * 1000000000ull);
     }
-    [[nodiscard]] uint64_t seconds() const noexcept {
+    [[nodiscard]] uint64_t
+    seconds() const noexcept {
         return _timestamp / 1000000000;
     }
-    [[nodiscard]] uint64_t milliseconds() const noexcept {
+    [[nodiscard]] uint64_t
+    milliseconds() const noexcept {
         return _timestamp / 1000000;
     }
-    [[nodiscard]] uint64_t microseconds() const noexcept {
+    [[nodiscard]] uint64_t
+    microseconds() const noexcept {
         return _timestamp / 1000;
     }
-    [[nodiscard]] uint64_t nanoseconds() const noexcept {
+    [[nodiscard]] uint64_t
+    nanoseconds() const noexcept {
         return _timestamp;
     }
 
-    [[nodiscard]] uint64_t total() const noexcept {
+    [[nodiscard]] uint64_t
+    total() const noexcept {
         return _timestamp;
     }
 
-    static Timestamp days(int64_t days) noexcept {
+    static Timestamp
+    days(int64_t days) noexcept {
         return Timestamp(days * 24 * 60 * 60 * 1000000000ull);
     }
-    static Timestamp hours(int64_t hours) noexcept {
+    static Timestamp
+    hours(int64_t hours) noexcept {
         return Timestamp(hours * 60 * 60 * 1000000000ull);
     }
-    static Timestamp minutes(int64_t minutes) noexcept {
+    static Timestamp
+    minutes(int64_t minutes) noexcept {
         return Timestamp(minutes * 60 * 1000000000ull);
     }
-    static Timestamp seconds(int64_t seconds) noexcept {
+    static Timestamp
+    seconds(int64_t seconds) noexcept {
         return Timestamp(seconds * 1000000000);
     }
-    static Timestamp milliseconds(int64_t milliseconds) noexcept {
+    static Timestamp
+    milliseconds(int64_t milliseconds) noexcept {
         return Timestamp(milliseconds * 1000000);
     }
-    static Timestamp microseconds(int64_t microseconds) noexcept {
+    static Timestamp
+    microseconds(int64_t microseconds) noexcept {
         return Timestamp(microseconds * 1000);
     }
-    static Timestamp nanoseconds(int64_t nanoseconds) noexcept {
+    static Timestamp
+    nanoseconds(int64_t nanoseconds) noexcept {
         return Timestamp(nanoseconds);
     }
 
-    static uint64_t epoch() noexcept {
+    static uint64_t
+    epoch() noexcept {
         return 0;
     }
-    static uint64_t nano() {
+    static uint64_t
+    nano() {
         // Store system time and steady time on first call
-        static const std::chrono::time_point<std::chrono::system_clock> clk_system_start =
-            std::chrono::system_clock::now();
-        static const std::chrono::time_point<std::chrono::steady_clock> clk_steady_start =
-            std::chrono::steady_clock::now();
+        static const std::chrono::time_point<std::chrono::system_clock>
+            clk_system_start = std::chrono::system_clock::now();
+        static const std::chrono::time_point<std::chrono::steady_clock>
+            clk_steady_start = std::chrono::steady_clock::now();
 
         // Nano timestamp is (system_start + (steady_now - steady_start))
         return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -428,7 +529,8 @@ public:
                     clk_steady_start.time_since_epoch()))
             .count();
     }
-    static uint64_t rdts() {
+    static uint64_t
+    rdts() {
 #if defined(_MSC_VER)
         return __rdtsc();
 #elif defined(__i386__)

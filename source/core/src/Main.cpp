@@ -23,33 +23,55 @@
 namespace qb {
 
 // CoreInitializer
-CoreInitializer::CoreInitializer(CoreId index)
+CoreInitializer::CoreInitializer(CoreId const index)
     : _index(index)
     , _next_id(VirtualCore::_nb_service + 1)
+    , _affinity{index}
     , _low_latency(true) {}
 
 CoreInitializer::~CoreInitializer() noexcept {
     clear();
 }
 
-void CoreInitializer::clear() noexcept {
+void
+CoreInitializer::clear() noexcept {
     _next_id = VirtualCore::_nb_service + 1;
+    _affinity.clear();
     for (auto factory : _actor_factories)
         delete factory;
     _actor_factories.clear();
     _registered_services.clear();
 }
 
-CoreInitializer::ActorBuilder CoreInitializer::builder() noexcept {
+CoreInitializer::ActorBuilder
+CoreInitializer::builder() noexcept {
     return ActorBuilder{*this};
 }
 
-CoreInitializer &CoreInitializer::setLowLatency(bool state) noexcept {
+CoreInitializer &
+CoreInitializer::setAffinity(CoreIdSet const &id) noexcept {
+    _affinity = id;
+    return *this;
+}
+
+CoreInitializer &
+CoreInitializer::setLowLatency(bool const state) noexcept {
     _low_latency = state;
     return *this;
 }
 
-bool CoreInitializer::isLowLatency() const noexcept {
+CoreId
+CoreInitializer::getIndex() const noexcept {
+    return _index;
+}
+
+CoreIdSet const &
+CoreInitializer::getAffinity() const noexcept {
+    return _affinity;
+}
+
+bool
+CoreInitializer::isLowLatency() const noexcept {
     return _low_latency;
 }
 
@@ -61,19 +83,22 @@ CoreInitializer::ActorBuilder::ActorBuilder(CoreInitializer &initializer) noexce
     : _initializer(initializer)
     , _valid(true) {}
 
-bool CoreInitializer::ActorBuilder::valid() const noexcept {
+bool
+CoreInitializer::ActorBuilder::valid() const noexcept {
     return _valid;
 }
 CoreInitializer::ActorBuilder::operator bool() const noexcept {
     return valid();
 }
-CoreInitializer::ActorBuilder::ActorIdList CoreInitializer::ActorBuilder::idList() const noexcept {
+CoreInitializer::ActorBuilder::ActorIdList
+CoreInitializer::ActorBuilder::idList() const noexcept {
     return _ret_ids;
 }
 // !CoreInitializer::ActorBuilder
 
 // SharedCoreCommunication
-SharedCoreCommunication::SharedCoreCommunication(qb::unordered_set<CoreId> const &set) noexcept
+SharedCoreCommunication::SharedCoreCommunication(
+    qb::unordered_set<CoreId> const &set) noexcept
     : _core_set(set)
     , _event_safe_deadlock(_core_set.getNbCore())
     , _mail_boxes(_core_set.getSize()) {
@@ -89,78 +114,124 @@ SharedCoreCommunication::~SharedCoreCommunication() noexcept {
     }
 }
 
-bool SharedCoreCommunication::send(Event const &event) const noexcept {
+bool
+SharedCoreCommunication::send(Event const &event) const noexcept {
     CoreId source_index = _core_set.resolve(event.source._index);
 
     return static_cast<bool>(_mail_boxes[_core_set.resolve(event.dest._index)]->enqueue(
         source_index, reinterpret_cast<const EventBucket *>(&event), event.bucket_size));
 }
 
-SharedCoreCommunication::MPSCBuffer &SharedCoreCommunication::getMailBox(CoreId const id) const
-    noexcept {
+SharedCoreCommunication::MPSCBuffer &
+SharedCoreCommunication::getMailBox(CoreId const id) const noexcept {
     return *_mail_boxes[_core_set.resolve(id)];
 }
 
-CoreId SharedCoreCommunication::getNbCore() const noexcept {
+CoreId
+SharedCoreCommunication::getNbCore() const noexcept {
     return static_cast<CoreId>(_core_set.getNbCore());
 }
 // !SharedCoreCommunication
 
-void Main::onSignal(int signal) {
-    io::cout() << "Received signal(" << signal << ") will stop the engine" << std::endl;
-    is_running = false;
+std::vector<Main *> Main::_instances = {};
+std::mutex Main::_instances_lock = {};
+
+void
+Main::onSignal(int const signum) noexcept {
+    std::lock_guard lock(Main::_instances_lock);
+    for (auto it : Main::_instances) {
+        if (it->_is_running) {
+            for (auto core_id : it->_shared_com->_core_set._raw_set) {
+                SignalEvent event;
+                VirtualCore::fill_event<SignalEvent>(event, BroadcastId(core_id),
+                                                     BroadcastId(core_id));
+                event.signum = signum;
+                while (!it->_shared_com->send(event))
+                    spin_loop_pause();
+            }
+        }
+    }
 }
 
-Main::Main() noexcept {
-    is_running = false;
+Main::Main() noexcept
+    : _shared_com(nullptr)
+    , _is_running(false) {
+    std::lock_guard lock(_instances_lock);
+    Main::_instances.push_back(this);
 }
 
-Main::~Main() {
-    if (is_running)
+Main::~Main() noexcept {
+    if (_is_running)
         join();
+    std::lock_guard lock(_instances_lock);
+    Main::_instances.erase(
+        std::find(Main::_instances.cbegin(), Main::_instances.cend(), this));
     delete _shared_com;
 }
 
-void Main::start_thread(CoreSpawnerParameter const &params) noexcept {
-    VirtualCore core(params.id, params.shared_com);
+void
+Main::start_thread(CoreSpawnerParameter const &params) noexcept {
+    auto &initializer = params.initializer;
+    VirtualCore core(initializer.getIndex(), params.shared_com);
     VirtualCore::_handler = &core;
     io::async::init();
-    auto &initializer = params.initializer;
+
     core.setLowLatency(initializer.isLowLatency());
     try {
         // Init VirtualCore
         auto &core_factory = initializer._actor_factories;
-        core.__init__();
-        if (core_factory.empty()) {
+        if (!core.__init__(initializer.getAffinity())) {
+            LOG_CRIT("" << core << " Init Failed");
+            params.sync_start.store(VirtualCore::Error::BadInit,
+                                    std::memory_order_release);
+        } else if (core_factory.empty()) {
             LOG_CRIT("" << core << " Started with 0 Actor");
-            Main::sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
-            return;
-        } else if (std::any_of(core_factory.begin(), core_factory.end(), [&core](auto it) {
-                       return !core.appendActor(*it->create()).is_valid();
-                   })) {
+            params.sync_start.store(VirtualCore::Error::NoActor,
+                                    std::memory_order_release);
+        } else if (std::any_of(core_factory.begin(), core_factory.end(),
+                               [&core](auto it) {
+                                   return !core.appendActor(*it->create()).is_valid();
+                               })) {
             LOG_CRIT("Actor at " << core << " failed to init");
-            Main::sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
-        } else
-            core.__init__actors__();
+            params.sync_start.store(VirtualCore::Error::BadActorInit,
+                                    std::memory_order_release);
+        } else if (!core.__init__actors__()) {
+            LOG_CRIT("Actor at " << core << " failed to init");
+            params.sync_start.store(VirtualCore::Error::BadActorInit,
+                                    std::memory_order_release);
+        }
         initializer.clear();
-        if (!core.__wait__all__cores__ready())
+        if (!__wait__all__cores__ready(params.shared_com.getNbCore(), params.sync_start))
             return;
         core.__workflow__();
     } catch (std::exception &e) {
         (void)e;
         LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
-        Main::sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
-        Main::is_running = false;
+        params.sync_start.store(VirtualCore::Error::ExceptionThrown,
+                                std::memory_order_release);
         initializer.clear();
     }
 }
 
-void Main::start(bool async) {
+bool
+Main::__wait__all__cores__ready(std::size_t const nb_core,
+                                std::atomic<uint64_t> &sync_start) noexcept {
+    sync_start.fetch_add(1, std::memory_order_acq_rel);
+    uint64_t ret = 0;
+    do {
+        spin_loop_pause();
+        ret = sync_start.load(std::memory_order_acquire);
+    } while (ret < nb_core);
+    return ret < VirtualCore::Error::BadInit;
+}
+
+void
+Main::start(bool async) noexcept {
     uint64_t ret = 0;
     if (!_core_initializers.empty()) {
         LOG_INFO("[MAIN] Init with " << _core_initializers.size() << " cores");
-        is_running = true;
-        sync_start.store(0, std::memory_order_release);
+        _is_running = true;
+        _sync_start.store(0, std::memory_order_release);
 
         qb::unordered_set<CoreId> core_ids;
         for (const auto &initializer : _core_initializers)
@@ -171,55 +242,58 @@ void Main::start(bool async) {
         auto i = 0u;
         for (auto &it : _core_initializers) {
             if (!async && i == (_core_initializers.size() - 1))
-                start_thread({it.first, it.second, *_shared_com});
+                start_thread({it.first, it.second, *_shared_com, _sync_start});
             else
                 _cores[i] = std::thread(start_thread,
-                                        CoreSpawnerParameter{it.first, it.second, *_shared_com});
+                                        CoreSpawnerParameter{it.first, it.second,
+                                                             *_shared_com, _sync_start});
             ++i;
         }
 
         do {
-            std::this_thread::yield();
-            ret = sync_start.load(std::memory_order_acquire);
+            spin_loop_pause();
+            ret = _sync_start.load(std::memory_order_acquire);
         } while (ret < _cores.size());
     } else {
         LOG_CRIT("[Main] Cannot start engine with 0 Actor");
-        Main::sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
+        _sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
         ret = VirtualCore::Error::NoActor;
     }
 
     if (ret < VirtualCore::Error::BadInit) {
         LOG_INFO("[Main] Init Success");
-        std::signal(SIGINT, &onSignal);
+        Main::registerSignal(SIGINT);
     } else {
-        is_running = false;
+        _is_running = false;
         LOG_CRIT("[Main] Init Failed");
-        io::cout() << "CRITICAL: Core Init Failed -> show logs to have more details" << std::endl;
+        io::cout() << "CRITICAL: Core Init Failed -> show logs to have more details"
+                   << std::endl;
     }
 }
 
-bool Main::hasError() noexcept {
-    return sync_start.load(std::memory_order_acquire) >= VirtualCore::Error::BadInit;
+bool
+Main::hasError() const noexcept {
+    return _sync_start.load(std::memory_order_acquire) >= VirtualCore::Error::BadInit;
 }
 
-void Main::stop() noexcept {
-    if (is_running)
-        std::raise(SIGINT);
+void
+Main::stop() noexcept {
+    std::raise(SIGINT);
 }
 
-void Main::join() {
+void
+Main::join() {
     for (auto &core : _cores) {
         if (core.joinable())
             core.join();
     }
 }
 
-std::atomic<uint64_t> Main::sync_start(0);
-bool Main::is_running(false);
-
-CoreInitializer &Main::core(CoreId const index) {
-    if (is_running)
-        throw std::runtime_error("Cannot access to CoreInitializers while engine is running");
+CoreInitializer &
+Main::core(CoreId const index) {
+    if (_is_running)
+        throw std::runtime_error(
+            "Cannot access to CoreInitializers while engine is running");
     const auto &it = _core_initializers.find(index);
     if (it != _core_initializers.cend())
         return it->second;
@@ -227,6 +301,21 @@ CoreInitializer &Main::core(CoreId const index) {
     if (index > 255)
         throw std::range_error("Max core id managed by qb is 255");
     return _core_initializers.emplace(index, index).first->second;
+}
+
+void
+Main::registerSignal(int const signum) noexcept {
+    std::signal(signum, &Main::onSignal);
+}
+
+void
+Main::unregisterSignal(int const signum) noexcept {
+    std::signal(signum, SIG_DFL);
+}
+
+void
+Main::ignoreSignal(int const signum) noexcept {
+    std::signal(signum, SIG_IGN);
 }
 
 } // namespace qb
