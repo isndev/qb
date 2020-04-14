@@ -17,24 +17,30 @@
 
 #ifndef QB_PIPE_H
 #define QB_PIPE_H
+#include <array>
 #include <cstring>
+#include <iostream>
 #include <memory>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/nocopy.h>
 #include <qb/utility/prefix.h>
+#include <string_view>
+#include <vector>
 
 namespace qb::allocator {
 
 template <typename T, typename U>
-constexpr auto getItemSize() {
+constexpr auto
+getItemSize() {
     return sizeof(T) / sizeof(U) + static_cast<bool>(sizeof(T) % sizeof(U));
 }
 
-template <typename T, std::size_t _SIZE = 4096>
-class QB_LOCKFREE_CACHELINE_ALIGNMENT pipe
+template <typename T>
+class base_pipe
     : nocopy
     , std::allocator<T> {
     using base_type = std::allocator<T>;
+    constexpr static const std::size_t _SIZE = 4096;
 
 protected:
     std::size_t _begin;
@@ -45,7 +51,7 @@ protected:
     T *_data;
 
 public:
-    pipe()
+    base_pipe()
         : _begin(0)
         , _end(0)
         , _flag_front(false)
@@ -53,39 +59,57 @@ public:
         , _factor(1)
         , _data(base_type::allocate(_SIZE)) {}
 
-    ~pipe() {
+    ~base_pipe() {
         base_type::deallocate(_data, _capacity);
     }
 
-    [[nodiscard]] inline std::size_t capacity() const {
+    [[nodiscard]] inline std::size_t
+    capacity() const noexcept {
         return _capacity;
     }
 
-    [[nodiscard]] inline T *data() const {
+    [[nodiscard]] inline T *
+    data() const noexcept {
         return _data;
     }
 
-    [[nodiscard]] inline std::size_t begin() const {
-        return _begin;
+    [[nodiscard]] inline T *
+    begin() const noexcept {
+        return _data + _begin;
     }
 
-    [[nodiscard]] inline std::size_t end() const {
-        return _end;
+    [[nodiscard]] inline T *
+    end() const noexcept {
+        return _data + _end;
     }
 
-    [[nodiscard]] inline std::size_t size() const {
+    [[nodiscard]] inline const T *
+    cbegin() const noexcept {
+        return _data + _begin;
+    }
+
+    [[nodiscard]] inline const T *
+    cend() const noexcept {
+        return _data + _end;
+    }
+
+    [[nodiscard]] inline std::size_t
+    size() const noexcept {
         return _end - _begin;
     }
 
-    inline void free_front(std::size_t const size) {
+    inline void
+    free_front(std::size_t const size) noexcept {
         _begin += size;
     }
 
-    inline void free_back(std::size_t const size) {
+    inline void
+    free_back(std::size_t const size) noexcept {
         _end -= size;
     }
 
-    inline void reset(std::size_t const begin) {
+    inline void
+    reset(std::size_t const begin) noexcept {
         if (begin != _end)
             _begin = begin;
         else {
@@ -94,20 +118,23 @@ public:
         }
     }
 
-    inline void reset() {
+    inline void
+    reset() noexcept {
         _begin = 0;
         _end = 0;
         _flag_front = false;
     }
 
-    inline void free(std::size_t const size) {
+    inline void
+    free(std::size_t const size) noexcept {
         if (_flag_front)
             _begin += size;
         else
             _end -= size;
     }
 
-    inline auto *allocate_back(std::size_t const size) {
+    inline auto *
+    allocate_back(std::size_t const size) {
         if (likely(_end + size <= _capacity)) {
             const auto save_index = _end;
             _end += size;
@@ -139,20 +166,23 @@ public:
     }
 
     template <typename U, typename... _Init>
-    inline U &allocate_back(_Init &&... init) {
+    inline U &
+    allocate_back(_Init &&... init) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
         return *(new (reinterpret_cast<U *>(allocate_back(BUCKET_SIZE)))
                      U(std::forward<_Init>(init)...));
     }
 
     template <typename U, typename... _Init>
-    inline U &allocate_size(std::size_t const size, _Init &&... init) {
+    inline U &
+    allocate_size(std::size_t const size, _Init &&... init) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
         return *(new (reinterpret_cast<U *>(allocate_back(size + BUCKET_SIZE)))
                      U(std::forward<_Init>(init)...));
     }
 
-    inline auto allocate(std::size_t const size) {
+    inline auto
+    allocate(std::size_t const size) {
         if (_begin - (size + 1) < _end) {
             _begin -= size;
             _flag_front = true;
@@ -163,35 +193,47 @@ public:
     }
 
     template <typename U, typename... _Init>
-    inline U &allocate(_Init &&... init) {
+    inline U &
+    allocate(_Init &&... init) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
         return *(new (reinterpret_cast<U *>(allocate(BUCKET_SIZE)))
                      U(std::forward<_Init>(init)...));
     }
 
     template <typename U>
-    inline U &recycle_back(U const &data) {
+    inline U &
+    recycle_back(U const &data) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
-        return *reinterpret_cast<U *>(std::memcpy(allocate_back(BUCKET_SIZE), &data, sizeof(U)));
+        return *reinterpret_cast<U *>(
+            std::memcpy(allocate_back(BUCKET_SIZE), &data, sizeof(U)));
     }
 
     template <typename U>
-    inline U &recycle_back(U const &data, std::size_t const size) {
-        return *reinterpret_cast<U *>(std::memcpy(allocate_back(size), &data, size * sizeof(T)));
+    inline U &
+    recycle_back(U const &data, std::size_t const size) {
+        return *reinterpret_cast<U *>(
+            std::memcpy(allocate_back(size), &data, size * sizeof(T)));
     }
 
     template <typename U>
-    inline U &recycle(U const &data) {
+    inline U &
+    recycle(U const &data) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
-        return *reinterpret_cast<U *>(std::memcpy(allocate(BUCKET_SIZE), &data, sizeof(U)));
+        return *reinterpret_cast<U *>(
+            std::memcpy(allocate(BUCKET_SIZE), &data, sizeof(U)));
     }
 
     template <typename U>
-    inline U &recycle(U const &data, std::size_t const size) {
-        return *reinterpret_cast<U *>(std::memcpy(allocate(size), &data, size * sizeof(T)));
+    inline U &
+    recycle(U const &data, std::size_t const size) {
+        return *reinterpret_cast<U *>(
+            std::memcpy(allocate(size), &data, size * sizeof(T)));
     }
 
-    inline void reorder() {
+    inline void
+    reorder() noexcept {
+        if (!_begin)
+            return;
         const auto nb_item = _end - _begin;
         // std::cout << "Start reorder " << _begin << ":" << _end << "|" << nb_item;
         std::memmove(_data, _data + _begin, nb_item * sizeof(T));
@@ -200,11 +242,137 @@ public:
         // std::cout << "End reorder " << _begin << ":" << _end << "|" << _end - _begin;
     }
 
-    inline void swap(pipe &rhs) {
-        std::swap(*reinterpret_cast<CacheLine *>(this), *reinterpret_cast<CacheLine *>(&rhs));
+    inline void
+    flush() const noexcept {}
+
+    void
+    reserve(std::size_t const size) {
+        allocate_back(size);
+        free_back(size);
     }
 };
 
+template <typename T>
+class QB_LOCKFREE_CACHELINE_ALIGNMENT pipe : public base_pipe<T> {
+public:
+    inline void
+    swap(pipe &rhs) noexcept {
+        std::swap(*reinterpret_cast<CacheLine *>(this),
+                  *reinterpret_cast<CacheLine *>(&rhs));
+    }
+
+    template <typename _It>
+    pipe &
+    put(_It begin, _It const &end) {
+        auto out = allocate_back(end - begin);
+        while (begin != end) {
+            *out = *begin;
+            ++out;
+            ++begin;
+        }
+        return *this;
+    }
+
+    pipe &
+    put(T const *data, std::size_t const size) {
+        memcpy(this->allocate_back(size), data, size * sizeof(T));
+        return *this;
+    }
+
+    template <typename U>
+    pipe &
+    operator<<(U &&rhs) noexcept {
+        this->template allocate_back<U>(std::forward<U>(rhs));
+        return *this;
+    }
+};
+
+template <>
+class pipe<char> : public base_pipe<char> {
+public:
+    template <typename U>
+    pipe &
+    put(const U &rhs) {
+        return put(std::to_string(rhs));
+    }
+
+    template <std::size_t _Size>
+    pipe &
+    put(const char (&str)[_Size]) {
+        memcpy(allocate_back(_Size - 1), str, _Size - 1);
+        return *this;
+    }
+
+    template <typename T>
+    pipe &
+    put(std::vector<T> const &vec) {
+        memcpy(allocate_back(vec.size()), reinterpret_cast<const char *>(vec.data()),
+               vec.size());
+        return *this;
+    }
+
+    template <typename T, std::size_t _Size>
+    pipe &
+    put(std::array<T, _Size> const &arr) {
+        memcpy(allocate_back(arr.size()), reinterpret_cast<const char *>(arr.data()),
+               arr.size());
+        return *this;
+    }
+
+    template <typename _It>
+    pipe &
+    put(_It begin, _It const &end) {
+        auto out = allocate_back(end - begin);
+        while (begin != end) {
+            *out = *begin;
+            ++out;
+            ++begin;
+        }
+        return *this;
+    }
+
+    template <typename U>
+    pipe &
+    operator<<(const U &rhs) noexcept {
+        return put(rhs);
+    }
+
+    pipe &put(char const *data, std::size_t size) noexcept;
+
+    pipe &write(const char *data, std::size_t size) noexcept;
+
+    std::string str() const noexcept;
+
+    std::string_view view() const noexcept;
+};
+
+template <>
+pipe<char> &pipe<char>::put<char>(const char &c);
+
+template <>
+pipe<char> &pipe<char>::put<unsigned char>(const unsigned char &c);
+
+template <>
+pipe<char> &pipe<char>::put<const char *>(const char *const &c);
+
+template <>
+pipe<char> &pipe<char>::put<std::string>(std::string const &str);
+
+template <>
+pipe<char> &pipe<char>::put<std::string_view>(std::string_view const &str);
+
+template <>
+pipe<char> &pipe<char>::put<pipe<char>>(pipe<char> const &rhs);
+
 } // namespace qb::allocator
+
+// std::ostream &operator<<(std::ostream &os, qb::allocator::pipe<char> const &p);
+
+template <typename stream>
+stream &
+operator<<(stream &os, qb::allocator::pipe<char> const &p) {
+    os << std::string_view(p.begin(), p.size());
+    return os;
+}
 
 #endif // QB_PIPE_H

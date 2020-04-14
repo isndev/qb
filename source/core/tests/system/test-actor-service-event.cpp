@@ -39,10 +39,12 @@ struct TestEvent : public qb::Event {
         });
     }
 
-    [[nodiscard]] bool checkSum() const {
+    [[nodiscard]] bool
+    checkSum() const {
         auto ret = true;
         if (has_extra_data) {
-            ret = !memcmp(_data, reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent),
+            ret = !memcmp(_data,
+                          reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent),
                           sizeof(_data));
         }
 
@@ -59,13 +61,15 @@ protected:
 
 public:
     BaseActorSender()
-        : _to(getServiceId<MyTag>((getIndex() + 1) % std::thread::hardware_concurrency())) {
+        : _to(getServiceId<MyTag>((getIndex() + 1) %
+                                  std::thread::hardware_concurrency())) {
         registerEvent<TestEvent>(*this);
         if (!getIndex())
             static_cast<Derived &>(*this).doSend();
     }
 
-    void on(TestEvent const &event) {
+    void
+    on(TestEvent const &event) {
         EXPECT_TRUE(event.checkSum());
         if (getIndex() != 0)
             static_cast<Derived &>(*this).doSend();
@@ -74,34 +78,40 @@ public:
 };
 
 struct BasicPushActor : public BaseActorSender<BasicPushActor> {
-    void doSend() {
+    void
+    doSend() {
         push<TestEvent>(_to);
     }
 };
 
 struct BasicSendActor : public BaseActorSender<BasicSendActor> {
-    void doSend() {
+    void
+    doSend() {
         send<TestEvent>(_to);
     }
 };
 
 struct EventBuilderPushActor : public BaseActorSender<EventBuilderPushActor> {
-    void doSend() {
+    void
+    doSend() {
         to(_to).push<TestEvent>();
     }
 };
 
 struct PipePushActor : public BaseActorSender<PipePushActor> {
-    void doSend() {
+    void
+    doSend() {
         getPipe(_to).push<TestEvent>();
     }
 };
 
 struct AllocatedPipePushActor : public BaseActorSender<AllocatedPipePushActor> {
-    void doSend() {
+    void
+    doSend() {
         auto &e = getPipe(_to).allocated_push<TestEvent>(32);
         e.has_extra_data = true;
-        memcpy(reinterpret_cast<uint8_t *>(&e) + sizeof(TestEvent), e._data, sizeof(e._data));
+        memcpy(reinterpret_cast<uint8_t *>(&e) + sizeof(TestEvent), e._data,
+               sizeof(e._data));
     }
 };
 
@@ -113,16 +123,18 @@ protected:
     ActorEventMulti()
         : max_core(std::thread::hardware_concurrency()) {}
 
-    void SetUp() final {
+    void
+    SetUp() final {
         for (auto i = 0u; i < max_core; ++i) {
             main.addActor<ActorSender>(i);
         }
     }
-    void TearDown() final {}
+    void
+    TearDown() final {}
 };
 
-typedef testing::Types<BasicPushActor, BasicSendActor, EventBuilderPushActor, PipePushActor,
-                       AllocatedPipePushActor>
+typedef testing::Types<BasicPushActor, BasicSendActor, EventBuilderPushActor,
+                       PipePushActor, AllocatedPipePushActor>
     Implementations;
 
 TYPED_TEST_SUITE(ActorEventMulti, Implementations);

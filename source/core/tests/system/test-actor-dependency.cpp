@@ -24,7 +24,8 @@ constexpr uint32_t MAX_ACTOR = 2048;
 class TestActor : public qb::Actor {
 public:
     TestActor() = default;
-    bool onInit() final {
+    bool
+    onInit() final {
         return true;
     }
 };
@@ -46,7 +47,8 @@ public:
     }
 
     uint32_t counter = 0;
-    void on(qb::RequireEvent const &event) {
+    void
+    on(qb::RequireEvent const &event) {
         if (is<TestActor>(event)) {
             ++counter;
             send<qb::KillEvent>(event.getSource());

@@ -23,53 +23,77 @@
 
 namespace qb::io::async::udp {
 
-template <typename _Derived, typename _Session>
-class server : public io<server<_Derived, _Session>, transport::udp> {
-public:
-    using base_t = io<server<_Derived, _Session>, transport::udp>;
-    using session_map_t =
-        qb::unordered_map<transport::udp::identity, _Session, transport::udp::identity::hasher>;
+        template <typename _Derived>
+        class server
+                : public io<_Derived>
+                , public transport::udp {
+        public:
+            constexpr static const bool has_server = false;
 
-private:
-    session_map_t _sessions{};
+            server() noexcept {
+                if constexpr (has_member_Protocol<_Derived>::value) {
+                    if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
+                        this->template switch_protocol<typename _Derived::Protocol>(
+                                static_cast<_Derived &>(*this));
+                    }
+                }
+            }
+        };
 
-public:
-    server() = default;
 
-    session_map_t &sessions() {
-        return _sessions;
-    }
-
-    void on(transport::udp::message_type message, std::size_t size) {
-        auto it = _sessions.find(message.ident);
-        if (it == _sessions.end()) {
-            it = _sessions.emplace(message.ident, static_cast<_Derived &>(*this)).first;
-            it->second.ident() = message.ident;
-        }
-        //                            return; // drop the message
-
-        memcpy(it->second.buffer().allocate_back(size), message.data, size);
-        auto ret = 0;
-        while ((ret = it->second.getMessageSize()) > 0) {
-            it->second.on(it->second.getMessage(ret), ret);
-            it->second.flush(ret);
-        }
-    }
-
-    void stream(char const *message, std::size_t size) {
-        for (auto &session : sessions())
-            session.second.publish(message, size);
-    }
-
-    bool disconnected() const {
-        throw std::runtime_error("Server had been disconnected");
-        return true;
-    }
-
-    void disconnected(transport::udp::identity ident) {
-        _sessions.erase(ident);
-    }
-};
+//template <typename _Derived, typename _Session>
+//class server : public io<server<_Derived, _Session>> {
+//public:
+//    using base_t = io<server<_Derived, _Session>>;
+//    using session_map_t = qb::unordered_map<transport::udp::identity, _Session,
+//                                            transport::udp::identity::hasher>;
+//
+//private:
+//    session_map_t _sessions{};
+//
+//public:
+//    using IOSession = _Session;
+//    server() = default;
+//
+//    session_map_t &
+//    sessions() {
+//        return _sessions;
+//    }
+//
+//    void
+//    on(transport::udp::message_type message, std::size_t size) {
+//        auto it = _sessions.find(message.ident);
+//        if (it == _sessions.end()) {
+//            it = _sessions.emplace(message.ident, static_cast<_Derived &>(*this)).first;
+//            it->second.ident() = message.ident;
+//        }
+//        //                            return; // drop the message
+//
+//        memcpy(it->second.buffer().allocate_back(size), message.data, size);
+//        auto ret = 0;
+//        while ((ret = it->second.getMessageSize()) > 0) {
+//            it->second.on(it->second.getMessage(ret), ret);
+//            it->second.flush(ret);
+//        }
+//    }
+//
+//    void
+//    stream(char const *message, std::size_t size) {
+//        for (auto &session : sessions())
+//            session.second.publish(message, size);
+//    }
+//
+//    bool
+//    disconnected() const {
+//        throw std::runtime_error("Server had been disconnected");
+//        return true;
+//    }
+//
+//    void
+//    disconnected(transport::udp::identity ident) {
+//        _sessions.erase(ident);
+//    }
+//};
 
 } // namespace qb::io::async::udp
 

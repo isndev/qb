@@ -20,45 +20,57 @@
 
 #include <qb/system/container/unordered_map.h>
 
+#include "../../protocol/accept.h"
 #include "../io.h"
 
 namespace qb::io::async::tcp {
 
 template <typename _Derived, typename _Session, typename _Prot>
-class server : public input<server<_Derived, _Session, _Prot>, _Prot> {
+class server
+    : public input<server<_Derived, _Session, _Prot>>
+    , public _Prot {
 public:
-    using base_t = input<server<_Derived, _Session, _Prot>, _Prot>;
+    using base_t = input<server<_Derived, _Session, _Prot>>;
     using session_map_t = qb::unordered_map<uint64_t, _Session>;
+    using Protocol = protocol::accept<server, typename _Prot::socket_type>;
 
 private:
     session_map_t _sessions;
 
 public:
-    server() = default;
+    using IOSession = _Session;
 
-    session_map_t &sessions() {
+    server() noexcept
+        : base_t(new Protocol(*this)) {}
+
+    session_map_t &
+    sessions() {
         return _sessions;
     }
 
-    void on(typename _Prot::message_type new_io, std::size_t size) {
+    void
+    on(typename Protocol::message_type new_io) {
         const auto &it =
-            sessions().emplace(new_io.ident(), std::ref(static_cast<_Derived &>(*this)));
-        it.first->second.in() = new_io;
+            sessions().emplace(new_io.fd(), std::ref(static_cast<_Derived &>(*this)));
+        it.first->second.transport() = new_io;
         it.first->second.start();
         static_cast<_Derived &>(*this).on(it.first->second);
     }
 
-    void on(event::disconnected const &) const {
+    void
+    on(event::disconnected const &) const {
         throw std::runtime_error("Server had been disconnected");
     }
 
     template <typename... _Args>
-    void stream(_Args &&... args) {
+    void
+    stream(_Args &&... args) {
         for (auto &session : sessions())
             session.second.publish(std::forward<_Args>(args)...);
     }
 
-    void disconnected(int ident) {
+    void
+    disconnected(int ident) {
         _sessions.erase(static_cast<uint64_t>(ident));
     }
 };

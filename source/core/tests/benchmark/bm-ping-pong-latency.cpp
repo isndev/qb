@@ -23,12 +23,14 @@
 
 class PongActor : public qb::Actor {
 public:
-    bool onInit() final {
+    bool
+    onInit() final {
         registerEvent<LightEvent>(*this);
         return true;
     }
 
-    void on(LightEvent &event) {
+    void
+    on(LightEvent &event) {
         --event._ttl;
         reply(event);
     }
@@ -42,18 +44,21 @@ public:
         _latency.generate<std::ostream, std::chrono::nanoseconds>(std::cout, "ns");
     }
 
-    bool onInit() final {
+    bool
+    onInit() final {
         registerEvent<qb::RequireEvent>(*this);
         registerEvent<LightEvent>(*this);
         require<PongActor>();
         return true;
     }
 
-    void on(qb::RequireEvent const &event) {
+    void
+    on(qb::RequireEvent const &event) {
         send<LightEvent>(event.getSource(), 1000000);
     }
 
-    void on(LightEvent const &event) {
+    void
+    on(LightEvent const &event) {
         _latency.add(std::chrono::high_resolution_clock::now() - event._timepoint);
         if (event._ttl)
             send<LightEvent>(event.getSource(), event._ttl);
@@ -65,7 +70,8 @@ public:
 };
 
 bool run = true;
-void thread_ping(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
+void
+thread_ping(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
     auto &latency = *new pg::latency<1000 * 1000, 900000>{};
     LightEvent events[4096];
 
@@ -75,7 +81,8 @@ void thread_ping(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
         spsc[0].dequeue(
             [&](auto event, auto nb_events) {
                 for (auto i = 0u; i < nb_events; ++i) {
-                    latency.add(std::chrono::high_resolution_clock::now() - event[i]._timepoint);
+                    latency.add(std::chrono::high_resolution_clock::now() -
+                                event[i]._timepoint);
                     if (event[i]._ttl)
                         spsc[1].enqueue(LightEvent(event[i]._ttl));
                     else {
@@ -89,7 +96,8 @@ void thread_ping(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
     delete &latency;
 }
 
-void thread_pong(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
+void
+thread_pong(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
     LightEvent events[4096];
 
     while (qb::likely(run)) {
@@ -105,7 +113,8 @@ void thread_pong(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
     }
 }
 
-static void BM_Reference_Multi_PingPong_Latency(benchmark::State &state) {
+static void
+BM_Reference_Multi_PingPong_Latency(benchmark::State &state) {
     for (auto _ : state) {
         auto spsc = new qb::lockfree::spsc::ringbuffer<LightEvent, 4096>[2];
         std::thread threads[2];
@@ -121,7 +130,8 @@ static void BM_Reference_Multi_PingPong_Latency(benchmark::State &state) {
     }
 }
 
-static void BM_Mono_PingPong_Latency(benchmark::State &state) {
+static void
+BM_Mono_PingPong_Latency(benchmark::State &state) {
     for (auto _ : state) {
         qb::Main main;
 
@@ -133,7 +143,8 @@ static void BM_Mono_PingPong_Latency(benchmark::State &state) {
     }
 }
 
-static void BM_Multi_PingPong_Latency(benchmark::State &state) {
+static void
+BM_Multi_PingPong_Latency(benchmark::State &state) {
     for (auto _ : state) {
         qb::Main main;
 

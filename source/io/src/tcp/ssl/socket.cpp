@@ -17,19 +17,43 @@
 
 #include <qb/io/tcp/ssl/socket.h>
 
-namespace qb::io::tcp::ssl {
+namespace qb::io::ssl {
 
-SSL_CTX *create_client_context(const SSL_METHOD *method) {
+Certificate
+get_certificate(SSL *ssl) {
+    X509 *cert;
+    char *line;
+    Certificate ret{};
+
+    cert = SSL_get_peer_certificate(ssl); /* Get certificates (if available) */
+    if (cert != nullptr) {
+        line = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
+        ret.subject = line;
+        free(line);
+        line = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
+        ret.issuer = line;
+        free(line);
+        ret.version = X509_get_version(cert);
+        X509_free(cert);
+    }
+
+    return ret;
+}
+
+SSL_CTX *
+create_client_context(const SSL_METHOD *method) {
     return method ? SSL_CTX_new(method) : nullptr;
 }
 
-SSL_CTX *create_server_context(const SSL_METHOD *method, std::string const &cert_path,
-                               std::string const &key_path) {
+SSL_CTX *
+create_server_context(const SSL_METHOD *method, std::string const &cert_path,
+                      std::string const &key_path) {
     SSL_CTX *ctx = nullptr;
     if (!method)
         goto error;
     ctx = SSL_CTX_new(method);
-    if (!ctx || SSL_CTX_use_certificate_file(ctx, cert_path.c_str(), SSL_FILETYPE_PEM) <= 0 ||
+    if (!ctx ||
+        SSL_CTX_use_certificate_file(ctx, cert_path.c_str(), SSL_FILETYPE_PEM) <= 0 ||
         SSL_CTX_use_PrivateKey_file(ctx, key_path.c_str(), SSL_FILETYPE_PEM) <= 0 ||
         SSL_CTX_check_private_key(ctx) <= 0)
         goto error;
@@ -41,7 +65,12 @@ error:
     return nullptr;
 }
 
-void socket::init(SSL *handle) {
+} // namespace qb::io::ssl
+
+namespace qb::io::tcp::ssl {
+
+void
+socket::init(SSL *handle) noexcept {
     _ssl_handle = handle;
     _connected = false;
 }
@@ -51,11 +80,13 @@ socket::socket()
     , _ssl_handle(nullptr)
     , _connected(false) {}
 
-SSL *socket::ssl() const {
+SSL *
+socket::ssl() const noexcept {
     return _ssl_handle;
 }
 
-int socket::handCheck() {
+int
+socket::handCheck() noexcept {
     if (_connected)
         return 1;
     auto ret = SSL_do_handshake(_ssl_handle);
@@ -74,7 +105,8 @@ int socket::handCheck() {
     return 1;
 }
 
-SocketStatus socket::connect(const ip &remoteAddress, unsigned short remotePort, int timeout) {
+SocketStatus
+socket::connect(const ip &remoteAddress, unsigned short remotePort, int timeout) {
     auto ret = tcp::socket::connect(remoteAddress, remotePort, timeout);
     if (ret != SocketStatus::Done)
         return ret;
@@ -89,7 +121,8 @@ SocketStatus socket::connect(const ip &remoteAddress, unsigned short remotePort,
     return handCheck() < 0 ? SocketStatus::Error : SocketStatus::Done;
 }
 
-void socket::disconnect() {
+void
+socket::disconnect() noexcept {
     tcp::socket::disconnect();
     if (_ssl_handle) {
         SSL_shutdown(_ssl_handle);
@@ -99,20 +132,26 @@ void socket::disconnect() {
     }
 }
 
-int socket::read(void *data, std::size_t size) {
+int
+socket::read(void *data, std::size_t size) noexcept {
     auto ret = handCheck();
     if (ret == 1) {
         ret = SSL_read(_ssl_handle, data, static_cast<int>(size));
-        return ret >= 0 ? ret : (SSL_get_error(_ssl_handle, ret) <= SSL_ERROR_WANT_WRITE ? 0 : -1);
+        return ret >= 0
+                   ? ret
+                   : (SSL_get_error(_ssl_handle, ret) <= SSL_ERROR_WANT_WRITE ? 0 : -1);
     }
     return ret;
 }
 
-int socket::write(const void *data, std::size_t size) {
+int
+socket::write(const void *data, std::size_t size) noexcept {
     auto ret = handCheck();
     if (ret == 1) {
         ret = SSL_write(_ssl_handle, data, static_cast<int>(size));
-        return ret >= 0 ? ret : (SSL_get_error(_ssl_handle, ret) <= SSL_ERROR_WANT_WRITE ? 0 : -1);
+        return ret >= 0
+                   ? ret
+                   : (SSL_get_error(_ssl_handle, ret) <= SSL_ERROR_WANT_WRITE ? 0 : -1);
     }
     return ret;
 }

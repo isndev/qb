@@ -27,28 +27,30 @@ Session::Session(ServerActor &server)
 }
 
 // client is receiving a new message
-void Session::on(IOMessage message, std::size_t size) {
+void
+Session::on(IOMessage const &&message) {
     // handle your message here
-    std::cout << "Received from Session(" << in().ident() << ") ip(" << in().getRemoteAddress()
-              << ")" << std::endl
-              << "-> Message (" << size << "): " << std::string_view(message, size - 1)
-              << std::endl;
+    std::cout << "Received from Session(" << transport().ident() << ") ip("
+              << transport().getRemoteAddress() << ")" << std::endl
+              << "-> Message (" << message.size << "): " << message.text << std::endl;
     // stream the message received to all connected sessions
-    server().stream(message, size);
+    server().stream(message.data, message.size);
     // reset session time out
     updateTimeout();
 }
 
 // client is receving timeout
-void Session::on(qb::io::async::event::timer &event) {
+void
+Session::on(qb::io::async::event::timer const &event) {
     // disconnect session on timeout
     // add reason for timeout
     disconnect(DisconnectedReason::ByTimeout);
 }
 
 // client is being disconnected
-void Session::on(qb::io::async::event::disconnected const &event) {
-    std::cout << "Session(" << in().ident() << ") ip(" << in().getRemoteAddress()
+void
+Session::on(qb::io::async::event::disconnected const &event) {
+    std::cout << "Session(" << transport().ident() << ") ip(" << transport().getRemoteAddress()
               << ") disconnected -> ";
     switch (event.reason) {
     case DisconnectedReason::ByUser:

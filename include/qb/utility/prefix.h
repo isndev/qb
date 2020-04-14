@@ -32,8 +32,10 @@
 
 #ifdef _MSC_VER
 
-#    define QB_LOCKFREE_CACHELINE_ALIGNMENT __declspec(align(QB_LOCKFREE_CACHELINE_BYTES))
-#    define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT __declspec(align(QB_LOCKFREE_EVENT_BUCKET_BYTES))
+#    define QB_LOCKFREE_CACHELINE_ALIGNMENT \
+        __declspec(align(QB_LOCKFREE_CACHELINE_BYTES))
+#    define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT \
+        __declspec(align(QB_LOCKFREE_EVENT_BUCKET_BYTES))
 
 #    if defined(_M_IX86)
 #        define QB_LOCKFREE_DCAS_ALIGNMENT

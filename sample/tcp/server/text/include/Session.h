@@ -19,11 +19,12 @@
 #define QB_SAMPLE_PROJECT_SESSION_H
 
 #include <qb/io/async.h>
-#include <qb/io/protocol/cmd.h>
+#include <qb/io/protocol/text.h>
 
 class ServerActor;
 class Session
-    : public qb::io::use<Session>::tcp::client<qb::io::protocol::cmd, ServerActor>
+    : public qb::io::use<Session>::tcp::client<qb::protocol::text::command_view,
+                                               ServerActor>
     , public qb::io::use<Session>::timeout {
     // clean way to identify why client is disconnected
     enum DisconnectedReason : int {
@@ -37,11 +38,21 @@ public:
     explicit Session(ServerActor &server);
 
     // client is receiving a new message
-    void on(IOMessage msg, std::size_t size);
+    void on(IOMessage const &&msg);
     // client is receiving timeout
-    void on(qb::io::async::event::timeout &event);
+    void on(qb::io::async::event::timeout const &event);
+    // client has an incomplete message
+    void
+    on(qb::io::async::event::pending_read const &) {}
+    // client has received everything
+    void
+    on(qb::io::async::event::eof const &) {}
+    // client has bytes in write buffer
+    void
+    on(qb::io::async::event::pending_write const &) {}
     // client write buffer is empty
-    void on(qb::io::async::event::eos const &) {}
+    void
+    on(qb::io::async::event::eos const &) {}
     // client is being disconnected
     void on(qb::io::async::event::disconnected const &event);
 };

@@ -15,33 +15,39 @@
  *         limitations under the License.
  */
 
-#include <gtest/gtest.h>
-#include <csignal>
-#include <thread>
 #include <chrono>
-#include <qb/io/async/listener.h>
+#include <csignal>
+#include <gtest/gtest.h>
 #include <qb/io/async/event/all.h>
+#include <qb/io/async/listener.h>
 #include <qb/io/system/file.h>
+#include <thread>
 
 struct FakeActor {
     int nb_events = 0;
     int fd_test = 0;
 
-    bool is_alive() { return true; }
+    bool
+    is_alive() {
+        return true;
+    }
 
-    void on(qb::io::async::event::signal<SIGINT> const &event) {
+    void
+    on(qb::io::async::event::signal<SIGINT> const &event) {
         EXPECT_EQ(SIGINT, event.signum);
         ++nb_events;
     }
 
-    void on(qb::io::async::event::io &event) {
+    void
+    on(qb::io::async::event::io &event) {
         EXPECT_EQ(fd_test, event.fd);
         EXPECT_EQ(true, event._revents & EV_READ);
         event.stop();
         ++nb_events;
     }
 
-    void on(qb::io::async::event::file const &event) {
+    void
+    on(qb::io::async::event::file const &event) {
 #ifdef _WIN32
         EXPECT_EQ(event.attr.st_size, 7);
 #else
@@ -50,10 +56,10 @@ struct FakeActor {
         ++nb_events;
     }
 
-    void on(qb::io::async::event::timer const &) {
+    void
+    on(qb::io::async::event::timer const &) {
         ++nb_events;
     }
-
 };
 
 TEST(KernelEvents, Signal) {
@@ -86,9 +92,7 @@ TEST(KernelEvents, File) {
 
     handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", 0).start();
 
-    std::thread t([]() {
-        system("echo test > test.file");
-    });
+    std::thread t([]() { system("echo test > test.file"); });
 
     for (auto i = 0; i < 10 && !actor.nb_events; ++i)
         handler.run(EVRUN_ONCE);

@@ -22,16 +22,18 @@ namespace qb::io::tcp::ssl {
 listener::listener()
     : _ctx(nullptr) {}
 
-listener::~listener() {
+listener::~listener() noexcept {
     if (_ctx)
         SSL_CTX_free(_ctx);
 }
 
-void listener::init(SSL_CTX *ctx) {
+void
+listener::init(SSL_CTX *ctx) noexcept {
     _ctx = ctx;
 }
 
-SocketStatus listener::accept(ssl::socket &socket) {
+SocketStatus
+listener::accept(ssl::socket &socket) const noexcept {
     if (tcp::listener::accept(socket) == SocketStatus::Done) {
         socket.init(SSL_new(_ctx));
         SSL_set_fd(socket.ssl(), socket.ident());
@@ -41,7 +43,8 @@ SocketStatus listener::accept(ssl::socket &socket) {
     return SocketStatus::Error;
 }
 
-SSL_CTX *listener::ssl() const {
+SSL_CTX *
+listener::ssl() const noexcept {
     return _ctx;
 }
 

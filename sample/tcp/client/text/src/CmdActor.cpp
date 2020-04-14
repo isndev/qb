@@ -30,7 +30,10 @@ void CmdActor::onCallback() {
     std::string cmd;
     // /!\ blocking core, but it's ok for the example
     // CmdActor is alone in its core
-    std::getline(std::cin, cmd);
-    // push line to client actor
-    _client_pipe.push<CommandEvent>().message = cmd;
+    if (std::getline(std::cin, cmd))
+        _client_pipe.push<CommandEvent>().message = cmd; // push line to client actor
+    else {
+        _client_pipe.push<qb::KillEvent>(); // push event to kill client actor
+        kill();                             // kill cmd Actor
+    }
 }

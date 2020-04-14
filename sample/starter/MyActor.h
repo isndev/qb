@@ -47,7 +47,8 @@ public:
     ~MyActor() final = default;
 
     // will call this function before adding MyActor
-    bool onInit() final {
+    bool
+    onInit() final {
         registerEvent<MyEvent>(*this); // will listen MyEvent
         registerCallback(*this);       // each core loop will call onCallback
 
@@ -62,14 +63,17 @@ public:
     }
 
     // will call this function each core loop
-    void onCallback() final {
+    void
+    onCallback() final {
         // ...
     }
 
     // will call this function when MyActor received MyEvent
-    void on(MyEvent const &) {
+    void
+    on(MyEvent const &) {
         // I am a dummy actor, notify the engine to remove me !
-        qb::io::cout() << "MyActor(" << id() << ") received MyEvent and will Die" << std::endl;
+        qb::io::cout() << "MyActor(" << id() << ") received MyEvent and will Die"
+                       << std::endl;
         kill(); // /!\ after this line MyActor is not able to receive events
     }
 };

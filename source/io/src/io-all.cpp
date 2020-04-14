@@ -15,6 +15,7 @@
  *         limitations under the License.
  */
 
+#include "pipe.cpp"
 #include "helper.cpp"
 #include "ip.cpp"
 #include "system/file.cpp"
@@ -27,3 +28,4 @@
 #endif
 #include "async/listener.cpp"
 #include "udp/socket.cpp"
+#include "stream.cpp"

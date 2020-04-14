@@ -21,11 +21,21 @@
 #ifndef QB_IO_TCP_SSL_SOCKET_H_
 #    define QB_IO_TCP_SSL_SOCKET_H_
 
-namespace qb::io::tcp::ssl {
+namespace qb::io::ssl {
 
+struct Certificate {
+    std::string subject;
+    std::string issuer;
+    int64_t version;
+};
+
+Certificate get_certificate(SSL *ssl);
 SSL_CTX *create_client_context(const SSL_METHOD *method);
 SSL_CTX *create_server_context(const SSL_METHOD *method, std::string const &cert_path,
                                std::string const &key_path);
+
+} // namespace qb::io::ssl
+namespace qb::io::tcp::ssl {
 
 class listener;
 
@@ -37,20 +47,23 @@ class QB_API socket : public tcp::socket {
     SSL *_ssl_handle;
     bool _connected;
 
-    int handCheck();
+    int handCheck() noexcept;
 
 public:
     socket();
     socket(socket const &rhs) = default;
 
-    void init(SSL *handle);
-    SocketStatus connect(const ip &remoteAddress, unsigned short remotePort, int timeout = 0);
-    void disconnect();
+    void init(SSL *handle) noexcept;
+    SocketStatus connect(const ip &remoteAddress, unsigned short remotePort,
+                         int timeout = 0);
+    void disconnect() noexcept;
 
-    int read(void *data, std::size_t size);
-    int write(const void *data, std::size_t size);
+    int read(void *data, std::size_t size) noexcept;
+    int write(const void *data, std::size_t size) noexcept;
+    //int ssl_pending() noexcept;
 
-    [[nodiscard]] SSL *ssl() const;
+    [[nodiscard]] SSL *ssl() const noexcept;
+
 private:
     friend class ssl::listener;
 };

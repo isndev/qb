@@ -30,18 +30,21 @@ public:
     PongActor() = default;
 
     // /!\ the engine will call this function before adding PongActor
-    bool onInit() final {
+    bool
+    onInit() final {
         registerEvent<MyEvent>(*this); // will just listen MyEvent
 
         return true; // init ok
     }
     // will call this function when PongActor receives MyEvent
-    void on(MyEvent &event) {
+    void
+    on(MyEvent &event) {
         // debug print
         qb::io::cout() << "PongActor id(" << id() << ") received MyEvent" << std::endl;
         reply(event); // reply the event to SourceActor
         // debug print
-        qb::io::cout() << "PongActor id(" << id() << ") has replied MyEvent" << std::endl;
+        qb::io::cout() << "PongActor id(" << id() << ") has replied MyEvent"
+                       << std::endl;
         kill(); // then notify engine to kill PongActor
     }
 };

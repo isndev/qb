@@ -28,23 +28,28 @@ CoreSet::CoreSet(qb::unordered_set<CoreId> const &set) noexcept
         _set[id] = idx++;
 }
 
-CoreId CoreSet::resolve(std::size_t id) const noexcept {
+CoreId
+CoreSet::resolve(std::size_t id) const noexcept {
     return _set.at(id);
 }
 
-std::size_t CoreSet::getSize() const noexcept {
+std::size_t
+CoreSet::getSize() const noexcept {
     return _size;
 }
 
-std::size_t CoreSet::getNbCore() const noexcept {
+std::size_t
+CoreSet::getNbCore() const noexcept {
     return _nb_core;
 }
 
-const qb::unordered_set<CoreId> &CoreSet::raw() const noexcept {
+const qb::unordered_set<CoreId> &
+CoreSet::raw() const noexcept {
     return _raw_set;
 }
 
-CoreSet CoreSet::build(uint32_t const nb_core) noexcept {
+CoreSet
+CoreSet::build(uint32_t const nb_core) noexcept {
     qb::unordered_set<CoreId> set;
     for (CoreId i = 0; i < nb_core; ++i)
         set.insert(i);

@@ -32,7 +32,8 @@ public:
         registerEvent<Event>(*this);
     }
 
-    void on(Event &event) {
+    void
+    on(Event &event) {
         if (_idList.size()) {
             for (auto to : _idList)
                 send<Event>(to, event);

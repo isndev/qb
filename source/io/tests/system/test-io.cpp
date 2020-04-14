@@ -16,10 +16,10 @@
  */
 
 #include <gtest/gtest.h>
-#include <thread>
 #include <qb/io/ip.h>
 #include <qb/io/tcp/listener.h>
 #include <qb/io/udp/socket.h>
+#include <thread>
 
 constexpr const unsigned short port = 64322;
 
@@ -40,7 +40,7 @@ TEST(TCP, Blocking) {
     std::thread tlistener([]() {
         qb::io::tcp::listener listener;
         EXPECT_FALSE(listener.listen(port) != qb::io::SocketStatus::Done);
-        EXPECT_TRUE(listener.good());
+        EXPECT_TRUE(listener.is_open());
         EXPECT_EQ(listener.getLocalPort(), port);
         qb::io::tcp::socket sock;
         EXPECT_FALSE(listener.accept(sock) != qb::io::SocketStatus::Done);
@@ -55,7 +55,7 @@ TEST(TCP, Blocking) {
     std::thread tsender([]() {
         qb::io::tcp::socket sock;
         EXPECT_FALSE(sock.connect("127.0.0.1", port, 10) != qb::io::SocketStatus::Done);
-        EXPECT_TRUE(sock.good());
+        EXPECT_TRUE(sock.is_open());
         EXPECT_EQ(sock.getRemotePort(), port);
         std::this_thread::sleep_for(std::chrono::seconds(3));
         const char msg[] = "Hello Test !";
@@ -71,7 +71,7 @@ TEST(TCP, NonBlocking) {
     std::thread tlistener([]() {
         qb::io::tcp::listener listener;
         EXPECT_FALSE(listener.listen(port) != qb::io::SocketStatus::Done);
-        EXPECT_TRUE(listener.good());
+        EXPECT_TRUE(listener.is_open());
         EXPECT_EQ(listener.getLocalPort(), port);
         qb::io::tcp::socket sock;
         EXPECT_FALSE(listener.accept(sock) != qb::io::SocketStatus::Done);
@@ -86,7 +86,7 @@ TEST(TCP, NonBlocking) {
     std::thread tsender([]() {
         qb::io::tcp::socket sock;
         EXPECT_FALSE(sock.connect("127.0.0.1", port, 10) != qb::io::SocketStatus::Done);
-        EXPECT_TRUE(sock.good());
+        EXPECT_TRUE(sock.is_open());
         EXPECT_EQ(sock.getRemotePort(), port);
         sock.setBlocking(false);
         std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -103,7 +103,7 @@ TEST(UDP, Blocking) {
     std::thread tlistener([]() {
         qb::io::udp::socket listener;
         EXPECT_FALSE(listener.bind(port) != qb::io::SocketStatus::Done);
-        EXPECT_TRUE(listener.good());
+        EXPECT_TRUE(listener.is_open());
         EXPECT_EQ(listener.getLocalPort(), port);
         char buffer[512];
         *buffer = 0;
@@ -118,7 +118,7 @@ TEST(UDP, Blocking) {
     std::this_thread::sleep_for(std::chrono::seconds(3));
     std::thread tsender([]() {
         qb::io::udp::socket sock;
-        EXPECT_TRUE(sock.good());
+        EXPECT_TRUE(sock.is_open());
         std::this_thread::sleep_for(std::chrono::seconds(3));
         const char msg[] = "Hello Test !";
         EXPECT_FALSE(sock.write(msg, sizeof(msg), "127.0.0.1", port) <= 0);
@@ -133,7 +133,7 @@ TEST(UDP, NonBlocking) {
     std::thread tlistener([]() {
         qb::io::udp::socket listener;
         EXPECT_FALSE(listener.bind(port) != qb::io::SocketStatus::Done);
-        EXPECT_TRUE(listener.good());
+        EXPECT_TRUE(listener.is_open());
         EXPECT_EQ(listener.getLocalPort(), port);
         listener.setBlocking(false);
         char buffer[512];
@@ -148,7 +148,7 @@ TEST(UDP, NonBlocking) {
     std::this_thread::sleep_for(std::chrono::seconds(3));
     std::thread tsender([]() {
         qb::io::udp::socket sock;
-        EXPECT_TRUE(sock.good());
+        EXPECT_TRUE(sock.is_open());
         sock.setBlocking(false);
         std::this_thread::sleep_for(std::chrono::seconds(3));
         const char msg[] = "Hello Test !";

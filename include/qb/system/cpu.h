@@ -19,6 +19,7 @@
 #define FEATURES_CPU_H
 
 #include <memory>
+#include <thread>
 #if defined(__APPLE__)
 #    include <sys/sysctl.h>
 #elif defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
@@ -37,7 +38,8 @@ namespace Internals {
 
 #if defined(_WIN32) || defined(_WIN64)
 // Helper function to count set bits in the processor mask
-DWORD CountSetBits(ULONG_PTR pBitMask) {
+DWORD
+CountSetBits(ULONG_PTR pBitMask) {
     DWORD dwLeftShift = sizeof(ULONG_PTR) * 8 - 1;
     DWORD dwBitSetCount = 0;
     ULONG_PTR pBitTest = (ULONG_PTR)1 << dwLeftShift;
@@ -56,17 +58,21 @@ DWORD CountSetBits(ULONG_PTR pBitMask) {
 namespace qb {
 
 template <typename T, typename TCleaner>
-auto resource(T handle, TCleaner cleaner) {
-    return std::unique_ptr<typename std::remove_pointer<T>::type, TCleaner>(handle, cleaner);
+auto
+resource(T handle, TCleaner cleaner) {
+    return std::unique_ptr<typename std::remove_pointer<T>::type, TCleaner>(handle,
+                                                                            cleaner);
 }
 
 template <typename TCleaner>
-auto resource(void *handle, TCleaner cleaner) {
+auto
+resource(void *handle, TCleaner cleaner) {
     return std::unique_ptr<void, TCleaner>(handle, cleaner);
 }
 
 template <typename TCleaner>
-auto resource(TCleaner cleaner) {
+auto
+resource(TCleaner cleaner) {
     return std::unique_ptr<void, TCleaner>(&cleaner, cleaner);
 }
 
@@ -80,7 +86,8 @@ public:
     CPU &operator=(const CPU &) = delete;
     CPU &operator=(CPU &&) noexcept = delete;
 
-    static std::string Architecture() {
+    static std::string
+    Architecture() {
 #if defined(__APPLE__)
         char result[1024];
         size_t size = sizeof(result);
@@ -102,9 +109,9 @@ public:
         return "<unknown>";
 #elif defined(_WIN32) || defined(_WIN64)
         HKEY hKeyProcessor;
-        LONG lError =
-            RegOpenKeyExA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-                          0, KEY_READ, &hKeyProcessor);
+        LONG lError = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                                    "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+                                    0, KEY_READ, &hKeyProcessor);
         if (lError != ERROR_SUCCESS)
             return "<unknown>";
 
@@ -123,7 +130,8 @@ public:
 #    error Unsupported platform
 #endif
     }
-    static int Affinity() {
+    static int
+    Affinity() {
 #if defined(__APPLE__)
         int logical = 0;
         size_t logical_size = sizeof(logical);
@@ -142,13 +150,16 @@ public:
 #    error Unsupported platform
 #endif
     }
-    static int LogicalCores() {
+    static int
+    LogicalCores() {
         return TotalCores().first;
     }
-    static int PhysicalCores() {
+    static int
+    PhysicalCores() {
         return TotalCores().second;
     }
-    static std::pair<int, int> TotalCores() {
+    static std::pair<int, int>
+    TotalCores() {
 #if defined(__APPLE__)
         int logical = 0;
         size_t logical_size = sizeof(logical);
@@ -175,7 +186,8 @@ public:
                 if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
                     if (pBuffer != nullptr)
                         std::free(pBuffer);
-                    pBuffer = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION)std::malloc(dwLength);
+                    pBuffer =
+                        (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION)std::malloc(dwLength);
                     if (pBuffer == nullptr)
                         return std::make_pair(-1, -1);
                 } else
@@ -212,7 +224,8 @@ public:
 #    error Unsupported platform
 #endif
     }
-    static int64_t ClockSpeed() {
+    static int64_t
+    ClockSpeed() {
 #if defined(__APPLE__)
         uint64_t frequency = 0;
         size_t size = sizeof(frequency);
@@ -234,9 +247,9 @@ public:
         return -1;
 #elif defined(_WIN32) || defined(_WIN64)
         HKEY hKeyProcessor;
-        long lError =
-            RegOpenKeyExA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-                          0, KEY_READ, &hKeyProcessor);
+        long lError = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                                    "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+                                    0, KEY_READ, &hKeyProcessor);
         if (lError != ERROR_SUCCESS)
             return -1;
 
@@ -245,8 +258,8 @@ public:
 
         DWORD dwMHz = 0;
         DWORD dwBufferSize = sizeof(DWORD);
-        lError =
-            RegQueryValueExA(key.get(), "~MHz", nullptr, nullptr, (LPBYTE)&dwMHz, &dwBufferSize);
+        lError = RegQueryValueExA(key.get(), "~MHz", nullptr, nullptr, (LPBYTE)&dwMHz,
+                                  &dwBufferSize);
         if (lError != ERROR_SUCCESS)
             return -1;
 
@@ -255,12 +268,29 @@ public:
 #    error Unsupported platform
 #endif
     }
-    static bool HyperThreading() {
+    static bool
+    HyperThreading() {
         std::pair<int, int> cores = TotalCores();
         return (cores.first != cores.second);
     }
 };
 
 } // namespace qb
+
+#ifdef __SSE2__
+#include <emmintrin.h>
+namespace qb {
+    inline void spin_loop_pause() noexcept { _mm_pause(); }
+} // namespace qb
+#elif defined(_MSC_VER) && _MSC_VER >= 1800 && (defined(_M_X64) || defined(_M_IX86))
+#include <intrin.h>
+namespace qb {
+  inline void spin_loop_pause() noexcept { _mm_pause(); }
+} // namespace qb
+#else
+namespace qb {
+  inline void spin_loop_pause() noexcept { std::this_thread::yield(); }
+} // namespace qb
+#endif
 
 #endif // FEATURES_CPU_H

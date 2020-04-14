@@ -22,7 +22,8 @@
 #include <qb/main.h>
 
 template <typename Event>
-static void BM_Multicast_Latency(benchmark::State &state) {
+static void
+BM_Multicast_Latency(benchmark::State &state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
         const auto nb_actor = state.range(1);
@@ -41,7 +42,8 @@ static void BM_Multicast_Latency(benchmark::State &state) {
     }
 }
 
-static void CustomArguments(benchmark::internal::Benchmark *b) {
+static void
+CustomArguments(benchmark::internal::Benchmark *b) {
     auto nb_core = std::thread::hardware_concurrency();
     for (auto i = 1u; i <= nb_core; i *= 2) {
         for (int j = i - 1; j <= static_cast<int>(nb_core * 10); j *= 10) {
@@ -57,6 +59,5 @@ BENCHMARK_TEMPLATE(BM_Multicast_Latency, LightEvent)
     ->Apply(CustomArguments)
     ->ArgNames({"NB_EVENTS", "NB_ACTORS", "NB_CORE"})
     ->Unit(benchmark::kMillisecond);
-
 
 BENCHMARK_MAIN();

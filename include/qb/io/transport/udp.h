@@ -15,19 +15,29 @@
  *         limitations under the License.
  */
 
+// TODO : UDP IS BROKEN
+// TOFIX : New way to read !!!
+// new way to write !!!!
+// new way to get message !!!!
+
 #ifndef QB_IO_TRANSPORT_UDP_H_
 #define QB_IO_TRANSPORT_UDP_H_
+#include "../stream.h"
 #include "../udp/socket.h"
-#include <qb/system/allocator/pipe.h>
 #include <qb/utility/functional.h>
 
 namespace qb::io::transport {
 
-class udp {
+class udp : public stream<io::udp::socket> {
+    using base_t = stream<io::udp::socket>;
+
 public:
+    constexpr static const bool has_reset_on_pending_read = true;
+
     struct identity {
         struct hasher {
-            std::size_t operator()(const identity &id) const noexcept {
+            std::size_t
+            operator()(const identity &id) const noexcept {
                 return hash_combine(id._ip.toInteger(), id._port);
             }
         };
@@ -35,102 +45,127 @@ public:
         ip _ip;
         uint16_t _port;
 
-        bool operator==(identity const &rhs) const noexcept {
-            return _ip == rhs._ip && _port == rhs._port;
+        bool
+        operator!=(identity const &rhs) const noexcept {
+            return _ip != rhs._ip || _port != rhs._port;
         }
     };
 
-    struct message_type {
-        udp::identity ident;
-        const char *data;
+    class ProxyOut {
+        udp &proxy;
+
+    public:
+        ProxyOut(udp &prx)
+            : proxy(prx) {}
+
+        template <typename T>
+        auto &
+        operator<<(T &&data) {
+            if (proxy._remote_dest._ip != qb::io::ip::None) {
+                auto &out_buffer = static_cast<udp::base_t &>(proxy).out();
+                const auto start_size = out_buffer.size();
+                out_buffer << std::forward<T>(data);
+                auto p = reinterpret_cast<udp::pushed_message *>(
+                    out_buffer.begin() + proxy._last_pushed_offset);
+                p->size += (out_buffer.size() - start_size);
+            }
+            return *this;
+        }
     };
 
-protected:
-    io::udp::socket _io;
-    qb::allocator::pipe<char> _in_buffer;
-    qb::allocator::pipe<char> _out_buffer;
+    friend ProxyOut;
 
 private:
-    message_type _message;
+    ProxyOut _out{*this};
+    udp::identity _remote_source;
+    udp::identity _remote_dest;
 
     struct pushed_message {
         udp::identity ident;
-        int size;
+        int size = 0;
     };
 
-    pushed_message _pushed_message;
+    pushed_message _current_pushed_message;
+    int _last_pushed_offset = -1;
 
 public:
-    // in section
-    io::udp::socket &in() {
-        return _io;
+    const udp::identity &
+    getSource() const noexcept {
+        return _remote_source;
     }
 
-    auto &buffer() {
-        return _in_buffer;
+    void
+    setDestination(udp::identity const &to) noexcept {
+        _remote_dest = to;
+        _last_pushed_offset = -1;
     }
 
-    int read() {
-        _in_buffer.reset();
-        const auto ret =
-            _io.read(_in_buffer.allocate_back(io::udp::socket::MaxDatagramSize),
-                     io::udp::socket::MaxDatagramSize, _message.ident._ip, _message.ident._port);
+    auto &
+    out() {
+        if (_last_pushed_offset < 0 && _remote_dest._ip != qb::io::ip::None) {
+            _last_pushed_offset = _out_buffer.size();
+            auto &m = _out_buffer.allocate_back<pushed_message>();
+            m.ident = _remote_dest;
+            m.size = 0;
+        }
+
+        return _out;
+    }
+
+    int
+    read() noexcept {
+        const auto ret = transport().read(
+            _in_buffer.allocate_back(io::udp::socket::MaxDatagramSize),
+            io::udp::socket::MaxDatagramSize, _remote_source._ip, _remote_source._port);
         if (qb::likely(ret > 0))
             _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
+        setDestination(_remote_source);
         return ret;
     }
 
-    void flush(std::size_t size) {
-        _in_buffer.free_front(size);
-        if (!_in_buffer.size())
-            _in_buffer.reset();
-    }
-    // out sections
-    io::udp::socket &out() {
-        return _io;
+    void
+    eof() noexcept {
+        _in_buffer.reset();
     }
 
-    [[nodiscard]] std::size_t pendingWrite() const {
-        return _out_buffer.size();
-    }
-
-    int write() {
-        if (!_pushed_message.size) {
-            _pushed_message =
-                *reinterpret_cast<pushed_message const *>(_out_buffer.data() + _out_buffer.begin());
+    int
+    write() noexcept {
+        if (!_current_pushed_message.size) {
+            _current_pushed_message =
+                *reinterpret_cast<pushed_message const *>(_out_buffer.begin());
             _out_buffer.free_front(sizeof(pushed_message));
         }
 
-        const auto ret = this->_io.write(
-            _out_buffer.data() + _out_buffer.begin(),
-            std::min(_pushed_message.size, static_cast<int>(io::udp::socket::MaxDatagramSize)),
-            _pushed_message.ident._ip, _pushed_message.ident._port);
+        const auto ret = transport().write(
+            _out_buffer.begin(),
+            std::min(_current_pushed_message.size,
+                     static_cast<int>(io::udp::socket::MaxDatagramSize)),
+            _current_pushed_message.ident._ip, _current_pushed_message.ident._port);
         if (qb::likely(ret > 0)) {
-            _pushed_message.size -= ret;
-            _out_buffer.reset(_out_buffer.begin() + ret);
+            _current_pushed_message.size -= ret;
+
+            if (ret != _out_buffer.size()) {
+                _out_buffer.free_front(ret);
+                _out_buffer.reorder();
+            } else
+                _out_buffer.reset();
         }
         return ret;
     }
 
-    char *publish(udp::identity const &to, char const *data, std::size_t size) {
+    char *
+    publish(char const *data, std::size_t size) noexcept {
+        return publish_to(_remote_dest, data, size);
+    }
+
+    char *
+    publish_to(udp::identity const &to, char const *data, std::size_t size) noexcept {
         auto &m = _out_buffer.allocate_back<pushed_message>();
         m.ident = to;
         m.size = size;
 
-        return static_cast<char *>(std::memcpy(_out_buffer.allocate_back(size), data, size));
-    }
-
-    void close() {
-        _io.close();
-    }
-
-    int getMessageSize() {
-        _message.data = _in_buffer.data() + _in_buffer.begin();
-        return _in_buffer.size();
-    }
-
-    message_type getMessage(int) {
-        return _message;
+        return static_cast<char *>(
+            std::memcpy(_out_buffer.allocate_back(size), data, size));
     }
 };
 

@@ -42,7 +42,8 @@ public:
             send<Event>(to, id());
     }
 
-    void on(Event &event) {
+    void
+    on(Event &event) {
         _latency.add(std::chrono::high_resolution_clock::now() - event._timepoint);
         --_max_events;
         if (!_max_events) {

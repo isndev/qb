@@ -19,7 +19,8 @@
 #include <qb/actor.h>
 #include <qb/main.h>
 
-static void BM_Main_Example(benchmark::State &state) {
+static void
+BM_Main_Example(benchmark::State &state) {
     for (auto _ : state) {
         qb::Main main{0};
 

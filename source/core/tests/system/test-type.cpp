@@ -37,10 +37,12 @@ struct NonTriviallyDestructibleEvent : public TriviallyDestructibleEvent {
 
 TEST(TYPE, AllCheck) {
     std::cout << "-------- Constants --------" << std::endl;
-    std::cout << "QB_LOCKFREE_CACHELINE_BYTES(" << QB_LOCKFREE_CACHELINE_BYTES << ")" << std::endl;
-    std::cout << "QB_LOCKFREE_EVENT_BUCKET_BYTES(" << QB_LOCKFREE_EVENT_BUCKET_BYTES << ")"
+    std::cout << "QB_LOCKFREE_CACHELINE_BYTES(" << QB_LOCKFREE_CACHELINE_BYTES << ")"
               << std::endl;
-    std::cout << "QB_MAX_EVENT_SIZE(" << std::numeric_limits<uint16_t>::max() << ")" << std::endl;
+    std::cout << "QB_LOCKFREE_EVENT_BUCKET_BYTES(" << QB_LOCKFREE_EVENT_BUCKET_BYTES
+              << ")" << std::endl;
+    std::cout << "QB_MAX_EVENT_SIZE(" << std::numeric_limits<uint16_t>::max() << ")"
+              << std::endl;
     std::cout << "--------   Types   --------" << std::endl;
     std::cout << "sizeof<std::size_t>(" << sizeof(std::size_t) << ")" << std::endl;
     std::cout << "sizeof<std::allocator>(" << sizeof(std::allocator<EventBucket>) << ")"
@@ -54,8 +56,8 @@ TEST(TYPE, AllCheck) {
     std::cout << "--------  Classes  --------" << std::endl;
     std::cout << "sizeof<Main>(" << sizeof(qb::Main) << ")" << std::endl;
     std::cout << "sizeof<VirtualCore>(" << sizeof(qb::VirtualCore) << ")" << std::endl;
+    std::cout << "sizeof<VirtualPipe>(" << sizeof(qb::VirtualPipe) << ")" << std::endl;
     std::cout << "sizeof<Pipe>(" << sizeof(qb::Pipe) << ")" << std::endl;
-    std::cout << "sizeof<ProxyPipe>(" << sizeof(qb::ProxyPipe) << ")" << std::endl;
     std::cout << "sizeof<Actor>(" << sizeof(qb::Actor) << ")" << std::endl;
     std::cout << "sizeof<EventQOS0>(" << sizeof(qb::EventQOS0) << ")" << std::endl;
 #ifdef NDEBUG
@@ -73,7 +75,8 @@ TEST(TYPE, AllCheck) {
               << std::is_trivially_destructible_v<qb::EventQOS2> << ")" << std::endl;
     EXPECT_EQ(std::is_trivially_destructible_v<qb::EventQOS0>, 1);
     std::cout << "is_trivially_destructible<TriviallyDestructibleEvent>("
-              << std::is_trivially_destructible_v<TriviallyDestructibleEvent> << ")" << std::endl;
+              << std::is_trivially_destructible_v<TriviallyDestructibleEvent> << ")"
+              << std::endl;
     EXPECT_EQ(std::is_trivially_destructible_v<TriviallyDestructibleEvent>, 1);
     std::cout << "is_trivially_destructible<NonTriviallyDestructibleEvent>("
               << std::is_trivially_destructible_v<NonTriviallyDestructibleEvent> << ")"

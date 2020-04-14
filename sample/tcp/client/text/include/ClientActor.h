@@ -19,14 +19,15 @@
 #include "event/RetryConnectEvent.h"
 #include <qb/actor.h>
 #include <qb/io/async.h>
-#include <qb/io/protocol/cmd.h>
+#include <qb/io/protocol/text.h>
 
 #ifndef QB_SAMPLE_PROJECT_CLIENTACTOR_H
 #    define QB_SAMPLE_PROJECT_CLIENTACTOR_H
 
 class ClientActor
     : public qb::Actor
-    , public qb::io::use<ClientActor>::tcp::client<qb::io::protocol::cmd> {
+    , public qb::io::use<ClientActor>::tcp::client<
+          qb::protocol::text::command_view> {
 
     // connect function
     bool connect();
@@ -44,7 +45,7 @@ public:
 
     // io events
     // new message received from remote
-    void on(IOMessage message, std::size_t size);
+    void on(IOMessage message);
     // client is being disconnected
     void on(qb::io::async::event::disconnected const &event);
     // !io events

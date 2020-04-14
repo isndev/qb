@@ -35,6 +35,8 @@ public:
     virtual void onCallback() = 0;
 };
 
+using icallback = ICallback;
+
 } // namespace qb
 
 #endif // QB_ICALLBACK_H

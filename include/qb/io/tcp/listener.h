@@ -32,11 +32,11 @@ public:
 
     listener(listener const &) = delete;
 
-    ~listener();
+    ~listener() noexcept;
 
     SocketStatus listen(unsigned short port, const ip &address = ip::Any);
 
-    SocketStatus accept(socket &socket);
+    SocketStatus accept(socket &socket) const noexcept;
 };
 
 } // namespace qb::io::tcp

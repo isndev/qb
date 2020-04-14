@@ -33,18 +33,19 @@ public:
 
     socket();
     socket(socket const &rhs) = default;
-    explicit socket(SocketHandler handler);
+    explicit socket(SocketHandler handler) noexcept;
 
-    [[nodiscard]] unsigned short getLocalPort() const;
+    [[nodiscard]] unsigned short getLocalPort() const noexcept;
 
     SocketStatus bind(unsigned short port, const ip &address = ip::Any);
 
-    void unbind();
+    void unbind() noexcept;
 
     int write(const void *data, std::size_t size, const ip &remoteAddress,
-              unsigned short remotePort) const;
+              unsigned short remotePort) const noexcept;
 
-    int read(void *data, std::size_t size, ip &remoteAddress, unsigned short &remotePort) const;
+    int read(void *data, std::size_t size, ip &remoteAddress,
+             unsigned short &remotePort) const noexcept;
 };
 
 } // namespace qb::io::udp

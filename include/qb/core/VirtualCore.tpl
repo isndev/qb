@@ -16,22 +16,25 @@
  */
 
 #ifndef QB_CORE_TPL
-#    define QB_CORE_TPL
+#define QB_CORE_TPL
 
 namespace qb {
 
 template <typename _Event, typename _Actor>
-void VirtualCore::registerEvent(_Actor &actor) noexcept {
+void
+VirtualCore::registerEvent(_Actor &actor) noexcept {
     _router.subscribe<_Event>(actor);
 }
 
 template <typename _Event, typename _Actor>
-void VirtualCore::unregisterEvent(_Actor &actor) noexcept {
+void
+VirtualCore::unregisterEvent(_Actor &actor) noexcept {
     _router.unsubscribe<_Event>(actor);
 }
 
 template <typename _Actor, typename... _Init>
-_Actor *VirtualCore::addReferencedActor(_Init &&... init) noexcept {
+_Actor *
+VirtualCore::addReferencedActor(_Init &&... init) noexcept {
     auto actor = new _Actor(std::forward<_Init>(init)...);
     actor->id_type = type_id<_Actor>();
     actor->name = typeid(_Actor).name();
@@ -41,7 +44,8 @@ _Actor *VirtualCore::addReferencedActor(_Init &&... init) noexcept {
 }
 
 template <typename _ServiceActor>
-_ServiceActor *VirtualCore::getService() const noexcept {
+_ServiceActor *
+VirtualCore::getService() const noexcept {
     const auto &it = _actors.find(ActorId(_ServiceActor::ServiceIndex, _index));
     if (it == _actors.end()) {
         LOG_CRIT("Failed to get Service[" << typeid(_ServiceActor).name() << "]"
@@ -53,14 +57,15 @@ _ServiceActor *VirtualCore::getService() const noexcept {
 }
 
 template <typename _Actor>
-void VirtualCore::registerCallback(_Actor &actor) noexcept {
+void
+VirtualCore::registerCallback(_Actor &actor) noexcept {
     _actor_callbacks.insert({actor.id(), &actor});
 }
 
 // Event API
 template <typename T>
-inline void VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) const
-    noexcept {
+inline void
+VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) noexcept {
     data.id = data.template type_to_id<T>();
     data.dest = dest;
     data.source = source;
@@ -79,7 +84,8 @@ inline void VirtualCore::fill_event(T &data, ActorId const dest, ActorId const s
 }
 
 template <typename T, typename... _Init>
-void VirtualCore::send(ActorId const dest, ActorId const source, _Init &&... init) noexcept {
+void
+VirtualCore::send(ActorId const dest, ActorId const source, _Init &&... init) noexcept {
     auto &pipe = __getPipe__(dest._index);
     auto &data = pipe.template allocate<T>(std::forward<_Init>(init)...);
 
@@ -90,13 +96,15 @@ void VirtualCore::send(ActorId const dest, ActorId const source, _Init &&... ini
 }
 
 template <typename T, typename... _Init>
-void VirtualCore::broadcast(ActorId const source, _Init &&... init) noexcept {
+void
+VirtualCore::broadcast(ActorId const source, _Init &&... init) noexcept {
     for (const auto it : _engine._core_set.raw())
         send<T, _Init...>(BroadcastId(it), source, std::forward<_Init>(init)...);
 }
 
 template <typename T, typename... _Init>
-T &VirtualCore::push(ActorId const dest, ActorId const source, _Init &&... init) noexcept {
+T &
+VirtualCore::push(ActorId const dest, ActorId const source, _Init &&... init) noexcept {
     auto &pipe = __getPipe__(dest._index);
     auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
 

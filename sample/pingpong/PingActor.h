@@ -29,27 +29,31 @@ public:
     PingActor() = default; // PingActor requires PongActor Actor
 
     // /!\ the engine will call this function before adding PingPongActor
-    bool onInit() final {
+    bool
+    onInit() final {
         registerEvent<qb::RequireEvent>(*this); // id dependency
         require<PongActor>();                   // require PongActor id
 
         return true; // init ok
     }
 
-    void on(qb::RequireEvent const &event) {
+    void
+    on(qb::RequireEvent const &event) {
         if (is<PongActor>(event.type)) {
-            registerEvent<MyEvent>(*this); // will listen MyEvent
-            auto &e = push<MyEvent>(
-                event.getSource()); // push MyEvent to PongActor and keep a reference to the event
-            e.data = 1337;          // set trivial data
-            e.container.push_back(7331); // set dynamic data
+            registerEvent<MyEvent>(*this);              // will listen MyEvent
+            auto &e = push<MyEvent>(event.getSource()); // push MyEvent to PongActor and
+                                                        // keep a reference to the event
+            e.data = 1337;                              // set trivial data
+            e.container.push_back(7331);                // set dynamic data
             // debug print
-            qb::io::cout() << "PingActor id(" << id() << ") has sent MyEvent" << std::endl;
+            qb::io::cout() << "PingActor id(" << id() << ") has sent MyEvent"
+                           << std::endl;
         }
     }
 
     // will call this function when PingActor receives MyEvent
-    void on(MyEvent &) {
+    void
+    on(MyEvent &) {
         // debug print
         qb::io::cout() << "PingActor id(" << id() << ") received MyEvent" << std::endl;
         kill(); // then notify engine to kill PingActor

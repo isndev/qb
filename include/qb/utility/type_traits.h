@@ -60,33 +60,35 @@ struct has_member {
     static char (&f(...))[2];
 
     // Make sure the member name is consistently spelled the same.
-    static_assert((sizeof(f<AmbiguitySeed>(0)) == 1),
-                  "Member name specified in AmbiguitySeed is different from member name specified "
-                  "in Alias, or wrong Alias/AmbiguitySeed has been specified.");
+    static_assert(
+        (sizeof(f<AmbiguitySeed>(0)) == 1),
+        "Member name specified in AmbiguitySeed is different from member name specified "
+        "in Alias, or wrong Alias/AmbiguitySeed has been specified.");
 
     static bool const value = sizeof(f<Alias>(0)) == 2;
 };
 
 // Check for any member with given name, whether var, func, class, union, enum.
-#define CREATE_MEMBER_CHECK(member)                                                                \
-                                                                                                   \
-    template <typename T, typename = std::true_type>                                               \
-    struct Alias_##member;                                                                         \
-                                                                                                   \
-    template <typename T>                                                                          \
-    struct Alias_##member<T,                                                                       \
-                          std::integral_constant<bool, got_type<decltype(&T::member)>::value>> {   \
-        static const decltype(&T::member) value;                                                   \
-    };                                                                                             \
-                                                                                                   \
-    struct AmbiguitySeed_##member {                                                                \
-        char member;                                                                               \
-    };                                                                                             \
-                                                                                                   \
-    template <typename T>                                                                          \
-    struct has_member_##member {                                                                   \
-        static const bool value = has_member<Alias_##member<ambiguate<T, AmbiguitySeed_##member>>, \
-                                             Alias_##member<AmbiguitySeed_##member>>::value;       \
+#define CREATE_MEMBER_CHECK(member)                                               \
+                                                                                  \
+    template <typename T, typename = std::true_type>                              \
+    struct Alias_##member;                                                        \
+                                                                                  \
+    template <typename T>                                                         \
+    struct Alias_##member<                                                        \
+        T, std::integral_constant<bool, got_type<decltype(&T::member)>::value>> { \
+        static const decltype(&T::member) value;                                  \
+    };                                                                            \
+                                                                                  \
+    struct AmbiguitySeed_##member {                                               \
+        char member;                                                              \
+    };                                                                            \
+                                                                                  \
+    template <typename T>                                                         \
+    struct has_member_##member {                                                  \
+        static const bool value =                                                 \
+            has_member<Alias_##member<ambiguate<T, AmbiguitySeed_##member>>,      \
+                       Alias_##member<AmbiguitySeed_##member>>::value;            \
     }
 
 // Check for member variable with given name.
@@ -102,39 +104,40 @@ struct has_member {
         : std::true_type {}
 
 // Check for member class with given name.
-#define CREATE_MEMBER_CLASS_CHECK(class_name)                                                \
-                                                                                             \
-    template <typename T, typename = std::true_type>                                         \
-    struct has_member_class_##class_name : std::false_type {};                               \
-                                                                                             \
-    template <typename T>                                                                    \
-    struct has_member_class_##class_name<                                                    \
-        T, std::integral_constant<                                                           \
-               bool, std::is_class<typename got_type<typename T::class_name>::type>::value>> \
+#define CREATE_MEMBER_CLASS_CHECK(class_name)                                       \
+                                                                                    \
+    template <typename T, typename = std::true_type>                                \
+    struct has_member_class_##class_name : std::false_type {};                      \
+                                                                                    \
+    template <typename T>                                                           \
+    struct has_member_class_##class_name<                                           \
+        T, std::integral_constant<bool, std::is_class<typename got_type<            \
+                                            typename T::class_name>::type>::value>> \
         : std::true_type {}
 
 // Check for member union with given name.
-#define CREATE_MEMBER_UNION_CHECK(union_name)                                                \
-                                                                                             \
-    template <typename T, typename = std::true_type>                                         \
-    struct has_member_union_##union_name : std::false_type {};                               \
-                                                                                             \
-    template <typename T>                                                                    \
-    struct has_member_union_##union_name<                                                    \
-        T, std::integral_constant<                                                           \
-               bool, std::is_union<typename got_type<typename T::union_name>::type>::value>> \
+#define CREATE_MEMBER_UNION_CHECK(union_name)                                       \
+                                                                                    \
+    template <typename T, typename = std::true_type>                                \
+    struct has_member_union_##union_name : std::false_type {};                      \
+                                                                                    \
+    template <typename T>                                                           \
+    struct has_member_union_##union_name<                                           \
+        T, std::integral_constant<bool, std::is_union<typename got_type<            \
+                                            typename T::union_name>::type>::value>> \
         : std::true_type {}
 
 // Check for member enum with given name.
-#define CREATE_MEMBER_ENUM_CHECK(enum_name)                                                \
-                                                                                           \
-    template <typename T, typename = std::true_type>                                       \
-    struct has_member_enum_##enum_name : std::false_type {};                               \
-                                                                                           \
-    template <typename T>                                                                  \
-    struct has_member_enum_##enum_name<                                                    \
-        T, std::integral_constant<                                                         \
-               bool, std::is_enum<typename got_type<typename T::enum_name>::type>::value>> \
+#define CREATE_MEMBER_ENUM_CHECK(enum_name)                                             \
+                                                                                        \
+    template <typename T, typename = std::true_type>                                    \
+    struct has_member_enum_##enum_name : std::false_type {};                            \
+                                                                                        \
+    template <typename T>                                                               \
+    struct has_member_enum_##enum_name<                                                 \
+        T,                                                                              \
+        std::integral_constant<                                                         \
+            bool, std::is_enum<typename got_type<typename T::enum_name>::type>::value>> \
         : std::true_type {}
 
 // Check for function with given name, any signature.
@@ -156,22 +159,21 @@ struct has_member {
     CREATE_MEMBER_ENUM_CHECK(member);  \
     CREATE_MEMBER_FUNC_CHECK(member)
 
-#define GENERATE_HAS_METHOD(method)                                                            \
-                                                                                               \
-    template <typename C, typename Ret, typename... Args>                                      \
-    class has_method_##method {                                                                \
-        template <typename T>                                                                  \
-        static constexpr auto check(T *) ->                                                    \
-            typename std::is_same<decltype(std::declval<T>().method(std::declval<Args>()...)), \
-                                  Ret>::type;                                                  \
-                                                                                               \
-        template <typename>                                                                    \
-        static constexpr std::false_type check(...);                                           \
-                                                                                               \
-        typedef decltype(check<C>(0)) type;                                                    \
-                                                                                               \
-    public:                                                                                    \
-        static constexpr bool value = type::value;                                             \
+#define GENERATE_HAS_METHOD(method)                                                  \
+                                                                                     \
+    template <typename C, typename Ret, typename... Args>                            \
+    class has_method_##method {                                                      \
+        template <typename T>                                                        \
+        static constexpr auto check(T *) -> typename std::is_same<                   \
+            decltype(std::declval<T>().method(std::declval<Args>()...)), Ret>::type; \
+                                                                                     \
+        template <typename>                                                          \
+        static constexpr std::false_type check(...);                                 \
+                                                                                     \
+        typedef decltype(check<C>(0)) type;                                          \
+                                                                                     \
+    public:                                                                          \
+        static constexpr bool value = type::value;                                   \
     };
 
 #define GENERATE_HAS_MEMBER(member)                                                   \
@@ -234,5 +236,8 @@ CREATE_MEMBER_CHECKS(is_alive);
 CREATE_MEMBER_CHECKS(is_broadcast);
 CREATE_MEMBER_CHECKS(is_valid);
 CREATE_MEMBER_CHECKS(disconnect);
+GENERATE_HAS_METHOD(on)
+GENERATE_HAS_METHOD(read)
+GENERATE_HAS_METHOD(write)
 
 #endif // QB_TYPE_TRAITS_H

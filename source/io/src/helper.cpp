@@ -20,7 +20,8 @@
 namespace qb::io {
 #ifdef __WIN__SYSTEM__
 
-sockaddr_in helper::createAddress(uint32_t address, unsigned short port) {
+sockaddr_in
+helper::createAddress(uint32_t address, unsigned short port) {
     sockaddr_in addr;
     std::memset(&addr, 0, sizeof(addr));
     addr.sin_addr.s_addr = htonl(address);
@@ -30,16 +31,19 @@ sockaddr_in helper::createAddress(uint32_t address, unsigned short port) {
     return addr;
 }
 
-bool helper::close(SocketHandler socket) {
+bool
+helper::close(SocketHandler socket) {
     return !closesocket(socket);
 }
 
-bool helper::block(SocketHandler socket, bool block) {
+bool
+helper::block(SocketHandler socket, bool block) {
     unsigned long new_state = static_cast<unsigned long>(!block);
     return !ioctlsocket(socket, FIONBIO, &new_state);
 }
 
-SocketStatus helper::getErrorStatus() {
+SocketStatus
+helper::getErrorStatus() {
     const auto err = WSAGetLastError();
     switch (err) {
     case WSAEWOULDBLOCK:
@@ -59,7 +63,8 @@ SocketStatus helper::getErrorStatus() {
     }
 }
 
-bool helper::is_blocking(SocketHandler) {
+bool
+helper::is_blocking(SocketHandler) {
     return true;
 }
 
@@ -75,15 +80,17 @@ WinSockInitializer::~WinSockInitializer() noexcept {
 #    endif
 }
 
-bool WinSockInitializer::isInitialized() const noexcept {
+bool
+WinSockInitializer::isInitialized() const noexcept {
     return _init;
 }
 
 const WinSockInitializer WinSockInitializer::status{};
-// GlobalInitializer = {};
+
 #else
 
-sockaddr_in helper::createAddress(uint32_t address, unsigned short port) {
+sockaddr_in
+helper::createAddress(uint32_t address, unsigned short port) {
     sockaddr_in addr;
     std::memset(&addr, 0, sizeof(addr));
     addr.sin_addr.s_addr = htonl(address);
@@ -93,18 +100,21 @@ sockaddr_in helper::createAddress(uint32_t address, unsigned short port) {
     return addr;
 }
 
-bool helper::close(SocketHandler sock) {
+bool
+helper::close(SocketHandler sock) {
     return !::close(sock);
 }
 
-bool helper::block(SocketHandler sock, bool newst) {
+bool
+helper::block(SocketHandler sock, bool newst) {
     int status = fcntl(sock, F_GETFL);
 
     return (newst ? fcntl(sock, F_SETFL, status & ~O_NONBLOCK) != -1
                   : fcntl(sock, F_SETFL, status | O_NONBLOCK) != -1);
 }
 
-SocketStatus helper::getErrorStatus() {
+SocketStatus
+helper::getErrorStatus() {
     if ((errno == EAGAIN) || (errno == EINPROGRESS))
         return SocketStatus::NotReady;
 
@@ -123,7 +133,8 @@ SocketStatus helper::getErrorStatus() {
     }
 }
 
-bool helper::is_blocking(SocketHandler sock) {
+bool
+helper::is_blocking(SocketHandler sock) {
     int status = fcntl(sock, F_GETFL);
 
     return !(status & O_NONBLOCK);

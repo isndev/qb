@@ -18,14 +18,12 @@
 #ifndef QB_IO_ASYNC_IO_H
 #define QB_IO_ASYNC_IO_H
 
-#include "event/disconnected.h"
-#include "event/eos.h"
-#include "event/io.h"
-#include "event/timer.h"
+#include "event/all.h"
 #include "listener.h"
+#include "protocol.h"
 #include <qb/utility/type_traits.h>
 
-GENERATE_HAS_METHOD(on)
+GENERATE_HAS_METHOD(flush)
 
 namespace qb::io::async {
 
@@ -34,8 +32,8 @@ class base {
 protected:
     _EV_EVENT &_async_event;
     base()
-        : _async_event(listener::current.registerEvent<_EV_EVENT>(static_cast<_Derived &>(*this))) {
-    }
+        : _async_event(listener::current.registerEvent<_EV_EVENT>(
+              static_cast<_Derived &>(*this))) {}
     ~base() {
         listener::current.unregisterEvent(_async_event._interface);
     }
@@ -54,11 +52,13 @@ public:
             this->_async_event.start(_timeout);
     }
 
-    void updateTimeout() {
+    void
+    updateTimeout() noexcept {
         _last_activity = this->_async_event.loop.now();
     }
 
-    void setTimeout(double timeout) {
+    void
+    setTimeout(double timeout) noexcept {
         _timeout = timeout;
         if (_timeout) {
             _last_activity = this->_async_event.loop.now();
@@ -68,7 +68,11 @@ public:
             this->_async_event.stop();
     }
 
-    void on(event::timer &event) {
+private:
+    friend class listener::RegisteredKernelEvent<event::timer, with_timeout>;
+
+    void
+    on(event::timer &event) noexcept {
         const ev_tstamp after = _last_activity - event.loop.now() + _timeout;
 
         if (after < 0.)
@@ -80,199 +84,349 @@ public:
     }
 };
 
-template <typename _Derived, typename _Prot>
-class input : public base<input<_Derived, _Prot>, event::io> {
-    _Prot _prot;
+#define Derived static_cast<_Derived &>(*this)
+
+template <typename _Derived>
+class input : public base<input<_Derived>, event::io> {
+    using base_t = base<input<_Derived>, event::io>;
+    AProtocol<_Derived> *_protocol = nullptr;
+    std::vector<AProtocol<_Derived> *> _protocol_list;
+    bool _disconnected_by_user = false;
 
 public:
+    using base_io_t = input<_Derived>;
     constexpr static const bool has_server = false;
-    using IOMessage = typename _Prot::message_type;
-    using input_io_type = typename _Prot::input_io_type;
 
     input() = default;
+    input(AProtocol<_Derived> *protocol) noexcept
+        : _protocol(protocol) {}
     input(input const &) = delete;
-
-    input_io_type &in() {
-        return _prot.in();
+    ~input() noexcept {
+        for (auto protocol : _protocol_list)
+            delete protocol;
     }
 
-    void start() {
-        _prot.in().setBlocking(false);
-        this->_async_event.start(_prot.in().fd(), EV_READ);
+    template <typename _Protocol, typename... _Args>
+    _Protocol *
+    switch_protocol(_Args &&... args) {
+        auto new_protocol = new _Protocol(std::forward<_Args>(args)...);
+        if (new_protocol->ok()) {
+            _protocol = new_protocol;
+            _protocol_list.push_back(new_protocol);
+            return new_protocol;
+        }
+        return nullptr;
     }
 
-    void disconnect(int reason = 0) {
-        this->_async_event.stop();
+    void
+    start() noexcept {
+        Derived.transport().setBlocking(false);
+        this->_async_event.start(Derived.transport().fd(), EV_READ);
+    }
 
+    void
+    ready_to_read() noexcept {
+        if (!(this->_async_event.events & EV_READ))
+            this->_async_event.start(Derived.transport().fd(), EV_READ);
+    }
+
+    void
+    disconnect(int reason = 0) {
         if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
             event::disconnected e;
             e.reason = reason;
-            static_cast<_Derived &>(*this).on(e);
+            Derived.on(e);
         }
-        const auto ident = _prot.in().ident();
-        _prot.close();
-        if constexpr (_Derived::has_server) {
-            static_cast<_Derived &>(*this).server().disconnected(ident);
-        }
+        _disconnected_by_user = true;
+        listener::current.loop().feed_fd_event(Derived.transport().fd(), EV_UNDEF);
     }
 
-    void on(event::io const &event) {
-        auto ret = 0;
+private:
+    friend class listener::RegisteredKernelEvent<event::io, input>;
+
+    void
+    on(event::io const &event) {
+        constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
+        std::size_t ret = 0u;
+
+        if (_disconnected_by_user || !_protocol->ok())
+            goto error;
+
         if (likely(event._revents & EV_READ)) {
-            ret = _prot.read();
-            if (unlikely(ret < 0))
+            ret = static_cast<std::size_t>(Derived.read());
+            if (unlikely(ret == invalid_ret))
                 goto error;
-            while ((ret = _prot.getMessageSize()) > 0) {
-                static_cast<_Derived &>(*this).on(_prot.getMessage(ret), ret);
-                _prot.flush(ret);
+            while ((ret = this->_protocol->getMessageSize()) > 0) {
+                // has a new message to read
+                this->_protocol->onMessage(ret);
+                Derived.flush(ret);
             }
-            return;
+            Derived.eof();
+            if constexpr (has_method_on<_Derived, void, event::pending_read>::value ||
+                          has_method_on<_Derived, void, event::eof>::value) {
+                const auto pendingRead = Derived.pendingRead();
+                if (pendingRead) {
+                    if constexpr (has_method_on<_Derived, void,
+                                                event::pending_read>::value) {
+                        Derived.on(event::pending_read{pendingRead});
+                    }
+                } else {
+                    if constexpr (has_method_on<_Derived, void, event::eof>::value) {
+                        Derived.on(event::eof{});
+                    }
+                }
+            }
         }
+
+        if (!(event._revents & EV_ERROR))
+            return;
     error:
-        disconnect();
+        if (!_disconnected_by_user)
+            disconnect();
+        this->_async_event.stop();
+        Derived.close();
+        if constexpr (_Derived::has_server) {
+            Derived.server().disconnected(event.fd);
+        }
     }
 };
 
-template <typename _Derived, typename _Prot>
-class output : public base<output<_Derived, _Prot>, event::io> {
-    _Prot _prot;
+template <typename _Derived>
+class output : public base<output<_Derived>, event::io> {
+    using base_t = base<output<_Derived>, event::io>;
+    bool _disconnected_by_user = false;
 
 public:
+    using base_io_t = output<_Derived>;
     constexpr static const bool has_server = false;
-    using output_io_type = typename _Prot::output_io_type;
 
     output() = default;
     output(output const &) = delete;
+    ~output() = default;
 
-    output_io_type &out() {
-        return _prot.out();
+    void
+    start() noexcept {
+        Derived.transport().setBlocking(false);
+        this->_async_event.start(Derived.transport().fd(), EV_WRITE);
     }
 
-    void start() {
-        _prot.in().setBlocking(false);
-        this->_async_event.start(_prot.out().fd(), EV_WRITE);
+    void
+    ready_to_write() noexcept {
+        if (!(this->_async_event.events & EV_WRITE))
+            this->_async_event.set(EV_WRITE);
     }
 
     template <typename... _Args>
-    inline auto publish(_Args &&... args) {
-        if (!(this->_async_event.events & EV_WRITE))
-            this->_async_event.set(EV_WRITE);
-        return _prot.publish(std::forward<_Args>(args)...);
+    inline auto &
+    publish(_Args &&... args) noexcept {
+        ready_to_write();
+        if constexpr (sizeof...(_Args))
+            (Derived.out() << ... << std::forward<_Args>(args));
+        return Derived.out();
     }
 
-    void disconnect(int reason = 0) {
-        this->_async_event.stop();
+    template <typename T>
+    auto &
+    operator<<(T &&data) {
+        return publish(std::forward<T>(data));
+    }
+
+    void
+    disconnect(int reason = 0) {
         if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
             event::disconnected e;
             e.reason = reason;
-            static_cast<_Derived &>(*this).on(e);
+            Derived.on(e);
         }
-        const auto ident = _prot.in().ident();
-        _prot.close();
-        if constexpr (_Derived::has_server) {
-            static_cast<_Derived &>(*this).server().disconnected(ident);
-        }
+        _disconnected_by_user = true;
+        listener::current.loop().feed_fd_event(Derived.transport().fd(), EV_UNDEF);
     }
 
-    void on(event::io &event) {
+private:
+    friend class listener::RegisteredKernelEvent<event::io, output>;
+
+    void
+    on(event::io const &event) {
         auto ret = 0;
+
+        if (_disconnected_by_user)
+            goto error;
+
         if (likely(event._revents & EV_WRITE)) {
-            ret = _prot.write();
+            ret = Derived.write();
             if (unlikely(ret < 0))
                 goto error;
-            if (!_prot.pendingWrite()) {
-                event.stop();
-                event.set(EV_READ);
+            if (!Derived.pendingWrite()) {
+                this->_async_event.stop(EV_NONE);
                 if constexpr (has_method_on<_Derived, void, event::eos>::value) {
-                    static_cast<_Derived &>(*this).on(event::eos{});
+                    Derived.on(event::eos{});
                 }
+            } else if constexpr (has_method_on<_Derived, void,
+                                               event::pending_write>::value) {
+                Derived.on(event::pending_write{Derived.pendingWrite()});
             }
-            return;
         }
+
+        if (!(event._revents & EV_ERROR))
+            return;
     error:
-        disconnect();
+        if (!_disconnected_by_user)
+            disconnect();
+        this->_async_event.stop();
+        Derived.close();
+        if constexpr (_Derived::has_server) {
+            Derived.server().disconnected(event.fd);
+        }
     }
 };
 
-template <typename _Derived, typename _Prot>
-class io : public base<io<_Derived, _Prot>, event::io> {
-    _Prot _prot;
+template <typename _Derived>
+class io : public base<io<_Derived>, event::io> {
+    using base_t = base<io<_Derived>, event::io>;
+    AProtocol<_Derived> *_protocol = nullptr;
+    std::vector<AProtocol<_Derived> *> _protocol_list;
+    bool _disconnected_by_user = false;
 
 public:
+    using base_io_t = io<_Derived>;
     constexpr static const bool has_server = false;
-    using input_io_type = typename _Prot::input_io_type;
-    using output_io_type = typename _Prot::output_io_type;
-    using IOMessage = typename _Prot::message_type;
 
     io() = default;
-    ~io() {
-        _prot.close();
-    }
+    io(AProtocol<_Derived> *protocol) noexcept
+        : _protocol(protocol) {}
     io(io const &) = delete;
-
-    input_io_type &in() {
-        return _prot.in();
+    ~io() noexcept {
+        for (auto protocol : _protocol_list)
+            delete protocol;
     }
 
-    output_io_type &out() {
-        return _prot.out();
+    template <typename _Protocol, typename... _Args>
+    _Protocol *
+    switch_protocol(_Args &&... args) {
+        auto new_protocol = new _Protocol(std::forward<_Args>(args)...);
+        if (new_protocol->ok()) {
+            _protocol = new_protocol;
+            _protocol_list.push_back(new_protocol);
+            return new_protocol;
+        } else
+            delete new_protocol;
+        return nullptr;
     }
 
-    void start() {
-        _prot.in().setBlocking(false);
-        _prot.out() = _prot.in();
-        this->_async_event.start(_prot.in().fd(), EV_READ);
+    void
+    start() noexcept {
+        Derived.transport().setBlocking(false);
+        this->_async_event.start(Derived.transport().fd(), EV_READ);
+    }
+
+    void
+    ready_to_read() noexcept {
+        if (!(this->_async_event.events & EV_READ))
+            this->_async_event.set(this->_async_event.events | EV_READ);
+    }
+
+    void
+    ready_to_write() noexcept {
+        if (!(this->_async_event.events & EV_WRITE))
+            this->_async_event.set(this->_async_event.events | EV_WRITE);
+    }
+
+    void
+    close_after_deliver() const noexcept {
+        _protocol->not_ok();
     }
 
     template <typename... _Args>
-    inline auto publish(_Args &&... args) {
-        if (!(this->_async_event.events & EV_WRITE))
-            this->_async_event.set(EV_READ | EV_WRITE);
-        return _prot.publish(std::forward<_Args>(args)...);
+    inline auto &
+    publish(_Args &&... args) noexcept {
+        ready_to_write();
+        if constexpr (sizeof...(_Args))
+            (Derived.out() << ... << std::forward<_Args>(args));
+        return Derived.out();
     }
 
-    void disconnect(int reason = 0) {
-        this->_async_event.stop();
+    template <typename T>
+    auto &
+    operator<<(T &&data) {
+        return publish(std::forward<T>(data));
+    }
+
+    void
+    disconnect(int reason = 0) {
         if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
             event::disconnected e;
             e.reason = reason;
-            static_cast<_Derived &>(*this).on(e);
+            Derived.on(e);
         }
-        const auto ident = _prot.in().ident();
-        _prot.close();
-        if constexpr (_Derived::has_server) {
-            static_cast<_Derived &>(*this).server().disconnected(ident);
-        }
+        _disconnected_by_user = true;
+        listener::current.loop().feed_fd_event(Derived.transport().fd(), EV_UNDEF);
     }
 
-    void on(event::io &event) {
-        auto ret = 0;
-        if (event._revents & EV_READ) {
-            ret = _prot.read();
-            if (unlikely(ret < 0))
+private:
+    friend class listener::RegisteredKernelEvent<event::io, io>;
+
+    void
+    on(event::io const &event) {
+        constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
+        std::size_t ret = 0u;
+
+        if (_disconnected_by_user)
+            goto error;
+
+        if (event._revents & EV_READ && _protocol->ok()) {
+            ret = static_cast<std::size_t>(Derived.read());
+            if (unlikely(ret == invalid_ret))
                 goto error;
-            while ((ret = _prot.getMessageSize()) > 0) {
-                static_cast<_Derived &>(*this).on(_prot.getMessage(ret), ret);
-                _prot.flush(ret);
+            while ((ret = this->_protocol->getMessageSize()) > 0) {
+                this->_protocol->onMessage(ret);
+                Derived.flush(ret);
             }
-        }
-        if (event._revents & EV_WRITE) {
-            ret = _prot.write();
-            if (unlikely(ret < 0))
-                goto error;
-            if (!_prot.pendingWrite()) {
-                event.set(EV_READ);
-                if constexpr (has_method_on<_Derived, void, event::eos>::value) {
-                    static_cast<_Derived &>(*this).on(event::eos{});
+            Derived.eof();
+            if constexpr (has_method_on<_Derived, void, event::pending_read>::value ||
+                          has_method_on<_Derived, void, event::eof>::value) {
+                const auto pendingRead = Derived.pendingRead();
+                if (pendingRead) {
+                    if constexpr (has_method_on<_Derived, void,
+                                                event::pending_read>::value) {
+                        Derived.on(event::pending_read{pendingRead});
+                    }
+                } else {
+                    if constexpr (has_method_on<_Derived, void, event::eof>::value) {
+                        Derived.on(event::eof{});
+                    }
                 }
             }
         }
-        return;
+        if (event._revents & EV_WRITE) {
+            ret = static_cast<std::size_t>(Derived.write());
+            if (unlikely(ret == invalid_ret))
+                goto error;
+            if (!Derived.pendingWrite()) {
+                if (!_protocol->ok())
+                    goto error;
+                this->_async_event.set(EV_READ);
+                if constexpr (has_method_on<_Derived, void, event::eos>::value) {
+                    Derived.on(event::eos{});
+                }
+            } else if constexpr (has_method_on<_Derived, void,
+                                               event::pending_write>::value) {
+                Derived.on(event::pending_write{Derived.pendingWrite()});
+            }
+        }
+        if (!(event._revents & EV_ERROR))
+            return;
     error:
-        disconnect();
+        if (!_disconnected_by_user)
+            disconnect();
+        this->_async_event.stop();
+        Derived.close();
+        if constexpr (_Derived::has_server) {
+            Derived.server().disconnected(event.fd);
+        }
     }
 };
 
 } // namespace qb::io::async
 
+#undef Derived
 #endif // QB_IO_ASYNC_IO_H

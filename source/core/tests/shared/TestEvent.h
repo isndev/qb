@@ -15,8 +15,8 @@
  *         limitations under the License.
  */
 
-#include <cstring>
 #include <chrono>
+#include <cstring>
 #include <numeric>
 #include <qb/event.h>
 #include <qb/system/timestamp.h>
@@ -54,10 +54,12 @@ struct TestEvent : public qb::Event {
         _ttl = ttl;
     }
 
-    [[nodiscard]] bool checkSum() const {
+    [[nodiscard]] bool
+    checkSum() const {
         auto ret = true;
         if (has_extra_data) {
-            ret = !memcmp(_data, reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent),
+            ret = !memcmp(_data,
+                          reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent),
                           sizeof(_data));
         }
 
@@ -65,7 +67,8 @@ struct TestEvent : public qb::Event {
     }
 
 private:
-    void __init__() {
+    void
+    __init__() {
         std::random_device rand_dev;
         std::mt19937 generator(rand_dev());
 

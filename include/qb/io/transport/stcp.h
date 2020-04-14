@@ -19,14 +19,29 @@
 #define QB_IO_TRANSPORT_STCP_H
 #include "../stream.h"
 #include "../tcp/ssl/socket.h"
-
+#include <iostream>
 namespace qb::io::transport {
 
 class stcp : public stream<io::tcp::ssl::socket> {
 public:
+    [[nodiscard]] int
+    read() noexcept {
+        static constexpr const std::size_t bucket_read = 4096;
+
+        auto ret = _in.read(_in_buffer.allocate_back(bucket_read), bucket_read);
+        if (likely(ret >= 0)) {
+            _in_buffer.free_back(bucket_read - ret);
+            const auto pending = SSL_pending(transport().ssl());
+            if (pending) {
+                ret += _in.read(_in_buffer.allocate_back(pending), pending);
+            }
+        }
+        return ret;
+    }
+
     // Derived class should define :
     // using message_type = const char *;
-    // int getMessageSize();
+    // std::size_t getMessageSize();
     // message_type getMessage();
 };
 

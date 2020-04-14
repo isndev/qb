@@ -17,6 +17,7 @@
 
 #include "../helper.h"
 #include <fcntl.h>
+#include <qb/system/allocator/pipe.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -42,22 +43,63 @@ class QB_API file {
     int _handle;
 
 public:
-    file();
+    file() noexcept;
     file(file const &) = default;
-    explicit file(int fd);
-    explicit file(std::string const &fname, int flags = O_RDWR);
+    explicit file(int fd) noexcept;
+    explicit file(std::string const &fname, int flags = O_RDWR) noexcept;
 
-    [[nodiscard]] int ident() const;
-    [[nodiscard]] int fd() const;
-    [[nodiscard]] bool good() const;
-    void open(std::string const &fname, int flags = O_RDWR);
-    void open(int fd);
-    int write(const char *data, std::size_t size);
-    int read(char *data, std::size_t size);
-    void close();
+    [[nodiscard]] int ident() const noexcept;
+    [[nodiscard]] int fd() const noexcept;
+    [[nodiscard]] bool is_open() const noexcept;
+    void open(std::string const &fname, int flags = O_RDWR, int mode = 0644) noexcept;
+    void open(int fd) noexcept;
+    int write(const char *data, std::size_t size) const noexcept;
+    int read(char *data, std::size_t size) const noexcept;
+    void close() noexcept;
 
     // unused
-    [[maybe_unused]] void setBlocking(bool) {}
+    void
+    setBlocking(bool) const noexcept {}
+};
+
+class QB_API file_to_pipe {
+    qb::allocator::pipe<char> &_pipe;
+    file _handle;
+    std::size_t _expected_size = 0;
+    std::size_t _read_bytes = 0;
+
+public:
+    file_to_pipe() = delete;
+    ~file_to_pipe() noexcept;
+    file_to_pipe(qb::allocator::pipe<char> &out) noexcept;
+
+    bool open(std::string const &path) noexcept;
+    [[nodiscard]] int read() noexcept;
+    [[nodiscard]] int read_all() noexcept;
+    [[nodiscard]] std::size_t read_bytes() const noexcept;
+    [[nodiscard]] std::size_t expected_size() const noexcept;
+    [[nodiscard]] bool is_open() const noexcept;
+    [[nodiscard]] bool eof() const noexcept;
+    void close() noexcept;
+};
+
+class QB_API pipe_to_file {
+    const qb::allocator::pipe<char> &_pipe;
+    file _handle;
+    std::size_t _written_bytes = 0;
+
+public:
+    pipe_to_file() = delete;
+    ~pipe_to_file() noexcept;
+    pipe_to_file(qb::allocator::pipe<char> const &out) noexcept;
+
+    bool open(std::string const &path, int mode = 0644) noexcept;
+    [[nodiscard]] int write() noexcept;
+    [[nodiscard]] int write_all() noexcept;
+    [[nodiscard]] std::size_t written_bytes() const noexcept;
+    [[nodiscard]] bool is_open() const noexcept;
+    [[nodiscard]] bool eos() const noexcept;
+    void close() noexcept;
 };
 
 } // namespace qb::io::sys

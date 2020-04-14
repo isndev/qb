@@ -21,6 +21,10 @@
 #include "disconnected.h"
 #include "file.h"
 #include "io.h"
+#include "pending_read.h"
+#include "eof.h"
+#include "pending_write.h"
+#include "eos.h"
 #include "signal.h"
 #include "timer.h"
 

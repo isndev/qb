@@ -17,14 +17,14 @@
 
 project(${QB_PREFIX}-io LANGUAGES CXX VERSION ${QB_VERSION} DESCRIPTION "A simple io library")
 
-find_package(OpenSSL)
 if (OPENSSL_FOUND)
     include_directories(${OPENSSL_INCLUDE_DIR})
     cxx_library(NAME ${PROJECT_NAME}
-            FLAGS ${cxx_default_lib}
-            SOURCES "src/io-all.cpp"
-            DEPENDENCIES "ev " OpenSSL::SSL)
-    target_compile_definitions(${PROJECT_NAME} PUBLIC QB_IO_WITH_SSL)
+            FLAGS "${cxx_default_lib}"
+            SOURCES src/io-all.cpp
+            DEPENDENCIES "ev OpenSSL::SSL")
+    target_compile_definitions(${PROJECT_NAME} PUBLIC QB_IO_WITH_SSL=1)
+
 else()
     cxx_library(NAME ${PROJECT_NAME}
             FLAGS ${cxx_default_lib}

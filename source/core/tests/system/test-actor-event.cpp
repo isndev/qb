@@ -39,10 +39,12 @@ struct TestEvent : public qb::Event {
         });
     }
 
-    [[nodiscard]] bool checkSum() const {
+    [[nodiscard]] bool
+    checkSum() const {
         auto ret = true;
         if (has_extra_data) {
-            ret = !memcmp(_data, reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent),
+            ret = !memcmp(_data,
+                          reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent),
                           sizeof(_data));
         }
 
@@ -69,13 +71,15 @@ public:
         EXPECT_EQ(_count, _max_events);
     }
 
-    void on(TestEvent const &event) {
+    void
+    on(TestEvent const &event) {
         EXPECT_TRUE(event.checkSum());
         if (++_count >= _max_events)
             kill();
     }
 
-    void on(RemovedEvent const &) {}
+    void
+    on(RemovedEvent const &) {}
 };
 
 class BaseSender {
@@ -103,12 +107,14 @@ public:
     BaseActorSender(uint32_t const max_events, qb::ActorId const to)
         : BaseSender(max_events, to) {}
 
-    bool onInit() final {
+    bool
+    onInit() final {
         registerCallback(*this);
         return true;
     }
 
-    void onCallback() final {
+    void
+    onCallback() final {
         static_cast<Derived &>(*this).doSend();
         if (++_count >= _max_events)
             kill();
@@ -118,7 +124,8 @@ public:
 struct BasicPushActor : public BaseActorSender<BasicPushActor> {
     BasicPushActor(uint32_t const max_events, qb::ActorId const to)
         : BaseActorSender(max_events, to) {}
-    void doSend() {
+    void
+    doSend() {
         push<TestEvent>(_to);
     }
 };
@@ -126,7 +133,8 @@ struct BasicPushActor : public BaseActorSender<BasicPushActor> {
 struct BasicSendActor : public BaseActorSender<BasicSendActor> {
     BasicSendActor(uint32_t const max_events, qb::ActorId const to)
         : BaseActorSender(max_events, to) {}
-    void doSend() {
+    void
+    doSend() {
         send<TestEvent>(_to);
     }
 };
@@ -134,7 +142,8 @@ struct BasicSendActor : public BaseActorSender<BasicSendActor> {
 struct EventBuilderPushActor : public BaseActorSender<EventBuilderPushActor> {
     EventBuilderPushActor(uint32_t const max_events, qb::ActorId const to)
         : BaseActorSender(max_events, to) {}
-    void doSend() {
+    void
+    doSend() {
         to(_to).push<TestEvent>();
     }
 };
@@ -142,7 +151,8 @@ struct EventBuilderPushActor : public BaseActorSender<EventBuilderPushActor> {
 struct PipePushActor : public BaseActorSender<PipePushActor> {
     PipePushActor(uint32_t const max_events, qb::ActorId const to)
         : BaseActorSender(max_events, to) {}
-    void doSend() {
+    void
+    doSend() {
         getPipe(_to).push<TestEvent>();
     }
 };
@@ -150,10 +160,12 @@ struct PipePushActor : public BaseActorSender<PipePushActor> {
 struct AllocatedPipePushActor : public BaseActorSender<AllocatedPipePushActor> {
     AllocatedPipePushActor(uint32_t const max_events, qb::ActorId const to)
         : BaseActorSender(max_events, to) {}
-    void doSend() {
+    void
+    doSend() {
         auto &e = getPipe(_to).allocated_push<TestEvent>(32);
         e.has_extra_data = true;
-        memcpy(reinterpret_cast<uint8_t *>(&e) + sizeof(TestEvent), e._data, sizeof(e._data));
+        memcpy(reinterpret_cast<uint8_t *>(&e) + sizeof(TestEvent), e._data,
+               sizeof(e._data));
     }
 };
 
@@ -170,13 +182,15 @@ class ActorEventMono : public testing::Test {
 protected:
     qb::Main main;
     ActorEventMono() = default;
-    void SetUp() final {
+    void
+    SetUp() final {
         for (auto i = 0u; i < MAX_ACTORS; ++i) {
             main.addActor<ActorSender>(0, MAX_EVENTS,
                                        main.addActor<TestActorReceiver>(0, MAX_EVENTS));
         }
     }
-    void TearDown() final {}
+    void
+    TearDown() final {}
 };
 
 template <typename ActorSender>
@@ -187,7 +201,8 @@ protected:
     ActorEventMulti()
         : max_core(std::thread::hardware_concurrency()) {}
 
-    void SetUp() final {
+    void
+    SetUp() final {
         for (auto i = 0u; i < max_core; ++i) {
             for (auto j = 0u; j < MAX_ACTORS; ++j) {
                 main.addActor<ActorSender>(
@@ -196,7 +211,8 @@ protected:
             }
         }
     }
-    void TearDown() final {}
+    void
+    TearDown() final {}
 };
 
 template <typename ActorSender>
@@ -204,13 +220,15 @@ class ActorEventBroadcastMono : public testing::Test {
 protected:
     qb::Main main;
     ActorEventBroadcastMono() = default;
-    void SetUp() final {
+    void
+    SetUp() final {
         main.addActor<ActorSender>(0, MAX_EVENTS, qb::BroadcastId(0));
         for (auto i = 0u; i < MAX_ACTORS; ++i) {
             main.addActor<TestActorReceiver>(0, MAX_EVENTS);
         }
     }
-    void TearDown() final {}
+    void
+    TearDown() final {}
 };
 
 template <typename ActorSender>
@@ -221,19 +239,22 @@ protected:
     ActorEventBroadcastMulti()
         : max_core(std::thread::hardware_concurrency()) {}
 
-    void SetUp() final {
+    void
+    SetUp() final {
         for (auto i = 0u; i < max_core; ++i) {
-            main.addActor<ActorSender>(i, MAX_EVENTS, qb::BroadcastId((i + 1) % max_core));
+            main.addActor<ActorSender>(i, MAX_EVENTS,
+                                       qb::BroadcastId((i + 1) % max_core));
             for (auto j = 0u; j < MAX_ACTORS; ++j) {
                 main.addActor<TestActorReceiver>(((i + 1) % max_core), MAX_EVENTS);
             }
         }
     }
-    void TearDown() final {}
+    void
+    TearDown() final {}
 };
 
-typedef testing::Types<BasicPushActor, BasicSendActor, EventBuilderPushActor, PipePushActor,
-                       AllocatedPipePushActor>
+typedef testing::Types<BasicPushActor, BasicSendActor, EventBuilderPushActor,
+                       PipePushActor, AllocatedPipePushActor>
     Implementations;
 
 TYPED_TEST_SUITE(ActorEventMono, Implementations);
@@ -281,7 +302,8 @@ public:
         EXPECT_EQ(counter, 2u);
     }
 
-    bool onInit() final {
+    bool
+    onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
 
         registerEvent<TestEvent>(*this);
@@ -297,12 +319,14 @@ public:
         return true;
     }
 
-    void on(TestEvent &event) {
+    void
+    on(TestEvent &event) {
         ++counter;
         EXPECT_TRUE(event.checkSum());
     }
 
-    void on(EventForward &event) {
+    void
+    on(EventForward &event) {
         ++counter;
         EXPECT_TRUE(event.checkSum());
         push<qb::KillEvent>(qb::BroadcastId(_to.index()));
@@ -323,20 +347,23 @@ public:
             EXPECT_EQ(counter, 2u);
     }
 
-    bool onInit() final {
+    bool
+    onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
         registerEvent<TestEvent>(*this);
         registerEvent<EventForward>(*this);
         return true;
     }
 
-    void on(TestEvent &event) {
+    void
+    on(TestEvent &event) {
         EXPECT_TRUE(event.checkSum());
         reply(event);
         ++counter;
     }
 
-    void on(EventForward &event) {
+    void
+    on(EventForward &event) {
         EXPECT_TRUE(event.checkSum());
         forward(event.getSource(), event);
         ++counter;

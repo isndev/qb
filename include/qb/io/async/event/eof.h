@@ -15,34 +15,13 @@
  *         limitations under the License.
  */
 
-#ifndef QB_IO_PROT_CMD_H_
-#define QB_IO_PROT_CMD_H_
-#include "../stream.h"
+#ifndef QB_IO_ASYNC_EVENT_EOF_H
+#define QB_IO_ASYNC_EVENT_EOF_H
 
-namespace qb::io::protocol {
+namespace qb::io::async::event {
 
-template <typename _IO_>
-class cmd : public _IO_ {
-public:
-    using message_type = const char *;
+struct eof {};
 
-    int getMessageSize() {
-        auto &buffer = this->_in_buffer;
-        auto i = buffer.begin();
-        while (i < buffer.end()) {
-            if (buffer.data()[i] == '\n')
-                return i - buffer.begin() + 1;
-            ++i;
-        }
-        return 0;
-    }
+} // namespace qb::io::async::event
 
-    message_type getMessage(int) {
-        auto &buffer = this->_in_buffer;
-        return buffer.data() + buffer.begin();
-    }
-};
-
-} // namespace qb::io::protocol
-
-#endif // QB_IO_PROT_CMD_H_
+#endif // QB_IO_ASYNC_EVENT_EOF_H

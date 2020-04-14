@@ -26,23 +26,27 @@ namespace qb {
 class Main;
 
 template <typename _Actor, typename... _Args>
-ActorId CoreInitializer::addActor(_Args &&... args) noexcept {
+ActorId
+CoreInitializer::addActor(_Args &&... args) noexcept {
     ActorId id = ActorId::NotFound;
     if constexpr (std::is_base_of<Service, _Actor>::value) {
-        if (_registered_services.find(_Actor::ServiceIndex) == _registered_services.end()) {
+        if (_registered_services.find(_Actor::ServiceIndex) ==
+            _registered_services.end()) {
             _registered_services.insert(_Actor::ServiceIndex);
             id = ActorId(_Actor::ServiceIndex, _index);
         } else {
-            LOG_CRIT("[Start Sequence] Failed to add Service Actor(" << typeid(_Actor).name() << ")"
-                                                                     << " in Core(" << _index << ")"
-                                                                     << " : Already registered");
+            LOG_CRIT("[Start Sequence] Failed to add Service Actor("
+                     << typeid(_Actor).name() << ")"
+                     << " in Core(" << _index << ")"
+                     << " : Already registered");
             return id;
         }
     } else {
         if (unlikely(_next_id == std::numeric_limits<ServiceId>::max())) {
-            LOG_CRIT("[Start Sequence] Failed to add Actor(" << typeid(_Actor).name() << ")"
-                                                             << " in Core(" << _index << ")"
-                                                             << " : Max number of Actors reached");
+            LOG_CRIT("[Start Sequence] Failed to add Actor("
+                     << typeid(_Actor).name() << ")"
+                     << " in Core(" << _index << ")"
+                     << " : Max number of Actors reached");
             return id;
         }
         id = ActorId(_next_id++, _index);
@@ -53,8 +57,10 @@ ActorId CoreInitializer::addActor(_Args &&... args) noexcept {
 }
 
 template <typename _Actor, typename... _Args>
-CoreInitializer::ActorBuilder &CoreInitializer::ActorBuilder::addActor(_Args &&... args) noexcept {
-    auto id = _initializer.template addActor<_Actor, _Args...>(std::forward<_Args>(args)...);
+CoreInitializer::ActorBuilder &
+CoreInitializer::ActorBuilder::addActor(_Args &&... args) noexcept {
+    auto id =
+        _initializer.template addActor<_Actor, _Args...>(std::forward<_Args>(args)...);
     if (!id.is_valid())
         _valid = false;
 
@@ -63,7 +69,8 @@ CoreInitializer::ActorBuilder &CoreInitializer::ActorBuilder::addActor(_Args &&.
 }
 
 template <typename _Actor, typename... _Args>
-ActorId Main::addActor(std::size_t cid, _Args &&... args) {
+ActorId
+Main::addActor(CoreId const cid, _Args &&... args) {
     return core(cid).addActor<_Actor>(std::forward<_Args>(args)...);
 }
 

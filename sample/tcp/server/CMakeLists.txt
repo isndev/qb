@@ -16,6 +16,6 @@
 #
 
 add_subdirectory(text)
-#add_subdirectory(json)
+add_subdirectory(http)
 #add_subdirectory(json_packed)
 #add_subdirectory(xml)

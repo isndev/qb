@@ -27,31 +27,35 @@ class accept {
 
 public:
     using input_io_type = io::tcp::listener;
-    using message_type = io::tcp::socket;
+    using socket_type = io::tcp::socket;
 
-    io::tcp::listener &in() {
+    io::tcp::listener &
+    transport() noexcept {
         return _io;
     }
 
-    int read() {
+    std::size_t
+    read() noexcept {
         if (_io.accept(_accepted_io) == io::SocketStatus::Done)
-            return _accepted_io.ident();
-        return -1;
+            return static_cast<std::size_t>(_accepted_io.ident());
+        return static_cast<std::size_t>(-1);
     }
 
-    void flush(std::size_t) {
+    void
+    flush(std::size_t) noexcept {
         _accepted_io = io::tcp::socket();
     }
 
-    void close() {
+    void
+    eof() const noexcept {}
+
+    void
+    close() noexcept {
         _io.close();
     }
 
-    int getMessageSize() {
-        return _accepted_io.ident();
-    }
-
-    message_type getMessage(int) {
+    io::tcp::socket
+    getAccepted() const {
         return _accepted_io;
     }
 };

@@ -45,7 +45,8 @@ public:
 
 protected:
     template <typename _Handler, typename _Event>
-    inline void invoke(_Handler &handler, _Event &event) const {
+    inline void
+    invoke(_Handler &handler, _Event &event) const {
         if constexpr (has_member_func_is_alive<_Event>::value) {
             if (handler.is_alive())
                 handler.on(event);
@@ -54,7 +55,8 @@ protected:
     }
 
     template <typename _Event>
-    inline void dispose(_Event &event) const noexcept {
+    inline void
+    dispose(_Event &event) const noexcept {
         if constexpr (!std::is_trivially_destructible_v<_Event>) {
             if constexpr (has_member_func_is_alive<_Event>::value) {
                 if (!event.is_alive())
@@ -81,7 +83,8 @@ public:
         : _handler(handler) {}
 
     template <bool _CleanEvent = true>
-    void route(_RawEvent &event) {
+    void
+    route(_RawEvent &event) {
         invoke(_handler, event);
         if constexpr (_CleanEvent)
             dispose(event);
@@ -101,7 +104,8 @@ public:
     ~semh() = default;
 
     template <bool _CleanEvent = true>
-    void route(_RawEvent &event) noexcept {
+    void
+    route(_RawEvent &event) noexcept {
         if constexpr (has_member_func_is_broadcast<_HandlerId>::value) {
             if (event.getDestination().is_broadcast()) {
                 for (auto &it : _subscribed_handlers)
@@ -122,12 +126,14 @@ public:
             dispose(event);
     }
 
-    void subscribe(_Handler &handler) noexcept {
+    void
+    subscribe(_Handler &handler) noexcept {
         _subscribed_handlers.erase(handler.id());
         _subscribed_handlers.insert({handler.id(), handler});
     }
 
-    void unsubscribe(_HandlerId const &id) noexcept {
+    void
+    unsubscribe(_HandlerId const &id) noexcept {
         _subscribed_handlers.erase(id);
     }
 };
@@ -150,11 +156,13 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
         , public sesh<_RawEvent, _Handler> {
     public:
         HandlerResolver() = delete;
+        ~HandlerResolver() = default;
 
         explicit HandlerResolver(_Handler &handler) noexcept
             : sesh<_RawEvent, _Handler>(handler) {}
 
-        void resolve(_RawEvent &event) final {
+        void
+        resolve(_RawEvent &event) final {
             sesh<_RawEvent, _Handler>::template route<false>(event);
         }
     };
@@ -166,11 +174,12 @@ public:
 
     ~semh() noexcept {
         for (const auto &it : _subscribed_handlers)
-            delete &it.second;
+            delete &(it.second);
     }
 
     template <bool _CleanEvent = false>
-    void route(_RawEvent &event) const noexcept {
+    void
+    route(_RawEvent &event) const noexcept {
         if constexpr (has_member_func_is_broadcast<_HandlerId>::value) {
             if (event.getDestination().is_broadcast()) {
                 for (const auto &it : _subscribed_handlers)
@@ -192,14 +201,19 @@ public:
     }
 
     template <typename _Handler>
-    void subscribe(_Handler &handler) noexcept {
+    void
+    subscribe(_Handler &handler) noexcept {
         const auto &it = _subscribed_handlers.find(handler.id());
-        if (it != _subscribed_handlers.cend())
+        if (it != _subscribed_handlers.cend()) {
             delete &it->second;
-        _subscribed_handlers.insert({handler.id(), *new HandlerResolver<_Handler>(handler)});
+            _subscribed_handlers.erase(it);
+        }
+        _subscribed_handlers.insert(
+            {handler.id(), *new HandlerResolver<_Handler>(handler)});
     }
 
-    void unsubscribe(_HandlerId const &id) noexcept {
+    void
+    unsubscribe(_HandlerId const &id) noexcept {
         const auto &it = _subscribed_handlers.find(id);
         if (it != _subscribed_handlers.end()) {
             delete &it->second;
@@ -229,7 +243,8 @@ private:
     public:
         EventResolver() = default;
 
-        void resolve(_Handler &handler, _RawEvent &event) const final {
+        void
+        resolve(_Handler &handler, _RawEvent &event) const final {
             auto &revent = reinterpret_cast<_Event &>(event);
             invoke(handler, revent);
             if constexpr (_CleanEvent)
@@ -250,7 +265,8 @@ public:
         unsubscribe();
     }
 
-    void route(_RawEvent &event) {
+    void
+    route(_RawEvent &event) {
         // /!\ Why do not not protecting this ?
         // because a dynamic event pushed and not registred
         // has 100% risk of leaking memory
@@ -262,8 +278,10 @@ public:
     }
 
     template <typename _Event>
-    void subscribe() {
-        const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+    void
+    subscribe() {
+        const auto &it =
+            _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it == _registered_events.cend()) {
             _registered_events.insert(
                 {_RawEvent::template type_to_id<_Event>(), *new EventResolver<_Event>});
@@ -271,15 +289,18 @@ public:
     }
 
     template <typename _Event>
-    void unsubscribe() {
-        const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+    void
+    unsubscribe() {
+        const auto &it =
+            _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it != _registered_events.cend()) {
             delete &it->second;
             _registered_events.erase(it);
         }
     }
 
-    void unsubscribe() {
+    void
+    unsubscribe() {
         for (const auto &it : _registered_events)
             delete &it.second;
         _registered_events.clear();
@@ -312,12 +333,14 @@ private:
         EventResolver() noexcept
             : semh<_Event, _Handler>() {}
 
-        void resolve(_RawEvent &event) final {
+        void
+        resolve(_RawEvent &event) final {
             auto &revent = reinterpret_cast<_Event &>(event);
             semh<_Event, _Handler>::template route<_CleanEvent>(revent);
         }
 
-        void unsubscribe(_HandlerId const &id) final {
+        void
+        unsubscribe(_HandlerId const &id) final {
             semh<_Event, _Handler>::unsubscribe(id);
         }
     };
@@ -332,35 +355,43 @@ public:
             delete &it.second;
     }
 
-    void route(_RawEvent &event) const {
+    void
+    route(_RawEvent &event) const {
         // /!\ Look notice in of mesh router above
         _registered_events.at(event.getID()).resolve(event);
     }
 
     template <typename _Event>
-    void subscribe(_Handler &handler) {
-        const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+    void
+    subscribe(_Handler &handler) {
+        const auto &it =
+            _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it == _registered_events.cend()) {
             auto &resolver = *new EventResolver<_Event>;
             resolver.subscribe(handler);
-            _registered_events.insert({_RawEvent::template type_to_id<_Event>(), resolver});
+            _registered_events.insert(
+                {_RawEvent::template type_to_id<_Event>(), resolver});
         } else {
             dynamic_cast<EventResolver<_Event> &>(it->second).subscribe(handler);
         }
     }
 
     template <typename _Event>
-    void unsubscribe(_Handler &handler) const {
-        auto const &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+    void
+    unsubscribe(_Handler &handler) const {
+        auto const &it =
+            _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it != _registered_events.cend())
             it->second.unsubscribe(handler.id());
     }
 
-    void unsubscribe(_Handler const &handler) const {
+    void
+    unsubscribe(_Handler const &handler) const {
         unsubscribe(handler.id());
     }
 
-    void unsubscribe(_HandlerId const &id) const {
+    void
+    unsubscribe(_HandlerId const &id) const {
         for (auto const &it : _registered_events) {
             it.second.unsubscribe(id);
         }
@@ -391,12 +422,14 @@ private:
         EventResolver() noexcept
             : semh<_Event>() {}
 
-        void resolve(_RawEvent &event) const final {
+        void
+        resolve(_RawEvent &event) const final {
             auto &revent = reinterpret_cast<_Event &>(event);
             semh<_Event>::template route<_CleanEvent>(revent);
         }
 
-        void unsubscribe(typename _RawEvent::id_handler_type const &id) final {
+        void
+        unsubscribe(typename _RawEvent::id_handler_type const &id) final {
             semh<_Event>::unsubscribe(id);
         }
     };
@@ -411,36 +444,44 @@ public:
             delete &it.second;
     }
 
-    void route(_RawEvent &event) const {
+    void
+    route(_RawEvent &event) const {
         // /!\ Look notice in of mesh router above
         _registered_events.at(event.getID()).resolve(event);
     }
 
     template <typename _Event, typename _Handler>
-    void subscribe(_Handler &handler) {
-        const auto &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+    void
+    subscribe(_Handler &handler) {
+        const auto &it =
+            _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it == _registered_events.cend()) {
             auto &resolver = *new EventResolver<_Event>;
             resolver.subscribe(handler);
-            _registered_events.insert({_RawEvent::template type_to_id<_Event>(), resolver});
+            _registered_events.insert(
+                {_RawEvent::template type_to_id<_Event>(), resolver});
         } else {
             dynamic_cast<EventResolver<_Event> &>(it->second).subscribe(handler);
         }
     }
 
     template <typename _Event, typename _Handler>
-    void unsubscribe(_Handler const &handler) const {
-        auto const &it = _registered_events.find(_RawEvent::template type_to_id<_Event>());
+    void
+    unsubscribe(_Handler const &handler) const {
+        auto const &it =
+            _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it != _registered_events.cend())
             it->second.unsubscribe(handler.id());
     }
 
     template <typename _Handler>
-    void unsubscribe(_Handler const &handler) const {
+    void
+    unsubscribe(_Handler const &handler) const {
         unsubscribe(handler.id());
     }
 
-    void unsubscribe(_HandlerId const &id) const {
+    void
+    unsubscribe(_HandlerId const &id) const {
         for (auto const &it : _registered_events) {
             it.second.unsubscribe(id);
         }
