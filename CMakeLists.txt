@@ -42,7 +42,6 @@ endif()
 set(QB_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 option("${QB_PREFIX_UPPER}_BUILD_TEST" "Build qb Tests" OFF)
 option("${QB_PREFIX_UPPER}_BUILD_BENCHMARK" "Build qb Benchmarks" OFF)
-option("${QB_PREFIX_UPPER}_BUILD_SAMPLE" "Build qb Samples" OFF)
 option("${QB_PREFIX_UPPER}_BUILD_DOC" "Build qb Documentation" OFF)
 option("${QB_PREFIX_UPPER}_WITH_LOG" "Enable nanolog" ON)
 option("${QB_PREFIX_UPPER}_WITH_TCMALLOC" "TCMalloc is ennabled" OFF)
@@ -50,6 +49,17 @@ option("${QB_PREFIX_UPPER}_WITH_TCMALLOC" "TCMalloc is ennabled" OFF)
 #default build type to Release
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
+endif()
+
+# check if has module googletest
+if (${QB_PREFIX_UPPER}_BUILD_TEST AND NOT EXISTS "${QB_PATH}/modules/googletest/CMakeLists.txt")
+    set(${QB_PREFIX_UPPER}_BUILD_TEST OFF)
+    message(WARNING: Cannot build tests googletest module not loaded, try -> git submodule update --init --recursive)
+endif()
+# check if has module googlebenchmark
+if (${QB_PREFIX_UPPER}_BUILD_BENCHMARK AND NOT EXISTS "${QB_PATH}/modules/googlebenchmark/CMakeLists.txt")
+    set(${QB_PREFIX_UPPER}_BUILD_TEST OFF)
+    message(WARNING: Cannot build benchmarks googlebenchmark module not loaded, try -> git submodule update --init --recursive)
 endif()
 
 set(BUILD_TESTING OFF)
@@ -94,6 +104,8 @@ find_package(OpenSSL)
 if(OPENSSL_FOUND)
     #used for tests
     set(${QB_PREFIX_UPPER}_SSL_RESOURCES ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/key.pem ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/cert.pem)
+else()
+    message(INFO: OPENSSL not found, some modules require libssl, they will be skipped)
 endif()
 
 #TCMALLOC only available on linux for the moment
@@ -122,10 +134,6 @@ add_subdirectory(docs)
 # load default modules
 qb_load_modules(${QB_PATH}/qb-module)
 
-if(QB_MODULE_PATH)
-    qb_load_modules(${QB_MODULE_PATH})
-endif()
-
 if (${QB_PREFIX_UPPER}_COVERAGE)
     set(COVERAGE_LCOV_EXCLUDES
             '/usr/*'
@@ -144,11 +152,6 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
     SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(NAME ${PROJECT_NAME}-coverage-xml
             EXECUTABLE ctest
             DEPENDENCIES qb-core)
-endif()
-
-# Sample Projects
-if (${QB_PREFIX_UPPER}_BUILD_SAMPLE)
-    add_subdirectory(sample)
 endif()
 
 # share some variable to parent
