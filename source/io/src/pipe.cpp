@@ -71,13 +71,13 @@ pipe<char>::put<pipe<char>>(pipe<char> const &rhs) {
 
 pipe<char> &
 pipe<char>::put(char const *data, std::size_t size) noexcept {
-    memcpy(this->allocate_back(size), data, size);
+    memcpy(allocate_back(size), data, size);
     return *this;
 }
 
 pipe<char> &
 pipe<char>::write(const char *data, std::size_t size) noexcept {
-    memcpy(this->allocate_back(size), data, size);
+    memcpy(allocate_back(size), data, size);
     return *this;
 }
 

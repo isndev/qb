@@ -61,7 +61,7 @@ namespace qb::io::async::udp {
 //    }
 //
 //    void
-//    on(transport::udp::message_type message, std::size_t size) {
+//    on(transport::udp::message message, std::size_t size) {
 //        auto it = _sessions.find(message.ident);
 //        if (it == _sessions.end()) {
 //            it = _sessions.emplace(message.ident, static_cast<_Derived &>(*this)).first;

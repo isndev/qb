@@ -6,15 +6,3 @@
 	path = modules/googletest
 	url = https://github.com/google/googletest.git
 	branch = master
-[submodule "modules/json"]
-	path = modules/json
-	url = https://github.com/nlohmann/json.git
-	branch = master
-[submodule "modules/xml"]
-	path = modules/xml
-	url = https://github.com/zeux/pugixml.git
-	branch = master
-[submodule "modules/http"]
-	path = modules/http
-	url = https://github.com/nodejs/http-parser.git
-	branch = master

@@ -24,6 +24,7 @@
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/nocopy.h>
 #include <qb/utility/prefix.h>
+#include <qb/string.h>
 #include <string_view>
 #include <vector>
 
@@ -303,6 +304,13 @@ public:
         return *this;
     }
 
+    template <std::size_t _Size>
+    pipe &
+    put(const qb::string<_Size> &str) {
+        memcpy(allocate_back(str.size()), str.c_str(), str.size());
+        return *this;
+    }
+
     template <typename T>
     pipe &
     put(std::vector<T> const &vec) {
@@ -366,9 +374,7 @@ pipe<char> &pipe<char>::put<pipe<char>>(pipe<char> const &rhs);
 
 } // namespace qb::allocator
 
-// std::ostream &operator<<(std::ostream &os, qb::allocator::pipe<char> const &p);
-
-template <typename stream>
+template <typename stream, typename = std::enable_if_t<!std::is_same_v<stream, qb::allocator::pipe<char>>>>
 stream &
 operator<<(stream &os, qb::allocator::pipe<char> const &p) {
     os << std::string_view(p.begin(), p.size());

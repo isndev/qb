@@ -162,13 +162,12 @@ protected:
             const size_t count0 = max_size - read_index;
             const size_t count1 = output_count - count0;
 
-            std::memcpy(output_buffer, internal_buffer + read_index, count0 * sizeof(T));
-            std::memcpy(output_buffer + count0, internal_buffer, count1 * sizeof(T));
+            std::uninitialized_copy(internal_buffer + read_index, internal_buffer + read_index + count0, output_buffer);
+            std::uninitialized_copy(internal_buffer, internal_buffer + count1, output_buffer + count0);
 
             new_read_index -= max_size;
         } else {
-            std::memcpy(output_buffer, internal_buffer + read_index,
-                        output_count * sizeof(T));
+            std::uninitialized_copy(internal_buffer + read_index, internal_buffer + read_index + output_count, output_buffer);
 
             if (new_read_index == max_size)
                 new_read_index = 0;
