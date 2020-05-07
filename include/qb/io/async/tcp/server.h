@@ -49,7 +49,7 @@ public:
     }
 
     void
-    on(typename Protocol::message_type new_io) {
+    on(typename Protocol::message new_io) {
         const auto &it =
             sessions().emplace(new_io.fd(), std::ref(static_cast<_Derived &>(*this)));
         it.first->second.transport() = new_io;
@@ -63,10 +63,20 @@ public:
     }
 
     template <typename... _Args>
-    void
+    _Derived &
     stream(_Args &&... args) {
         for (auto &session : sessions())
-            session.second.publish(std::forward<_Args>(args)...);
+            (session.second << ... << std::forward<_Args>(args));
+        return static_cast<_Derived &>(*this);
+    }
+
+    template <typename _Func, typename... _Args>
+    _Derived &
+    stream_if(_Func const &func, _Args &&... args) {
+        for (auto &session : sessions())
+            if (func(std::ref(session)))
+                (session.second << ... << std::forward<_Args>(args));
+        return static_cast<_Derived &>(*this);
     }
 
     void

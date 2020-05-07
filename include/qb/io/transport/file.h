@@ -31,9 +31,9 @@ public:
     }
 
     // Derived class should define :
-    // using message_type = const char *;
+    // using message = const char *;
     // std::size_t getMessageSize();
-    // message_type getMessage();
+    // message getMessage();
 };
 
 } // namespace qb::io::transport

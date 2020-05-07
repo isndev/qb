@@ -29,7 +29,7 @@ class byte_terminated : public io::async::AProtocol<_IO_> {
 
 public:
     constexpr static const std::size_t delimiter_size = 1;
-    constexpr static const char endl = _EndByte;
+    constexpr static const char end = _EndByte;
 
     byte_terminated() = delete;
     virtual ~byte_terminated() = default;
@@ -69,7 +69,7 @@ class bytes_terminated : public io::async::AProtocol<_IO_> {
 
 public:
     constexpr static const std::size_t delimiter_size = _SizeBytes;
-    constexpr static const auto endl = _Trait::_EndBytes;
+    constexpr static const auto end = _Trait::_EndBytes;
 
     bytes_terminated() = delete;
     virtual ~bytes_terminated() = default;

@@ -50,9 +50,9 @@ public:
     }
 
     void
-    on(Protocol::message_type &&msg) {
+    on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(STRING_MESSAGE) - 1);
-        *this << msg.text << Protocol::endl;
+        *this << msg.text << Protocol::end;
         ++msg_count_server_side;
     }
 };
@@ -80,7 +80,7 @@ public:
     }
 
     void
-    on(Protocol::message_type &&msg) {
+    on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(STRING_MESSAGE) - 1);
         ++msg_count_client_side;
     }
@@ -134,9 +134,9 @@ public:
     }
 
     void
-    on(Protocol::message_type &&msg) {
+    on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(STRING_MESSAGE) - 1);
-        *this << msg.text << Protocol::endl;
+        *this << msg.text << Protocol::end;
         ++msg_count_server_side;
     }
 };
@@ -165,7 +165,7 @@ public:
     }
 
     void
-    on(Protocol::message_type &&msg) {
+    on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(STRING_MESSAGE) - 1);
         ++msg_count_client_side;
     }
@@ -217,9 +217,9 @@ public:
     }
 
     void
-    on(Protocol::message_type &&msg) {
+    on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(STRING_MESSAGE) - 1);
-        *this << msg.text << Protocol::endl;
+        *this << msg.text << Protocol::end;
         ++msg_count_server_side;
     }
 };
@@ -234,7 +234,7 @@ public:
     }
 
     void
-    on(Protocol::message_type &&msg) {
+    on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(STRING_MESSAGE) - 1);
         ++msg_count_client_side;
     }

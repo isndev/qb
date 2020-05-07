@@ -28,7 +28,7 @@ public:
     basic_text(_IO_ &io) noexcept
     : base::byte_terminated<_IO_, _Sep>(io) {}
 
-    struct message_type {
+    struct message {
         const std::size_t size;
         const char *data;
         _StringTrait text;
@@ -38,7 +38,7 @@ public:
     onMessage(std::size_t size) noexcept {
         const auto &buffer = this->_io.in();
         const auto parsed = this->shiftSize(size);
-        this->_io.on(message_type{parsed, buffer.cbegin(), {buffer.cbegin(), parsed}});
+        this->_io.on(message{parsed, buffer.cbegin(), {buffer.cbegin(), parsed}});
     }
 };
 
@@ -49,14 +49,14 @@ public:
     basic_binary(_IO_ &io) noexcept
     : base::size_as_header<_IO_, _SizeHeader>(io) {}
 
-    struct message_type {
+    struct message {
         const std::size_t size;
         const char *data;
     };
 
     void
     onMessage(std::size_t size) const noexcept {
-        this->_io.on(message_type{size, this->_io.in().cbegin() + this->shiftSize()});
+        this->_io.on(message{size, this->_io.in().cbegin() + this->shiftSize()});
     }
 };
 

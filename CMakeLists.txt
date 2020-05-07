@@ -40,11 +40,15 @@ if(NOT CYGWIN)
 endif()
 
 set(QB_PATH ${CMAKE_CURRENT_SOURCE_DIR})
-option("${QB_PREFIX_UPPER}_BUILD_TEST" "Build qb Tests" OFF)
-option("${QB_PREFIX_UPPER}_BUILD_BENCHMARK" "Build qb Benchmarks" OFF)
-option("${QB_PREFIX_UPPER}_BUILD_DOC" "Build qb Documentation" OFF)
-option("${QB_PREFIX_UPPER}_WITH_LOG" "Enable nanolog" ON)
-option("${QB_PREFIX_UPPER}_WITH_TCMALLOC" "TCMalloc is ennabled" OFF)
+option(${QB_PREFIX_UPPER}_BUILD_TEST "Build qb Tests" OFF)
+option(${QB_PREFIX_UPPER}_BUILD_BENCHMARK "Build qb Benchmarks" OFF)
+option(${QB_PREFIX_UPPER}_BUILD_DOC "Build qb Documentation" OFF)
+option(${QB_PREFIX_UPPER}_WITH_LOG "Enable nanolog" ON)
+option(${QB_PREFIX_UPPER}_WITH_TCMALLOC "TCMalloc is ennabled" OFF)
+
+if (NOT ${QB_PREFIX_UPPER}_BUILD_ARCH)
+    set(${QB_PREFIX_UPPER}_BUILD_ARCH native)
+endif()
 
 #default build type to Release
 if (NOT CMAKE_BUILD_TYPE)
@@ -105,7 +109,7 @@ if(OPENSSL_FOUND)
     #used for tests
     set(${QB_PREFIX_UPPER}_SSL_RESOURCES ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/key.pem ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/cert.pem)
 else()
-    message(INFO: OPENSSL not found, some modules require libssl, they will be skipped)
+    message(INFO: OPENSSL not found, some modules require libssl, they will be skipped from compilation)
 endif()
 
 #TCMALLOC only available on linux for the moment
@@ -130,9 +134,6 @@ add_subdirectory(source/io)
 add_subdirectory(source/core)
 # Generate Documentation
 add_subdirectory(docs)
-
-# load default modules
-qb_load_modules(${QB_PATH}/qb-module)
 
 if (${QB_PREFIX_UPPER}_COVERAGE)
     set(COVERAGE_LCOV_EXCLUDES
@@ -160,4 +161,9 @@ if(hasParent)
     set(CMAKE_CXX_FLAGS "${${QB_PREFIX_UPPER}_CXX_FLAGS}" PARENT_SCOPE)
     set(QB_PREFIX "${QB_PREFIX}" PARENT_SCOPE)
     set(QB_DIRECTORY "${QB_DIRECTORY}" PARENT_SCOPE)
+    set(OPENSSL_FOUND "${OPENSSL_FOUND}" PARENT_SCOPE)
+    set(${QB_PREFIX_UPPER}_BUILD_TEST "${${QB_PREFIX_UPPER}_BUILD_TEST}" PARENT_SCOPE)
+    set(${QB_PREFIX_UPPER}_BUILD_BENCHMARK "${${QB_PREFIX_UPPER}_BUILD_BENCHMARK}" PARENT_SCOPE)
+    set(${QB_PREFIX_UPPER}_BUILD_COVERAGE "${${QB_PREFIX_UPPER}_BUILD_COVERAGE}" PARENT_SCOPE)
+    set(${QB_PREFIX_UPPER}_SSL_RESOURCES "${${QB_PREFIX_UPPER}_SSL_RESOURCES}" PARENT_SCOPE)
 endif()

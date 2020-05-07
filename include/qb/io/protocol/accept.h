@@ -23,7 +23,7 @@ namespace qb::io::protocol {
 template <typename _IO_, typename _Socket>
 class accept : public async::AProtocol<_IO_> {
 public:
-    using message_type = _Socket;
+    using message = _Socket;
 
     accept() = delete;
 

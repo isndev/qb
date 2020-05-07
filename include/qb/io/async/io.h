@@ -120,6 +120,7 @@ public:
 
     void
     start() noexcept {
+        _disconnected_by_user = false;
         Derived.transport().setBlocking(false);
         this->_async_event.start(Derived.transport().fd(), EV_READ);
     }
@@ -206,6 +207,7 @@ public:
 
     void
     start() noexcept {
+        _disconnected_by_user = false;
         Derived.transport().setBlocking(false);
         this->_async_event.start(Derived.transport().fd(), EV_WRITE);
     }
@@ -315,6 +317,7 @@ public:
 
     void
     start() noexcept {
+        _disconnected_by_user = false;
         Derived.transport().setBlocking(false);
         this->_async_event.start(Derived.transport().fd(), EV_READ);
     }

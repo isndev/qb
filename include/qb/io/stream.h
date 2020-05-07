@@ -158,7 +158,7 @@ public:
 };
 
 template <typename _IO_>
-struct stream : public istream<_IO_> {
+class stream : public istream<_IO_> {
 public:
     using output_io_type = _IO_;
     using output_buffer_type = qb::allocator::pipe<char>;
