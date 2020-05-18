@@ -21,6 +21,7 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+#include <cxxabi.h>
 // include from qb
 #include "Event.h"
 #include "ICallback.h"
@@ -28,6 +29,12 @@
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/nocopy.h>
 #include <qb/utility/type_traits.h>
+
+#ifdef __GNUG__
+#include <cstdlib>
+#include <memory>
+#include <cxxabi.h>
+#endif
 
 namespace qb {
 
@@ -237,6 +244,12 @@ public:
      * @return name as string_view
      */
     std::string_view getName() const noexcept;
+
+    /*!
+     * Get core set
+     * @return Coreset of current engine
+     */
+    const qb::unordered_set<CoreId> &getCoreSet() const noexcept;
 
     /*!
      * @brief Get current time
@@ -584,14 +597,34 @@ class ActorProxy {
 protected:
     ActorProxy() = default;
     template <typename _Type>
-    void
+    static void
     setType(Actor &actor) {
-        actor.id_type = type_id<_Type>();
+        actor.id_type = ActorProxy::getType<_Type>();
     }
     template <typename _Type>
-    void
+    static void
     setName(Actor &actor) {
-        actor.name = typeid(_Type).name();
+        actor.name = ActorProxy::getName<_Type>();
+    }
+public:
+    template <typename _Type>
+    static auto
+    getType() {
+        return type_id<_Type>();
+    }
+    template <typename _Type>
+    static const char *
+    getName() {
+#ifdef __GNUC__
+        static std::unique_ptr<char, void(*)(void*)> res {
+                abi::__cxa_demangle(typeid(_Type).name(), nullptr, nullptr, nullptr),
+                std::free
+        };
+
+        return res.get();
+#else
+        return typeid(_Type).name();
+#endif
     }
 };
 
@@ -614,8 +647,8 @@ public:
     Actor *
     create_impl(std::index_sequence<Is...>) {
         auto actor = new _Actor(std::get<Is>(_parameters)...);
-        setType<_Actor>(*actor);
-        setName<_Actor>(*actor);
+        ActorProxy::setType<_Actor>(*actor);
+        ActorProxy::setName<_Actor>(*actor);
         return actor;
     }
 
@@ -637,5 +670,5 @@ using service_actor = ServiceActor<Tag>;
 } // namespace qb
 
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor);
-
+std::ostream &operator<<(std::ostream &os, qb::Actor const &actor);
 #endif // QB_ACTOR_H

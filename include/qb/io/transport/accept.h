@@ -26,7 +26,7 @@ class accept {
     io::tcp::socket _accepted_io;
 
 public:
-    using input_io_type = io::tcp::listener;
+    using transport_io_type = io::tcp::listener;
     using socket_type = io::tcp::socket;
 
     io::tcp::listener &

@@ -47,7 +47,7 @@ target_include_directories(${PROJECT_NAME} INTERFACE
 #        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
 
 if (WIN32)
-#    target_link_libraries(${PROJECT_NAME} ws2_32)
+    target_link_libraries(${PROJECT_NAME} ws2_32)
 #    target_link_libraries(${PROJECT_NAME}-shared ws2_32)
 endif()
 

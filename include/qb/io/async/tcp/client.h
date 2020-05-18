@@ -31,6 +31,7 @@ class client
     using base_t = io<_Derived>;
     friend base_t;
 public:
+    using transport_io_type = typename _Transport::transport_io_type;
     using base_t::publish;
     using _Transport::in;
     using _Transport::out;
@@ -71,6 +72,7 @@ class client<_Derived, _Transport, void>
     using base_t = io<_Derived>;
     friend base_t;
 public:
+    using transport_io_type = typename _Transport::transport_io_type;
     using base_t::publish;
     using _Transport::in;
     using _Transport::out;

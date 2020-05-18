@@ -90,6 +90,11 @@ Actor::getName() const noexcept {
     return name;
 }
 
+const qb::unordered_set<CoreId>  &
+Actor::getCoreSet() const noexcept {
+    return VirtualCore::_handler->getCoreSet();
+}
+
 void
 Actor::unregisterCallback() const noexcept {
     VirtualCore::_handler->unregisterCallback(id());
@@ -112,7 +117,7 @@ Actor::to(ActorId const dest) const noexcept {
 void
 Actor::reply(Event &event) const noexcept {
     if (unlikely(event.dest.is_broadcast())) {
-        LOG_WARN("" << *this << " failed to reply broadcast event");
+        LOG_WARN(*this << " failed to reply broadcast event");
         return;
     }
     VirtualCore::_handler->reply(event);
@@ -122,7 +127,7 @@ void
 Actor::forward(ActorId const dest, Event &event) const noexcept {
     event.source = id();
     if (unlikely(event.dest.is_broadcast())) {
-        LOG_WARN("" << *this << " failed to forward broadcast event");
+        LOG_WARN(*this << " failed to forward broadcast event");
         return;
     }
     VirtualCore::_handler->forward(dest, event);
@@ -150,9 +155,13 @@ Service::Service(ServiceId const sid)
 
 qb::io::log::stream &
 operator<<(qb::io::log::stream &os, qb::Actor const &actor) {
-    std::stringstream ss;
-    ss << "Actor[" << actor.getName() << "](" << actor.id().index() << "."
+    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "."
        << actor.id().sid() << ")";
-    os << ss.str();
+    return os;
+}
+
+std::ostream &operator<<(std::ostream &os, qb::Actor const &actor) {
+    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "."
+       << actor.id().sid() << ")";
     return os;
 }

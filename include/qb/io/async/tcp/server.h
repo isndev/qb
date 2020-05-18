@@ -18,70 +18,27 @@
 #ifndef QB_IO_ASYNC_TCP_SERVER_H
 #define QB_IO_ASYNC_TCP_SERVER_H
 
-#include <qb/system/container/unordered_map.h>
-
-#include "../../protocol/accept.h"
-#include "../io.h"
+#include "acceptor.h"
+#include "../io_handler.h"
 
 namespace qb::io::async::tcp {
 
 template <typename _Derived, typename _Session, typename _Prot>
 class server
-    : public input<server<_Derived, _Session, _Prot>>
-    , public _Prot {
+    : public acceptor<server<_Derived, _Session, _Prot>, _Prot>
+    , public io_handler<_Derived, _Session> {
+    using acceptor_type = acceptor<server<_Derived, _Session, _Prot>, _Prot>;
 public:
-    using base_t = input<server<_Derived, _Session, _Prot>>;
-    using session_map_t = qb::unordered_map<uint64_t, _Session>;
-    using Protocol = protocol::accept<server, typename _Prot::socket_type>;
-
-private:
-    session_map_t _sessions;
-
-public:
-    using IOSession = _Session;
-
-    server() noexcept
-        : base_t(new Protocol(*this)) {}
-
-    session_map_t &
-    sessions() {
-        return _sessions;
-    }
+    server() = default;
 
     void
-    on(typename Protocol::message new_io) {
-        const auto &it =
-            sessions().emplace(new_io.fd(), std::ref(static_cast<_Derived &>(*this)));
-        it.first->second.transport() = new_io;
-        it.first->second.start();
-        static_cast<_Derived &>(*this).on(it.first->second);
+    on(typename acceptor_type::accepted_socket_type &&new_io) {
+        this->registerSession(std::forward<typename acceptor_type::accepted_socket_type>(new_io));
     }
 
     void
     on(event::disconnected const &) const {
         throw std::runtime_error("Server had been disconnected");
-    }
-
-    template <typename... _Args>
-    _Derived &
-    stream(_Args &&... args) {
-        for (auto &session : sessions())
-            (session.second << ... << std::forward<_Args>(args));
-        return static_cast<_Derived &>(*this);
-    }
-
-    template <typename _Func, typename... _Args>
-    _Derived &
-    stream_if(_Func const &func, _Args &&... args) {
-        for (auto &session : sessions())
-            if (func(std::ref(session)))
-                (session.second << ... << std::forward<_Args>(args));
-        return static_cast<_Derived &>(*this);
-    }
-
-    void
-    disconnected(int ident) {
-        _sessions.erase(static_cast<uint64_t>(ident));
     }
 };
 

@@ -28,6 +28,7 @@
 #        endif
 #        include <WS2tcpip.h>
 #        include <winsock2.h>
+#        include <io.h>
 #    else
 #        include <arpa/inet.h>
 #        include <errno.h>

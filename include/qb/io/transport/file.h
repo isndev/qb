@@ -29,11 +29,6 @@ public:
     write() {
         return 0;
     }
-
-    // Derived class should define :
-    // using message = const char *;
-    // std::size_t getMessageSize();
-    // message getMessage();
 };
 
 } // namespace qb::io::transport

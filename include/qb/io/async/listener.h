@@ -23,6 +23,7 @@
 #include <qb/io/helper.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
+#include <qb/system/container/unordered_set.h>
 #include <thread>
 #include <vector>
 
@@ -57,7 +58,7 @@ public:
 
 private:
     ev::dynamic_loop _loop;
-    std::vector<IRegisteredKernelEvent *> _registeredEvents;
+    qb::unordered_set<IRegisteredKernelEvent *> _registeredEvents;
     std::size_t _nb_invoked_events = 0;
 
 public:
@@ -95,14 +96,13 @@ public:
         if constexpr (sizeof...(_Args) > 0)
             revent->_event.set(std::forward<_Args>(args)...);
 
-        _registeredEvents.push_back(revent);
+        _registeredEvents.emplace(revent);
         return revent->_event;
     }
 
     void
     unregisterEvent(IRegisteredKernelEvent *kevent) {
-        _registeredEvents.erase(std::find(std::begin(_registeredEvents),
-                                          std::end(_registeredEvents), kevent));
+        _registeredEvents.erase(kevent);
         delete kevent;
     }
 

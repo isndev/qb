@@ -46,6 +46,11 @@ struct use {
 
     struct tcp {
 
+        using acceptor = async::tcp::acceptor<_Derived, transport::accept>;
+
+        template <typename _Client>
+        using io_handler = async::io_handler<_Derived, _Client>;
+
         template <typename _Client>
         using server = async::tcp::server<_Derived, _Client, transport::accept>;
 
@@ -54,6 +59,12 @@ struct use {
 
 #ifdef QB_IO_WITH_SSL
         struct ssl {
+
+            using acceptor = async::tcp::acceptor<_Derived, transport::saccept>;
+
+            template <typename _Client>
+            using io_handler = async::io_handler<_Derived, _Client>;
+
             template <typename _Client>
             using server = async::tcp::server<_Derived, _Client, transport::saccept>;
 
