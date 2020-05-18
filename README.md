@@ -39,12 +39,14 @@ The **qb** framework is a thin-layer multicore-optimized runtime that enable use
 - *It's* adding more **samples** and tutorials
 - *It's* releasing official benchmarks
 - *and more...*
+
+#### qb Visual Monitoring Tools
+- **Monitor**, **analyze** and **debug** your software with **qb Visual Monitoring Tools**
+
 #### qb UAML* Tool
-- **Design** and **generate** your software architecture using **qb UAML Tool**
+- **Design** and **generate** your software architecture with **qb UAML Tool**
 
 <sub>*Unified Actor Modeling Language</sub>
-#### qb Visual Analyser Tool
-- **Monitor**, **analyse** and **debug** your software by connecting it to **qb Visual Analyser Tool**
 
 # The Actor Model
 
