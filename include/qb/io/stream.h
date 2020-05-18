@@ -25,7 +25,7 @@ namespace qb::io {
 template <typename _IO_>
 class istream {
 public:
-    using input_io_type = _IO_;
+    using transport_io_type = _IO_;
     using input_buffer_type = qb::allocator::pipe<char>;
 
 protected:
@@ -93,7 +93,7 @@ public:
 template <typename _IO_>
 class ostream {
 public:
-    using output_io_type = _IO_;
+    using transport_io_type = _IO_;
     using output_buffer_type = qb::allocator::pipe<char>;
 
 protected:
@@ -160,7 +160,7 @@ public:
 template <typename _IO_>
 class stream : public istream<_IO_> {
 public:
-    using output_io_type = _IO_;
+    using transport_io_type = _IO_;
     using output_buffer_type = qb::allocator::pipe<char>;
     constexpr static const bool has_reset_on_pending_read = false;
 

@@ -181,11 +181,11 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
         // Init VirtualCore
         auto &core_factory = initializer._actor_factories;
         if (!core.__init__(initializer.getAffinity())) {
-            LOG_CRIT("" << core << " Init Failed");
+            LOG_CRIT(core << " Init Failed");
             params.sync_start.store(VirtualCore::Error::BadInit,
                                     std::memory_order_release);
         } else if (core_factory.empty()) {
-            LOG_CRIT("" << core << " Started with 0 Actor");
+            LOG_CRIT(core << " Started with 0 Actor");
             params.sync_start.store(VirtualCore::Error::NoActor,
                                     std::memory_order_release);
         } else if (std::any_of(core_factory.begin(), core_factory.end(),
@@ -241,29 +241,30 @@ Main::start(bool async) noexcept {
 
         auto i = 0u;
         for (auto &it : _core_initializers) {
-            if (!async && i == (_core_initializers.size() - 1))
+            if (!async && i == (_core_initializers.size() - 1)) {
+                Main::registerSignal(SIGINT);
                 start_thread({it.first, it.second, *_shared_com, _sync_start});
-            else
+            } else
                 _cores[i] = std::thread(start_thread,
                                         CoreSpawnerParameter{it.first, it.second,
                                                              *_shared_com, _sync_start});
             ++i;
         }
 
-        do {
-            spin_loop_pause();
-            ret = _sync_start.load(std::memory_order_acquire);
-        } while (ret < _cores.size());
+        if (async) {
+            do {
+                spin_loop_pause();
+                ret = _sync_start.load(std::memory_order_acquire);
+            } while (ret < _cores.size());
+            Main::registerSignal(SIGINT);
+        }
     } else {
         LOG_CRIT("[Main] Cannot start engine with 0 Actor");
         _sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
         ret = VirtualCore::Error::NoActor;
     }
 
-    if (ret < VirtualCore::Error::BadInit) {
-        LOG_INFO("[Main] Init Success");
-        Main::registerSignal(SIGINT);
-    } else {
+    if (ret >= VirtualCore::Error::BadInit) {
         _is_running = false;
         LOG_CRIT("[Main] Init Failed");
         io::cout() << "CRITICAL: Core Init Failed -> show logs to have more details"

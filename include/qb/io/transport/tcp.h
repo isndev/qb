@@ -24,10 +24,6 @@ namespace qb::io::transport {
 
 class tcp : public stream<io::tcp::socket> {
 public:
-    // Derived class should define :
-    // using message = const char *;
-    // std::size_t getMessageSize() final;
-    // void onMessage() final;
 };
 
 } // namespace qb::io::transport

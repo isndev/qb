@@ -285,7 +285,8 @@ namespace nanolog
 		char * b = buffer();
 		auto type_id = TupleIndex < char *, SupportedTypes >::value;
 		*reinterpret_cast<uint8_t*>(b++) = static_cast<uint8_t>(type_id);
-		memcpy(b, arg, length + 1);
+		memcpy(b, arg, length);
+		b[length] = '\0';
 		m_bytes_used += 1 + length + 1;
 	}
 
@@ -294,52 +295,66 @@ namespace nanolog
 		encode < string_literal_t >(arg, TupleIndex < string_literal_t, SupportedTypes >::value);
 	}
 
-	NanoLogLine& NanoLogLine::operator<<(std::string const & arg)
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<std::string>(std::string const &arg)
 	{
 		encode_c_string(arg.c_str(), arg.length());
 		return *this;
 	}
 
-    NanoLogLine& NanoLogLine::operator<<(std::string_view const & arg)
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<std::string_view>(std::string_view const &arg)
     {
         encode_c_string(arg.data(), arg.length());
         return *this;
     }
 
-	NanoLogLine& NanoLogLine::operator<<(int32_t arg)
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<int32_t>(int32_t const &arg)
 	{
 		encode < int32_t >(arg, TupleIndex < int32_t, SupportedTypes >::value);
 		return *this;
 	}
 
-	NanoLogLine& NanoLogLine::operator<<(uint32_t arg)
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<uint32_t>(uint32_t const &arg)
 	{
 		encode < uint32_t >(arg, TupleIndex < uint32_t, SupportedTypes >::value);
 		return *this;
 	}
 
-	NanoLogLine& NanoLogLine::operator<<(int64_t arg)
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<int64_t>(int64_t const &arg)
 	{
 		encode < int64_t >(arg, TupleIndex < int64_t, SupportedTypes >::value);
 		return *this;
 	}
 
-	NanoLogLine& NanoLogLine::operator<<(uint64_t arg)
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<uint64_t>(uint64_t const &arg)
 	{
 		encode < uint64_t >(arg, TupleIndex < uint64_t, SupportedTypes >::value);
 		return *this;
 	}
 
-	NanoLogLine& NanoLogLine::operator<<(double arg)
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<double>(double const &arg)
 	{
 		encode < double >(arg, TupleIndex < double, SupportedTypes >::value);
 		return *this;
 	}
 
-	NanoLogLine& NanoLogLine::operator<<(char arg)
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<char>(char const &arg)
 	{
 		encode < char >(arg, TupleIndex < char, SupportedTypes >::value);
 		return *this;
+	}
+
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<char const *>(char const * const &arg) {
+	    encode(arg);
+	    return *this;
 	}
 
 	struct BufferBase

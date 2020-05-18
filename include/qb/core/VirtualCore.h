@@ -53,7 +53,9 @@
 namespace qb {
 class VirtualCore;
 }
+
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
+std::ostream &operator<<(std::ostream &os, qb::VirtualCore const &core);
 
 namespace qb {
 
@@ -200,7 +202,9 @@ public:
     VirtualCore() = delete;
 
     [[nodiscard]] CoreId getIndex() const noexcept;
+    [[nodiscard]] const qb::unordered_set<CoreId> &getCoreSet() const noexcept;
     [[nodiscard]] uint64_t time() const noexcept;
+
 };
 
 } // namespace qb

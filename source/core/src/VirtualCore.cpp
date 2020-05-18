@@ -219,14 +219,14 @@ VirtualCore::__init__actors__() const {
                         [](auto &it) {
         auto ret = !it.second->onInit();
         if (ret)
-            LOG_CRIT("" << *it.second << " failed to init");
+            LOG_CRIT(*it.second << " failed to init");
         return ret;
     });
 }
 
 void
 VirtualCore::__workflow__() {
-    LOG_INFO("" << *this << " Init Success " << static_cast<uint32_t>(_actors.size())
+    LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actors.size())
                 << " actor(s)");
     while (likely(true)) {
         // core has io
@@ -270,7 +270,7 @@ VirtualCore::__workflow__() {
         __receive__();
     } while (__flush_all__());
 
-    LOG_INFO("" << *this << " Stopped normally");
+    LOG_INFO(*this << " Stopped normally");
 }
 
 //! Workflow
@@ -291,7 +291,7 @@ VirtualCore::appendActor(Actor &actor, bool const doInit) noexcept {
     if (initActor(actor, doInit).is_valid()) {
         if (_actors.find(actor.id()) == _actors.end()) {
             _actors.insert({actor.id(), &actor});
-            LOG_DEBUG("New " << actor);
+            LOG_INFO("New " << actor);
         } else {
             LOG_CRIT("Error Cannot add Service Actor multiple times" << actor);
             return ActorId::NotFound;
@@ -307,12 +307,12 @@ VirtualCore::removeActor(ActorId const id) noexcept {
     unregisterEvents(id);
     const auto it = _actors.find(id);
     if (it != _actors.end()) {
+        LOG_INFO("Delete " << *it->second);
         delete it->second;
         _actors.erase(it);
         if (id._id > _nb_service)
             _ids.insert(id._id);
     }
-    LOG_DEBUG("Delete Actor(" << id.index() << "," << id.sid() << ")");
 }
 
 //! Actor Management
@@ -383,6 +383,10 @@ VirtualCore::getIndex() const noexcept {
     return _index;
 }
 
+const qb::unordered_set<CoreId> &VirtualCore::getCoreSet() const noexcept {
+    return _engine._core_set._raw_set;
+}
+
 uint64_t
 VirtualCore::time() const noexcept {
     return _metrics._nanotimer ? _metrics._nanotimer : Timestamp::nano();
@@ -394,9 +398,15 @@ thread_local VirtualCore *VirtualCore::_handler = nullptr;
 
 qb::io::log::stream &
 operator<<(qb::io::log::stream &os, qb::VirtualCore const &core) {
-    std::stringstream ss;
-    ss << "VirtualCore(" << core.getIndex() << ").id(" << std::this_thread::get_id()
+    os << "VirtualCore(" << core.getIndex() << ").id(" << std::this_thread::get_id()
        << ")";
-    os << ss.str();
     return os;
 }
+
+std::ostream &
+operator<<(std::ostream &os, qb::VirtualCore const &core) {
+    os << "VirtualCore(" << core.getIndex() << ").id(" << std::this_thread::get_id()
+       << ")";
+    return os;
+}
+

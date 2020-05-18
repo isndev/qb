@@ -29,6 +29,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <memory>
 #include <string>
 #include <string_view>
+#include <sstream>
 #include <iosfwd>
 #include <type_traits>
 
@@ -47,44 +48,18 @@ namespace nanolog
 
         void stringify(std::ostream & os);
 
-        NanoLogLine& operator<<(char arg);
-        NanoLogLine& operator<<(int32_t arg);
-        NanoLogLine& operator<<(uint32_t arg);
-        NanoLogLine& operator<<(int64_t arg);
-        NanoLogLine& operator<<(uint64_t arg);
-        NanoLogLine& operator<<(double arg);
-        NanoLogLine& operator<<(std::string const & arg);
-        NanoLogLine& operator<<(std::string_view const & arg);
-
-//        Todo: :( remake this
-//        template <typename T>
-//        NanoLogLine& operator<<(T const &data) {
-//            std::ostringstream os;
-//            *this << os << data;
-//
-//            return *this;
-//        }
+        template <typename T>
+        NanoLogLine& operator<<(T const &data) {
+            std::ostringstream os;
+            os << data;
+            *this << os.str();
+            return *this;
+        }
 
         template < size_t N >
         NanoLogLine& operator<<(const char (&arg)[N])
         {
             encode(string_literal_t(arg));
-            return *this;
-        }
-
-        template < typename Arg >
-        typename std::enable_if < std::is_same < Arg, char const * >::value, NanoLogLine& >::type
-        operator<<(Arg const & arg)
-        {
-            encode(arg);
-            return *this;
-        }
-
-        template < typename Arg >
-        typename std::enable_if < std::is_same < Arg, char * >::value, NanoLogLine& >::type
-        operator<<(Arg const & arg)
-        {
-            encode(arg);
             return *this;
         }
 
@@ -116,6 +91,25 @@ namespace nanolog
         std::unique_ptr < char [] > m_heap_buffer;
         char m_stack_buffer[256 - 2 * sizeof(size_t) - sizeof(decltype(m_heap_buffer)) - 8 /* Reserved */];
     };
+
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<char>(char const &arg);
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<char const *>(char const * const &arg);
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<int32_t>(int32_t const &arg);
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<uint32_t>(uint32_t const &arg);
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<int64_t>(int64_t const &arg);
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<uint64_t>(uint64_t const &arg);
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<double>(double const &arg);
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<std::string>(std::string const &arg);
+    template <>
+    NanoLogLine& NanoLogLine::operator<<<std::string_view>(std::string_view const &arg);
 
     struct NanoLog
     {
