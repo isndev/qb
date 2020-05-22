@@ -122,16 +122,21 @@ protected:
 
         if (write_index + input_count > max_size) {
             /* copy data in two sections */
-            size_t count0 = max_size - write_index;
+            const size_t count0 = max_size - write_index;
+            const size_t count1 = input_count - count0;
 
-            std::uninitialized_copy(input_buffer, input_buffer + count0,
-                                    internal_buffer + write_index);
-            std::uninitialized_copy(input_buffer + count0, input_buffer + input_count,
-                                    internal_buffer);
+            //std::uninitialized_copy(input_buffer, input_buffer + count0,
+            //                        internal_buffer + write_index);
+            //std::uninitialized_copy(input_buffer + count0, input_buffer + input_count,
+            //                        internal_buffer);
+            std::memcpy(internal_buffer + write_index, input_buffer, count0 * sizeof(T));
+            std::memcpy(internal_buffer, input_buffer + count0, count1 * sizeof(T));
             new_write_index -= max_size;
         } else {
-            std::uninitialized_copy(input_buffer, input_buffer + input_count,
-                                    internal_buffer + write_index);
+            //std::uninitialized_copy(input_buffer, input_buffer + input_count,
+            //                        internal_buffer + write_index);
+            std::memcpy(internal_buffer + write_index, input_buffer,
+                        input_count * sizeof(T));
 
             if (new_write_index == max_size)
                 new_write_index = 0;
@@ -162,12 +167,16 @@ protected:
             const size_t count0 = max_size - read_index;
             const size_t count1 = output_count - count0;
 
-            std::uninitialized_copy(internal_buffer + read_index, internal_buffer + read_index + count0, output_buffer);
-            std::uninitialized_copy(internal_buffer, internal_buffer + count1, output_buffer + count0);
+            //std::uninitialized_copy(internal_buffer + read_index, internal_buffer + read_index + count0, output_buffer);
+            //std::uninitialized_copy(internal_buffer, internal_buffer + count1, output_buffer + count0);
+            std::memcpy(output_buffer, internal_buffer + read_index, count0 * sizeof(T));
+            std::memcpy(output_buffer + count0, internal_buffer, count1 * sizeof(T));
 
             new_read_index -= max_size;
         } else {
-            std::uninitialized_copy(internal_buffer + read_index, internal_buffer + read_index + output_count, output_buffer);
+            //std::uninitialized_copy(internal_buffer + read_index, internal_buffer + read_index + output_count, output_buffer);
+            std::memcpy(output_buffer, internal_buffer + read_index,
+                        output_count * sizeof(T));
 
             if (new_read_index == max_size)
                 new_read_index = 0;

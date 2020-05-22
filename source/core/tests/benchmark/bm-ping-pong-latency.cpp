@@ -113,51 +113,51 @@ thread_pong(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
     }
 }
 
-static void
-BM_Reference_Multi_PingPong_Latency(benchmark::State &state) {
-    for (auto _ : state) {
-        auto spsc = new qb::lockfree::spsc::ringbuffer<LightEvent, 4096>[2];
-        std::thread threads[2];
-
-        threads[0] = std::thread(thread_ping, spsc);
-        threads[1] = std::thread(thread_pong, spsc);
-
-        for (auto &thread : threads) {
-            if (thread.joinable())
-                thread.join();
-        }
-        delete[] spsc;
-    }
-}
-
-static void
-BM_Mono_PingPong_Latency(benchmark::State &state) {
-    for (auto _ : state) {
-        qb::Main main;
-
-        main.addActor<PingActor>(0);
-        main.addActor<PongActor>(0);
-
-        main.start(true);
-        main.join();
-    }
-}
+//static void
+//BM_Reference_Multi_PingPong_Latency(benchmark::State &state) {
+//    for (auto _ : state) {
+//        auto spsc = new qb::lockfree::spsc::ringbuffer<LightEvent, 4096>[2];
+//        std::thread threads[2];
+//
+//        threads[0] = std::thread(thread_ping, spsc);
+//        threads[1] = std::thread(thread_pong, spsc);
+//
+//        for (auto &thread : threads) {
+//            if (thread.joinable())
+//                thread.join();
+//        }
+//        delete[] spsc;
+//    }
+//}
+//
+//static void
+//BM_Mono_PingPong_Latency(benchmark::State &state) {
+//    for (auto _ : state) {
+//        qb::Main main;
+//
+//        main.addActor<PingActor>(0);
+//        main.addActor<PongActor>(0);
+//
+//        main.start(true);
+//        main.join();
+//    }
+//}
 
 static void
 BM_Multi_PingPong_Latency(benchmark::State &state) {
     for (auto _ : state) {
         qb::Main main;
 
-        main.addActor<PingActor>(0);
-        main.addActor<PongActor>(1);
+        main.core(0).addActor<PingActor>();
+        main.core(2).addActor<PongActor>();
 
         main.start(true);
         main.join();
     }
 }
-// Register the function as a benchmark
-BENCHMARK(BM_Reference_Multi_PingPong_Latency);
-BENCHMARK(BM_Mono_PingPong_Latency);
+//// Register the function as a benchmark
+//BENCHMARK(BM_Reference_Multi_PingPong_Latency);
+//BENCHMARK(BM_Mono_PingPong_Latency);
 BENCHMARK(BM_Multi_PingPong_Latency);
 
 BENCHMARK_MAIN();

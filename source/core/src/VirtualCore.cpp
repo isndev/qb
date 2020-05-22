@@ -111,8 +111,8 @@ VirtualCore::__receive_events__(EventBucket *buffer, std::size_t const nb_events
 
         event->state.alive = 0;
         _router.route(*event);
-        ++_metrics._nb_event_received;
-        _metrics._nb_bucket_received += event->bucket_size;
+//        ++_metrics._nb_event_received;
+//        _metrics._nb_bucket_received += event->bucket_size;
         i += event->bucket_size;
     }
 }
