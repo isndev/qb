@@ -21,7 +21,6 @@
 #include <tuple>
 #include <utility>
 #include <vector>
-#include <cxxabi.h>
 // include from qb
 #include "Event.h"
 #include "ICallback.h"
