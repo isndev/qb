@@ -19,7 +19,6 @@
 #include <qb/io/system/file.h>
 #include <qb/io/tcp/socket.h>
 #include <qb/io/udp/socket.h>
-#include <qb/io/tcp/ssl/socket.h>
 
 namespace qb::io {
 
@@ -38,6 +37,8 @@ template class stream<udp::socket>;
 } // namespace qb::io
 
 #ifdef QB_IO_WITH_SSL
+
+#include <qb/io/tcp/ssl/socket.h>
 
 namespace qb::io {
 
