@@ -162,7 +162,7 @@ VirtualCore::__flush_all__() noexcept {
                             _engine
                                 ._event_safe_deadlock[_engine._core_set.resolve(
                                     event.dest._index)]
-                                .store(false, std::memory_order_acq_rel);
+                                .store(false, std::memory_order_release);
                         } else {
                             // partial send another core is maybe in deadlock
                             pipe.reset(i - pipe.data());
