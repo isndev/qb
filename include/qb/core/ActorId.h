@@ -108,6 +108,8 @@ using actor_id_list = ActorIdList;
 using actor_is_set = ActorIdSet;
 using core_id_set = CoreIdSet;
 
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
+
 } // namespace qb
 
 namespace std {
@@ -119,7 +121,5 @@ struct hash<qb::ActorId> {
     }
 };
 } // namespace std
-
-qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
 
 #endif // QB_ACTORID_H

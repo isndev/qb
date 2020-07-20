@@ -57,7 +57,7 @@ ActorId::is_valid() const noexcept {
 } // namespace qb
 
 qb::io::log::stream &
-operator<<(qb::io::log::stream &os, qb::ActorId const &id) {
+qb::operator<<(qb::io::log::stream &os, qb::ActorId const &id) {
     std::stringstream ss;
     ss << id.index() << "." << id.sid();
     os << ss.str();
