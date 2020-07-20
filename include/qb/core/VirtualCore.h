@@ -51,13 +51,6 @@
 #include <qb/system/timestamp.h>
 
 namespace qb {
-class VirtualCore;
-}
-
-qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
-std::ostream &operator<<(std::ostream &os, qb::VirtualCore const &core);
-
-namespace qb {
 
 class VirtualCore {
     thread_local static VirtualCore *_handler;
@@ -206,6 +199,9 @@ public:
     [[nodiscard]] uint64_t time() const noexcept;
 
 };
+
+qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
+std::ostream &operator<<(std::ostream &os, qb::VirtualCore const &core);
 
 } // namespace qb
 

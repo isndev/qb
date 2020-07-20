@@ -154,13 +154,14 @@ Service::Service(ServiceId const sid)
 } // namespace qb
 
 qb::io::log::stream &
-operator<<(qb::io::log::stream &os, qb::Actor const &actor) {
+qb::operator<<(qb::io::log::stream &os, qb::Actor const &actor) {
     os << "Actor[" << actor.getName() << "](" << actor.id().index() << "."
        << actor.id().sid() << ")";
     return os;
 }
 
-std::ostream &operator<<(std::ostream &os, qb::Actor const &actor) {
+std::ostream &
+qb::operator<<(std::ostream &os, qb::Actor const &actor) {
     os << "Actor[" << actor.getName() << "](" << actor.id().index() << "."
        << actor.id().sid() << ")";
     return os;
