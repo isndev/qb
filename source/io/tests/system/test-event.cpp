@@ -63,6 +63,7 @@ struct FakeActor {
 };
 
 TEST(KernelEvents, Signal) {
+    qb::io::async::init();
     qb::io::async::listener handler;
     FakeActor actor;
 
