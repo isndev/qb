@@ -133,7 +133,7 @@
 .\" ========================================================================
 .\"
 .IX Title "LIBEV 3"
-.TH LIBEV 3 "2019-06-25" "libev-4.25" "libev - high performance full featured event loop"
+.TH LIBEV 3 "2020-04-19" "libev-4.33" "libev - high performance full featured event loop"
 .\" For nroff, turn off justification.  Always turn off hyphenation; it makes
 .\" way too many mistakes in technical documents.
 .if n .ad l
@@ -608,8 +608,17 @@ unblocking the signals.
 .Sp
 It's also required by \s-1POSIX\s0 in a threaded program, as libev calls
 \&\f(CW\*(C`sigprocmask\*(C'\fR, whose behaviour is officially unspecified.
+.ie n .IP """EVFLAG_NOTIMERFD""" 4
+.el .IP "\f(CWEVFLAG_NOTIMERFD\fR" 4
+.IX Item "EVFLAG_NOTIMERFD"
+When this flag is specified, the libev will avoid using a \f(CW\*(C`timerfd\*(C'\fR to
+detect time jumps. It will still be able to detect time jumps, but takes
+longer and has a lower accuracy in doing so, but saves a file descriptor
+per loop.
 .Sp
-This flag's behaviour will become the default in future versions of libev.
+The current implementation only tries to use a \f(CW\*(C`timerfd\*(C'\fR when the first
+\&\f(CW\*(C`ev_periodic\*(C'\fR watcher is started and falls back on other methods if it
+cannot be created, but this behaviour might change in the future.
 .ie n .IP """EVBACKEND_SELECT""  (value 1, portable select backend)" 4
 .el .IP "\f(CWEVBACKEND_SELECT\fR  (value 1, portable select backend)" 4
 .IX Item "EVBACKEND_SELECT (value 1, portable select backend)"
@@ -1342,8 +1351,9 @@ with a watcher-specific start function (\f(CW\*(C`ev_TYPE_start (loop, watcher
 corresponding stop function (\f(CW\*(C`ev_TYPE_stop (loop, watcher *)\*(C'\fR.
 .PP
 As long as your watcher is active (has been started but not stopped) you
-must not touch the values stored in it. Most specifically you must never
-reinitialise it or call its \f(CW\*(C`ev_TYPE_set\*(C'\fR macro.
+must not touch the values stored in it except when explicitly documented
+otherwise. Most specifically you must never reinitialise it or call its
+\&\f(CW\*(C`ev_TYPE_set\*(C'\fR macro.
 .PP
 Each and every callback receives the event loop pointer as first, the
 registered watcher structure as second, and a bitset of received events as
@@ -1524,7 +1534,7 @@ therefore a good idea to always call its \f(CW\*(C`ev_TYPE_stop\*(C'\fR function
 .IX Item "bool ev_is_active (ev_TYPE *watcher)"
 Returns a true value iff the watcher is active (i.e. it has been started
 and not yet been stopped). As long as a watcher is active you must not modify
-it.
+it unless documented otherwise.
 .IP "bool ev_is_pending (ev_TYPE *watcher)" 4
 .IX Item "bool ev_is_pending (ev_TYPE *watcher)"
 Returns a true value iff the watcher is pending, (i.e. it has outstanding
@@ -1656,7 +1666,7 @@ Many event loops support \fIwatcher priorities\fR, which are usually small
 integers that influence the ordering of event callback invocation
 between watchers in some way, all else being equal.
 .PP
-In libev, Watcher priorities can be set using \f(CW\*(C`ev_set_priority\*(C'\fR. See its
+In libev, watcher priorities can be set using \f(CW\*(C`ev_set_priority\*(C'\fR. See its
 description for the more technical details such as the actual priority
 range.
 .PP
@@ -1760,14 +1770,18 @@ This section describes each watcher in detail, but will not repeat
 information given in the last section. Any initialisation/set macros,
 functions and members specific to the watcher type are explained.
 .PP
-Members are additionally marked with either \fI[read\-only]\fR, meaning that,
-while the watcher is active, you can look at the member and expect some
-sensible content, but you must not modify it (you can modify it while the
-watcher is stopped to your hearts content), or \fI[read\-write]\fR, which
-means you can expect it to have some sensible content while the watcher
-is active, but you can also modify it. Modifying it may not do something
+Most members are additionally marked with either \fI[read\-only]\fR, meaning
+that, while the watcher is active, you can look at the member and expect
+some sensible content, but you must not modify it (you can modify it while
+the watcher is stopped to your hearts content), or \fI[read\-write]\fR, which
+means you can expect it to have some sensible content while the watcher is
+active, but you can also modify it (within the same thread as the event
+loop, i.e. without creating data races). Modifying it may not do something
 sensible or take immediate effect (or do anything at all), but libev will
 not crash or malfunction in any way.
+.PP
+In any case, the documentation for each member will explain what the
+effects are, and if there are any additional access restrictions.
 .ie n .SS """ev_io"" \- is this file descriptor readable or writable?"
 .el .SS "\f(CWev_io\fP \- is this file descriptor readable or writable?"
 .IX Subsection "ev_io - is this file descriptor readable or writable?"
@@ -1873,7 +1887,7 @@ reuse the same code path.
 \fIThe special problem of fork\fR
 .IX Subsection "The special problem of fork"
 .PP
-Some backends (epoll, kqueue, probably linuxaio) do not support \f(CW\*(C`fork ()\*(C'\fR
+Some backends (epoll, kqueue, linuxaio, iouring) do not support \f(CW\*(C`fork ()\*(C'\fR
 at all or exhibit useless behaviour. Libev fully supports fork, but needs
 to be told about it in the child if you want to continue to use it in the
 child.
@@ -1943,14 +1957,33 @@ opportunity for a DoS attack.
 .IX Item "ev_io_set (ev_io *, int fd, int events)"
 .PD
 Configures an \f(CW\*(C`ev_io\*(C'\fR watcher. The \f(CW\*(C`fd\*(C'\fR is the file descriptor to
-receive events for and \f(CW\*(C`events\*(C'\fR is either \f(CW\*(C`EV_READ\*(C'\fR, \f(CW\*(C`EV_WRITE\*(C'\fR or
-\&\f(CW\*(C`EV_READ | EV_WRITE\*(C'\fR, to express the desire to receive the given events.
-.IP "int fd [read\-only]" 4
-.IX Item "int fd [read-only]"
-The file descriptor being watched.
-.IP "int events [read\-only]" 4
-.IX Item "int events [read-only]"
-The events being watched.
+receive events for and \f(CW\*(C`events\*(C'\fR is either \f(CW\*(C`EV_READ\*(C'\fR, \f(CW\*(C`EV_WRITE\*(C'\fR, both
+\&\f(CW\*(C`EV_READ | EV_WRITE\*(C'\fR or \f(CW0\fR, to express the desire to receive the given
+events.
+.Sp
+Note that setting the \f(CW\*(C`events\*(C'\fR to \f(CW0\fR and starting the watcher is
+supported, but not specially optimized \- if your program sometimes happens
+to generate this combination this is fine, but if it is easy to avoid
+starting an io watcher watching for no events you should do so.
+.IP "ev_io_modify (ev_io *, int events)" 4
+.IX Item "ev_io_modify (ev_io *, int events)"
+Similar to \f(CW\*(C`ev_io_set\*(C'\fR, but only changes the requested events. Using this
+might be faster with some backends, as libev can assume that the \f(CW\*(C`fd\*(C'\fR
+still refers to the same underlying file description, something it cannot
+do when using \f(CW\*(C`ev_io_set\*(C'\fR.
+.IP "int fd [no\-modify]" 4
+.IX Item "int fd [no-modify]"
+The file descriptor being watched. While it can be read at any time, you
+must not modify this member even when the watcher is stopped \- always use
+\&\f(CW\*(C`ev_io_set\*(C'\fR for that.
+.IP "int events [no\-modify]" 4
+.IX Item "int events [no-modify]"
+The set of events the fd is being watched for, among other flags. Remember
+that this is a bit set \- to test for \f(CW\*(C`EV_READ\*(C'\fR, use \f(CW\*(C`w\->events &
+EV_READ\*(C'\fR, and similarly for \f(CW\*(C`EV_WRITE\*(C'\fR.
+.Sp
+As with \f(CW\*(C`fd\*(C'\fR, you must not modify this member even when the watcher is
+stopped, always use \f(CW\*(C`ev_io_set\*(C'\fR or \f(CW\*(C`ev_io_modify\*(C'\fR for that.
 .PP
 \fIExamples\fR
 .IX Subsection "Examples"
@@ -4388,6 +4421,9 @@ method.
 .Sp
 For \f(CW\*(C`ev::embed\*(C'\fR watchers this method is called \f(CW\*(C`set_embed\*(C'\fR, to avoid
 clashing with the \f(CW\*(C`set (loop)\*(C'\fR method.
+.Sp
+For \f(CW\*(C`ev::io\*(C'\fR watchers there is an additional \f(CW\*(C`set\*(C'\fR method that acepts a
+new event mask only, and internally calls \f(CW\*(C`ev_io_modfify\*(C'\fR.
 .IP "w\->start ()" 4
 .IX Item "w->start ()"
 Starts the watcher. Note that there is no \f(CW\*(C`loop\*(C'\fR argument, as the
@@ -4626,6 +4662,7 @@ in your include path (e.g. in libev/ when using \-Ilibev):
 \&   ev_poll.c       only when poll backend is enabled
 \&   ev_epoll.c      only when the epoll backend is enabled
 \&   ev_linuxaio.c   only when the linux aio backend is enabled
+\&   ev_iouring.c    only when the linux io_uring backend is enabled
 \&   ev_kqueue.c     only when the kqueue backend is enabled
 \&   ev_port.c       only when the solaris port backend is enabled
 .Ve
@@ -4755,6 +4792,27 @@ available and will probe for kernel support at runtime. This will improve
 \&\f(CW\*(C`ev_signal\*(C'\fR and \f(CW\*(C`ev_async\*(C'\fR performance and reduce resource consumption.
 If undefined, it will be enabled if the headers indicate GNU/Linux + Glibc
 2.7 or newer, otherwise disabled.
+.IP "\s-1EV_USE_SIGNALFD\s0" 4
+.IX Item "EV_USE_SIGNALFD"
+If defined to be \f(CW1\fR, then libev will assume that \f(CW\*(C`signalfd ()\*(C'\fR is
+available and will probe for kernel support at runtime. This enables
+the use of \s-1EVFLAG_SIGNALFD\s0 for faster and simpler signal handling. If
+undefined, it will be enabled if the headers indicate GNU/Linux + Glibc
+2.7 or newer, otherwise disabled.
+.IP "\s-1EV_USE_TIMERFD\s0" 4
+.IX Item "EV_USE_TIMERFD"
+If defined to be \f(CW1\fR, then libev will assume that \f(CW\*(C`timerfd ()\*(C'\fR is
+available and will probe for kernel support at runtime. This allows
+libev to detect time jumps accurately. If undefined, it will be enabled
+if the headers indicate GNU/Linux + Glibc 2.8 or newer and define
+\&\f(CW\*(C`TFD_TIMER_CANCEL_ON_SET\*(C'\fR, otherwise disabled.
+.IP "\s-1EV_USE_EVENTFD\s0" 4
+.IX Item "EV_USE_EVENTFD"
+If defined to be \f(CW1\fR, then libev will assume that \f(CW\*(C`eventfd ()\*(C'\fR is
+available and will probe for kernel support at runtime. This will improve
+\&\f(CW\*(C`ev_signal\*(C'\fR and \f(CW\*(C`ev_async\*(C'\fR performance and reduce resource consumption.
+If undefined, it will be enabled if the headers indicate GNU/Linux + Glibc
+2.7 or newer, otherwise disabled.
 .IP "\s-1EV_USE_SELECT\s0" 4
 .IX Item "EV_USE_SELECT"
 If undefined or defined to be \f(CW1\fR, libev will compile in support for the
@@ -4818,10 +4876,15 @@ backend for GNU/Linux systems. If undefined, it will be enabled if the
 headers indicate GNU/Linux + Glibc 2.4 or newer, otherwise disabled.
 .IP "\s-1EV_USE_LINUXAIO\s0" 4
 .IX Item "EV_USE_LINUXAIO"
+If defined to be \f(CW1\fR, libev will compile in support for the Linux aio
+backend (\f(CW\*(C`EV_USE_EPOLL\*(C'\fR must also be enabled). If undefined, it will be
+enabled on linux, otherwise disabled.
+.IP "\s-1EV_USE_IOURING\s0" 4
+.IX Item "EV_USE_IOURING"
 If defined to be \f(CW1\fR, libev will compile in support for the Linux
-aio backend. Due to it's currenbt limitations it has to be requested
-explicitly.  If undefined, it will be enabled on linux, otherwise
-disabled.
+io_uring backend (\f(CW\*(C`EV_USE_EPOLL\*(C'\fR must also be enabled). Due to it's
+current limitations it has to be requested explicitly. If undefined, it
+will be enabled on linux, otherwise disabled.
 .IP "\s-1EV_USE_KQUEUE\s0" 4
 .IX Item "EV_USE_KQUEUE"
 If defined to be \f(CW1\fR, libev will compile in support for the \s-1BSD\s0 style

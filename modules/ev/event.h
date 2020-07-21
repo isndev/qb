@@ -65,7 +65,7 @@ extern "C" {
 # include <time.h> /* mingw seems to need this, for whatever reason */
 # include <sys/time.h>
 #else
-# include <WinSock2.h>
+# include <winsock.h>
 #endif
 
 struct event_base;
