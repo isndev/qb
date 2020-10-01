@@ -27,8 +27,14 @@
                                    boundaries
 */
 
+#if __cpp_lib_hardware_interference_size >= 201603
+#include <new>
+#define QB_LOCKFREE_CACHELINE_BYTES std::hardware_destructive_interference_size
+#define QB_LOCKFREE_EVENT_BUCKET_BYTES std::hardware_destructive_interference_size
+#else
 #define QB_LOCKFREE_CACHELINE_BYTES 64
 #define QB_LOCKFREE_EVENT_BUCKET_BYTES 64
+#endif
 
 #ifdef _MSC_VER
 
@@ -50,7 +56,6 @@
 
 #    define QB_LOCKFREE_CACHELINE_ALIGNMENT alignas(QB_LOCKFREE_CACHELINE_BYTES)
 #    define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT alignas(QB_LOCKFREE_EVENT_BUCKET_BYTES)
-//__attribute__((aligned(QB_LOCKFREE_CACHELINE_BYTES)))
 
 #    if defined(__i386__) || defined(__ppc__)
 #        define QB_LOCKFREE_DCAS_ALIGNMENT

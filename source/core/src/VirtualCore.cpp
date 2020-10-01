@@ -151,7 +151,7 @@ VirtualCore::__flush_all__() noexcept {
                 ++_metrics._nb_event_sent_try;
                 if (!try_send(event) && event.state.qos) {
                     ++_metrics._nb_event_sent_try;
-                    auto &current_lock = _engine._event_safe_deadlock[_resolved_index];
+                    static thread_local auto &current_lock = _engine._event_safe_deadlock[_resolved_index];
                     // current locked by event set to true
                     current_lock.store(true, std::memory_order_release);
                     while (!try_send(event)) {
@@ -160,8 +160,7 @@ VirtualCore::__flush_all__() noexcept {
                         if (current_lock.load(std::memory_order_acquire)) {
                             // notify to unlock dest core
                             _engine
-                                ._event_safe_deadlock[_engine._core_set.resolve(
-                                    event.dest._index)]
+                                ._event_safe_deadlock[_engine._core_set.resolve(event.dest._index)]
                                 .store(false, std::memory_order_release);
                         } else {
                             // partial send another core is maybe in deadlock
