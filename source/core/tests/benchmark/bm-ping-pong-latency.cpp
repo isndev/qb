@@ -21,7 +21,7 @@
 #include <qb/actor.h>
 #include <qb/main.h>
 
-class PongActor : public qb::Actor {
+class PongActor final : public qb::Actor {
 public:
     bool
     onInit() final {
@@ -36,11 +36,11 @@ public:
     }
 };
 
-class PingActor : public qb::Actor {
+class PingActor final : public qb::Actor {
     pg::latency<1000 * 1000, 900000> _latency;
 
 public:
-    ~PingActor() final {
+    ~PingActor() {
         _latency.generate<std::ostream, std::chrono::nanoseconds>(std::cout, "ns");
     }
 
@@ -106,7 +106,7 @@ thread_pong(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
             [&](auto event, auto nb_events) {
                 for (auto i = 0u; i < nb_events; ++i) {
                     --event[i]._ttl;
-                    spsc[0].enqueue(LightEvent(event[i]._ttl));
+                    spsc[0].enqueue(event[i]);
                 }
             },
             events, 4096u);

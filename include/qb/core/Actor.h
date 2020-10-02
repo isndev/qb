@@ -314,7 +314,7 @@ public:
      *     registerCallback(*this);
      *   }
      * // ...
-     *   virtual void onCallback() override final {
+     *   virtual void onCallback() final {
      *     // do something
      *   }
      * }
