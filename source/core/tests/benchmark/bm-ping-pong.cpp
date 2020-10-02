@@ -49,37 +49,8 @@ struct DynamicEvent : qb::Event {
         , vec(512, 8) {}
 };
 
-template <typename EventTrait>
-class ActorPong : public qb::Actor {
-    const uint64_t max_sends;
-    const qb::ActorId actor_to_send;
-
-public:
-    explicit ActorPong(uint64_t const max, qb::ActorId const id = qb::ActorId())
-        : max_sends(max)
-        , actor_to_send(id) {}
-
-    bool
-    onInit() final {
-        registerEvent<EventTrait>(*this);
-        if (actor_to_send)
-            push<EventTrait>(actor_to_send, 0u);
-        return true;
-    }
-
-    void
-    on(EventTrait &event) const {
-        if (event.x >= max_sends)
-            kill();
-        if (event.x <= max_sends) {
-            ++event.x;
-            reply(event);
-        }
-    }
-};
-
 template <typename TestEvent>
-class PongActor : public qb::Actor {
+class PongActor final : public qb::Actor {
 public:
     bool
     onInit() final {
@@ -95,7 +66,7 @@ public:
 };
 
 template <typename TestEvent>
-class PingActor : public qb::Actor {
+class PingActor final : public qb::Actor {
     const uint64_t max_sends;
     const qb::ActorId actor_to_send;
 

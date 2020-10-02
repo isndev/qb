@@ -176,7 +176,7 @@ public:
       : _id_pong(id_pong) {}
 
     // /!\ the engine will call this function before adding PingPongActor
-    bool onInit() override final {
+    bool onInit() final {
         registerEvent<MyEvent>(*this);         // will listen MyEvent
         auto &event = push<MyEvent>(_id_pong); // push MyEvent to PongActor and keep a reference to the event
         event.data = 1337;                     // set trivial data
@@ -220,7 +220,7 @@ public:
     PongActor() = default;
 
     // /!\ the engine will call this function before adding PongActor
-    bool onInit() override final {
+    bool onInit() final {
         registerEvent<MyEvent>(*this);         // will just listen MyEvent
 
         return true;                           // init ok

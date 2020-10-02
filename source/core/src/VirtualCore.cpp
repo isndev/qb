@@ -148,14 +148,14 @@ VirtualCore::__flush_all__() noexcept {
             auto i = pipe.begin();
             while (i < pipe.end()) {
                 const auto &event = *reinterpret_cast<const Event *>(i);
-                ++_metrics._nb_event_sent_try;
+                //++_metrics._nb_event_sent_try;
                 if (!try_send(event) && event.state.qos) {
-                    ++_metrics._nb_event_sent_try;
+                    //++_metrics._nb_event_sent_try;
                     static thread_local auto &current_lock = _engine._event_safe_deadlock[_resolved_index];
                     // current locked by event set to true
                     current_lock.store(true, std::memory_order_release);
                     while (!try_send(event)) {
-                        ++_metrics._nb_event_sent_try;
+                        //++_metrics._nb_event_sent_try;
                         // entering in deadlock
                         if (current_lock.load(std::memory_order_acquire)) {
                             // notify to unlock dest core
@@ -169,8 +169,8 @@ VirtualCore::__flush_all__() noexcept {
                         }
                     }
                 }
-                ++_metrics._nb_event_sent;
-                _metrics._nb_bucket_sent += event.bucket_size;
+                //++_metrics._nb_event_sent;
+                //_metrics._nb_bucket_sent += event.bucket_size;
                 i += event.bucket_size;
             }
             pipe.reset();
@@ -228,9 +228,10 @@ VirtualCore::__workflow__() {
     LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actors.size())
                 << " actor(s)");
     while (likely(true)) {
+        _metrics._nanotimer = Timestamp::nano();
         // core has io
         if (io::async::listener::current.size())
-            _metrics._nb_event_io =
+            //_metrics._nb_event_io =
                 io::async::run(_is_low_latency ? EVRUN_NOWAIT : EVRUN_ONCE);
         //        _metrics._nb_event_io = io::async::run(EVRUN_NOWAIT);
         // send core events
@@ -388,7 +389,7 @@ const qb::unordered_set<CoreId> &VirtualCore::getCoreSet() const noexcept {
 
 uint64_t
 VirtualCore::time() const noexcept {
-    return _metrics._nanotimer ? _metrics._nanotimer : Timestamp::nano();
+    return _metrics._nanotimer;
 }
 
 ServiceId VirtualCore::_nb_service = 0;
