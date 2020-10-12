@@ -116,9 +116,12 @@ SharedCoreCommunication::~SharedCoreCommunication() noexcept {
 
 bool
 SharedCoreCommunication::send(Event const &event) const noexcept {
-    CoreId source_index = _core_set.resolve(event.source._index);
+    const CoreId source_index = _core_set.resolve(event.source._index);
+    const CoreId dest_index = _core_set.resolve(event.dest._index);
+    
+    _mail_boxes[dest_index]->notify();
 
-    return static_cast<bool>(_mail_boxes[_core_set.resolve(event.dest._index)]->enqueue(
+    return static_cast<bool>(_mail_boxes[dest_index]->enqueue(
         source_index, reinterpret_cast<const EventBucket *>(&event), event.bucket_size));
 }
 

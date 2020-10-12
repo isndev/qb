@@ -20,6 +20,7 @@
 #include <iostream>
 #include <qb/system/container/unordered_map.h>
 #include <thread>
+#include <condition_variable>
 #include <vector>
 // include from qb
 #include "CoreSet.h"
@@ -164,7 +165,28 @@ class SharedCoreCommunication : nocopy {
     constexpr static const uint64_t MaxRingEvents =
         (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
     //////// Types
-    using MPSCBuffer = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
+    struct MPSCBuffer
+        : public lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0> {
+        std::mutex mtx;
+        std::condition_variable cv;
+        const bool has_wait;
+
+        explicit MPSCBuffer(std::size_t const nb_producer)
+            : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer), has_wait(nb_producer > 1) {}
+
+        void
+        wait() noexcept {
+            if (has_wait) {
+                std::unique_lock lk(mtx);
+                cv.wait_for(lk, std::chrono::nanoseconds(100));
+            }
+        }
+        void
+        notify() noexcept {
+            if (has_wait)
+                cv.notify_all();
+        }
+    };
 
     const CoreSet _core_set;
     std::vector<std::atomic<bool>> _event_safe_deadlock;
