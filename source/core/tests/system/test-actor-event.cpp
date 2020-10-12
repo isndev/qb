@@ -216,6 +216,29 @@ protected:
 };
 
 template <typename ActorSender>
+class ActorEventMultiHighLatency : public testing::Test {
+protected:
+    const uint32_t max_core;
+    qb::Main main;
+    ActorEventMultiHighLatency()
+        : max_core(std::thread::hardware_concurrency()) {}
+
+    void
+    SetUp() final {
+        for (auto i = 0u; i < max_core; ++i) {
+            for (auto j = 0u; j < MAX_ACTORS; ++j) {
+                main.core(((i + 1) % max_core)).setLowLatency(false);
+                main.addActor<ActorSender>(
+                    i, MAX_EVENTS,
+                    main.addActor<TestActorReceiver>(((i + 1) % max_core), MAX_EVENTS));
+            }
+        }
+    }
+    void
+    TearDown() final {}
+};
+
+template <typename ActorSender>
 class ActorEventBroadcastMono : public testing::Test {
 protected:
     qb::Main main;
@@ -261,6 +284,7 @@ TYPED_TEST_SUITE(ActorEventMono, Implementations);
 TYPED_TEST_SUITE(ActorEventBroadcastMono, Implementations);
 TYPED_TEST_SUITE(ActorEventMulti, Implementations);
 TYPED_TEST_SUITE(ActorEventBroadcastMulti, Implementations);
+TYPED_TEST_SUITE(ActorEventMultiHighLatency, Implementations);
 
 TYPED_TEST(ActorEventMono, SendEvents) {
     this->main.start();
@@ -282,6 +306,13 @@ TYPED_TEST(ActorEventMulti, SendEvents) {
 }
 
 TYPED_TEST(ActorEventBroadcastMulti, SendEvents) {
+    EXPECT_GT(this->max_core, 1u);
+    this->main.start();
+    this->main.join();
+    EXPECT_FALSE(this->main.hasError());
+}
+
+TYPED_TEST(ActorEventMultiHighLatency, SendEvents) {
     EXPECT_GT(this->max_core, 1u);
     this->main.start();
     this->main.join();

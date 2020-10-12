@@ -76,7 +76,7 @@ WinSockInitializer::WinSockInitializer() noexcept
 
 WinSockInitializer::~WinSockInitializer() noexcept {
 #    ifndef QB_IO_WITH_SSL
-    WSACleanup();
+//    WSACleanup();
 #    endif
 }
 

@@ -108,20 +108,20 @@ private:
     // --- loop
     bool _is_low_latency; // default no wait
     struct {
-//        uint64_t _sleep_count = 0;
-//        uint64_t _nb_event_io = 0;
-//        uint64_t _nb_event_received = 0;
-//        uint64_t _nb_bucket_received = 0;
-//        uint64_t _nb_event_sent_try = 0;
-//        uint64_t _nb_event_sent = 0;
-//        uint64_t _nb_bucket_sent = 0;
+        uint64_t _sleep_count = 0;
+        uint64_t _nb_event_io = 0;
+        uint64_t _nb_event_received = 0;
+        uint64_t _nb_bucket_received = 0;
+        uint64_t _nb_event_sent_try = 0;
+        uint64_t _nb_event_sent = 0;
+        uint64_t _nb_bucket_sent = 0;
         uint64_t _nanotimer = 0;
 //
         inline void
         reset() {
-            *this = {};
-//            //*this = {_sleep_count +
-//            //         ((_nb_event_sent + _nb_event_received + _nb_event_io) << 3u)};
+            //*this = {};
+            *this = {(
+                (_sleep_count + _nb_event_sent + _nb_event_received + _nb_event_io + _nb_event_sent_try))};
         }
 //
     } _metrics;

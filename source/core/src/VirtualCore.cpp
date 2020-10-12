@@ -111,8 +111,8 @@ VirtualCore::__receive_events__(EventBucket *buffer, std::size_t const nb_events
 
         event->state.alive = 0;
         _router.route(*event);
-//        ++_metrics._nb_event_received;
-//        _metrics._nb_bucket_received += event->bucket_size;
+        ++_metrics._nb_event_received;
+        _metrics._nb_bucket_received += event->bucket_size;
         i += event->bucket_size;
     }
 }
@@ -148,14 +148,14 @@ VirtualCore::__flush_all__() noexcept {
             auto i = pipe.begin();
             while (i < pipe.end()) {
                 const auto &event = *reinterpret_cast<const Event *>(i);
-                //++_metrics._nb_event_sent_try;
+                ++_metrics._nb_event_sent_try;
                 if (!try_send(event) && event.state.qos) {
-                    //++_metrics._nb_event_sent_try;
+                    ++_metrics._nb_event_sent_try;
                     static thread_local auto &current_lock = _engine._event_safe_deadlock[_resolved_index];
                     // current locked by event set to true
                     current_lock.store(true, std::memory_order_release);
                     while (!try_send(event)) {
-                        //++_metrics._nb_event_sent_try;
+                        ++_metrics._nb_event_sent_try;
                         // entering in deadlock
                         if (current_lock.load(std::memory_order_acquire)) {
                             // notify to unlock dest core
@@ -169,8 +169,8 @@ VirtualCore::__flush_all__() noexcept {
                         }
                     }
                 }
-                //++_metrics._nb_event_sent;
-                //_metrics._nb_bucket_sent += event.bucket_size;
+                ++_metrics._nb_event_sent;
+                _metrics._nb_bucket_sent += event.bucket_size;
                 i += event.bucket_size;
             }
             pipe.reset();
@@ -231,9 +231,7 @@ VirtualCore::__workflow__() {
         _metrics._nanotimer = Timestamp::nano();
         // core has io
         if (io::async::listener::current.size())
-            //_metrics._nb_event_io =
-                io::async::run(_is_low_latency ? EVRUN_NOWAIT : EVRUN_ONCE);
-        //        _metrics._nb_event_io = io::async::run(EVRUN_NOWAIT);
+            _metrics._nb_event_io = io::async::run(EVRUN_NOWAIT);
         // send core events
         __flush_all__();
         // receive core events
@@ -255,15 +253,14 @@ VirtualCore::__workflow__() {
                 break;
             }
         }
-        //        if (!_is_low_latency) {
-        //            if (likely(_metrics._sleep_count > 0))
-        //                --_metrics._sleep_count;
-        //            else
-        //                spin_loop_pause();
-        //                std::this_thread::sleep_for(std::chrono::nanoseconds(1));
-        //        }
         // reset metrics
         _metrics.reset();
+        if (!_is_low_latency) {
+            if (likely(_metrics._sleep_count))
+                --_metrics._sleep_count;
+            else
+                _mail_box.wait();
+        }
     }
     // receive and flush residual events
     do {
