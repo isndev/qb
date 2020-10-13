@@ -71,8 +71,7 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     , _event_buffer(*new EventBuffer())
     , _pipes(engine.getNbCore())
     , _mono_pipe_swap(_pipes[_resolved_index])
-    , _mono_pipe(*new VirtualPipe())
-    , _is_low_latency(true) {
+    , _mono_pipe(*new VirtualPipe()) {
 
     for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
         _ids.insert(static_cast<ServiceId>(i));
@@ -255,7 +254,7 @@ VirtualCore::__workflow__() {
         }
         // reset metrics
         _metrics.reset();
-        if (!_is_low_latency) {
+        if (_mail_box.getLatency()) {
             if (likely(_metrics._sleep_count))
                 --_metrics._sleep_count;
             else
@@ -369,11 +368,6 @@ VirtualCore::forward(ActorId const dest, Event &event) noexcept {
     send(event);
 }
 //! Event Api
-
-void
-VirtualCore::setLowLatency(bool state) noexcept {
-    _is_low_latency = state;
-}
 
 CoreId
 VirtualCore::getIndex() const noexcept {

@@ -65,11 +65,6 @@ Actor::time() const noexcept {
     return VirtualCore::_handler->time();
 }
 
-void
-Actor::setCoreLowLatency(bool state) const noexcept {
-    VirtualCore::_handler->setLowLatency(state);
-}
-
 bool
 Actor::is_alive() const noexcept {
     return _alive;
