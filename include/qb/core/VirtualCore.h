@@ -78,7 +78,7 @@ private:
     constexpr static const uint64_t MaxRingEvents =
         ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_EVENT_BUCKET_BYTES;
     // Types
-    using MPSCBuffer = SharedCoreCommunication::MPSCBuffer;
+    using Mailbox = SharedCoreCommunication::Mailbox;
     using EventBuffer = std::array<EventBucket, MaxRingEvents>;
     using ActorMap = qb::unordered_map<ActorId, Actor *>;
     using CallbackMap = qb::unordered_map<ActorId, ICallback *>;
@@ -93,7 +93,7 @@ private:
     const CoreId _resolved_index;
     SharedCoreCommunication &_engine;
     // event reception
-    MPSCBuffer &_mail_box;
+    Mailbox &_mail_box;
     EventBuffer &_event_buffer;
     router::memh<Event> _router;
     // event flush
@@ -106,7 +106,7 @@ private:
     CallbackMap _actor_callbacks;
     RemoveActorList _actor_to_remove;
     // --- loop
-    bool _is_low_latency; // default no wait
+
     struct {
         uint64_t _sleep_count = 0;
         uint64_t _nb_event_io = 0;
@@ -188,8 +188,6 @@ private:
     template <typename T, typename... _Init>
     T &push(ActorId dest, ActorId source, _Init &&... init) noexcept;
     //! Event Api
-    // IO strategy
-    void setLowLatency(bool state) noexcept;
 
 public:
     VirtualCore() = delete;

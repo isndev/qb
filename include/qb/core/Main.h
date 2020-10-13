@@ -95,7 +95,7 @@ private:
     const CoreId _index;
     ServiceId _next_id;
     qb::unordered_set<CoreId> _affinity;
-    bool _low_latency;
+    uint64_t _latency;
 
     qb::unordered_set<ServiceId> _registered_services;
     std::vector<IActorFactory *> _actor_factories;
@@ -147,17 +147,20 @@ public:
     CoreInitializer &setAffinity(CoreIdSet const &cores = {}) noexcept;
 
     /*!
-     * @brief Set VirtualCore low latency (default = true)
-     * @param state
+     * @brief Set VirtualCore max wait latency in nanosecond if it hasn't received any core/io events
+     * @param latency in nanoseconds (default 0)
      * @note
-     * If true then used core will never sleep depends on usage
+     * 0 is low latency (Core is used at 100%)
+     * latency > 0 Core max wating time before handling events and callbacks
      */
-    CoreInitializer &setLowLatency(bool state = true) noexcept;
+    CoreInitializer &setLatency(uint64_t latency = 0) noexcept;
 
     [[nodiscard]] CoreId getIndex() const noexcept;
     [[nodiscard]] CoreIdSet const &getAffinity() const noexcept;
-    [[nodiscard]] bool isLowLatency() const noexcept;
+    [[nodiscard]] uint64_t getLatency() const noexcept;
 };
+
+using CoreInitializerMap = qb::unordered_map<CoreId, CoreInitializer>;
 
 class SharedCoreCommunication : nocopy {
     friend class VirtualCore;
@@ -165,41 +168,50 @@ class SharedCoreCommunication : nocopy {
     constexpr static const uint64_t MaxRingEvents =
         (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
     //////// Types
-    struct MPSCBuffer
+    class Mailbox
         : public lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0> {
-        std::mutex mtx;
-        std::condition_variable cv;
-        const bool has_wait;
+        const uint64_t _latency;
+        std::mutex _mtx;
+        std::condition_variable _cv;
+    public:
 
-        explicit MPSCBuffer(std::size_t const nb_producer)
-            : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer), has_wait(nb_producer > 1) {}
+        explicit Mailbox(std::size_t const nb_producer, uint64_t const latency)
+            : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer)
+            , _latency(latency) {}
 
         void
         wait() noexcept {
-            if (has_wait) {
-                std::unique_lock lk(mtx);
-                cv.wait_for(lk, std::chrono::nanoseconds(100));
+            if (_latency) {
+                std::unique_lock lk(_mtx);
+                _cv.wait_for(lk, std::chrono::nanoseconds(_latency));
             }
         }
+
         void
         notify() noexcept {
-            if (has_wait)
-                cv.notify_all();
+            if (_latency)
+                _cv.notify_all();
         }
+
+        [[nodiscard]] uint64_t
+        getLatency() const noexcept {
+            return _latency;
+        }
+
     };
 
     const CoreSet _core_set;
     std::vector<std::atomic<bool>> _event_safe_deadlock;
-    std::vector<MPSCBuffer *> _mail_boxes;
+    std::vector<Mailbox *> _mail_boxes;
 
 public:
     SharedCoreCommunication() = delete;
-    explicit SharedCoreCommunication(qb::unordered_set<CoreId> const &set) noexcept;
+    explicit SharedCoreCommunication(CoreInitializerMap const &core_initializers) noexcept;
 
     ~SharedCoreCommunication() noexcept;
 
     [[nodiscard]] bool send(Event const &event) const noexcept;
-    [[nodiscard]] MPSCBuffer &getMailBox(CoreId id) const noexcept;
+    [[nodiscard]] Mailbox &getMailBox(CoreId id) const noexcept;
     [[nodiscard]] CoreId getNbCore() const noexcept;
 };
 
@@ -222,7 +234,7 @@ class Main {
     constexpr static const uint64_t MaxRingEvents =
         (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
     //////// Types
-    using MPSCBuffer = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
+    using Mailbox = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
 
     static std::vector<Main *> _instances;
     static std::mutex _instances_lock;
@@ -236,7 +248,7 @@ class Main {
 private:
     std::vector<std::thread> _cores;
     // Core Factory
-    qb::unordered_map<CoreId, CoreInitializer> _core_initializers;
+    CoreInitializerMap _core_initializers;
     SharedCoreCommunication *_shared_com;
     bool _is_running;
 

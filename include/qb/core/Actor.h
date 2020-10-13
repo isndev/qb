@@ -279,7 +279,7 @@ public:
     template <typename _ServiceActor>
     _ServiceActor *getService() const noexcept;
 
-    void setCoreLowLatency(bool state) const noexcept;
+    //void setCoreLowLatency(bool state) const noexcept;
 
     /*!
      * @brief Check if Actor is alive

@@ -27,7 +27,7 @@ CoreInitializer::CoreInitializer(CoreId const index)
     : _index(index)
     , _next_id(VirtualCore::_nb_service + 1)
     , _affinity{index}
-    , _low_latency(true) {}
+    , _latency(0) {}
 
 CoreInitializer::~CoreInitializer() noexcept {
     clear();
@@ -55,8 +55,8 @@ CoreInitializer::setAffinity(CoreIdSet const &id) noexcept {
 }
 
 CoreInitializer &
-CoreInitializer::setLowLatency(bool const state) noexcept {
-    _low_latency = state;
+CoreInitializer::setLatency(uint64_t const latency) noexcept {
+    _latency = latency;
     return *this;
 }
 
@@ -70,9 +70,9 @@ CoreInitializer::getAffinity() const noexcept {
     return _affinity;
 }
 
-bool
-CoreInitializer::isLowLatency() const noexcept {
-    return _low_latency;
+uint64_t
+CoreInitializer::getLatency() const noexcept {
+    return _latency;
 }
 
 // !CoreInitializer
@@ -96,15 +96,22 @@ CoreInitializer::ActorBuilder::idList() const noexcept {
 }
 // !CoreInitializer::ActorBuilder
 
+static auto
+set_from_core_initializers(CoreInitializerMap const &core_initializers) {
+    qb::unordered_set<CoreId> core_ids;
+    for (const auto &initializer : core_initializers)
+        core_ids.insert(initializer.first);
+    return std::move(core_ids);
+}
+
 // SharedCoreCommunication
-SharedCoreCommunication::SharedCoreCommunication(
-    qb::unordered_set<CoreId> const &set) noexcept
-    : _core_set(set)
+SharedCoreCommunication::SharedCoreCommunication(CoreInitializerMap const &core_initializers) noexcept
+    : _core_set(set_from_core_initializers(core_initializers))
     , _event_safe_deadlock(_core_set.getNbCore())
     , _mail_boxes(_core_set.getSize()) {
-    for (auto core_id : set) {
+    for (const auto &initializer : core_initializers) {
         const auto nb_producers = _core_set.getNbCore();
-        _mail_boxes[_core_set.resolve(core_id)] = new MPSCBuffer(nb_producers);
+        _mail_boxes[_core_set.resolve(initializer.first)] = new Mailbox(nb_producers, initializer.second.getLatency());
     }
 }
 
@@ -119,13 +126,17 @@ SharedCoreCommunication::send(Event const &event) const noexcept {
     const CoreId source_index = _core_set.resolve(event.source._index);
     const CoreId dest_index = _core_set.resolve(event.dest._index);
     
-    _mail_boxes[dest_index]->notify();
+    if (static_cast<bool>(_mail_boxes[dest_index]->enqueue(
+            source_index, reinterpret_cast<const EventBucket *>(&event),
+            event.bucket_size))) {
+        _mail_boxes[dest_index]->notify();
+        return true;
+    }
 
-    return static_cast<bool>(_mail_boxes[dest_index]->enqueue(
-        source_index, reinterpret_cast<const EventBucket *>(&event), event.bucket_size));
+    return false;
 }
 
-SharedCoreCommunication::MPSCBuffer &
+SharedCoreCommunication::Mailbox &
 SharedCoreCommunication::getMailBox(CoreId const id) const noexcept {
     return *_mail_boxes[_core_set.resolve(id)];
 }
@@ -179,7 +190,6 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     VirtualCore::_handler = &core;
     io::async::init();
 
-    core.setLowLatency(initializer.isLowLatency());
     try {
         // Init VirtualCore
         auto &core_factory = initializer._actor_factories;
@@ -235,12 +245,8 @@ Main::start(bool async) noexcept {
         LOG_INFO("[MAIN] Init with " << _core_initializers.size() << " cores");
         _is_running = true;
         _sync_start.store(0, std::memory_order_release);
-
-        qb::unordered_set<CoreId> core_ids;
-        for (const auto &initializer : _core_initializers)
-            core_ids.insert(initializer.first);
         _cores.resize(_core_initializers.size());
-        _shared_com = new SharedCoreCommunication(core_ids);
+        _shared_com = new SharedCoreCommunication(_core_initializers);
 
         auto i = 0u;
         for (auto &it : _core_initializers) {
