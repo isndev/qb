@@ -20,6 +20,7 @@
 
 #include "async/event/all.h"
 #include "async/io.h"
+#include "async/file.h"
 #include "async/tcp/client.h"
 #include "async/tcp/server.h"
 #include "async/udp/client.h"
@@ -93,6 +94,7 @@ struct use {
     };
 
     using timeout = async::with_timeout<_Derived>;
+    using file = async::file<_Derived>;
 };
 
 } // namespace qb::io
