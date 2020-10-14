@@ -25,9 +25,9 @@ namespace qb::io::async {
 
 template <typename _Derived>
 class file
-    : public input_file<_Derived>
+    : public file_watcher<_Derived>
     , qb::io::transport::file {
-    using base_t = input_file<_Derived>;
+    using base_t = file_watcher<_Derived>;
     friend base_t;
 public:
     using transport_io_type = typename qb::io::transport::file::transport_io_type;

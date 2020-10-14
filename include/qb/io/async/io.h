@@ -88,19 +88,20 @@ private:
 #define Derived static_cast<_Derived &>(*this)
 
 template <typename _Derived>
-class input_file : public base<input_file<_Derived>, event::file> {
-    using base_t = base<input_file<_Derived>, event::file>;
+class file_watcher : public base<file_watcher<_Derived>, event::file> {
+    using base_t = base<file_watcher<_Derived>, event::file>;
     AProtocol<_Derived> *_protocol = nullptr;
     std::vector<AProtocol<_Derived> *> _protocol_list;
 
 public:
-    using base_io_t = input_file<_Derived>;
+    using base_io_t = file_watcher<_Derived>;
+    constexpr static const bool do_read = true;
 
-    input_file() = default;
-    input_file(AProtocol<_Derived> *protocol) noexcept
+    file_watcher() = default;
+    file_watcher(AProtocol<_Derived> *protocol) noexcept
         : _protocol(protocol) {}
-    input_file(input_file const &) = delete;
-    ~input_file() noexcept {
+    file_watcher(file_watcher const &) = delete;
+    ~file_watcher() noexcept {
         for (auto protocol : _protocol_list)
             delete protocol;
     }
@@ -127,20 +128,13 @@ public:
         this->_async_event.stop();
     }
 
-private:
-    friend class listener::RegisteredKernelEvent<event::file, input_file>;
-
-    void
-    on(event::file const &event) {
+    int read_all() {
         constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
         std::size_t ret = 0u;
-
-        if (!_protocol->ok() || !event.attr.st_nlink)
-            goto error;
-        if (event.prev.st_size != event.attr.st_size) {
+        do {
             ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret))
-                goto error;
+                return -1;
             while ((ret = this->_protocol->getMessageSize()) > 0) {
                 // has a new message to read
                 this->_protocol->onMessage(ret);
@@ -161,11 +155,36 @@ private:
                     }
                 }
             }
+        } while (ret);
+        return 0;
+    }
+
+private:
+    friend class listener::RegisteredKernelEvent<event::file, file_watcher>;
+
+    void
+    on(event::file const &event) {
+        constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
+        int ret = 0u;
+
+        // forward event to Derived if desired
+        if constexpr (has_method_on<_Derived, void, event::file>::value) {
+            Derived.on(event);
         }
-        return;
-    error:
-        this->_async_event.stop();
-        Derived.close();
+
+        auto diff_read = event.attr.st_size - event.prev.st_size;
+        if (!_protocol->ok() || !event.attr.st_nlink || (diff_read < 0 && lseek(Derived.transport().fd(), 0, SEEK_SET)))
+            ret = -1;
+        else if (diff_read) {
+            if constexpr (_Derived::do_read) {
+                ret = read_all();
+            }
+        }
+
+        if (ret < 0) {
+            this->_async_event.stop();
+            Derived.close();
+        }
     }
 };
 
