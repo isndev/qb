@@ -20,8 +20,6 @@
 
 #include "../io.h"
 
-CREATE_MEMBER_CHECK(Protocol);
-
 namespace qb::io::async::tcp {
 
 template <typename _Derived, typename _Transport, typename _Server = void>

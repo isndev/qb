@@ -23,6 +23,7 @@
 #include "protocol.h"
 #include <qb/utility/type_traits.h>
 
+CREATE_MEMBER_CHECK(Protocol);
 GENERATE_HAS_METHOD(flush)
 
 namespace qb::io::async {
@@ -85,6 +86,88 @@ private:
 };
 
 #define Derived static_cast<_Derived &>(*this)
+
+template <typename _Derived>
+class input_file : public base<input_file<_Derived>, event::file> {
+    using base_t = base<input_file<_Derived>, event::file>;
+    AProtocol<_Derived> *_protocol = nullptr;
+    std::vector<AProtocol<_Derived> *> _protocol_list;
+
+public:
+    using base_io_t = input_file<_Derived>;
+
+    input_file() = default;
+    input_file(AProtocol<_Derived> *protocol) noexcept
+        : _protocol(protocol) {}
+    input_file(input_file const &) = delete;
+    ~input_file() noexcept {
+        for (auto protocol : _protocol_list)
+            delete protocol;
+    }
+
+    template <typename _Protocol, typename... _Args>
+    _Protocol *
+    switch_protocol(_Args &&... args) {
+        auto new_protocol = new _Protocol(std::forward<_Args>(args)...);
+        if (new_protocol->ok()) {
+            _protocol = new_protocol;
+            _protocol_list.push_back(new_protocol);
+            return new_protocol;
+        }
+        return nullptr;
+    }
+
+    void
+    start(std::string const &fpath, ev_tstamp ts = 0.1) noexcept {
+        this->_async_event.start(fpath.c_str(), ts);
+    }
+
+    void
+    disconnect() noexcept {
+        this->_async_event.stop();
+    }
+
+private:
+    friend class listener::RegisteredKernelEvent<event::file, input_file>;
+
+    void
+    on(event::file const &event) {
+        constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
+        std::size_t ret = 0u;
+
+        if (!_protocol->ok() || !event.attr.st_nlink)
+            goto error;
+        if (event.prev.st_size != event.attr.st_size) {
+            ret = static_cast<std::size_t>(Derived.read());
+            if (unlikely(ret == invalid_ret))
+                goto error;
+            while ((ret = this->_protocol->getMessageSize()) > 0) {
+                // has a new message to read
+                this->_protocol->onMessage(ret);
+                Derived.flush(ret);
+            }
+            Derived.eof();
+            if constexpr (has_method_on<_Derived, void, event::pending_read>::value ||
+                          has_method_on<_Derived, void, event::eof>::value) {
+                const auto pendingRead = Derived.pendingRead();
+                if (pendingRead) {
+                    if constexpr (has_method_on<_Derived, void,
+                                                event::pending_read>::value) {
+                        Derived.on(event::pending_read{pendingRead});
+                    }
+                } else {
+                    if constexpr (has_method_on<_Derived, void, event::eof>::value) {
+                        Derived.on(event::eof{});
+                    }
+                }
+            }
+        }
+        return;
+    error:
+        this->_async_event.stop();
+        Derived.close();
+    }
+};
 
 template <typename _Derived>
 class input : public base<input<_Derived>, event::io> {
