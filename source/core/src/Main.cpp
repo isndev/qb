@@ -90,7 +90,7 @@ CoreInitializer::ActorBuilder::valid() const noexcept {
 CoreInitializer::ActorBuilder::operator bool() const noexcept {
     return valid();
 }
-CoreInitializer::ActorBuilder::ActorIdList
+CoreInitializer::ActorBuilder::ActorIdList const &
 CoreInitializer::ActorBuilder::idList() const noexcept {
     return _ret_ids;
 }
@@ -101,7 +101,7 @@ set_from_core_initializers(CoreInitializerMap const &core_initializers) {
     qb::unordered_set<CoreId> core_ids;
     for (const auto &initializer : core_initializers)
         core_ids.insert(initializer.first);
-    return std::move(core_ids);
+    return core_ids;
 }
 
 // SharedCoreCommunication
