@@ -88,7 +88,7 @@ public:
          * @brief Get list of created ActorId by the ActorBuilder
          * @return Created ActorId list
          */
-        [[nodiscard]] ActorIdList idList() const noexcept;
+        [[nodiscard]] ActorIdList const &idList() const noexcept;
     };
 
 private:

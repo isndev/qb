@@ -126,10 +126,11 @@ file_to_pipe::read() noexcept {
     if (!eof() && is_open()) {
         const auto to_read = _expected_size - _read_bytes;
         const auto ret = _handle.read(_pipe.allocate_back(to_read), to_read);
-        if (ret < 0)
+        if (ret < 0) {
+            _pipe.free_back(to_read);
             close();
-        else {
-            _pipe.free_back(ret);
+        } else {
+            _pipe.free_back(to_read - ret);
             _read_bytes += ret;
         }
 
