@@ -90,7 +90,7 @@ CoreInitializer::ActorBuilder::valid() const noexcept {
 CoreInitializer::ActorBuilder::operator bool() const noexcept {
     return valid();
 }
-CoreInitializer::ActorBuilder::ActorIdList const &
+CoreInitializer::ActorBuilder::ActorIdList
 CoreInitializer::ActorBuilder::idList() const noexcept {
     return _ret_ids;
 }
