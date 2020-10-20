@@ -315,6 +315,14 @@ public:
      */
     CoreInitializer &core(CoreId index);
 
+    qb::CoreIdSet usedCoreSet() const {
+        qb::CoreIdSet ret;
+        for (const auto &it : _core_initializers)
+            ret.emplace(it.first);
+        return ret;
+    }
+
+
     /*!
      * @brief Register signal for all engines
      * @param signum Signal number
