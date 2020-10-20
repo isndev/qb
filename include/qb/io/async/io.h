@@ -42,11 +42,11 @@ protected:
 
 template <typename _Derived>
 class with_timeout : public base<with_timeout<_Derived>, event::timer> {
-    double _timeout;
-    double _last_activity;
+    ev_tstamp _timeout;
+    ev_tstamp _last_activity;
 
 public:
-    explicit with_timeout(double timeout = 3)
+    explicit with_timeout(ev_tstamp timeout = 3)
         : _timeout(timeout)
         , _last_activity(0.) {
         if (timeout > 0.)
@@ -59,10 +59,10 @@ public:
     }
 
     void
-    setTimeout(double timeout) noexcept {
+    setTimeout(ev_tstamp timeout) noexcept {
         _timeout = timeout;
         if (_timeout) {
-            _last_activity = this->_async_event.loop.now();
+            _last_activity = ev_time();
             this->_async_event.set(_timeout);
             this->_async_event.start();
         } else
