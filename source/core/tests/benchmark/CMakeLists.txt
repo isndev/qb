@@ -21,3 +21,4 @@ cxx_benchmark(${PROJECT_NAME}-benchmark-disruptor-latency  "${PROJECT_NAME}" bm-
 cxx_benchmark(${PROJECT_NAME}-benchmark-pipeline-latency  "${PROJECT_NAME}" bm-pipeline-latency.cpp)
 cxx_benchmark(${PROJECT_NAME}-benchmark-multicast-latency  "${PROJECT_NAME}" bm-multicast-latency.cpp)
 cxx_benchmark(${PROJECT_NAME}-benchmark-ping-pong-latency  "${PROJECT_NAME}" bm-ping-pong-latency.cpp)
+cxx_benchmark(${PROJECT_NAME}-benchmark-producer-consumer  "${PROJECT_NAME}" bm-producer-consumer.cpp)
