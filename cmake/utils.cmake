@@ -275,7 +275,7 @@ function(qb_register_module)
                     NAME ${Module_NAME}
                     FLAGS "${Module_FLAGS}"
                     SOURCES "${Module_SOURCES}"
-                    DEPENDENCIES ${QB_PREFIX}-core ${Module_DEPENDENCIES})
+                    DEPENDENCIES "${QB_PREFIX}-core ${Module_DEPENDENCIES}")
 #            target_link_libraries(${Module_NAME} ${QB_PREFIX}-core ${Module_DEPENDENCIES})
         else ()
             cxx_library_with_type(INTERFACE
