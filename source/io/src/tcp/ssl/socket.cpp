@@ -111,7 +111,7 @@ socket::connect(const ip &remoteAddress, unsigned short remotePort, int timeout)
     if (ret != SocketStatus::Done)
         return ret;
     if (!_ssl_handle) {
-        auto ctx = SSL_CTX_new(SSLv23_client_method());
+        const auto ctx = SSL_CTX_new(SSLv23_client_method());
         _ssl_handle = SSL_new(ctx);
         if (!_ssl_handle) {
             SSL_CTX_free(ctx);
@@ -131,7 +131,7 @@ socket::connect(const uri &uri, int timeout) {
     if (ret != SocketStatus::Done)
         return ret;
     if (!_ssl_handle) {
-        auto ctx = SSL_CTX_new(SSLv23_client_method());
+        const auto ctx = SSL_CTX_new(SSLv23_client_method());
         _ssl_handle = SSL_new(ctx);
         if (!_ssl_handle) {
             SSL_CTX_free(ctx);
@@ -150,10 +150,12 @@ void
 socket::disconnect() noexcept {
     tcp::socket::disconnect();
     if (_ssl_handle) {
-        auto ctx = SSL_get_SSL_CTX(_ssl_handle);
+        const auto ctx = SSL_get_SSL_CTX(_ssl_handle);
+        const auto is_client = !SSL_is_server(_ssl_handle);
         SSL_shutdown(_ssl_handle);
         SSL_free(_ssl_handle);
-        SSL_CTX_free(ctx);
+        if (is_client)
+            SSL_CTX_free(ctx);
         _ssl_handle = nullptr;
         _connected = false;
     }
