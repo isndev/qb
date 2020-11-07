@@ -15,18 +15,13 @@
  *         limitations under the License.
  */
 
-#ifndef QB_IO_ASYNC_EVENT_ALL_H
-#define QB_IO_ASYNC_EVENT_ALL_H
+#ifndef QB_IO_ASYNC_EVENT_DISPOSE_H
+#define QB_IO_ASYNC_EVENT_DISPOSE_H
 
-#include "disconnected.h"
-#include "file.h"
-#include "io.h"
-#include "pending_read.h"
-#include "eof.h"
-#include "pending_write.h"
-#include "eos.h"
-#include "signal.h"
-#include "timer.h"
-#include "dispose.h"
+namespace qb::io::async::event {
 
-#endif // QB_IO_ASYNC_EVENT_ALL_H
+struct dispose {};
+
+} // namespace qb::io::async::event
+
+#endif // QB_IO_ASYNC_EVENT_DISPOSE_H

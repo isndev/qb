@@ -169,6 +169,11 @@ socket::connect(const ip &remoteAddress, unsigned short const remotePort,
     }
 }
 
+SocketStatus
+socket::connect(const uri &remoteAddress, int const timeout) {
+    return connect({std::string(remoteAddress.host())}, std::stod(std::string(remoteAddress.port())), timeout);
+}
+
 void
 socket::disconnect() noexcept {
     // Close the socket

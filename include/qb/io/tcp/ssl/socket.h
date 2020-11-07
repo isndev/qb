@@ -56,6 +56,7 @@ public:
     void init(SSL *handle) noexcept;
     SocketStatus connect(const ip &remoteAddress, unsigned short remotePort,
                          int timeout = 0);
+    SocketStatus connect(const uri &remoteAddress, int timeout = 0);
     void disconnect() noexcept;
 
     int read(void *data, std::size_t size) noexcept;
