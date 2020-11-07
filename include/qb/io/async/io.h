@@ -290,6 +290,9 @@ private:
         Derived.close();
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(event.fd);
+        } else if constexpr (has_method_on<_Derived, void,
+                event::dispose>::value) {
+            Derived.on(event::dispose{});
         }
     }
 };
@@ -417,6 +420,13 @@ public:
         return nullptr;
     }
 
+//    [[nodiscard]] AProtocol<_Derived> *
+//    pop_protocol() {
+//        if (_protocol_list.size()) {
+//            _protocol = *_protocol_list.rend();
+//        }
+//    }
+
     void
     start() noexcept {
         _disconnected_by_user = false;
@@ -527,6 +537,9 @@ private:
         Derived.close();
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(event.fd);
+        } else if constexpr (has_method_on<_Derived, void,
+                    event::dispose>::value) {
+                Derived.on(event::dispose{});
         }
     }
 };

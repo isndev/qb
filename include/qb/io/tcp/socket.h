@@ -16,6 +16,7 @@
  */
 
 #include "../ip.h"
+#include "../uri.h"
 #include "../system/socket.h"
 
 #ifndef QB_IO_TCP_SOCKET_H_
@@ -39,6 +40,7 @@ public:
 
     SocketStatus connect(const ip &remoteAddress, unsigned short remotePort,
                          int timeout = 0);
+    SocketStatus connect(const uri &remoteAddress, int timeout = 0);
     void disconnect() noexcept;
 
     int read(void *data, std::size_t size) const noexcept;
