@@ -31,18 +31,6 @@ protected:
     SocketHandler _handle;
 
     void
-    init() {
-        if (!is_open()) {
-            SocketHandler handle;
-            if constexpr (_Type == SocketType::TCP)
-                handle = ::socket(PF_INET, SOCK_STREAM, 0);
-            else
-                handle = ::socket(PF_INET, SOCK_DGRAM, 0);
-            init(handle);
-        }
-    }
-
-    void
     init(SocketHandler handle) {
         if (!is_open() && (handle != SOCKET_INVALID)) {
             if constexpr (_Type == SocketType::TCP) {
@@ -76,6 +64,18 @@ public:
         : _handle(SOCKET_INVALID) {}
 
     ~socket() = default;
+
+    void
+    init() {
+        if (!is_open()) {
+            SocketHandler handle;
+            if constexpr (_Type == SocketType::TCP)
+                handle = ::socket(PF_INET, SOCK_STREAM, 0);
+            else
+                handle = ::socket(PF_INET, SOCK_DGRAM, 0);
+            init(handle);
+        }
+    }
 
     [[nodiscard]] SocketHandler
     ident() const noexcept {
