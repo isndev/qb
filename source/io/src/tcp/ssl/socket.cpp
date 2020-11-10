@@ -108,7 +108,7 @@ socket::handCheck() noexcept {
 SocketStatus
 socket::connect(const ip &remoteAddress, unsigned short remotePort, int timeout) {
     auto ret = tcp::socket::connect(remoteAddress, remotePort, timeout);
-    if (ret != SocketStatus::Done)
+    if (ret >= SocketStatus::Partial)
         return ret;
     if (!_ssl_handle) {
         const auto ctx = SSL_CTX_new(SSLv23_client_method());
@@ -122,13 +122,15 @@ socket::connect(const ip &remoteAddress, unsigned short remotePort, int timeout)
     SSL_set_quiet_shutdown(_ssl_handle, 1);
     SSL_set_fd(_ssl_handle, ident());
     SSL_set_connect_state(_ssl_handle);
+    if (ret == SocketStatus::NotReady)
+        return ret;
     return handCheck() < 0 ? SocketStatus::Error : SocketStatus::Done;
 }
 
 SocketStatus
 socket::connect(const uri &uri, int timeout) {
     auto ret = tcp::socket::connect(uri, timeout);
-    if (ret != SocketStatus::Done)
+    if (ret >= SocketStatus::Partial)
         return ret;
     if (!_ssl_handle) {
         const auto ctx = SSL_CTX_new(SSLv23_client_method());
@@ -143,6 +145,8 @@ socket::connect(const uri &uri, int timeout) {
     SSL_set_tlsext_host_name(_ssl_handle, std::string(uri.host()).c_str());
     SSL_set_fd(_ssl_handle, ident());
     SSL_set_connect_state(_ssl_handle);
+    if (ret == SocketStatus::NotReady)
+        return ret;
     return handCheck() < 0 ? SocketStatus::Error : SocketStatus::Done;
 }
 

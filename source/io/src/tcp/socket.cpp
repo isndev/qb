@@ -87,9 +87,6 @@ socket::getRemotePort() const noexcept {
 SocketStatus
 socket::connect(const ip &remoteAddress, unsigned short const remotePort,
                 int const timeout) {
-    // Disconnect the socket if it is already connected
-    disconnect();
-
     // Create the internal socket if it doesn't exist
     init();
 
