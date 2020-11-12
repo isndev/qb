@@ -26,6 +26,8 @@
 CREATE_MEMBER_CHECK(Protocol);
 GENERATE_HAS_METHOD(flush)
 
+#define Derived static_cast<_Derived &>(*this)
+
 namespace qb::io::async {
 
 template <typename _Derived, typename _EV_EVENT>
@@ -34,7 +36,7 @@ protected:
     _EV_EVENT &_async_event;
     base()
         : _async_event(listener::current.registerEvent<_EV_EVENT>(
-              static_cast<_Derived &>(*this))) {}
+            Derived)) {}
     ~base() {
         listener::current.unregisterEvent(_async_event._interface);
     }
@@ -48,7 +50,7 @@ class with_timeout : public base<with_timeout<_Derived>, event::timer> {
 public:
     explicit with_timeout(ev_tstamp timeout = 3)
         : _timeout(timeout)
-        , _last_activity(0.) {
+        , _last_activity(0) {
         if (timeout > 0.)
             this->_async_event.start(_timeout);
     }
@@ -77,7 +79,7 @@ private:
         const ev_tstamp after = _last_activity - event.loop.now() + _timeout;
 
         if (after < 0.)
-            static_cast<_Derived &>(*this).on(event);
+            Derived.on(event);
         else {
             this->_async_event.set(after);
             this->_async_event.start();
@@ -85,7 +87,28 @@ private:
     }
 };
 
-#define Derived static_cast<_Derived &>(*this)
+template <typename _Func>
+class Timeout : public with_timeout<Timeout<_Func>> {
+    _Func _func;
+public:
+    Timeout(_Func &&func, double timeout = 0.)
+            : _func(std::forward<_Func>(func))
+            , with_timeout<Timeout<_Func>>(timeout) {
+        if (!timeout) {
+            _func();
+            delete this;
+        }
+    }
+    void on(event::timer const &event) const {
+        _func();
+        delete this;
+    }
+};
+
+template <typename _Func>
+void callback(_Func &&func, double timeout = 0.) {
+    new Timeout<_Func>(std::forward<_Func>(func));
+}
 
 template <typename _Derived>
 class file_watcher : public base<file_watcher<_Derived>, event::file> {
@@ -204,8 +227,7 @@ public:
         : _protocol(protocol) {}
     input(input const &) = delete;
     ~input() noexcept {
-        for (auto protocol : _protocol_list)
-            delete protocol;
+        clear_protocols();
     }
 
     template <typename _Protocol, typename... _Args>
@@ -216,8 +238,22 @@ public:
             _protocol = new_protocol;
             _protocol_list.push_back(new_protocol);
             return new_protocol;
-        }
+        } else
+            delete new_protocol;
         return nullptr;
+    }
+
+    void
+    clear_protocols() {
+        for (auto protocol : _protocol_list)
+            delete protocol;
+        _protocol_list.clear();
+        _protocol = nullptr;
+    };
+
+    AProtocol<_Derived> *
+    protocol() {
+        return _protocol;
     }
 
     void
@@ -236,9 +272,7 @@ public:
     void
     disconnect(int reason = 0) {
         if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
-            event::disconnected e;
-            e.reason = reason;
-            Derived.on(e);
+            Derived.on(event::disconnected{reason});
         }
         _disconnected_by_user = true;
         listener::current.loop().feed_fd_event(Derived.transport().fd(), EV_UNDEF);
@@ -290,8 +324,7 @@ private:
         Derived.close();
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(event.fd);
-        } else if constexpr (has_method_on<_Derived, void,
-                event::dispose>::value) {
+        } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
             Derived.on(event::dispose{});
         }
     }
@@ -341,9 +374,7 @@ public:
     void
     disconnect(int reason = 0) {
         if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
-            event::disconnected e;
-            e.reason = reason;
-            Derived.on(e);
+            Derived.on(event::disconnected{reason});
         }
         _disconnected_by_user = true;
         listener::current.loop().feed_fd_event(Derived.transport().fd(), EV_UNDEF);
@@ -383,6 +414,8 @@ private:
         Derived.close();
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(event.fd);
+        } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
+            Derived.on(event::dispose{});
         }
     }
 };
@@ -423,6 +456,7 @@ public:
     clear_protocols() {
         for (auto protocol : _protocol_list)
             delete protocol;
+        _protocol_list.clear();
         _protocol = nullptr;
     };
 
@@ -430,13 +464,6 @@ public:
     protocol() {
         return _protocol;
     }
-
-//    [[nodiscard]] AProtocol<_Derived> *
-//    pop_protocol() {
-//        if (_protocol_list.size()) {
-//            _protocol = *_protocol_list.rend();
-//        }
-//    }
 
     void
     start() noexcept {
