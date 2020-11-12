@@ -403,8 +403,7 @@ public:
         : _protocol(protocol) {}
     io(io const &) = delete;
     ~io() noexcept {
-        for (auto protocol : _protocol_list)
-            delete protocol;
+        clear_protocols();
     }
 
     template <typename _Protocol, typename... _Args>
@@ -418,6 +417,18 @@ public:
         } else
             delete new_protocol;
         return nullptr;
+    }
+
+    void
+    clear_protocols() {
+        for (auto protocol : _protocol_list)
+            delete protocol;
+        _protocol = nullptr;
+    };
+
+    AProtocol<_Derived> *
+    protocol() {
+        return _protocol;
     }
 
 //    [[nodiscard]] AProtocol<_Derived> *
@@ -469,9 +480,7 @@ public:
     void
     disconnect(int reason = 0) {
         if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
-            event::disconnected e;
-            e.reason = reason;
-            Derived.on(e);
+            Derived.on(event::disconnected{reason});
         }
         _disconnected_by_user = true;
         listener::current.loop().feed_fd_event(Derived.transport().fd(), EV_UNDEF);
@@ -537,8 +546,7 @@ private:
         Derived.close();
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(event.fd);
-        } else if constexpr (has_method_on<_Derived, void,
-                    event::dispose>::value) {
+        } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
                 Derived.on(event::dispose{});
         }
     }
