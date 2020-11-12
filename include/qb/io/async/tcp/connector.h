@@ -28,9 +28,12 @@ namespace qb::io::async::tcp {
     template <typename Socket_, typename Func_>
     class connector {
         Func_ _func;
+        const double _timeout;
         Socket_ _socket;
     public:
-        connector(uri const &remote, Func_ &&func) : _func(std::forward<Func_>(func)) {
+        connector(uri const &remote, Func_ &&func, double timeout = 0.)
+        : _func(std::forward<Func_>(func))
+        , _timeout(timeout > 0. ? ev_time() + timeout : 0.) {
             static_cast<sys::socket<SocketType::TCP>&>(_socket).init();
             _socket.setBlocking(false);
             auto ret = _socket.connect(remote);
@@ -44,10 +47,14 @@ namespace qb::io::async::tcp {
             delete this;
         }
         void on(event::io const &event) {
-            if (!(event._revents & EV_WRITE)) {
+            if (!(event._revents & EV_WRITE))
                 _socket.disconnect();
-            } else if (_socket.getRemoteAddress() == ip::None)
-                return;
+            else if (_socket.getRemoteAddress() == ip::None) {
+                if (!_timeout || ev_time() < _timeout)
+                    return;
+                else
+                    _socket.disconnect();
+            }
             listener::current.unregisterEvent(event._interface);
             _func(_socket);
             delete this;
@@ -55,8 +62,8 @@ namespace qb::io::async::tcp {
     };
 
     template <typename Socket_, typename Func_>
-    void connect(uri const &remote, Func_ &&func) {
-        new connector<Socket_, Func_>(remote, std::forward<Func_>(func));
+    void connect(uri const &remote, Func_ &&func, double timeout = 0.) {
+        new connector<Socket_, Func_>(remote, std::forward<Func_>(func), timeout);
     }
 
 } // namespace qb::io::async::tcp
