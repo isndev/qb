@@ -405,6 +405,23 @@ public:
     using _HandlerId = typename _RawEvent::id_handler_type;
 
 private:
+    class IDisposer {
+    public:
+        virtual ~IDisposer() = default;
+        virtual void dispose(_RawEvent *event) = 0;
+    };
+
+    template <typename T>
+    class Disposer : public IDisposer{
+    public:
+        void dispose(_RawEvent *event) final {
+            delete reinterpret_cast<T *>(event);
+        }
+    };
+
+    static qb::unordered_map<_EventId, IDisposer *> _disposers;
+    static std::mutex _disposers_mtx;
+
     class IEventResolver {
     public:
         virtual ~IEventResolver() = default;
@@ -437,6 +454,14 @@ private:
     qb::unordered_map<_EventId, IEventResolver &> _registered_events;
 
 public:
+    template <typename T>
+    struct SafeDispose {
+        SafeDispose() {
+            std::lock_guard lk(_disposers_mtx);
+            _disposers.try_emplace(_RawEvent::template type_to_id<T>(), new Disposer<T>());
+        }
+    };
+
     memh() = default;
 
     ~memh() noexcept {
@@ -444,10 +469,19 @@ public:
             delete &it.second;
     }
 
+    template <typename _Func>
     void
-    route(_RawEvent &event) const {
+    route(_RawEvent &event, _Func const &onError) const {
+        const auto &it = _registered_events.find(event.getID());
+        if (likely(it != _registered_events.cend()))
+            it->second.resolve(event);
+        else {
+            std::lock_guard lk(_disposers_mtx);
+            onError(event);
+            _disposers.at(event.getID())->dispose(&event);
+        };
         // /!\ Look notice in of mesh router above
-        _registered_events.at(event.getID()).resolve(event);
+//        _registered_events.at(event.getID()).resolve(event);
     }
 
     template <typename _Event, typename _Handler>

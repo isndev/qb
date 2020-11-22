@@ -109,7 +109,10 @@ VirtualCore::__receive_events__(EventBucket *buffer, std::size_t const nb_events
         auto event = reinterpret_cast<Event *>(buffer + i);
 
         event->state.alive = 0;
-        _router.route(*event);
+        _router.route(*event, [this](auto &event) {
+            if (!event.getDestination().is_broadcast())
+                LOG_WARN(*this << " failed to send event[" << event.getID() << "] sent from " << event.getSource());
+        });
         ++_metrics._nb_event_received;
         _metrics._nb_bucket_received += event->bucket_size;
         i += event->bucket_size;
@@ -401,3 +404,7 @@ qb::operator<<(std::ostream &os, qb::VirtualCore const &core) {
     return os;
 }
 
+template<>
+qb::unordered_map<qb::Event::id_type, qb::router::memh<qb::Event, true, void>::IDisposer *>  qb::router::memh<qb::Event, true, void>::_disposers = {};
+template<>
+std::mutex  qb::router::memh<qb::Event, true, void>::_disposers_mtx = {};
