@@ -66,6 +66,7 @@ VirtualCore::registerCallback(_Actor &actor) noexcept {
 template <typename T>
 inline void
 VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) noexcept {
+    static qb::router::memh<qb::Event, true, void>::SafeDispose<T> _uniq_safer;
     data.id = data.template type_to_id<T>();
     data.dest = dest;
     data.source = source;
