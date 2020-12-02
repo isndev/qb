@@ -84,6 +84,8 @@ private:
     id_handler_type dest;
     id_handler_type source;
 
+//    Event &operator=(Event const &) = default;
+
 public:
     Event() = default;
 
