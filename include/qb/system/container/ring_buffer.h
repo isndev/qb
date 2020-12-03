@@ -69,7 +69,7 @@ namespace qb {
             [[nodiscard]] const_reference operator->() const noexcept {
                 return &((*source_)[index_]);
             }
-            [[nodiscard]] self_type& operator++() noexcept {
+            self_type& operator++() noexcept {
                 index_ = ++index_ % N;
                 ++count_;
                 return *this;
@@ -147,7 +147,7 @@ namespace qb {
             --size_;
             tail_ = ++tail_ %N;
         }
-        [[nodiscard]] reference back() noexcept { return reinterpret_cast<reference>(elements_[std::clamp(head_, 0UL, N - 1)]); }
+        [[nodiscard]] reference back() noexcept { return reinterpret_cast<reference>(elements_[std::clamp(head_ - 1, 0UL, N - 1)]); }
         [[nodiscard]] const_reference back() const noexcept {
             return const_cast<self_type*>(back)->back();
         }
