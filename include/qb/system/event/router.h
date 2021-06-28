@@ -424,7 +424,7 @@ private:
     class Disposer : public IDisposer{
     public:
         void dispose(_RawEvent *event) final {
-            delete reinterpret_cast<T *>(event);
+            reinterpret_cast<T *>(event)->~T();
         }
     };
 

@@ -41,7 +41,7 @@ class Pipe {
         , source(i_source) {}
 
 public:
-    Pipe() = delete;
+    Pipe() = default;
     Pipe(Pipe const &) = default;
     Pipe &operator=(Pipe const &) = default;
 
