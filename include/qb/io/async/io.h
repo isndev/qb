@@ -71,6 +71,11 @@ public:
             this->_async_event.stop();
     }
 
+    auto
+    getTimeout() const noexcept {
+        return _timeout;
+    }
+
 private:
     friend class listener::RegisteredKernelEvent<event::timer, with_timeout>;
 

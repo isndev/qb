@@ -153,6 +153,30 @@ namespace qb::io {
             return out;
         }
 
+        static std::string
+        encode(std::string const &input) {
+            static const char *dont_escape = "._-$,;~()";
+            static const char *hex = "0123456789abcdef";
+
+            std::string dst;
+            auto src_len = input.length();
+            auto src = input.c_str();
+
+            dst.reserve(src_len * 3);
+
+            for (; src_len > 0; src++, src_len--) {
+                if (isalnum(*src) || strchr(dont_escape, *src) != NULL) {
+                    dst.push_back(*src);
+                } else {
+                    dst.push_back('%');
+                    dst.push_back(hex[(*src) >> 4]);
+                    dst.push_back(hex[(*src) & 0xf]);
+                }
+            }
+
+            return dst;
+        }
+
         static uri parse(std::string const &str_uri) {
             uri new_uri;
             new_uri.from(str_uri);

@@ -18,6 +18,7 @@
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
+#include <mutex>
 
 #ifndef QB_EVENT_ROUTER_H
 #    define QB_EVENT_ROUTER_H
@@ -355,12 +356,20 @@ public:
             delete &it.second;
     }
 
+    template <typename _Func>
     void
-    route(_RawEvent &event) const {
+    route(_RawEvent &event, _Func const &onError) const {
+        const auto &it = _registered_events.find(event.getID());
+        if (likely(it != _registered_events.cend()))
+            it->second.resolve(event);
+        else {
+            // std::lock_guard lk(_disposers_mtx);
+            onError(event);
+            //_disposers.at(event.getID())->dispose(&event);
+        };
         // /!\ Look notice in of mesh router above
-        _registered_events.at(event.getID()).resolve(event);
+        // _registered_events.at(event.getID()).resolve(event);
     }
-
     template <typename _Event>
     void
     subscribe(_Handler &handler) {
