@@ -76,9 +76,9 @@ Actor::send(ActorId const &dest, _Args &&... args) const noexcept {
 
 template <typename _Event, typename... _Args>
 _Event
-Actor::build_event(_Args &&... args) const noexcept {
+Actor::build_event(ActorId const source, _Args &&... args) const noexcept {
     _Event event{std::forward<_Args>(args)...};
-    VirtualCore::fill_event(event, id(), id());
+    VirtualCore::fill_event(event, id(), source);
     return event;
 }
 

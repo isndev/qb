@@ -460,24 +460,25 @@ public:
     /*!
     * @brief build local event
     * @tparam _Event Event type
+    * @param source ActorId source
     * @param args arguments to forward to the constructor of the _Event
     * @return a local constructed _Event
     * @details
     * Local events are used to make a direct call of on callbacks.\n example:
     * @code
     * // ...
-    * auto e = local<MyEvent>(); // (1) build local
+    * auto e = local<MyEvent>(id()); // (1) build local event
     * e.some_data = 1337; // (2) set my event data without using constructor
     * on(e); // (3) call directly
      * // ...
     * @endcode
     * @note
-    * event source_id and dest_id will be set to id of actor builder
+    * event dest_id will be set to id of actor builder
     * @attention
     * /!\ We recommend to non advanced users to use only this function to send events.
     */
     template <typename _Event, typename... _Args>
-    _Event build_event(_Args &&... args) const noexcept;
+    _Event build_event(qb::ActorId const source, _Args &&... args) const noexcept;
 
     template <typename _Type>
     inline bool
