@@ -19,6 +19,7 @@
 #define QB_IO_ASYNC_IO_HANDLER_H
 
 #include <qb/system/container/unordered_map.h>
+#include <qb/uuid.h>
 
 namespace qb::io::async {
 
@@ -27,12 +28,14 @@ class io_handler {
     friend typename _Session::base_io_t;
 
     void
-    disconnected(int ident) {
-        _sessions.erase(static_cast<uint64_t>(ident));
+    disconnected(uuid ident) {
+        const auto it = _sessions.find(ident);
+        delete &it->second;
+        _sessions.erase(it);
     }
 
 public:
-    using session_map_t = qb::unordered_map<uint64_t, _Session>;
+    using session_map_t = qb::unordered_map<uuid, _Session &>;
 
 private:
     session_map_t _sessions;
@@ -49,8 +52,9 @@ public:
 
     void
     registerSession(typename _Session::transport_io_type &&new_io) {
+        auto &session = *new _Session{static_cast<_Derived &>(*this)};
         const auto &it =
-            sessions().emplace(new_io.fd(), std::ref(static_cast<_Derived &>(*this)));
+            sessions().emplace(session.id(), std::ref(session));
         it.first->second.transport() = new_io;
         it.first->second.start();
         if constexpr (has_method_on<_Derived, void, _Session &>::value)
@@ -58,17 +62,18 @@ public:
     }
 
     void
-    unregisterSession(uint64_t const ident) {
+    unregisterSession(uuid const &ident) {
         auto it = _sessions.find(ident);
         if (it != _sessions.cend())
             it->second.disconnect();
     }
 
     [[nodiscard]] std::pair<typename _Session::transport_io_type, bool>
-    extractSession(uint64_t const ident) {
+    extractSession(uuid const &ident) {
         auto it = _sessions.find(ident);
         if (it != _sessions.cend()) {
             auto t_io = it->second.transport();
+            delete &it->second;
             _sessions.erase(it);
             return {t_io, true};
         }
