@@ -16,6 +16,7 @@
  */
 
 #include <qb/io/helper.h>
+#include <qb/uuid.h>
 
 namespace qb::io {
 #ifdef __WIN__SYSTEM__
@@ -143,3 +144,21 @@ helper::is_blocking(SocketHandler sock) {
 #endif
 
 } // namespace qb::io
+
+namespace qb {
+    uuid generate_random_uuid() {
+        static uuids::uuid_random_generator gen{[]() {
+            static auto seed_data = std::array<int, std::mt19937::state_size> {
+                [](){
+                    std::random_device rd;
+                    std::array<int, std::mt19937::state_size> seed_data;
+                    std::generate(std::begin(seed_data), std::end(seed_data), std::ref(rd));
+                    return seed_data;
+            }()};
+            static std::seed_seq seq(std::begin(seed_data), std::end(seed_data));
+            static std::mt19937 generator(seq);
+            return &generator;
+        }()};
+        return gen();
+    }
+} // namespace qb

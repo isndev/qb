@@ -128,6 +128,11 @@ if (NOT WIN32 AND ${QB_PREFIX_UPPER}_USE_TCMALLOC)
 endif()
 
 # qb io libraries
+set(UUID_BUILD_TESTS OFF)
+option(UUID_SYSTEM_GENERATOR ON)
+option(UUID_TIME_GENERATOR "Enable experimental time-based uuid generator" ON)
+option(UUID_USING_CXX20_SPAN "Using span from std instead of gsl" OFF)
+add_subdirectory(modules/uuid)
 add_subdirectory(modules/ev)
 add_subdirectory(source/io)
 # qb core library

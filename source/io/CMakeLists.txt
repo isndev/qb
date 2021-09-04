@@ -22,14 +22,14 @@ if (OPENSSL_FOUND)
     cxx_library(NAME ${PROJECT_NAME}
             FLAGS "${cxx_default_lib}"
             SOURCES src/io-all.cpp
-            DEPENDENCIES "ev OpenSSL::SSL")
+            DEPENDENCIES "ev OpenSSL::SSL stduuid")
     target_compile_definitions(${PROJECT_NAME} PUBLIC QB_IO_WITH_SSL=1)
 
 else()
     cxx_library(NAME ${PROJECT_NAME}
             FLAGS ${cxx_default_lib}
             SOURCES "src/io-all.cpp"
-            DEPENDENCIES ev)
+            DEPENDENCIES "ev stduuid")
 endif()
 
 set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION})

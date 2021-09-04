@@ -328,7 +328,7 @@ private:
         this->_async_event.stop();
         Derived.close();
         if constexpr (_Derived::has_server) {
-            Derived.server().disconnected(event.fd);
+            Derived.server().disconnected(Derived.id());
         } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
             Derived.on(event::dispose{});
         }
@@ -418,7 +418,7 @@ private:
         this->_async_event.stop();
         Derived.close();
         if constexpr (_Derived::has_server) {
-            Derived.server().disconnected(event.fd);
+            Derived.server().disconnected(Derived.id());
         } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
             Derived.on(event::dispose{});
         }
@@ -577,7 +577,7 @@ private:
         this->_async_event.stop();
         Derived.close();
         if constexpr (_Derived::has_server) {
-            Derived.server().disconnected(event.fd);
+            Derived.server().disconnected(Derived.id());
         } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
                 Derived.on(event::dispose{});
         }
