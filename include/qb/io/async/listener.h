@@ -34,7 +34,7 @@ public:
     thread_local static listener current;
 
     template <typename _Event, typename _Actor>
-    class RegisteredKernelEvent : public IRegisteredKernelEvent {
+    class RegisteredKernelEvent final : public IRegisteredKernelEvent {
         friend class listener;
 
         _Actor &_actor;
