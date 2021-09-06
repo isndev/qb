@@ -27,12 +27,12 @@ public:
     SpinLock() noexcept
         : _lock(false) {}
     SpinLock(const SpinLock &) = delete;
-    SpinLock(SpinLock &&) = default;
+    SpinLock(SpinLock &&) = delete;
 
     ~SpinLock() = default;
 
     SpinLock &operator=(const SpinLock &) = delete;
-    SpinLock &operator=(SpinLock &&) = default;
+    SpinLock &operator=(SpinLock &&) = delete;
 
     bool
     locked() noexcept {
