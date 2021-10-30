@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -54,7 +54,7 @@ struct TestEvent : public qb::Event {
 
 struct RemovedEvent : public qb::Event {};
 
-class TestActorReceiver : public qb::Actor {
+class TestActorReceiver final : public qb::Actor {
     const uint32_t _max_events;
     uint32_t _count;
 
@@ -321,7 +321,7 @@ TYPED_TEST(ActorEventMultiHighLatency, SendEvents) {
 
 struct EventForward : public TestEvent {};
 
-class TestSendReply : public qb::Actor {
+class TestSendReply final : public qb::Actor {
     const qb::ActorId _to;
     uint32_t counter = 0;
 
@@ -365,7 +365,7 @@ public:
     }
 };
 
-class TestReceiveReply : public qb::Actor {
+class TestReceiveReply final : public qb::Actor {
     uint32_t counter = 0;
 
 public:

@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,33 +19,45 @@
 
 namespace qb::io::tcp::ssl {
 
-listener::listener()
-    : _ctx(nullptr) {}
+void bristou(SSL_CTX *ctx) {
+    SSL_CTX_free(ctx);
+}
+
 
 listener::~listener() noexcept {
-    if (_ctx)
-        SSL_CTX_free(_ctx);
 }
 
-void
-listener::init(SSL_CTX *ctx) noexcept {
-    _ctx = ctx;
+listener::listener() noexcept
+    : _ctx(nullptr, bristou) {}
+
+void listener::init(SSL_CTX *ctx) noexcept {
+    _ctx.reset(ctx);
 }
 
-SocketStatus
-listener::accept(ssl::socket &socket) const noexcept {
-    if (tcp::listener::accept(socket) == SocketStatus::Done) {
-        socket.init(SSL_new(_ctx));
-        SSL_set_fd(socket.ssl(), socket.ident());
-        SSL_set_accept_state(socket.ssl());
-        return SocketStatus::Done;
+ssl::socket listener::accept() const noexcept {
+    auto sock = tcp::listener::accept();
+    if (!sock.is_open())
+        return {};
+    const auto ctx = SSL_new(ssl_handle());
+    SSL_set_fd(ctx, sock.native_handle());
+    SSL_set_accept_state(ctx);
+    return {ctx, sock};
+}
+
+int listener::accept(ssl::socket &ssock) const noexcept {
+    tcp::socket sock;
+    auto ret = tcp::listener::accept(sock);
+    if (!ret) {
+        const auto ctx = SSL_new(ssl_handle());
+        SSL_set_fd(ctx, FD_TO_SOCKET(sock.native_handle()));
+        SSL_set_accept_state(ctx);
+        ssock = ssl::socket{ctx, sock};
     }
-    return SocketStatus::Error;
+    return ret;
 }
 
-SSL_CTX *
-listener::ssl() const noexcept {
-    return _ctx;
+[[nodiscard]] SSL_CTX *listener::ssl_handle() const noexcept {
+    return _ctx.get();
 }
 
 } // namespace qb::io::tcp::ssl

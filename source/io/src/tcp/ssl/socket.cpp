@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,29 +69,43 @@ error:
 
 namespace qb::io::tcp::ssl {
 
-void
-socket::init(SSL *handle) noexcept {
-    _ssl_handle = handle;
-    _connected = false;
-}
-
-socket::socket()
+socket::socket() noexcept
     : tcp::socket()
-    , _ssl_handle(nullptr)
+    , _ssl_handle(nullptr, SSL_free)
     , _connected(false) {}
 
-SSL *
-socket::ssl() const noexcept {
-    return _ssl_handle;
+socket::socket(SSL *ctx, tcp::socket &sock) noexcept
+    : tcp::socket(std::move(sock))
+    , _ssl_handle(ctx, SSL_free)
+    , _connected(false) {}
+
+socket::~socket() noexcept {
+    if (_ssl_handle) {
+        const auto handle = ssl_handle();
+        const auto ctx = SSL_get_SSL_CTX(handle);
+        const auto is_client = !SSL_is_server(handle);
+        // SSL_shutdown(handle);
+        // SSL_free(handle);
+        if (is_client)
+            SSL_CTX_free(ctx);
+        _ssl_handle.reset(nullptr);
+        _connected = false;
+    }
+}
+
+void
+socket::init(SSL *handle) noexcept {
+    _ssl_handle.reset(handle);
+    _connected = false;
 }
 
 int
 socket::handCheck() noexcept {
     if (_connected)
         return 1;
-    auto ret = SSL_do_handshake(_ssl_handle);
+    auto ret = SSL_do_handshake(ssl_handle());
     if (ret != 1) {
-        auto err = SSL_get_error(_ssl_handle, ret);
+        auto err = SSL_get_error(ssl_handle(), ret);
         switch (err) {
         case SSL_ERROR_WANT_WRITE:
         case SSL_ERROR_WANT_READ:
@@ -105,74 +119,89 @@ socket::handCheck() noexcept {
     return 1;
 }
 
-SocketStatus
-socket::connect(const ip &remoteAddress, unsigned short remotePort, int timeout) {
-    auto ret = tcp::socket::connect(remoteAddress, remotePort, timeout);
-    if (ret >= SocketStatus::Partial)
+int
+socket::connect_in(int af, std::string const &host, uint16_t port) noexcept {
+    auto ret = -1;
+    qb::io::socket::resolve_i(
+        [&, this](const auto &ep) {
+            if (ep.af() == af) {
+                ret = connect(ep, host);
+                return true;
+            }
+            return false;
+        },
+        host.c_str(), port, af, SOCK_STREAM);
+
+    return ret;
+}
+
+int
+socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
+    auto ret = tcp::socket::connect(ep);
+    if (ret != 0 && !socket_no_error(qb::io::socket::get_last_errno()))
         return ret;
     if (!_ssl_handle) {
         const auto ctx = SSL_CTX_new(SSLv23_client_method());
-        _ssl_handle = SSL_new(ctx);
+        _ssl_handle.reset(SSL_new(ctx));
         if (!_ssl_handle) {
             SSL_CTX_free(ctx);
             tcp::socket::disconnect();
             return SocketStatus::Error;
         }
     }
-    SSL_set_quiet_shutdown(_ssl_handle, 1);
-    SSL_set_fd(_ssl_handle, ident());
-    SSL_set_connect_state(_ssl_handle);
-    if (ret == SocketStatus::NotReady)
+    const auto h_ssl = ssl_handle();
+    SSL_set_quiet_shutdown(h_ssl, 1);
+    SSL_set_fd(h_ssl, FD_TO_SOCKET(native_handle()));
+    SSL_set_tlsext_host_name(h_ssl, hostname.c_str());
+    SSL_set_connect_state(h_ssl);
+    if (ret != 0)
         return ret;
-    return handCheck() < 0 ? SocketStatus::Error : SocketStatus::Done;
+    return handCheck() < 0 ? -1 : 0;
 }
 
-SocketStatus
-socket::connect(const uri &uri, int timeout) {
-    auto ret = tcp::socket::connect(uri, timeout);
-    if (ret >= SocketStatus::Partial)
-        return ret;
-    if (!_ssl_handle) {
-        const auto ctx = SSL_CTX_new(SSLv23_client_method());
-        _ssl_handle = SSL_new(ctx);
-        if (!_ssl_handle) {
-            SSL_CTX_free(ctx);
-            tcp::socket::disconnect();
-            return SocketStatus::Error;
-        }
+int
+socket::connect(uri const &u) noexcept {
+    switch (u.af()) {
+    case AF_INET:
+    case AF_INET6:
+        return connect_in(u.af(), std::string(u.host()), u.u_port());
+    case AF_UNIX:
+        const auto path = std::string(u.path()) + std::string(u.host());
+        return connect_un(path);
     }
-    SSL_set_quiet_shutdown(_ssl_handle, 1);
-    SSL_set_tlsext_host_name(_ssl_handle, std::string(uri.host()).c_str());
-    SSL_set_fd(_ssl_handle, ident());
-    SSL_set_connect_state(_ssl_handle);
-    if (ret == SocketStatus::NotReady)
-        return ret;
-    return handCheck() < 0 ? SocketStatus::Error : SocketStatus::Done;
+    return -1;
 }
 
-void
+int
+socket::connect_v4(std::string const &host, uint16_t port) noexcept {
+    return connect_in(AF_INET, host, port);
+}
+
+int
+socket::connect_v6(std::string const &host, uint16_t port) noexcept {
+    return connect_in(AF_INET6, host, port);
+}
+
+int
+socket::connect_un(std::string const &path) noexcept {
+    return connect(endpoint().as_un(path.c_str()));
+}
+
+int
 socket::disconnect() noexcept {
-    tcp::socket::disconnect();
-    if (_ssl_handle) {
-        const auto ctx = SSL_get_SSL_CTX(_ssl_handle);
-        const auto is_client = !SSL_is_server(_ssl_handle);
-        SSL_shutdown(_ssl_handle);
-        SSL_free(_ssl_handle);
-        if (is_client)
-            SSL_CTX_free(ctx);
-        _ssl_handle = nullptr;
-        _connected = false;
-    }
+    _connected = false;
+    SSL_shutdown(ssl_handle());
+    return tcp::socket::disconnect();
 }
 
 int
 socket::read(void *data, std::size_t size) noexcept {
     auto ret = handCheck();
     if (ret == 1) {
-        ret = SSL_read(_ssl_handle, data, static_cast<int>(size));
+        ret = SSL_read(ssl_handle(), data, static_cast<int>(size));
         return ret >= 0
                    ? ret
-                   : (SSL_get_error(_ssl_handle, ret) <= SSL_ERROR_WANT_WRITE ? 0 : -1);
+                   : (SSL_get_error(ssl_handle(), ret) <= SSL_ERROR_WANT_WRITE ? 0 : -1);
     }
     return ret;
 }
@@ -181,12 +210,17 @@ int
 socket::write(const void *data, std::size_t size) noexcept {
     auto ret = handCheck();
     if (ret == 1) {
-        ret = SSL_write(_ssl_handle, data, static_cast<int>(size));
+        ret = SSL_write(ssl_handle(), data, static_cast<int>(size));
         return ret >= 0
                    ? ret
-                   : (SSL_get_error(_ssl_handle, ret) <= SSL_ERROR_WANT_WRITE ? 0 : -1);
+                   : (SSL_get_error(ssl_handle(), ret) <= SSL_ERROR_WANT_WRITE ? 0 : -1);
     }
     return ret;
+}
+
+[[nodiscard]] SSL *
+socket::ssl_handle() const noexcept {
+    return _ssl_handle.get();
 }
 
 } // namespace qb::io::tcp::ssl

@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
  *         limitations under the License.
  */
 
-#include "../ip.h"
-#include "../system/socket.h"
+#include "../uri.h"
+#include "../system/sys__socket.h"
 
 #ifndef QB_IO_UDP_SOCKET_H_
 #    define QB_IO_UDP_SOCKET_H_
@@ -27,25 +27,39 @@ namespace qb::io::udp {
  * @class socket udp/socket.h qb/io/udp/socket.h
  * @ingroup UDP
  */
-class QB_API socket : public sys::socket<SocketType::UDP> {
+class QB_API socket : private qb::io::socket {
 public:
     constexpr static const std::size_t MaxDatagramSize = 65507;
+    using qb::io::socket::close;
+    using qb::io::socket::get_optval;
+    using qb::io::socket::is_open;
+    using qb::io::socket::local_endpoint;
+    using qb::io::socket::native_handle;
+    using qb::io::socket::peer_endpoint;
+    using qb::io::socket::release_handle;
+    using qb::io::socket::set_nonblocking;
+    using qb::io::socket::set_optval;
+    using qb::io::socket::test_nonblocking;
 
-    socket();
-    socket(socket const &rhs) = default;
-    explicit socket(SocketHandler handler) noexcept;
+    socket() = default;
+    socket(socket const &) = delete;
+    socket(socket &&) = default;
+    socket &operator=(socket &&) = default;
+    socket(io::socket &&sock) noexcept;
 
-    [[nodiscard]] unsigned short getLocalPort() const noexcept;
+    socket &operator=(io::socket &&sock) noexcept;
 
-    SocketStatus bind(unsigned short port, const ip &address = ip::Any);
+    bool init(int af = AF_INET) noexcept;
+    int bind(qb::io::endpoint const &ep) noexcept;
+    int bind(qb::io::uri const &u) noexcept;
+    int bind_v4(uint16_t port, std::string const &host = "0.0.0.0") noexcept;
+    int bind_v6(uint16_t port, std::string const &host = "::") noexcept;
+    int bind_un(std::string const &path) noexcept;
 
-    void unbind() noexcept;
-
-    int write(const void *data, std::size_t size, const ip &remoteAddress,
-              unsigned short remotePort) const noexcept;
-
-    int read(void *data, std::size_t size, ip &remoteAddress,
-             unsigned short &remotePort) const noexcept;
+    int read(void *dest, std::size_t len, qb::io::endpoint &peer) const noexcept;
+    int write(const void *data, std::size_t len,
+              qb::io::endpoint const &to) const noexcept;
+    int disconnect() const noexcept;
 };
 
 } // namespace qb::io::udp

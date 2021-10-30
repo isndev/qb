@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@
 #ifndef QB_IO_ASYNC_TCP_CONNECTOR_H
 #define QB_IO_ASYNC_TCP_CONNECTOR_H
 
-#include "../../ip.h"
 #include "../../uri.h"
 #include "../listener.h"
 #include "../event/io.h"
@@ -34,29 +33,32 @@ namespace qb::io::async::tcp {
         connector(uri const &remote, Func_ &&func, double timeout = 0.)
         : _func(std::forward<Func_>(func))
         , _timeout(timeout > 0. ? ev_time() + timeout : 0.) {
-            static_cast<sys::socket<SocketType::TCP>&>(_socket).init();
-            _socket.setBlocking(false);
+            static_cast<qb::io::tcp::socket &>(_socket).init();
+            _socket.set_nonblocking(true);
             auto ret = _socket.connect(remote);
-            if (ret == SocketStatus::Done) {
-                _func(_socket);
-            } else if (ret == SocketStatus::NotReady) {
-                listener::current.registerEvent<event::io>(*this, _socket.fd(), EV_WRITE).start();
+            if (!ret) {
+                _func(std::move(_socket));
+            } else if (socket_no_error(qb::io::socket::get_last_errno())) {
+                listener::current.registerEvent<event::io>(*this, _socket.native_handle(), EV_WRITE).start();
                 return;
             } else
                 _socket.disconnect();
             delete this;
         }
+
         void on(event::io const &event) {
+            int err = 0;
             if (!(event._revents & EV_WRITE))
                 _socket.disconnect();
-            else if (_socket.getRemoteAddress() == ip::None) {
+            else if (!_socket.template get_optval<int>(SOL_SOCKET, SO_ERROR, err) && (!err || err == EISCONN)) {
+//            else if (_socket.peer_endpoint() peer_endpoint() == ip::None) {
                 if (!_timeout || ev_time() < _timeout)
                     return;
                 else
                     _socket.disconnect();
             }
             listener::current.unregisterEvent(event._interface);
-            _func(_socket);
+            _func(Socket_{});
             delete this;
         }
     };

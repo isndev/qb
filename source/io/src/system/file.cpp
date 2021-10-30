@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -33,12 +33,7 @@ file::file(std::string const &fname, int const flags) noexcept
 }
 
 int
-file::ident() const noexcept {
-    return _handle;
-}
-
-int
-file::fd() const noexcept {
+file::native_handle() const noexcept {
     return _handle;
 }
 

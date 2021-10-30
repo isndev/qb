@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -250,13 +250,6 @@ TEST(EventRouting, MESH) {
     Test_MESH<TestDestroyEvent>(1024);
     Test_MESH<TestDestroyEvent, false>(0);
 }
-
-template <>
-qb::unordered_map<RawEvent::id_type,
-                  qb::router::memh<RawEvent, true, void>::IDisposer *>
-    qb::router::memh<RawEvent, true, void>::_disposers = {};
-template <>
-std::mutex qb::router::memh<RawEvent, true, void>::_disposers_mtx = {};
 
 template <typename _Event, bool _CleanEvent = true, typename _Handler = void>
 void

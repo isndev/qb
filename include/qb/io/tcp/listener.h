@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,17 +26,29 @@ namespace qb::io::tcp {
  * @class listener tcp/listener.h qb/io/tcp/listener.h
  * @ingroup TCP
  */
-class QB_API listener : public socket {
+class QB_API listener : private io::socket {
 public:
-    listener() = default;
+    using qb::io::socket::close;
+    using qb::io::socket::get_optval;
+    using qb::io::socket::is_open;
+    using qb::io::socket::local_endpoint;
+    using qb::io::socket::native_handle;
+    using qb::io::socket::peer_endpoint;
+    using qb::io::socket::release_handle;
+    using qb::io::socket::set_nonblocking;
+    using qb::io::socket::set_optval;
+    using qb::io::socket::test_nonblocking;
 
-    listener(listener const &) = delete;
+    int listen(io::endpoint const &ep) noexcept;
+    int listen(io::uri const &uri) noexcept;
+    int listen_v4(uint16_t port, std::string const &host = "0.0.0.0") noexcept;
+    int listen_v6(uint16_t port, std::string const &host = "::") noexcept;
+    int listen_un(std::string const &path) noexcept;
 
-    ~listener() noexcept;
+    tcp::socket accept() const noexcept;
+    int accept(tcp::socket &sock) const noexcept;
 
-    SocketStatus listen(unsigned short port, const ip &address = ip::Any);
-
-    SocketStatus accept(socket &socket) const noexcept;
+    int disconnect() const noexcept;
 };
 
 } // namespace qb::io::tcp

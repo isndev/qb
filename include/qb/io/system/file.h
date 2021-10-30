@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  *         limitations under the License.
  */
 
-#include "../helper.h"
 #include <fcntl.h>
 #include <qb/system/allocator/pipe.h>
 #include <sys/stat.h>
@@ -48,8 +47,7 @@ public:
     explicit file(int fd) noexcept;
     explicit file(std::string const &fname, int flags = O_RDWR) noexcept;
 
-    [[nodiscard]] int ident() const noexcept;
-    [[nodiscard]] int fd() const noexcept;
+    [[nodiscard]] int native_handle() const noexcept;
     [[nodiscard]] bool is_open() const noexcept;
     void open(std::string const &fname, int flags = O_RDWR, int mode = 0644) noexcept;
     void open(int fd) noexcept;
@@ -59,7 +57,7 @@ public:
 
     // unused
     void
-    setBlocking(bool) const noexcept {}
+    set_non_blocking(bool) const noexcept {}
 };
 
 class QB_API file_to_pipe {

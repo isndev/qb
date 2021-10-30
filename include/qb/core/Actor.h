@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,9 +30,9 @@
 #include <qb/utility/type_traits.h>
 
 #ifdef __GNUG__
-#include <cstdlib>
-#include <memory>
-#include <cxxabi.h>
+#    include <cstdlib>
+#    include <cxxabi.h>
+#    include <memory>
 #endif
 
 namespace qb {
@@ -215,7 +215,7 @@ public:
          * @endcode
          */
         template <typename _Event, typename... _Args>
-        EventBuilder &push(_Args &&... args) noexcept;
+        EventBuilder &push(_Args &&...args) noexcept;
     };
 
     /*!
@@ -279,7 +279,7 @@ public:
     template <typename _ServiceActor>
     _ServiceActor *getService() const noexcept;
 
-    //void setCoreLowLatency(bool state) const noexcept;
+    // void setCoreLowLatency(bool state) const noexcept;
 
     /*!
      * @brief Check if Actor is alive
@@ -431,7 +431,7 @@ public:
      * /!\ We recommend to non advanced users to use only this function to send events.
      */
     template <typename _Event, typename... _Args>
-    _Event &push(ActorId const &dest, _Args &&... args) const noexcept;
+    _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 
     /*!
      * @brief Send a new unordered event
@@ -455,30 +455,30 @@ public:
      * /!\ We recommend to non advanced users to not use this function to send events.
      */
     template <typename _Event, typename... _Args>
-    void send(ActorId const &dest, _Args &&... args) const noexcept;
+    void send(ActorId const &dest, _Args &&...args) const noexcept;
 
     /*!
-    * @brief build local event
-    * @tparam _Event Event type
-    * @param source ActorId source
-    * @param args arguments to forward to the constructor of the _Event
-    * @return a local constructed _Event
-    * @details
-    * Local events are used to make a direct call of on callbacks.\n example:
-    * @code
-    * // ...
-    * auto e = local<MyEvent>(id()); // (1) build local event
-    * e.some_data = 1337; // (2) set my event data without using constructor
-    * on(e); // (3) call directly
+     * @brief build local event
+     * @tparam _Event Event type
+     * @param source ActorId source
+     * @param args arguments to forward to the constructor of the _Event
+     * @return a local constructed _Event
+     * @details
+     * Local events are used to make a direct call of on callbacks.\n example:
+     * @code
      * // ...
-    * @endcode
-    * @note
-    * event dest_id will be set to id of actor builder
-    * @attention
-    * /!\ We recommend to non advanced users to use only this function to send events.
-    */
+     * auto e = local<MyEvent>(id()); // (1) build local event
+     * e.some_data = 1337; // (2) set my event data without using constructor
+     * on(e); // (3) call directly
+     * // ...
+     * @endcode
+     * @note
+     * event dest_id will be set to id of actor builder
+     * @attention
+     * /!\ We recommend to non advanced users to use only this function to send events.
+     */
     template <typename _Event, typename... _Args>
-    _Event build_event(qb::ActorId const source, _Args &&... args) const noexcept;
+    _Event build_event(qb::ActorId const source, _Args &&...args) const noexcept;
 
     template <typename _Type>
     inline bool
@@ -496,7 +496,7 @@ public:
     bool require() const noexcept;
 
     template <typename _Event, typename... _Args>
-    void broadcast(_Args &&... args) const noexcept;
+    void broadcast(_Args &&...args) const noexcept;
 
     /*!
      * @brief Reply an event
@@ -570,7 +570,7 @@ public:
      * then improve global performance.
      */
     template <typename _Actor, typename... _Args>
-    _Actor *addRefActor(_Args &&... args) const;
+    _Actor *addRefActor(_Args &&...args) const;
 
     /*!
      * @}
@@ -628,6 +628,7 @@ protected:
     setName(Actor &actor) {
         actor.name = ActorProxy::getName<_Type>();
     }
+
 public:
     template <typename _Type>
     static auto
@@ -638,10 +639,9 @@ public:
     static const char *
     getName() {
 #ifdef __GNUC__
-        static std::unique_ptr<char, void(*)(void*)> res {
-                abi::__cxa_demangle(typeid(_Type).name(), nullptr, nullptr, nullptr),
-                std::free
-        };
+        static std::unique_ptr<char, void (*)(void *)> res{
+            abi::__cxa_demangle(typeid(_Type).name(), nullptr, nullptr, nullptr),
+            std::free};
 
         return res.get();
 #else
@@ -661,7 +661,7 @@ class TActorFactory
         _parameters;
 
 public:
-    explicit TActorFactory(ActorId const id, _Args &&... args)
+    explicit TActorFactory(ActorId const id, _Args &&...args)
         : _id(id)
         , _parameters(std::forward<_Args>(args)...) {}
 

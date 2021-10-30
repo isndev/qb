@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.7.0)
 project(stduuid CXX)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 
-option(UUID_BUILD_TESTS "Build the unit tests" ON)
+option(UUID_BUILD_TESTS "Build the unit tests" OFF)
 option(UUID_SYSTEM_GENERATOR "Enable operating system uuid generator" OFF)
 option(UUID_TIME_GENERATOR "Enable experimental time-based uuid generator" OFF)
 option(UUID_USING_CXX20_SPAN "Using span from std instead of gsl" OFF)

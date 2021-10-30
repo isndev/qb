@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,18 +28,19 @@ namespace qb::io::tcp::ssl {
  * @ingroup TCP
  */
 class QB_API listener : public tcp::listener {
-    SSL_CTX *_ctx;
-
+    std::unique_ptr<SSL_CTX, void(*)(SSL_CTX *)> _ctx;
 public:
-    listener();
-    listener(listener const &) = delete;
-
     ~listener() noexcept;
+    listener() noexcept;
+    listener(listener const &) = delete;
+    listener(listener &&) = default;
+    listener &operator=(listener &&) = default;
 
     void init(SSL_CTX *ctx) noexcept;
-    SocketStatus accept(ssl::socket &socket) const noexcept;
+    ssl::socket accept() const noexcept;
+    int accept(ssl::socket &socket) const noexcept;
 
-    [[nodiscard]] SSL_CTX *ssl() const noexcept;
+    [[nodiscard]] SSL_CTX *ssl_handle() const noexcept;
 };
 
 } // namespace qb::io::tcp::ssl

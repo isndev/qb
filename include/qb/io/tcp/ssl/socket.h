@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,36 +37,44 @@ SSL_CTX *create_server_context(const SSL_METHOD *method, std::string const &cert
 } // namespace qb::io::ssl
 namespace qb::io::tcp::ssl {
 
-class listener;
+// class listener;
 
 /*!
  * @class socket tcp/ssl/socket.h qb/io/tcp/ssl/socket.h
  * @ingroup TCP
  */
 class QB_API socket : public tcp::socket {
-    SSL *_ssl_handle;
+    std::unique_ptr<SSL, void (*)(SSL *)> _ssl_handle;
     bool _connected;
 
     int handCheck() noexcept;
+    int connect_in(int af, std::string const &host, uint16_t port) noexcept;
 
 public:
-    socket();
-    socket(socket const &rhs) = default;
+    ~socket() noexcept;
+    socket() noexcept;
+    socket(SSL *ctx, tcp::socket &sock) noexcept;
+    socket(socket const &rhs) = delete;
+    socket(socket &&rhs) = default;
+    socket &operator=(socket &&rhs) = default;
 
     void init(SSL *handle) noexcept;
-    SocketStatus connect(const ip &remoteAddress, unsigned short remotePort,
-                         int timeout = 0);
-    SocketStatus connect(const uri &remoteAddress, int timeout = 0);
-    void disconnect() noexcept;
+
+    int connect(endpoint const &ep, std::string const &hostname = "") noexcept;
+    int connect(uri const &u) noexcept;
+    int connect_v4(std::string const &host, uint16_t port) noexcept;
+    int connect_v6(std::string const &host, uint16_t port) noexcept;
+    int connect_un(std::string const &path) noexcept;
+
+    int disconnect() noexcept;
 
     int read(void *data, std::size_t size) noexcept;
     int write(const void *data, std::size_t size) noexcept;
-    //int ssl_pending() noexcept;
 
-    [[nodiscard]] SSL *ssl() const noexcept;
+    [[nodiscard]] SSL *ssl_handle() const noexcept;
 
 private:
-    friend class ssl::listener;
+    //    friend class ssl::listener;
 };
 
 } // namespace qb::io::tcp::ssl

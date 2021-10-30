@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,20 +34,23 @@ class udp : public stream<io::udp::socket> {
 public:
     constexpr static const bool has_reset_on_pending_read = true;
 
-    struct identity {
+    struct identity : public qb::io::endpoint {
+        identity() = default;
+        identity(identity const &) = default;
+        identity(qb::io::endpoint const &ep)
+            : qb::io::endpoint(ep) {}
+
         struct hasher {
             std::size_t
             operator()(const identity &id) const noexcept {
-                return hash_combine(id._ip.toInteger(), id._port);
+                return std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char *>(&id), id.len()));
             }
         };
 
-        ip _ip;
-        uint16_t _port;
-
         bool
         operator!=(identity const &rhs) const noexcept {
-            return _ip != rhs._ip || _port != rhs._port;
+            return std::string_view(reinterpret_cast<const char *>(this), len()) !=
+                   std::string_view(reinterpret_cast<const char *>(&rhs), rhs.len());
         }
     };
 
@@ -61,14 +64,14 @@ public:
         template <typename T>
         auto &
         operator<<(T &&data) {
-            if (proxy._remote_dest._ip != qb::io::ip::None) {
+//            if (proxy._remote_dest._ip != qb::io::ip::None) {
                 auto &out_buffer = static_cast<udp::base_t &>(proxy).out();
                 const auto start_size = out_buffer.size();
                 out_buffer << std::forward<T>(data);
                 auto p = reinterpret_cast<udp::pushed_message *>(
                     out_buffer.begin() + proxy._last_pushed_offset);
                 p->size += (out_buffer.size() - start_size);
-            }
+//            }
             return *this;
         }
     };
@@ -102,7 +105,8 @@ public:
 
     auto &
     out() {
-        if (_last_pushed_offset < 0 && _remote_dest._ip != qb::io::ip::None) {
+        //&& _remote_dest._ip != qb::io::ip::None
+        if (_last_pushed_offset < 0) {
             _last_pushed_offset = _out_buffer.size();
             auto &m = _out_buffer.allocate_back<pushed_message>();
             m.ident = _remote_dest;
@@ -116,7 +120,7 @@ public:
     read() noexcept {
         const auto ret = transport().read(
             _in_buffer.allocate_back(io::udp::socket::MaxDatagramSize),
-            io::udp::socket::MaxDatagramSize, _remote_source._ip, _remote_source._port);
+            io::udp::socket::MaxDatagramSize, _remote_source);
         if (qb::likely(ret > 0))
             _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
         setDestination(_remote_source);
@@ -140,7 +144,7 @@ public:
             _out_buffer.begin(),
             std::min(_current_pushed_message.size,
                      static_cast<int>(io::udp::socket::MaxDatagramSize)),
-            _current_pushed_message.ident._ip, _current_pushed_message.ident._port);
+            _current_pushed_message.ident);
         if (qb::likely(ret > 0)) {
             _current_pushed_message.size -= ret;
 

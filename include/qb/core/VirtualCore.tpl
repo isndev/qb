@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -66,7 +66,6 @@ VirtualCore::registerCallback(_Actor &actor) noexcept {
 template <typename T>
 inline void
 VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) noexcept {
-    static qb::router::memh<qb::Event, true, void>::SafeDispose<T> _uniq_safer;
     data.id = data.template type_to_id<T>();
     data.dest = dest;
     data.source = source;

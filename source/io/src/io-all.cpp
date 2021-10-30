@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,31 @@
  */
 
 #include "pipe.cpp"
-#include "helper.cpp"
-#include "ip.cpp"
+#include "uri.cpp"
+#include "system/sys__socket.cpp"
 #include "system/file.cpp"
 #include "tcp/listener.cpp"
 #include "tcp/socket.cpp"
+
+#include <qb/uuid.h>
+namespace qb {
+uuid generate_random_uuid() {
+    static uuids::uuid_random_generator gen{[]() {
+        static auto seed_data = std::array<int, std::mt19937::state_size> {
+            [](){
+                std::random_device rd;
+                std::array<int, std::mt19937::state_size> new_seed;
+                std::generate(std::begin(new_seed), std::end(new_seed), std::ref(rd));
+                return new_seed;
+            }()};
+        static std::seed_seq seq(std::begin(seed_data), std::end(seed_data));
+        static std::mt19937 generator(seq);
+        return &generator;
+    }()};
+    return gen();
+}
+} // namespace qb
+
 #ifdef QB_IO_WITH_SSL
 #    include "tcp/ssl/init.cpp"
 #    include "tcp/ssl/listener.cpp"

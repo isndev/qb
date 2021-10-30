@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,98 +15,82 @@
  *         limitations under the License.
  */
 
-#include <algorithm>
 #include <qb/io/udp/socket.h>
 
 namespace qb::io::udp {
 
-socket::socket()
-    : sys::socket<SocketType::UDP>() {
-    init();
+socket::socket(io::socket &&sock) noexcept
+    : io::socket(sock.release_handle()) {}
+
+socket &
+socket::operator=(io::socket &&sock) noexcept {
+    static_cast<io::socket &>(*this) = sock.release_handle();
+    return *this;
 }
 
-socket::socket(SocketHandler handle) noexcept
-    : sys::socket<SocketType::UDP>() {
-    _handle = handle;
+bool
+socket::init(int af) noexcept {
+    auto ret = open(af, SOCK_DGRAM, 0);
+
+    set_optval(SOL_SOCKET, SO_BROADCAST, 1);
+
+    return ret;
 }
 
-unsigned short
-socket::getLocalPort() const noexcept {
+int
+socket::read(void *dest, std::size_t len, qb::io::endpoint &peer) const noexcept {
+    return recvfrom(dest, len, peer);
+}
+
+int
+socket::write(const void *data, std::size_t len,
+              qb::io::endpoint const &to) const noexcept {
+    return sendto(data, len, to);
+}
+
+int
+socket::bind(qb::io::endpoint const &ep) noexcept {
     if (is_open()) {
-        // Retrieve informations about the local end of the socket
-        sockaddr_in address;
-        AddrLength size = sizeof(address);
-        if (getsockname(_handle, reinterpret_cast<sockaddr *>(&address), &size) != -1) {
-            return ntohs(address.sin_port);
-        }
-    }
+        auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
+        if (af != ep.af())
+            return -1;
+    } else
+        init(ep.af());
 
-    // We failed to retrieve the port
-    return 0;
-}
-
-SocketStatus
-socket::bind(unsigned short port, const ip &address) {
-
-    // Create the internal socket if it doesn't exist
-    init();
-
-    // Check if the address is valid
-    if ((address == ip::None))
-        return SocketStatus::Error;
-
-    // Bind the socket
-    sockaddr_in addr = helper::createAddress(address.toInteger(), port);
-    if (::bind(_handle, reinterpret_cast<sockaddr *>(&addr), sizeof(addr))) {
-        std::cerr << "Failed to bind socket to port " << port << std::endl;
-        return SocketStatus::Error;
-    }
-
-    return SocketStatus::Done;
-}
-
-void
-socket::unbind() noexcept {
-    // Simply close the socket
-    close();
+    return qb::io::inet::socket::bind(ep);
 }
 
 int
-socket::write(const void *data, std::size_t size, const ip &remoteAddress,
-              unsigned short remotePort) const noexcept {
-
-    // Build the target address
-    sockaddr_in address = helper::createAddress(remoteAddress.toInteger(), remotePort);
-
-    // Send the data (unlike TCP, all the data is always sent in one call)
-    return sendto(_handle, static_cast<const char *>(data), static_cast<int>(size), 0,
-                  reinterpret_cast<sockaddr *>(&address), sizeof(address));
+socket::bind(io::uri const &u) noexcept {
+    switch (u.af()) {
+    case AF_INET:
+    case AF_INET6:
+        return bind(io::endpoint().as_in(std::string(u.host()).c_str(), u.u_port()));
+    case AF_UNIX:
+        const auto path = std::string(u.path()) + std::string(u.host());
+        return bind_un(path.c_str());
+    }
+    return -1;
 }
 
 int
-socket::read(void *data, std::size_t size, ip &remoteAddress,
-             unsigned short &remotePort) const noexcept {
-    // First clear the variables to fill
-    remoteAddress = ip();
-    remotePort = 0;
+socket::bind_v4(uint16_t port, std::string const &host) noexcept {
+    return bind(qb::io::endpoint().as_in(host.c_str(), port));
+}
 
-    // Data that will be filled with the other computer's address
-    sockaddr_in address = helper::createAddress(INADDR_ANY, 0);
+int
+socket::bind_v6(uint16_t port, std::string const &host) noexcept {
+    return bind(qb::io::endpoint().as_in(host.c_str(), port));
+}
 
-    // Receive a chunk of bytes
-    AddrLength addressSize = sizeof(address);
-    const int sizeReceived =
-        recvfrom(_handle, static_cast<char *>(data), static_cast<int>(size), 0,
-                 reinterpret_cast<sockaddr *>(&address), &addressSize);
+int
+socket::bind_un(std::string const &path) noexcept {
+    return bind(qb::io::endpoint().as_un(path.c_str()));
+}
 
-    // Check for errors
-    if (sizeReceived >= 0) {
-        // Fill the sender informations
-        remoteAddress = ip(ntohl(address.sin_addr.s_addr));
-        remotePort = ntohs(address.sin_port);
-    }
-
-    return sizeReceived;
+int
+socket::disconnect() const noexcept {
+    return shutdown();
 }
 
 } // namespace qb::io::udp

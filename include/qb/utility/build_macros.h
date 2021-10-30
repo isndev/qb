@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -74,5 +74,137 @@
 #            define QB_UNUSED_VAR
 #        endif
 #    endif
+
+// Tests whether compiler has fully c++11 support
+// About preprocessor '_MSC_VER', please see:
+// https://docs.microsoft.com/en-us/cpp/preprocessor/predefined-macros?view=vs-2019
+#if defined(_MSC_VER)
+#  if _MSC_VER < 1900
+#    define QB__HAS_FULL_CXX11 0
+#  else
+#    define QB__HAS_FULL_CXX11 1
+#    if _MSC_VER > 1900 // VS2017 or later
+#      include <vcruntime.h>
+#      include <sdkddkver.h>
+#    endif
+#  endif
+#else
+#  define QB__HAS_FULL_CXX11 1
+#endif
+
+// Tests whether compiler has c++14 support
+#if (defined(__cplusplus) && __cplusplus >= 201402L) || (defined(_MSC_VER) && _MSC_VER >= 1900 && (defined(_MSVC_LANG) && (_MSVC_LANG >= 201402L)))
+#  ifndef QB_HAS_CXX14
+#    define QB__HAS_CXX14 1
+#  endif // C++14 features macro
+#endif   // C++14 features check
+#if !defined(QB__HAS_CXX14)
+#  define QB__HAS_CXX14 0
+#endif
+
+// Tests whether compiler has c++17 support
+#if (defined(__cplusplus) && __cplusplus >= 201703L) ||                                                                                                        \
+    (defined(_MSC_VER) && _MSC_VER > 1900 && ((defined(_HAS_CXX17) && _HAS_CXX17 == 1) || (defined(_MSVC_LANG) && (_MSVC_LANG > 201402L))))
+#  ifndef QB_HAS_CXX17
+#    define QB__HAS_CXX17 1
+#  endif // C++17 features macro
+#endif   // C++17 features check
+#if !defined(QB__HAS_CXX17)
+#  define QB__HAS_CXX17 0
+#endif
+
+// Tests whether compiler has c++20 support
+#if (defined(__cplusplus) && __cplusplus > 201703L) ||                                                                                                         \
+    (defined(_MSC_VER) && _MSC_VER > 1900 && ((defined(_HAS_CXX20) && _HAS_CXX20 == 1) || (defined(_MSVC_LANG) && (_MSVC_LANG > 201703L))))
+#  ifndef QB__HAS_CXX20
+#    define QB__HAS_CXX20 1
+#  endif // C++20 features macro
+#endif   // C++20 features check
+#if !defined(QB__HAS_CXX20)
+#  define QB__HAS_CXX20 0
+#endif
+
+// Workaround for compiler without fully c++11 support, such as vs2013
+#if QB__HAS_FULL_CXX11
+#  define QB__HAS_NS_INLINE 1
+#  define QB__NS_INLINE inline
+#else
+#  define QB__HAS_NS_INLINE 0
+#  define QB__NS_INLINE
+#  if defined(constexpr)
+#    undef constexpr
+#  endif
+#  define constexpr const
+#endif
+
+// Unix domain socket feature test
+#if !defined(_WIN32) || defined(NTDDI_WIN10_RS5)
+#  define QB__HAS_UDS 1
+#else
+#  define QB__HAS_UDS 0
+#endif
+
+// Test whether sockaddr has member 'sa_len'
+#if defined(__linux__) || defined(_WIN32)
+#  define QB__HAS_SA_LEN 0
+#else
+#  if defined(__unix__) || defined(__APPLE__)
+#    define QB__HAS_SA_LEN 1
+#  else
+#    define QB__HAS_SA_LEN 0
+#  endif
+#endif
+
+#if !defined(_WIN32) || defined(NTDDI_VISTA)
+#  define QB__HAS_NTOP 1
+#else
+#  define QB__HAS_NTOP 0
+#endif
+
+// 64bits Sense Macros
+#if defined(_M_X64) || defined(_WIN64) || defined(__LP64__) || defined(_LP64) || defined(__x86_64) || defined(__arm64__) || defined(__aarch64__)
+#  define QB__64BITS 1
+#else
+#  define QB__64BITS 0
+#endif
+
+// Try detect compiler exceptions
+#if !defined(__cpp_exceptions)
+#  define QB__NO_EXCEPTIONS 1
+#endif
+
+#if !defined(QB__NO_EXCEPTIONS)
+#  define QB__THROW(x, retval) throw(x)
+#  define QB__THROW0(x) throw(x)
+#else
+#  define QB__THROW(x, retval) return (retval)
+#  define QB__THROW0(x) return
+#endif
+
+// Compatibility with non-clang compilers...
+#ifndef __has_attribute
+#  define __has_attribute(x) 0
+#endif
+#ifndef __has_builtin
+#  define __has_builtin(x) 0
+#endif
+
+/*
+ * Helps the compiler's optimizer predicting branches
+ */
+#if __has_builtin(__builtin_expect)
+#  ifdef __cplusplus
+#    define qb__likely(exp) (__builtin_expect(!!(exp), true))
+#    define qb__unlikely(exp) (__builtin_expect(!!(exp), false))
+#  else
+#    define qb__likely(exp) (__builtin_expect(!!(exp), 1))
+#    define qb__unlikely(exp) (__builtin_expect(!!(exp), 0))
+#  endif
+#else
+#  define qb__likely(exp) (!!(exp))
+#  define qb__unlikely(exp) (!!(exp))
+#endif
+
+#define QB__STD ::std::
 
 #endif

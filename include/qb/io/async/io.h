@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -201,7 +201,7 @@ private:
         }
 
         auto diff_read = event.attr.st_size - event.prev.st_size;
-        if (!_protocol->ok() || !event.attr.st_nlink || (diff_read < 0 && lseek(Derived.transport().fd(), 0, SEEK_SET)))
+        if (!_protocol->ok() || !event.attr.st_nlink || (diff_read < 0 && lseek(Derived.transport().native_handle(), 0, SEEK_SET)))
             ret = -1;
         else if (diff_read) {
             if constexpr (_Derived::do_read) {
@@ -264,14 +264,14 @@ public:
     void
     start() noexcept {
         _disconnected_by_user = false;
-        Derived.transport().setBlocking(false);
-        this->_async_event.start(Derived.transport().fd(), EV_READ);
+        Derived.transport().set_nonblocking(true);
+        this->_async_event.start(Derived.transport().native_handle(), EV_READ);
     }
 
     void
     ready_to_read() noexcept {
         if (!(this->_async_event.events & EV_READ))
-            this->_async_event.start(Derived.transport().fd(), EV_READ);
+            this->_async_event.start(Derived.transport().native_handle(), EV_READ);
     }
 
     void
@@ -280,7 +280,7 @@ public:
             Derived.on(event::disconnected{reason});
         }
         _disconnected_by_user = true;
-        listener::current.loop().feed_fd_event(Derived.transport().fd(), EV_UNDEF);
+        listener::current.loop().feed_fd_event(Derived.transport().native_handle(), EV_UNDEF);
     }
 
 private:
@@ -351,8 +351,8 @@ public:
     void
     start() noexcept {
         _disconnected_by_user = false;
-        Derived.transport().setBlocking(false);
-        this->_async_event.start(Derived.transport().fd(), EV_WRITE);
+        Derived.transport().set_nonblocking(true);
+        this->_async_event.start(Derived.transport().native_handle(), EV_WRITE);
     }
 
     void
@@ -382,7 +382,7 @@ public:
             Derived.on(event::disconnected{reason});
         }
         _disconnected_by_user = true;
-        listener::current.loop().feed_fd_event(Derived.transport().fd(), EV_UNDEF);
+        listener::current.loop().feed_fd_event(Derived.transport().native_handle(), EV_UNDEF);
     }
 
 private:
@@ -473,8 +473,8 @@ public:
     void
     start() noexcept {
         _disconnected_by_user = false;
-        Derived.transport().setBlocking(false);
-        this->_async_event.start(Derived.transport().fd(), EV_READ);
+        Derived.transport().set_nonblocking(true);
+        this->_async_event.start(Derived.transport().native_handle(), EV_READ);
     }
 
     void
@@ -515,7 +515,7 @@ public:
             Derived.on(event::disconnected{reason});
         }
         _disconnected_by_user = true;
-        listener::current.loop().feed_fd_event(Derived.transport().fd(), EV_UNDEF);
+        listener::current.loop().feed_fd_event(Derived.transport().native_handle(), EV_UNDEF);
     }
 
 private:
