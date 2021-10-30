@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,7 +55,7 @@ public:
         auto &session = *new _Session{static_cast<_Derived &>(*this)};
         const auto &it =
             sessions().emplace(session.id(), std::ref(session));
-        it.first->second.transport() = new_io;
+        it.first->second.transport() = std::move(new_io);
         it.first->second.start();
         if constexpr (has_method_on<_Derived, void, _Session &>::value)
             static_cast<_Derived &>(*this).on(it.first->second);

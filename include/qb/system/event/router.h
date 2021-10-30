@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
  *         limitations under the License.
  */
 
+#include <mutex>
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
-#include <mutex>
 
 #ifndef QB_EVENT_ROUTER_H
 #    define QB_EVENT_ROUTER_H
@@ -421,15 +421,20 @@ private:
     };
 
     template <typename T>
-    class Disposer : public IDisposer{
+    class Disposer : public IDisposer {
     public:
-        void dispose(_RawEvent *event) final {
-            reinterpret_cast<T *>(event)->~T();
+        void
+        dispose(_RawEvent *event) final {
+            if constexpr (!std::is_trivially_destructible_v<T>) {
+                reinterpret_cast<T *>(event)->~T();
+            } else {
+                (void)event;
+            }
         }
     };
 
-    static qb::unordered_map<_EventId, IDisposer *> _disposers;
-    static std::mutex _disposers_mtx;
+    static inline qb::unordered_map<_EventId, IDisposer *> _disposers;
+    static inline std::mutex _disposers_mtx;
 
     class IEventResolver {
     public:
@@ -467,7 +472,9 @@ public:
     struct SafeDispose {
         SafeDispose() {
             std::lock_guard lk(_disposers_mtx);
-            _disposers.try_emplace(_RawEvent::template type_to_id<T>(), new Disposer<T>());
+
+            _disposers.try_emplace(_RawEvent::template type_to_id<T>(),
+                                   new Disposer<T>());
         }
     };
 
@@ -485,17 +492,19 @@ public:
         if (likely(it != _registered_events.cend()))
             it->second.resolve(event);
         else {
-            std::lock_guard lk(_disposers_mtx);
             onError(event);
-            _disposers.at(event.getID())->dispose(&event);
+            if constexpr (_CleanEvent) {
+                std::lock_guard lk(_disposers_mtx);
+                _disposers.at(event.getID())->dispose(&event);
+            }
         };
-        // /!\ Look notice in of mesh router above
-//        _registered_events.at(event.getID()).resolve(event);
     }
 
     template <typename _Event, typename _Handler>
     void
     subscribe(_Handler &handler) {
+        static const SafeDispose<_Event> o{};
+
         const auto &it =
             _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it == _registered_events.cend()) {

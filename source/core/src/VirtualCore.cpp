@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -403,8 +403,3 @@ qb::operator<<(std::ostream &os, qb::VirtualCore const &core) {
        << ")";
     return os;
 }
-
-template<>
-qb::unordered_map<qb::Event::id_type, qb::router::memh<qb::Event, true, void>::IDisposer *>  qb::router::memh<qb::Event, true, void>::_disposers = {};
-template<>
-std::mutex  qb::router::memh<qb::Event, true, void>::_disposers_mtx = {};

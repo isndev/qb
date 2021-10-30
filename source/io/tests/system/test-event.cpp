@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -108,9 +108,9 @@ TEST(KernelEvents, BasicIO) {
     qb::io::sys::file f("test.file");
     FakeActor actor;
 
-    actor.fd_test = f.fd();
+    actor.fd_test = f.native_handle();
 
-    handler.registerEvent<qb::io::async::event::io>(actor, f.fd(), EV_READ).start();
+    handler.registerEvent<qb::io::async::event::io>(actor, f.native_handle(), EV_READ).start();
 
     for (auto i = 0; i < 10 && !actor.nb_events; ++i)
         handler.run(EVRUN_ONCE);

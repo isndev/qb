@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,13 +37,13 @@ public:
     std::size_t
     read() noexcept {
         if (_io.accept(_accepted_io) == io::SocketStatus::Done)
-            return static_cast<std::size_t>(_accepted_io.ident());
+            return static_cast<std::size_t>(_accepted_io.native_handle());
         return static_cast<std::size_t>(-1);
     }
 
     void
     flush(std::size_t) noexcept {
-        _accepted_io = io::tcp::socket();
+        _accepted_io.release_handle();
     }
 
     void
@@ -54,8 +54,8 @@ public:
         _io.close();
     }
 
-    io::tcp::socket
-    getAccepted() const {
+    io::tcp::socket &
+    getAccepted() {
         return _accepted_io;
     }
 };

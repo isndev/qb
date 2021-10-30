@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@
 #include <utility>
 
 template <typename Event>
-class ProducerActor : public qb::Actor {
+class ProducerActor final : public qb::Actor {
     const qb::ActorIdList _idList;
     uint64_t _max_events;
     pg::latency<1000 * 1000, 900000> _latency;

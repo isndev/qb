@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2020 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,74 +19,59 @@
 
 namespace qb::io::tcp {
 
-listener::~listener() noexcept {
-    close();
+int
+listener::listen(io::endpoint const &ep) noexcept {
+    const auto ret = pserve(ep);
+    set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
+    return ret;
 }
 
-SocketStatus
-listener::listen(unsigned short port, const ip &address) {
-    // Close the socket if it is already bound
-    close();
-
-    // init the internal socket if it doesn't exist
-    init();
-
-#ifdef __LINUX__SYSTEM__
-    int Yes = 1;
-    setsockopt(_handle, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&Yes),
-               sizeof(Yes));
-#endif
-    // Check if the address is valid
-    if ((address == ip::None)) {
-        _handle = SOCKET_INVALID;
-        return SocketStatus::Error;
+int
+listener::listen(io::uri const &u) noexcept {
+    switch (u.af()) {
+    case AF_INET:
+    case AF_INET6:
+        return listen(io::endpoint().as_in(std::string(u.host()).c_str(), u.u_port()));
+    case AF_UNIX:
+        const auto path = std::string(u.path()) + std::string(u.host());
+        return listen_un(path.c_str());
     }
-
-    // Bind the socket to the specified port
-    sockaddr_in addr = helper::createAddress(address.toInteger(), port);
-    if (bind(_handle, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) == -1) {
-        _handle = SOCKET_INVALID;
-        // Not likely to happen, but...
-        std::cerr << "Failed to bind listener socket to port " << port << std::endl;
-        return SocketStatus::Error;
-    }
-
-    // Listen to the bound port
-    if (::listen(_handle, SOMAXCONN) == -1) {
-        close();
-        _handle = SOCKET_INVALID;
-        // Oops, socket is deaf
-        std::cerr << "Failed to listen to port " << port << std::endl;
-        return SocketStatus::Error;
-    }
-
-    return SocketStatus::Done;
+    return -1;
 }
 
-SocketStatus
-listener::accept(socket &sock) const noexcept {
-    // Make sure that we're listening
-    if (!is_open()) {
-        std::cerr << "Failed to accept a new connection, the socket is not listening"
-                  << std::endl;
-        return SocketStatus::Error;
-    }
+int
+listener::listen_v4(uint16_t port, std::string const &host) noexcept {
+    return listen(io::endpoint().as_in(host.c_str(), port));
+}
 
-    // Accept a new connection
-    sockaddr_in address;
-    AddrLength length = sizeof(address);
-    SocketHandler remote =
-        ::accept(_handle, reinterpret_cast<sockaddr *>(&address), &length);
+int
+listener::listen_v6(uint16_t port, std::string const &host) noexcept {
+    return listen(io::endpoint().as_in(host.c_str(), port));
+}
 
-    // Check for errors
-    if (remote == SOCKET_INVALID)
-        return helper::getErrorStatus();
+int
+listener::listen_un(std::string const &path) noexcept {
+    return listen(io::endpoint().as_un(path.c_str()));
+}
 
-    // Initialize the new connected socket
-    sock.close();
-    sock.init(remote);
+socket
+listener::accept() const noexcept {
+    return {io::socket::accept()};
+}
 
-    return SocketStatus::Done;
+int
+listener::accept(tcp::socket &sock) const noexcept {
+    socket_type nt_sock = qb::io::inet::invalid_socket;
+
+    auto ret = io::socket::accept_n(nt_sock);
+    sock = nt_sock;
+
+    return ret;
+}
+
+int
+listener::disconnect() const noexcept {
+    return shutdown();
 }
 
 } // namespace qb::io::tcp
