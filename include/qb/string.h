@@ -118,18 +118,18 @@ public:
     }
 };
 
-} // namespace qb
-
-template <std::size_t _Size>
+template<std::size_t _Size>
 std::ostream &operator<<(std::ostream &os, qb::string<_Size> const &str) noexcept {
     os << str.c_str();
     return os;
 }
 
-template <std::size_t _Size>
+template<std::size_t _Size>
 std::istream &operator>>(std::istream &is, qb::string<_Size> const &str) noexcept {
     str.c_str() >> is;
     return is;
 }
+
+} // namespace qb
 
 #endif // QB_STRING_H_
