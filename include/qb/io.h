@@ -20,10 +20,13 @@
 
 #include <iostream>
 #include <mutex>
-#include <nanolog/nanolog.h>
 #include <sstream>
 #include <type_traits>
 #include <utility>
+
+#ifdef QB_LOGGER
+#include <nanolog/nanolog.h>
+#endif
 
 namespace qb {
 #ifdef NDEBUG
@@ -33,7 +36,7 @@ constexpr static bool debug = true;
 #endif
 
 namespace io {
-
+#ifdef QB_LOGGER
 namespace log {
 using stream = nanolog::NanoLogLine;
 using Level = nanolog::LogLevel;
@@ -59,7 +62,7 @@ void setLevel(Level lvl);
  */
 void init(std::string const &file_path, uint32_t roll_MB = 128);
 } // namespace log
-
+#endif
 /*!
  * @class cout
  * @brief thread safe print in std::cout
@@ -88,5 +91,21 @@ public:
 };
 } // namespace io
 } // namespace qb
+
+#ifndef QB_LOGGER
+#ifndef QB_STDOUT_LOG
+#    define LOG_DEBUG(X) qb::cout() << X
+#    define LOG_VERB(X) qb::cout() << X
+#    define LOG_INFO(X) qb::cout() << X
+#    define LOG_WARN(X) qb::cout() << X
+#    define LOG_CRIT(X) qb::cout() << X
+#else
+#    define LOG_DEBUG(X)
+#    define LOG_VERB(X)
+#    define LOG_INFO(X)
+#    define LOG_WARN(X)
+#    define LOG_CRIT(X)
+#endif
+#endif
 
 #endif // QB_TYPES_H

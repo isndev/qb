@@ -138,6 +138,12 @@ run(int flag = 0) {
     return listener::current.getNbInvokedEvent();
 }
 
+inline void
+run_until(bool const &status) {
+    while (status)
+        listener::current.run(EVRUN_ONCE);
+}
+
 } // namespace qb::io::async
 
 #endif // QB_IO_ASYNC_LISTENER_H_

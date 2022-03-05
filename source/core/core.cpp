@@ -15,10 +15,8 @@
  *         limitations under the License.
  */
 
-#include "nanolog/nanolog.cpp"
 #include "src/ActorId.cpp"
 #include "src/VirtualCore.cpp"
 #include "src/Actor.cpp"
 #include "src/CoreSet.cpp"
 #include "src/Main.cpp"
-#include "src/io.cpp"

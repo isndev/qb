@@ -503,6 +503,22 @@ namespace uuids
          return uuid{ data };
       }
 
+      inline auto begin() {
+          return std::begin(data);
+      }
+
+      inline auto begin() const {
+          return std::cbegin(data);
+      }
+
+      inline auto end() {
+          return std::end(data);
+      }
+
+      inline auto end() const {
+          return std::cend(data);
+      }
+
    private:
       std::array<value_type, 16> data{ { 0 } };
 

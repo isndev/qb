@@ -190,7 +190,7 @@ socket::connect_un(std::string const &path) noexcept {
 int
 socket::disconnect() noexcept {
     _connected = false;
-    SSL_shutdown(ssl_handle());
+//    SSL_shutdown(ssl_handle());
     return tcp::socket::disconnect();
 }
 

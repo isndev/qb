@@ -86,7 +86,7 @@ public:
     static std::string
     encode(_IT begin, _IT end) noexcept {
         std::string dst;
-        dst.reserve(static_cast<size_t>(begin - end) * 3);
+        dst.reserve(static_cast<ptrdiff_t>(end - begin) * 3);
 
         while (begin != end) {
             if (isalnum(*begin) || strchr(dont_escape, *begin) != NULL) {

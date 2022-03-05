@@ -21,7 +21,7 @@ if (OPENSSL_FOUND)
     include_directories(${OPENSSL_INCLUDE_DIR})
     cxx_library(NAME ${PROJECT_NAME}
             FLAGS "${cxx_default_lib}"
-            SOURCES src/io-all.cpp
+            SOURCES src/io.cpp
             DEPENDENCIES "ev OpenSSL::SSL stduuid")
     target_compile_definitions(${PROJECT_NAME} PUBLIC QB_IO_WITH_SSL=1)
 
@@ -36,6 +36,17 @@ set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION})
 target_include_directories(${PROJECT_NAME} INTERFACE
         "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
         "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
+
+if (${QB_PREFIX_UPPER}_WITH_LOG)
+    message(STATUS "INFO: Will build ${QB_PREFIX} libraries with logger")
+    target_compile_definitions(${QB_PREFIX}-io PUBLIC QB_LOGGER=1)
+else()
+    message(STATUS "INFO: Will build ${QB_PREFIX} libraries without logger")
+    if(${QB_PREFIX_UPPER}_STDOUT_LOG)
+        target_compile_definitions(${QB_PREFIX}-io PUBLIC QB_STDOUT_LOG=1)
+        message(STATUS "INFO: Will build ${QB_PREFIX} print logs")
+    endif()
+endif()
 
 #cxx_shared_library(NAME ${PROJECT_NAME}-shared
 #        FLAGS ${cxx_default_lib}

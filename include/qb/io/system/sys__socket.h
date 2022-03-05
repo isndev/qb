@@ -61,6 +61,10 @@ IN6_IS_ADDR_GLOBAL(const in6_addr *a) {
 #    pragma warning(disable : 4996)
 #endif
 
+#if !defined MSG_NOSIGNAL
+#    define MSG_NOSIGNAL 0
+#endif
+
 namespace qb::io {
 QB__NS_INLINE
 namespace inet {
@@ -789,8 +793,8 @@ public:
      *parameter.
      **         Otherwise, a value of SOCKET_ERROR is returned.
      */
-    QB__DECL int send(const void *buf, int len, int flags = 0) const;
-    QB__DECL static int send(socket_type fd, const void *buf, int len, int flags = 0);
+    QB__DECL int send(const void *buf, int len, int flags = MSG_NOSIGNAL) const;
+    QB__DECL static int send(socket_type fd, const void *buf, int len, int flags = MSG_NOSIGNAL);
 
     /* @brief: Receives data from this connected socket or a bound connectionless socket.
      ** @params: omit
@@ -801,8 +805,8 @@ public:
      *received.
      **         If the connection has been gracefully closed, the return value is [0].
      */
-    QB__DECL int recv(void *buf, int len, int flags = 0) const;
-    QB__DECL static int recv(socket_type s, void *buf, int len, int flags);
+    QB__DECL int recv(void *buf, int len, int flags = MSG_NOSIGNAL) const;
+    QB__DECL static int recv(socket_type s, void *buf, int len, int flags = MSG_NOSIGNAL);
 
     /* @brief: Sends data on this connected socket
      ** @params: omit
@@ -814,7 +818,7 @@ public:
      **         Otherwise, a value of SOCKET_ERROR is returned.
      */
     QB__DECL int sendto(const void *buf, int len, const endpoint &to,
-                        int flags = 0) const;
+                        int flags = MSG_NOSIGNAL) const;
 
     /* @brief: Receives a datagram and stores the source address
      ** @params: omit
@@ -825,7 +829,7 @@ public:
      *received.
      **         If the connection has been gracefully closed, the return value is [0].
      */
-    QB__DECL int recvfrom(void *buf, int len, endpoint &peer, int flags = 0) const;
+    QB__DECL int recvfrom(void *buf, int len, endpoint &peer, int flags = MSG_NOSIGNAL) const;
 
     QB__DECL int handle_write_ready(const std::chrono::microseconds &wtimeout) const;
     QB__DECL static int handle_write_ready(socket_type s,
@@ -1172,7 +1176,7 @@ constexpr static const int FD_INVALID = -1;
 
 inline bool
 socket_no_error(int error) {
-    return error == EWOULDBLOCK || error == EAGAIN || error == EINTR;
+    return error == EWOULDBLOCK || error == EAGAIN || error == EINTR || error == EINPROGRESS;
 }
 } // namespace qb::io
 

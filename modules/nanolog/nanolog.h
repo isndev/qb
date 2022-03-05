@@ -177,11 +177,5 @@ void initialize(NonGuaranteedLogger ngl, std::string const &log_file_path,
 #    define LOG_CRIT(X)                                       \
         (void)(nanolog::is_logged(nanolog::LogLevel::CRIT) && \
                NANO_LOG(nanolog::LogLevel::CRIT) << X)
-#else
-#    define LOG_DEBUG(X)
-#    define LOG_VERB(X)
-#    define LOG_INFO(X)
-#    define LOG_WARN(X)
-#    define LOG_CRIT(X)
 #endif
 #endif /* NANO_LOG_HEADER_GUARD */

@@ -153,6 +153,10 @@ uri::parse() noexcept {
         if (it != default_ports.end())
             _port = it->second;
     }
+
+    if (_scheme == "unix")
+        _af = AF_UNIX;
+
     return ret;
 }
 

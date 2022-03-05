@@ -26,13 +26,6 @@ target_include_directories(${PROJECT_NAME} INTERFACE
         "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
         "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
 
-if (${QB_PREFIX_UPPER}_WITH_LOG)
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries with logger")
-    target_compile_definitions(${QB_PREFIX}-core PUBLIC QB_LOGGER=1)
-else()
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries without logger")
-endif()
-
 if (${QB_PREFIX_UPPER}_BUILD_TEST)
     add_subdirectory(tests)
 endif()
