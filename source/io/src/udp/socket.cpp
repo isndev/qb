@@ -39,13 +39,13 @@ socket::init(int af) noexcept {
 
 int
 socket::read(void *dest, std::size_t len, qb::io::endpoint &peer) const noexcept {
-    return recvfrom(dest, len, peer);
+    return recvfrom(dest, static_cast<int>(len), peer);
 }
 
 int
 socket::write(const void *data, std::size_t len,
               qb::io::endpoint const &to) const noexcept {
-    return sendto(data, len, to);
+    return sendto(data, static_cast<int>(len), to);
 }
 
 int

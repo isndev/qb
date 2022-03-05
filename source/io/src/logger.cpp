@@ -16,7 +16,7 @@
  */
 
 #include <qb/io.h>
-
+#ifdef QB_LOGGER
 void
 qb::io::log::init(std::string const &file_path, uint32_t const roll_MB) {
     nanolog::initialize(nanolog::GuaranteedLogger(), file_path, roll_MB);
@@ -26,7 +26,7 @@ void
 qb::io::log::setLevel(io::log::Level lvl) {
     nanolog::set_log_level(lvl);
 }
-
+#endif
 std::mutex qb::io::cout::io_lock;
 
 qb::io::cout::~cout() {

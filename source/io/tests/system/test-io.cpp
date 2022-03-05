@@ -81,7 +81,7 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u8.query("query1") == "value1");
     EXPECT_TRUE(u8.query("query2") == "value2");
     EXPECT_TRUE(u8.af() == AF_INET6);
-    qb::io::uri u9{"unix://name.sock/path/to/service/", AF_UNIX};
+    qb::io::uri u9{"unix://name.sock/path/to/service/"};
     EXPECT_TRUE(u9.scheme() == "unix");
     EXPECT_TRUE(u9.host() == "name.sock");
     EXPECT_TRUE(u9.path() == "/path/to/service/");

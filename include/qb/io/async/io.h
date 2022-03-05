@@ -112,7 +112,7 @@ public:
 
 template <typename _Func>
 void callback(_Func &&func, double timeout = 0.) {
-    new Timeout<_Func>(std::forward<_Func>(func));
+    new Timeout<_Func>(std::forward<_Func>(func), timeout);
 }
 
 template <typename _Derived>

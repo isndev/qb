@@ -15,6 +15,10 @@
  *         limitations under the License.
  */
 
+#ifdef QB_LOGGER
+#include "nanolog/nanolog.cpp"
+#endif
+#include "logger.cpp"
 #include "pipe.cpp"
 #include "uri.cpp"
 #include "system/sys__socket.cpp"

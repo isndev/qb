@@ -19,54 +19,71 @@
 #define QB_IO_ASYNC_TCP_CONNECTOR_H
 
 #include "../../uri.h"
-#include "../listener.h"
 #include "../event/io.h"
+#include "../listener.h"
+#include <qb/io.h>
 
 namespace qb::io::async::tcp {
 
-    template <typename Socket_, typename Func_>
-    class connector {
-        Func_ _func;
-        const double _timeout;
-        Socket_ _socket;
-    public:
-        connector(uri const &remote, Func_ &&func, double timeout = 0.)
+template <typename Socket_, typename Func_>
+class connector {
+    Func_ _func;
+    const double _timeout;
+    Socket_ _socket;
+    uri _remote;
+
+public:
+    connector(uri const &remote, Func_ &&func, double timeout = 0.)
         : _func(std::forward<Func_>(func))
-        , _timeout(timeout > 0. ? ev_time() + timeout : 0.) {
-            static_cast<qb::io::tcp::socket &>(_socket).init();
-            _socket.set_nonblocking(true);
-            auto ret = _socket.connect(remote);
-            if (!ret) {
-                _func(std::move(_socket));
-            } else if (socket_no_error(qb::io::socket::get_last_errno())) {
-                listener::current.registerEvent<event::io>(*this, _socket.native_handle(), EV_WRITE).start();
-                return;
-            } else
-                _socket.disconnect();
-            delete this;
-        }
-
-        void on(event::io const &event) {
-            int err = 0;
-            if (!(event._revents & EV_WRITE))
-                _socket.disconnect();
-            else if (!_socket.template get_optval<int>(SOL_SOCKET, SO_ERROR, err) && (!err || err == EISCONN)) {
-//            else if (_socket.peer_endpoint() peer_endpoint() == ip::None) {
-                if (!_timeout || ev_time() < _timeout)
-                    return;
-                else
-                    _socket.disconnect();
-            }
-            listener::current.unregisterEvent(event._interface);
+        , _timeout(timeout > 0. ? ev_time() + timeout : 0.)
+        , _remote{remote} {
+        LOG_DEBUG("Started async connect to " << remote.source());
+        _socket.set_nonblocking(true);
+        auto ret = _socket.connect(remote);
+        if (!ret) {
+            LOG_DEBUG("Connected directly to " << remote.source());
+            _func(std::move(_socket));
+        } else if (socket_no_error(qb::io::socket::get_last_errno())) {
+            listener::current
+                .registerEvent<event::io>(*this, _socket.native_handle(), EV_WRITE)
+                .start();
+            return;
+        } else {
+            _socket.disconnect();
+            LOG_DEBUG("Failed to connect to "
+                      << remote.source() << " err=" << qb::io::socket::get_last_errno());
             _func(Socket_{});
-            delete this;
         }
-    };
-
-    template <typename Socket_, typename Func_>
-    void connect(uri const &remote, Func_ &&func, double timeout = 0.) {
-        new connector<Socket_, Func_>(remote, std::forward<Func_>(func), timeout);
+        delete this;
     }
+
+    void
+    on(event::io const &event) {
+        int err = 0;
+        if (!(event._revents & EV_WRITE) ||
+            _socket.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)) {
+            _socket.disconnect();
+            err = 1;
+        } else if ((err && err != EISCONN) && (!_timeout || ev_time() < _timeout))
+            return;
+        listener::current.unregisterEvent(event._interface);
+        if (!err || err == EISCONN) {
+            LOG_DEBUG("Connected async to " << _remote.source());
+            _func(std::move(_socket));
+        } else {
+            LOG_DEBUG("Failed to connect to " << _remote.source() << " err="
+                                              << qb::io::socket::get_last_errno());
+            _func(Socket_{});
+        }
+        delete this;
+    }
+};
+
+template <typename Socket_, typename Func_>
+void
+connect(uri const &remote, Func_ &&func, double timeout = 0.) {
+    new connector<Socket_, Func_>(remote, std::forward<Func_>(func), timeout);
+}
 
 } // namespace qb::io::async::tcp
 
