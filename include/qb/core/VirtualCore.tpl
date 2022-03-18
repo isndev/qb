@@ -23,12 +23,14 @@ namespace qb {
 template <typename _Event, typename _Actor>
 void
 VirtualCore::registerEvent(_Actor &actor) noexcept {
+    LOG_INFO("Actor(" << actor.id() << ") subscribed to " << ActorProxy::getName<_Event>());
     _router.subscribe<_Event>(actor);
 }
 
 template <typename _Event, typename _Actor>
 void
 VirtualCore::unregisterEvent(_Actor &actor) noexcept {
+    LOG_INFO("Actor(" << actor.id() << ") unsubscribed to " << ActorProxy::getName<_Event>());
     _router.unsubscribe<_Event>(actor);
 }
 
