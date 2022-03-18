@@ -513,7 +513,6 @@ public:
             _registered_events.insert(
                 {_RawEvent::template type_to_id<_Event>(), resolver});
         } else {
-	    LOG_INFO("Actor(" << handler.id() <<  ") registered " << ActorProxy::template getName<_Event>() << " [" << _RawEvent::template type_to_id<_Event>() << "|" << it->first << "]");
             dynamic_cast<EventResolver<_Event> *>(&(it->second))->subscribe(handler);
         }
     }

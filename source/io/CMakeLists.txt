@@ -28,7 +28,7 @@ if (OPENSSL_FOUND)
 else()
     cxx_library(NAME ${PROJECT_NAME}
             FLAGS ${cxx_default_lib}
-            SOURCES "src/io-all.cpp"
+            SOURCES "src/io.cpp"
             DEPENDENCIES "ev stduuid")
 endif()
 
