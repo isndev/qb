@@ -57,8 +57,10 @@ pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
         return -1;
     thread_affinity_policy_data_t policy = {core};
     mach_thread = pthread_mach_thread_np(thread);
-    return thread_policy_set(mach_thread, THREAD_AFFINITY_POLICY,
-                             (thread_policy_t)&policy, 1) != KERN_SUCCESS;
+    const auto ret =  thread_policy_set(mach_thread, THREAD_AFFINITY_POLICY,
+                             (thread_policy_t)&policy, 1);
+    return !(ret == KERN_SUCCESS || ret == KERN_NOT_SUPPORTED);
+
 }
 #endif
 

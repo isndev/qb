@@ -20,7 +20,6 @@
 
 #include "../../../uuid.h"
 #include "../io.h"
-#include <openssl/ossl_typ.h>
 
 namespace qb::io::async::tcp {
 
