@@ -32,8 +32,16 @@ class crypto {
 
 public:
     inline static const std::string_view range_numeric = "0123456789";
+    inline static const std::string_view range_alpha =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
     inline static const std::string_view range_alpha_numeric =
         "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+    inline static const std::string_view range_alpha_numeric_special =
+        "0123456789"
+        " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz";
     inline static const std::string_view range_hex_upper = "0123456789ABCDEF";

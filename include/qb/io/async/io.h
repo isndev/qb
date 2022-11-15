@@ -217,6 +217,46 @@ private:
 };
 
 template <typename _Derived>
+class directory_watcher : public base<directory_watcher<_Derived>, event::file> {
+    using base_t = base<file_watcher<_Derived>, event::file>;
+
+public:
+    using base_io_t = directory_watcher<_Derived>;
+    constexpr static const bool do_read = false;
+
+    directory_watcher() = default;
+    ~directory_watcher() = default;
+
+    void
+    start(std::string const &fpath, ev_tstamp ts = 0.1) noexcept {
+        this->_async_event.start(fpath.c_str(), ts);
+    }
+
+    void
+    disconnect() noexcept {
+        this->_async_event.stop();
+    }
+
+private:
+    friend class listener::RegisteredKernelEvent<event::file, directory_watcher>;
+
+    void
+    on(event::file const &event) {
+        constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
+        int ret = 0u;
+
+        // forward event to Derived if desired
+        if constexpr (has_method_on<_Derived, void, event::file>::value) {
+            Derived.on(event);
+        }
+
+        if (ret < 0) {
+            this->_async_event.stop();
+        }
+    }
+};
+
+template <typename _Derived>
 class input : public base<input<_Derived>, event::io> {
     using base_t = base<input<_Derived>, event::io>;
     AProtocol<_Derived> *_protocol = nullptr;
