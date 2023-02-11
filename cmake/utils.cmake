@@ -283,7 +283,7 @@ function(qb_register_module)
         endif ()
         #    target_include_directories(${Module_NAME} ${CMAKE_CURRENT_SOURCE_DIR})
         target_include_directories(${Module_NAME} INTERFACE
-                "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules;${CMAKE_SOURCE_DIR}/modules>"
+                "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules;${CMAKE_SOURCE_DIR}/modules;${CMAKE_CURRENT_SOURCE_DIR}/..>"
                 "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
 
 #        if (Module_DEPENDENCIES)
