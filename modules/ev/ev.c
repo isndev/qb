@@ -37,6 +37,10 @@
  * either the BSD or the GPL.
  */
 
+#pragma clang diagnostic ignored "-Wunused-value"
+#pragma clang diagnostic ignored "-Wcomment"
+#pragma clang diagnostic ignored "-Wextern-initializer"
+
 /* this big block deduces configuration from config.h */
 #ifndef EV_STANDALONE
 # ifdef EV_CONFIG_H
@@ -107,7 +111,7 @@
 #  undef EV_USE_POLL
 #  define EV_USE_POLL 0
 # endif
-   
+
 # if HAVE_EPOLL_CTL && HAVE_SYS_EPOLL_H
 #  ifndef EV_USE_EPOLL
 #   define EV_USE_EPOLL EV_FEATURE_BACKENDS
@@ -116,7 +120,7 @@
 #  undef EV_USE_EPOLL
 #  define EV_USE_EPOLL 0
 # endif
-   
+
 # if HAVE_LINUX_AIO_ABI_H
 #  ifndef EV_USE_LINUXAIO
 #   define EV_USE_LINUXAIO 0 /* was: EV_FEATURE_BACKENDS, always off by default */
@@ -125,7 +129,7 @@
 #  undef EV_USE_LINUXAIO
 #  define EV_USE_LINUXAIO 0
 # endif
-   
+
 # if HAVE_LINUX_FS_H && HAVE_SYS_TIMERFD_H && HAVE_KERNEL_RWF_T
 #  ifndef EV_USE_IOURING
 #   define EV_USE_IOURING EV_FEATURE_BACKENDS
@@ -134,7 +138,7 @@
 #  undef EV_USE_IOURING
 #  define EV_USE_IOURING 0
 # endif
- 
+
 # if HAVE_KQUEUE && HAVE_SYS_EVENT_H
 #  ifndef EV_USE_KQUEUE
 #   define EV_USE_KQUEUE EV_FEATURE_BACKENDS
@@ -143,7 +147,7 @@
 #  undef EV_USE_KQUEUE
 #  define EV_USE_KQUEUE 0
 # endif
-   
+
 # if HAVE_PORT_H && HAVE_PORT_CREATE
 #  ifndef EV_USE_PORT
 #   define EV_USE_PORT EV_FEATURE_BACKENDS
@@ -1373,7 +1377,7 @@ ecb_inline void ecb_poke_u64_u (void *ptr, uint64_t v) { memcpy (ptr, &v, sizeof
 ecb_inline void ecb_poke_be_u16_u (void *ptr, uint_fast16_t v) { ecb_poke_u16_u (ptr, ecb_host_to_be_u16 (v)); }
 ecb_inline void ecb_poke_be_u32_u (void *ptr, uint_fast32_t v) { ecb_poke_u32_u (ptr, ecb_host_to_be_u32 (v)); }
 ecb_inline void ecb_poke_be_u64_u (void *ptr, uint_fast64_t v) { ecb_poke_u64_u (ptr, ecb_host_to_be_u64 (v)); }
-                                                                                                
+
 ecb_inline void ecb_poke_le_u16_u (void *ptr, uint_fast16_t v) { ecb_poke_u16_u (ptr, ecb_host_to_le_u16 (v)); }
 ecb_inline void ecb_poke_le_u32_u (void *ptr, uint_fast32_t v) { ecb_poke_u32_u (ptr, ecb_host_to_le_u32 (v)); }
 ecb_inline void ecb_poke_le_u64_u (void *ptr, uint_fast64_t v) { ecb_poke_u64_u (ptr, ecb_host_to_le_u64 (v)); }
@@ -2657,7 +2661,7 @@ downheap (ANHE *heap, int N, int k)
 
       heap [k] = heap [c];
       ev_active (ANHE_w (heap [k])) = k;
-      
+
       k = c;
     }
 
@@ -3508,7 +3512,7 @@ loop_fork (EV_P)
       #if EV_USE_SIGNALFD
         /* surprisingly, nothing needs to be done for signalfd, accoridng to docs, it does the right thing on fork */
       #endif
-      
+
       #if EV_USE_TIMERFD
         if (ev_is_active (&timerfd_w))
           {
@@ -3517,24 +3521,24 @@ loop_fork (EV_P)
 
             close (timerfd);
             timerfd = -2;
-      
+
             evtimerfd_init (EV_A);
             /* reschedule periodics, in case we missed something */
             ev_feed_event (EV_A_ &timerfd_w, EV_CUSTOM);
           }
       #endif
-      
+
       #if EV_SIGNAL_ENABLE || EV_ASYNC_ENABLE
         if (ev_is_active (&pipe_w))
           {
             /* pipe_write_wanted must be false now, so modifying fd vars should be safe */
-      
+
             ev_ref (EV_A);
             ev_io_stop (EV_A_ &pipe_w);
-      
+
             if (evpipe [0] >= 0)
               EV_WIN32_CLOSE_FD (evpipe [0]);
-      
+
             evpipe_init (EV_A);
             /* iterate over everything, in case we missed something before */
             ev_feed_event (EV_A_ &pipe_w, EV_CUSTOM);
@@ -4094,16 +4098,20 @@ ev_run (EV_P_ int flags)
           {
             waittime = EV_TS_CONST (MAX_BLOCKTIME);
 
+#if EV_USE_MONOTONIC
+            if (ecb_expect_true (have_monotonic))
+              {
 #if EV_USE_TIMERFD
-            /* sleep a lot longer when we can reliably detect timejumps */
-            if (ecb_expect_true (timerfd >= 0))
-              waittime = EV_TS_CONST (MAX_BLOCKTIME2);
+                /* sleep a lot longer when we can reliably detect timejumps */
+                if (ecb_expect_true (timerfd != -1))
+                  waittime = EV_TS_CONST (MAX_BLOCKTIME2);
 #endif
 #if !EV_PERIODIC_ENABLE
-            /* without periodics but with monotonic clock there is no need */
-            /* for any time jump detection, so sleep longer */
-            if (ecb_expect_true (have_monotonic))
-              waittime = EV_TS_CONST (MAX_BLOCKTIME2);
+                /* without periodics but with monotonic clock there is no need */
+                /* for any time jump detection, so sleep longer */
+                waittime = EV_TS_CONST (MAX_BLOCKTIME2);
+#endif
+              }
 #endif
 
             if (timercnt)
