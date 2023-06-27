@@ -104,14 +104,21 @@ config_compiler_and_linker()  # Defined in internal_utils.cmake.
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
 
-# (optional) some modules require openssl
+# (optional) some modules require zlib/openssl
+find_package(ZLIB)
 find_package(OpenSSL)
+
 if(OPENSSL_FOUND)
     #used for tests
     set(${QB_PREFIX_UPPER}_SSL_RESOURCES ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/key.pem ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/cert.pem)
 else()
     message(INFO: OPENSSL not found, some modules require libssl, they will be skipped from compilation)
 endif()
+
+if (ZLIB_FOUND)
+else ()
+    message(INFO: ZLIB not found, some modules require libz, they will be skipped from compilation)
+endif ()
 
 #TCMALLOC only available on linux for the moment
 if (NOT WIN32 AND ${QB_PREFIX_UPPER}_USE_TCMALLOC)
@@ -130,9 +137,9 @@ endif()
 
 # qb io libraries
 set(UUID_BUILD_TESTS OFF)
-option(UUID_SYSTEM_GENERATOR ON)
-option(UUID_TIME_GENERATOR "Enable experimental time-based uuid generator" ON)
-option(UUID_USING_CXX20_SPAN "Using span from std instead of gsl" OFF)
+set(UUID_SYSTEM_GENERATOR OFF)
+set(UUID_TIME_GENERATOR OFF)
+set(UUID_USING_CXX20_SPAN OFF)
 add_subdirectory(modules/uuid)
 add_subdirectory(modules/ev)
 add_subdirectory(source/io)
@@ -168,6 +175,7 @@ if(hasParent)
     set(QB_PREFIX "${QB_PREFIX}" PARENT_SCOPE)
     set(QB_DIRECTORY "${QB_DIRECTORY}" PARENT_SCOPE)
     set(OPENSSL_FOUND "${OPENSSL_FOUND}" PARENT_SCOPE)
+    set(ZLIB_FOUND "${OPENSSL_FOUND}" PARENT_SCOPE)
     set(${QB_PREFIX_UPPER}_BUILD_TEST "${${QB_PREFIX_UPPER}_BUILD_TEST}" PARENT_SCOPE)
     set(${QB_PREFIX_UPPER}_BUILD_BENCHMARK "${${QB_PREFIX_UPPER}_BUILD_BENCHMARK}" PARENT_SCOPE)
     set(${QB_PREFIX_UPPER}_BUILD_COVERAGE "${${QB_PREFIX_UPPER}_BUILD_COVERAGE}" PARENT_SCOPE)

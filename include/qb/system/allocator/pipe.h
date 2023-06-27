@@ -21,10 +21,10 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <qb/string.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/nocopy.h>
 #include <qb/utility/prefix.h>
-#include <qb/string.h>
 #include <string_view>
 #include <vector>
 
@@ -187,7 +187,7 @@ public:
 
     template <typename U, typename... _Init>
     inline U &
-    allocate_back(_Init &&... init) {
+    allocate_back(_Init &&...init) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
         return *(new (reinterpret_cast<U *>(allocate_back(BUCKET_SIZE)))
                      U(std::forward<_Init>(init)...));
@@ -195,7 +195,7 @@ public:
 
     template <typename U, typename... _Init>
     inline U &
-    allocate_size(std::size_t const size, _Init &&... init) {
+    allocate_size(std::size_t const size, _Init &&...init) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
         return *(new (reinterpret_cast<U *>(allocate_back(size + BUCKET_SIZE)))
                      U(std::forward<_Init>(init)...));
@@ -214,7 +214,7 @@ public:
 
     template <typename U, typename... _Init>
     inline U &
-    allocate(_Init &&... init) {
+    allocate(_Init &&...init) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
         return *(new (reinterpret_cast<U *>(allocate(BUCKET_SIZE)))
                      U(std::forward<_Init>(init)...));
@@ -312,6 +312,12 @@ class pipe<char> : public base_pipe<char> {
 public:
     template <typename U>
     pipe &
+    put(U &rhs) {
+        return put(static_cast<const U &>(rhs));
+    }
+
+    template <typename U>
+    pipe &
     put(const U &rhs) {
         return put(std::to_string(rhs));
     }
@@ -360,7 +366,13 @@ public:
 
     template <typename U>
     pipe &
-    operator<<(const U &rhs) noexcept {
+    operator<<(const U &rhs) {
+        return put(rhs);
+    }
+
+    template <typename U>
+    pipe &
+    operator<<(U &rhs) {
         return put(rhs);
     }
 
@@ -393,7 +405,8 @@ pipe<char> &pipe<char>::put<pipe<char>>(pipe<char> const &rhs);
 
 } // namespace qb::allocator
 
-template <typename stream, typename = std::enable_if_t<!std::is_same_v<stream, qb::allocator::pipe<char>>>>
+template <typename stream, typename = std::enable_if_t<
+                               !std::is_same_v<stream, qb::allocator::pipe<char>>>>
 stream &
 operator<<(stream &os, qb::allocator::pipe<char> const &p) {
     os << std::string_view(p.begin(), p.size());

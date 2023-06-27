@@ -50,6 +50,9 @@ uuid generate_random_uuid() {
 #    include "tcp/ssl/listener.cpp"
 #    include "tcp/ssl/socket.cpp"
 #endif
+#ifdef QB_IO_WITH_ZLIB
+#include "gzip.cpp"
+#endif
 #include "async/listener.cpp"
 #include "udp/socket.cpp"
 #include "stream.cpp"

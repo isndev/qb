@@ -17,50 +17,53 @@
 
 project(${QB_PREFIX}-io LANGUAGES CXX VERSION ${QB_VERSION} DESCRIPTION "A simple io library")
 
-if (OPENSSL_FOUND)
-    include_directories(${OPENSSL_INCLUDE_DIR})
-    cxx_library(NAME ${PROJECT_NAME}
-            FLAGS "${cxx_default_lib}"
-            SOURCES src/io.cpp
-            DEPENDENCIES "ev OpenSSL::SSL stduuid")
-    target_compile_definitions(${PROJECT_NAME} PUBLIC QB_IO_WITH_SSL=1)
-
-else()
-    cxx_library(NAME ${PROJECT_NAME}
-            FLAGS ${cxx_default_lib}
-            SOURCES "src/io.cpp"
-            DEPENDENCIES "ev stduuid")
-endif()
-
-set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION})
-target_include_directories(${PROJECT_NAME} INTERFACE
-        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
-        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
+set(CURRENT_DEPENDENCIES ev stduuid)
+set(CURRENT_DEFINITIONS QB_IO_VERSION=${QB_VERSION})
+set(CURRENT_INCLUDES)
 
 if (${QB_PREFIX_UPPER}_WITH_LOG)
+    list(APPEND CURRENT_DEFINITIONS QB_LOGGER=1)
     message(STATUS "INFO: Will build ${QB_PREFIX} libraries with logger")
-    target_compile_definitions(${QB_PREFIX}-io PUBLIC QB_LOGGER=1)
 else()
     message(STATUS "INFO: Will build ${QB_PREFIX} libraries without logger")
     if(${QB_PREFIX_UPPER}_STDOUT_LOG)
-        target_compile_definitions(${QB_PREFIX}-io PUBLIC QB_STDOUT_LOG=1)
+        list(APPEND CURRENT_DEFINITIONS QB_STDOUT_LOG=1)
         message(STATUS "INFO: Will build ${QB_PREFIX} print logs")
     endif()
 endif()
 
-#cxx_shared_library(NAME ${PROJECT_NAME}-shared
-#        FLAGS ${cxx_default_lib}
-#        SOURCES "src/io-all.cpp"
-#        DEPENDENCIES ev-shared)
-#set_target_properties(${PROJECT_NAME}-shared PROPERTIES VERSION ${QB_VERSION} SOVERSION ${QB_VERSION_MAJOR})
-#target_include_directories(${PROJECT_NAME}-shared INTERFACE
-#        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
-#        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
-
 if (WIN32)
-    target_link_libraries(${PROJECT_NAME} ws2_32)
-#    target_link_libraries(${PROJECT_NAME}-shared ws2_32)
+    list(APPEND CURRENT_DEPENDENCIES ws2_32)
 endif()
+if(ZLIB_FOUND)
+    list(APPEND CURRENT_DEPENDENCIES ZLIB::ZLIB)
+    list(APPEND CURRENT_DEFINITIONS QB_IO_WITH_ZLIB=1)
+    list(APPEND ${ZLIB_INCLUDE_DIRS})
+    message(STATUS "INFO: Will build ${QB_PREFIX} libraries with zlib")
+endif()
+if (OPENSSL_FOUND)
+    list(APPEND CURRENT_DEPENDENCIES OpenSSL::SSL)
+    list(APPEND CURRENT_DEFINITIONS QB_IO_WITH_SSL=1)
+    list(APPEND ${OPENSSL_INCLUDE_DIR})
+    message(STATUS "INFO: Will build ${QB_PREFIX} libraries with openssl")
+endif ()
+
+if (${CURRENT_INCLUDES})
+    include_directories(${CURRENT_INCLUDES})
+endif ()
+
+cxx_library(NAME ${PROJECT_NAME}
+        FLAGS ${cxx_default_lib}
+        SOURCES src/io.cpp
+        DEPENDENCIES ${CURRENT_DEPENDENCIES})
+
+set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION})
+foreach (def ${CURRENT_DEFINITIONS})
+    target_compile_definitions(${PROJECT_NAME} PUBLIC ${def})
+endforeach ()
+target_include_directories(${PROJECT_NAME} INTERFACE
+        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
+        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
 
 if (${QB_PREFIX_UPPER}_BUILD_TEST)
     add_subdirectory(tests)

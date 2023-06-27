@@ -17,9 +17,12 @@
 
 cxx_gtest(${PROJECT_NAME}-gtest-event "${PROJECT_NAME}" test-event.cpp)
 cxx_gtest(${PROJECT_NAME}-gtest-tcp-udp "${PROJECT_NAME}" test-io.cpp)
-
 cxx_gtest(${PROJECT_NAME}-gtest-session-text "${PROJECT_NAME}" test-session-text.cpp)
+
+if (ZLIB_FOUND)
+    cxx_gtest(${PROJECT_NAME}-gtest-gzip "${PROJECT_NAME}" test-gzip.cpp)
+endif ()
 
 if (OPENSSL_FOUND)
     file(COPY ${QB_SSL_RESOURCES} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-endif()
+endif ()

@@ -127,58 +127,58 @@ class ringbuffer<T, max_size, 0> : public nocopy {
         spsc::ringbuffer<T, max_size> _ringbuffer;
     };
 
-    std::unique_ptr<Producer> _producers;
+    std::vector<Producer> _producers;
     const std::size_t _nb_producer;
 
 public:
     ringbuffer() = delete;
     explicit ringbuffer(std::size_t const nb_producer)
-        : _producers(new Producer[nb_producer])
+        : _producers(nb_producer)
         , _nb_producer(nb_producer) {}
 
     template <size_t _Index>
     bool
     enqueue(T const &t) {
-        return _producers.get()[_Index]._ringbuffer.enqueue(t);
+        return _producers[_Index]._ringbuffer.enqueue(t);
     }
 
     template <size_t _Index, bool _All = true>
     size_t
     enqueue(T const *t, size_t const size) {
-        return _producers.get()[_Index]._ringbuffer.enqueue<_All>(t, size);
+        return _producers[_Index]._ringbuffer.enqueue<_All>(t, size);
     }
 
     bool
     enqueue(size_t const index, T const &t) {
-        return _producers.get()[index]._ringbuffer.enqueue(t);
+        return _producers[index]._ringbuffer.enqueue(t);
     }
 
     template <bool _All = true>
     size_t
     enqueue(size_t const index, T const *t, size_t const size) {
-        return _producers.get()[index]._ringbuffer.template enqueue<_All>(t, size);
+        return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
     }
 
     size_t
     enqueue(T const &t) {
         const size_t index = Clock::now().time_since_epoch().count() % _nb_producer;
-        std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
-        return _producers.get()[index]._ringbuffer.enqueue(t);
+        std::lock_guard<SpinLock> lock(_producers[index].lock);
+        return _producers[index]._ringbuffer.enqueue(t);
     }
 
     template <bool _All = true>
     size_t
     enqueue(T const *t, size_t const size) {
         const size_t index = Clock::now().time_since_epoch().count() % _nb_producer;
-        std::lock_guard<SpinLock> lock(_producers.get()[index].lock);
-        return _producers.get()[index]._ringbuffer.template enqueue<_All>(t, size);
+        std::lock_guard<SpinLock> lock(_producers[index].lock);
+        return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
     }
 
     size_t
     dequeue(T *ret, size_t size) {
         const size_t save_size = size;
         for (size_t i = 0; i < _nb_producer; ++i) {
-            size -= _producers.get()[i]._ringbuffer.dequeue(ret, size);
+            size -= _producers[i]._ringbuffer.dequeue(ret, size);
             if (!size)
                 break;
         }
@@ -190,7 +190,7 @@ public:
     dequeue(Func const &func, T *ret, size_t const size) {
         size_t nb_consume = 0;
         for (size_t i = 0; i < _nb_producer; ++i) {
-            nb_consume += _producers.get()[i]._ringbuffer.dequeue(func, ret, size);
+            nb_consume += _producers[i]._ringbuffer.dequeue(func, ret, size);
         }
         return nb_consume;
     }
@@ -200,14 +200,14 @@ public:
     consume_all(Func const &func) {
         size_t nb_consume = 0;
         for (size_t i = 0; i < _nb_producer; ++i) {
-            nb_consume += _producers.get()[i]._ringbuffer.consume_all(func);
+            nb_consume += _producers[i]._ringbuffer.consume_all(func);
         }
         return nb_consume;
     }
 
     auto &
     ringOf(size_t const index) {
-        return _producers.get()[index]._ringbuffer;
+        return _producers[index]._ringbuffer;
     }
 };
 
