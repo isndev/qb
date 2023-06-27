@@ -50,7 +50,20 @@ public:
         return _sessions;
     }
 
-    void
+    template <typename ...Args>
+    _Session &
+    registerSession(typename _Session::transport_io_type &&new_io, Args &&...args) {
+        auto &session = *new _Session{static_cast<_Derived &>(*this), std::forward<Args>(args)...};
+        const auto &it =
+            sessions().emplace(session.id(), std::ref(session));
+        it.first->second.transport() = std::move(new_io);
+        it.first->second.start();
+        if constexpr (has_method_on<_Derived, void, _Session &>::value)
+            static_cast<_Derived &>(*this).on(it.first->second);
+        return it.first->second;
+    }
+
+    _Session &
     registerSession(typename _Session::transport_io_type &&new_io) {
         auto &session = *new _Session{static_cast<_Derived &>(*this)};
         const auto &it =
@@ -59,6 +72,7 @@ public:
         it.first->second.start();
         if constexpr (has_method_on<_Derived, void, _Session &>::value)
             static_cast<_Derived &>(*this).on(it.first->second);
+        return it.first->second;
     }
 
     void
@@ -72,12 +86,12 @@ public:
     extractSession(uuid const &ident) {
         auto it = _sessions.find(ident);
         if (it != _sessions.cend()) {
-            auto t_io = it->second.transport();
+            auto t_io = std::move(it->second.transport());
             delete &it->second;
             _sessions.erase(it);
-            return {t_io, true};
+            return {std::move(t_io), true};
         }
-        return {{}, false};
+        return {typename _Session::transport_io_type{}, false};
     }
 
     template <typename... _Args>

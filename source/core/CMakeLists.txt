@@ -20,7 +20,7 @@ project(${QB_PREFIX}-core LANGUAGES CXX VERSION ${QB_VERSION} DESCRIPTION "A sim
 cxx_library(NAME ${PROJECT_NAME}
         FLAGS ${cxx_default_lib}
         SOURCES core.cpp
-        DEPENDENCIES "${QB_PREFIX}-io")
+        DEPENDENCIES ${QB_PREFIX}-io)
 set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION} SOVERSION ${QB_VERSION_MAJOR})
 target_include_directories(${PROJECT_NAME} INTERFACE
         "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
