@@ -2410,31 +2410,6 @@ fd_reify (EV_P)
    */
   int changecnt = fdchangecnt;
 
-#if EV_SELECT_IS_WINSOCKET || EV_USE_IOCP
-  for (i = 0; i < changecnt; ++i)
-    {
-      int fd = fdchanges [i];
-      ANFD *anfd = anfds + fd;
-
-      if (anfd->reify & EV__IOFDSET && anfd->head)
-        {
-          SOCKET handle = EV_FD_TO_WIN32_HANDLE (fd);
-
-          if (handle != anfd->handle)
-            {
-              unsigned long arg;
-
-              assert (("libev: only socket fds supported in this configuration", ioctlsocket (handle, FIONREAD, &arg) == 0));
-
-              /* handle changed, but fd didn't - we need to do it in two steps */
-              backend_modify (EV_A_ fd, anfd->events, 0);
-              anfd->events = 0;
-              anfd->handle = handle;
-            }
-        }
-    }
-#endif
-
   for (i = 0; i < changecnt; ++i)
     {
       int fd = fdchanges [i];
@@ -3411,10 +3386,12 @@ ev_loop_destroy (EV_P)
   if (fs_fd >= 0)
     close (fs_fd);
 #endif
-
+#ifndef _WIN32
   if (backend_fd >= 0)
     close (backend_fd);
-
+#else
+    epoll_close(backend_fd);
+#endif
 #if EV_USE_IOCP
   if (backend == EVBACKEND_IOCP    ) iocp_destroy     (EV_A);
 #endif
