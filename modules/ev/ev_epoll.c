@@ -63,7 +63,11 @@
  * file descriptors.
  */
 
+#ifdef _WIN32
+#include "wepoll.c"
+#else
 #include <sys/epoll.h>
+#endif // WIN32
 
 #define EV_EMASK_EPERM 0x80
 
@@ -251,9 +255,10 @@ epoll_epoll_create (void)
 #endif
     {
       fd = epoll_create (256);
-
+#ifndef _WIN32
       if (fd >= 0)
         fcntl (fd, F_SETFD, FD_CLOEXEC);
+#endif
     }
 
   return fd;
