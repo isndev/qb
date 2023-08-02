@@ -18,8 +18,93 @@
 #ifndef QB_TYPE_TRAITS_H
 #define QB_TYPE_TRAITS_H
 #include <type_traits>
+#include <valarray>
+#include <string_view>
 
 namespace qb {
+
+namespace detail {
+// SFINAE type trait to detect whether T::const_iterator exists.
+
+struct sfinae_base {
+    using yes = char;
+    using no = yes[2];
+};
+
+template <typename T>
+struct has_const_iterator : private sfinae_base {
+private:
+    template <typename C>
+    static yes &test(typename C::const_iterator *);
+    template <typename C>
+    static no &test(...);
+
+public:
+    static const bool value = sizeof(test<T>(nullptr)) == sizeof(yes);
+    using type = T;
+};
+
+template <typename T>
+struct has_begin_end : private sfinae_base {
+private:
+    template <typename C>
+    static yes &
+    f(typename std::enable_if<std::is_same<
+          decltype(static_cast<typename C::const_iterator (C::*)() const>(&C::begin)),
+          typename C::const_iterator (C::*)() const>::value>::type *);
+
+    template <typename C>
+    static no &f(...);
+
+    template <typename C>
+    static yes &
+    g(typename std::enable_if<
+        std::is_same<
+            decltype(static_cast<typename C::const_iterator (C::*)() const>(&C::end)),
+            typename C::const_iterator (C::*)() const>::value,
+        void>::type *);
+
+    template <typename C>
+    static no &g(...);
+
+public:
+    static bool const beg_value = sizeof(f<T>(nullptr)) == sizeof(yes);
+    static bool const end_value = sizeof(g<T>(nullptr)) == sizeof(yes);
+};
+
+template <typename T, typename U = void>
+struct is_mappish_impl : std::false_type {};
+
+template <typename T>
+struct is_mappish_impl<
+    T, std::void_t<
+           typename T::key_type, typename T::mapped_type,
+           decltype(std::declval<T &>()[std::declval<const typename T::key_type &>()])>>
+    : std::true_type {};
+
+} // namespace detail
+
+template <typename T>
+struct is_container
+    : public std::integral_constant<bool, detail::has_const_iterator<T>::value &&
+                                              detail::has_begin_end<T>::beg_value &&
+                                              detail::has_begin_end<T>::end_value> {};
+
+template <typename T, std::size_t N>
+struct is_container<T[N]> : std::true_type {};
+
+template <std::size_t N>
+struct is_container<char[N]> : std::false_type {};
+
+template <typename T>
+struct is_container<std::valarray<T>> : std::true_type {};
+
+template <typename T1, typename T2>
+struct is_container<std::pair<T1, T2>> : std::true_type {};
+
+template <typename... Args>
+struct is_container<std::tuple<Args...>> : std::true_type {};
+
 template <typename T, bool cond>
 struct remove_reference_if {
     typedef T type;
@@ -31,6 +116,85 @@ struct remove_reference_if<T, true> {
     typedef typename std::remove_reference<T>::type type;
     constexpr static bool value = true;
 };
+
+template <typename T>
+struct is_mappish : detail::is_mappish_impl<T>::type {};
+
+template <typename...>
+struct is_pair : std::false_type {};
+
+template <typename T, typename U>
+struct is_pair<std::pair<T, U>> : std::true_type {};
+
+template <typename...>
+using Void = void;
+
+template <typename T, typename U = Void<>>
+struct is_inserter : std::false_type {};
+
+template <typename T>
+// struct is_inserter<T, Void<typename T::container_type>> : std::true_type {};
+struct is_inserter<
+    T, typename std::enable_if<!std::is_void<typename T::container_type>::value>::type>
+    : std::true_type {};
+
+template <typename Iter, typename T = Void<>>
+struct iterator_type {
+    using type = typename std::iterator_traits<Iter>::value_type;
+};
+
+template <typename Iter>
+struct iterator_type<Iter,
+                     // typename std::enable_if<std::is_void<typename
+                     // Iter::value_type>::value>::type> {
+                     typename std::enable_if<is_inserter<Iter>::value>::type> {
+    using type = typename std::decay<typename Iter::container_type::value_type>::type;
+};
+
+template <typename Iter, typename T = Void<>>
+struct is_terator : std::false_type {};
+
+template <typename Iter>
+struct is_terator<Iter, typename std::enable_if<is_inserter<Iter>::value>::type>
+    : std::true_type {};
+
+template <typename Iter>
+struct is_terator<Iter,
+                  typename std::enable_if<!std::is_void<
+                      typename std::iterator_traits<Iter>::value_type>::value>::type>
+    : std::integral_constant<bool, !std::is_convertible<Iter, std::string_view>::value> {
+};
+
+template <typename T>
+struct is_map_iterator : is_pair<typename iterator_type<T>::type> {};
+
+template <typename T, typename = Void<>>
+struct has_push_back : std::false_type {};
+
+template <typename T>
+struct has_push_back<
+    T, typename std::enable_if<std::is_void<decltype(std::declval<T>().push_back(
+           std::declval<typename T::value_type>()))>::value>::type> : std::true_type {};
+
+template <typename T, typename = Void<>>
+struct has_insert : std::false_type {};
+
+template <typename T>
+struct has_insert<
+    T, typename std::enable_if<std::is_same<
+           decltype(std::declval<T>().insert(std::declval<typename T::const_iterator>(),
+                                             std::declval<typename T::value_type>())),
+           typename T::iterator>::value>::type> : std::true_type {};
+
+template <typename T>
+struct is_sequence_container
+    : std::integral_constant<
+          bool, has_push_back<T>::value &&
+                    !std::is_same<typename std::decay<T>::type, std::string>::value> {};
+
+template <typename T>
+struct is_associative_container
+    : std::integral_constant<bool, has_insert<T>::value && !has_push_back<T>::value> {};
 
 } // namespace qb
 

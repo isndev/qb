@@ -551,7 +551,7 @@ public:
 
     void
     disconnect(int reason = 0) {
-        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
+        if constexpr (has_method_on<_Derived, void, event::disconnected &&>::value) {
             Derived.on(event::disconnected{reason});
         }
         _disconnected_by_user = true;
