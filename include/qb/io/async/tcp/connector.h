@@ -38,8 +38,8 @@ public:
         , _timeout(timeout > 0. ? ev_time() + timeout : 0.)
         , _remote{remote} {
         LOG_DEBUG("Started async connect to " << remote.source());
-        _socket.set_nonblocking(true);
-        auto ret = _socket.connect(remote);
+        //_socket.set_nonblocking(true);
+        auto ret = _socket.n_connect(remote);
         if (!ret) {
             LOG_DEBUG("Connected directly to " << remote.source());
             _func(std::move(_socket));

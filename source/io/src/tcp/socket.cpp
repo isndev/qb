@@ -118,6 +118,65 @@ socket::connect_un(std::string const &path) noexcept {
     return connect(qb::io::endpoint().as_un(path.c_str()));
 }
 
+// non blocking version
+
+int
+socket::n_connect_in(int af, std::string const &host, uint16_t port) noexcept {
+    auto ret = -1;
+    qb::io::socket::resolve_i(
+        [&, this](const auto &ep) {
+            if (ep.af() == af) {
+                ret = n_connect(ep);
+                return true;
+            }
+            return false;
+        },
+        host.c_str(), port, af, SOCK_STREAM);
+
+    return ret;
+}
+
+int
+socket::n_connect(qb::io::endpoint const &ep) noexcept {
+    if (is_open()) {
+        const auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
+        if (af != ep.af())
+            return -1;
+    } else
+        init(ep.af());
+
+    return qb::io::socket::connect_n(ep);
+}
+
+int
+socket::n_connect(uri const &u) noexcept {
+    switch (u.af()) {
+    case AF_INET:
+    case AF_INET6:
+        return n_connect_in(u.af(), std::string(u.host()), u.u_port());
+    case AF_UNIX:
+        const auto path = std::string(u.path()) + std::string(u.host());
+        return n_connect_un(path);
+    }
+    return -1;
+}
+
+int
+socket::n_connect_v4(std::string const &host, uint16_t port) noexcept {
+    return n_connect_in(AF_INET, host, port);
+}
+
+int
+socket::n_connect_v6(std::string const &host, uint16_t port) noexcept {
+    return n_connect_in(AF_INET6, host, port);
+}
+
+int
+socket::n_connect_un(std::string const &path) noexcept {
+    return n_connect(qb::io::endpoint().as_un(path.c_str()));
+}
+
+
 int
 socket::read(void *dest, std::size_t len) const noexcept {
     return recv(dest, len);

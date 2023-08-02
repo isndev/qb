@@ -30,6 +30,7 @@ namespace qb::io::tcp {
 class QB_API socket : protected qb::io::socket {
 
     int connect_in(int af, std::string const &host, uint16_t port) noexcept;
+    int n_connect_in(int af, std::string const &host, uint16_t port) noexcept;
 
 public:
     using qb::io::socket::close;
@@ -53,11 +54,19 @@ public:
     int init(int af = AF_INET) noexcept;
     int bind(qb::io::endpoint const &ep) noexcept;
     int bind(qb::io::uri const &u) noexcept;
+
     int connect(qb::io::endpoint const &ep) noexcept;
     int connect(uri const &u) noexcept;
     int connect_v4(std::string const &host, uint16_t port) noexcept;
     int connect_v6(std::string const &host, uint16_t port) noexcept;
     int connect_un(std::string const &path) noexcept;
+
+    int n_connect(qb::io::endpoint const &ep) noexcept;
+    int n_connect(uri const &u) noexcept;
+    int n_connect_v4(std::string const &host, uint16_t port) noexcept;
+    int n_connect_v6(std::string const &host, uint16_t port) noexcept;
+    int n_connect_un(std::string const &path) noexcept;
+
 
     int read(void *dest, std::size_t len) const noexcept;
     int write(const void *data, std::size_t size) const noexcept;

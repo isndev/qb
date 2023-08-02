@@ -630,7 +630,7 @@ socket::connect_n(const endpoint &ep, const std::chrono::microseconds &wtimeout)
 int
 socket::connect_n(socket_type s, const endpoint &ep,
                   const std::chrono::microseconds &wtimeout) {
-    fd_set rset, wset;
+//    fd_set rset, wset;
     int n, error = 0;
 
     set_nonblocking(s, true);
@@ -641,29 +641,30 @@ socket::connect_n(socket_type s, const endpoint &ep,
             return -1;
     }
 
+    return n;
     /* Do whatever we want while the connect is taking place. */
-    if (n == 0)
-        goto done; /* connect completed immediately */
-
-    if ((n = socket::select(s, &rset, &wset, NULL, wtimeout)) <= 0)
-        error = socket::get_last_errno();
-    else if ((FD_ISSET(s, &rset) || FD_ISSET(s, &wset))) { /* Everythings are ok */
-        socklen_t len = sizeof(error);
-        if (::getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&error, &len) < 0)
-            return (-1); /* Solaris pending error */
-    }
-
-done:
-    if (error != 0) {
-        ::closesocket(s); /* just in case */
-        return (-1);
-    }
-
-    /* Since v3.31.2, we don't restore file status flags for unify behavior for all
-     * platforms */
-    // pitfall: because on win32, there is no way to test whether the s is non-blocking
-    // so, can't restore properly
-    return (0);
+//    if (n == 0)
+//        goto done; /* connect completed immediately */
+//
+//    if ((n = socket::select(s, &rset, &wset, NULL, wtimeout)) <= 0)
+//        error = socket::get_last_errno();
+//    else if ((FD_ISSET(s, &rset) || FD_ISSET(s, &wset))) { /* Everythings are ok */
+//        socklen_t len = sizeof(error);
+//        if (::getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&error, &len) < 0)
+//            return (-1); /* Solaris pending error */
+//    }
+//
+//done:
+//    if (error != 0) {
+//        ::closesocket(s); /* just in case */
+//        return (-1);
+//    }
+//
+//    /* Since v3.31.2, we don't restore file status flags for unify behavior for all
+//     * platforms */
+//    // pitfall: because on win32, there is no way to test whether the s is non-blocking
+//    // so, can't restore properly
+//    return (0);
 }
 
 int
