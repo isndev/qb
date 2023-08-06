@@ -62,6 +62,11 @@ public:
         return _server;
     }
 
+    inline _Server &
+    server() const {
+        return _server;
+    }
+
     inline uuid const &id() const noexcept {
         return _uuid;
     }

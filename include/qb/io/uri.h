@@ -63,7 +63,7 @@ public:
     static std::string
     decode(_IT begin, _IT end) noexcept {
         std::string out;
-        char c, v1, v2;
+        char c, v1, v2{};
 
         while (begin != end) {
             c = *(begin++);

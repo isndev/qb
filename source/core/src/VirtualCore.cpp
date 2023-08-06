@@ -204,7 +204,7 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
 #    ifdef _MSC_VER
         DWORD_PTR mask = 0u;
         for (const auto core : affinity_cores)
-            mask |= static_cast<DWORD_PTR>(1u << core);
+            mask |= static_cast<DWORD_PTR>(1u) << core;
         ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
 #    else
 #        warning "Cannot set affinity on windows with GNU Compiler"

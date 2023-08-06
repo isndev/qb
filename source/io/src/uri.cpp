@@ -18,7 +18,8 @@
 #include <qb/io/uri.h>
 
 namespace qb::io {
-
+DISABLE_WARNING_PUSH
+DISABLE_WARNING_NARROWING
 const char uri::tbl[256] = {
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -33,6 +34,7 @@ const char uri::tbl[256] = {
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+DISABLE_WARNING_POP
 
 uri::uri(uri const &rhs) noexcept
     : _af(rhs._af)
@@ -145,9 +147,9 @@ bool
 uri::parse() noexcept {
     _queries.clear();
     const auto pos_v6 = _source.find_first_of('[');
-    const auto ret = pos_v6 == std::string::npos
+    const auto ret = (pos_v6 == std::string::npos
                          ? parse_v4()
-                         : (parse_v6(pos_v6) && (_af = AF_INET6));
+                         : (parse_v6(pos_v6) && (_af = AF_INET6)));
     if (!_port.size()) {
         const auto it = default_ports.find(_scheme);
         if (it != default_ports.end())

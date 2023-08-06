@@ -49,6 +49,7 @@ uuid generate_random_uuid() {
 #    include "tcp/ssl/init.cpp"
 #    include "tcp/ssl/listener.cpp"
 #    include "tcp/ssl/socket.cpp"
+#    include "crypto.cpp"
 #endif
 #ifdef QB_IO_WITH_ZLIB
 #include "gzip.cpp"

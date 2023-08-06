@@ -69,6 +69,7 @@ public:
         listener::current.unregisterEvent(event._interface);
         if (!err || err == EISCONN) {
             LOG_DEBUG("Connected async to " << _remote.source());
+            _socket.connected();
             _func(std::move(_socket));
         } else {
             LOG_DEBUG("Failed to connect to " << _remote.source() << " err="

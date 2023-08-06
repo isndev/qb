@@ -56,13 +56,13 @@ compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
     // with a default value of 8 for mem_level and our window_bits of 15
     // this is 128Kb
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
+DISABLE_WARNING_PUSH
+DISABLE_WARNING_OLD_STYLE_CAST
     if (deflateInit2(&deflate_s, level, Z_DEFLATED, window_bits, mem_level,
                      Z_DEFAULT_STRATEGY) != Z_OK) {
         throw std::runtime_error("deflate init failed");
     }
-#pragma GCC diagnostic pop
+DISABLE_WARNING_POP
 
     const std::size_t out_size = output.size();
     deflate_s.next_in = reinterpret_cast<z_const Bytef *>(data);
@@ -121,12 +121,12 @@ uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size
     // (8 to 15) + 32 to automatically detect gzip/zlib header
     constexpr int window_bits = 15 + 32; // auto with windowbits of 15
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wold-style-cast"
+DISABLE_WARNING_PUSH
+DISABLE_WARNING_OLD_STYLE_CAST
     if (inflateInit2(&inflate_s, window_bits) != Z_OK) {
         throw std::runtime_error("inflate init failed");
     }
-#pragma GCC diagnostic pop
+DISABLE_WARNING_POP
     inflate_s.next_in = reinterpret_cast<z_const Bytef *>(data);
 
 #ifdef DEBUG

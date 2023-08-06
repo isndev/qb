@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1)
 project(libev C)
-set(LIBEV_VERSION 4.27)
+set(LIBEV_VERSION 4.35)
 set(LIBEV_VERSION_CURRENT 4)
 set(LIBEV_VERSION_AGE 0)
 set(LIBEV_VERSION_REVISION 0)
@@ -9,7 +9,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/CMakeMacroLibtoolFile.cmake)
 include(CheckIncludeFile)
 include(CheckSymbolExists)
 include(CheckCSourceCompiles)
-
+config_compiler_with_no_warning()
 #if(NOT DEFINED BUILD_SHARED_LIBS)
 #    option(BUILD_SHARED_LIBS "Build libev as a shared library" ON)
 #endif()
@@ -172,7 +172,6 @@ list(APPEND LIBEV_SRCS
         ev.c
         event.c
         )
-
 if(BUILD_STATIC_LIBS)
     add_library(ev STATIC ${LIBEV_SRCS})
     if(WIN32)

@@ -363,7 +363,7 @@ public:
 
     void
     af(int v) {
-        sa_.sa_family = v;
+        sa_.sa_family = static_cast<uint16_t>(v);
     }
     int
     af() const {

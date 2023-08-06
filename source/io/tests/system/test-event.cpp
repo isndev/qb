@@ -93,7 +93,7 @@ TEST(KernelEvents, File) {
 
     handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", 0).start();
 
-    std::thread t([]() { system("echo test > test.file"); });
+    std::thread t([]() { EXPECT_EQ(system("echo test > test.file"), 0); });
 
     for (auto i = 0; i < 10 && !actor.nb_events; ++i)
         handler.run(EVRUN_ONCE);
