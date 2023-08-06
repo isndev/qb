@@ -71,10 +71,8 @@ public:
 #endif
 
 private:
-    union {
-        struct {
-            uint32_t : 16, : 8, alive : 1, qos : 2, factor : 5;
-        };
+    union Header {
+        uint32_t : 16, : 8, alive : 1, qos : 2, factor : 5;
         uint8_t prot[4] = {'q', 'b', '\0',
                            4 | ((QB_LOCKFREE_EVENT_BUCKET_BYTES / 16) << 3)};
     } state;

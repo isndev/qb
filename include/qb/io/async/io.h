@@ -339,8 +339,11 @@ private:
             if (unlikely(ret == invalid_ret))
                 goto error;
             while ((ret = this->_protocol->getMessageSize()) > 0) {
+                // prevent recall in message
+                this->_async_event.set(0);
                 // has a new message to read
                 this->_protocol->onMessage(ret);
+                this->_async_event.set(EV_READ);
                 Derived.flush(ret);
             }
             Derived.eof();
@@ -573,8 +576,13 @@ private:
             ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret))
                 goto error;
+            int ev_write = 0;
             while ((ret = this->_protocol->getMessageSize()) > 0) {
+                // prevent recall in message
+                this->_async_event.set(0);
                 this->_protocol->onMessage(ret);
+                ev_write |= this->_async_event.events & EV_WRITE;
+                this->_async_event.set(ev_write | EV_READ);
                 Derived.flush(ret);
             }
             Derived.eof();

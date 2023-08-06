@@ -1,19 +1,19 @@
 /*
-* qb - C++ Actor Framework
-* Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*         http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-*         limitations under the License.
-*/
+ * qb - C++ Actor Framework
+ * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ *         limitations under the License.
+ */
 
 #ifndef QB_IO_CRYPTO_H
 #define QB_IO_CRYPTO_H
@@ -25,18 +25,20 @@
 #include <cmath>
 #include <iomanip>
 #include <istream>
+#include <random>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <random>
-
+#include <algorithm>
 #include <openssl/buffer.h>
 #include <openssl/evp.h>
 #include <openssl/md5.h>
 #include <openssl/sha.h>
 
+#undef hex_to_string
+
 namespace qb {
-// TODO 2017: remove workaround for MSVS 2012
+
 #if _MSC_VER == 1700 // MSVS 2012 has no definition for round()
 inline double
 round(double x) noexcept { // Custom definition of round() for positive numbers
@@ -48,24 +50,23 @@ class crypto {
     const static std::size_t buffer_size = 131072;
 
 public:
-    inline static const std::string_view range_numeric = "0123456789";
-    inline static const std::string_view range_alpha =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz";
-    inline static const std::string_view range_alpha_numeric =
+    constexpr static const std::string_view range_numeric = "0123456789";
+    constexpr static const std::string_view range_alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                                                          "abcdefghijklmnopqrstuvwxyz";
+    constexpr static const std::string_view range_alpha_numeric =
         "0123456789"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz";
-    inline static const std::string_view range_alpha_numeric_special =
+    constexpr static const std::string_view range_alpha_numeric_special =
         "0123456789"
         " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz";
-    inline static const std::string_view range_hex_upper = "0123456789ABCDEF";
-    inline static const std::string_view range_hex_lower = "0123456789abcdef";
+    constexpr static const std::string_view range_hex_upper = "0123456789ABCDEF";
+    constexpr static const std::string_view range_hex_lower = "0123456789abcdef";
 
     template <typename T = std::mt19937>
-   static  auto
+    static auto
     random_generator() {
         auto constexpr seed_bytes = sizeof(typename T::result_type) * T::state_size;
         auto constexpr seed_len = seed_bytes / sizeof(std::seed_seq::result_type);
@@ -92,281 +93,45 @@ public:
         return generate_random_string(len, std::string_view(range, sizeof(range) - 1));
     }
 
-    class Base64 {
+    class base64 {
     public:
         /// Returns Base64 encoded string from input string.
-        static std::string
-        encode(const std::string &input) noexcept {
-            std::string base64;
-
-            BIO *bio, *b64;
-            BUF_MEM *bptr = BUF_MEM_new();
-
-            b64 = BIO_new(BIO_f_base64());
-            BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
-            bio = BIO_new(BIO_s_mem());
-            BIO_push(b64, bio);
-            BIO_set_mem_buf(b64, bptr, BIO_CLOSE);
-
-            // Write directly to base64-buffer to avoid copy
-            auto base64_length = static_cast<std::size_t>(
-                round(4 * ceil(static_cast<double>(input.size()) / 3.0)));
-            base64.resize(base64_length);
-            bptr->length = 0;
-            bptr->max = base64_length + 1;
-            bptr->data = &base64[0];
-
-            if (BIO_write(b64, &input[0], static_cast<int>(input.size())) <= 0 ||
-                BIO_flush(b64) <= 0)
-                base64.clear();
-
-            // To keep &base64[0] through BIO_free_all(b64)
-            bptr->length = 0;
-            bptr->max = 0;
-            bptr->data = nullptr;
-
-            BIO_free_all(b64);
-
-            return base64;
-        }
+        static std::string encode(const std::string &input) noexcept;
 
         /// Returns Base64 decoded string from base64 input.
-        static std::string
-        decode(const std::string &base64) noexcept {
-            std::string ascii;
-
-            // Resize ascii, however, the size is a up to two bytes too large.
-            ascii.resize((6 * base64.size()) / 8);
-            BIO *b64, *bio;
-
-            b64 = BIO_new(BIO_f_base64());
-            BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
-// TODO: Remove in 2022 or later
-#if (defined(OPENSSL_VERSION_NUMBER) && OPENSSL_VERSION_NUMBER < 0x1000214fL) || \
-    (defined(LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x2080000fL)
-            bio = BIO_new_mem_buf(const_cast<char *>(&base64[0]),
-                                  static_cast<int>(base64.size()));
-#else
-            bio = BIO_new_mem_buf(&base64[0], static_cast<int>(base64.size()));
-#endif
-            bio = BIO_push(b64, bio);
-
-            auto decoded_length =
-                BIO_read(bio, &ascii[0], static_cast<int>(ascii.size()));
-            if (decoded_length > 0)
-                ascii.resize(static_cast<std::size_t>(decoded_length));
-            else
-                ascii.clear();
-
-            BIO_free_all(b64);
-
-            return ascii;
-        }
+        static std::string decode(const std::string &base64) noexcept;
     };
 
     /// Returns hex string from bytes in input string.
-    static std::string
-    to_hex_string(const std::string &input) noexcept {
-        static const char hex_digits[] = "0123456789ABCDEF";
-
-        std::string output;
-        output.reserve(input.length() * 2);
-        for (unsigned char c : input) {
-            output.push_back(hex_digits[c >> 4]);
-            output.push_back(hex_digits[c & 15]);
-        }
-        return output;
-    }
-
+    static std::string to_hex_string(const std::string &input, std::string_view const &range = range_hex_upper) noexcept;
     /// Returns hex value from byte.
-    static int
-    hex_value(unsigned char hex_digit) {
-        static const signed char hex_values[256] = {
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,
-            9,  -1, -1, -1, -1, -1, -1, -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1,
-        };
-
-        return hex_values[hex_digit];
-    }
-
+    static int hex_value(unsigned char hex_digit) noexcept;
     /// Returns formatted hex string from hex bytes in input string.
-    std::string
-    static hex_to_string(const std::string &input) {
-        const auto len = input.length();
-        if (len & 1)
-            return "";
-
-        std::string output;
-        output.reserve(len / 2);
-        for (auto it = input.begin(); it != input.end();) {
-            int hi = hex_value(*it++);
-            int lo = hex_value(*it++);
-            output.push_back(hi << 4 | lo);
-        }
-        return output;
-    }
-
+    static std::string hex_to_string(const std::string &input) noexcept;
+    /// Returns hash from input stream using EVP_get_digest_byname
+    static std::string evp(std::istream &stream, const EVP_MD *md) noexcept;
     /// Returns md5 hash value from input string.
-    static std::string
-    md5(const std::string &input, std::size_t iterations = 1) noexcept {
-        std::string hash;
-
-        hash.resize(128 / 8);
-        MD5(reinterpret_cast<const unsigned char *>(&input[0]), input.size(),
-            reinterpret_cast<unsigned char *>(&hash[0]));
-
-        for (std::size_t c = 1; c < iterations; ++c)
-            MD5(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-                reinterpret_cast<unsigned char *>(&hash[0]));
-
-        return hash;
-    }
-
+    static std::string md5(const std::string &input,
+                           std::size_t iterations = 1) noexcept;
     /// Returns md5 hash value from input stream.
-    static std::string
-    md5(std::istream &stream, std::size_t iterations = 1) noexcept {
-        MD5_CTX context;
-        MD5_Init(&context);
-        std::streamsize read_length;
-        std::vector<char> buffer(buffer_size);
-        while ((read_length = stream.read(&buffer[0], buffer_size).gcount()) > 0)
-            MD5_Update(&context, buffer.data(), static_cast<std::size_t>(read_length));
-        std::string hash;
-        hash.resize(128 / 8);
-        MD5_Final(reinterpret_cast<unsigned char *>(&hash[0]), &context);
-
-        for (std::size_t c = 1; c < iterations; ++c)
-            MD5(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-                reinterpret_cast<unsigned char *>(&hash[0]));
-
-        return hash;
-    }
-
+    static std::string md5(std::istream &stream, std::size_t iterations = 1) noexcept;
     /// Returns sha1 hash value from input string.
-    static std::string
-    sha1(const std::string &input, std::size_t iterations = 1) noexcept {
-        std::string hash;
-
-        hash.resize(160 / 8);
-        SHA1(reinterpret_cast<const unsigned char *>(&input[0]), input.size(),
-             reinterpret_cast<unsigned char *>(&hash[0]));
-
-        for (std::size_t c = 1; c < iterations; ++c)
-            SHA1(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-                 reinterpret_cast<unsigned char *>(&hash[0]));
-
-        return hash;
-    }
-
+    static std::string sha1(const std::string &input,
+                            std::size_t iterations = 1) noexcept;
     /// Returns sha1 hash value from input stream.
-    static std::string
-    sha1(std::istream &stream, std::size_t iterations = 1) noexcept {
-        SHA_CTX context;
-        SHA1_Init(&context);
-        std::streamsize read_length;
-        std::vector<char> buffer(buffer_size);
-        while ((read_length = stream.read(&buffer[0], buffer_size).gcount()) > 0)
-            SHA1_Update(&context, buffer.data(), static_cast<std::size_t>(read_length));
-        std::string hash;
-        hash.resize(160 / 8);
-        SHA1_Final(reinterpret_cast<unsigned char *>(&hash[0]), &context);
-
-        for (std::size_t c = 1; c < iterations; ++c)
-            SHA1(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-                 reinterpret_cast<unsigned char *>(&hash[0]));
-
-        return hash;
-    }
-
+    static std::string sha1(std::istream &stream, std::size_t iterations = 1) noexcept;
     /// Returns sha256 hash value from input string.
-    static std::string
-    sha256(const std::string &input, std::size_t iterations = 1) noexcept {
-        std::string hash;
-
-        hash.resize(256 / 8);
-        SHA256(reinterpret_cast<const unsigned char *>(&input[0]), input.size(),
-               reinterpret_cast<unsigned char *>(&hash[0]));
-
-        for (std::size_t c = 1; c < iterations; ++c)
-            SHA256(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-                   reinterpret_cast<unsigned char *>(&hash[0]));
-
-        return hash;
-    }
-
+    static std::string sha256(const std::string &input,
+                              std::size_t iterations = 1) noexcept;
     /// Returns sha256 hash value from input stream.
-    static std::string
-    sha256(std::istream &stream, std::size_t iterations = 1) noexcept {
-        SHA256_CTX context;
-        SHA256_Init(&context);
-        std::streamsize read_length;
-        std::vector<char> buffer(buffer_size);
-        while ((read_length = stream.read(&buffer[0], buffer_size).gcount()) > 0)
-            SHA256_Update(&context, buffer.data(),
-                          static_cast<std::size_t>(read_length));
-        std::string hash;
-        hash.resize(256 / 8);
-        SHA256_Final(reinterpret_cast<unsigned char *>(&hash[0]), &context);
-
-        for (std::size_t c = 1; c < iterations; ++c)
-            SHA256(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-                   reinterpret_cast<unsigned char *>(&hash[0]));
-
-        return hash;
-    }
-
+    static std::string sha256(std::istream &stream, std::size_t iterations = 1) noexcept;
     /// Returns sha512 hash value from input string.
-    static std::string
-    sha512(const std::string &input, std::size_t iterations = 1) noexcept {
-        std::string hash;
-
-        hash.resize(512 / 8);
-        SHA512(reinterpret_cast<const unsigned char *>(&input[0]), input.size(),
-               reinterpret_cast<unsigned char *>(&hash[0]));
-
-        for (std::size_t c = 1; c < iterations; ++c)
-            SHA512(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-                   reinterpret_cast<unsigned char *>(&hash[0]));
-
-        return hash;
-    }
-
+    static std::string sha512(const std::string &input,
+                              std::size_t iterations = 1) noexcept;
     /// Returns sha512 hash value from input stream.
-    static std::string
-    sha512(std::istream &stream, std::size_t iterations = 1) noexcept {
-        SHA512_CTX context;
-        SHA512_Init(&context);
-        std::streamsize read_length;
-        std::vector<char> buffer(buffer_size);
-        while ((read_length = stream.read(&buffer[0], buffer_size).gcount()) > 0)
-            SHA512_Update(&context, buffer.data(),
-                          static_cast<std::size_t>(read_length));
-        std::string hash;
-        hash.resize(512 / 8);
-        SHA512_Final(reinterpret_cast<unsigned char *>(&hash[0]), &context);
-
-        for (std::size_t c = 1; c < iterations; ++c)
-            SHA512(reinterpret_cast<const unsigned char *>(&hash[0]), hash.size(),
-                   reinterpret_cast<unsigned char *>(&hash[0]));
-
-        return hash;
-    }
-
+    static std::string sha512(std::istream &stream, std::size_t iterations = 1) noexcept;
     /// Returns PBKDF2 hash value from the given password
     /// Input parameter key_size  number of bytes of the returned key.
-
     /**
      * Returns PBKDF2 derived key from the given password.
      *
@@ -377,17 +142,8 @@ public:
      *
      * @return The PBKDF2 derived key.
      */
-    static std::string
-    pbkdf2(const std::string &password, const std::string &salt, int iterations,
-           int key_size) noexcept {
-        std::string key;
-        key.resize(static_cast<std::size_t>(key_size));
-        PKCS5_PBKDF2_HMAC_SHA1(password.c_str(), password.size(),
-                               reinterpret_cast<const unsigned char *>(salt.c_str()),
-                               salt.size(), iterations, key_size,
-                               reinterpret_cast<unsigned char *>(&key[0]));
-        return key;
-    }
+    static std::string pbkdf2(const std::string &password, const std::string &salt,
+                              int iterations, int key_size) noexcept;
 };
 } // namespace qb
 

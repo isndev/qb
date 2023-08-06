@@ -2133,8 +2133,8 @@ struct fibonacci_hash_policy {
         return 64 - detailv3::log2(size);
     }
     void
-    commit(int8_t shift) {
-        this->shift = shift;
+    commit(int8_t val) {
+        this->shift = val;
     }
     void
     reset() {

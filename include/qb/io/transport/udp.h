@@ -107,7 +107,7 @@ public:
     out() {
         //&& _remote_dest._ip != qb::io::ip::None
         if (_last_pushed_offset < 0) {
-            _last_pushed_offset = _out_buffer.size();
+            _last_pushed_offset = static_cast<int>(_out_buffer.size());
             auto &m = _out_buffer.allocate_back<pushed_message>();
             m.ident = _remote_dest;
             m.size = 0;
@@ -166,7 +166,7 @@ public:
     publish_to(udp::identity const &to, char const *data, std::size_t size) noexcept {
         auto &m = _out_buffer.allocate_back<pushed_message>();
         m.ident = to;
-        m.size = size;
+        m.size = static_cast<int>(size);
 
         return static_cast<char *>(
             std::memcpy(_out_buffer.allocate_back(size), data, size));

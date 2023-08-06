@@ -70,7 +70,7 @@ macro(config_compiler_and_linker)
     if (MSVC)
         # Newlines inside flags variables break CMake's NMake generator.
         # TODO(vladl@google.com): Add -RTCs and -RTCu to debug builds.
-        set(cxx_base_flags "-GS -W4 -wd4251 -wd4275 -nologo -J -Zi")
+        set(cxx_base_flags "-GS -W4 -nologo -J -Zi")
         set(cxx_base_flags "${cxx_base_flags} -D_UNICODE -DUNICODE -DWIN32 -D_WIN32 -DNOMINMAX -D_CRT_SECURE_NO_WARNINGS")
         set(cxx_base_flags "${cxx_base_flags} -DSTRICT -DWIN32_LEAN_AND_MEAN")
         set(cxx_exception_flags "-EHsc -D_HAS_EXCEPTIONS=1")
@@ -78,13 +78,14 @@ macro(config_compiler_and_linker)
         set(cxx_no_rtti_flags "-GR-")
         # Suppress "unreachable code" warning
         # http://stackoverflow.com/questions/3232669 explains the issue.
-        set(cxx_base_flags "${cxx_base_flags} -wd4702")
+        set(cxx_base_flags "${cxx_base_flags} -wd4702 -wd4324 -wd4251 -wd4275 -wd4458 -wd4505 -wd4100 -wd4244 -wd4224 -wd4267 -wd4200 -wd4996")
     elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        set(cxx_base_flags "-Wall -Wno-narrowing -Werror -march=${${QB_PREFIX_UPPER}_BUILD_ARCH}")
+        set(cxx_base_flags "-Wall -Wno-narrowing -Wno-sign-compare -march=${${QB_PREFIX_UPPER}_BUILD_ARCH}")
         set(cxx_exception_flags "-fexceptions")
+        set(cxx_strict_flags "-Wextra -Werror")
         set(cxx_no_exception_flags "-fno-exceptions")
     elseif (CMAKE_COMPILER_IS_GNUCXX)
-        set(cxx_base_flags "-Wall -Wno-narrowing -Werror -march=${${QB_PREFIX_UPPER}_BUILD_ARCH}")
+        set(cxx_base_flags "-Wall -Wno-narrowing -Wno-sign-compare -march=${${QB_PREFIX_UPPER}_BUILD_ARCH}")
         if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0.0)
             set(cxx_base_flags "${cxx_base_flags} -Wno-error=dangling-else")
         endif ()
@@ -95,7 +96,7 @@ macro(config_compiler_and_linker)
         # explicitly.
         set(cxx_no_rtti_flags "-fno-rtti -D${QB_PREFIX_UPPER}_HAS_RTTI=0")
         set(cxx_strict_flags
-                "-Wextra -Wno-unused-parameter -Wno-missing-field-initializers")
+                "-Wextra -Werror -Wno-unused-parameter -Wno-missing-field-initializers")
     elseif (CMAKE_CXX_COMPILER_ID STREQUAL "SunPro")
         set(cxx_exception_flags "-features=except")
         # Sun Pro doesn't provide macros to indicate whether exceptions and
@@ -147,6 +148,47 @@ macro(config_compiler_and_linker)
 #        set(cxx_default_lib "${cxx_default} ${cxx_strict_flags} ${cxx_no_rtti_flags}")
 #    endif ()
 endmacro()
+
+macro(config_compiler_with_no_warning)
+    config_compiler_and_linker()
+    if (MSVC)
+        foreach (flag_var
+                CMAKE_C_FLAGS CMAKE_C_FLAGS_DEBUG CMAKE_C_FLAGS_RELEASE
+                CMAKE_C_FLAGS_MINSIZEREL CMAKE_C_FLAGS_RELWITHDEBINFO
+                CMAKE_CXX_FLAGS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE
+                CMAKE_CXX_FLAGS_MINSIZEREL CMAKE_CXX_FLAGS_RELWITHDEBINFO)
+          
+            string(REPLACE "/W1" "" ${flag_var} "${${flag_var}}")
+            string(REPLACE "/W2" "" ${flag_var} "${${flag_var}}")
+            string(REPLACE "/W3" "" ${flag_var} "${${flag_var}}")
+            string(REPLACE "/W4" "" ${flag_var} "${${flag_var}}")
+
+        endforeach ()
+    endif ()
+    add_definitions(-w)
+endmacro()
+
+function(print_target_properties tgt)
+    if (NOT TARGET ${tgt})
+        message("There is no target named '${tgt}'")
+        return()
+    endif ()
+
+    # this list of properties can be extended as needed
+    set(CMAKE_PROPERTY_LIST SOURCE_DIR BINARY_DIR COMPILE_DEFINITIONS
+            COMPILE_OPTIONS INCLUDE_DIRECTORIES LINK_LIBRARIES COMPILE_FLAGS)
+
+    message("Configuration for target ${tgt}")
+
+    foreach (prop ${CMAKE_PROPERTY_LIST})
+        get_property(propval TARGET ${tgt} PROPERTY ${prop} SET)
+        if (propval)
+            get_target_property(propval ${tgt} ${prop})
+            message(STATUS "${prop} = ${propval}")
+        endif ()
+    endforeach (prop)
+
+endfunction(print_target_properties)
 
 # Defines the cube & cube_main libraries.  User tests should link
 # with one of them.
@@ -217,16 +259,8 @@ function(cxx_library_with_type type)
                 else ()
                     target_link_libraries(${Library_NAME} INTERFACE ${Library_DEPENDENCIES})
                 endif ()
-                #string(REPLACE " " ";" LIB_LIST ${Library_DEPENDENCIES})
-
-#                foreach (lib ${LIB_LIST})
-#                    if (Library_SOURCES)
-#                        target_link_libraries(${Library_NAME} ${lib})
-#                    else ()
-#                        target_link_libraries(${Library_NAME} INTERFACE ${lib})
-#                    endif ()
-#                endforeach ()
             endif ()
+            print_target_properties(${Library_NAME})
         endif ()
     endif ()
 endfunction()
@@ -266,6 +300,7 @@ endmacro()
 # register a named qb C++ module that depends on the given libraries and
 # is built from the given source files with the given compiler flags.
 function(qb_register_module)
+    config_compiler_and_linker()
     set(options NONE)
     set(oneValueArgs NAME VERSION FLAGS URL)
     set(multiValueArgs DEPENDENCIES SOURCES)
@@ -274,8 +309,8 @@ function(qb_register_module)
     if (Module_NAME)
         set(Module_NAME "qbm-${Module_NAME}")
         message(STATUS "Load ${Module_NAME} Module")
-        if (NOT ${Module_FLAGS})
-            set(Module_FLAGS ${cxx_default_lib})
+        if (NOT Module_FLAGS)
+            set(Module_FLAGS "${cxx_default_lib}")
         endif ()
         if (Module_SOURCES)
             cxx_library_with_type(STATIC
@@ -288,21 +323,9 @@ function(qb_register_module)
             cxx_library_with_type(INTERFACE
                     NAME ${Module_NAME})
         endif ()
-        #    target_include_directories(${Module_NAME} ${CMAKE_CURRENT_SOURCE_DIR})
         target_include_directories(${Module_NAME} INTERFACE
                 "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules;${CMAKE_SOURCE_DIR}/modules;${CMAKE_CURRENT_SOURCE_DIR}/..>"
                 "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
-
-#        if (Module_DEPENDENCIES)
-#            string(REPLACE " " ";" LIB_LIST ${Module_DEPENDENCIES})
-#            foreach (lib ${LIB_LIST})
-#                if (${Module_SOURCES})
-#                    target_link_libraries(${Module_NAME} ${lib})
-#                else ()
-#                    target_link_libraries(${Module_NAME} INTERFACE ${lib})
-#                endif ()
-#            endforeach ()
-#        endif ()
     else ()
         message(FATAL_ERROR "qb_register: Missing module NAME")
     endif ()
@@ -349,6 +372,8 @@ function(cxx_executable_with_flags name cxx_flags libs)
     foreach (lib ${LIB_LIST})
         target_link_libraries(${name} ${lib})
     endforeach ()
+
+    print_target_properties(${name})
 endfunction()
 
 # cxx_executable(name dir lib srcs...)
@@ -384,7 +409,7 @@ endfunction()
 # creates a named test target that depends on the given libs and is
 # built from the given source files.
 function(cxx_test name libs)
-    cxx_test_with_flags("${name}" "${cxx_default_lib}" "${libs}"
+    cxx_test_with_flags("${name}" "${cxx_default}" "${libs}"
             ${ARGN})
 endfunction()
 
@@ -393,7 +418,7 @@ endfunction()
 # creates a named test target that depends on the given libs and is
 # built from the given source files.
 function(cxx_gtest name libs)
-    cxx_test_with_flags("${name}" "" "gtest gtest_main ${libs}"
+    cxx_test_with_flags("${name}" "${cxx_default}" "gtest gtest_main ${libs}"
             ${ARGN})
 endfunction()
 
@@ -405,6 +430,7 @@ endfunction()
 # register a named qb C++ test module that depends on the given libraries and
 # is built from the given source files with the given compiler flags.
 function(qb_register_module_gtest)
+    config_compiler_and_linker()
     set(options NONE)
     set(oneValueArgs NAME TESTNAME FLAGS)
     set(multiValueArgs SOURCES DEPENDENCIES)
@@ -417,15 +443,24 @@ function(qb_register_module_gtest)
         message(FATAL_ERROR "qb failed to register module test, missing SOURCES")
         return()
     endif ()
-    if (NOT ${Module_FLAGS})
-        set(Module_FLAGS ${cxx_default_lib})
+    if (NOT Module_FLAGS)
+        set(Module_FLAGS ${cxx_default})
     endif ()
+    if (NOT Module_DEPENDENCIES)
+        set(Module_DEPENDENCIES "")
+    endif ()
+    list(APPEND Module_DEPENDENCIES
+                "${QB_PREFIX}-core"
+                "qbm-${Module_NAME}"
+                "gtest"
+                "gtest_main")
     set(Module_NAME "qbm-${Module_NAME}-gtest-${Module_TESTNAME}")
     message(STATUS "Load ${Module_NAME} Test")
+    string(REPLACE ";" " " LIBS "${Module_DEPENDENCIES}")
     cxx_test_with_flags(
             "${Module_NAME}"
             "${Module_FLAGS}"
-            "${Module_DEPENDENCIES} ${QB_PREFIX}-core gtest gtest_main"
+            "${LIBS}"
             ${Module_SOURCES}
     )
 endfunction()
@@ -438,7 +473,7 @@ function(cxx_benchmark name libs)
     #  if (MSVC)
     #    set(cxx_benchmark_flags "${cxx_default_lib} -MD")
     #  else()
-    set(cxx_benchmark_flags "${cxx_default_lib}")
+    set(cxx_benchmark_flags "${cxx_default}")
     #  endif()
     cxx_test_with_flags("${name}" "${cxx_benchmark_flags}" "${libs} benchmark"
             ${ARGN})
@@ -533,25 +568,3 @@ function(install_project)
         endforeach ()
     endif ()
 endfunction()
-
-function(print_target_properties tgt)
-    if (NOT TARGET ${tgt})
-        message("There is no target named '${tgt}'")
-        return()
-    endif ()
-
-    # this list of properties can be extended as needed
-    set(CMAKE_PROPERTY_LIST SOURCE_DIR BINARY_DIR COMPILE_DEFINITIONS
-            COMPILE_OPTIONS INCLUDE_DIRECTORIES LINK_LIBRARIES COMPILE_FLAGS)
-
-    message("Configuration for target ${tgt}")
-
-    foreach (prop ${CMAKE_PROPERTY_LIST})
-        get_property(propval TARGET ${tgt} PROPERTY ${prop} SET)
-        if (propval)
-            get_target_property(propval ${tgt} ${prop})
-            message(STATUS "${prop} = ${propval}")
-        endif ()
-    endforeach (prop)
-
-endfunction(print_target_properties)

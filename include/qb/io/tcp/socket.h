@@ -62,6 +62,7 @@ public:
     int connect_un(std::string const &path) noexcept;
 
     int n_connect(qb::io::endpoint const &ep) noexcept;
+    inline void connected() noexcept {}
     int n_connect(uri const &u) noexcept;
     int n_connect_v4(std::string const &host, uint16_t port) noexcept;
     int n_connect_v6(std::string const &host, uint16_t port) noexcept;

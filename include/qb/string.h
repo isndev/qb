@@ -56,6 +56,11 @@ public:
     string() noexcept
         : base_t{'\0'} {}
 
+    template <std::size_t N>
+    string(const char (&str)[N]) noexcept {
+        assign(str, N - 1);
+    }
+
     template <typename T>
     string(T const &rhs) noexcept {
         assign(rhs);
@@ -68,6 +73,11 @@ public:
         return *this;
     }
 
+    template <std::size_t N>
+    string &assign(const char (&str)[N]) noexcept {
+        return assign(str, N - 1);
+    }
+
     template <typename T>
     string &assign(T const &rhs) noexcept {
         return assign(rhs.c_str(), rhs.size());
@@ -75,6 +85,11 @@ public:
 
     string &assign(char const *rhs) noexcept {
         return assign(rhs, strlen(rhs));
+    }
+
+    template <std::size_t N>
+    string &operator=(const char (&str)[N]) noexcept {
+        return assign(str, N - 1);
     }
 
     template <typename T>
@@ -87,7 +102,11 @@ public:
     }
 
     operator std::string() const noexcept {
-        return std::string(base_t::data());
+        return {base_t::data(), _size};
+    }
+
+    operator std::string_view() const noexcept {
+        return {base_t::data(), _size};
     }
 
     template <typename T>

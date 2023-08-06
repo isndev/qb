@@ -416,7 +416,7 @@ bool
 socket::open(int af, int type, int protocol) {
     if (invalid_socket == this->fd)
 #if defined(_WIN32)
-        this->fd = OPEN_FD_FROM_SOCKET(::socket(af, type, protocol), 0);
+        this->fd = OPEN_FD_FROM_SOCKET(::socket(af, type, protocol));
 #else
         this->fd = ::socket(af, type, protocol);
 #endif
@@ -434,30 +434,32 @@ bool
 socket::open_ex(int af, int type, int protocol) {
 #    if !defined(WP8)
     if (invalid_socket == this->fd) {
-        this->fd = ::WSASocket(af, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
+        SOCKET sock = ::WSASocket(af, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
         DWORD dwBytes = 0;
         if (nullptr == __accept_ex) {
             GUID guidAcceptEx = WSAID_ACCEPTEX;
-            (void)WSAIoctl(this->fd, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidAcceptEx,
+            (void)WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidAcceptEx,
                            sizeof(guidAcceptEx), &__accept_ex, sizeof(__accept_ex),
                            &dwBytes, nullptr, nullptr);
         }
 
         if (nullptr == __connect_ex) {
             GUID guidConnectEx = WSAID_CONNECTEX;
-            (void)WSAIoctl(this->fd, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidConnectEx,
+            (void)WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidConnectEx,
                            sizeof(guidConnectEx), &__connect_ex, sizeof(__connect_ex),
                            &dwBytes, nullptr, nullptr);
         }
 
         if (nullptr == __get_accept_ex_sockaddrs) {
             GUID guidGetAcceptExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS;
-            (void)WSAIoctl(this->fd, SIO_GET_EXTENSION_FUNCTION_POINTER,
+            (void)WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER,
                            &guidGetAcceptExSockaddrs, sizeof(guidGetAcceptExSockaddrs),
                            &__get_accept_ex_sockaddrs, sizeof(__get_accept_ex_sockaddrs),
                            &dwBytes, nullptr, nullptr);
         }
+
+        this->fd = OPEN_FD_FROM_SOCKET(sock);
     }
     return is_open();
 #    else
@@ -629,7 +631,7 @@ socket::connect_n(const endpoint &ep, const std::chrono::microseconds &wtimeout)
 }
 int
 socket::connect_n(socket_type s, const endpoint &ep,
-                  const std::chrono::microseconds &wtimeout) {
+                  const std::chrono::microseconds &) {
 //    fd_set rset, wset;
     int n, error = 0;
 

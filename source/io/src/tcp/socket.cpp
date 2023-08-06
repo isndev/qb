@@ -176,15 +176,14 @@ socket::n_connect_un(std::string const &path) noexcept {
     return n_connect(qb::io::endpoint().as_un(path.c_str()));
 }
 
-
 int
 socket::read(void *dest, std::size_t len) const noexcept {
-    return recv(dest, len);
+    return recv(dest, static_cast<int>(len));
 }
 
 int
 socket::write(const void *data, std::size_t size) const noexcept {
-    return send(data, size);
+    return send(data, static_cast<int>(size));
 }
 
 int
