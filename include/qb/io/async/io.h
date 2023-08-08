@@ -35,8 +35,7 @@ class base {
 protected:
     _EV_EVENT &_async_event;
     base()
-        : _async_event(listener::current.registerEvent<_EV_EVENT>(
-            Derived)) {}
+        : _async_event(listener::current.registerEvent<_EV_EVENT>(Derived)) {}
     ~base() {
         listener::current.unregisterEvent(_async_event._interface);
     }
@@ -95,23 +94,26 @@ private:
 template <typename _Func>
 class Timeout : public with_timeout<Timeout<_Func>> {
     _Func _func;
+
 public:
     Timeout(_Func &&func, double timeout = 0.)
-            : _func(std::forward<_Func>(func))
-            , with_timeout<Timeout<_Func>>(timeout) {
+        : _func(std::forward<_Func>(func))
+        , with_timeout<Timeout<_Func>>(timeout) {
         if (!timeout) {
             _func();
             delete this;
         }
     }
-    void on(event::timer const &event) const {
+    void
+    on(event::timer const &event) const {
         _func();
         delete this;
     }
 };
 
 template <typename _Func>
-void callback(_Func &&func, double timeout = 0.) {
+void
+callback(_Func &&func, double timeout = 0.) {
     new Timeout<_Func>(std::forward<_Func>(func), timeout);
 }
 
@@ -136,7 +138,7 @@ public:
 
     template <typename _Protocol, typename... _Args>
     _Protocol *
-    switch_protocol(_Args &&... args) {
+    switch_protocol(_Args &&...args) {
         auto new_protocol = new _Protocol(std::forward<_Args>(args)...);
         if (new_protocol->ok()) {
             _protocol = new_protocol;
@@ -156,7 +158,8 @@ public:
         this->_async_event.stop();
     }
 
-    int read_all() {
+    int
+    read_all() {
         constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
         std::size_t ret = 0u;
         do {
@@ -201,7 +204,8 @@ private:
         }
 
         auto diff_read = event.attr.st_size - event.prev.st_size;
-        if (!_protocol->ok() || !event.attr.st_nlink || (diff_read < 0 && lseek(Derived.transport().native_handle(), 0, SEEK_SET)))
+        if (!_protocol->ok() || !event.attr.st_nlink ||
+            (diff_read < 0 && lseek(Derived.transport().native_handle(), 0, SEEK_SET)))
             ret = -1;
         else if (diff_read) {
             if constexpr (_Derived::do_read) {
@@ -277,7 +281,7 @@ public:
 
     template <typename _Protocol, typename... _Args>
     _Protocol *
-    switch_protocol(_Args &&... args) {
+    switch_protocol(_Args &&...args) {
         auto new_protocol = new _Protocol(std::forward<_Args>(args)...);
         if (new_protocol->ok()) {
             _protocol = new_protocol;
@@ -320,7 +324,8 @@ public:
             Derived.on(event::disconnected{reason});
         }
         _disconnected_by_user = true;
-        listener::current.loop().feed_fd_event(Derived.transport().native_handle(), EV_UNDEF);
+        listener::current.loop().feed_fd_event(Derived.transport().native_handle(),
+                                               EV_UNDEF);
     }
 
 private:
@@ -339,11 +344,7 @@ private:
             if (unlikely(ret == invalid_ret))
                 goto error;
             while ((ret = this->_protocol->getMessageSize()) > 0) {
-                // prevent recall in message
-                this->_async_event.set(0);
-                // has a new message to read
                 this->_protocol->onMessage(ret);
-                this->_async_event.set(EV_READ);
                 Derived.flush(ret);
             }
             Derived.eof();
@@ -366,9 +367,14 @@ private:
         if (!(event._revents & EV_ERROR))
             return;
     error:
+        dispose();
+    }
+
+public:
+    void
+    dispose() {
         if (!_disconnected_by_user)
             disconnect();
-        this->_async_event.stop();
         Derived.close();
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
@@ -406,7 +412,7 @@ public:
 
     template <typename... _Args>
     inline auto &
-    publish(_Args &&... args) noexcept {
+    publish(_Args &&...args) noexcept {
         ready_to_write();
         if constexpr (sizeof...(_Args))
             (Derived.out() << ... << std::forward<_Args>(args));
@@ -425,7 +431,8 @@ public:
             Derived.on(event::disconnected{reason});
         }
         _disconnected_by_user = true;
-        listener::current.loop().feed_fd_event(Derived.transport().native_handle(), EV_UNDEF);
+        listener::current.loop().feed_fd_event(Derived.transport().native_handle(),
+                                               EV_UNDEF);
     }
 
 private:
@@ -443,7 +450,7 @@ private:
             if (unlikely(ret < 0))
                 goto error;
             if (!Derived.pendingWrite()) {
-                this->_async_event.stop(EV_NONE);
+                this->_async_event.set(EV_NONE);
                 if constexpr (has_method_on<_Derived, void, event::eos>::value) {
                     Derived.on(event::eos{});
                 }
@@ -456,9 +463,14 @@ private:
         if (!(event._revents & EV_ERROR))
             return;
     error:
+        dispose();
+    }
+
+public:
+    void
+    dispose() {
         if (!_disconnected_by_user)
             disconnect();
-        this->_async_event.stop();
         Derived.close();
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
@@ -489,7 +501,7 @@ public:
 
     template <typename _Protocol, typename... _Args>
     _Protocol *
-    switch_protocol(_Args &&... args) {
+    switch_protocol(_Args &&...args) {
         auto new_protocol = new _Protocol(std::forward<_Args>(args)...);
         if (new_protocol->ok()) {
             _protocol = new_protocol;
@@ -539,7 +551,7 @@ public:
 
     template <typename... _Args>
     inline auto &
-    publish(_Args &&... args) noexcept {
+    publish(_Args &&...args) noexcept {
         ready_to_write();
         if constexpr (sizeof...(_Args))
             (Derived.out() << ... << std::forward<_Args>(args));
@@ -558,7 +570,9 @@ public:
             Derived.on(event::disconnected{reason});
         }
         _disconnected_by_user = true;
-        listener::current.loop().feed_fd_event(Derived.transport().native_handle(), EV_UNDEF);
+        this->_async_event.feed_event(EV_UNDEF);
+        // listener::current.loop().feed_fd_event(Derived.transport().native_handle(),
+        // EV_UNDEF);
     }
 
 private:
@@ -576,13 +590,10 @@ private:
             ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret))
                 goto error;
-            int ev_write = 0;
+
             while ((ret = this->_protocol->getMessageSize()) > 0) {
                 // prevent recall in message
-                this->_async_event.set(0);
                 this->_protocol->onMessage(ret);
-                ev_write |= this->_async_event.events & EV_WRITE;
-                this->_async_event.set(ev_write | EV_READ);
                 Derived.flush(ret);
             }
             Derived.eof();
@@ -620,14 +631,19 @@ private:
         if (!(event._revents & EV_ERROR))
             return;
     error:
+        dispose();
+    }
+
+public:
+    void
+    dispose() {
         if (!_disconnected_by_user)
             disconnect();
-        this->_async_event.stop();
         Derived.close();
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
         } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
-                Derived.on(event::dispose{});
+            Derived.on(event::dispose{});
         }
     }
 };

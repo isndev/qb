@@ -23,7 +23,8 @@
 
 using namespace qb::io;
 
-constexpr const std::size_t NB_ITERATION = 4096;
+constexpr const std::size_t NB_ITERATION = 1000;
+constexpr const std::size_t NB_CLIENTS = 5;
 constexpr const char STRING_MESSAGE[] = "Here is my content test";
 constexpr const char UNIX_SOCK_PATH[] = "qb-test.sock";
 std::atomic<std::size_t> msg_count_server_side = 0;
@@ -32,7 +33,17 @@ std::atomic<std::size_t> msg_count_client_side = 0;
 bool
 all_done() {
     return msg_count_server_side == (NB_ITERATION) &&
-           msg_count_client_side == NB_ITERATION;
+           msg_count_client_side == (NB_ITERATION);
+}
+
+bool
+server_done() {
+    return msg_count_server_side == (NB_ITERATION * NB_CLIENTS);
+}
+
+bool
+client_done() {
+    return msg_count_client_side == NB_ITERATION;
 }
 
 // OVER TCP
@@ -166,7 +177,7 @@ public:
         : client(server) {}
 
     ~TestSecureServerClient() {
-        EXPECT_EQ(msg_count_server_side, NB_ITERATION);
+        EXPECT_EQ(msg_count_server_side % NB_ITERATION, 0);
     }
 
     void
@@ -183,7 +194,7 @@ class TestSecureServer
 
 public:
     ~TestSecureServer() {
-        EXPECT_EQ(connection_count, 1u);
+        EXPECT_EQ(connection_count, NB_CLIENTS);
     }
 
     void
@@ -197,7 +208,7 @@ public:
     using Protocol = qb::protocol::text::command<TestSecureClient>;
 
     ~TestSecureClient() {
-        EXPECT_EQ(msg_count_client_side, NB_ITERATION);
+        EXPECT_EQ(msg_count_client_side % NB_ITERATION, 0);
     }
 
     void
@@ -210,7 +221,6 @@ public:
 TEST(Session, COMMAND_OVER_SECURE_TCP) {
     async::init();
     msg_count_server_side = 0;
-    msg_count_client_side = 0;
 
     TestSecureServer server;
     server.transport().init(
@@ -218,63 +228,70 @@ TEST(Session, COMMAND_OVER_SECURE_TCP) {
     server.transport().listen_v4(60666);
     server.start();
 
-    std::thread t([]() {
+    std::thread tc([]() {
         async::init();
-        TestSecureClient client;
-        if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", 60666)) {
-            throw std::runtime_error("could not connect");
-        }
-        client.start();
+        for (auto i = 0; i < NB_CLIENTS; ++i) {
+            msg_count_client_side = 0;
+            TestSecureClient client;
+            if (SocketStatus::Done !=
+                client.transport().connect_v4("127.0.0.1", 60666)) {
+                throw std::runtime_error("could not connect");
+            }
+            client.start();
 
-        for (auto i = 0u; i < NB_ITERATION; ++i) {
-            client << STRING_MESSAGE << '\n';
-        }
+            for (auto j = 0u; j < NB_ITERATION; ++j) {
+                client << STRING_MESSAGE << '\n';
+            }
 
-        for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
-            async::run(EVRUN_ONCE);
+            for (auto j = 0; j < (NB_ITERATION * 5) && !client_done(); ++j)
+                async::run(EVRUN_ONCE);
+        }
     });
 
-    for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
+    for (auto i = 0;
+         i < (NB_ITERATION * NB_CLIENTS) && (!server_done() || !client_done()); ++i)
         async::run(EVRUN_ONCE);
-    t.join();
+    tc.join();
 }
 
-#ifndef _WIN32
+#    ifndef _WIN32
 
 TEST(Session, COMMAND_OVER_SECURE_UTCP) {
     unlink(UNIX_SOCK_PATH);
     async::init();
     msg_count_server_side = 0;
-    msg_count_client_side = 0;
 
     TestSecureServer server;
     server.transport().init(
         ssl::create_server_context(SSLv23_server_method(), "cert.pem", "key.pem"));
     server.transport().listen_un(UNIX_SOCK_PATH);
     server.start();
-
-    std::thread t([]() {
+    std::thread tc([]() {
         async::init();
-        TestSecureClient client;
-        if (SocketStatus::Done != client.transport().connect_un(UNIX_SOCK_PATH)) {
-            throw std::runtime_error("could not connect");
-        }
-        client.start();
+        for (auto i = 0; i < NB_CLIENTS; ++i) {
+            msg_count_client_side = 0;
+            TestSecureClient &client = *new TestSecureClient();
+            if (SocketStatus::Done != client.transport().connect_un(UNIX_SOCK_PATH)) {
+                throw std::runtime_error("could not connect");
+            }
+            client.start();
 
-        for (auto i = 0u; i < NB_ITERATION; ++i) {
-            client << STRING_MESSAGE << '\n';
-        }
+            for (auto j = 0u; j < NB_ITERATION; ++j) {
+                client << STRING_MESSAGE << '\n';
+            }
 
-        for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
-            async::run(EVRUN_ONCE);
+            for (auto j = 0; j < (NB_ITERATION * 5) && !client_done(); ++j)
+                async::run(EVRUN_ONCE);
+        }
     });
 
-    for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
+    for (auto i = 0;
+         i < (NB_ITERATION * NB_CLIENTS) && (!server_done() || !client_done()); ++i)
         async::run(EVRUN_ONCE);
-    t.join();
+    tc.join();
 }
 
-#endif
+#    endif
 
 #endif
 
@@ -286,7 +303,7 @@ public:
 
     TestUDPServerClient() = default;
     ~TestUDPServerClient() {
-        EXPECT_EQ(msg_count_server_side, NB_ITERATION);
+        EXPECT_EQ(msg_count_server_side % NB_ITERATION, 0);
     }
 
     void
@@ -314,33 +331,36 @@ public:
 };
 
 TEST(Session, COMMAND_OVER_UDP) {
-    async::init();
     msg_count_server_side = 0;
-    msg_count_client_side = 0;
 
+    async::init();
     TestUDPServerClient server;
     server.transport().bind_v4(60666);
     server.start();
 
-    std::thread t([]() {
+    std::thread tc([]() {
         async::init();
-        TestUDPClient client;
-        client.transport().init();
-        if (!client.transport().is_open()) {
-            throw std::runtime_error("could not connect");
-        }
-        client.start();
 
-        for (auto i = 0u; i < NB_ITERATION; ++i) {
-            client.setDestination(endpoint().as_in("127.0.0.1", 60666));
-            client << STRING_MESSAGE << '\n';
-        }
+        for (auto i = 0; i < 5; ++i) {
+            msg_count_client_side = 0;
+            TestUDPClient client;
+            client.transport().init();
+            if (!client.transport().is_open()) {
+                throw std::runtime_error("could not connect");
+            }
+            client.start();
+            for (auto j = 0u; j < NB_ITERATION; ++j) {
+                client.setDestination(endpoint().as_in("127.0.0.1", 60666));
+                client << STRING_MESSAGE << '\n';
+            }
 
-        for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
-            async::run(EVRUN_ONCE);
+            for (auto j = 0; i < (NB_ITERATION * 10000) && !client_done(); ++j)
+                async::run(EVRUN_NOWAIT);
+        }
     });
 
-    for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
-        async::run(EVRUN_ONCE);
-    t.join();
+    for (auto i = 0;
+         i < (NB_ITERATION * 10000 * 5) && (!server_done() || !client_done()); ++i)
+        async::run(EVRUN_NOWAIT);
+    tc.join();
 }

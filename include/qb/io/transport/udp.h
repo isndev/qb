@@ -15,11 +15,6 @@
  *         limitations under the License.
  */
 
-// TODO : UDP IS BROKEN
-// TOFIX : New way to read !!!
-// new way to write !!!!
-// new way to get message !!!!
-
 #ifndef QB_IO_TRANSPORT_UDP_H_
 #define QB_IO_TRANSPORT_UDP_H_
 #include "../stream.h"
@@ -43,7 +38,8 @@ public:
         struct hasher {
             std::size_t
             operator()(const identity &id) const noexcept {
-                return std::hash<std::string_view>{}(std::string_view(reinterpret_cast<const char *>(&id), id.len()));
+                return std::hash<std::string_view>{}(
+                    std::string_view(reinterpret_cast<const char *>(&id), id.len()));
             }
         };
 
@@ -64,15 +60,18 @@ public:
         template <typename T>
         auto &
         operator<<(T &&data) {
-//            if (proxy._remote_dest._ip != qb::io::ip::None) {
-                auto &out_buffer = static_cast<udp::base_t &>(proxy).out();
-                const auto start_size = out_buffer.size();
-                out_buffer << std::forward<T>(data);
-                auto p = reinterpret_cast<udp::pushed_message *>(
-                    out_buffer.begin() + proxy._last_pushed_offset);
-                p->size += (out_buffer.size() - start_size);
-//            }
+            auto &out_buffer = static_cast<udp::base_t &>(proxy).out();
+            const auto start_size = out_buffer.size();
+            out_buffer << std::forward<T>(data);
+            auto p = reinterpret_cast<udp::pushed_message *>(out_buffer.begin() +
+                                                             proxy._last_pushed_offset);
+            p->size += (out_buffer.size() - start_size);
             return *this;
+        }
+
+        std::size_t
+        size() {
+            return static_cast<udp::base_t &>(proxy).pendingWrite();
         }
     };
 
@@ -86,9 +85,9 @@ private:
     struct pushed_message {
         udp::identity ident;
         int size = 0;
+        int offset = 0;
     };
 
-    pushed_message _current_pushed_message;
     int _last_pushed_offset = -1;
 
 public:
@@ -99,13 +98,14 @@ public:
 
     void
     setDestination(udp::identity const &to) noexcept {
-        _remote_dest = to;
-        _last_pushed_offset = -1;
+        if (to != _remote_dest) {
+            _remote_dest = to;
+            _last_pushed_offset = -1;
+        }
     }
 
     auto &
     out() {
-        //&& _remote_dest._ip != qb::io::ip::None
         if (_last_pushed_offset < 0) {
             _last_pushed_offset = static_cast<int>(_out_buffer.size());
             auto &m = _out_buffer.allocate_back<pushed_message>();
@@ -118,9 +118,9 @@ public:
 
     int
     read() noexcept {
-        const auto ret = transport().read(
-            _in_buffer.allocate_back(io::udp::socket::MaxDatagramSize),
-            io::udp::socket::MaxDatagramSize, _remote_source);
+        const auto ret =
+            transport().read(_in_buffer.allocate_back(io::udp::socket::MaxDatagramSize),
+                             io::udp::socket::MaxDatagramSize, _remote_source);
         if (qb::likely(ret > 0))
             _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
         setDestination(_remote_source);
@@ -134,25 +134,30 @@ public:
 
     int
     write() noexcept {
-        if (!_current_pushed_message.size) {
-            _current_pushed_message =
-                *reinterpret_cast<pushed_message const *>(_out_buffer.begin());
-            _out_buffer.free_front(sizeof(pushed_message));
-        }
+        if (!_out_buffer.size())
+            return 0;
+
+        auto &msg = *reinterpret_cast<pushed_message *>(_out_buffer.begin());
+        auto begin = _out_buffer.begin() + sizeof(pushed_message) + msg.offset;
 
         const auto ret = transport().write(
-            _out_buffer.begin(),
-            std::min(_current_pushed_message.size,
+            begin,
+            std::min(msg.size - msg.offset,
                      static_cast<int>(io::udp::socket::MaxDatagramSize)),
-            _current_pushed_message.ident);
+            msg.ident);
         if (qb::likely(ret > 0)) {
-            _current_pushed_message.size -= ret;
+            msg.offset += ret;
 
-            if (ret != _out_buffer.size()) {
-                _out_buffer.free_front(ret);
-                _out_buffer.reorder();
-            } else
-                _out_buffer.reset();
+            if (msg.offset == msg.size) {
+                _out_buffer.free_front(msg.size + sizeof(pushed_message));
+                if (_out_buffer.size()) {
+                    _out_buffer.reorder();
+                    if (_last_pushed_offset > 0) {
+                        _last_pushed_offset = -1;
+                    }
+                } else
+                    _out_buffer.reset();
+            }
         }
         return ret;
     }
