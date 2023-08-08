@@ -20,9 +20,9 @@
 
 #include "event/base.h"
 #include <algorithm>
+#include <qb/system/container/unordered_set.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
-#include <qb/system/container/unordered_set.h>
 #include <thread>
 #include <vector>
 
@@ -69,6 +69,7 @@ public:
         for (auto it : _registeredEvents)
             delete it;
         _registeredEvents.clear();
+        run(EVRUN_ONCE);
     }
 
     ~listener() noexcept {
@@ -86,7 +87,7 @@ public:
 
     template <typename _Event, typename _Actor, typename... _Args>
     _Event &
-    registerEvent(_Actor &actor, _Args &&... args) {
+    registerEvent(_Actor &actor, _Args &&...args) {
         auto revent = new RegisteredKernelEvent<_Event, _Actor>(_loop, actor);
         revent->_event.template set<listener, &listener::on<typename _Event::ev_t>>(
             this);

@@ -32,10 +32,11 @@ class acceptor
     using base_t = input<acceptor<_Derived, _Prot>>;
     using Protocol = protocol::accept<acceptor, typename _Prot::socket_type>;
 
+public:
     void
-    on(event::disconnected const &e) const {
+    on(event::disconnected &&e) {
         if constexpr (has_method_on<_Derived, void, event::disconnected>::value)
-            static_cast<_Derived &>(*this).on(e);
+            static_cast<_Derived &>(*this).on(std::forward<event::disconnected>(e));
         else
             throw std::runtime_error("Acceptor has been disconnected");
     }
@@ -49,7 +50,8 @@ public:
 
     void
     on(typename Protocol::message &&new_socket) {
-        static_cast<_Derived &>(*this).on(std::forward<typename Protocol::message>(new_socket));
+        static_cast<_Derived &>(*this).on(
+            std::forward<typename Protocol::message>(new_socket));
     }
 };
 

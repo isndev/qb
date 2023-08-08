@@ -60,7 +60,7 @@ if(WIN32)
     set(HAVE_SYS_EPOLL_H 1)
     set(HAVE_EPOLL_CTL 1)
     set(EV_USE_EPOLL 1)
-    set(EV_SELECT_IS_WINSOCKET 1)
+    set(EV_SELECT_IS_WINSOCKET 0)
 endif()
 
 check_symbol_exists(clock_gettime time.h HAVE_CLOCK_GETTIME)

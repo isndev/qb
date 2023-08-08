@@ -50,12 +50,12 @@ public:
         return _sessions;
     }
 
-    template <typename ...Args>
+    template <typename... Args>
     _Session &
     registerSession(typename _Session::transport_io_type &&new_io, Args &&...args) {
-        auto &session = *new _Session{static_cast<_Derived &>(*this), std::forward<Args>(args)...};
-        const auto &it =
-            sessions().emplace(session.id(), std::ref(session));
+        auto &session =
+            *new _Session{static_cast<_Derived &>(*this), std::forward<Args>(args)...};
+        const auto &it = sessions().emplace(session.id(), std::ref(session));
         it.first->second.transport() = std::move(new_io);
         it.first->second.start();
         if constexpr (has_method_on<_Derived, void, _Session &>::value)
@@ -66,8 +66,7 @@ public:
     _Session &
     registerSession(typename _Session::transport_io_type &&new_io) {
         auto &session = *new _Session{static_cast<_Derived &>(*this)};
-        const auto &it =
-            sessions().emplace(session.id(), std::ref(session));
+        const auto &it = sessions().emplace(session.id(), std::ref(session));
         it.first->second.transport() = std::move(new_io);
         it.first->second.start();
         if constexpr (has_method_on<_Derived, void, _Session &>::value)
@@ -96,7 +95,7 @@ public:
 
     template <typename... _Args>
     _Derived &
-    stream(_Args &&... args) {
+    stream(_Args &&...args) {
         for (auto &session : sessions())
             (session.second << ... << std::forward<_Args>(args));
         return static_cast<_Derived &>(*this);
@@ -104,7 +103,7 @@ public:
 
     template <typename _Func, typename... _Args>
     _Derived &
-    stream_if(_Func const &func, _Args &&... args) {
+    stream_if(_Func const &func, _Args &&...args) {
         for (auto &session : sessions())
             if (func(session.second))
                 (session.second << ... << std::forward<_Args>(args));

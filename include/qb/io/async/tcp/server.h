@@ -18,8 +18,8 @@
 #ifndef QB_IO_ASYNC_TCP_SERVER_H
 #define QB_IO_ASYNC_TCP_SERVER_H
 
-#include "acceptor.h"
 #include "../io_handler.h"
+#include "acceptor.h"
 
 namespace qb::io::async::tcp {
 
@@ -28,17 +28,19 @@ class server
     : public acceptor<server<_Derived, _Session, _Prot>, _Prot>
     , public io_handler<_Derived, _Session> {
     using acceptor_type = acceptor<server<_Derived, _Session, _Prot>, _Prot>;
+
 public:
     server() = default;
 
     void
     on(typename acceptor_type::accepted_socket_type &&new_io) {
-        this->registerSession(std::forward<typename acceptor_type::accepted_socket_type>(new_io));
+        this->registerSession(
+            std::forward<typename acceptor_type::accepted_socket_type>(new_io));
     }
 
     void
-    on(event::disconnected const &) const {
-        throw std::runtime_error("Server had been disconnected");
+    on(event::disconnected &&) {
+        // throw std::runtime_error("Server had been disconnected");
     }
 };
 

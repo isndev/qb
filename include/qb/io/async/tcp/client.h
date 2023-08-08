@@ -96,6 +96,12 @@ public:
             }
         }
     }
+
+    ~client() {
+        if (transport().is_open()) {
+            this->dispose();
+        }
+    }
 };
 
 } // namespace qb::io::async::tcp

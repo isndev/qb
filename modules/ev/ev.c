@@ -4049,8 +4049,10 @@ ev_run (EV_P_ int flags)
         break;
 
       /* we might have forked, so reify kernel state if necessary */
+      #ifndef _WIN32
       if (ecb_expect_false (postfork))
         loop_fork (EV_A);
+      #endif
 
       /* update fd-related kernel structures */
       fd_reify (EV_A);
