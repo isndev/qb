@@ -355,12 +355,12 @@ TEST(Session, COMMAND_OVER_UDP) {
             }
 
             for (auto j = 0; i < (NB_ITERATION * 10000) && !client_done(); ++j)
-                async::run(EVRUN_NOWAIT);
+                async::run(EVRUN_ONCE);
         }
     });
 
     for (auto i = 0;
          i < (NB_ITERATION * 10000 * 5) && (!server_done() || !client_done()); ++i)
-        async::run(EVRUN_NOWAIT);
+        async::run(EVRUN_ONCE);
     tc.join();
 }

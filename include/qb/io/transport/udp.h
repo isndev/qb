@@ -123,13 +123,10 @@ public:
                              io::udp::socket::MaxDatagramSize, _remote_source);
         if (qb::likely(ret > 0))
             _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
+        else
+            return 0;
         setDestination(_remote_source);
         return ret;
-    }
-
-    void
-    eof() noexcept {
-        _in_buffer.reset();
     }
 
     int
@@ -152,13 +149,14 @@ public:
                 _out_buffer.free_front(msg.size + sizeof(pushed_message));
                 if (_out_buffer.size()) {
                     _out_buffer.reorder();
-                    if (_last_pushed_offset > 0) {
+                    if (_last_pushed_offset >= 0) {
                         _last_pushed_offset = -1;
                     }
                 } else
                     _out_buffer.reset();
             }
-        }
+        } else
+            return 0;
         return ret;
     }
 

@@ -29,7 +29,8 @@ namespace qb::io::udp {
  */
 class QB_API socket : private qb::io::socket {
 public:
-    constexpr static const std::size_t MaxDatagramSize = 65507;
+    // constexpr static const std::size_t MaxDatagramSize = 65507;
+    constexpr static const std::size_t MaxDatagramSize = 512;
     using qb::io::socket::close;
     using qb::io::socket::get_optval;
     using qb::io::socket::is_open;
