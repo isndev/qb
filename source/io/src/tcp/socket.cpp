@@ -30,11 +30,11 @@ socket::operator=(io::socket &&sock) noexcept {
 
 int
 socket::init(int af) noexcept {
-    const auto ret = io::socket::open(af, SOCK_STREAM, 0);
+    if (io::socket::open(af, SOCK_STREAM, 0) &&
+        !set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1))
+        return 0;
 
-    set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
-
-    return ret;
+    return -1;
 }
 
 int
@@ -142,8 +142,8 @@ socket::n_connect(qb::io::endpoint const &ep) noexcept {
         const auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
         if (af != ep.af())
             return -1;
-    } else
-        init(ep.af());
+    } else if (init(ep.af()))
+        return -1;
 
     return qb::io::socket::connect_n(ep);
 }
@@ -178,7 +178,8 @@ socket::n_connect_un(std::string const &path) noexcept {
 
 int
 socket::read(void *dest, std::size_t len) const noexcept {
-    return recv(dest, static_cast<int>(len));
+    int ret = recv(dest, static_cast<int>(len));
+    return ret > 0 ? ret : -1;
 }
 
 int

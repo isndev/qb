@@ -266,6 +266,7 @@ class input : public base<input<_Derived>, event::io> {
     AProtocol<_Derived> *_protocol = nullptr;
     std::vector<AProtocol<_Derived> *> _protocol_list;
     bool _disconnected_by_user = false;
+    bool _disposed = false;
 
 public:
     using base_io_t = input<_Derived>;
@@ -373,6 +374,9 @@ private:
 public:
     void
     dispose() {
+        if (_disposed)
+            return;
+        _disposed = true;
         if (!_disconnected_by_user)
             disconnect();
         Derived.close();
@@ -388,6 +392,7 @@ template <typename _Derived>
 class output : public base<output<_Derived>, event::io> {
     using base_t = base<output<_Derived>, event::io>;
     bool _disconnected_by_user = false;
+    bool _disposed = false;
 
 public:
     using base_io_t = output<_Derived>;
@@ -469,6 +474,9 @@ private:
 public:
     void
     dispose() {
+        if (_disposed)
+            return;
+        _disposed = true;
         if (!_disconnected_by_user)
             disconnect();
         Derived.close();
@@ -486,6 +494,7 @@ class io : public base<io<_Derived>, event::io> {
     AProtocol<_Derived> *_protocol = nullptr;
     std::vector<AProtocol<_Derived> *> _protocol_list;
     bool _disconnected_by_user = false;
+    bool _disposed = false;
 
 public:
     using base_io_t = io<_Derived>;
@@ -637,6 +646,9 @@ private:
 public:
     void
     dispose() {
+        if (_disposed)
+            return;
+        _disposed = true;
         if (!_disconnected_by_user)
             disconnect();
         Derived.close();

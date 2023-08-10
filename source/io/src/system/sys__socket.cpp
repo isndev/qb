@@ -957,6 +957,8 @@ socket::operator socket_type(void) const {
 
 int
 socket::shutdown(int how) const {
+    if (!is_open())
+        return -1;
     return ::shutdown(FD_TO_SOCKET(this->fd), how);
 }
 
