@@ -60,9 +60,9 @@ public:
     template <typename Available = void>
     [[nodiscard]] int
     read(std::enable_if_t<has_method_read<_IO_, int, char *, std::size_t>::value, Available> * = nullptr) noexcept {
-        static constexpr const std::size_t bucket_read = 4096;
+        static constexpr const std::size_t bucket_read = 8192;
         const auto ret = _in.read(_in_buffer.allocate_back(bucket_read), bucket_read);
-        if (likely(ret >= 0))
+        if (ret >= 0)
             _in_buffer.free_back(bucket_read - ret);
         return ret;
     }
@@ -130,7 +130,7 @@ public:
     write(std::enable_if_t<has_method_write<_IO_, int, const char *, std::size_t>::value, Available> * = nullptr) noexcept {
         const auto ret = _out.write(_out_buffer.begin(), _out_buffer.size());
 
-        if (likely(ret > 0)) {
+        if (ret > 0) {
             if (ret != _out_buffer.size()) {
                 _out_buffer.free_front(ret);
                 _out_buffer.reorder();
@@ -182,7 +182,7 @@ public:
     [[nodiscard]] int
     write(std::enable_if_t<has_method_write<_IO_, int, const char *, std::size_t>::value, Available> * = nullptr) noexcept {
         const auto ret = this->_in.write(_out_buffer.begin(), _out_buffer.size());
-        if (likely(ret > 0)) {
+        if (ret > 0) {
             if (ret != _out_buffer.size()) {
                 _out_buffer.free_front(ret);
                 _out_buffer.reorder();

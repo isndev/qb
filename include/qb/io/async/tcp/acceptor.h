@@ -48,6 +48,8 @@ public:
     acceptor() noexcept
         : base_t(new Protocol(*this)) {}
 
+    ~acceptor() = default;
+
     void
     on(typename Protocol::message &&new_socket) {
         static_cast<_Derived &>(*this).on(

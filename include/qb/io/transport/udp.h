@@ -98,7 +98,7 @@ public:
 
     void
     setDestination(udp::identity const &to) noexcept {
-        if (to != _remote_dest) {
+        if (to != _remote_dest || !_out_buffer.size()) {
             _remote_dest = to;
             _last_pushed_offset = -1;
         }
@@ -121,11 +121,10 @@ public:
         const auto ret =
             transport().read(_in_buffer.allocate_back(io::udp::socket::MaxDatagramSize),
                              io::udp::socket::MaxDatagramSize, _remote_source);
-        if (qb::likely(ret > 0))
+        if (qb::likely(ret > 0)) {
             _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
-        else
-            return 0;
-        setDestination(_remote_source);
+            setDestination(_remote_source);
+        }
         return ret;
     }
 
@@ -149,14 +148,12 @@ public:
                 _out_buffer.free_front(msg.size + sizeof(pushed_message));
                 if (_out_buffer.size()) {
                     _out_buffer.reorder();
-                    if (_last_pushed_offset >= 0) {
-                        _last_pushed_offset = -1;
-                    }
+                    _last_pushed_offset = -1;
                 } else
                     _out_buffer.reset();
             }
-        } else
-            return 0;
+        }
+
         return ret;
     }
 

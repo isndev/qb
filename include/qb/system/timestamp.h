@@ -38,7 +38,9 @@
 #    endif
 #    include <windows.h>
 #endif
+#include <iostream>
 #include <thread>
+#include <qb/io.h>
 
 namespace qb {
 
@@ -588,6 +590,20 @@ public:
         : Timestamp(Timestamp::rdts()) {}
     RdtsTimestamp(const Timestamp &timestamp)
         : Timestamp(timestamp) {}
+};
+
+class LogTimer {
+    const std::string reason;
+    NanoTimestamp ts;
+
+public:
+    inline LogTimer(std::string const &reason)
+        : reason(reason)
+        , ts() {}
+    inline ~LogTimer() {
+        qb::io::cout() << reason << ": " << (qb::NanoTimestamp() - ts).microseconds() << "us"
+                  << std::endl;
+    }
 };
 
 } // namespace qb

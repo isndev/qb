@@ -276,7 +276,7 @@ Main::start(bool async) noexcept {
     if (ret >= VirtualCore::Error::BadInit) {
         _is_running = false;
         LOG_CRIT("[Main] Init Failed");
-        io::cout() << "CRITICAL: Core Init Failed -> show logs to have more details"
+        std::cerr << "CRITICAL: Core Init Failed -> show logs to have more details"
                    << std::endl;
     }
 }

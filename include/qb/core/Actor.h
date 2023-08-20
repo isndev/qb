@@ -688,8 +688,9 @@ public:
 using actor = Actor;
 template <typename Tag>
 using service_actor = ServiceActor<Tag>;
-
+#    ifdef QB_LOGGER
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor);
+#endif
 std::ostream &operator<<(std::ostream &os, qb::Actor const &actor);
 
 } // namespace qb

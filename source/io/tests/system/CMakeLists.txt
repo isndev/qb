@@ -20,7 +20,7 @@ cxx_gtest(${PROJECT_NAME}-gtest-tcp-udp "${PROJECT_NAME}" test-io.cpp)
 cxx_gtest(${PROJECT_NAME}-gtest-session-text "${PROJECT_NAME}" test-session-text.cpp)
 
 if (ZLIB_FOUND)
-    cxx_gtest(${PROJECT_NAME}-gtest-gzip "${PROJECT_NAME}" test-gzip.cpp)
+    cxx_gtest(${PROJECT_NAME}-gtest-compression "${PROJECT_NAME}" test-compression.cpp)
 endif ()
 
 if (OPENSSL_FOUND)

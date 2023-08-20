@@ -104,13 +104,13 @@ TEST(Session, COMMAND_OVER_TCP) {
     msg_count_client_side = 0;
 
     TestServer server;
-    server.transport().listen_v4(60666);
+    server.transport().listen_v4(9999);
     server.start();
 
     std::thread t([]() {
         async::init();
         TestClient client;
-        if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", 60666)) {
+        if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", 9999)) {
             throw std::runtime_error("could not connect");
         }
         client.start();
@@ -225,7 +225,7 @@ TEST(Session, COMMAND_OVER_SECURE_TCP) {
     TestSecureServer server;
     server.transport().init(
         ssl::create_server_context(SSLv23_server_method(), "cert.pem", "key.pem"));
-    server.transport().listen_v4(60666);
+    server.transport().listen_v4(9999);
     server.start();
 
     std::thread tc([]() {
@@ -234,7 +234,7 @@ TEST(Session, COMMAND_OVER_SECURE_TCP) {
             msg_count_client_side = 0;
             TestSecureClient client;
             if (SocketStatus::Done !=
-                client.transport().connect_v4("127.0.0.1", 60666)) {
+                client.transport().connect_v4("127.0.0.1", 9999)) {
                 throw std::runtime_error("could not connect");
             }
             client.start();
@@ -270,7 +270,7 @@ TEST(Session, COMMAND_OVER_SECURE_UTCP) {
         async::init();
         for (auto i = 0; i < NB_CLIENTS; ++i) {
             msg_count_client_side = 0;
-            TestSecureClient &client = *new TestSecureClient();
+            TestSecureClient client;
             if (SocketStatus::Done != client.transport().connect_un(UNIX_SOCK_PATH)) {
                 throw std::runtime_error("could not connect");
             }
@@ -335,7 +335,7 @@ TEST(Session, COMMAND_OVER_UDP) {
 
     async::init();
     TestUDPServerClient server;
-    server.transport().bind_v4(60666);
+    server.transport().bind_v4(9999);
     server.start();
 
     std::thread tc([]() {
@@ -350,7 +350,7 @@ TEST(Session, COMMAND_OVER_UDP) {
             }
             client.start();
             for (auto j = 0u; j < NB_ITERATION; ++j) {
-                client.setDestination(endpoint().as_in("127.0.0.1", 60666));
+                client.setDestination(endpoint().as_in("127.0.0.1", 9999));
                 client << STRING_MESSAGE << '\n';
             }
 

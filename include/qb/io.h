@@ -25,7 +25,7 @@
 #include <utility>
 
 #ifdef QB_LOGGER
-#include <nanolog/nanolog.h>
+#    include <nanolog/nanolog.h>
 #endif
 
 namespace qb {
@@ -93,19 +93,29 @@ public:
 } // namespace qb
 
 #ifndef QB_LOGGER
-#ifndef QB_STDOUT_LOG
-#    define LOG_DEBUG(X) qb::cout() << X
-#    define LOG_VERB(X) qb::cout() << X
-#    define LOG_INFO(X) qb::cout() << X
-#    define LOG_WARN(X) qb::cout() << X
-#    define LOG_CRIT(X) qb::cout() << X
-#else
-#    define LOG_DEBUG(X)
-#    define LOG_VERB(X)
-#    define LOG_INFO(X)
-#    define LOG_WARN(X)
-#    define LOG_CRIT(X)
-#endif
+#    ifdef QB_STDOUT_LOG
+#        define LOG_DEBUG(X) qb::io::cout() << X << std::endl;
+#        define LOG_VERB(X) qb::io::cout() << X << std::endl;
+#        define LOG_INFO(X) qb::io::cout() << X << std::endl;
+#        define LOG_WARN(X) qb::io::cout() << X << std::endl;
+#        define LOG_CRIT(X) qb::io::cout() << X << std::endl;
+#    else
+#        define LOG_DEBUG(X) \
+            do {             \
+            } while (false)
+#        define LOG_VERB(X) \
+            do {            \
+            } while (false)
+#        define LOG_INFO(X) \
+            do {            \
+            } while (false)
+#        define LOG_WARN(X) \
+            do {            \
+            } while (false)
+#        define LOG_CRIT(X) \
+            do {            \
+            } while (false)
+#    endif
 #endif
 
 #endif // QB_TYPES_H

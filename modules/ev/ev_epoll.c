@@ -113,18 +113,12 @@ epoll_modify (EV_P_ int fd, int oev, int nev)
     {
       /* EEXIST means we ignored a previous DEL, but the fd is still active */
       /* if the kernel mask is the same as the new mask, we assume it hasn't changed */
-#ifdef _WIN32
-      ev.events |= EPOLLOUT;
-      if (!epoll_ctl(backend_fd, EPOLL_CTL_DEL, fd, NULL) &&
-          !epoll_ctl(backend_fd, EPOLL_CTL_ADD, fd, &ev))
-        return;
-#else
       if (oldmask == nev)
         goto dec_egen;
 
       if (!epoll_ctl(backend_fd, EPOLL_CTL_MOD, fd, &ev))
         return;
-#endif
+//#endif
     }
   else if (ecb_expect_true (errno == EPERM))
     {

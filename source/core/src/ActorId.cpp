@@ -55,7 +55,7 @@ ActorId::is_valid() const noexcept {
 }
 
 } // namespace qb
-
+#ifdef QB_LOGGER
 qb::io::log::stream &
 qb::operator<<(qb::io::log::stream &os, qb::ActorId const &id) {
     std::stringstream ss;
@@ -63,3 +63,4 @@ qb::operator<<(qb::io::log::stream &os, qb::ActorId const &id) {
     os << ss.str();
     return os;
 }
+#endif

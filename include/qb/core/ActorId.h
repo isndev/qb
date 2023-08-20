@@ -107,9 +107,9 @@ using broadcast_id = BroadcastId;
 using actor_id_list = ActorIdList;
 using actor_is_set = ActorIdSet;
 using core_id_set = CoreIdSet;
-
+#ifdef QB_LOGGER
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
-
+#endif
 } // namespace qb
 
 namespace std {

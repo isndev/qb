@@ -65,7 +65,7 @@ listener::accept(tcp::socket &sock) const noexcept {
 
     auto ret = io::socket::accept_n(nt_sock);
     sock = nt_sock;
-
+    sock.set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
     return ret;
 }
 

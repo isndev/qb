@@ -266,7 +266,8 @@ class input : public base<input<_Derived>, event::io> {
     AProtocol<_Derived> *_protocol = nullptr;
     std::vector<AProtocol<_Derived> *> _protocol_list;
     bool _disconnected_by_user = false;
-    bool _disposed = false;
+    bool _on_message = false;
+    bool _is_disposed = false;
 
 public:
     using base_io_t = input<_Derived>;
@@ -274,7 +275,9 @@ public:
 
     input() = default;
     input(AProtocol<_Derived> *protocol) noexcept
-        : _protocol(protocol) {}
+        : _protocol(protocol) {
+        _protocol_list.push_back(protocol);
+    }
     input(input const &) = delete;
     ~input() noexcept {
         clear_protocols();
@@ -336,7 +339,8 @@ private:
     on(event::io const &event) {
         constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
         std::size_t ret = 0u;
-
+        if (_on_message)
+            return;
         if (_disconnected_by_user || !_protocol->ok())
             goto error;
 
@@ -344,10 +348,12 @@ private:
             ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret))
                 goto error;
+            _on_message = true;
             while ((ret = this->_protocol->getMessageSize()) > 0) {
                 this->_protocol->onMessage(ret);
                 Derived.flush(ret);
             }
+            _on_message = false;
             Derived.eof();
             if constexpr (has_method_on<_Derived, void, event::pending_read>::value ||
                           has_method_on<_Derived, void, event::eof>::value) {
@@ -363,20 +369,18 @@ private:
                     }
                 }
             }
-        }
-
-        if (!(event._revents & EV_ERROR))
             return;
+        }
     error:
         dispose();
     }
 
-public:
+protected:
     void
     dispose() {
-        if (_disposed)
+        if (_is_disposed)
             return;
-        _disposed = true;
+        _is_disposed = true;
         if (!_disconnected_by_user)
             disconnect();
         Derived.close();
@@ -392,7 +396,7 @@ template <typename _Derived>
 class output : public base<output<_Derived>, event::io> {
     using base_t = base<output<_Derived>, event::io>;
     bool _disconnected_by_user = false;
-    bool _disposed = false;
+    bool _is_disposed = false;
 
 public:
     using base_io_t = output<_Derived>;
@@ -463,20 +467,18 @@ private:
                                                event::pending_write>::value) {
                 Derived.on(event::pending_write{Derived.pendingWrite()});
             }
-        }
-
-        if (!(event._revents & EV_ERROR))
             return;
+        }
     error:
         dispose();
     }
 
-public:
+protected:
     void
     dispose() {
-        if (_disposed)
+        if (_is_disposed)
             return;
-        _disposed = true;
+        _is_disposed = true;
         if (!_disconnected_by_user)
             disconnect();
         Derived.close();
@@ -494,15 +496,18 @@ class io : public base<io<_Derived>, event::io> {
     AProtocol<_Derived> *_protocol = nullptr;
     std::vector<AProtocol<_Derived> *> _protocol_list;
     bool _disconnected_by_user = false;
-    bool _disposed = false;
+    bool _on_message = false;
+    bool _is_disposed = false;
 
 public:
-    using base_io_t = io<_Derived>;
+    typedef io<_Derived> base_io_t;
     constexpr static const bool has_server = false;
 
     io() = default;
     io(AProtocol<_Derived> *protocol) noexcept
-        : _protocol(protocol) {}
+        : _protocol(protocol) {
+        _protocol_list.push_back(protocol);
+    }
     io(io const &) = delete;
     ~io() noexcept {
         clear_protocols();
@@ -539,6 +544,8 @@ public:
         _disconnected_by_user = false;
         Derived.transport().set_nonblocking(true);
         this->_async_event.start(Derived.transport().native_handle(), EV_READ);
+        // Derived.in().reserve(32768);
+        // Derived.out().reserve(32768);
     }
 
     void
@@ -575,15 +582,12 @@ public:
 
     void
     disconnect(int reason = 0) {
-        if constexpr (has_method_on<_Derived, void, event::disconnected &&>::value) {
+        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
             Derived.on(event::disconnected{reason});
         }
         _disconnected_by_user = true;
         this->_async_event.feed_event(EV_UNDEF);
-        // listener::current.loop().feed_fd_event(Derived.transport().native_handle(),
-        // EV_UNDEF);
     }
-
 private:
     friend class listener::RegisteredKernelEvent<event::io, io>;
 
@@ -591,20 +595,24 @@ private:
     on(event::io const &event) {
         constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
         std::size_t ret = 0u;
+        bool ok = false;
 
+        if (_on_message)
+            return;
         if (_disconnected_by_user)
             goto error;
-
         if (event._revents & EV_READ && _protocol->ok()) {
             ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret))
                 goto error;
 
+            _on_message = true;
             while ((ret = this->_protocol->getMessageSize()) > 0) {
                 // prevent recall in message
                 this->_protocol->onMessage(ret);
                 Derived.flush(ret);
             }
+            _on_message = false;
             Derived.eof();
             if constexpr (has_method_on<_Derived, void, event::pending_read>::value ||
                           has_method_on<_Derived, void, event::eof>::value) {
@@ -620,6 +628,7 @@ private:
                     }
                 }
             }
+            ok = true;
         }
         if (event._revents & EV_WRITE) {
             ret = static_cast<std::size_t>(Derived.write());
@@ -636,19 +645,20 @@ private:
                                                event::pending_write>::value) {
                 Derived.on(event::pending_write{Derived.pendingWrite()});
             }
+            ok = true;
         }
-        if (!(event._revents & EV_ERROR))
+        if (ok)
             return;
     error:
         dispose();
     }
 
-public:
+protected:
     void
     dispose() {
-        if (_disposed)
+        if (_is_disposed)
             return;
-        _disposed = true;
+        _is_disposed = true;
         if (!_disconnected_by_user)
             disconnect();
         Derived.close();

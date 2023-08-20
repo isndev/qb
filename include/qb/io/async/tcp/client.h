@@ -31,6 +31,7 @@ class client
     friend base_t;
 
 public:
+    using base_io_t = io<_Derived>;
     using transport_io_type = typename _Transport::transport_io_type;
     using _Transport::in;
     using _Transport::out;
@@ -57,6 +58,8 @@ public:
         }
     }
 
+    ~client() = default;
+
     inline _Server &
     server() {
         return _server;
@@ -67,10 +70,10 @@ public:
         return _server;
     }
 
-    inline uuid const &id() const noexcept {
+    inline uuid const &
+    id() const noexcept {
         return _uuid;
     }
-
 };
 
 template <typename _Derived, typename _Transport>
@@ -98,8 +101,10 @@ public:
     }
 
     ~client() {
-        if (transport().is_open()) {
-            this->dispose();
+        if constexpr (!has_method_on<_Derived, void, event::dispose>::value) {
+            if (transport().is_open()) {
+                this->dispose();
+            }
         }
     }
 };
