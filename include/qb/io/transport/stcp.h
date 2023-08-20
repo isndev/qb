@@ -26,10 +26,10 @@ class stcp : public stream<io::tcp::ssl::socket> {
 public:
     [[nodiscard]] int
     read() noexcept {
-        static constexpr const std::size_t bucket_read = 4096;
+        static constexpr const std::size_t bucket_read = 8192;
 
         auto ret = _in.read(_in_buffer.allocate_back(bucket_read), bucket_read);
-        if (likely(ret >= 0)) {
+        if (ret >= 0) {
             _in_buffer.free_back(bucket_read - ret);
             const auto pending = SSL_pending(transport().ssl_handle());
             if (pending) {

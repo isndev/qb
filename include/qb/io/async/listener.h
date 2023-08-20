@@ -142,7 +142,7 @@ run(int flag = 0) {
 inline void
 run_until(bool const &status) {
     while (status)
-        listener::current.run(EVRUN_ONCE);
+        listener::current.run(EVRUN_NOWAIT);
 }
 
 } // namespace qb::io::async

@@ -38,7 +38,6 @@ public:
         , _timeout(timeout > 0. ? ev_time() + timeout : 0.)
         , _remote{remote} {
         LOG_DEBUG("Started async connect to " << remote.source());
-        //_socket.set_nonblocking(true);
         auto ret = _socket.n_connect(remote);
         if (!ret) {
             LOG_DEBUG("Connected directly to " << remote.source());
@@ -64,7 +63,7 @@ public:
             _socket.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)) {
             _socket.disconnect();
             err = 1;
-        } else if ((err && err != EISCONN) && (!_timeout || ev_time() < _timeout))
+        } else if (err && (err != EISCONN) && (!_timeout || ev_time() < _timeout))
             return;
         listener::current.unregisterEvent(event._interface);
         if (!err || err == EISCONN) {

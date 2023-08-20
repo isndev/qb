@@ -30,10 +30,10 @@ socket::operator=(io::socket &&sock) noexcept {
 
 int
 socket::init(int af) noexcept {
-    if (io::socket::open(af, SOCK_STREAM, 0) &&
-        !set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1))
+    if (io::socket::open(af, SOCK_STREAM, 0)) {
+        set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
         return 0;
-
+    }
     return -1;
 }
 
@@ -43,8 +43,8 @@ socket::bind(qb::io::endpoint const &ep) noexcept {
         const auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
         if (af != ep.af())
             return -1;
-    } else
-        init(ep.af());
+    } else if (init(ep.af()))
+        return -1;
 
     return qb::io::socket::bind(ep);
 }
@@ -84,8 +84,8 @@ socket::connect(qb::io::endpoint const &ep) noexcept {
         const auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
         if (af != ep.af())
             return -1;
-    } else
-        init(ep.af());
+    } else if (init(ep.af()))
+        return -1;
 
     return qb::io::socket::connect(ep);
 }

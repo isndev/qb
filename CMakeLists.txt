@@ -44,6 +44,7 @@ option(${QB_PREFIX_UPPER}_BUILD_TEST "Build qb Tests" OFF)
 option(${QB_PREFIX_UPPER}_BUILD_BENCHMARK "Build qb Benchmarks" OFF)
 option(${QB_PREFIX_UPPER}_BUILD_DOC "Build qb Documentation" OFF)
 option(${QB_PREFIX_UPPER}_WITH_LOG "Enable nanolog" ON)
+option(${QB_PREFIX_UPPER}_STDOUT_LOG ON)
 option(${QB_PREFIX_UPPER}_WITH_TCMALLOC "TCMalloc is ennabled" OFF)
 
 if (NOT ${QB_PREFIX_UPPER}_BUILD_ARCH)

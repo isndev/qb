@@ -148,12 +148,14 @@ Service::Service(ServiceId const sid)
     : Actor(ActorId(sid, VirtualCore::_handler->getIndex())) {}
 } // namespace qb
 
+#ifdef QB_LOGGER
 qb::io::log::stream &
 qb::operator<<(qb::io::log::stream &os, qb::Actor const &actor) {
     os << "Actor[" << actor.getName() << "](" << actor.id().index() << "."
        << actor.id().sid() << ")";
     return os;
 }
+#endif
 
 std::ostream &
 qb::operator<<(std::ostream &os, qb::Actor const &actor) {

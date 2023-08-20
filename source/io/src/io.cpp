@@ -52,7 +52,7 @@ uuid generate_random_uuid() {
 #    include "crypto.cpp"
 #endif
 #ifdef QB_IO_WITH_ZLIB
-#include "gzip.cpp"
+#include "compression.cpp"
 #endif
 #include "async/listener.cpp"
 #include "udp/socket.cpp"

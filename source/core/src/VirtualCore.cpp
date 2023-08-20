@@ -391,13 +391,14 @@ VirtualCore::time() const noexcept {
 ServiceId VirtualCore::_nb_service = 0;
 thread_local VirtualCore *VirtualCore::_handler = nullptr;
 } // namespace qb
-
+#ifdef QB_LOGGER
 qb::io::log::stream &
 qb::operator<<(qb::io::log::stream &os, qb::VirtualCore const &core) {
     os << "VirtualCore(" << core.getIndex() << ").id(" << std::this_thread::get_id()
        << ")";
     return os;
 }
+#endif
 
 std::ostream &
 qb::operator<<(std::ostream &os, qb::VirtualCore const &core) {

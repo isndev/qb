@@ -23,6 +23,9 @@ struct OpenSSLInitializer {
     OpenSSLInitializer() noexcept {
         SSL_load_error_strings();
         SSL_library_init();
+#ifndef _WIN32
+        signal(SIGPIPE, SIG_IGN);
+#endif // !_WIN32
     }
 } initializer = {};
 

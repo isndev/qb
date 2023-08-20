@@ -44,6 +44,10 @@ public:
     using IOSession = _Session;
 
     io_handler() = default;
+    ~io_handler() {
+        for (auto &[key, session] : _sessions)
+            delete &session;
+    }
 
     session_map_t &
     sessions() {
