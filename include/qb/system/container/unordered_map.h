@@ -109,6 +109,16 @@ class icase_basic_map : _Map {
     using base_t = _Map;
 
 public:
+    icase_basic_map() = default;
+    icase_basic_map(icase_basic_map const &) = default;
+    icase_basic_map(icase_basic_map &&) noexcept = default;
+    icase_basic_map(std::initializer_list<typename _Map::value_type> il) {
+        for (auto &it : il)
+            emplace(it.first, std::move(it.second));
+    }
+    icase_basic_map &operator=(icase_basic_map const &) = default;
+    icase_basic_map &operator=(icase_basic_map &&) noexcept = default;
+
     template <typename T, typename... _Args>
     auto
     emplace(T &&key, _Args &&... args) {
@@ -156,7 +166,7 @@ public:
     }
 
     template <typename T>
-    auto
+    bool
     has(T &&key) const {
         return find(std::forward<T>(key)) != this->cend();
     }

@@ -239,6 +239,19 @@ Main::__wait__all__cores__ready(std::size_t const nb_core,
 }
 
 void
+Main::setLatency(uint64_t const latency) {
+    for (auto &it : _core_initializers)
+        it.second.setLatency(latency);
+}
+
+qb::CoreIdSet Main::usedCoreSet() const {
+    qb::CoreIdSet ret;
+    for (const auto &it : _core_initializers)
+        ret.emplace(it.first);
+    return ret;
+}
+
+void
 Main::start(bool async) noexcept {
     uint64_t ret = 0;
     if (!_core_initializers.empty()) {

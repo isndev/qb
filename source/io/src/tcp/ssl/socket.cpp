@@ -84,7 +84,7 @@ socket::~socket() noexcept {
         const auto handle = ssl_handle();
         const auto ctx = SSL_get_SSL_CTX(handle);
         const auto is_client = !SSL_is_server(handle);
-        SSL_shutdown(handle);
+        // SSL_shutdown(handle);
         // SSL_free(handle);
         if (is_client)
             SSL_CTX_free(ctx);
