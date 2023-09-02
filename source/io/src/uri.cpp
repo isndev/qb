@@ -36,13 +36,17 @@ const char uri::tbl[256] = {
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 DISABLE_WARNING_POP
 
-uri::uri(uri const &rhs) noexcept
-    : _af(rhs._af)
-    , _source(rhs._source) {
-    parse();
+uri::uri(uri &&rhs) noexcept
+{
+    *this = std::forward<uri>(rhs);
 }
 
-uri::uri(std::string const &str, int af) noexcept
+uri::uri(uri const &rhs)
+{
+    *this = rhs;
+}
+
+uri::uri(std::string const &str, int af)
     : _af(af)
     , _source(str) {
     parse();
@@ -216,20 +220,65 @@ uri::operator=(std::string const &str) {
 }
 
 uri &
-uri::operator=(std::string &&str) {
+uri::operator=(std::string &&str) noexcept {
     from(str);
     return *this;
 }
 
 uri &
 uri::operator=(uri const &rhs) {
-    from(rhs._source);
+    auto tmp = rhs.source().c_str();
+    _af = rhs._af;
+    _source = rhs._source;
+    _queries = rhs._queries;
+    _scheme = {_source.c_str() + std::ptrdiff_t(rhs._scheme.data() - tmp),
+               rhs._scheme.size()};
+    _user = {_source.c_str() + std::ptrdiff_t(rhs._user.data() - tmp), rhs._user.size()};
+    _password = {_source.c_str() + std::ptrdiff_t(rhs._password.data() - tmp),
+                 rhs._password.size()};
+    _host = {_source.c_str() + std::ptrdiff_t(rhs._host.data() - tmp), rhs._host.size()};
+    if (rhs._port.data() >= tmp && rhs._port.data() <= (tmp + _source.size()))
+        _port = {_source.c_str() + std::ptrdiff_t(rhs._port.data() - tmp),
+                 rhs._port.size()};
+    else
+        _port = rhs._port;
+    if (rhs._full_path.data() >= tmp &&
+        rhs._full_path.data() <= (tmp + _source.size())) {
+        _full_path = {_source.c_str() + std::ptrdiff_t(rhs._full_path.data() - tmp),
+                      rhs._full_path.size()};
+        _path = {_source.c_str() + std::ptrdiff_t(rhs._path.data() - tmp),
+                 rhs._path.size()};
+    } else {
+        _full_path = rhs._full_path;
+        _path = rhs._path;
+    }
     return *this;
 }
 
 uri &
-uri::operator=(uri &&rhs) {
-    from(std::move(rhs._source));
+uri::operator=(uri &&rhs) noexcept {
+    auto tmp = rhs.source().c_str();
+    _af = rhs._af;
+    _source = std::move(rhs._source);
+    _queries = std::move(rhs._queries);
+    _scheme = {_source.c_str() + std::ptrdiff_t(rhs._scheme.data() - tmp), rhs._scheme.size()};
+    _user = {_source.c_str() + std::ptrdiff_t(rhs._user.data() - tmp), rhs._user.size()};
+    _password = {_source.c_str() + std::ptrdiff_t(rhs._password.data() - tmp), rhs._password.size()};
+    _host  = {_source.c_str() + std::ptrdiff_t(rhs._host.data() - tmp), rhs._host.size()};
+    if (rhs._port.data() >= tmp && rhs._port.data() <= (tmp + _source.size()))
+        _port = {_source.c_str() + std::ptrdiff_t(rhs._port.data() - tmp), rhs._port.size()};
+    else
+        _port = rhs._port;
+    if (rhs._full_path.data() >= tmp &&
+        rhs._full_path.data() <= (tmp + _source.size())) {
+        _full_path = {_source.c_str() + std::ptrdiff_t(rhs._full_path.data() - tmp),
+                      rhs._full_path.size()};
+        _path = {_source.c_str() + std::ptrdiff_t(rhs._path.data() - tmp),
+                 rhs._path.size()};
+    } else {
+        _full_path = rhs._full_path;
+        _path = rhs._path;
+    }
     return *this;
 }
 

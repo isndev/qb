@@ -315,13 +315,17 @@ public:
      */
     CoreInitializer &core(CoreId index);
 
-    qb::CoreIdSet usedCoreSet() const {
-        qb::CoreIdSet ret;
-        for (const auto &it : _core_initializers)
-            ret.emplace(it.first);
-        return ret;
-    }
+    /*!
+     * @brief Set Latency to all cores
+     * @param latency in ns, 0 = nowait for io events
+     * @return CoreInitializer &
+     * @attention
+     * This function is not available while engine is running.
+     * but can be modified directly in Core api in Actors
+     */
+    void setLatency(uint64_t latency = 0);
 
+    qb::CoreIdSet usedCoreSet() const;
 
     /*!
      * @brief Register signal for all engines

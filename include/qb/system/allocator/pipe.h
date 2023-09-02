@@ -58,11 +58,21 @@ public:
         , _factor(1)
         , _data(base_type::allocate(_SIZE)) {}
 
-    // no copy
-    base_pipe(base_pipe const &) = delete;
-    // but movable
-    base_pipe(base_pipe &&rhs)
-        : _begin(rhs._begin)
+    base_pipe(base_pipe const &rhs)
+        : base_type()
+        , _begin(0)
+        , _end(0)
+        , _flag_front(false)
+        , _capacity(0)
+        , _factor(1)
+        , _data(nullptr)
+    {
+        std::memcpy(allocate_back(rhs.size()), rhs._data, rhs.size() * sizeof(T));
+    }
+
+    base_pipe(base_pipe &&rhs) noexcept
+        : base_type()
+        , _begin(rhs._begin)
         , _end(rhs._end)
         , _flag_front(rhs._flag_front)
         , _capacity(rhs._capacity)
@@ -75,12 +85,26 @@ public:
         rhs._data = nullptr;
     }
 
-    // not assignable
-    base_pipe operator=(base_pipe const &) = delete;
-    base_pipe operator=(base_pipe &&rhs) = delete;
+    base_pipe &operator=(base_pipe const &) = delete;
+    base_pipe &operator=(base_pipe &&rhs) noexcept {
+        base_type::deallocate(_data, _capacity);
+        _begin = rhs._begin;
+        _end = rhs._end;
+        _flag_front = rhs._flag_front;
+        _capacity = rhs._capacity;
+        _factor = rhs._factor;
+        _data = rhs._data;
+        rhs._begin = rhs._end = 0;
+        rhs._flag_front = false;
+        rhs._capacity = 0;
+        rhs._factor = 1;
+        rhs._data = nullptr;
+        return *this;
+    }
 
     ~base_pipe() {
-        base_type::deallocate(_data, _capacity);
+        if (_capacity)
+            base_type::deallocate(_data, _capacity);
     }
 
     [[nodiscard]] inline std::size_t
@@ -118,6 +142,13 @@ public:
         return _end - _begin;
     }
 
+    void resize(std::size_t new_size) {
+        if (new_size <= size())
+            _end -= size() - new_size;
+        else
+            allocate_back(new_size - size());
+    }
+
     inline void
     free_front(std::size_t const size) noexcept {
         _begin += size;
@@ -143,6 +174,14 @@ public:
         _begin = 0;
         _end = 0;
         _flag_front = false;
+    }
+
+    inline void clear() noexcept {
+        reset();
+    }
+
+    inline bool empty() const noexcept {
+        return _begin == _end;
     }
 
     inline void
@@ -175,7 +214,8 @@ public:
 
             const auto new_data = base_type::allocate(new_capacity);
             std::memcpy(new_data, _data + _begin, nb_item * sizeof(T));
-            base_type::deallocate(_data, _capacity);
+            if (_capacity)
+                base_type::deallocate(_data, _capacity);
 
             _begin = 0;
             _end = nb_item + size;

@@ -23,6 +23,17 @@
 
 namespace qb {
 
+template <typename T>
+struct crtp {
+    inline T &impl() noexcept {
+        return static_cast<T &>(*this);
+    }
+
+    inline T const &impl() const noexcept {
+        return static_cast<T &>(*this);
+    }
+};
+
 namespace detail {
 // SFINAE type trait to detect whether T::const_iterator exists.
 

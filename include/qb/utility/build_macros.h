@@ -219,6 +219,7 @@
 
 #define DISABLE_WARNING_DEPRECATED                       DISABLE_WARNING(4996)
 #define DISABLE_WARNING_OLD_STYLE_CAST
+#define DISABLE_WARNING_IMPLICIT_FALLTHROUGH
 // other warnings you want to deactivate...
 
 #elif defined(__GNUC__) || defined(__clang__)
@@ -232,6 +233,7 @@
 #define DISABLE_WARNING_NARROWING                        DISABLE_WARNING(-Wnarrowing)
 #define DISABLE_WARNING_DEPRECATED                       DISABLE_WARNING(-Wdeprecated-declarations)
 #define DISABLE_WARNING_OLD_STYLE_CAST                   DISABLE_WARNING(-Wold-style-cast)
+#define DISABLE_WARNING_IMPLICIT_FALLTHROUGH             DISABLE_WARNING(-Wimplicit-fallthrough)
 // other warnings you want to deactivate...
 
 #else
@@ -242,7 +244,7 @@
 #define DISABLE_WARNING_NARROWING
 #define DISABLE_WARNING_DEPRECATED
 #define DISABLE_WARNING_OLD_STYLE_CAST
-// other warnings you want to deactivate...
+#define DISABLE_WARNING_IMPLICIT_FALLTHROUGH
 
 #endif
 

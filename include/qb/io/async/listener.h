@@ -118,7 +118,7 @@ public:
     }
 
     [[nodiscard]] inline std::size_t
-    getNbInvokedEvent() const {
+    nb_invoked_event() const {
         return _nb_invoked_events;
     }
 
@@ -136,13 +136,13 @@ init() {
 inline std::size_t
 run(int flag = 0) {
     listener::current.run(flag);
-    return listener::current.getNbInvokedEvent();
+    return listener::current.nb_invoked_event();
 }
 
 inline void
 run_until(bool const &status) {
     while (status)
-        listener::current.run(EVRUN_NOWAIT);
+        listener::current.run(EVRUN_ONCE);
 }
 
 } // namespace qb::io::async

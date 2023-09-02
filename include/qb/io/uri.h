@@ -52,9 +52,9 @@ class uri {
 
 public:
     uri() = default;
-    uri(uri &&rhs) = default;
-    uri(uri const &rhs) noexcept;
-    uri(std::string const &str, int af = AF_INET) noexcept;
+    uri(uri &&rhs) noexcept;
+    uri(uri const &rhs);
+    uri(std::string const &str, int af = AF_INET);
     uri(std::string &&str, int af = AF_INET) noexcept;
 
     static const char tbl[256];
@@ -110,10 +110,10 @@ public:
     static std::string encode(const char *input, std::size_t size) noexcept;
     static uri parse(std::string const &str, int af = AF_INET) noexcept;
 
-    uri &operator=(uri const &str);
-    uri &operator=(uri &&str);
+    uri &operator=(uri const &rhs);
+    uri &operator=(uri &&rhs) noexcept;
     uri &operator=(std::string const &str);
-    uri &operator=(std::string &&str);
+    uri &operator=(std::string &&str) noexcept;
 
     [[nodiscard]] inline auto
     af() const {
