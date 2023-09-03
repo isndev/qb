@@ -789,14 +789,58 @@ public:
             .first;
     }
 
-    template <typename K2, typename V2, typename H2, typename E2, typename A2>
-    void merge(unordered_map<K2, V2, H2, E2, A2> &source) {
-        std::copy(std::cbegin(source), std::cend(source), std::inserter(*this, this->end()));
+    template <typename _Obj>
+    std::pair<typename Table::iterator, bool>
+    insert_or_assign(const key_type &__k, _Obj &&__obj) {
+        auto __ret = try_emplace(__k, std::forward<_Obj>(__obj));
+        if (!__ret.second)
+            __ret.first->second = std::forward<_Obj>(__obj);
+        return __ret;
+    }
+
+    // move-capable overload
+    template <typename _Obj>
+    std::pair<typename Table::iterator, bool>
+    insert_or_assign(key_type &&__k, _Obj &&__obj) {
+        auto __ret = try_emplace(std::move(__k), std::forward<_Obj>(__obj));
+        if (!__ret.second)
+            __ret.first->second = std::forward<_Obj>(__obj);
+        return __ret;
+    }
+
+    template <typename _Obj>
+    typename Table::iterator
+    insert_or_assign(typename Table::const_iterator __hint, const key_type &__k,
+                     _Obj &&__obj) {
+        auto __ret = try_emplace(__k, std::forward<_Obj>(__obj));
+        if (!__ret.second)
+            __ret.first->second = std::forward<_Obj>(__obj);
+        return __ret.first;
+    }
+
+    // move-capable overload
+    template <typename _Obj>
+    typename Table::iterator
+    insert_or_assign(typename Table::const_iterator __hint, key_type &&__k,
+                     _Obj &&__obj) {
+        auto __ret = try_emplace(std::move(__k), std::forward<_Obj>(__obj));
+        if (!__ret.second)
+            __ret.first->second = std::forward<_Obj>(__obj);
+        return __ret.first;
     }
 
     template <typename K2, typename V2, typename H2, typename E2, typename A2>
-    void merge(unordered_map<K2, V2, H2, E2, A2> &&source) {
-        std::move(std::cbegin(source), std::cend(source), std::inserter(*this, this->end()));
+    void
+    merge(unordered_map<K2, V2, H2, E2, A2> &source) {
+        std::copy(std::cbegin(source), std::cend(source),
+                  std::inserter(*this, this->end()));
+    }
+
+    template <typename K2, typename V2, typename H2, typename E2, typename A2>
+    void
+    merge(unordered_map<K2, V2, H2, E2, A2> &&source) {
+        std::move(std::cbegin(source), std::cend(source),
+                  std::inserter(*this, this->end()));
     }
 
     friend bool

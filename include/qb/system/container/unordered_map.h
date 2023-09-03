@@ -177,7 +177,6 @@ public:
     using base_t::clear;
     using base_t::end;
     using base_t::erase;
-    using base_t::insert;
     using base_t::size;
 
     template <typename T>
