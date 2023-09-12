@@ -67,7 +67,7 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u6.query("query2") == "value2");
     qb::io::uri u7{"https://[::1]/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u7.scheme() == "https");
-    EXPECT_TRUE(u7.host() == "::1");
+    EXPECT_TRUE(u7.host() == "[::1]");
     EXPECT_TRUE(u7.path() == "/section1/section2/action");
     EXPECT_TRUE(u7.u_port() == 443);
     EXPECT_TRUE(u7.query("query1") == "value1");
@@ -75,7 +75,7 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u7.af() == AF_INET6);
     qb::io::uri u8{"https://[::1]:8080/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u8.scheme() == "https");
-    EXPECT_TRUE(u8.host() == "::1");
+    EXPECT_TRUE(u8.host() == "[::1]");
     EXPECT_TRUE(u8.path() == "/section1/section2/action");
     EXPECT_TRUE(u8.u_port() == 8080);
     EXPECT_TRUE(u8.query("query1") == "value1");
@@ -89,8 +89,7 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u9.af() == AF_UNIX);
     qb::io::uri u10{"https://user:password@www.example.com/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u10.scheme() == "https");
-    EXPECT_TRUE(u10.user() == "user");
-    EXPECT_TRUE(u10.password() == "password");
+    EXPECT_TRUE(u10.user_info() == "user:password");
     EXPECT_TRUE(u10.host() == "www.example.com");
     EXPECT_TRUE(u10.path() == "/section1/section2/action");
     EXPECT_TRUE(u10.u_port() == 443);
@@ -98,8 +97,7 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u10.query("query2") == "value2");
     qb::io::uri u20{"https://user:password@www.example.com:8080/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u20.scheme() == "https");
-    EXPECT_TRUE(u20.user() == "user");
-    EXPECT_TRUE(u20.password() == "password");
+    EXPECT_TRUE(u20.user_info() == "user:password");
     EXPECT_TRUE(u20.host() == "www.example.com");
     EXPECT_TRUE(u20.path() == "/section1/section2/action");
     EXPECT_TRUE(u20.u_port() == 8080);
@@ -107,8 +105,7 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u20.query("query2") == "value2");
     qb::io::uri u30{"https://user:password@localhost/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u30.scheme() == "https");
-    EXPECT_TRUE(u30.user() == "user");
-    EXPECT_TRUE(u30.password() == "password");
+    EXPECT_TRUE(u30.user_info() == "user:password");
     EXPECT_TRUE(u30.host() == "localhost");
     EXPECT_TRUE(u30.path() == "/section1/section2/action");
     EXPECT_TRUE(u30.u_port() == 443);
@@ -116,8 +113,7 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u30.query("query2") == "value2");
     qb::io::uri u40{"https://user:password@localhost:8080/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u40.scheme() == "https");
-    EXPECT_TRUE(u40.user() == "user");
-    EXPECT_TRUE(u40.password() == "password");
+    EXPECT_TRUE(u40.user_info() == "user:password");
     EXPECT_TRUE(u40.host() == "localhost");
     EXPECT_TRUE(u40.path() == "/section1/section2/action");
     EXPECT_TRUE(u40.u_port() == 8080);
@@ -125,8 +121,7 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u40.query("query2") == "value2");
     qb::io::uri u50{"https://user:password@127.0.0.1/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u50.scheme() == "https");
-    EXPECT_TRUE(u50.user() == "user");
-    EXPECT_TRUE(u50.password() == "password");
+    EXPECT_TRUE(u50.user_info() == "user:password");
     EXPECT_TRUE(u50.host() == "127.0.0.1");
     EXPECT_TRUE(u50.path() == "/section1/section2/action");
     EXPECT_TRUE(u50.u_port() == 443);
@@ -134,8 +129,7 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u50.query("query2") == "value2");
     qb::io::uri u60{"https://user:password@127.0.0.1:8080/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u60.scheme() == "https");
-    EXPECT_TRUE(u60.user() == "user");
-    EXPECT_TRUE(u60.password() == "password");
+    EXPECT_TRUE(u60.user_info() == "user:password");
     EXPECT_TRUE(u60.host() == "127.0.0.1");
     EXPECT_TRUE(u60.path() == "/section1/section2/action");
     EXPECT_TRUE(u60.u_port() == 8080);
@@ -143,23 +137,22 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u60.query("query2") == "value2");
     qb::io::uri u70{"https://user:password@[::1]/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u70.scheme() == "https");
-    EXPECT_TRUE(u70.user() == "user");
-    EXPECT_TRUE(u70.password() == "password");
-    EXPECT_TRUE(u70.host() == "::1");
+    EXPECT_TRUE(u70.user_info() == "user:password");
+    EXPECT_TRUE(u70.host() == "[::1]");
     EXPECT_TRUE(u70.path() == "/section1/section2/action");
     EXPECT_TRUE(u70.u_port() == 443);
     EXPECT_TRUE(u70.query("query1") == "value1");
     EXPECT_TRUE(u70.query("query2") == "value2");
     EXPECT_TRUE(u70.af() == AF_INET6);
-    qb::io::uri u80{"https://user:password@[::1]:8080/section1/section2/action?query1=value1&query2=value2"};
+    qb::io::uri u80{"https://user:password@[::1]:8080/section1/section2/action?query1%5B%5D=value1&query2%5B%5D=value2#fragment"};
     EXPECT_TRUE(u80.scheme() == "https");
-    EXPECT_TRUE(u80.user() == "user");
-    EXPECT_TRUE(u80.password() == "password");
-    EXPECT_TRUE(u80.host() == "::1");
+    EXPECT_TRUE(u80.user_info() == "user:password");
+    EXPECT_TRUE(u80.host() == "[::1]");
     EXPECT_TRUE(u80.path() == "/section1/section2/action");
     EXPECT_TRUE(u80.u_port() == 8080);
-    EXPECT_TRUE(u80.query("query1") == "value1");
-    EXPECT_TRUE(u80.query("query2") == "value2");
+    EXPECT_TRUE(u80.query("query1[]") == "value1");
+    EXPECT_TRUE(u80.query("query2[]") == "value2");
+    EXPECT_TRUE(u80.fragment() == "fragment");
     EXPECT_TRUE(u80.af() == AF_INET6);
 }
 

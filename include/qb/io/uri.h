@@ -29,23 +29,98 @@
 #    define QB_IO_URI_H_
 
 namespace qb::io {
+
+inline bool
+is_alnum(int c) {
+    return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+}
+
+inline bool
+is_unreserved(int c) {
+    return is_alnum((char)c) || c == '-' || c == '.' || c == '_' || c == '~';
+}
+
+inline bool
+is_gen_delim(int c) {
+    return c == ':' || c == '/' || c == '?' || c == '#' || c == '[' || c == ']' ||
+           c == '@';
+}
+
+inline bool
+is_sub_delim(int c) {
+    switch (c) {
+    case '!':
+    case '$':
+    case '&':
+    case '\'':
+    case '(':
+    case ')':
+    case '*':
+    case '+':
+    case ',':
+    case ';':
+    case '=':
+        return true;
+    default:
+        return false;
+    }
+}
+
+inline bool
+is_reserved(int c) {
+    return is_gen_delim(c) || is_sub_delim(c);
+}
+
+inline bool
+is_scheme_character(int c) {
+    return is_alnum((char)c) || c == '+' || c == '-' || c == '.';
+}
+
+inline bool
+is_user_info_character(int c) {
+    return is_unreserved(c) || is_sub_delim(c) || c == '%' || c == ':';
+}
+
+inline bool
+is_authority_character(int c) {
+    return is_unreserved(c) || is_sub_delim(c) || c == '%' || c == '@' || c == ':' ||
+           c == '[' || c == ']';
+}
+
+inline bool
+is_path_character(int c) {
+    return is_unreserved(c) || is_sub_delim(c) || c == '%' || c == '/' || c == ':' ||
+           c == '@';
+}
+
+inline bool
+is_query_character(int c) {
+    return is_path_character(c) || c == '?';
+}
+
+inline bool
+is_fragment_character(int c) {
+    // this is intentional, they have the same set of legal characters
+    return is_query_character(c);
+}
+
 class uri {
     int _af = AF_INET;
     std::string _source;
     std::string_view _scheme;
-    std::string_view _user;
-    std::string_view _password;
+    std::string_view _user_info;
     std::string_view _host;
     std::string_view _port;
-    std::string_view _full_path;
     std::string_view _path;
+    std::string_view _raw_queries;
+    std::string_view _fragment;
     qb::icase_unordered_map<std::vector<std::string>> _queries;
 
     constexpr static const char no_path[] = "/";
 
     bool parse_queries(std::size_t pos) noexcept;
-    bool parse_v6(std::size_t pos) noexcept;
-    bool parse_v4() noexcept;
+//    bool parse_v6(std::size_t pos) noexcept;
+//    bool parse_v4() noexcept;
     bool parse() noexcept;
     bool from(std::string const &rhs) noexcept;
     bool from(std::string &&rhs) noexcept;
@@ -80,26 +155,32 @@ public:
         return out;
     }
 
-    constexpr static const char dont_escape[] = "._-$,;~()";
-    constexpr static const char hex[] = "0123456789abcdef";
+    constexpr static const char hex[] = "0123456789ABCDEF";
     template <typename _IT>
     static std::string
     encode(_IT begin, _IT end) noexcept {
-        std::string dst;
-        dst.reserve(static_cast<ptrdiff_t>(end - begin) * 3);
+        std::string encoded;
 
-        while (begin != end) {
-            if (isalnum(*begin) || strchr(dont_escape, *begin) != NULL) {
-                dst.push_back(*begin);
-            } else {
-                dst.push_back('%');
-                dst.push_back(hex[(*begin) >> 4]);
-                dst.push_back(hex[(*begin) & 0xf]);
+        encoded.reserve(static_cast<ptrdiff_t>(end - begin) * 3);
+        for (auto iter = begin; iter != end; ++iter)
+        {
+            // for utf8 encoded string, char ASCII can be greater than 127.
+            int ch = static_cast<unsigned char>(*iter);
+            // ch should be same under both utf8 and utf16.
+            if (!is_unreserved(ch) && !is_reserved(ch))
+            {
+                encoded.push_back('%');
+                encoded.push_back(hex[(ch >> 4) & 0xF]);
+                encoded.push_back(hex[ch & 0xF]);
             }
-            ++begin;
+            else
+            {
+                // ASCII don't need to be encoded, which should be same on both utf8 and utf16.
+                encoded.push_back((char)ch);
+            }
         }
 
-        return dst;
+        return encoded;
     }
 
     static std::string decode(std::string const &input) noexcept;
@@ -128,13 +209,10 @@ public:
         return _scheme;
     }
     [[nodiscard]] inline auto
-    user() const {
-        return _user;
+    user_info() const {
+        return _user_info;
     }
-    [[nodiscard]] inline auto
-    password() const {
-        return _password;
-    }
+
     [[nodiscard]] inline auto
     host() const {
         return _host;
@@ -143,24 +221,24 @@ public:
     port() const {
         return _port;
     }
-    [[nodiscard]] inline auto
-    full_path() const {
-        return _full_path;
-    }
-    [[nodiscard]] inline auto
-    path() const {
-        return _path;
-    }
-    [[nodiscard]] inline const auto &
-    queries() const {
-        return _queries;
-    }
     [[nodiscard]] uint16_t
     u_port() const {
         int p = 0;
 
         std::from_chars(port().data(), port().data() + port().size(), p);
         return static_cast<uint16_t>(p);
+    }
+    [[nodiscard]] inline auto
+    path() const {
+        return _path;
+    }
+    [[nodiscard]] inline const auto &
+    encoded_queries() const {
+        return _raw_queries;
+    }
+    [[nodiscard]] inline const auto &
+    queries() const {
+        return _queries;
     }
 
     template <typename T>
@@ -172,6 +250,10 @@ public:
             return it->second[index];
 
         return not_found;
+    }
+    [[nodiscard]] inline auto
+    fragment() const {
+        return _fragment;
     }
 };
 } // namespace qb::io
