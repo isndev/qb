@@ -36,13 +36,11 @@ const char uri::tbl[256] = {
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 DISABLE_WARNING_POP
 
-uri::uri(uri &&rhs) noexcept
-{
+uri::uri(uri &&rhs) noexcept {
     *this = std::forward<uri>(rhs);
 }
 
-uri::uri(uri const &rhs)
-{
+uri::uri(uri const &rhs) {
     *this = rhs;
 }
 
@@ -58,86 +56,6 @@ uri::uri(std::string &&str, int af) noexcept
     parse();
 }
 
-bool
-uri::parse_queries(std::size_t pos) noexcept {
-    static const std::regex query_regex("(\\?|&)([^=]*)=([^&]*)");
-
-    if (pos != std::string::npos) {
-        _path = {_full_path.data(), static_cast<std::size_t>(pos)};
-        auto search = _full_path.data() + pos;
-        const auto end = _full_path.data() + _full_path.size();
-        std::cmatch what;
-        while (std::regex_search(search, end, what, query_regex)) {
-            _queries[std::string(what[2].first,
-                                 static_cast<std::size_t>(what[2].length()))]
-                .push_back(
-                    decode(what[3].first,
-                           what[3].first + static_cast<std::size_t>(what[3].length())));
-            search += what[0].length();
-        }
-    } else
-        _path = _full_path;
-
-    return true;
-}
-
-static const std::regex uri_regex_p1("((\\w+)://)?(([^:]+)(:(.+))?@)?");
-static const std::regex uri_regex_p2("(:(\\d+))?(.+)?");
-
-bool
-uri::parse_v6(std::size_t pos) noexcept {
-    const auto begin_p1 = _source.c_str();
-    const auto end_p1 = begin_p1 + pos;
-
-    std::cmatch what;
-    if (!std::regex_match(begin_p1, end_p1, what, uri_regex_p1))
-        return false;
-
-    _scheme = {what[2].first, static_cast<std::size_t>(what[2].length())};
-    _user = {what[4].first, static_cast<std::size_t>(what[4].length())};
-    _password = {what[6].first, static_cast<std::size_t>(what[6].length())};
-
-    const auto begin_host = end_p1 + 1;
-    const auto end = begin_p1 + _source.size();
-    const auto end_host = std::find(begin_host, end, ']');
-
-    if (end_host == end)
-        return false;
-
-    _host = {begin_host, static_cast<std::size_t>(end_host - begin_host)};
-
-    std::regex_match(end_host + 1, end, what, uri_regex_p2);
-
-    _port = {what[2].first, static_cast<std::size_t>(what[2].length())};
-    _full_path =
-        what[3].length()
-            ? std::string_view{what[3].first, static_cast<std::size_t>(what[3].length())}
-            : no_path;
-
-    return parse_queries(_full_path.find_first_of('?'));
-}
-
-static const std::regex
-    uri_regex("((\\w+)://)?(([^:]+)(:(.+))?@)?([a-zA-Z0-9\\.-]+)(:(\\d+))?(.+)?");
-
-bool
-uri::parse_v4() noexcept {
-    std::cmatch what;
-    if (!std::regex_match(_source.c_str(), what, uri_regex))
-        return false;
-    _scheme = {what[2].first, static_cast<std::size_t>(what[2].length())};
-    _user = {what[4].first, static_cast<std::size_t>(what[4].length())};
-    _password = {what[6].first, static_cast<std::size_t>(what[6].length())};
-    _host = {what[7].first, static_cast<std::size_t>(what[7].length())};
-    _port = {what[9].first, static_cast<std::size_t>(what[9].length())};
-    _full_path = what[10].length() || _af == AF_UNIX
-                     ? std::string_view{what[10].first,
-                                        static_cast<std::size_t>(what[10].length())}
-                     : no_path;
-
-    return parse_queries(_full_path.find_first_of('?'));
-}
-
 static const qb::unordered_map<std::string_view, std::string_view> default_ports{
     {"unix", "0"},    {"ftp", "21"},    {"sftp", "22"},   {"ssh", "22"},
     {"telnet", "23"}, {"smtp", "25"},   {"dns", "53"},    {"http", "80"},
@@ -150,20 +68,208 @@ static const qb::unordered_map<std::string_view, std::string_view> default_ports
 bool
 uri::parse() noexcept {
     _queries.clear();
-    const auto pos_v6 = _source.find_first_of('[');
-    const auto ret = (pos_v6 == std::string::npos
-                         ? parse_v4()
-                         : (parse_v6(pos_v6) && (_af = AF_INET6)));
-    if (!_port.size()) {
-        const auto it = default_ports.find(_scheme);
-        if (it != default_ports.end())
+
+    const char *p = _source.c_str();
+    const char *scheme_begin = nullptr;
+    const char *scheme_end = nullptr;
+    const char *uinfo_begin = nullptr;
+    const char *uinfo_end = nullptr;
+    const char *host_begin = nullptr;
+    const char *host_end = nullptr;
+    const char *port_begin = nullptr;
+    const char *port_end = nullptr;
+    const char *path_begin = nullptr;
+    const char *path_end = nullptr;
+    const char *query_begin = nullptr;
+    const char *query_end = nullptr;
+    const char *fragment_begin = nullptr;
+    const char *fragment_end = nullptr;
+
+    // IMPORTANT -- A uri may either be an absolute uri, or an relative-reference
+    // Absolute: 'http://host.com'
+    // Relative-Reference: '//:host.com', '/path1/path2?query', './path1:path2'
+    // A Relative-Reference can be disambiguated by parsing for a ':' before the first
+    // slash
+
+    bool is_relative_reference = true;
+    const char *p2 = p;
+    for (; *p2 != '/' && *p2 != '\0'; p2++) {
+        if (*p2 == ':') {
+            // found a colon, the first portion is a scheme
+            is_relative_reference = false;
+            break;
+        }
+    }
+
+    if (!is_relative_reference) {
+        // the first character of a scheme must be a letter
+        if (!isalpha(*p)) {
+            return false;
+        }
+
+        // start parsing the scheme, it's always delimited by a colon (must be present)
+        scheme_begin = p++;
+        for (; *p != ':'; p++) {
+            if (!is_scheme_character(*p)) {
+                return false;
+            }
+        }
+        scheme_end = p;
+
+        // skip over the colon
+        p++;
+    }
+
+    // if we see two slashes next, then we're going to parse the authority portion
+    // later on we'll break up the authority into the port and host
+    const char *authority_begin = nullptr;
+    const char *authority_end = nullptr;
+    if (*p == '/' && p[1] == '/') {
+        // skip over the slashes
+        p += 2;
+        authority_begin = p;
+
+        // the authority is delimited by a slash (resource), question-mark (query) or
+        // octothorpe (fragment) or by EOS. The authority could be empty
+        // ('file:///C:\file_name.txt')
+        for (; *p != '/' && *p != '?' && *p != '#' && *p != '\0'; p++) {
+            // We're NOT currently supporting IPvFuture or username/password in authority
+            // IPv6 as the host (i.e. http://[:::::::]) is allowed as valid URI and
+            // passed to subsystem for support.
+            if (!is_authority_character(*p)) {
+                return false;
+            }
+        }
+        authority_end = p;
+
+        // now lets see if we have a port specified -- by working back from the end
+        if (authority_begin != authority_end) {
+            // the port is made up of all digits
+            port_begin = authority_end - 1;
+            for (; isdigit(*port_begin) && port_begin != authority_begin; port_begin--) {
+            }
+
+            if (*port_begin == ':') {
+                // has a port
+                host_begin = authority_begin;
+                host_end = port_begin;
+
+                // skip the colon
+                port_begin++;
+                port_end = authority_end;
+            } else {
+                // no port
+                host_begin = authority_begin;
+                host_end = authority_end;
+            }
+
+            // look for a user_info component
+            const char *u_end = host_begin;
+            for (; is_user_info_character(*u_end) && u_end != host_end; u_end++) {
+            }
+
+            if (*u_end == '@') {
+                host_begin = u_end + 1;
+                uinfo_begin = authority_begin;
+                uinfo_end = u_end;
+            }
+        }
+    }
+
+    // if we see a path character or a slash, then the
+    // if we see a slash, or any other legal path character, parse the path next
+    if (*p == '/' || is_path_character(*p)) {
+        path_begin = p;
+
+        // the path is delimited by a question-mark (query) or octothorpe (fragment) or
+        // by EOS
+        for (; *p != '?' && *p != '#' && *p != '\0'; p++) {
+            if (!is_path_character(*p)) {
+                return false;
+            }
+        }
+        path_end = p;
+    }
+
+    // if we see a ?, then the query is next
+    if (*p == '?') {
+        // skip over the question mark
+        p++;
+        query_begin = p;
+
+        // the query is delimited by a '#' (fragment) or EOS
+        for (; *p != '#' && *p != '\0'; p++) {
+            if (!is_query_character(*p)) {
+                return false;
+            }
+        }
+        query_end = p;
+    }
+
+    // if we see a #, then the fragment is next
+    if (*p == '#') {
+        // skip over the hash mark
+        p++;
+        fragment_begin = p;
+
+        // the fragment is delimited by EOS
+        for (; *p != '\0'; p++) {
+            if (!is_fragment_character(*p)) {
+                return false;
+            }
+        }
+        fragment_end = p;
+    }
+
+    if (scheme_begin) {
+        _scheme = {scheme_begin, scheme_end - scheme_begin};
+        if (_scheme == "unix")
+            _af = AF_UNIX;
+    }
+
+    if (uinfo_begin)
+        _user_info = {uinfo_begin, uinfo_end - uinfo_begin};
+
+    if (host_begin) {
+        _host = {host_begin, host_end - host_begin};
+        if (_af != AF_UNIX)
+            _af = _host.find_first_of(':') == std::string::npos ? AF_INET : AF_INET6;
+    }
+
+    if (port_end)
+        _port = {port_begin, port_end - port_begin};
+    else {
+        auto it = default_ports.find(std::string(_scheme));
+        if (it != std::end(default_ports))
             _port = it->second;
     }
 
-    if (_scheme == "unix")
-        _af = AF_UNIX;
+    if (path_begin)
+        _path = {path_begin, path_end - path_begin};
+    else
+        _path = "/";
 
-    return ret;
+    if (query_begin) {
+        _raw_queries = {query_begin, query_end - query_begin};
+        static const std::regex query_regex("(&?)([^=]*)=([^&]*)");
+
+        auto search = query_begin;
+        const auto end = query_end;
+        std::cmatch what;
+        while (std::regex_search(search, end, what, query_regex)) {
+            _queries[decode(what[2].first,
+                                 static_cast<std::size_t>(what[2].length()))]
+                .push_back(
+                    decode(what[3].first,
+                           what[3].first + static_cast<std::size_t>(what[3].length())));
+            search += what[0].length();
+        }
+    }
+
+    if (fragment_begin)
+        _fragment = {fragment_begin, fragment_end - fragment_begin};
+
+    return true;
 }
 
 bool
@@ -221,64 +327,22 @@ uri::operator=(std::string const &str) {
 
 uri &
 uri::operator=(std::string &&str) noexcept {
-    from(str);
+    _source = std::move(str);
+    parse();
     return *this;
 }
 
 uri &
 uri::operator=(uri const &rhs) {
-    auto tmp = rhs.source().c_str();
-    _af = rhs._af;
     _source = rhs._source;
-    _queries = rhs._queries;
-    _scheme = {_source.c_str() + std::ptrdiff_t(rhs._scheme.data() - tmp),
-               rhs._scheme.size()};
-    _user = {_source.c_str() + std::ptrdiff_t(rhs._user.data() - tmp), rhs._user.size()};
-    _password = {_source.c_str() + std::ptrdiff_t(rhs._password.data() - tmp),
-                 rhs._password.size()};
-    _host = {_source.c_str() + std::ptrdiff_t(rhs._host.data() - tmp), rhs._host.size()};
-    if (rhs._port.data() >= tmp && rhs._port.data() <= (tmp + _source.size()))
-        _port = {_source.c_str() + std::ptrdiff_t(rhs._port.data() - tmp),
-                 rhs._port.size()};
-    else
-        _port = rhs._port;
-    if (rhs._full_path.data() >= tmp &&
-        rhs._full_path.data() <= (tmp + _source.size())) {
-        _full_path = {_source.c_str() + std::ptrdiff_t(rhs._full_path.data() - tmp),
-                      rhs._full_path.size()};
-        _path = {_source.c_str() + std::ptrdiff_t(rhs._path.data() - tmp),
-                 rhs._path.size()};
-    } else {
-        _full_path = rhs._full_path;
-        _path = rhs._path;
-    }
+    parse();
     return *this;
 }
 
 uri &
 uri::operator=(uri &&rhs) noexcept {
-    auto tmp = rhs.source().c_str();
-    _af = rhs._af;
     _source = std::move(rhs._source);
-    _queries = std::move(rhs._queries);
-    _scheme = {_source.c_str() + std::ptrdiff_t(rhs._scheme.data() - tmp), rhs._scheme.size()};
-    _user = {_source.c_str() + std::ptrdiff_t(rhs._user.data() - tmp), rhs._user.size()};
-    _password = {_source.c_str() + std::ptrdiff_t(rhs._password.data() - tmp), rhs._password.size()};
-    _host  = {_source.c_str() + std::ptrdiff_t(rhs._host.data() - tmp), rhs._host.size()};
-    if (rhs._port.data() >= tmp && rhs._port.data() <= (tmp + _source.size()))
-        _port = {_source.c_str() + std::ptrdiff_t(rhs._port.data() - tmp), rhs._port.size()};
-    else
-        _port = rhs._port;
-    if (rhs._full_path.data() >= tmp &&
-        rhs._full_path.data() <= (tmp + _source.size())) {
-        _full_path = {_source.c_str() + std::ptrdiff_t(rhs._full_path.data() - tmp),
-                      rhs._full_path.size()};
-        _path = {_source.c_str() + std::ptrdiff_t(rhs._path.data() - tmp),
-                 rhs._path.size()};
-    } else {
-        _full_path = rhs._full_path;
-        _path = rhs._path;
-    }
+    parse();
     return *this;
 }
 
