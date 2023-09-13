@@ -335,12 +335,11 @@ endfunction()
 function(qb_load_modules path)
     message(STATUS "Load modules on path : ${path}")
     SUBDIRLIST(list ${path})
-
+    include_directories(${path})
     foreach (subdir ${list})
         message(${path}/${subdir})
         add_subdirectory(${path}/${subdir} ${CMAKE_CURRENT_BINARY_DIR}/qb-module/${subdir})
     endforeach ()
-    include_directories(${path})
 endfunction()
 
 # cxx_executable_with_flags(name cxx_flags libs srcs...)
