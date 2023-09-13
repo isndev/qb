@@ -145,7 +145,7 @@ crypto::evp(std::istream &stream, const EVP_MD *md) noexcept {
     EVP_MD_CTX *context = EVP_MD_CTX_new();
     std::string hash;
 
-    if (context && EVP_DigestInit_ex2(context, md, NULL)) {
+    if (context && EVP_DigestInit_ex(context, md, NULL)) {
         std::streamsize read_length;
         std::vector<char> buffer(buffer_size);
         while ((read_length = stream.read(&buffer[0], buffer_size).gcount()) > 0)
