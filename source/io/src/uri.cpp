@@ -222,22 +222,22 @@ uri::parse() noexcept {
     }
 
     if (scheme_begin) {
-        _scheme = {scheme_begin, scheme_end - scheme_begin};
+        _scheme = {scheme_begin, static_cast<std::size_t>(scheme_end - scheme_begin)};
         if (_scheme == "unix")
             _af = AF_UNIX;
     }
 
     if (uinfo_begin)
-        _user_info = {uinfo_begin, uinfo_end - uinfo_begin};
+        _user_info = {uinfo_begin, static_cast<std::size_t>(uinfo_end - uinfo_begin)};
 
     if (host_begin) {
-        _host = {host_begin, host_end - host_begin};
+        _host = {host_begin, static_cast<std::size_t>(host_end - host_begin)};
         if (_af != AF_UNIX)
             _af = _host.find_first_of(':') == std::string::npos ? AF_INET : AF_INET6;
     }
 
     if (port_end)
-        _port = {port_begin, port_end - port_begin};
+        _port = {port_begin, static_cast<std::size_t>(port_end - port_begin)};
     else {
         auto it = default_ports.find(std::string(_scheme));
         if (it != std::end(default_ports))
@@ -245,12 +245,12 @@ uri::parse() noexcept {
     }
 
     if (path_begin)
-        _path = {path_begin, path_end - path_begin};
+        _path = {path_begin, static_cast<std::size_t>(path_end - path_begin)};
     else
         _path = "/";
 
     if (query_begin) {
-        _raw_queries = {query_begin, query_end - query_begin};
+        _raw_queries = {query_begin, static_cast<std::size_t>(query_end - query_begin)};
         static const std::regex query_regex("(&?)([^=]*)=([^&]*)");
 
         auto search = query_begin;
@@ -267,7 +267,7 @@ uri::parse() noexcept {
     }
 
     if (fragment_begin)
-        _fragment = {fragment_begin, fragment_end - fragment_begin};
+        _fragment = {fragment_begin, static_cast<std::size_t>(fragment_end - fragment_begin)};
 
     return true;
 }
