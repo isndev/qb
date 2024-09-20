@@ -18,6 +18,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <functional>
 
 #ifndef QB_IO_COMPRESSION_H
 #    define QB_IO_COMPRESSION_H
