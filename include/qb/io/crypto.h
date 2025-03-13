@@ -53,6 +53,8 @@ public:
     constexpr static const std::string_view range_numeric = "0123456789";
     constexpr static const std::string_view range_alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
                                                           "abcdefghijklmnopqrstuvwxyz";
+    constexpr static const std::string_view range_alpha_lower = "abcdefghijklmnopqrstuvwxyz";
+    constexpr static const std::string_view range_alpha_upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     constexpr static const std::string_view range_alpha_numeric =
         "0123456789"
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -144,6 +146,16 @@ public:
      */
     static std::string pbkdf2(const std::string &password, const std::string &salt,
                               int iterations, int key_size) noexcept;
+    // base64 encode (without new line)
+    static std::string base64_encode(const unsigned char* data, size_t len);
+    // base64 decode
+    static std::vector<unsigned char> base64_decode(const std::string& input);
+    // HMAC-SHA256 en using modern openssl api
+    static std::vector<unsigned char> hmac_sha256(const std::vector<unsigned char>& key, const std::string& data);
+    // SHA256 with std::vector
+    static std::vector<unsigned char> sha256(const std::vector<unsigned char>& data);
+    // xor two vector of same size
+    static std::vector<unsigned char> xor_bytes(const std::vector<unsigned char>& a, const std::vector<unsigned char>& b);
 };
 } // namespace qb
 

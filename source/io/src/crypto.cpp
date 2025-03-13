@@ -301,4 +301,109 @@ crypto::pbkdf2(const std::string &password, const std::string &salt, int iterati
     return key;
 }
 
+// base64 encode (without new line)
+std::string
+crypto::base64_encode(const unsigned char* data, size_t len) {
+    BIO* bio = BIO_new(BIO_s_mem());
+    BIO* b64 = BIO_new(BIO_f_base64());
+    if (!bio || !b64) {
+        throw std::runtime_error("Error during BIO creation");
+    }
+    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL); // pas de retour à la ligne
+    bio = BIO_push(b64, bio);
+    if(BIO_write(bio, data, len) <= 0 || BIO_flush(bio) != 1) {
+        BIO_free_all(bio);
+        throw std::runtime_error("Error reading BIO");
+    }
+    BUF_MEM* bufferPtr = nullptr;
+    BIO_get_mem_ptr(bio, &bufferPtr);
+    std::string encoded(bufferPtr->data, bufferPtr->length);
+    BIO_free_all(bio);
+    return encoded;
+}
+// base64 decode
+std::vector<unsigned char>
+crypto::base64_decode(const std::string& input) {
+    BIO* bio = BIO_new_mem_buf(input.data(), static_cast<int>(input.size()));
+    BIO* b64 = BIO_new(BIO_f_base64());
+    if (!bio || !b64) {
+        throw std::runtime_error("Error during BIO creation");
+    }
+    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+    bio = BIO_push(b64, bio);
+    std::vector<unsigned char> decoded(input.size());
+    int decodedLen = BIO_read(bio, decoded.data(), static_cast<int>(input.size()));
+    if (decodedLen < 0) {
+        BIO_free_all(bio);
+        throw std::runtime_error("Error reading BIO");
+    }
+    decoded.resize(decodedLen);
+    BIO_free_all(bio);
+    return decoded;
+}
+
+// HMAC-SHA256 en using modern openssl api
+std::vector<unsigned char>
+crypto::hmac_sha256(const std::vector<unsigned char> &key, const std::string &data) {
+    std::vector<unsigned char> result;
+    // Récupération de l'algorithme "HMAC"
+    EVP_MAC *mac = EVP_MAC_fetch(nullptr, "HMAC", nullptr);
+    if (!mac) {
+        throw std::runtime_error("EVP_MAC_fetch failed");
+    }
+    EVP_MAC_CTX *ctx = EVP_MAC_CTX_new(mac);
+    if (!ctx) {
+        EVP_MAC_free(mac);
+        throw std::runtime_error("EVP_MAC_CTX_new failed");
+    }
+    // Spécifier l'algorithme de hachage à utiliser : "SHA256"
+    OSSL_PARAM params[2];
+    params[0] = OSSL_PARAM_construct_utf8_string("digest", const_cast<char *>("SHA256"), 0);
+    params[1] = OSSL_PARAM_construct_end();
+    if (EVP_MAC_init(ctx, key.data(), key.size(), params) != 1) {
+        EVP_MAC_CTX_free(ctx);
+        EVP_MAC_free(mac);
+        throw std::runtime_error("EVP_MAC_init failed");
+    }
+    if (EVP_MAC_update(ctx, reinterpret_cast<const unsigned char *>(data.data()), data.size()) != 1) {
+        EVP_MAC_CTX_free(ctx);
+        EVP_MAC_free(mac);
+        throw std::runtime_error("EVP_MAC_update failed");
+    }
+    size_t out_len = 0;
+    size_t out_buf_len = EVP_MAX_MD_SIZE; // taille maximale possible
+    result.resize(out_buf_len);
+    if (EVP_MAC_final(ctx, result.data(), &out_len, result.size()) != 1) {
+        EVP_MAC_CTX_free(ctx);
+        EVP_MAC_free(mac);
+        throw std::runtime_error("EVP_MAC_final failed");
+    }
+    result.resize(out_len);
+    EVP_MAC_CTX_free(ctx);
+    EVP_MAC_free(mac);
+    return result;
+}
+// SHA256 with std::vector
+std::vector<unsigned char>
+crypto::sha256(const std::vector<unsigned char> &data) {
+    std::vector<unsigned char> digest(SHA256_DIGEST_LENGTH);
+    if (!SHA256(data.data(), data.size(), digest.data())) {
+        throw std::runtime_error("error during compute of SHA256");
+    }
+    return digest;
+}
+
+// xor two vector of same size
+std::vector<unsigned char>
+crypto::xor_bytes(const std::vector<unsigned char> &a, const std::vector<unsigned char> &b) {
+    if (a.size() != b.size()) {
+        throw std::runtime_error("vectors must have the same size to XOR");
+    }
+    std::vector<unsigned char> result(a.size());
+    for (size_t i = 0; i < a.size(); ++i) {
+        result[i] = a[i] ^ b[i];
+    }
+    return result;
+}
+
 } // namespace qb
