@@ -27,14 +27,18 @@
                                    boundaries
 */
 
-#if __cpp_lib_hardware_interference_size >= 201603
-#include <new>
-#define QB_LOCKFREE_CACHELINE_BYTES std::hardware_destructive_interference_size
-#define QB_LOCKFREE_EVENT_BUCKET_BYTES std::hardware_destructive_interference_size
+constexpr std::size_t cache_line_size() {
+#ifdef KNOWN_L1_CACHE_LINE_SIZE
+    return KNOWN_L1_CACHE_LINE_SIZE;
+#elif defined(__cpp_lib_hardware_interference_size)
+    return std::hardware_destructive_interference_size;
 #else
-#define QB_LOCKFREE_CACHELINE_BYTES 64
-#define QB_LOCKFREE_EVENT_BUCKET_BYTES 64
+    return 64;
 #endif
+}
+
+#define QB_LOCKFREE_CACHELINE_BYTES cache_line_size()
+#define QB_LOCKFREE_EVENT_BUCKET_BYTES cache_line_size()
 
 #ifdef _MSC_VER
 

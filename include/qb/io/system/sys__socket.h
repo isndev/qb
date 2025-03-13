@@ -55,6 +55,8 @@ IN6_IS_ADDR_GLOBAL(const in6_addr *a) {
 #endif
 
 #define QB_ADDR_ANY(af) (af == AF_INET ? "0.0.0.0" : "::")
+#define QB_MAX_CHAR_UCHAR 4
+#define QB_MAX_CHAR_USHORT 6
 
 #if defined(_MSC_VER)
 #    pragma warning(push)
@@ -405,12 +407,12 @@ public:
         case AF_INET:
             n = strlen(compat::inet_ntop(AF_INET, &in4_.sin_addr, &addr.front(),
                                          static_cast<socklen_t>(addr.length())));
-            n += sprintf(&addr.front() + n, ":%u", this->port());
+            n += snprintf(&addr.front() + n, QB_MAX_CHAR_USHORT + 1, ":%u", this->port());
             break;
         case AF_INET6:
             n = strlen(compat::inet_ntop(AF_INET6, &in6_.sin6_addr, &addr.front() + 1,
                                          static_cast<socklen_t>(addr.length() - 1)));
-            n += sprintf(&addr.front() + n, "]:%u", this->port());
+            n += snprintf(&addr.front() + n, QB_MAX_CHAR_USHORT + 2, "]:%u", this->port());
             break;
 #if defined(QB_ENABLE_UDS) && QB__HAS_UDS
         case AF_UNIX:
@@ -467,7 +469,7 @@ public:
             auto fmt = _SIN_FORMATS[idx];
             auto offst = s.find(fmt);
             if (offst != std::string::npos) {
-                sprintf(snum, "%u", addr_bytes[idx]);
+                snprintf(snum, QB_MAX_CHAR_UCHAR, "%u", addr_bytes[idx]);
                 s.replace(offst, _N0, snum);
             }
         }
@@ -1087,8 +1089,7 @@ public:
         char buffer[sizeof "65535"] = {'\0'};
         const char *service = nullptr;
         if (port > 0) {
-            sprintf(buffer, "%u",
-                    port); // It's enough for unsigned short, so use sprintf ok.
+            snprintf(buffer, QB_MAX_CHAR_USHORT, "%u", port);
             service = buffer;
         }
         int error = getaddrinfo(hostname, service, &hint, &answerlist);

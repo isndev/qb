@@ -145,7 +145,7 @@ public:
     template <size_t _Index, bool _All = true>
     size_t
     enqueue(T const *t, size_t const size) {
-        return _producers[_Index]._ringbuffer.enqueue<_All>(t, size);
+        return _producers[_Index]._ringbuffer.template enqueue<_All>(t, size);
     }
 
     bool

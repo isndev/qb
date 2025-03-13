@@ -468,7 +468,8 @@ if(OPENSSL_FOUND)
             EXISTS "${LIB_EAY_LIBRARY_DEBUG}" OR
             EXISTS "${LIB_EAY_LIBRARY_RELEASE}")
             )
-        add_library(OpenSSL::Crypto UNKNOWN IMPORTED)
+        add_library(OpenSSL::Crypto UNKNOWN IMPORTED
+                ../../qb-projects/test_/main.cpp)
         set_target_properties(OpenSSL::Crypto PROPERTIES
                 INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIR}")
         if(EXISTS "${OPENSSL_CRYPTO_LIBRARY}")
