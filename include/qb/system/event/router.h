@@ -433,7 +433,7 @@ private:
         }
     };
 
-    static inline qb::unordered_map<_EventId, IDisposer *> _disposers;
+    static inline qb::unordered_map<_EventId, std::unique_ptr<IDisposer>> _disposers;
     static inline std::mutex _disposers_mtx;
 
     class IEventResolver {
@@ -476,6 +476,8 @@ public:
             _disposers.try_emplace(_RawEvent::template type_to_id<T>(),
                                    new Disposer<T>());
         }
+
+        ~SafeDispose() = default;
     };
 
     memh() = default;

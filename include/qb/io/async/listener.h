@@ -66,8 +66,8 @@ public:
 
     void
     clear() {
-        for (auto it : _registeredEvents)
-            delete it;
+        // for (auto it : _registeredEvents)
+        //    delete it;
         _registeredEvents.clear();
         run(EVRUN_ONCE);
     }

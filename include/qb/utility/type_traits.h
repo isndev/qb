@@ -17,9 +17,27 @@
 
 #ifndef QB_TYPE_TRAITS_H
 #define QB_TYPE_TRAITS_H
+#include <utility>
 #include <type_traits>
 #include <valarray>
 #include <string_view>
+
+// Alias for std::move
+template <typename T>
+inline std::remove_reference_t<T>&& mv(T&& t) noexcept {
+    return static_cast<std::remove_reference_t<T>&&>(t);
+}
+
+// Alias for std::forward
+template <typename T>
+inline T&& fwd(std::remove_reference_t<T>& t) noexcept {
+    return std::forward<T>(t);
+}
+
+template <typename T>
+inline T&& fwd(std::remove_reference_t<T>&& t) noexcept {
+    return std::forward<T>(t);
+}
 
 namespace qb {
 
