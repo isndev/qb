@@ -19,6 +19,7 @@
 #define QB_MAIN_H
 #include <iostream>
 #include <qb/system/container/unordered_map.h>
+#include <pthread.h>
 #include <thread>
 #include <condition_variable>
 #include <vector>

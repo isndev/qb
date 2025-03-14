@@ -32,7 +32,7 @@ struct sherwood_v10_entry {
 
     static EntryPointer *
     empty_pointer() {
-        static EntryPointer result[3] = {EntryPointer(nullptr) + ptrdiff_t(1), nullptr,
+        static EntryPointer result[3] = {EntryPointer(1), nullptr,
                                          nullptr};
         return result + 1;
     }
@@ -432,7 +432,7 @@ public:
         EntryPointer *new_buckets(
             &*BucketAllocatorTraits::allocate(*this, num_buckets + 1));
         EntryPointer *end_it = new_buckets + static_cast<ptrdiff_t>(num_buckets + 1);
-        *new_buckets = EntryPointer(nullptr) + ptrdiff_t(1);
+        *new_buckets = EntryPointer(1);
         ++new_buckets;
         std::fill(new_buckets, end_it, nullptr);
         std::swap(entries, new_buckets);
@@ -810,7 +810,7 @@ public:
 
     template <typename _Obj>
     typename Table::iterator
-    insert_or_assign(typename Table::const_iterator __hint, const key_type &__k,
+    insert_or_assign(typename Table::const_iterator, const key_type &__k,
                      _Obj &&__obj) {
         auto __ret = try_emplace(__k, std::forward<_Obj>(__obj));
         if (!__ret.second)
@@ -821,7 +821,7 @@ public:
     // move-capable overload
     template <typename _Obj>
     typename Table::iterator
-    insert_or_assign(typename Table::const_iterator __hint, key_type &&__k,
+    insert_or_assign(typename Table::const_iterator, key_type &&__k,
                      _Obj &&__obj) {
         auto __ret = try_emplace(std::move(__k), std::forward<_Obj>(__obj));
         if (!__ret.second)

@@ -199,13 +199,15 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
             CPU_SET(core, &cpuset);
 
         pthread_t current_thread = pthread_self();
-        ret = !pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
+        if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset))
+            LOG_WARN("Virtual core could not set thread affinity");
 #elif defined(_WIN32) || defined(_WIN64)
 #    ifdef _MSC_VER
         DWORD_PTR mask = 0u;
         for (const auto core : affinity_cores)
             mask |= static_cast<DWORD_PTR>(1u) << core;
-        ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
+        if (SetThreadAffinityMask(GetCurrentThread(), mask))
+            LOG_WARN("Virtual core could not set thread affinity");
 #    else
 #        warning "Cannot set affinity on windows with GNU Compiler"
 #    endif

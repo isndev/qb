@@ -66,8 +66,6 @@ public:
      * internal function
      */
     ActorId(uint32_t id) noexcept;
-    ActorId(ActorId const &) = default;
-
     operator uint32_t() const noexcept;
 
     /*!
