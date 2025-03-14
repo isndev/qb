@@ -80,7 +80,7 @@ macro(config_compiler_and_linker)
         # http://stackoverflow.com/questions/3232669 explains the issue.
         set(cxx_base_flags "${cxx_base_flags} -wd4702 -wd4324 -wd4251 -wd4275 -wd4458 -wd4505 -wd4100 -wd4244 -wd4224 -wd4267 -wd4200 -wd4996")
     elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        set(cxx_base_flags "-Wall -Wno-interference-size -Wno-narrowing -Wno-sign-compare -march=${${QB_PREFIX_UPPER}_BUILD_ARCH}")
+        set(cxx_base_flags "-Wall -Wno-narrowing -Wno-sign-compare -march=${${QB_PREFIX_UPPER}_BUILD_ARCH}")
         set(cxx_exception_flags "-fexceptions")
         set(cxx_strict_flags "-Wextra -Werror")
         set(cxx_no_exception_flags "-fno-exceptions")
