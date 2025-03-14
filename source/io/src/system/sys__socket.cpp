@@ -686,7 +686,8 @@ socket::disconnect() const {
 }
 int
 socket::disconnect(socket_type s) {
-    sockaddr addr_unspec = {0};
+    sockaddr addr_unspec;
+    memset(&addr_unspec, 0, sizeof(addr_unspec));
     addr_unspec.sa_family = AF_UNSPEC;
     return ::connect(FD_TO_SOCKET(s), &addr_unspec, sizeof(addr_unspec));
 }
@@ -948,6 +949,8 @@ socket::exclusive_address(bool exclusive) {
     this->set_optval(SOL_SOCKET, SO_EXCLUSIVEADDRUSE, exclusive ? 1 : 0);
 #elif defined(SO_EXCLBIND)
     this->set_optval(SOL_SOCKET, SO_EXCLBIND, exclusive ? 1 : 0);
+#else
+    (void)exclusive;
 #endif
 }
 

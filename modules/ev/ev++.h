@@ -290,7 +290,7 @@ struct loop_ref {
 
     template <class K, void (K::*method)()>
     static void
-    method_noargs_thunk(int revents, void *arg) {
+    method_noargs_thunk(int, void *arg) {
         (static_cast<K *>(arg)->*method)();
     }
 
@@ -303,7 +303,7 @@ struct loop_ref {
 
     template <void (*cb)(int)>
     static void
-    simpler_func_thunk(int revents, void *arg) {
+    simpler_func_thunk(int revents, void *) {
         (*cb)(revents);
     }
 
@@ -316,7 +316,7 @@ struct loop_ref {
 
     template <void (*cb)()>
     static void
-    simplest_func_thunk(int revents, void *arg) {
+    simplest_func_thunk(int, void *) {
         (*cb)();
     }
 
@@ -454,6 +454,7 @@ struct base : ev_watcher {
     static void
     function_thunk(EV_P_ ev_watcher *w, int revents) {
         function(*static_cast<watcher *>(w), revents);
+        (void)loop;
     }
 
     // method callback
@@ -474,6 +475,7 @@ struct base : ev_watcher {
     static void
     method_thunk(EV_P_ ev_watcher *w, int revents) {
         (static_cast<K *>(w->data)->*method)(*static_cast<watcher *>(w), revents);
+        (void) loop;
     }
 
     // no-argument callback
@@ -485,8 +487,9 @@ struct base : ev_watcher {
 
     template <class K, void (K::*method)()>
     static void
-    method_noargs_thunk(EV_P_ ev_watcher *w, int revents) {
+    method_noargs_thunk(EV_P_ ev_watcher *w, int) {
         (static_cast<K *>(w->data)->*method)();
+        (void) loop;
     }
 
     void
