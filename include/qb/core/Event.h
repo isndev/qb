@@ -43,7 +43,7 @@ type_id() {
  * @ingroup Core
  * @brief Event base class
  */
-class Event {
+class QB_LOCKFREE_CACHELINE_ALIGNMENT Event {
     friend class SharedCoreCommunication;
     friend class VirtualCore;
     friend class Actor;
