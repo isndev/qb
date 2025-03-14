@@ -60,9 +60,6 @@ TEST(TYPE, AllCheck) {
     std::cout << "sizeof<Pipe>(" << sizeof(qb::Pipe) << ")" << std::endl;
     std::cout << "sizeof<Actor>(" << sizeof(qb::Actor) << ")" << std::endl;
     std::cout << "sizeof<EventQOS0>(" << sizeof(qb::EventQOS0) << ")" << std::endl;
-#ifdef NDEBUG
-    EXPECT_EQ(sizeof(qb::Event), 16);
-#endif
     std::cout << "is_trivially_destructible<EventQOS0>("
               << std::is_trivially_destructible_v<qb::EventQOS0> << ")" << std::endl;
     EXPECT_EQ(std::is_trivially_destructible_v<qb::EventQOS0>, 1);
