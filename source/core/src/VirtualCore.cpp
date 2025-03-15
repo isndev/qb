@@ -44,6 +44,25 @@ CPU_ISSET(int num, cpu_set_t *cs) {
     return (cs->count & (1 << num));
 }
 
+static int pthread_getaffinity_np(pthread_t thread, size_t cpusetsize, cpu_set_t *cpuset) {
+    if (!cpuset) return false;
+
+    // Only logical cores count on macOS
+    int num_cores;
+    size_t len = sizeof(num_cores);
+    if (sysctlbyname("hw.logicalcpu", &num_cores, &len, nullptr, 0))
+        return 1;
+
+    CPU_ZERO(cpuset);
+
+    // On macOS, no api to set affinity,
+    for (int i = 0; i < num_cores; i++) {
+        CPU_SET(i, cpuset);
+    }
+
+    return 0;
+}
+
 static int
 pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
     thread_port_t mach_thread;
