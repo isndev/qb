@@ -128,6 +128,8 @@ macro(config_compiler_and_linker)
     # The pthreads library is available and allowed?
     if (DEFINED ${QB_PREFIX_UPPER}_HAS_PTHREAD)
         set(${QB_PREFIX_UPPER}_HAS_PTHREAD_MACRO "-D${QB_PREFIX_UPPER}_HAS_PTHREAD=1")
+        set(cxx_base_flags "${cxx_base_flags} -pthread")
+
     else ()
         set(${QB_PREFIX_UPPER}_HAS_PTHREAD_MACRO "-D${QB_PREFIX_UPPER}_HAS_PTHREAD=0")
     endif ()

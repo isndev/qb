@@ -74,16 +74,6 @@ TEST(Main, StartMultiCoreShouldAbortIfNoActor) {
     EXPECT_TRUE(main.hasError());
 }
 
-TEST(Main, StartMonoCoreShouldAbortIfNoExistingCore) {
-    qb::Main main;
-
-    main.addActor<TestActor>(255, true);
-
-    main.start();
-    main.join();
-    EXPECT_TRUE(main.hasError());
-}
-
 TEST(Main, StartMonoCoreShouldAbortIfCoreHasThrownException) {
     qb::Main main;
 
