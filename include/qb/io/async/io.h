@@ -105,7 +105,7 @@ public:
         }
     }
     void
-    on(event::timer const &event) const {
+    on(event::timer const &) const {
         _func();
         delete this;
     }
@@ -195,7 +195,6 @@ private:
 
     void
     on(event::file const &event) {
-        constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
         int ret = 0u;
 
         // forward event to Derived if desired
@@ -246,17 +245,16 @@ private:
 
     void
     on(event::file const &event) {
-        constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
-        int ret = 0u;
+//        int ret = 0u;
 
         // forward event to Derived if desired
         if constexpr (has_method_on<_Derived, void, event::file>::value) {
             Derived.on(event);
         }
 
-        if (ret < 0) {
-            this->_async_event.stop();
-        }
+//        if (ret < 0) {
+//            this->_async_event.stop();
+//        }
     }
 };
 

@@ -183,7 +183,7 @@ public:
     write(std::enable_if_t<has_method_write<_IO_, int, const char *, std::size_t>::value, Available> * = nullptr) noexcept {
         const auto ret = this->_in.write(_out_buffer.begin(), _out_buffer.size());
         if (ret > 0) {
-            if (ret != _out_buffer.size()) {
+            if (static_cast<std::size_t>(ret) != _out_buffer.size()) {
                 _out_buffer.free_front(ret);
                 _out_buffer.reorder();
             } else

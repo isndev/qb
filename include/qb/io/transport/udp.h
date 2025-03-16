@@ -31,7 +31,7 @@ public:
 
     struct identity : public qb::io::endpoint {
         identity() = default;
-        identity(identity const &) = default;
+        // identity(identity const &) = default;
         identity(qb::io::endpoint const &ep)
             : qb::io::endpoint(ep) {}
 
