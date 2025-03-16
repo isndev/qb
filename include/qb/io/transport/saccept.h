@@ -43,7 +43,7 @@ public:
 
     void
     flush(std::size_t) noexcept {
-        _accepted_io = std::move(io::tcp::ssl::socket());
+        _accepted_io = io::tcp::ssl::socket();
     }
 
     void
