@@ -63,10 +63,10 @@ format_timestamp(std::ostream &os, uint64_t timestamp) {
     strftime(buffer, 32, "%Y-%m-%d %T.", gmtime);
     char microseconds[7];
 #ifdef _WIN32
-    sprintf_s(microseconds, "%06llu",
+    snprintf_s(microseconds, 7, "%06llu",
               static_cast<unsigned long long>(timestamp % 1000000));
 #else
-    sprintf(microseconds, "%06llu",
+    snprintf(microseconds, 7, "%06llu",
             static_cast<unsigned long long>(timestamp % 1000000));
 #endif
     os << '[' << buffer << microseconds << ']';
