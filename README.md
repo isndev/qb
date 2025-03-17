@@ -102,7 +102,7 @@ $> mkdir pingpong && cd pingpong && git clone git@github.com:isndev/qb.git
 
 ```cmake
 # CMakeLists.txt file
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.13)
 project(pingpong)
 
 # qb minimum requirements
