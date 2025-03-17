@@ -373,7 +373,9 @@ function(cxx_executable_with_flags name cxx_flags libs)
     foreach (lib ${LIB_LIST})
         target_link_libraries(${name} ${lib})
     endforeach ()
-
+    set_target_properties(${name} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${PROJECT_NAME}/"
+    )
     print_target_properties(${name})
 endfunction()
 
