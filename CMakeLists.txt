@@ -55,7 +55,10 @@ endif()
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "" FORCE)
 endif()
-
+# output definitions
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/${PROJECT_NAME})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # check if has module googletest
 if (${QB_PREFIX_UPPER}_BUILD_TEST AND NOT EXISTS "${QB_PATH}/modules/googletest/CMakeLists.txt")
     set(${QB_PREFIX_UPPER}_BUILD_TEST OFF)

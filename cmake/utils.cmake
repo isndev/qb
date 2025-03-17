@@ -403,6 +403,9 @@ function(cxx_test_with_flags name cxx_flags libs)
         add_test(NAME ${name}
                 COMMAND "$<TARGET_FILE:${name}>")
     endif ()
+    set_target_properties(${name} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${PROJECT_NAME}/tests"
+    )
 endfunction()
 
 # cxx_test(name libs srcs...)
@@ -419,7 +422,7 @@ endfunction()
 # creates a named test target that depends on the given libs and is
 # built from the given source files.
 function(cxx_gtest name libs)
-    cxx_test_with_flags("${name}" "${cxx_default}" "gtest gtest_main ${libs}"
+    cxx_test_with_flags("${name}" "${cxx_default}" "gtest_main ${libs}"
             ${ARGN})
 endfunction()
 
@@ -464,6 +467,9 @@ function(qb_register_module_gtest)
             "${LIBS}"
             ${Module_SOURCES}
     )
+    set_target_properties(${name} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/qbm/${PROJECT_NAME}/tests"
+    )
 endfunction()
 
 # cxx_benchmark(name libs srcs...)
@@ -478,6 +484,9 @@ function(cxx_benchmark name libs)
     #  endif()
     cxx_test_with_flags("${name}" "${cxx_benchmark_flags}" "${libs} benchmark"
             ${ARGN})
+    set_target_properties(${name} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${PROJECT_NAME}/benchmarks"
+    )
 endfunction()
 
 # py_test(name)
