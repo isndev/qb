@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.13)
 project(libev C)
 set(LIBEV_VERSION 4.35)
 set(LIBEV_VERSION_CURRENT 4)
