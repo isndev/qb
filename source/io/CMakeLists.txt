@@ -1,6 +1,6 @@
 #
 # qb - C++ Actor Framework
-# Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
+# Copyright (c) 2011-2025 qb - isndev (cpp.actor). All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,59 +12,165 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-#         limitations under the License.
+# limitations under the License.
 #
 
-project(${QB_PREFIX}-io LANGUAGES CXX VERSION ${QB_VERSION} DESCRIPTION "A simple io library")
+# -----------------------------------------------------------------------------
+# qb IO Library - CMake Configuration
+#
+# This file configures the build system for the qb IO component, which provides
+# network I/O, socket handling, and core communication functionality.
+# -----------------------------------------------------------------------------
 
+# Define project with same version as parent project
+project(${QB_PREFIX}-io 
+    LANGUAGES CXX 
+    VERSION ${QB_VERSION} 
+    DESCRIPTION "I/O and networking library for the qb framework"
+)
+
+# -----------------------------------------------------------------------------
+# Dependencies and compile definitions configuration
+# -----------------------------------------------------------------------------
+# Core dependencies required by the IO library
 set(CURRENT_DEPENDENCIES ev stduuid)
 set(CURRENT_DEFINITIONS QB_IO_VERSION=${QB_VERSION})
 set(CURRENT_INCLUDES)
 
+# -----------------------------------------------------------------------------
+# Library source files
+# -----------------------------------------------------------------------------
+set(IO_SOURCES
+    src/io.cpp
+)
+
+# -----------------------------------------------------------------------------
+# Logging configuration
+# -----------------------------------------------------------------------------
+# Configure logging based on parent project settings
 if (${QB_PREFIX_UPPER}_WITH_LOG)
     list(APPEND CURRENT_DEFINITIONS QB_LOGGER=1)
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries with logger")
+    message(STATUS "[${PROJECT_NAME}] Building with logger support")
 else ()
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries without logger")
+    message(STATUS "[${PROJECT_NAME}] Building without logger support")
     if (${QB_PREFIX_UPPER}_STDOUT_LOG)
         list(APPEND CURRENT_DEFINITIONS QB_STDOUT_LOG=1)
-        message(STATUS "INFO: Will build ${QB_PREFIX} print logs")
+        message(STATUS "[${PROJECT_NAME}] Enabling stdout logging")
     endif ()
 endif ()
 
+# -----------------------------------------------------------------------------
+# Platform-specific dependencies
+# -----------------------------------------------------------------------------
+# Windows requires the winsock library
 if (WIN32)
     list(APPEND CURRENT_DEPENDENCIES ws2_32)
+    message(STATUS "[${PROJECT_NAME}] Adding Windows-specific dependency: ws2_32")
 endif ()
+
+# -----------------------------------------------------------------------------
+# Optional compression support (ZLIB)
+# -----------------------------------------------------------------------------
 if (ZLIB_FOUND)
     list(APPEND CURRENT_DEPENDENCIES ZLIB::ZLIB)
     list(APPEND CURRENT_DEFINITIONS QB_IO_WITH_ZLIB=1)
-    list(APPEND ${ZLIB_INCLUDE_DIRS})
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries with zlib")
+    
+    # Add ZLIB include directories if not using imported targets
+    if(NOT TARGET ZLIB::ZLIB)
+        list(APPEND CURRENT_INCLUDES ${ZLIB_INCLUDE_DIRS})
+    endif()
+    
+    message(STATUS "[${PROJECT_NAME}] Building with ZLIB compression support")
 endif ()
+
+# -----------------------------------------------------------------------------
+# Optional SSL/TLS support (OpenSSL)
+# -----------------------------------------------------------------------------
 if (OPENSSL_FOUND)
     list(APPEND CURRENT_DEPENDENCIES OpenSSL::SSL)
     list(APPEND CURRENT_DEFINITIONS QB_IO_WITH_SSL=1)
-    list(APPEND ${OPENSSL_INCLUDE_DIR})
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries with openssl")
+    
+    # Add OpenSSL include directories if not using imported targets
+    if(NOT TARGET OpenSSL::SSL)
+        list(APPEND CURRENT_INCLUDES ${OPENSSL_INCLUDE_DIR})
+    endif()
+    
+    message(STATUS "[${PROJECT_NAME}] Building with OpenSSL support")
 endif ()
 
-if (${CURRENT_INCLUDES})
+# Add any additional include directories if specified
+if (CURRENT_INCLUDES)
     include_directories(${CURRENT_INCLUDES})
 endif ()
 
-cxx_library(NAME ${PROJECT_NAME}
-        FLAGS ${cxx_default_lib}
-        SOURCES src/io.cpp
-        DEPENDENCIES ${CURRENT_DEPENDENCIES})
+# -----------------------------------------------------------------------------
+# Library target configuration
+# -----------------------------------------------------------------------------
+# Define the IO library using the custom cxx_library macro from parent project
+cxx_library(
+    NAME ${PROJECT_NAME}
+    FLAGS ${cxx_default_lib}
+    SOURCES ${IO_SOURCES}
+    DEPENDENCIES ${CURRENT_DEPENDENCIES}
+)
 
-set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION})
+# Configure library properties and interface includes
+set_target_properties(${PROJECT_NAME} PROPERTIES 
+    VERSION ${QB_VERSION}
+    SOVERSION ${QB_VERSION_MAJOR}
+    POSITION_INDEPENDENT_CODE ON
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
+# Apply public compile definitions
 foreach (def ${CURRENT_DEFINITIONS})
     target_compile_definitions(${PROJECT_NAME} PUBLIC ${def})
 endforeach ()
-target_include_directories(${PROJECT_NAME} INTERFACE
-        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
-        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
 
+# Setup include directories for both build and install interfaces
+target_include_directories(${PROJECT_NAME} 
+    PUBLIC
+        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include>"
+    PRIVATE
+        "$<BUILD_INTERFACE:${QB_DIRECTORY}/source/io/include>"
+    INTERFACE
+        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+)
+
+# Add module directories to the include path
+target_include_directories(${PROJECT_NAME} 
+    PUBLIC "$<BUILD_INTERFACE:${QB_DIRECTORY}/modules>"
+)
+
+# -----------------------------------------------------------------------------
+# Installation configuration
+# -----------------------------------------------------------------------------
+if(${QB_PREFIX_UPPER}_INSTALL)
+    include(GNUInstallDirs)
+    
+    install(TARGETS ${PROJECT_NAME}
+        EXPORT ${PROJECT_NAME}Targets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+    
+    # Generate and install export file
+    install(EXPORT ${PROJECT_NAME}Targets
+        FILE ${PROJECT_NAME}Targets.cmake
+        NAMESPACE qb::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+    )
+endif()
+
+# -----------------------------------------------------------------------------
+# Tests configuration
+# -----------------------------------------------------------------------------
+# Add tests if enabled in the parent project
 if (${QB_PREFIX_UPPER}_BUILD_TEST)
+    message(STATUS "[${PROJECT_NAME}] Building tests")
     add_subdirectory(tests)
 endif ()

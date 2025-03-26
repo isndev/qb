@@ -1,6 +1,6 @@
 #
 # qb - C++ Actor Framework
-# Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
+# Copyright (c) 2011-2025 qb - isndev (cpp.actor). All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,17 +12,67 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-#         limitations under the License.
+# limitations under the License.
 #
 
-cxx_gtest(${PROJECT_NAME}-gtest-event "${PROJECT_NAME}" test-event.cpp)
-cxx_gtest(${PROJECT_NAME}-gtest-tcp-udp "${PROJECT_NAME}" test-io.cpp)
-cxx_gtest(${PROJECT_NAME}-gtest-session-text "${PROJECT_NAME}" test-session-text.cpp)
+# -----------------------------------------------------------------------------
+# qb IO System Tests - CMake Configuration
+#
+# This file configures the system tests for the qb IO component.
+# It defines test targets for core IO functionality and optional components
+# that depend on available libraries (ZLIB, OpenSSL).
+# -----------------------------------------------------------------------------
 
+# -----------------------------------------------------------------------------
+# Test targets definition
+# -----------------------------------------------------------------------------
+
+# Core IO functionality tests
+set(CORE_TESTS
+    test-event.cpp
+    test-io.cpp
+    test-session-text.cpp
+)
+
+# Create core test targets
+foreach(TEST_SOURCE ${CORE_TESTS})
+    # Extract test name from filename (removing extension)
+    get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
+    # Create test target with a descriptive name
+    cxx_gtest(
+        ${PROJECT_NAME}-gtest-${TEST_NAME}  # Target name
+        "${PROJECT_NAME}"                   # Library dependency
+        ${TEST_SOURCE}                      # Source file
+    )
+    # Set properties for the test target (optional)
+    set_target_properties(${PROJECT_NAME}-gtest-${TEST_NAME} PROPERTIES
+        FOLDER "Tests/IO/System"
+    )
+endforeach()
+
+# -----------------------------------------------------------------------------
+# Optional feature tests
+# -----------------------------------------------------------------------------
+
+# Optional compression tests (requires ZLIB)
 if (ZLIB_FOUND)
-    cxx_gtest(${PROJECT_NAME}-gtest-compression "${PROJECT_NAME}" test-compression.cpp)
+    cxx_gtest(
+        ${PROJECT_NAME}-gtest-compression
+        "${PROJECT_NAME}"
+        test-compression.cpp
+    )
+    set_target_properties(${PROJECT_NAME}-gtest-compression PROPERTIES
+        FOLDER "Tests/IO/System"
+    )
+    message(STATUS "[IO Tests] Building ZLIB compression tests")
 endif ()
 
+# -----------------------------------------------------------------------------
+# Test resources setup
+# -----------------------------------------------------------------------------
+
+# Copy SSL resources for tests if OpenSSL is available
 if (OPENSSL_FOUND)
+    message(STATUS "[IO Tests] Copying SSL test resources")
     file(COPY ${QB_SSL_RESOURCES} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 endif ()

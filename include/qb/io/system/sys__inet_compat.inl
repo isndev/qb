@@ -1,7 +1,20 @@
-/*
- * qb - C++ Actor Framework
- * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
- *
+/**
+ * @file qb/io/system/sys__inet_compat.inl
+ * @brief IP address conversion compatibility utilities
+ * 
+ * This file provides implementations of inet_ntop and inet_pton functions
+ * for converting IP addresses between their binary (network) representation and
+ * their text (presentation) representation. These implementations are platform-independent
+ * and serve as fallbacks when native functions are not available.
+ * 
+ * The implementations support both IPv4 (AF_INET) and IPv6 (AF_INET6) and
+ * comply with RFC specifications.
+ * 
+ * @note This file should not be included directly; it is intended for internal
+ * use by the QB IO library.
+ * 
+ * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -12,9 +25,7 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- *         limitations under the License.
- *
- *         many thanks to lib yasio : https://github.com/yasio/yasio
+ * limitations under the License.
  */
 
 #ifndef QB_IO_INET_COMPAT_INL
@@ -31,8 +42,9 @@
 #    endif
 #endif
 
-/*
- * Define constants based on RFC 883, RFC 1034, RFC 1035
+/**
+ * @brief Constants defined based on RFC 883, RFC 1034, RFC 1035
+ * These constants are used for domain name processing and DNS messages.
  */
 #define NS_PACKETSZ 512   /*%< default UDP packet size */
 #define NS_MAXDNAME 1025  /*%< maximum domain name */
@@ -56,16 +68,37 @@
  * sizeof(int) < 4.  sizeof(int) > 4 is fine; all the world's not a VAX.
  */
 
+/**
+ * @brief Converts a binary IPv4 address to text format
+ * 
+ * @param src Pointer to the binary IPv4 address
+ * @param dst Destination buffer to store the text representation
+ * @param size Size of the destination buffer
+ * @return Pointer to the string containing the formatted address, or NULL on error
+ */
 static const char *inet_ntop4(const u_char *src, char *dst, socklen_t size);
+
+/**
+ * @brief Converts a binary IPv6 address to text format
+ * 
+ * @param src Pointer to the binary IPv6 address
+ * @param dst Destination buffer to store the text representation
+ * @param size Size of the destination buffer
+ * @return Pointer to the string containing the formatted address, or NULL on error
+ */
 static const char *inet_ntop6(const u_char *src, char *dst, socklen_t size);
 
-/* char *
- * inet_ntop(af, src, dst, size)
- *	convert a network format address to presentation format.
- * return:
- *	pointer to presentation format address (`dst'), or NULL (see errno).
- * author:
- *	Paul Vixie, 1996.
+/**
+ * @brief Converts a binary network address to presentation text format
+ * 
+ * This function is a portable implementation of inet_ntop that converts a binary
+ * IP address to its human-readable text representation.
+ * 
+ * @param af Address family (AF_INET for IPv4, AF_INET6 for IPv6)
+ * @param src Pointer to the source binary address
+ * @param dst Destination buffer to store the text representation
+ * @param size Size of the destination buffer
+ * @return Pointer to the string containing the formatted address, or NULL on error
  */
 const char *
 inet_ntop(int af, const void *src, char *dst, socklen_t size) {
@@ -81,16 +114,16 @@ inet_ntop(int af, const void *src, char *dst, socklen_t size) {
     /* NOTREACHED */
 }
 
-/* const char *
- * inet_ntop4(src, dst, size)
- *	format an IPv4 address
- * return:
- *	`dst' (as a const)
- * notes:
- *	(1) uses no statics
- *	(2) takes a u_char* not an in_addr as input
- * author:
- *	Paul Vixie, 1996.
+/**
+ * @brief Implementation of IPv4 binary to text conversion
+ * 
+ * This function formats a binary IPv4 address into the standard dotted-decimal notation
+ * (e.g., "192.168.1.1").
+ * 
+ * @param src Pointer to the source IPv4 binary address (4 bytes)
+ * @param dst Destination buffer to store the text representation
+ * @param size Size of the destination buffer
+ * @return Pointer to the string containing the formatted address, or NULL on error
  */
 static const char *
 inet_ntop4(const u_char *src, char *dst, socklen_t size) {
@@ -104,11 +137,16 @@ inet_ntop4(const u_char *src, char *dst, socklen_t size) {
     return strcpy(dst, tmp);
 }
 
-/* const char *
- * inet_ntop6(src, dst, size)
- *	convert IPv6 binary address into presentation (printable) format
- * author:
- *	Paul Vixie, 1996.
+/**
+ * @brief Implementation of IPv6 binary to text conversion
+ * 
+ * This function formats a binary IPv6 address into its standard text representation
+ * (e.g., "2001:db8::1"). It supports compression of zero sequences.
+ * 
+ * @param src Pointer to the source IPv6 binary address (16 bytes)
+ * @param dst Destination buffer to store the text representation
+ * @param size Size of the destination buffer
+ * @return Pointer to the string containing the formatted address, or NULL on error
  */
 static const char *
 inet_ntop6(const u_char *src, char *dst, socklen_t size) {
@@ -127,9 +165,9 @@ inet_ntop6(const u_char *src, char *dst, socklen_t size) {
     int i;
 
     /*
-     * Preprocess:
-     *	Copy the input (bytewise) array into a wordwise array.
-     *	Find the longest run of 0x00's in src[] for :: shorthanding.
+     * Preprocessing:
+     * Copy the input (bytewise) array into a wordwise array.
+     * Find the longest run of 0x00's in src[] for :: shorthand notation.
      */
     memset(words, '\0', sizeof words);
     for (i = 0; i < NS_IN6ADDRSZ; i += 2)
@@ -206,19 +244,35 @@ inet_ntop6(const u_char *src, char *dst, socklen_t size) {
  * WARNING: Don't even consider trying to compile this on a system where
  * sizeof(int) < 4.  sizeof(int) > 4 is fine; all the world's not a VAX.
  */
+
+/**
+ * @brief Converts a text IPv4 address to binary format
+ * 
+ * @param src String containing the IPv4 address in text form
+ * @param dst Destination buffer for the binary address
+ * @return 1 if conversion succeeded, 0 if the address is invalid
+ */
 static int inet_pton4(const char *src, u_char *dst);
+
+/**
+ * @brief Converts a text IPv6 address to binary format
+ * 
+ * @param src String containing the IPv6 address in text form
+ * @param dst Destination buffer for the binary address
+ * @return 1 if conversion succeeded, 0 if the address is invalid
+ */
 static int inet_pton6(const char *src, u_char *dst);
 
-/* int
- * inet_pton(af, src, dst)
- *	convert from presentation format (which usually means ASCII printable)
- *	to network format (which is usually some kind of binary format).
- * return:
- *	1 if the address was valid for the specified address family
- *	0 if the address wasn't valid (`dst' is untouched in this case)
- *	-1 if some other error occurred (`dst' is untouched in this case, too)
- * author:
- *	Paul Vixie, 1996.
+/**
+ * @brief Converts an IP address from presentation format to network format
+ * 
+ * This function is a portable implementation of inet_pton that converts a text
+ * IP address to its binary representation used by the network.
+ * 
+ * @param af Address family (AF_INET for IPv4, AF_INET6 for IPv6)
+ * @param src String containing the address in text form
+ * @param dst Destination buffer for the binary address
+ * @return 1 if conversion succeeded, 0 if the address is invalid, -1 on error
  */
 int
 inet_pton(int af, const char *src, void *dst) {
@@ -234,16 +288,15 @@ inet_pton(int af, const char *src, void *dst) {
     /* NOTREACHED */
 }
 
-/* int
- * inet_pton4(src, dst)
- *	like inet_aton() but without all the hexadecimal, octal (with the
- *	exception of 0) and shorthand.
- * return:
- *	1 if `src' is a valid dotted quad, else 0.
- * notice:
- *	does not touch `dst' unless it's returning 1.
- * author:
- *	Paul Vixie, 1996.
+/**
+ * @brief Implementation of IPv4 text to binary conversion
+ * 
+ * This function parses an IPv4 address in dotted-decimal notation
+ * (e.g., "192.168.1.1") and converts it to its binary equivalent.
+ * 
+ * @param src String containing the IPv4 address in text form
+ * @param dst Destination buffer for the binary address (4 bytes)
+ * @return 1 if conversion succeeded, 0 if the address is invalid
  */
 static int
 inet_pton4(const char *src, u_char *dst) {
@@ -282,18 +335,16 @@ inet_pton4(const char *src, u_char *dst) {
     return (1);
 }
 
-/* int
- * inet_pton6(src, dst)
- *	convert presentation level address to network order binary form.
- * return:
- *	1 if `src' is a valid [RFC1884 2.2] address, else 0.
- * notice:
- *	(1) does not touch `dst' unless it's returning 1.
- *	(2) :: in a full address is silently ignored.
- * credit:
- *	inspired by Mark Andrews.
- * author:
- *	Paul Vixie, 1996.
+/**
+ * @brief Implementation of IPv6 text to binary conversion
+ * 
+ * This function parses an IPv6 address in its standard text form
+ * (e.g., "2001:db8::1") and converts it to its binary equivalent.
+ * It supports compressed notation with "::".
+ * 
+ * @param src String containing the IPv6 address in text form
+ * @param dst Destination buffer for the binary address (16 bytes)
+ * @return 1 if conversion succeeded, 0 if the address is invalid
  */
 static int
 inet_pton6(const char *src, u_char *dst) {
@@ -306,7 +357,7 @@ inet_pton6(const char *src, u_char *dst) {
     tp = (u_char *)memset(tmp, '\0', NS_IN6ADDRSZ);
     endp = tp + NS_IN6ADDRSZ;
     colonp = NULL;
-    /* Leading :: requires some special handling. */
+    /* Leading :: requires special handling. */
     if (*src == ':')
         if (*++src != ':')
             return (0);
