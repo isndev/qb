@@ -15,19 +15,25 @@
  *         limitations under the License.
  */
 
-#ifndef QB_CORESET_H
-#define QB_CORESET_H
-#include "ActorId.h"
+#ifndef QB_CORE_SET_H
+#define QB_CORE_SET_H
 #include <cstdint>
-#include <qb/system/container/unordered_set.h>
 #include <vector>
+#include <qb/system/container/unordered_set.h>
+#include <qb/utility/type_traits.h>
+
+// include from qb
+#include "ActorId.h"
 
 namespace qb {
 
 /*!
  * @class CoreSet core/CoreSet.h qb/coreset.h
  * @ingroup Core
- * @brief Main initializer
+ * @brief Manages a set of core identifiers
+ * @details
+ * CoreSet provides functionality to manage and manipulate sets of core identifiers.
+ * It is used to specify which cores should be used for actor execution and communication.
  */
 class CoreSet {
     friend class SharedCoreCommunication;
@@ -38,21 +44,52 @@ class CoreSet {
     const std::size_t _nb_core;
     const std::size_t _size;
     std::array<uint8_t, 256> _set;
-
-    [[nodiscard]] CoreId resolve(std::size_t id) const noexcept;
-    [[nodiscard]] std::size_t getSize() const noexcept;
-    [[nodiscard]] std::size_t getNbCore() const noexcept;
-
+    
 public:
     CoreSet() = delete;
-    CoreSet(CoreSet const &) = default;
+
+    /*!
+     * @brief Construct a CoreSet with a specific set of cores
+     * @param set Set of core IDs to include
+     */
     explicit CoreSet(qb::unordered_set<CoreId> const &set) noexcept;
 
-    [[nodiscard]] const qb::unordered_set<CoreId> &raw() const noexcept;
-    static CoreSet
-    build(uint32_t nb_core = std::thread::hardware_concurrency()) noexcept;
+    /*!
+     * @brief Build a CoreSet with a specified number of cores
+     * @param nb_core Number of cores to include (defaults to hardware concurrency)
+     * @return Newly created CoreSet
+     * @details
+     * Creates a CoreSet containing sequential core IDs from 0 to nb_core-1.
+     * If nb_core is not specified, it uses the number of hardware threads available.
+     */
+    [[nodiscard]] static CoreSet build(uint32_t nb_core = std::thread::hardware_concurrency()) noexcept;
+
+    /*!
+     * @brief Resolve a core ID to its index in the set
+     * @param id Core ID to resolve
+     * @return Index of the core in the set
+     */
+    [[nodiscard]] CoreId resolve(std::size_t id) const noexcept;
+
+    /*!
+     * @brief Get the raw set of core IDs
+     * @return Reference to the underlying set of core IDs
+     */
+    [[nodiscard]] qb::unordered_set<CoreId> const &raw() const noexcept;
+
+    /*!
+     * @brief Get the size of the core set
+     * @return Number of cores in the set
+     */
+    [[nodiscard]] uint32_t getSize() const noexcept;
+
+    /*!
+     * @brief Get the number of cores in the set
+     * @return Number of cores
+     */
+    [[nodiscard]] uint32_t getNbCore() const noexcept;
 };
 
 } // namespace qb
-
 #endif // QB_CORESET_H
+

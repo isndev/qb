@@ -52,6 +52,15 @@
 
 namespace qb {
 
+/*!
+ * @class VirtualCore core/VirtualCore.h qb/core.h
+ * @ingroup Core
+ * @brief Manages a virtual processing core in the actor system
+ * @details
+ * VirtualCore represents a logical processing unit that manages actors, events,
+ * and communication within the actor system. It handles event routing, actor lifecycle,
+ * and inter-core communication.
+ */
 class VirtualCore {
     thread_local static VirtualCore *_handler;
     static ServiceId _nb_service;
@@ -62,11 +71,15 @@ class VirtualCore {
     }
 
 public:
+    /*!
+     * @enum Error core/VirtualCore.h qb/core.h
+     * @brief Error codes for virtual core operations
+     */
     enum Error : uint64_t {
-        BadInit = (1u << 9u),
-        NoActor = (1u << 10u),
-        BadActorInit = (1u << 11u),
-        ExceptionThrown = (1u << 12u)
+        BadInit = (1u << 9u),        ///< Initialization error
+        NoActor = (1u << 10u),       ///< Actor not found
+        BadActorInit = (1u << 11u),  ///< Actor initialization error
+        ExceptionThrown = (1u << 12u) ///< Exception occurred during execution
     };
 
 private:
@@ -130,7 +143,11 @@ private:
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
     ~VirtualCore() noexcept;
 
-    ActorId __generate_id__() noexcept;
+    /*!
+     * @brief Generate a new actor ID
+     * @return Newly generated actor ID
+     */
+    [[nodiscard]] ActorId __generate_id__() noexcept;
 
     // Event Management
     template <typename _Event, typename _Actor>
@@ -138,10 +155,14 @@ private:
     template <typename _Event, typename _Actor>
     void unregisterEvent(_Actor &actor) noexcept;
     void unregisterEvents(ActorId id) noexcept;
-    VirtualPipe &__getPipe__(CoreId core) noexcept;
+    /*!
+     * @brief Get or create a pipe to a specific core
+     * @param core Target core ID
+     * @return Reference to the virtual pipe
+     */
+    [[nodiscard]] VirtualPipe &__getPipe__(CoreId core) noexcept;
     void __receive_events__(EventBucket *buffer, std::size_t nb_events);
     void __receive__();
-    //        void __receive_from__(CoreId const index) noexcept;
     bool __flush_all__() noexcept;
     //! Event Management
 
@@ -152,16 +173,28 @@ private:
     //! Workflow
 
     // Actor Management
-    ActorId initActor(Actor &actor, bool doInit) noexcept;
-    ActorId appendActor(Actor &actor, bool doInit = false) noexcept;
+    /*!
+     * @brief Initialize a new actor
+     * @param actor Actor to initialize
+     * @param doInit Whether to call the actor's init method
+     * @return ID of the initialized actor
+     */
+    [[nodiscard]] ActorId initActor(Actor &actor, bool doInit) noexcept;
+    /*!
+     * @brief Add an actor to the core
+     * @param actor Actor to add
+     * @param doInit Whether to call the actor's init method
+     * @return ID of the added actor
+     */
+    [[nodiscard]] ActorId appendActor(Actor &actor, bool doInit = false) noexcept;
     void removeActor(ActorId id) noexcept;
     //! Actor Management
 
 private:
     template <typename _Actor, typename... _Init>
-    _Actor *addReferencedActor(_Init &&... init) noexcept;
+    [[nodiscard]] _Actor *addReferencedActor(_Init &&... init) noexcept;
     template <typename _ServiceActor>
-    _ServiceActor *getService() const noexcept;
+    [[nodiscard]] _ServiceActor *getService() const noexcept;
 
     void killActor(ActorId id) noexcept;
 
@@ -172,9 +205,20 @@ private:
 
 private:
     // Event Api
-    Pipe getProxyPipe(ActorId dest, ActorId source) noexcept;
+    /*!
+     * @brief Get a proxy pipe between two actors
+     * @param dest Destination actor ID
+     * @param source Source actor ID
+     * @return Pipe connecting the actors
+     */
+    [[nodiscard]] Pipe getProxyPipe(ActorId dest, ActorId source) noexcept;
     [[nodiscard]] bool try_send(Event const &event) const noexcept;
     void send(Event const &event) noexcept;
+    /*!
+     * @brief Push an event to the event queue
+     * @param event Event to push
+     * @return Reference to the pushed event
+     */
     Event &push(Event const &event) noexcept;
     void reply(Event &event) noexcept;
     void forward(ActorId dest, Event &event) noexcept;
@@ -192,10 +236,23 @@ private:
 public:
     VirtualCore() = delete;
 
+    /*!
+     * @brief Get the core's index
+     * @return Core index
+     */
     [[nodiscard]] CoreId getIndex() const noexcept;
-    [[nodiscard]] const qb::unordered_set<CoreId> &getCoreSet() const noexcept;
-    [[nodiscard]] uint64_t time() const noexcept;
 
+    /*!
+     * @brief Get the set of cores this core can communicate with
+     * @return Set of core IDs
+     */
+    [[nodiscard]] const qb::unordered_set<CoreId> &getCoreSet() const noexcept;
+
+    /*!
+     * @brief Get the current time in nanoseconds
+     * @return Current time in nanoseconds
+     */
+    [[nodiscard]] uint64_t time() const noexcept;
 };
 #    ifdef QB_LOGGER
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
@@ -203,5 +260,5 @@ qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &
 std::ostream &operator<<(std::ostream &os, qb::VirtualCore const &core);
 
 } // namespace qb
-
 #endif // QB_CORE_H
+
