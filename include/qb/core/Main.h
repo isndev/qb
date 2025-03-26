@@ -272,7 +272,7 @@ private:
     std::vector<std::thread> _cores;
     // Core Factory
     CoreInitializerMap _core_initializers;
-    SharedCoreCommunication *_shared_com;
+    std::unique_ptr<SharedCoreCommunication> _shared_com;
     bool _is_running;
 
 public:

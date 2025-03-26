@@ -182,7 +182,6 @@ Main::~Main() noexcept {
     std::lock_guard lock(_instances_lock);
     Main::_instances.erase(
         std::find(Main::_instances.cbegin(), Main::_instances.cend(), this));
-    delete _shared_com;
 }
 
 void
@@ -255,40 +254,41 @@ Main::usedCoreSet() const {
 
 void
 Main::start(bool async) noexcept {
-    uint64_t ret = 0;
-    if (!_core_initializers.empty()) {
-        LOG_INFO("[MAIN] Init with " << _core_initializers.size() << " cores");
-        _is_running = true;
-        _sync_start.store(0, std::memory_order_release);
-        _cores.resize(_core_initializers.size());
-        _shared_com = new SharedCoreCommunication(_core_initializers);
-
-        auto i = 0u;
-        for (auto &it : _core_initializers) {
-            if (!async && i == (_core_initializers.size() - 1)) {
-                Main::registerSignal(SIGINT);
-                start_thread({it.first, it.second, *_shared_com, _sync_start});
-            } else
-                _cores[i] = std::thread(start_thread,
-                                        CoreSpawnerParameter{it.first, it.second,
-                                                             *_shared_com, _sync_start});
-            ++i;
-        }
-
-        if (async) {
-            do {
-                spin_loop_pause();
-                ret = _sync_start.load(std::memory_order_acquire);
-            } while (ret < _cores.size());
-            Main::registerSignal(SIGINT);
-        }
-    } else {
-        LOG_CRIT("[Main] Cannot start engine with 0 Actor");
-        _sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
-        ret = VirtualCore::Error::NoActor;
+    if (_is_running)
+        return;
+    _sync_start.store(0, std::memory_order_release);
+    if (_core_initializers.empty()) {
+        _sync_start.store(VirtualCore::Error::BadInit, std::memory_order_release);
+        LOG_CRIT("[Start Sequence] Failed: No Core registered");
+        return;
     }
 
-    if (ret >= VirtualCore::Error::BadInit) {
+    _is_running = true;
+    _shared_com = std::make_unique<SharedCoreCommunication>(_core_initializers);
+    _cores.resize(_core_initializers.size());
+
+    auto i = 0u;
+    for (auto &it : _core_initializers) {
+        if (!async && i == (_core_initializers.size() - 1)) {
+            Main::registerSignal(SIGINT);
+            start_thread({it.first, it.second, *_shared_com, _sync_start});
+        } else
+            _cores[i] = std::thread(start_thread,
+                                    CoreSpawnerParameter{it.first, it.second,
+                                                         *_shared_com, _sync_start});
+        ++i;
+    }
+
+    if (async) {
+        uint64_t ret = 0;
+        do {
+            spin_loop_pause();
+            ret = _sync_start.load(std::memory_order_acquire);
+        } while (ret < _cores.size());
+        Main::registerSignal(SIGINT);
+    }
+
+    if (hasError()) {
         _is_running = false;
         LOG_CRIT("[Main] Init Failed");
         std::cerr << "CRITICAL: Core Init Failed -> show logs to have more details"

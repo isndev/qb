@@ -37,11 +37,15 @@ VirtualCore::unregisterEvent(_Actor &actor) noexcept {
 template <typename _Actor, typename... _Init>
 _Actor *
 VirtualCore::addReferencedActor(_Init &&... init) noexcept {
-    auto actor = new _Actor(std::forward<_Init>(init)...);
+    auto actor_ptr = std::make_unique<_Actor>(std::forward<_Init>(init)...);
+    _Actor* actor = actor_ptr.get();
     actor->id_type = type_id<_Actor>();
     actor->name = typeid(_Actor).name();
-    if (appendActor(*actor, true).is_valid())
+    if (appendActor(*actor, true).is_valid()) {
+        // Transfert de propriété au système d'acteurs
+        actor_ptr.release();
         return actor;
+    }
     return nullptr;
 }
 
