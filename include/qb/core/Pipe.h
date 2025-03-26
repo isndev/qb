@@ -23,10 +23,13 @@
 namespace qb {
 
 /*!
- * @brief Object returned by Actor::getPipe()
- * @class Pipe Pipe.h qb/actor.h
+ * @class Pipe core/Pipe.h qb/actor.h
+ * @ingroup Core
+ * @brief Represents a communication channel between actors
  * @details
- * to define
+ * A Pipe object is returned by Actor::getPipe() and provides a way to send events
+ * between actors. It maintains references to both the source and destination actors
+ * and the underlying virtual pipe for communication.
  */
 class Pipe {
     friend class VirtualCore;
@@ -46,29 +49,29 @@ public:
     Pipe &operator=(Pipe const &) = default;
 
     /*!
-     *
-     * @tparam T
-     * @tparam _Args
-     * @param args
-     * @return
+     * @brief Push an event to the pipe
+     * @tparam T Type of the event to push
+     * @tparam _Args Types of the arguments to construct the event
+     * @param args Arguments to construct the event
+     * @return Reference to the pushed event
      */
     template <typename T, typename... _Args>
     T &push(_Args &&... args) const noexcept;
 
     /*!
-     *
-     * @tparam T
-     * @tparam _Args
-     * @param size
-     * @param args
-     * @return
+     * @brief Push an event with pre-allocated size to the pipe
+     * @tparam T Type of the event to push
+     * @tparam _Args Types of the arguments to construct the event
+     * @param size Pre-allocated size for the event
+     * @param args Arguments to construct the event
+     * @return Reference to the pushed event
      */
     template <typename T, typename... _Args>
-    T &allocated_push(std::size_t size, _Args &&... args) const noexcept;
+    [[nodiscard]] T &allocated_push(std::size_t size, _Args &&... args) const noexcept;
 
     /*!
-     *
-     * @return
+     * @brief Get the destination actor ID
+     * @return ID of the destination actor
      */
     [[nodiscard]] inline ActorId
     getDestination() const noexcept {
@@ -76,8 +79,8 @@ public:
     }
 
     /*!
-     *
-     * @return
+     * @brief Get the source actor ID
+     * @return ID of the source actor
      */
     [[nodiscard]] inline ActorId
     getSource() const noexcept {
@@ -88,5 +91,5 @@ public:
 using pipe = Pipe;
 
 } // namespace qb
-
 #endif // QB_PROXYPIPE_H
+

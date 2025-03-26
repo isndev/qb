@@ -227,6 +227,8 @@ struct CoreSpawnerParameter {
  * @brief Core main class
  * @details
  * This is the Main engine class, initialized with desired CoreSet.
+ * It manages the lifecycle of the actor system, including starting and stopping
+ * virtual cores, handling actor creation, and managing inter-core communication.
  */
 class Main {
     friend class VirtualCore;
@@ -265,7 +267,11 @@ public:
      */
     void start(bool async = true) noexcept;
 
-    bool hasError() const noexcept;
+    /*!
+     * @brief Check if there are any errors in the engine
+     * @return true if there are errors, false otherwise
+     */
+    [[nodiscard]] bool hasError() const noexcept;
 
     /*!
      * @brief Stop the engine
@@ -312,7 +318,7 @@ public:
      * @attention
      * This function is not available while engine is running.
      */
-    CoreInitializer &core(CoreId index);
+    [[nodiscard]] CoreInitializer &core(CoreId index);
 
     /*!
      * @brief Set Latency to all cores
@@ -324,7 +330,11 @@ public:
      */
     void setLatency(uint64_t latency = 0);
 
-    qb::CoreIdSet usedCoreSet() const;
+    /*!
+     * @brief Get the set of cores currently in use
+     * @return Set of core IDs
+     */
+    [[nodiscard]] qb::CoreIdSet usedCoreSet() const;
 
     /*!
      * @brief Register signal for all engines
@@ -350,5 +360,5 @@ public:
 using engine = Main;
 
 } // namespace qb
-
 #endif // QB_MAIN_H
+

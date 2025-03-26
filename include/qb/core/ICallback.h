@@ -23,20 +23,39 @@ namespace qb {
 /*!
  * @interface ICallback core/ICallback.h qb/icallback.h
  * @ingroup Core
- * @brief Actor callback interface
+ * @brief Interface for actor callbacks
  * @details
- * DerivedActor must inherit from this interface
- * to register loop callback
+ * ICallback provides an interface for implementing actor callbacks that are executed
+ * during each VirtualCore loop iteration. This allows actors to perform periodic tasks
+ * or background operations.
+ * 
+ * Example usage:
+ * @code
+ * class MyActor : public Actor, public ICallback {
+ *     void onCallback() override {
+ *         // Perform periodic tasks here
+ *     }
+ * };
+ * @endcode
  */
 class ICallback {
 public:
+    /*!
+     * @brief Virtual destructor
+     */
     virtual ~ICallback() = default;
 
+    /*!
+     * @brief Callback function executed during each VirtualCore loop iteration
+     * @details
+     * This pure virtual function must be implemented by derived classes.
+     * It will be called during each VirtualCore loop iteration.
+     */
     virtual void onCallback() = 0;
 };
 
 using icallback = ICallback;
 
 } // namespace qb
-
 #endif // QB_ICALLBACK_H
+

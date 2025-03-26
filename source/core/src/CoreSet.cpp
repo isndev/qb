@@ -33,12 +33,12 @@ CoreSet::resolve(std::size_t id) const noexcept {
     return _set.at(id);
 }
 
-std::size_t
+uint32_t
 CoreSet::getSize() const noexcept {
     return _size;
 }
 
-std::size_t
+uint32_t
 CoreSet::getNbCore() const noexcept {
     return _nb_core;
 }

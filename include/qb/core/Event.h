@@ -41,7 +41,11 @@ type_id() {
 /*!
  * @class Event core/Event.h qb/event.h
  * @ingroup Core
- * @brief Event base class
+ * @brief Base class for all events in the actor system
+ * @details
+ * Event provides the base functionality for event identification, routing,
+ * and quality of service. It is the foundation for all event types in the
+ * actor system.
  */
 class QB_LOCKFREE_CACHELINE_ALIGNMENT Event {
     friend class SharedCoreCommunication;
@@ -56,6 +60,11 @@ public:
 
 #ifdef NDEBUG
     using id_type = EventId;
+    /*!
+     * @brief Get the type identifier at compile time
+     * @tparam T Type to get the ID for
+     * @return Type identifier
+     */
     template <typename T>
     constexpr static id_type
     type_to_id() {
@@ -63,6 +72,11 @@ public:
     }
 #else
     using id_type = const char *;
+    /*!
+     * @brief Get the type identifier at runtime
+     * @tparam T Type to get the ID for
+     * @return Type identifier as string
+     */
     template <typename T>
     constexpr static id_type
     type_to_id() {
@@ -87,26 +101,50 @@ private:
 public:
     Event() = default;
 
+    /*!
+     * @brief Check if the event is still alive
+     * @return true if the event is alive, false otherwise
+     */
     [[nodiscard]] inline bool
     is_alive() const noexcept {
         return state.alive;
     }
+    /*!
+     * @brief Get the event's type ID
+     * @return Type identifier
+     */
     [[nodiscard]] inline id_type
     getID() const noexcept {
         return id;
     }
+    /*!
+     * @brief Get the event's quality of service level
+     * @return QoS level (0-2)
+     */
     [[nodiscard]] inline uint8_t
     getQOS() const noexcept {
         return state.qos;
     }
+    /*!
+     * @brief Get the destination actor ID
+     * @return ID of the destination actor
+     */
     [[nodiscard]] inline id_handler_type
     getDestination() const noexcept {
         return dest;
     }
+    /*!
+     * @brief Get the source actor ID
+     * @return ID of the source actor
+     */
     [[nodiscard]] inline id_handler_type
     getSource() const noexcept {
         return source;
     }
+    /*!
+     * @brief Get the size of the event in bytes
+     * @return Size of the event
+     */
     [[nodiscard]] inline std::size_t
     getSize() const noexcept {
         return static_cast<std::size_t>(bucket_size) * QB_LOCKFREE_EVENT_BUCKET_BYTES;
@@ -116,6 +154,10 @@ public:
 using EventQOS2 = Event;
 using EventQOS1 = Event;
 
+/*!
+ * @struct EventQOS0 core/Event.h qb/event.h
+ * @brief Event with lowest quality of service level
+ */
 struct EventQOS0 : public Event {
     EventQOS0() {
         state.qos = 0;
@@ -125,14 +167,19 @@ struct EventQOS0 : public Event {
 /*!
  * @class ServiceEvent core/Event.h qb/event.h
  * @ingroup Core
- * @brief More flexible Event
+ * @brief Event type for service-to-service communication
  * @details
- * Section in construction
+ * ServiceEvent extends the base Event class with additional functionality
+ * for service-to-service communication, including event forwarding and
+ * service-specific event identification.
  */
 struct ServiceEvent : public Event {
     id_handler_type forward;
     id_type service_event_id;
 
+    /*!
+     * @brief Mark the event as received and swap source/destination
+     */
     inline void
     received() noexcept {
         std::swap(dest, forward);
@@ -140,6 +187,10 @@ struct ServiceEvent : public Event {
         live(true);
     }
 
+    /*!
+     * @brief Set the event's alive status
+     * @param flag New alive status
+     */
     inline void
     live(bool flag) noexcept {
         state.alive = flag;
@@ -147,11 +198,21 @@ struct ServiceEvent : public Event {
 };
 
 /*!
- * @class KillEvent core/Event.h qb/event.h
- * default registered event to kill Actor by event
+ * @struct KillEvent core/Event.h qb/event.h
+ * @brief Event used to terminate an actor
  */
 struct KillEvent : public Event {};
+
+/*!
+ * @struct UnregisterCallbackEvent core/Event.h qb/event.h
+ * @brief Event used to unregister an actor's callback
+ */
 struct UnregisterCallbackEvent : public Event {};
+
+/*!
+ * @struct SignalEvent core/Event.h qb/event.h
+ * @brief Event used to handle system signals
+ */
 struct SignalEvent : public Event {
     int signum;
 };
@@ -159,9 +220,8 @@ struct SignalEvent : public Event {
 enum class ActorStatus : uint32_t { Alive, Dead };
 
 /*!
- * @private
- * @class PingEvent core/Event.h qb/event.h
- * default registered event to kill Actor by event
+ * @struct PingEvent core/Event.h qb/event.h
+ * @brief Event used for actor health checks
  */
 struct PingEvent : public Event {
     const uint32_t type;
@@ -170,6 +230,10 @@ struct PingEvent : public Event {
         : type(actor_type) {}
 };
 
+/*!
+ * @struct RequireEvent core/Event.h qb/event.h
+ * @brief Event used to query actor status
+ */
 struct RequireEvent : public Event {
     const uint32_t type;
     const ActorStatus status;
@@ -180,6 +244,10 @@ struct RequireEvent : public Event {
         , status(actor_status) {}
 };
 
+/*!
+ * @struct WithData core/Event.h qb/event.h
+ * @brief Event template that includes data payload
+ */
 template <typename... _Args>
 struct WithData : public Event {
     std::tuple<_Args...> data;
@@ -188,19 +256,23 @@ struct WithData : public Event {
         : data(std::forward<_Args>(args)...) {}
 };
 
+/*!
+ * @struct WithoutData core/Event.h qb/event.h
+ * @brief Event template without data payload
+ */
 template <typename... _Args>
 class WithoutData : public Event {};
 
 /*!
- * @private
- * @tparam Data
+ * @struct AskData core/Event.h qb/event.h
+ * @brief Event template for requesting data
  */
 template <typename... _Args>
 struct AskData : public WithoutData<_Args...> {};
 
 /*!
- * @private
- * @tparam Data
+ * @struct FillEvent core/Event.h qb/event.h
+ * @brief Event template for filling data
  */
 template <typename... _Args>
 struct FillEvent : public WithData<_Args...> {
