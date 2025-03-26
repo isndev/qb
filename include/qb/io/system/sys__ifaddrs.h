@@ -1,7 +1,17 @@
-/*
- * qb - C++ Actor Framework
- * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
- *
+/**
+ * @file qb/io/system/sys__ifaddrs.h
+ * @brief Network interface address information utilities
+ * 
+ * This file provides functionality to retrieve network interface addresses
+ * through the getifaddrs() and freeifaddrs() functions. It contains 
+ * platform-specific implementations for various systems including Android.
+ * 
+ * On systems with native ifaddrs.h support, this header simply provides
+ * namespace wrappers. For Android versions prior to API level 24, it provides
+ * a complete implementation.
+ * 
+ * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -12,7 +22,7 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- *         limitations under the License.
+ * limitations under the License.
  */
 
 #ifndef QB_IO_IFADDRS_H
@@ -229,9 +239,13 @@ using ::getifaddrs;
 /* Maximum interface address label size, should be more than enough */
 #    define MAX_IFA_LABEL_SIZE 1024
 
-/* We're implementing getifaddrs behavior, this is the structure we use. It is exactly
- * the same as struct ifaddrs defined in ifaddrs.h but since bionics doesn't have it we
- * need to mirror it here.
+/**
+ * @struct ifaddrs
+ * @brief Structure for managing network interface information
+ * 
+ * This structure provides information about a network interface, including
+ * its name, flags, addresses, and related data. It forms a linked list with
+ * the ifa_next pointer pointing to the next interface entry.
  */
 struct ifaddrs {
     struct ifaddrs *ifa_next; /* Pointer to the next structure.      */
@@ -262,12 +276,17 @@ struct ifaddrs {
 
 namespace qb::io {
 namespace internal {
-/* This is the message we send to the kernel */
+/**
+ * @brief Netlink request structure for communicating with the kernel
+ */
 typedef struct {
     struct nlmsghdr header;
     struct rtgenmsg message;
 } netlink_request;
 
+/**
+ * @brief Session information for netlink communication
+ */
 typedef struct {
     int sock_fd;
     int seq;
@@ -277,9 +296,11 @@ typedef struct {
     struct iovec payload_vector;  /* Used to send netlink_request */
 } netlink_session;
 
-/* Turns out that quite a few link types have address length bigger than the 8 bytes
- * allocated in this structure as defined by the OS. Examples are Infiniband or ipv6
- * tunnel devices
+/**
+ * @brief Extended sockaddr_ll structure to handle larger hardware addresses
+ * 
+ * Standard sockaddr_ll has limited space for hardware addresses. This extended 
+ * version supports longer addresses for interfaces like Infiniband or IPv6 tunnels.
  */
 struct sockaddr_ll_extended {
     unsigned short int sll_family;
@@ -288,15 +309,24 @@ struct sockaddr_ll_extended {
     unsigned short int sll_hatype;
     unsigned char sll_pkttype;
     unsigned char sll_halen;
-    unsigned char sll_addr[24];
+    unsigned char sll_addr[24];   /* Extended from standard 8 bytes */
 };
 
-/* fwds */
+/* Function declarations */
 static struct ifaddrs *get_link_info(const struct nlmsghdr *message);
 static struct ifaddrs *get_link_address(const struct nlmsghdr *message,
                                         struct ifaddrs **ifaddrs_head);
 
-/* implementaions */
+/**
+ * @brief Attempts to load getifaddrs and freeifaddrs from the system's libc
+ * 
+ * This function tries to dynamically load the native getifaddrs and freeifaddrs
+ * implementations from libc. If successful, these will be used instead of the
+ * custom implementation.
+ * 
+ * @param getifaddrs_impl Pointer to store the getifaddrs function pointer
+ * @param freeifaddrs_impl Pointer to store the freeifaddrs function pointer
+ */
 static void
 get_ifaddrs_impl(int (**getifaddrs_impl)(struct ifaddrs **ifap),
                  void (**freeifaddrs_impl)(struct ifaddrs *ifa)) {
@@ -321,6 +351,11 @@ get_ifaddrs_impl(int (**getifaddrs_impl)(struct ifaddrs **ifap),
     }
 }
 
+/**
+ * @brief Frees a single ifaddrs structure and all its associated resources
+ * 
+ * @param ifap Pointer to pointer of the ifaddrs structure to free
+ */
 static void
 free_single_ifaddrs(struct ifaddrs **ifap) {
     struct ifaddrs *ifa = ifap ? *ifap : NULL;
@@ -346,6 +381,12 @@ free_single_ifaddrs(struct ifaddrs **ifap) {
     *ifap = NULL;
 }
 
+/**
+ * @brief Opens a netlink socket and initializes a session for communication
+ * 
+ * @param session Pointer to a netlink_session structure to initialize
+ * @return 0 on success, -1 on failure
+ */
 static int
 open_netlink_session(netlink_session *session) {
     assert(session != 0);
@@ -379,6 +420,13 @@ open_netlink_session(netlink_session *session) {
     return 0;
 }
 
+/**
+ * @brief Sends a netlink request to retrieve network information
+ * 
+ * @param session Pointer to an initialized netlink_session
+ * @param type Request type (RTM_GETLINK or RTM_GETADDR)
+ * @return 0 on success, -1 on failure
+ */
 static int
 send_netlink_dump_request(netlink_session *session, int type) {
     netlink_request request;
@@ -417,6 +465,14 @@ send_netlink_dump_request(netlink_session *session, int type) {
     return 0;
 }
 
+/**
+ * @brief Appends an interface address structure to the linked list
+ * 
+ * @param addr Address structure to append
+ * @param ifaddrs_head Pointer to head of the linked list
+ * @param last_ifaddr Pointer to the last item in the linked list
+ * @return 0 on success, -1 on failure
+ */
 static int
 append_ifaddr(struct ifaddrs *addr, struct ifaddrs **ifaddrs_head,
               struct ifaddrs **last_ifaddr) {
@@ -970,9 +1026,14 @@ getifaddrs_init() {
 }
 } // namespace internal
 
-/* The getifaddrs/freeifaddrs
- * We don't use 'struct ifaddrs' since that doesn't exist in Android's bionic, but since
- * our version of the structure is 100% compatible we can just use it instead
+/**
+ * @brief Frees memory allocated by getifaddrs()
+ * 
+ * This function releases all memory allocated for the interface address
+ * information returned by getifaddrs(). It traverses the linked list and
+ * frees each structure and its associated data.
+ * 
+ * @param ifa Pointer to the interface address list to free
  */
 inline void
 freeifaddrs(struct ifaddrs *ifa) {
@@ -993,6 +1054,17 @@ freeifaddrs(struct ifaddrs *ifa) {
         cur = next;
     }
 }
+
+/**
+ * @brief Gets a list of network interfaces and their addresses
+ * 
+ * This function creates a linked list of structures describing the network
+ * interfaces on the local system. For each interface that has addresses
+ * associated with it, the structure describes the addresses and flags.
+ * 
+ * @param ifap Pointer to a pointer where the interface list will be stored
+ * @return 0 on success, -1 on failure (with errno set appropriately)
+ */
 inline int
 getifaddrs(struct ifaddrs **ifap) {
     static std::mutex _getifaddrs_init_lock;

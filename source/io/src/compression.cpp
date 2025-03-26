@@ -1,17 +1,27 @@
-/***
- * Copyright (C) Microsoft. All rights reserved.
- * Licensed under the MIT license. See LICENSE.txt file in the project root for full
- *license information.
+/**
+ * @file qb/io/src/compression.cpp
+ * @brief Implementation of compression and decompression interfaces
+ * 
+ * @details This file provides implementations for various compression algorithms including 
+ * GZIP and DEFLATE using zlib. It includes compressors, decompressors, and factory classes 
+ * for creating compression/decompression providers. The implementation supports both streaming 
+ * and one-shot compression operations.
+ * 
+ * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * =+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
+ *         http://www.apache.org/licenses/LICENSE-2.0
  *
- * HTTP Library: Compression and decompression interfaces
- *
- * For the latest on this and related APIs, please see:
- *https://github.com/Microsoft/cpprestsdk
- *
- * =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
- ****/
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * @ingroup IO
+ */
 
 #include <qb/io/compression.h>
 

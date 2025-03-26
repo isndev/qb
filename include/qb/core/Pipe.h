@@ -1,7 +1,18 @@
-/*
- * qb - C++ Actor Framework
- * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
- *
+/**
+ * @file qb/core/Pipe.h
+ * @brief Actor communication channel for the QB Actor Framework
+ * 
+ * This file defines the Pipe class which provides a communication channel between
+ * actors in the QB Actor Framework. Pipes enable actors to send events to each other
+ * in a type-safe and efficient manner, maintaining the actor model's isolation properties
+ * while facilitating message passing.
+ * 
+ * Each pipe has a source actor and a destination actor, and provides methods for
+ * pushing events to the destination actor with optional pre-allocated sizes for
+ * improved performance with larger messages.
+ * 
+ * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -12,7 +23,8 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- *         limitations under the License.
+ * limitations under the License.
+ * @ingroup Core
  */
 
 #ifndef QB_PROXYPIPE_H

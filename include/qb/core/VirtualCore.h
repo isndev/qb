@@ -1,7 +1,18 @@
-/*
- * qb - C++ Actor Framework
- * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
- *
+/**
+ * @file qb/core/VirtualCore.h
+ * @brief Virtual core management for the QB Actor Framework
+ * 
+ * This file defines the VirtualCore class, which is responsible for managing a logical
+ * processing unit in the QB Actor Framework. It handles actor lifecycle, event routing,
+ * and inter-core communication, enabling efficient parallel execution of actors.
+ * 
+ * Each VirtualCore represents a worker thread that processes actors assigned to it,
+ * managing their event queues and executing event handlers in response to received
+ * messages. The virtual cores coordinate to enable communication between actors
+ * regardless of which core they are assigned to.
+ * 
+ * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -12,7 +23,8 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- *         limitations under the License.
+ * limitations under the License.
+ * @ingroup Core
  */
 
 #ifndef QB_CORE_H

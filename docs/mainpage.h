@@ -1,6 +1,6 @@
 /*
  * qb - C++ Actor Framework
- * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
+ * Copyright (c) 2011-2025 qb - isndev (cpp.actor). All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- *         limitations under the License.
+ * limitations under the License.
  */
 
 /*!
@@ -56,7 +56,7 @@
  *   - Apache Version 2
  *
  * @section Introduction
- * Our CPUs are not getting any faster. What’s happening is that we now have multiple cores on them. If we want to take advantage of all this hardware we have available now, we need a way to run our code concurrently. Decades of untraceable bugs and developers’ depression have shown that threads are not the way to go.
+ * Our CPUs are not getting any faster. Whatâ€™s happening is that we now have multiple cores on them. If we want to take advantage of all this hardware we have available now, we need a way to run our code concurrently. Decades of untraceable bugs and developersâ€™ depression have shown that threads are not the way to go.
  *
  * #### Definition
  * The Actor model is a concurrent model of computation that treats "actors" as the universal primitives of concurrent computation.

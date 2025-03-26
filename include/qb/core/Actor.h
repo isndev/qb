@@ -1,7 +1,13 @@
-/*
- * qb - C++ Actor Framework
- * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
+/**
+ * @file qb/core/Actor.h
+ * @brief Actor base class and core actor model implementation
  *
+ * This file defines the core Actor class which serves as the base class for all actors
+ * in the QB Actor Framework. It implements the fundamental actor model concepts
+ * including message passing via events, lifecycle management, and actor identification.
+ *
+ * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -12,7 +18,8 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- *         limitations under the License.
+ * limitations under the License.
+ * @ingroup Core
  */
 
 #ifndef QB_ACTOR_H
@@ -41,13 +48,61 @@ class VirtualCore;
 class ActorProxy;
 class Service;
 
-/*!
- * @class Actor core/Actor.h qb/actor.h
- * @ingroup Core
- * @brief Actor base class
- * @details
- * The Actor sends event messages to be received by another Actor, which is then treated
- * by an Event handler.\n All UserActors should inherit from Actor class.
+/**
+ * @class Actor
+ * @brief Base class for all actors in the qb framework
+ *
+ * The Actor class is the fundamental unit of computation in the qb framework.
+ * Actors communicate exclusively by passing messages (events) to each other,
+ * which are processed by event handlers. This messaging pattern ensures
+ * isolation and prevents shared mutable state, making the system more robust
+ * for concurrent and distributed applications.
+ *
+ * Each actor:
+ * - Has a unique identity (ActorId)
+ * - Processes events asynchronously
+ * - Can send events to other actors
+ * - Manages its own internal state
+ * - Has a well-defined lifecycle
+ *
+ * Example usage:
+ * @code
+ * class MyActor : public qb::Actor {
+ * private:
+ *     int counter = 0;
+ *
+ * public:
+ *     // Custom event type
+ *     struct IncrementEvent : qb::Event {
+ *         int amount;
+ *         IncrementEvent(int amt) : amount(amt) {}
+ *     };
+ *
+ *     bool onInit() override {
+ *         // Register event handlers
+ *         registerEvent<IncrementEvent>(*this);
+ *         registerEvent<qb::KillEvent>(*this);
+ *         LOG_INFO("MyActor initialized with ID: " << id());
+ *         return true;
+ *     }
+ *
+ *     void on(const IncrementEvent& event) {
+ *         counter += event.amount;
+ *         LOG_INFO("Counter updated to: " << counter);
+ *     }
+ *
+ *     void on(const qb::KillEvent& event) {
+ *         LOG_INFO("MyActor shutting down...");
+ *         kill();
+ *     }
+ * };
+ *
+ * // In a VirtualCore or Main context:
+ * auto actor_id = addActor<MyActor>();
+ * to(actor_id).push<MyActor::IncrementEvent>(5);
+ * @endcode
+ *
+ * @ingroup Actor
  */
 class Actor : nocopy {
     friend class VirtualCore;
@@ -59,50 +114,82 @@ class Actor : nocopy {
     mutable bool _alive = true;
     std::uint32_t id_type = 0u;
 
-    /*!
+    /**
+     * @brief Check if this actor is of a specific type
+     *
+     * @tparam _Type The type to check against
+     * @return true if the actor is of the specified type
+     * @return false otherwise
      * @private
-     * @tparam _Type
      */
     template <typename _Type>
     bool require_type() const noexcept;
 
+    /**
+     * @brief Constructor with specified actor ID
+     *
+     * @param id The actor ID to assign
+     * @private
+     */
     explicit Actor(ActorId id) noexcept;
 
 protected:
-    /*!
+    /**
+     * @brief Register a service index
+     *
+     * @tparam Tag Type tag for the service
+     * @return ServiceId The service ID
      * @private
      */
     template <typename Tag>
     static ServiceId registerIndex() noexcept;
 
-    /*!
+    /**
      * @name Construction/Destruction
      * @{
      */
 
-    /*!
+    /**
+     * @brief Default constructor
+     *
+     * Creates an actor with a default (invalid) ID. The actual ID will be
+     * assigned when the actor is registered with a VirtualCore.
      */
     Actor() noexcept;
 
-    /*!
+    /**
+     * @brief Virtual destructor
+     *
+     * Ensures proper cleanup of derived actor classes.
      */
     virtual ~Actor() noexcept = default;
 
-    /*!
-     * @brief DerivedActor should implement this method
-     * @return true on init success then false
-     * @details
-     * example:
+    /**
+     * @brief Initialization callback
+     *
+     * This method is called when the actor is added to the system.
+     * Override this method to perform initialization tasks such as
+     * registering event handlers and setting up actor state.
+     *
+     * Example:
      * @code
-     * virtual bool onInit() {
-     *   // register events and callback here
-     *   // can also create actors
-     *   // ...
-     *   return true
+     * bool onInit() override {
+     *   // Register events
+     *   registerEvent<CustomEvent>(*this);
+     *   registerEvent<qb::KillEvent>(*this);
+     *
+     *   // Initialize resources or state
+     *   myResource = allocateResource();
+     *   if (!myResource)
+     *     return false;  // Initialization failed
+     *
+     *   return true;     // Initialization successful
      * }
      * @endcode
-     * @attention
-     * /!\ If initialization has failed DerivedActor will not be added to the engine
+     *
+     * @return true if initialization was successful
+     * @return false if initialization failed, which prevents the actor from
+     *         being added to the engine
      */
     virtual bool
     onInit() {
@@ -110,120 +197,159 @@ protected:
     };
 
 public:
-    /*!
-     * Kill the Actor
+    /**
+     * @brief Terminate this actor
+     *
+     * Marks the actor for removal from the system. After calling this method,
+     * the actor will no longer receive events and will be cleaned up by the
+     * framework.
+     *
+     * This method is typically called from event handlers when the actor
+     * needs to terminate itself, or it can be triggered by sending a KillEvent
+     * to the actor.
      */
     void kill() const noexcept;
 
-    /*!
+    /**
      * @}
      */
 
 public:
-    /*!
-     * @name Registered Event
+    /**
+     * @name Built-in Event Handlers
      * @{
      */
 
-    /*!
-     * @brief Receiving this event will kill the Actor
-     * @param event received event
-     * @details
-     * This event can be overloaded by DerivedActor.\n
-     * example:
+    /**
+     * @brief Handler for KillEvent
+     *
+     * Default handler for the KillEvent which terminates the actor.
+     * Derived classes can override this handler to perform cleanup
+     * before termination, but should typically call kill() at the end
+     * of their implementation.
+     *
+     * Example of overriding:
      * @code
-     * // ...
-     * registerEvent<qb::KillEvent>(*this);
-     * // DerivedActor should also define the event callback
-     * void on(qb::KillEvent const &event) {
-     *   // do something before killing actor
+     * void on(qb::KillEvent const &event) override {
+     *   // Perform cleanup
+     *   closeConnections();
+     *   releaseResources();
+     *
+     *   // Finally, kill the actor
      *   kill();
      * }
      * @endcode
-     * @attention
-     * /!\ Do not forget to call kill on overloaded function.
+     *
+     * @param event The received kill event
      */
     void on(KillEvent const &event) noexcept;
 
-    /*!
-     * @brief Receiving signal
-     * @param event received event
-     * @details
-     * This event can be overloaded by DerivedActor.\n
-     * example:
+    /**
+     * @brief Handler for SignalEvent
+     *
+     * Default handler for system signals that terminates the actor on signals
+     * like SIGINT. Derived classes can override this handler to perform custom
+     * signal handling.
+     *
+     * Example of overriding:
      * @code
-     * // ...
-     * registerEvent<qb::SignalEvent>(*this);
-     * // DerivedActor should also define the event callback
-     * // ex : default behaviour
-     * void on(qb::SignalEvent const &event) {
-     *   // do something before killing actor
-     *   if (event.signum == SIGINT)
-     *      kill();
+     * void on(qb::SignalEvent const &event) override {
+     *   if (event.signum == SIGINT) {
+     *     // Handle interrupt signal
+     *     LOG_INFO("Received interrupt signal, performing graceful shutdown");
+     *     kill();
+     *   } else if (event.signum == SIGUSR1) {
+     *     // Handle custom signals
+     *     LOG_INFO("Received SIGUSR1, reloading configuration");
+     *     reloadConfig();
+     *   }
      * }
      * @endcode
-     * @attention
-     * /!\ by default has same behaviour than KillEvent.
+     *
+     * @param event The received signal event
      */
     void on(SignalEvent const &event) noexcept;
 
-    /*!
-     * @brief Receiving this event will unregister the Actor's callback
-     * @param event received event
-     * @attention
-     * /!\ Do not overload this function.
+    /**
+     * @brief Handler for UnregisterCallbackEvent
+     *
+     * This handler unregisters a previously registered callback.
+     * It should not be overridden by derived classes.
+     *
+     * @param event The received unregister callback event
      */
     void on(UnregisterCallbackEvent const &event) noexcept;
 
+    /**
+     * @brief Handler for PingEvent
+     *
+     * Responds to ping requests, used for actor alive checks and diagnostics.
+     *
+     * @param event The received ping event
+     */
     void on(PingEvent const &event) noexcept;
 
-    /*!
+    /**
      * @}
      */
 
 public:
-    /*!
-     * @class EventBuilder core/ActorId.h qb/actor.h
-     * @brief Helper to build Events
+    /**
+     * @class EventBuilder
+     * @brief Helper class for building and sending events to actors
+     *
+     * This class simplifies the process of sending multiple events to a target
+     * actor. It provides a fluent interface for chaining event sends, ensuring
+     * that events are delivered in the order they are pushed.
+     *
+     * @ingroup Event
      */
     class EventBuilder {
         friend class Actor;
         Pipe dest_pipe;
 
+        /**
+         * @brief Construct a new EventBuilder for the given pipe
+         *
+         * @param pipe The destination pipe to send events to
+         */
         explicit EventBuilder(Pipe const &pipe) noexcept;
 
     public:
         EventBuilder() = delete;
         EventBuilder(EventBuilder const &rhs) noexcept = default;
 
-        /*!
-         * @brief Send a new ordered event
-         * @tparam _Event DerivedEvent type
-         * @param args arguments to forward to the constructor of the _Event
-         * @return Current EventBuilder
-         * @details
-         * EventBuilder is given by Actor::to function.\n
-         * This function can be chained.\n
-         * All events pushed will be received ordered by push order.\n
-         * example:
+        /**
+         * @brief Send a new event to the target actor
+         *
+         * Creates and sends an event of the specified type to the target actor.
+         * The event is constructed with the provided arguments and will be
+         * delivered in the order it was pushed.
+         *
+         * Example:
          * @code
-         * to(destId)
-         * .push<MyEvent1>()
-         * .push<MyEvent2>(param1, param2)
-         * // ...
-         * ;
+         * // Send multiple events to an actor
+         * to(targetActorId)
+         *   .push<ReadyEvent>()
+         *   .push<DataEvent>(buffer, size)
+         *   .push<CompleteEvent>(status);
          * @endcode
+         *
+         * @tparam _Event The type of event to create and send
+         * @tparam Args Types of arguments to forward to the event constructor
+         * @param args Arguments to forward to the event constructor
+         * @return Reference to this EventBuilder for method chaining
          */
         template <typename _Event, typename... _Args>
         EventBuilder &push(_Args &&...args) noexcept;
     };
 
-    /*!
+    /**
      * @name Public Accessors
      * @{
      */
 
-    /*!
+    /**
      * Get ActorId
      * @return ActorId of this actor
      */
@@ -232,25 +358,25 @@ public:
         return _id;
     }
 
-    /*!
+    /**
      * Get core index
      * @return core index where this actor is running
      */
     [[nodiscard]] CoreId getIndex() const noexcept;
 
-    /*!
+    /**
      * Get derived class name
      * @return name as string_view of this actor's class
      */
     [[nodiscard]] std::string_view getName() const noexcept;
 
-    /*!
+    /**
      * @brief Get the set of cores that this actor can communicate with
      * @return Set of core IDs this actor can communicate with
      */
     [[nodiscard]] const CoreIdSet &getCoreSet() const noexcept;
 
-    /*!
+    /**
      * @brief Get current time
      * @return nano timestamp since epoch
      * @details
@@ -266,13 +392,13 @@ public:
      */
     [[nodiscard]] uint64_t time() const noexcept;
 
-    /*!
+    /**
      * @private
      */
     template <typename T>
     [[nodiscard]] static ActorId getServiceId(CoreId index) noexcept;
 
-    /*!
+    /**
      * @brief Get direct access to ServiceActor* in same core
      * @return ptr to _ServiceActor else nullptr if not registered in core
      */
@@ -281,24 +407,24 @@ public:
 
     // void setCoreLowLatency(bool state) const noexcept;
 
-    /*!
+    /**
      * @brief Check if Actor is alive
      * @return true if Actor is alive else false
      */
     [[nodiscard]] bool is_alive() const noexcept;
 
-    /*!
+    /**
      * @}
      */
 
-    /*!
+    /**
      * @name Public Member Functions
      * This part describes how to manage Actor loop callback, events registration,
      * several ways to send events and create referenced actors.
      * @{
      */
 
-    /*!
+    /**
      * @brief Register a looped callback
      * @param actor reference of DerivedActor
      * @details
@@ -325,7 +451,7 @@ public:
     template <typename _Actor>
     void registerCallback(_Actor &actor) const noexcept;
 
-    /*!
+    /**
      * @brief Unregister actor callback
      * @param actor reference of DerivedActor
      * @details
@@ -337,12 +463,12 @@ public:
     template <typename _Actor>
     void unregisterCallback(_Actor &actor) const noexcept;
 
-    /*!
+    /**
      * @private
      */
     void unregisterCallback() const noexcept;
 
-    /*!
+    /**
      * @brief Actor will listen on new _Event
      * @tparam _Event DerivedEvent type
      * @param actor reference of DerivedActor
@@ -365,7 +491,7 @@ public:
     template <typename _Event, typename _Actor>
     void registerEvent(_Actor &actor) const noexcept;
 
-    /*!
+    /**
      * @brief Actor will stop listening _Event
      * @tparam _Event DerivedEvent type
      * @param actor reference of DerivedActor
@@ -378,14 +504,14 @@ public:
     template <typename _Event, typename _Actor>
     void unregisterEvent(_Actor &actor) const noexcept;
 
-    /*!
+    /**
      * @private
      * @tparam _Event
      */
     template <typename _Event>
     void unregisterEvent() const noexcept;
 
-    /*!
+    /**
      * @brief Get EventBuilder for ActorId destination
      * @param dest ActorId destination
      * @return EventBuilder for chaining event pushes
@@ -408,7 +534,7 @@ public:
      */
     [[nodiscard]] EventBuilder to(ActorId dest) const noexcept;
 
-    /*!
+    /**
      * @brief Send a new ordered event
      * @tparam _Event DerivedEvent type
      * @param dest destination ActorId
@@ -433,7 +559,7 @@ public:
     template <typename _Event, typename... _Args>
     _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 
-    /*!
+    /**
      * @brief Send a new unordered event
      * @tparam _Event DerivedEvent type
      * @param dest destination ActorId
@@ -457,7 +583,7 @@ public:
     template <typename _Event, typename... _Args>
     void send(ActorId const &dest, _Args &&...args) const noexcept;
 
-    /*!
+    /**
      * @brief build local event
      * @tparam _Event Event type
      * @param source ActorId source
@@ -499,7 +625,7 @@ public:
     template <typename _Event, typename... _Args>
     void broadcast(_Args &&...args) const noexcept;
 
-    /*!
+    /**
      * @brief Reply an event
      * @param event any received event
      * @details
@@ -516,7 +642,7 @@ public:
      */
     void reply(Event &event) const noexcept;
 
-    /*!
+    /**
      * @brief Forward an event
      * @param dest destination ActorId
      * @param event any received event
@@ -539,7 +665,7 @@ public:
     void push(Event const &event) const noexcept;
     bool try_send(Event const &event) const noexcept;
 
-    /*!
+    /**
      * @brief Get access to unidirectional out events pipe
      * @param dest destination ActorId
      * @return destination Pipe
@@ -550,7 +676,7 @@ public:
      */
     [[nodiscard]] Pipe getPipe(ActorId dest) const noexcept;
 
-    /*!
+    /**
      * @brief Create new referenced _Actor
      * @tparam _Actor DerivedActor type
      * @param args arguments to forward to the constructor of the _Actor
@@ -573,12 +699,12 @@ public:
     template <typename _Actor, typename... _Args>
     _Actor *addRefActor(_Args &&...args) const;
 
-    /*!
+    /**
      * @}
      */
 };
 
-/*!
+/**
  * @class Service
  * @brief internal
  */
@@ -587,7 +713,7 @@ public:
     explicit Service(ServiceId sid);
 };
 
-/*!
+/**
  * @class ServiceActor actor.h qb/actor.h
  * @ingroup Core
  * @brief SingletonActor base class

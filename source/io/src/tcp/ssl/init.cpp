@@ -1,7 +1,13 @@
-/*
- * qb - C++ Actor Framework
- * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
+/**
+ * @file qb/io/src/tcp/ssl/init.cpp
+ * @brief SSL/TLS library initialization implementation
  *
+ * This file contains the implementation for initializing and configuring the SSL/TLS
+ * library used by the QB framework. It handles the setup of the cryptographic subsystem,
+ * loading of security certificates, and configuration of cipher suites and security options.
+ *
+ * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -12,7 +18,8 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- *         limitations under the License.
+ * limitations under the License.
+ * @ingroup IO
  */
 
 #include <openssl/ssl.h>

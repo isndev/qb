@@ -1,7 +1,14 @@
-/*
- * qb - C++ Actor Framework
- * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
+/**
+ * @file qb/utility/build_macros.h
+ * @brief Platform and compiler detection macros
  *
+ * This file provides a comprehensive set of preprocessor macros for detecting
+ * compiler features, platform specifics, and C++ language version support.
+ * It defines platform-independent APIs, export/import directives for DLLs,
+ * and compatibility macros for different compiler environments.
+ *
+ * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -12,7 +19,8 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- *         limitations under the License.
+ * limitations under the License.
+ * @ingroup Utility
  */
 
 #include <cerrno>

@@ -1,7 +1,17 @@
-/*
- * qb - C++ Actor Framework
- * Copyright (C) 2011-2021 isndev (www.qbaf.io). All rights reserved.
- *
+/**
+ * @file qb/core/ActorId.h
+ * @brief Actor and core identification for the QB Actor Framework
+ * 
+ * This file defines the core identification types and the ActorId class which is used
+ * for uniquely identifying actors within the QB Actor Framework. It provides types for
+ * core IDs, service IDs, and actor IDs, as well as utilities for set operations on 
+ * collections of core IDs.
+ * 
+ * The ActorId is a compound identifier that includes both the core ID where an actor
+ * is located and a service ID that uniquely identifies the actor within that core.
+ * 
+ * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -12,7 +22,8 @@
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
- *         limitations under the License.
+ * limitations under the License.
+ * @ingroup Core
  */
 
 #ifndef QB_ACTORID_H

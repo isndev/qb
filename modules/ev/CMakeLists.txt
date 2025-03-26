@@ -1,15 +1,34 @@
+# -----------------------------------------------------------------------------
+# libev - Event Library CMake Configuration
+#
+# This file configures the build system for the libev library, which provides
+# a high-performance event loop implementation used by the qb framework.
+# -----------------------------------------------------------------------------
+
 cmake_minimum_required(VERSION 3.13)
 project(libev C)
+
+# -----------------------------------------------------------------------------
+# Library versioning
+# -----------------------------------------------------------------------------
 set(LIBEV_VERSION 4.35)
 set(LIBEV_VERSION_CURRENT 4)
 set(LIBEV_VERSION_AGE 0)
 set(LIBEV_VERSION_REVISION 0)
 
+# -----------------------------------------------------------------------------
+# Configuration and build setup
+# -----------------------------------------------------------------------------
+# Include libtool compatibility macros
 include(${CMAKE_CURRENT_SOURCE_DIR}/CMakeMacroLibtoolFile.cmake)
 include(CheckIncludeFile)
 include(CheckSymbolExists)
 include(CheckCSourceCompiles)
+
+# Configure compiler with minimal warnings for this third-party library
 config_compiler_with_no_warning()
+
+# Build options
 #if(NOT DEFINED BUILD_SHARED_LIBS)
 #    option(BUILD_SHARED_LIBS "Build libev as a shared library" ON)
 #endif()
@@ -20,6 +39,10 @@ if(NOT DEFINED BUILD_PIC_STATIC_LIBS AND NOT DEFINED CMAKE_POSITION_INDEPENDENT_
     option(BUILD_PIC_STATIC_LIBS "Build the libev static library position independent" ON)
 endif()
 
+# -----------------------------------------------------------------------------
+# Feature detection - platform-specific event mechanisms
+# -----------------------------------------------------------------------------
+# Check for various event notification mechanisms
 check_include_file(sys/inotify.h  HAVE_SYS_INOTIFY_H)
 check_include_file(sys/epoll.h    HAVE_SYS_EPOLL_H)
 check_include_file(sys/event.h    HAVE_SYS_EVENT_H)
@@ -29,6 +52,7 @@ check_include_file(sys/select.h   HAVE_SYS_SELECT_H)
 check_include_file(sys/eventfd.h  HAVE_SYS_EVENTFD_H)
 check_include_file(sys/signalfd.h HAVE_SYS_SIGNALFD_H)
 
+# Check for available notification mechanisms functionality
 if(HAVE_SYS_INOTIFY_H)
     check_symbol_exists(inotify_init sys/inotify.h  HAVE_INOTIFY_INIT)
 endif()
@@ -54,6 +78,7 @@ if(HAVE_SYS_SIGNALFD_H)
     check_symbol_exists(signalfd     sys/signalfd.h HAVE_SIGNALFD)
 endif()
 
+# Windows-specific configuration
 if(WIN32)
     set(HAVE_SELECT 0)
     set(EV_USE_SELECT 0)
@@ -63,8 +88,13 @@ if(WIN32)
     set(EV_SELECT_IS_WINSOCKET 0)
 endif()
 
+# -----------------------------------------------------------------------------
+# Feature detection - timing mechanisms
+# -----------------------------------------------------------------------------
+# Check for clock_gettime availability
 check_symbol_exists(clock_gettime time.h HAVE_CLOCK_GETTIME)
 if(NOT HAVE_CLOCK_GETTIME)
+    # On Linux, try to use syscall if regular function is not available
     if(CMAKE_SYSTEM_NAME STREQUAL Linux)
         message(STATUS "Checking for clock_gettime syscall")
         check_c_source_compiles("\
@@ -84,6 +114,7 @@ if(NOT HAVE_CLOCK_GETTIME)
                 )
     endif()
 
+    # If still not available, try linking with rt library
     if(NOT AVOID_LIBRT AND NOT HAVE_CLOCK_SYSCALL)
         set(CMAKE_REQUIRED_LIBRARIES rt)
         check_symbol_exists(clock_gettime time.h _HAVE_CLOCK_GETTIME_2)
@@ -96,6 +127,7 @@ if(NOT HAVE_CLOCK_GETTIME)
     endif()
 endif()
 
+# Check for nanosleep availability
 check_symbol_exists(nanosleep time.h HAVE_NANOSLEEP)
 if(NOT AVOID_LIBRT AND NOT HAVE_NANOSLEEP)
     set(CMAKE_REQUIRED_LIBRARIES rt)
@@ -108,6 +140,7 @@ if(NOT AVOID_LIBRT AND NOT HAVE_NANOSLEEP)
     endif()
 endif()
 
+# Check for math library functions
 check_symbol_exists(floor math.h HAVE_FLOOR)
 if(NOT AVOID_LIBM AND NOT HAVE_FLOOR)
     set(CMAKE_REQUIRED_LIBRARIES m)
@@ -120,12 +153,18 @@ if(NOT AVOID_LIBM AND NOT HAVE_FLOOR)
     endif()
 endif()
 
+# -----------------------------------------------------------------------------
+# Generate configuration header
+# -----------------------------------------------------------------------------
 configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmakein
         ${CMAKE_CURRENT_BINARY_DIR}/config.h
         @ONLY
 )
 
+# -----------------------------------------------------------------------------
+# Documentation (man page) generation
+# -----------------------------------------------------------------------------
 if(NOT DEFINED SKIP_MAN_PAGE)
     if(NOT POD2MAN_COMMAND)
         message(STATUS "Checking for pod2man")
@@ -143,6 +182,7 @@ if(NOT DEFINED SKIP_MAN_PAGE)
         endif()
     endif()
 
+    # Generate man page if pod2man is available
     if(POD2MAN_COMMAND)
         add_custom_command(
                 OUTPUT ev.3
@@ -157,6 +197,7 @@ if(NOT DEFINED SKIP_MAN_PAGE)
         )
         add_custom_target(man ALL DEPENDS ev.3)
 
+        # Install man page
         install(
                 FILES ${CMAKE_CURRENT_BINARY_DIR}/ev.3
                 DESTINATION share/man/man3
@@ -164,33 +205,64 @@ if(NOT DEFINED SKIP_MAN_PAGE)
     endif()
 endif()
 
+# -----------------------------------------------------------------------------
+# Include paths and source files
+# -----------------------------------------------------------------------------
 if(NOT CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_CURRENT_BINARY_DIR)
     include_directories(${CMAKE_CURRENT_BINARY_DIR})
 endif()
 
+# Define source files
 list(APPEND LIBEV_SRCS
         ev.c
         event.c
         )
+
+# -----------------------------------------------------------------------------
+# Library targets
+# -----------------------------------------------------------------------------
+# Static library build
 if(BUILD_STATIC_LIBS)
     add_library(ev STATIC ${LIBEV_SRCS})
+    
+    # Windows-specific dependencies
     if(WIN32)
         target_link_libraries(ev ws2_32)
     endif()
+    
+    # Configure library properties
     set_target_properties(ev PROPERTIES
             OUTPUT_NAME ev
             VERSION   ${LIBEV_VERSION_CURRENT}.${LIBEV_VERSION_AGE}.${LIBEV_VERSION_REVISION}
             SOVERSION ${LIBEV_VERSION_CURRENT}
+            POSITION_INDEPENDENT_CODE ON
             )
+            
+    # Enable position-independent code if requested
     if(BUILD_PIC_STATIC_LIBS)
         set_target_properties(ev PROPERTIES
                 POSITION_INDEPENDENT_CODE ON
                 )
     endif()
-#
-#    install(TARGETS ev ARCHIVE DESTINATION lib)
+
+    # Mark ev target for installation if QB installation is enabled
+    if(${QB_PREFIX_UPPER}_INSTALL)
+        install(TARGETS ev
+            EXPORT evTargets
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        )
+        
+        # Install the export file
+        install(EXPORT evTargets
+            FILE evTargets.cmake
+            NAMESPACE qb::
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+        )
+    endif()
 endif()
 
+# Shared library build is commented out in the original file
 #if(BUILD_SHARED_LIBS)
 #    add_library(ev-shared SHARED ${LIBEV_SRCS})
 #    if(WIN32)
@@ -213,6 +285,7 @@ endif()
 ##    install(TARGETS ev-shared LIBRARY DESTINATION lib)
 #endif()
 
+# Installation of headers is commented out in the original file
 #if((BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS) AND NOT SKIP_INSTALL_HEADERS)
 #    install(
 #            FILES ev.h ev++.h event.h
