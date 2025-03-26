@@ -55,28 +55,28 @@ Actor::unregisterEvent() const noexcept {
 
 template <typename _Actor, typename... _Args>
 _Actor *
-Actor::addRefActor(_Args &&... args) const {
+Actor::addRefActor(_Args &&...args) const {
     return VirtualCore::_handler->template addReferencedActor<_Actor>(
         std::forward<_Args>(args)...);
 }
 
 template <typename _Event, typename... _Args>
 _Event &
-Actor::push(ActorId const &dest, _Args &&... args) const noexcept {
+Actor::push(ActorId const &dest, _Args &&...args) const noexcept {
     return VirtualCore::_handler->template push<_Event>(dest, id(),
                                                         std::forward<_Args>(args)...);
 }
 
 template <typename _Event, typename... _Args>
 void
-Actor::send(ActorId const &dest, _Args &&... args) const noexcept {
+Actor::send(ActorId const &dest, _Args &&...args) const noexcept {
     VirtualCore::_handler->template send<_Event, _Args...>(dest, id(),
                                                            std::forward<_Args>(args)...);
 }
 
 template <typename _Event, typename... _Args>
 _Event
-Actor::build_event(ActorId const source, _Args &&... args) const noexcept {
+Actor::build_event(ActorId const source, _Args &&...args) const noexcept {
     _Event event{std::forward<_Args>(args)...};
     VirtualCore::fill_event(event, id(), source);
     return event;
@@ -97,7 +97,7 @@ Actor::require() const noexcept {
 
 template <typename _Event, typename... _Args>
 void
-Actor::broadcast(_Args &&... args) const noexcept {
+Actor::broadcast(_Args &&...args) const noexcept {
     VirtualCore::_handler->template broadcast<_Event, _Args...>(
         id(), std::forward<_Args>(args)...);
 }
@@ -116,7 +116,7 @@ Actor::getService() const noexcept {
 
 template <typename _Event, typename... _Args>
 Actor::EventBuilder &
-Actor::EventBuilder::push(_Args &&... args) noexcept {
+Actor::EventBuilder::push(_Args &&...args) noexcept {
     dest_pipe.push<_Event>(std::forward<_Args>(args)...);
     return *this;
 }

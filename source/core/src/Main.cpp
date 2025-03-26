@@ -105,13 +105,15 @@ set_from_core_initializers(CoreInitializerMap const &core_initializers) {
 }
 
 // SharedCoreCommunication
-SharedCoreCommunication::SharedCoreCommunication(CoreInitializerMap const &core_initializers) noexcept
+SharedCoreCommunication::SharedCoreCommunication(
+    CoreInitializerMap const &core_initializers) noexcept
     : _core_set(set_from_core_initializers(core_initializers))
     , _event_safe_deadlock(_core_set.getNbCore())
     , _mail_boxes(_core_set.getSize()) {
     for (const auto &[index, initializer] : core_initializers) {
         const auto nb_producers = _core_set.getNbCore();
-        _mail_boxes[_core_set.resolve(index)] = new Mailbox(nb_producers, initializer.getLatency());
+        _mail_boxes[_core_set.resolve(index)] =
+            new Mailbox(nb_producers, initializer.getLatency());
     }
 }
 
@@ -125,7 +127,7 @@ bool
 SharedCoreCommunication::send(Event const &event) const noexcept {
     const CoreId source_index = _core_set.resolve(event.source.index());
     const CoreId dest_index = _core_set.resolve(event.dest.index());
-    
+
     if (static_cast<bool>(_mail_boxes[dest_index]->enqueue(
             source_index, reinterpret_cast<const EventBucket *>(&event),
             event.bucket_size))) {
@@ -243,7 +245,8 @@ Main::setLatency(uint64_t const latency) {
         initializer.setLatency(latency);
 }
 
-qb::CoreIdSet Main::usedCoreSet() const {
+qb::CoreIdSet
+Main::usedCoreSet() const {
     qb::CoreIdSet ret;
     for (const auto &[index, _] : _core_initializers)
         ret.emplace(index);
@@ -289,7 +292,7 @@ Main::start(bool async) noexcept {
         _is_running = false;
         LOG_CRIT("[Main] Init Failed");
         std::cerr << "CRITICAL: Core Init Failed -> show logs to have more details"
-                   << std::endl;
+                  << std::endl;
     }
 }
 

@@ -18,9 +18,9 @@
 #ifndef QB_CORE_SET_H
 #define QB_CORE_SET_H
 #include <cstdint>
-#include <vector>
 #include <qb/system/container/unordered_set.h>
 #include <qb/utility/type_traits.h>
+#include <vector>
 
 // include from qb
 #include "ActorId.h"
@@ -33,7 +33,8 @@ namespace qb {
  * @brief Manages a set of core identifiers
  * @details
  * CoreSet provides functionality to manage and manipulate sets of core identifiers.
- * It is used to specify which cores should be used for actor execution and communication.
+ * It is used to specify which cores should be used for actor execution and
+ * communication.
  */
 class CoreSet {
     friend class SharedCoreCommunication;
@@ -44,7 +45,7 @@ class CoreSet {
     const std::size_t _nb_core;
     const std::size_t _size;
     std::array<uint8_t, 256> _set;
-    
+
 public:
     CoreSet() = delete;
 
@@ -62,7 +63,8 @@ public:
      * Creates a CoreSet containing sequential core IDs from 0 to nb_core-1.
      * If nb_core is not specified, it uses the number of hardware threads available.
      */
-    [[nodiscard]] static CoreSet build(uint32_t nb_core = std::thread::hardware_concurrency()) noexcept;
+    [[nodiscard]] static CoreSet
+    build(uint32_t nb_core = std::thread::hardware_concurrency()) noexcept;
 
     /*!
      * @brief Resolve a core ID to its index in the set
@@ -92,4 +94,3 @@ public:
 
 } // namespace qb
 #endif // QB_CORESET_H
-

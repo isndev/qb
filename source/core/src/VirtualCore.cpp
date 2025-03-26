@@ -44,8 +44,10 @@ CPU_ISSET(int num, cpu_set_t *cs) {
     return (cs->count & (1 << num));
 }
 
-static int pthread_getaffinity_np(pthread_t thread, size_t cpusetsize, cpu_set_t *cpuset) {
-    if (!cpuset) return false;
+static int
+pthread_getaffinity_np(pthread_t thread, size_t cpusetsize, cpu_set_t *cpuset) {
+    if (!cpuset)
+        return false;
 
     // Only logical cores count on macOS
     int num_cores;
@@ -76,10 +78,9 @@ pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
         return -1;
     thread_affinity_policy_data_t policy = {core};
     mach_thread = pthread_mach_thread_np(thread);
-    const auto ret =  thread_policy_set(mach_thread, THREAD_AFFINITY_POLICY,
-                             (thread_policy_t)&policy, 1);
+    const auto ret = thread_policy_set(mach_thread, THREAD_AFFINITY_POLICY,
+                                       (thread_policy_t)&policy, 1);
     return !(ret == KERN_SUCCESS || ret == KERN_NOT_SUPPORTED);
-
 }
 #endif
 
@@ -132,7 +133,8 @@ VirtualCore::__receive_events__(EventBucket *buffer, std::size_t const nb_events
         event->state.alive = 0;
         _router.route(*event, [this](auto &event) {
             if (!event.getDestination().is_broadcast())
-                LOG_WARN(*this << " failed to send event[" << event.getID() << "] sent from " << event.getSource());
+                LOG_WARN(*this << " failed to send event[" << event.getID()
+                               << "] sent from " << event.getSource());
         });
         ++_metrics._nb_event_received;
         _metrics._nb_bucket_received += event->bucket_size;
@@ -174,7 +176,8 @@ VirtualCore::__flush_all__() noexcept {
                 ++_metrics._nb_event_sent_try;
                 if (!try_send(event) && event.state.qos) {
                     ++_metrics._nb_event_sent_try;
-                    static thread_local auto &current_lock = _engine._event_safe_deadlock[_resolved_index];
+                    static thread_local auto &current_lock =
+                        _engine._event_safe_deadlock[_resolved_index];
                     // current locked by event set to true
                     current_lock.store(true, std::memory_order_release);
                     while (!try_send(event)) {
@@ -183,7 +186,8 @@ VirtualCore::__flush_all__() noexcept {
                         if (current_lock.load(std::memory_order_acquire)) {
                             // notify to unlock dest core
                             _engine
-                                ._event_safe_deadlock[_engine._core_set.resolve(event.dest.index())]
+                                ._event_safe_deadlock[_engine._core_set.resolve(
+                                    event.dest.index())]
                                 .store(false, std::memory_order_release);
                         } else {
                             // partial send another core is maybe in deadlock
@@ -244,8 +248,7 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
 bool
 VirtualCore::__init__actors__() const {
     // Init StaticActors
-    return !std::any_of(_actors.begin(), _actors.end(),
-                      [](auto &pair) {
+    return !std::any_of(_actors.begin(), _actors.end(), [](auto &pair) {
         auto ret = !pair.second->onInit();
         if (ret)
             LOG_CRIT(*pair.second << " failed to init");
@@ -256,7 +259,7 @@ VirtualCore::__init__actors__() const {
 void
 VirtualCore::__workflow__() {
     LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actors.size())
-                << " actor(s)");
+                   << " actor(s)");
     while (likely(true)) {
         _metrics._nanotimer = Timestamp::nano();
         // core has io
@@ -405,7 +408,8 @@ VirtualCore::getIndex() const noexcept {
     return _index;
 }
 
-const qb::unordered_set<CoreId> &VirtualCore::getCoreSet() const noexcept {
+const qb::unordered_set<CoreId> &
+VirtualCore::getCoreSet() const noexcept {
     return _engine._core_set._raw_set;
 }
 
