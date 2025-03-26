@@ -21,7 +21,7 @@ namespace qb {
 
 CoreSet::CoreSet(qb::unordered_set<CoreId> const &set) noexcept
     : _raw_set(set)
-    , _nb_core(set.size())
+    , _nb_core(std::size(set))
     , _size(*std::max_element(set.cbegin(), set.cend()) + 1u) {
     uint8_t idx = 0;
     for (auto id : set)

@@ -85,7 +85,7 @@ public:
 
         /*!
          * @brief Get list of created ActorId by the ActorBuilder
-         * @return Created ActorId list
+         * @return Created ActorId list containing all actors created by this builder
          */
         [[nodiscard]] ActorIdList idList() const noexcept;
     };
@@ -126,7 +126,7 @@ public:
 
     /*!
      * @brief Get ActorBuilder from CoreIntializer
-     * @return ActorBuilder
+     * @return ActorBuilder for creating multiple actors in a chain
      * @attention
      * @code
      * auto builder1 = main.core(0).builder();
@@ -135,11 +135,12 @@ public:
      * // builder1 != builder2
      * @endcode
      */
-    ActorBuilder builder() noexcept;
+    [[nodiscard]] ActorBuilder builder() noexcept;
 
     /*!
      * @brief Set VirtualCore affinity
      * @param cores list of physical cores to be used
+     * @return Reference to this CoreInitializer for method chaining
      * @note
      * by default affinity is on VirtualCore index
      */
@@ -148,6 +149,7 @@ public:
     /*!
      * @brief Set VirtualCore max wait latency in nanosecond if it hasn't received any core/io events
      * @param latency in nanoseconds (default 0)
+     * @return Reference to this CoreInitializer for method chaining
      * @note
      * 0 is low latency (Core is used at 100%)
      * latency > 0 Core max wating time before handling events and callbacks
@@ -192,6 +194,10 @@ class SharedCoreCommunication : nocopy {
                 _cv.notify_all();
         }
 
+        /**
+         * @brief Get the latency setting for this mailbox
+         * @return Latency value in nanoseconds
+         */
         [[nodiscard]] uint64_t
         getLatency() const noexcept {
             return _latency;
@@ -209,8 +215,24 @@ public:
 
     ~SharedCoreCommunication() noexcept;
 
+    /**
+     * @brief Send an event to the appropriate core
+     * @param event The event to send
+     * @return true if the event was successfully sent, false otherwise
+     */
     [[nodiscard]] bool send(Event const &event) const noexcept;
+    
+    /**
+     * @brief Get the mailbox for a specific core
+     * @param id The core ID to get the mailbox for
+     * @return Reference to the mailbox for the specified core
+     */
     [[nodiscard]] Mailbox &getMailBox(CoreId id) const noexcept;
+    
+    /**
+     * @brief Get the number of cores in the system
+     * @return The number of cores
+     */
     [[nodiscard]] CoreId getNbCore() const noexcept;
 };
 

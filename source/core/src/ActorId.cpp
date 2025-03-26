@@ -19,12 +19,12 @@
 
 namespace qb {
 ActorId::ActorId() noexcept
-    : _id(0)
-    , _index(0) {}
+    : _service_id(0)
+    , _core_id(0) {}
 
 ActorId::ActorId(ServiceId id, CoreId index) noexcept
-    : _id(id)
-    , _index(index) {}
+    : _service_id(id)
+    , _core_id(index) {}
 
 ActorId::ActorId(uint32_t id) noexcept {
     *reinterpret_cast<uint32_t *>(this) = id;
@@ -36,17 +36,17 @@ ActorId::operator uint32_t() const noexcept {
 
 ServiceId
 ActorId::sid() const noexcept {
-    return _id;
+    return _service_id;
 }
 
 CoreId
 ActorId::index() const noexcept {
-    return _index;
+    return _core_id;
 }
 
 bool
 ActorId::is_broadcast() const noexcept {
-    return _id == BroadcastSid;
+    return _service_id == BroadcastSid;
 }
 
 bool

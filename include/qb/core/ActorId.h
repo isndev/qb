@@ -36,20 +36,25 @@ using EventId = TypeId;
 /*!
  * @class ActorId core/ActorId.h qb/actorid.h
  * @ingroup Core
- * @brief Actor unique identifier
+ * @brief Unique identifier for actors
  * @details
- * ActorId is a composition of a Service Index (sid) and VirtualCore Index (index).
+ * ActorId combines a service/actor identifier with a core identifier to form a unique
+ * identifier for an actor within the actor system. It provides methods for creating,
+ * comparing, and validating actor IDs.
  */
 class ActorId {
+    template <typename T>
+    friend struct std::hash;
+
     friend class CoreInitializer;
     friend class SharedCoreCommunication;
     friend class VirtualCore;
     friend class Actor;
     friend class Service;
 
-    ServiceId _id;
-    CoreId _index;
-
+private:
+    ServiceId _service_id;
+    CoreId _core_id;
 protected:
     ActorId(ServiceId id, CoreId index) noexcept;
 
@@ -66,24 +71,34 @@ public:
      * internal function
      */
     ActorId(uint32_t id) noexcept;
-    operator uint32_t() const noexcept;
+    
+    /**
+     * @brief Conversion operator to uint32_t
+     * @return The ActorId as a 32-bit unsigned integer
+     */
+    [[nodiscard]] operator uint32_t() const noexcept;
 
     /*!
-     * @return Service index
+     * @brief Get the service identifier component of this ActorId
+     * @return Service identifier
      */
     [[nodiscard]] ServiceId sid() const noexcept;
+    
     /*!
-     * @return VirtualCore index
+     * @brief Get the core identifier component of this ActorId
+     * @return VirtualCore identifier
      */
     [[nodiscard]] CoreId index() const noexcept;
 
     /*!
-     * @return true if ActorId is a Core broadcast id
+     * @brief Check if this ActorId represents a broadcast identifier
+     * @return true if ActorId is a Core broadcast id, false otherwise
      */
     [[nodiscard]] bool is_broadcast() const noexcept;
 
     /*!
-     * @return true if ActorId is valid
+     * @brief Check if this ActorId is valid (not NotFound)
+     * @return true if ActorId is valid, false otherwise
      */
     [[nodiscard]] bool is_valid() const noexcept;
 };

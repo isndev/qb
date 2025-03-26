@@ -77,7 +77,7 @@ VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) noexc
                       "EventQOS < 2 require to be trivially destructible");
     }
 
-    if constexpr (std::is_base_of<ServiceEvent, T>::value) {
+    if constexpr (std::is_base_of_v<ServiceEvent, T>) {
         data.forward = source;
         std::swap(data.id, data.service_event_id);
     }
@@ -88,12 +88,12 @@ VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) noexc
 template <typename T, typename... _Init>
 void
 VirtualCore::send(ActorId const dest, ActorId const source, _Init &&... init) noexcept {
-    auto &pipe = __getPipe__(dest._index);
+    auto &pipe = __getPipe__(dest._core_id);
     auto &data = pipe.template allocate<T>(std::forward<_Init>(init)...);
 
     fill_event(data, dest, source);
 
-    if (dest._index != _index && try_send(data))
+    if (dest._core_id != _index && try_send(data))
         pipe.free(data.bucket_size);
 }
 
@@ -107,7 +107,7 @@ VirtualCore::broadcast(ActorId const source, _Init &&... init) noexcept {
 template <typename T, typename... _Init>
 T &
 VirtualCore::push(ActorId const dest, ActorId const source, _Init &&... init) noexcept {
-    auto &pipe = __getPipe__(dest._index);
+    auto &pipe = __getPipe__(dest._core_id);
     auto &data = pipe.template allocate_back<T>(std::forward<_Init>(init)...);
 
     fill_event(data, dest, source);
@@ -117,7 +117,7 @@ VirtualCore::push(ActorId const dest, ActorId const source, _Init &&... init) no
 //! Event Api
 
 template <typename Tag>
-const ServiceId ServiceActor<Tag>::ServiceIndex = Actor::registerIndex<Tag>();
+inline const ServiceId ServiceActor<Tag>::ServiceIndex = Actor::registerIndex<Tag>();
 
 } // namespace qb
 

@@ -99,8 +99,8 @@ CoreInitializer::ActorBuilder::idList() const noexcept {
 static auto
 set_from_core_initializers(CoreInitializerMap const &core_initializers) {
     qb::unordered_set<CoreId> core_ids;
-    for (const auto &initializer : core_initializers)
-        core_ids.insert(initializer.first);
+    for (const auto &[index, _] : core_initializers)
+        core_ids.insert(index);
     return core_ids;
 }
 
@@ -109,9 +109,9 @@ SharedCoreCommunication::SharedCoreCommunication(CoreInitializerMap const &core_
     : _core_set(set_from_core_initializers(core_initializers))
     , _event_safe_deadlock(_core_set.getNbCore())
     , _mail_boxes(_core_set.getSize()) {
-    for (const auto &initializer : core_initializers) {
+    for (const auto &[index, initializer] : core_initializers) {
         const auto nb_producers = _core_set.getNbCore();
-        _mail_boxes[_core_set.resolve(initializer.first)] = new Mailbox(nb_producers, initializer.second.getLatency());
+        _mail_boxes[_core_set.resolve(index)] = new Mailbox(nb_producers, initializer.getLatency());
     }
 }
 
@@ -123,8 +123,8 @@ SharedCoreCommunication::~SharedCoreCommunication() noexcept {
 
 bool
 SharedCoreCommunication::send(Event const &event) const noexcept {
-    const CoreId source_index = _core_set.resolve(event.source._index);
-    const CoreId dest_index = _core_set.resolve(event.dest._index);
+    const CoreId source_index = _core_set.resolve(event.source.index());
+    const CoreId dest_index = _core_set.resolve(event.dest.index());
     
     if (static_cast<bool>(_mail_boxes[dest_index]->enqueue(
             source_index, reinterpret_cast<const EventBucket *>(&event),
@@ -217,8 +217,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
         if (!__wait__all__cores__ready(params.shared_com.getNbCore(), params.sync_start))
             return;
         core.__workflow__();
-    } catch (std::exception &e) {
-        (void)e;
+    } catch (const std::exception &e) {
         LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
         params.sync_start.store(VirtualCore::Error::ExceptionThrown,
                                 std::memory_order_release);
@@ -240,14 +239,14 @@ Main::__wait__all__cores__ready(std::size_t const nb_core,
 
 void
 Main::setLatency(uint64_t const latency) {
-    for (auto &it : _core_initializers)
-        it.second.setLatency(latency);
+    for (auto &[_, initializer] : _core_initializers)
+        initializer.setLatency(latency);
 }
 
 qb::CoreIdSet Main::usedCoreSet() const {
     qb::CoreIdSet ret;
-    for (const auto &it : _core_initializers)
-        ret.emplace(it.first);
+    for (const auto &[index, _] : _core_initializers)
+        ret.emplace(index);
     return ret;
 }
 

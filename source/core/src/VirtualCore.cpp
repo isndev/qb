@@ -100,8 +100,8 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
 }
 
 VirtualCore::~VirtualCore() noexcept {
-    for (auto it : _actors)
-        delete it.second;
+    for (auto [_, actor] : _actors)
+        delete actor;
     delete &_event_buffer;
     delete &_mono_pipe;
 }
@@ -183,7 +183,7 @@ VirtualCore::__flush_all__() noexcept {
                         if (current_lock.load(std::memory_order_acquire)) {
                             // notify to unlock dest core
                             _engine
-                                ._event_safe_deadlock[_engine._core_set.resolve(event.dest._index)]
+                                ._event_safe_deadlock[_engine._core_set.resolve(event.dest.index())]
                                 .store(false, std::memory_order_release);
                         } else {
                             // partial send another core is maybe in deadlock
@@ -245,10 +245,10 @@ bool
 VirtualCore::__init__actors__() const {
     // Init StaticActors
     return !std::any_of(_actors.begin(), _actors.end(),
-                        [](auto &it) {
-        auto ret = !it.second->onInit();
+                      [](auto &pair) {
+        auto ret = !pair.second->onInit();
         if (ret)
-            LOG_CRIT(*it.second << " failed to init");
+            LOG_CRIT(*pair.second << " failed to init");
         return ret;
     });
 }
@@ -337,8 +337,8 @@ VirtualCore::removeActor(ActorId const id) noexcept {
         LOG_INFO("Delete " << *it->second);
         delete it->second;
         _actors.erase(it);
-        if (id._id > _nb_service)
-            _ids.insert(id._id);
+        if (id._service_id > _nb_service)
+            _ids.insert(id._service_id);
     }
 }
 
@@ -363,7 +363,7 @@ VirtualCore::unregisterCallback(ActorId const id) noexcept {
 // Event Api
 Pipe
 VirtualCore::getProxyPipe(ActorId const dest, ActorId const source) noexcept {
-    return {__getPipe__(dest._index), dest, source};
+    return {__getPipe__(dest._core_id), dest, source};
 }
 
 bool
@@ -373,15 +373,15 @@ VirtualCore::try_send(Event const &event) const noexcept {
 
 void
 VirtualCore::send(Event const &event) noexcept {
-    if (event.dest._index == _index || !try_send(event)) {
-        auto &pipe = __getPipe__(event.dest._index);
+    if (event.dest._core_id == _index || !try_send(event)) {
+        auto &pipe = __getPipe__(event.dest._core_id);
         pipe.recycle(event, event.bucket_size);
     }
 }
 
 Event &
 VirtualCore::push(Event const &event) noexcept {
-    auto &pipe = __getPipe__(event.dest._index);
+    auto &pipe = __getPipe__(event.dest._core_id);
     return pipe.recycle_back(event, event.bucket_size);
 }
 

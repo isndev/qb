@@ -225,30 +225,30 @@ public:
 
     /*!
      * Get ActorId
-     * @return ActorId
+     * @return ActorId of this actor
      */
-    ActorId
+    [[nodiscard]] ActorId
     id() const noexcept {
         return _id;
     }
 
     /*!
      * Get core index
-     * @return core index
+     * @return core index where this actor is running
      */
-    CoreId getIndex() const noexcept;
+    [[nodiscard]] CoreId getIndex() const noexcept;
 
     /*!
      * Get derived class name
-     * @return name as string_view
+     * @return name as string_view of this actor's class
      */
-    std::string_view getName() const noexcept;
+    [[nodiscard]] std::string_view getName() const noexcept;
 
     /*!
      * Get core set
      * @return Coreset of current engine
      */
-    const qb::unordered_set<CoreId> &getCoreSet() const noexcept;
+    [[nodiscard]] const qb::unordered_set<CoreId> &getCoreSet() const noexcept;
 
     /*!
      * @brief Get current time
@@ -264,20 +264,20 @@ public:
      * @endcode
      * To get precise time use NanoTimestamp.
      */
-    uint64_t time() const noexcept;
+    [[nodiscard]] uint64_t time() const noexcept;
 
     /*!
      * @private
      */
     template <typename T>
-    static ActorId getServiceId(CoreId index) noexcept;
+    [[nodiscard]] static ActorId getServiceId(CoreId index) noexcept;
 
     /*!
      * @brief Get direct access to ServiceActor* in same core
      * @return ptr to _ServiceActor else nullptr if not registered in core
      */
     template <typename _ServiceActor>
-    _ServiceActor *getService() const noexcept;
+    [[nodiscard]] _ServiceActor *getService() const noexcept;
 
     // void setCoreLowLatency(bool state) const noexcept;
 
@@ -285,7 +285,7 @@ public:
      * @brief Check if Actor is alive
      * @return true if Actor is alive else false
      */
-    bool is_alive() const noexcept;
+    [[nodiscard]] bool is_alive() const noexcept;
 
     /*!
      * @}
@@ -388,7 +388,7 @@ public:
     /*!
      * @brief Get EventBuilder for ActorId destination
      * @param dest ActorId destination
-     * @return EventBuilder
+     * @return EventBuilder for chaining event pushes
      * @details
      * A way to push chained events to destination Actor.\n
      * example:
@@ -406,7 +406,7 @@ public:
      * // builder1 == builder2 -> true
      * @endcode
      */
-    EventBuilder to(ActorId dest) const noexcept;
+    [[nodiscard]] EventBuilder to(ActorId dest) const noexcept;
 
     /*!
      * @brief Send a new ordered event
@@ -478,16 +478,16 @@ public:
      * /!\ We recommend to non advanced users to use only this function to send events.
      */
     template <typename _Event, typename... _Args>
-    _Event build_event(qb::ActorId const source, _Args &&...args) const noexcept;
+    [[nodiscard]] _Event build_event(qb::ActorId const source, _Args &&...args) const noexcept;
 
     template <typename _Type>
-    inline bool
+    [[nodiscard]] inline bool
     is(uint32_t const id) const noexcept {
         return id == type_id<_Type>();
     }
 
     template <typename _Type>
-    inline bool
+    [[nodiscard]] inline bool
     is(RequireEvent const &event) const noexcept {
         return event.type == type_id<_Type>();
     }
@@ -547,7 +547,7 @@ public:
      * Actor API allows to retrieve a Pipe to a desired Actor.\n
      * more details on Pipe section
      */
-    Pipe getPipe(ActorId dest) const noexcept;
+    [[nodiscard]] Pipe getPipe(ActorId dest) const noexcept;
 
     /*!
      * @brief Create new referenced _Actor

@@ -29,7 +29,7 @@ template <typename _Actor, typename... _Args>
 ActorId
 CoreInitializer::addActor(_Args &&... args) noexcept {
     ActorId id = ActorId::NotFound;
-    if constexpr (std::is_base_of<Service, _Actor>::value) {
+    if constexpr (std::is_base_of_v<Service, _Actor>) {
         if (_registered_services.find(_Actor::ServiceIndex) ==
             _registered_services.end()) {
             _registered_services.insert(_Actor::ServiceIndex);

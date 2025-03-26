@@ -50,28 +50,34 @@ public:
 
     /*!
      * @brief Push an event to the pipe
-     * @tparam T Type of the event to push
-     * @tparam _Args Types of the arguments to construct the event
-     * @param args Arguments to construct the event
-     * @return Reference to the pushed event
+     * @tparam _Event Type of event to push
+     * @tparam _Args Argument types for event construction
+     * @param args Arguments for event construction
+     * @return Reference to the constructed event
+     * @details
+     * This function creates a new event of type _Event and sends it through the pipe.
+     * The event will be delivered to the destination actor.
      */
-    template <typename T, typename... _Args>
-    T &push(_Args &&... args) const noexcept;
+    template <typename _Event, typename... _Args>
+    _Event &push(_Args &&... args) const noexcept;
 
     /*!
      * @brief Push an event with pre-allocated size to the pipe
-     * @tparam T Type of the event to push
-     * @tparam _Args Types of the arguments to construct the event
+     * @tparam _Event Type of event to push
+     * @tparam _Args Argument types for event construction
      * @param size Pre-allocated size for the event
-     * @param args Arguments to construct the event
-     * @return Reference to the pushed event
+     * @param args Arguments for event construction
+     * @return Reference to the constructed event
+     * @details
+     * This function creates a new event of type _Event with a pre-allocated size
+     * and sends it through the pipe. The event will be delivered to the destination actor.
      */
-    template <typename T, typename... _Args>
-    [[nodiscard]] T &allocated_push(std::size_t size, _Args &&... args) const noexcept;
+    template <typename _Event, typename... _Args>
+    [[nodiscard]] _Event &allocated_push(std::size_t size, _Args &&... args) const noexcept;
 
     /*!
      * @brief Get the destination actor ID
-     * @return ID of the destination actor
+     * @return ActorId of the destination
      */
     [[nodiscard]] inline ActorId
     getDestination() const noexcept {
@@ -80,7 +86,7 @@ public:
 
     /*!
      * @brief Get the source actor ID
-     * @return ID of the source actor
+     * @return ActorId of the source
      */
     [[nodiscard]] inline ActorId
     getSource() const noexcept {
