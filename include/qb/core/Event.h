@@ -63,10 +63,10 @@ public:
     /*!
      * @brief Get the type identifier at compile time
      * @tparam T Type to get the ID for
-     * @return Type identifier
+     * @return Type identifier for the specified type
      */
     template <typename T>
-    constexpr static id_type
+    [[nodiscard]] constexpr static id_type
     type_to_id() {
         return static_cast<id_type>(reinterpret_cast<std::size_t>(&qb::type<T>::id));
     }
@@ -75,10 +75,10 @@ public:
     /*!
      * @brief Get the type identifier at runtime
      * @tparam T Type to get the ID for
-     * @return Type identifier as string
+     * @return Type identifier as string for the specified type
      */
     template <typename T>
-    constexpr static id_type
+    [[nodiscard]] constexpr static id_type
     type_to_id() {
         return typeid(T).name();
     }
@@ -102,16 +102,16 @@ public:
     Event() = default;
 
     /*!
-     * @brief Check if the event is still alive
-     * @return true if the event is alive, false otherwise
+     * @brief Check if the event is still alive and can be processed
+     * @return true if the event is alive and ready for processing, false otherwise
      */
     [[nodiscard]] inline bool
     is_alive() const noexcept {
         return state.alive;
     }
     /*!
-     * @brief Get the event's type ID
-     * @return Type identifier
+     * @brief Get the event's type ID for event routing and handling
+     * @return Type identifier of this event
      */
     [[nodiscard]] inline id_type
     getID() const noexcept {
@@ -119,7 +119,7 @@ public:
     }
     /*!
      * @brief Get the event's quality of service level
-     * @return QoS level (0-2)
+     * @return QoS level (0-2) where higher values indicate higher priority
      */
     [[nodiscard]] inline uint8_t
     getQOS() const noexcept {
@@ -127,7 +127,7 @@ public:
     }
     /*!
      * @brief Get the destination actor ID
-     * @return ID of the destination actor
+     * @return ID of the destination actor that should receive this event
      */
     [[nodiscard]] inline id_handler_type
     getDestination() const noexcept {
@@ -135,7 +135,7 @@ public:
     }
     /*!
      * @brief Get the source actor ID
-     * @return ID of the source actor
+     * @return ID of the source actor that sent this event
      */
     [[nodiscard]] inline id_handler_type
     getSource() const noexcept {
@@ -143,7 +143,7 @@ public:
     }
     /*!
      * @brief Get the size of the event in bytes
-     * @return Size of the event
+     * @return Total size of the event in memory
      */
     [[nodiscard]] inline std::size_t
     getSize() const noexcept {

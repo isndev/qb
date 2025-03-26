@@ -28,7 +28,7 @@ Pipe::push(_Args &&... args) const noexcept {
     data.id = data.template type_to_id<T>();
     data.dest = dest;
     data.source = source;
-    if constexpr (std::is_base_of<ServiceEvent, T>::value) {
+    if constexpr (std::is_base_of_v<ServiceEvent, T>) {
         data.forward = source;
         std::swap(data.id, data.service_event_id);
     }
@@ -48,7 +48,7 @@ Pipe::allocated_push(std::size_t size, _Args &&... args) const noexcept {
     data.id = data.template type_to_id<T>();
     data.dest = dest;
     data.source = source;
-    if constexpr (std::is_base_of<ServiceEvent, T>::value) {
+    if constexpr (std::is_base_of_v<ServiceEvent, T>) {
         data.forward = source;
         std::swap(data.id, data.service_event_id);
     }

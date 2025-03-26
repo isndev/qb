@@ -145,7 +145,7 @@ private:
 
     /*!
      * @brief Generate a new actor ID
-     * @return Newly generated actor ID
+     * @return Newly generated actor ID for use within this core
      */
     [[nodiscard]] ActorId __generate_id__() noexcept;
 
@@ -158,7 +158,7 @@ private:
     /*!
      * @brief Get or create a pipe to a specific core
      * @param core Target core ID
-     * @return Reference to the virtual pipe
+     * @return Reference to the virtual pipe for communication with the target core
      */
     [[nodiscard]] VirtualPipe &__getPipe__(CoreId core) noexcept;
     void __receive_events__(EventBucket *buffer, std::size_t nb_events);
@@ -177,22 +177,34 @@ private:
      * @brief Initialize a new actor
      * @param actor Actor to initialize
      * @param doInit Whether to call the actor's init method
-     * @return ID of the initialized actor
+     * @return ID of the initialized actor or Invalid ID if initialization failed
      */
     [[nodiscard]] ActorId initActor(Actor &actor, bool doInit) noexcept;
     /*!
      * @brief Add an actor to the core
      * @param actor Actor to add
      * @param doInit Whether to call the actor's init method
-     * @return ID of the added actor
+     * @return ID of the added actor or Invalid ID if addition failed
      */
     [[nodiscard]] ActorId appendActor(Actor &actor, bool doInit = false) noexcept;
     void removeActor(ActorId id) noexcept;
     //! Actor Management
 
 private:
+    /*!
+     * @brief Create and add a new actor to this core
+     * @tparam _Actor Type of actor to create
+     * @tparam _Init Types of initialization parameters
+     * @param init Parameters for actor initialization
+     * @return Pointer to the newly created actor or nullptr if creation failed
+     */
     template <typename _Actor, typename... _Init>
     [[nodiscard]] _Actor *addReferencedActor(_Init &&... init) noexcept;
+    /*!
+     * @brief Get a service actor of specified type
+     * @tparam _ServiceActor Type of service actor to get
+     * @return Pointer to the service actor or nullptr if not found
+     */
     template <typename _ServiceActor>
     [[nodiscard]] _ServiceActor *getService() const noexcept;
 
@@ -209,15 +221,20 @@ private:
      * @brief Get a proxy pipe between two actors
      * @param dest Destination actor ID
      * @param source Source actor ID
-     * @return Pipe connecting the actors
+     * @return Pipe connecting the source and destination actors
      */
     [[nodiscard]] Pipe getProxyPipe(ActorId dest, ActorId source) noexcept;
+    /*!
+     * @brief Attempt to send an event immediately
+     * @param event Event to send
+     * @return true if the event was sent successfully, false otherwise
+     */
     [[nodiscard]] bool try_send(Event const &event) const noexcept;
     void send(Event const &event) noexcept;
     /*!
      * @brief Push an event to the event queue
      * @param event Event to push
-     * @return Reference to the pushed event
+     * @return Reference to the pushed event in the queue
      */
     Event &push(Event const &event) noexcept;
     void reply(Event &event) noexcept;
@@ -229,6 +246,15 @@ private:
     void send(ActorId dest, ActorId source, _Init &&... init) noexcept;
     template <typename T, typename... _Init>
     void broadcast(ActorId source, _Init &&... init) noexcept;
+    /*!
+     * @brief Build and push an event to the event queue
+     * @tparam T Type of event to create
+     * @tparam _Init Types of initialization parameters
+     * @param dest Destination actor ID
+     * @param source Source actor ID
+     * @param init Parameters for event initialization
+     * @return Reference to the created and pushed event
+     */
     template <typename T, typename... _Init>
     T &push(ActorId dest, ActorId source, _Init &&... init) noexcept;
     //! Event Api
@@ -238,13 +264,13 @@ public:
 
     /*!
      * @brief Get the core's index
-     * @return Core index
+     * @return Current core index identifier
      */
     [[nodiscard]] CoreId getIndex() const noexcept;
 
     /*!
      * @brief Get the set of cores this core can communicate with
-     * @return Set of core IDs
+     * @return Set of core IDs this core is connected to
      */
     [[nodiscard]] const qb::unordered_set<CoreId> &getCoreSet() const noexcept;
 
