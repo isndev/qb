@@ -90,10 +90,10 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     , _resolved_index(engine._core_set.resolve(id))
     , _engine(engine)
     , _mail_box(engine.getMailBox(id))
-    , _event_buffer(*new EventBuffer())
+    , _event_buffer(std::make_unique<EventBuffer>())
     , _pipes(engine.getNbCore())
     , _mono_pipe_swap(_pipes[_resolved_index])
-    , _mono_pipe(*new VirtualPipe()) {
+    , _mono_pipe(std::make_unique<VirtualPipe>()) {
 
     for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
         _ids.insert(static_cast<ServiceId>(i));
@@ -103,8 +103,7 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
 VirtualCore::~VirtualCore() noexcept {
     for (auto [_, actor] : _actors)
         delete actor;
-    delete &_event_buffer;
-    delete &_mono_pipe;
+    // Les smart pointers sont libérés automatiquement
 }
 
 ActorId
@@ -145,15 +144,15 @@ VirtualCore::__receive_events__(EventBucket *buffer, std::size_t const nb_events
 void
 VirtualCore::__receive__() {
     // from same core
-    _mono_pipe.swap(_mono_pipe_swap);
-    __receive_events__(_mono_pipe.begin(), _mono_pipe.size());
-    _mono_pipe.reset();
+    _mono_pipe->swap(_mono_pipe_swap);
+    __receive_events__(_mono_pipe->begin(), _mono_pipe->size());
+    _mono_pipe->reset();
     // global_core_events
     _mail_box.dequeue(
         [this](EventBucket *buffer, std::size_t const nb_events) {
             __receive_events__(buffer, nb_events);
         },
-        _event_buffer.data(), MaxRingEvents);
+        _event_buffer->data(), MaxRingEvents);
 }
 
 //    void VirtualCore::__receive_from__(CoreId const index) noexcept {

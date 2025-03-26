@@ -107,12 +107,12 @@ private:
     SharedCoreCommunication &_engine;
     // event reception
     Mailbox &_mail_box;
-    EventBuffer &_event_buffer;
+    std::unique_ptr<EventBuffer> _event_buffer;
     router::memh<Event> _router;
     // event flush
     PipeMap _pipes;
     VirtualPipe &_mono_pipe_swap;
-    VirtualPipe &_mono_pipe;
+    std::unique_ptr<VirtualPipe> _mono_pipe;
     // actors management
     AvailableIdList _ids;
     ActorMap _actors;
