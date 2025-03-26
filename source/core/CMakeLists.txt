@@ -28,4 +28,4 @@ target_include_directories(${PROJECT_NAME} INTERFACE
 
 if (${QB_PREFIX_UPPER}_BUILD_TEST)
     add_subdirectory(tests)
-endif()
+endif ()

@@ -55,6 +55,7 @@ class ActorId {
 private:
     ServiceId _service_id;
     CoreId _core_id;
+
 protected:
     ActorId(ServiceId id, CoreId index) noexcept;
 
@@ -71,7 +72,7 @@ public:
      * internal function
      */
     ActorId(uint32_t id) noexcept;
-    
+
     /**
      * @brief Conversion operator to uint32_t
      * @return The ActorId as a 32-bit unsigned integer
@@ -83,7 +84,7 @@ public:
      * @return Service identifier
      */
     [[nodiscard]] ServiceId sid() const noexcept;
-    
+
     /*!
      * @brief Get the core identifier component of this ActorId
      * @return VirtualCore identifier

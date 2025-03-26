@@ -478,7 +478,8 @@ public:
      * /!\ We recommend to non advanced users to use only this function to send events.
      */
     template <typename _Event, typename... _Args>
-    [[nodiscard]] _Event build_event(qb::ActorId const source, _Args &&...args) const noexcept;
+    [[nodiscard]] _Event build_event(qb::ActorId const source,
+                                     _Args &&...args) const noexcept;
 
     template <typename _Type>
     [[nodiscard]] inline bool
@@ -688,7 +689,7 @@ public:
 using actor = Actor;
 template <typename Tag>
 using service_actor = ServiceActor<Tag>;
-#    ifdef QB_LOGGER
+#ifdef QB_LOGGER
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor);
 #endif
 std::ostream &operator<<(std::ostream &os, qb::Actor const &actor);
