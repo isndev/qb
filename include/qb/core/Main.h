@@ -93,7 +93,7 @@ public:
 private:
     const CoreId _index;
     ServiceId _next_id;
-    qb::unordered_set<CoreId> _affinity;
+    CoreIdSet _affinity;
     uint64_t _latency;
 
     qb::unordered_set<ServiceId> _registered_services;

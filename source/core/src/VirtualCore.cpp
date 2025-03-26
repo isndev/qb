@@ -407,9 +407,9 @@ VirtualCore::getIndex() const noexcept {
     return _index;
 }
 
-const qb::unordered_set<CoreId> &
+const CoreIdSet &
 VirtualCore::getCoreSet() const noexcept {
-    return _engine._core_set._raw_set;
+    return _engine._core_set.raw();
 }
 
 uint64_t

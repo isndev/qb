@@ -41,10 +41,10 @@ class CoreSet {
     friend class VirtualCore;
     friend class Main;
 
-    const qb::unordered_set<CoreId> _raw_set;
+    const CoreIdSet _raw_set;
     const std::size_t _nb_core;
     const std::size_t _size;
-    std::array<uint8_t, 256> _set;
+    std::array<uint8_t, MaxCores> _set;
 
 public:
     CoreSet() = delete;
@@ -53,7 +53,7 @@ public:
      * @brief Construct a CoreSet with a specific set of cores
      * @param set Set of core IDs to include
      */
-    explicit CoreSet(qb::unordered_set<CoreId> const &set) noexcept;
+    explicit CoreSet(CoreIdSet const &set) noexcept;
 
     /*!
      * @brief Build a CoreSet with a specified number of cores
@@ -77,7 +77,7 @@ public:
      * @brief Get the raw set of core IDs
      * @return Reference to the underlying set of core IDs
      */
-    [[nodiscard]] qb::unordered_set<CoreId> const &raw() const noexcept;
+    [[nodiscard]] const CoreIdSet& raw() const noexcept;
 
     /*!
      * @brief Get the size of the core set

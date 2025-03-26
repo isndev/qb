@@ -98,7 +98,7 @@ CoreInitializer::ActorBuilder::idList() const noexcept {
 
 static auto
 set_from_core_initializers(CoreInitializerMap const &core_initializers) {
-    qb::unordered_set<CoreId> core_ids;
+    CoreIdSet core_ids;
     for (const auto &[index, _] : core_initializers)
         core_ids.insert(index);
     return core_ids;

@@ -17,9 +17,12 @@
 
 #ifndef QB_ACTORID_H
 #define QB_ACTORID_H
+#include <algorithm>
+#include <bitset>
 #include <cstdint>
 #include <limits>
 #include <unordered_set>
+#include <vector>
 // include from qb
 #include <qb/io.h>
 #include <qb/system/container/unordered_set.h>
@@ -32,6 +35,247 @@ using CoreId = uint16_t;
 using ServiceId = uint16_t;
 using TypeId = uint16_t;
 using EventId = TypeId;
+
+/**
+ * @brief Maximum number of cores supported in a system
+ */
+constexpr size_t MaxCores = 256;
+
+/**
+ * @class CoreIdBitSet
+ * @brief Efficient representation of a set of core IDs using a bitset
+ * @details
+ * This class provides bitset-based storage for core IDs, which is more memory
+ * efficient and provides faster set operations than unordered_set.
+ */
+class CoreIdBitSet {
+private:
+    std::bitset<MaxCores> _bits;
+
+public:
+    /**
+     * @brief Default constructor - creates an empty set
+     */
+    CoreIdBitSet() = default;
+
+    /**
+     * @brief Constructor from a set of core IDs
+     * @param coreIds Set of core IDs to include
+     */
+    explicit CoreIdBitSet(const qb::unordered_set<CoreId> &coreIds) {
+        for (const auto id : coreIds) {
+            _bits.set(id);
+        }
+    }
+
+    /**
+     * @brief Constructor from an initializer list
+     * @param ids List of core IDs to include
+     */
+    CoreIdBitSet(std::initializer_list<CoreId> ids) {
+        for (const auto id : ids) {
+            _bits.set(id);
+        }
+    }
+
+    /**
+     * @brief Get the raw bitset
+     * @return Reference to the underlying bitset
+     */
+    [[nodiscard]] const std::bitset<MaxCores> &
+    bits() const noexcept {
+        return _bits;
+    }
+
+    /**
+     * @brief Check if a core ID is in the set
+     * @param id Core ID to check
+     * @return true if the ID is in the set, false otherwise
+     */
+    [[nodiscard]] bool
+    contains(CoreId id) const noexcept {
+        return id < MaxCores && _bits.test(id);
+    }
+
+    /**
+     * @brief Add a core ID to the set
+     * @param id Core ID to add
+     */
+    void
+    insert(CoreId id) noexcept {
+        if (id < MaxCores) {
+            _bits.set(id);
+        }
+    }
+
+    /**
+     * @brief Add a core ID to the set (emplace version)
+     * @param id Core ID to add
+     */
+    void
+    emplace(CoreId id) noexcept {
+        insert(id);
+    }
+
+    /**
+     * @brief Remove a core ID from the set
+     * @param id Core ID to remove
+     */
+    void
+    remove(CoreId id) noexcept {
+        if (id < MaxCores) {
+            _bits.reset(id);
+        }
+    }
+
+    /**
+     * @brief Clear all core IDs from the set
+     */
+    void
+    clear() noexcept {
+        _bits.reset();
+    }
+
+    /**
+     * @brief Check if the set is empty
+     * @return true if the set is empty, false otherwise
+     */
+    [[nodiscard]] bool
+    empty() const noexcept {
+        return _bits.none();
+    }
+
+    /**
+     * @brief Get the number of core IDs in the set
+     * @return Count of core IDs
+     */
+    [[nodiscard]] size_t
+    size() const noexcept {
+        return _bits.count();
+    }
+
+    /**
+     * @brief Convert the set to a vector of core IDs
+     * @return Vector containing all core IDs in the set
+     */
+    [[nodiscard]] std::vector<CoreId>
+    to_vector() const {
+        std::vector<CoreId> result;
+        result.reserve(_bits.count());
+
+        for (size_t i = 0; i < MaxCores; ++i) {
+            if (_bits.test(i)) {
+                result.push_back(static_cast<CoreId>(i));
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * @brief Get an unordered_set of the core IDs
+     * @return Unordered set containing all core IDs
+     */
+    [[nodiscard]] qb::unordered_set<CoreId>
+    to_unordered_set() const {
+        qb::unordered_set<CoreId> result;
+
+        for (size_t i = 0; i < MaxCores; ++i) {
+            if (_bits.test(i)) {
+                result.insert(static_cast<CoreId>(i));
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * @brief Get a reference to the raw set for internal use
+     * @return Reference to the unordered_set for internal use
+     */
+    [[nodiscard]] qb::unordered_set<CoreId>
+    raw() const {
+        return to_unordered_set();
+    }
+
+    // Iteration support
+    class iterator {
+    private:
+        const CoreIdBitSet &_set;
+        size_t _pos;
+
+        // Advance to the next set bit
+        void
+        advance() {
+            while (_pos < MaxCores && !_set._bits.test(_pos)) {
+                ++_pos;
+            }
+        }
+
+    public:
+        using iterator_category = std::forward_iterator_tag;
+        using value_type = CoreId;
+        using difference_type = std::ptrdiff_t;
+        using pointer = const CoreId *;
+        using reference = const CoreId &;
+
+        iterator(const CoreIdBitSet &set, size_t pos)
+            : _set(set)
+            , _pos(pos) {
+            advance();
+        }
+
+        CoreId
+        operator*() const {
+            return static_cast<CoreId>(_pos);
+        }
+
+        iterator &
+        operator++() {
+            ++_pos;
+            advance();
+            return *this;
+        }
+
+        iterator
+        operator++(int) {
+            iterator tmp = *this;
+            ++(*this);
+            return tmp;
+        }
+
+        bool
+        operator==(const iterator &other) const {
+            return &_set == &other._set && _pos == other._pos;
+        }
+
+        bool
+        operator!=(const iterator &other) const {
+            return !(*this == other);
+        }
+    };
+
+    /**
+     * @brief Get an iterator to the beginning of the set
+     * @return Iterator to the first core ID
+     */
+    [[nodiscard]] iterator
+    begin() const {
+        return iterator(*this, 0);
+    }
+
+    /**
+     * @brief Get an iterator to the end of the set
+     * @return Iterator representing the end of the set
+     */
+    [[nodiscard]] iterator
+    end() const {
+        return iterator(*this, MaxCores);
+    }
+};
+
+// Define CoreIdSet as our new efficient implementation
+using CoreIdSet = CoreIdBitSet;
 
 /*!
  * @class ActorId core/ActorId.h qb/actorid.h
@@ -111,7 +355,6 @@ public:
         : ActorId(BroadcastSid, static_cast<CoreId>(core_id)) {}
 };
 
-using CoreIdSet = qb::unordered_set<CoreId>;
 using ActorIdList = std::vector<ActorId>;
 using ActorIdSet = std::unordered_set<ActorId>;
 using core_id = CoreId;

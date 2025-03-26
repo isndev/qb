@@ -85,7 +85,7 @@ Actor::getName() const noexcept {
     return name;
 }
 
-const qb::unordered_set<CoreId> &
+const CoreIdSet &
 Actor::getCoreSet() const noexcept {
     return VirtualCore::_handler->getCoreSet();
 }

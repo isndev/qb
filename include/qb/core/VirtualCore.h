@@ -272,7 +272,7 @@ public:
      * @brief Get the set of cores this core can communicate with
      * @return Set of core IDs this core is connected to
      */
-    [[nodiscard]] const qb::unordered_set<CoreId> &getCoreSet() const noexcept;
+    [[nodiscard]] const CoreIdSet &getCoreSet() const noexcept;
 
     /*!
      * @brief Get the current time in nanoseconds

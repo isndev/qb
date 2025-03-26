@@ -245,10 +245,10 @@ public:
     [[nodiscard]] std::string_view getName() const noexcept;
 
     /*!
-     * Get core set
-     * @return Coreset of current engine
+     * @brief Get the set of cores that this actor can communicate with
+     * @return Set of core IDs this actor can communicate with
      */
-    [[nodiscard]] const qb::unordered_set<CoreId> &getCoreSet() const noexcept;
+    [[nodiscard]] const CoreIdSet &getCoreSet() const noexcept;
 
     /*!
      * @brief Get current time
