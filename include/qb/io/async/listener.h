@@ -276,9 +276,14 @@ run(int flag = 0) {
  * @param status Reference to a boolean condition to check
  */
 inline void
+run_once() {
+    listener::current.run(EVRUN_ONCE);
+}
+
+inline void
 run_until(bool const &status) {
     while (status)
-        listener::current.run(EVRUN_ONCE);
+        listener::current.run(EVRUN_NOWAIT);
 }
 
 } // namespace qb::io::async
