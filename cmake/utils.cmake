@@ -456,7 +456,7 @@ function(qb_register_module_gtest)
         set(Module_DEPENDENCIES "")
     endif ()
     list(APPEND Module_DEPENDENCIES
-                "${QB_PREFIX}-core"
+    #            "${QB_PREFIX}-core"
                 "qbm-${Module_NAME}"
                 "gtest"
                 "gtest_main")

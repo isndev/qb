@@ -45,6 +45,13 @@ set(ACTOR_SYSTEM_TESTS
     test-actor-dependency.cpp
     test-actor-event.cpp
     test-actor-service-event.cpp
+    test-actor-broadcast.cpp
+    test-actor-delayed-events.cpp
+    test-actor-error-handling.cpp
+    test-actor-state-persistence.cpp
+    test-actor-concurrency-safety.cpp
+    test-actor-resource-management.cpp
+    test-actor-lifecycle-hooks.cpp
 )
 
 # -----------------------------------------------------------------------------
