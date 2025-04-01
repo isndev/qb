@@ -54,6 +54,9 @@ generate_random_uuid() {
 
 #ifdef QB_IO_WITH_SSL
 #    include "crypto.cpp"
+#    include "crypto_modern.cpp"
+#    include "crypto_advanced.cpp"
+#    include "crypto_asymmetric.cpp"
 #    include "tcp/ssl/init.cpp"
 #    include "tcp/ssl/listener.cpp"
 #    include "tcp/ssl/socket.cpp"
