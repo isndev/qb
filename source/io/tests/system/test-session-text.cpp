@@ -361,7 +361,7 @@ TEST(Session, COMMAND_OVER_UDP) {
                 client << STRING_MESSAGE << '\n';
             }
 
-            for (auto j = 0; i < (NB_ITERATION * 10000) && !client_done(); ++j)
+            for (auto j = 0; j < (NB_ITERATION * 10000) && !client_done(); ++j)
                 async::run(EVRUN_ONCE);
         }
     });

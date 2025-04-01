@@ -95,13 +95,21 @@ if (OPENSSL_FOUND)
         list(APPEND CURRENT_INCLUDES ${OPENSSL_INCLUDE_DIR})
     endif()
     
+    # Option pour Argon2 (désactivable)
+    option(QB_WITH_ARGON2 "Enable Argon2 support for password hashing" ON)
+    
     # Ajout de la bibliothèque Argon2 pour les fonctionnalités cryptographiques avancées
-    find_library(ARGON2_LIBRARY NAMES argon2 libargon2)
-    if(ARGON2_LIBRARY)
-        list(APPEND CURRENT_DEPENDENCIES ${ARGON2_LIBRARY})
-        message(STATUS "[${PROJECT_NAME}] Building with Argon2 support for advanced crypto")
+    if(QB_WITH_ARGON2)
+        find_library(ARGON2_LIBRARY NAMES argon2 libargon2)
+        if(ARGON2_LIBRARY)
+            list(APPEND CURRENT_DEPENDENCIES ${ARGON2_LIBRARY})
+            list(APPEND CURRENT_DEFINITIONS QB_IO_WITH_ARGON2=1)
+            message(STATUS "[${PROJECT_NAME}] Building with Argon2 support for advanced crypto")
+        else()
+            message(WARNING "[${PROJECT_NAME}] Argon2 library not found - advanced crypto functions will use fallback methods")
+        endif()
     else()
-        message(WARNING "[${PROJECT_NAME}] Argon2 library not found - advanced crypto functions may not work")
+        message(STATUS "[${PROJECT_NAME}] Argon2 support disabled - advanced crypto functions will use fallback methods")
     endif()
     
     # Ajout de nlohmann_json pour les métadonnées

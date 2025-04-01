@@ -37,7 +37,7 @@ struct TimerEvent : public qb::Event {
     uint64_t timestamp;
     int timer_id;
     
-    TimerEvent(int id) : timer_id(id), timestamp(0) {}
+    TimerEvent(int id) : timestamp(0), timer_id(id) {}
 };
 
 struct CompleteEvent : public qb::Event {};
@@ -93,7 +93,7 @@ public:
         // On second event reception, verify order and record completion
         else {
             // Calculate elapsed time
-            uint64_t elapsed = current_time - _timestamps[event.timer_id];
+            // uint64_t elapsed = current_time - _timestamps[event.timer_id];
             
             // Record the timer completion order
             {
