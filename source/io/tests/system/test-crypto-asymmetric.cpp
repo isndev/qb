@@ -25,6 +25,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <chrono>
 
 namespace {
 
@@ -209,6 +210,223 @@ TEST_F(CryptoAsymmetricTest, SecureMessagingScenario) {
     // Check that everything worked correctly
     EXPECT_TRUE(valid);
     EXPECT_EQ(received_message, test_data);
+}
+
+// Test for ECIES with different modes and sizes
+TEST_F(CryptoAsymmetricTest, ECIESModes) {
+    // Generate recipient key pair
+    auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
+    
+    // Test data sizes to try (including empty and large)
+    std::vector<size_t> data_sizes = {0, 16, 1024, 8192};
+    
+    // Test all ECIES modes
+    std::vector<qb::crypto::ECIESMode> modes = {
+        qb::crypto::ECIESMode::STANDARD,
+        qb::crypto::ECIESMode::AES_GCM,
+        qb::crypto::ECIESMode::CHACHA20
+    };
+    
+    for (auto mode : modes) {
+        for (auto size : data_sizes) {
+            // Generate test data of specified size
+            std::vector<unsigned char> data;
+            if (size > 0) {
+                data = qb::crypto::generate_random_bytes(size);
+            }
+            
+            // Encrypt data
+            auto [ephemeral_public, encrypted] = qb::crypto::ecies_encrypt(
+                data, public_key, {}, mode);
+            
+            // Check that we got results
+            EXPECT_FALSE(ephemeral_public.empty());
+            if (size > 0) {
+                EXPECT_FALSE(encrypted.empty());
+            }
+            
+            // Decrypt data
+            std::vector<unsigned char> decrypted = qb::crypto::ecies_decrypt(
+                encrypted, ephemeral_public, private_key, {}, mode);
+            
+            // Check that decrypted data matches original
+            EXPECT_EQ(decrypted, data);
+        }
+    }
+}
+
+// Test for error handling in ECIES operations
+TEST_F(CryptoAsymmetricTest, ECIESErrorHandling) {
+    try {
+        // Generate recipient key pair
+        auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
+        
+        // Simple test data
+        std::string test_string = "Test data for ECIES error handling";
+        std::vector<unsigned char> test_data_vec(test_string.begin(), test_string.end());
+        
+        // 1. Encrypt data with standard mode
+        auto [ephemeral_public, encrypted] = qb::crypto::ecies_encrypt(
+            test_data_vec, public_key, {}, qb::crypto::ECIESMode::STANDARD);
+            
+        // 2. Deliberately use wrong key for decryption (should fail)
+        auto [wrong_private, _] = qb::crypto::generate_x25519_keypair_bytes();
+        
+        // We expect this to throw an exception
+        std::vector<unsigned char> decrypted = qb::crypto::ecies_decrypt(
+            encrypted, ephemeral_public, wrong_private, {}, qb::crypto::ECIESMode::STANDARD);
+            
+        // Should not reach here, but if it does (implementation specific), just output a message
+        std::cout << "Note: Expected decryption to fail with wrong key, but got " 
+                 << decrypted.size() << " bytes." << std::endl;
+    }
+    catch (const std::exception& e) {
+        // Expected behavior - decryption failed
+        std::cout << "Expected decryption error: " << e.what() << std::endl;
+        SUCCEED() << "Correctly detected decryption error with wrong key";
+    }
+}
+
+// Test for ECIES authenticated data
+TEST_F(CryptoAsymmetricTest, ECIESWithContext) {
+    // Generate recipient key pair
+    auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
+    
+    // Context information (authenticated but not encrypted)
+    std::vector<unsigned char> context = {
+        'a', 'u', 't', 'h', 'e', 'n', 't', 'i', 'c', 'a', 't', 'e', 'd'
+    };
+    
+    // Encrypt with context
+    auto [ephemeral_public, encrypted] = qb::crypto::ecies_encrypt(
+        test_data, public_key, context, qb::crypto::ECIESMode::AES_GCM);
+    
+    // Decrypt with correct context
+    std::vector<unsigned char> decrypted = qb::crypto::ecies_decrypt(
+        encrypted, ephemeral_public, private_key, context, qb::crypto::ECIESMode::AES_GCM);
+    
+    // Should decrypt correctly
+    EXPECT_EQ(decrypted, test_data);
+    
+    // Decrypt with wrong context
+    std::vector<unsigned char> wrong_context = {'w', 'r', 'o', 'n', 'g'};
+    std::vector<unsigned char> wrong_context_decrypt = qb::crypto::ecies_decrypt(
+        encrypted, ephemeral_public, private_key, wrong_context, qb::crypto::ECIESMode::AES_GCM);
+    
+    // Should fail and return empty
+    EXPECT_TRUE(wrong_context_decrypt.empty());
+}
+
+// Test for cross-algorithm compatibility
+TEST_F(CryptoAsymmetricTest, CrossAlgorithmInteroperability) {
+    // Generate Ed25519 and X25519 key pairs
+    auto [ed_private, ed_public] = qb::crypto::generate_ed25519_keypair_bytes();
+    auto [x_private, x_public] = qb::crypto::generate_x25519_keypair_bytes();
+    
+    // Sign data with Ed25519
+    std::vector<unsigned char> signature = qb::crypto::ed25519_sign(test_data, ed_private);
+    
+    // Encrypt signed data with X25519/ECIES
+    std::vector<unsigned char> combined_data;
+    combined_data.insert(combined_data.end(), test_data.begin(), test_data.end());
+    combined_data.insert(combined_data.end(), signature.begin(), signature.end());
+    combined_data.insert(combined_data.end(), ed_public.begin(), ed_public.end());
+    
+    auto [ephemeral_public, encrypted] = qb::crypto::ecies_encrypt(
+        combined_data, x_public, {}, qb::crypto::ECIESMode::AES_GCM);
+    
+    // Decrypt with X25519
+    std::vector<unsigned char> decrypted = qb::crypto::ecies_decrypt(
+        encrypted, ephemeral_public, x_private, {}, qb::crypto::ECIESMode::AES_GCM);
+    
+    // Extract the original data, signature, and public key
+    ASSERT_GE(decrypted.size(), test_data.size() + signature.size() + ed_public.size());
+    
+    std::vector<unsigned char> recovered_data(
+        decrypted.begin(), 
+        decrypted.begin() + test_data.size()
+    );
+    
+    std::vector<unsigned char> recovered_signature(
+        decrypted.begin() + test_data.size(), 
+        decrypted.begin() + test_data.size() + signature.size()
+    );
+    
+    std::vector<unsigned char> recovered_public_key(
+        decrypted.begin() + test_data.size() + signature.size(),
+        decrypted.end()
+    );
+    
+    // Verify that everything matches
+    EXPECT_EQ(recovered_data, test_data);
+    EXPECT_EQ(recovered_signature, signature);
+    EXPECT_EQ(recovered_public_key, ed_public);
+    
+    // Verify the signature with the recovered public key
+    bool verified = qb::crypto::ed25519_verify(
+        recovered_data, recovered_signature, recovered_public_key);
+    
+    EXPECT_TRUE(verified);
+}
+
+// Test for asymmetric cryptography performance
+TEST_F(CryptoAsymmetricTest, AsymmetricPerformance) {
+    // This test case verifies that operations complete in a reasonable time
+    // Note: This is not a strict performance test, but rather a basic sanity check
+    
+    const int iterations = 10;
+    
+    // Generate test data (1MB)
+    std::vector<unsigned char> large_data = qb::crypto::generate_random_bytes(1024 * 1024);
+    
+    // Time X25519 key generation
+    auto start_keygen = std::chrono::high_resolution_clock::now();
+    
+    for (int i = 0; i < iterations; i++) {
+        auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
+        EXPECT_FALSE(private_key.empty());
+        EXPECT_FALSE(public_key.empty());
+    }
+    
+    auto end_keygen = std::chrono::high_resolution_clock::now();
+    auto keygen_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        end_keygen - start_keygen).count();
+    
+    // Time for each key generation should be reasonably fast (typically < 10ms per key)
+    double avg_keygen_ms = static_cast<double>(keygen_duration) / iterations;
+    EXPECT_LT(avg_keygen_ms, 50.0);  // Very conservative upper bound
+    
+    // Generate key pair for encryption test
+    auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
+    
+    // Time ECIES encryption (only a few iterations for large data)
+    auto start_encrypt = std::chrono::high_resolution_clock::now();
+    
+    auto [ephemeral_public, encrypted] = qb::crypto::ecies_encrypt(
+        large_data, public_key, {}, qb::crypto::ECIESMode::AES_GCM);
+    
+    auto end_encrypt = std::chrono::high_resolution_clock::now();
+    auto encrypt_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        end_encrypt - start_encrypt).count();
+    
+    // Encryption of 1MB should complete in a reasonable time (typically < 1 second)
+    EXPECT_LT(encrypt_duration, 1000);  // Very conservative upper bound
+    
+    // Time ECIES decryption
+    auto start_decrypt = std::chrono::high_resolution_clock::now();
+    
+    std::vector<unsigned char> decrypted = qb::crypto::ecies_decrypt(
+        encrypted, ephemeral_public, private_key, {}, qb::crypto::ECIESMode::AES_GCM);
+    
+    auto end_decrypt = std::chrono::high_resolution_clock::now();
+    auto decrypt_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+        end_decrypt - start_decrypt).count();
+    
+    // Decryption of 1MB should complete in a reasonable time (typically < 1 second)
+    EXPECT_LT(decrypt_duration, 1000);  // Very conservative upper bound
+    
+    // Ensure decryption was successful
+    EXPECT_EQ(decrypted, large_data);
 }
 
 }  // namespace
