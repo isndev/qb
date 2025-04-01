@@ -95,14 +95,16 @@ public:
      * @param fname Path to the file to open
      * @param flags File open flags (defaults to O_RDWR - read/write mode)
      * @param mode File creation mode (defaults to 0644 - rw-r--r--)
+     * @return The file descriptor if successful, or -1 on error
      */
-    void open(std::string const &fname, int flags = O_RDWR, int mode = 0644) noexcept;
+    int open(std::string const &fname, int flags = O_RDWR, int mode = 0644) noexcept;
     
     /**
      * @brief Opens a file using an existing file descriptor
      * @param fd File descriptor to use
+     * @return The file descriptor if successful, or -1 on error
      */
-    void open(int fd) noexcept;
+    int open(int fd) noexcept;
     
     /**
      * @brief Writes data to the file

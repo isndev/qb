@@ -36,6 +36,7 @@ set(CORE_TESTS
     test-connection-timeout.cpp
     test-file-operations.cpp
     test-stream-operations.cpp
+    test-async-io.cpp
 )
 
 # Create core test targets
@@ -84,6 +85,83 @@ if (OPENSSL_FOUND)
             FOLDER "Tests/IO/System"
         )
     endforeach()
+    
+    # -----------------------------------------------------------------------------
+    # Generate SSL certificates for tests
+    # -----------------------------------------------------------------------------
+    # Define output paths for certificates
+    set(SSL_CERT_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/cert.pem")
+    set(SSL_KEY_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/key.pem")
+    
+    # Function to check if OpenSSL is available
+    find_program(OPENSSL_EXECUTABLE openssl)
+    
+    if(OPENSSL_EXECUTABLE)
+        # Check OpenSSL version to determine command options
+        execute_process(
+            COMMAND ${OPENSSL_EXECUTABLE} version -v
+            OUTPUT_VARIABLE OPENSSL_VERSION_OUTPUT
+            ERROR_VARIABLE OPENSSL_VERSION_ERROR
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        
+        string(REGEX MATCH "([0-9]+)\\.([0-9]+)\\.([0-9]+)" OPENSSL_VERSION_MATCH "${OPENSSL_VERSION_OUTPUT}")
+        set(OPENSSL_VERSION_MAJOR ${CMAKE_MATCH_1})
+        set(OPENSSL_VERSION_MINOR ${CMAKE_MATCH_2})
+        set(OPENSSL_VERSION_PATCH ${CMAKE_MATCH_3})
+        
+        # For OpenSSL >= 1.1.1, use -addext option
+        if((OPENSSL_VERSION_MAJOR GREATER 1) OR 
+           (OPENSSL_VERSION_MAJOR EQUAL 1 AND OPENSSL_VERSION_MINOR GREATER 1) OR
+           (OPENSSL_VERSION_MAJOR EQUAL 1 AND OPENSSL_VERSION_MINOR EQUAL 1 AND OPENSSL_VERSION_PATCH GREATER_EQUAL 1))
+            set(OPENSSL_CERT_COMMAND 
+                ${OPENSSL_EXECUTABLE} req -x509 -newkey rsa:2048 -keyout ${SSL_KEY_OUTPUT} 
+                -out ${SSL_CERT_OUTPUT} -days 365 -nodes 
+                -subj "/CN=localhost/O=QB Tests/C=US" 
+                -addext "subjectAltName = DNS:localhost"
+            )
+        else()
+            # Older OpenSSL versions don't support -addext
+            set(OPENSSL_CERT_COMMAND 
+                ${OPENSSL_EXECUTABLE} req -x509 -newkey rsa:2048 -keyout ${SSL_KEY_OUTPUT} 
+                -out ${SSL_CERT_OUTPUT} -days 365 -nodes 
+                -subj "/CN=localhost/O=QB Tests/C=US"
+            )
+        endif()
+        
+        # Define command to generate SSL certificates
+        add_custom_command(
+            OUTPUT ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT}
+            COMMAND ${OPENSSL_CERT_COMMAND}
+            COMMENT "Generating self-signed SSL certificate for tests"
+            VERBATIM
+        )
+        
+        # Define custom target for certificate generation
+        add_custom_target(generate_ssl_certs DEPENDS ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT})
+        
+        # Create a directory structure for the certificates
+        file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/bin/qb-io/tests)
+        
+        # Copy SSL certificates to a common location
+        add_custom_command(
+            TARGET generate_ssl_certs
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT}
+                ${CMAKE_BINARY_DIR}/bin/qb-io/tests/
+            COMMENT "Copying SSL certificates to common test directory"
+        )
+        
+        # Make ssl-dependent tests depend on certificate generation
+        add_dependencies(${PROJECT_NAME}-gtest-test-async-io generate_ssl_certs)
+        add_dependencies(${PROJECT_NAME}-gtest-test-session-text generate_ssl_certs)
+        
+        # Tests using SSL will look for certificates in their runtime directory
+        message(STATUS "[IO Tests] SSL certificate generation enabled (OpenSSL ${OPENSSL_VERSION_OUTPUT})")
+    else()
+        message(STATUS "[IO Tests] OpenSSL executable not found, skipping certificate generation")
+    endif()
     
     message(STATUS "[IO Tests] Building OpenSSL crypto tests")
 endif ()

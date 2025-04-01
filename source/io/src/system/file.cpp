@@ -44,7 +44,7 @@ file::native_handle() const noexcept {
     return _handle;
 }
 
-void
+int
 file::open(std::string const &fname, int const flags, int const mode) noexcept {
     close();
 #ifdef _WIN32
@@ -52,12 +52,14 @@ file::open(std::string const &fname, int const flags, int const mode) noexcept {
 #else
     _handle = ::open(fname.c_str(), flags, mode);
 #endif
+    return _handle;
 }
 
-void
+int
 file::open(int const fd) noexcept {
     close();
     _handle = fd;
+    return _handle;
 }
 
 int
