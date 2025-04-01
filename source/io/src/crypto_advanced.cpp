@@ -45,7 +45,9 @@
 #endif
 
 // Argon2 library inclusion
+#if defined(QB_IO_WITH_ARGON2)
 #include <argon2.h>
+#endif
 
 namespace qb {
 
@@ -114,6 +116,7 @@ crypto::argon2_kdf(
     // Create output buffer
     std::vector<unsigned char> output(key_length, 0);
     
+#if defined(QB_IO_WITH_ARGON2)
     // Determine the variant
     argon2_type type;
     switch (variant) {
@@ -159,6 +162,31 @@ crypto::argon2_kdf(
         throw std::runtime_error("Argon2 key derivation failed: " + 
                                  std::string(argon2_error_message(result)));
     }
+#else
+    // Fallback implementation using PBKDF2 with higher iterations when Argon2 is not available
+    std::vector<unsigned char> salt_bytes;
+    if (params.salt.empty()) {
+        // Generate a random salt if none provided
+        salt_bytes = generate_salt(16);  // 16-byte salt
+    } else {
+        salt_bytes.assign(params.salt.begin(), params.salt.end());
+    }
+    
+    // Use higher iteration count as fallback
+    int iterations = 100000;  // Higher iterations to compensate for weaker memory hardness
+    
+    if (PKCS5_PBKDF2_HMAC(
+            password.c_str(),
+            password.length(),
+            salt_bytes.data(),
+            salt_bytes.size(),
+            iterations,
+            EVP_sha256(),
+            key_length,
+            output.data()) != 1) {
+        throw std::runtime_error("PBKDF2 key derivation failed (Argon2 fallback)");
+    }
+#endif
     
     return output;
 }
@@ -389,6 +417,7 @@ crypto::hash_password(
     const std::string& password,
     Argon2Variant variant) {
     
+#if defined(QB_IO_WITH_ARGON2)
     // Generate a random salt
     std::vector<unsigned char> salt = generate_salt(16);
     
@@ -439,6 +468,38 @@ crypto::hash_password(
     }
     
     return std::string(encoded);
+#else
+    // Fallback implementation using PBKDF2-HMAC-SHA256
+    std::vector<unsigned char> salt = generate_salt(16);
+    
+    // Higher iterations for better security
+    int iterations = 100000;
+    int key_length = 32;  // 256 bits
+    
+    // Generate the hash with PBKDF2
+    std::vector<unsigned char> hash_bytes(key_length);
+    if (PKCS5_PBKDF2_HMAC(
+            password.c_str(),
+            password.length(),
+            salt.data(),
+            salt.size(),
+            iterations,
+            EVP_sha256(),
+            key_length,
+            hash_bytes.data()) != 1) {
+        throw std::runtime_error("PBKDF2 password hashing failed (Argon2 fallback)");
+    }
+    
+    // Format the hash for storage with algorithm, iterations, salt, and hash
+    // Format: $pbkdf2-sha256$i=100000$salt_base64$hash_base64
+    std::string salt_base64 = base64_encode(salt.data(), salt.size());
+    std::string hash_base64 = base64_encode(hash_bytes.data(), hash_bytes.size());
+    
+    std::stringstream ss;
+    ss << "$pbkdf2-sha256$i=" << iterations << "$" << salt_base64 << "$" << hash_base64;
+    
+    return ss.str();
+#endif
 }
 
 // Implementation of password verification
@@ -447,6 +508,7 @@ crypto::verify_password(
     const std::string& password,
     const std::string& hash) {
     
+#if defined(QB_IO_WITH_ARGON2)
     // Verify the password against the stored hash
     int result = argon2_verify(
         hash.c_str(),                     // Encoded hash
@@ -456,6 +518,61 @@ crypto::verify_password(
     );
     
     return (result == ARGON2_OK);
+#else
+    // Fallback implementation for PBKDF2 format
+    // Parse the hash string format: $pbkdf2-sha256$i=iterations$salt$hash
+    if (hash.substr(0, 13) != "$pbkdf2-sha256") {
+        return false;  // Unsupported format
+    }
+    
+    size_t iter_start = hash.find("i=");
+    if (iter_start == std::string::npos) return false;
+    
+    size_t iter_end = hash.find('$', iter_start);
+    if (iter_end == std::string::npos) return false;
+    
+    size_t salt_start = iter_end + 1;
+    size_t salt_end = hash.find('$', salt_start);
+    if (salt_end == std::string::npos) return false;
+    
+    size_t hash_start = salt_end + 1;
+    
+    // Parse iterations
+    std::string iter_str = hash.substr(iter_start, iter_end - iter_start);
+    if (iter_str.substr(0, 2) != "i=") return false;
+    int iterations = std::stoi(iter_str.substr(2));
+    
+    // Extract salt and stored hash
+    std::string salt_base64 = hash.substr(salt_start, salt_end - salt_start);
+    std::string stored_hash_base64 = hash.substr(hash_start);
+    
+    std::vector<unsigned char> salt;
+    std::vector<unsigned char> stored_hash;
+    
+    try {
+        salt = base64_decode(salt_base64);
+        stored_hash = base64_decode(stored_hash_base64);
+    } catch (const std::exception&) {
+        return false; // Invalid base64 encoding
+    }
+    
+    // Generate hash with the same parameters
+    std::vector<unsigned char> computed_hash(stored_hash.size());
+    if (PKCS5_PBKDF2_HMAC(
+            password.c_str(),
+            password.length(),
+            salt.data(),
+            salt.size(),
+            iterations,
+            EVP_sha256(),
+            stored_hash.size(),
+            computed_hash.data()) != 1) {
+        return false;
+    }
+    
+    // Compare in constant time
+    return constant_time_compare(computed_hash, stored_hash);
+#endif
 }
 
 // Implementation of unique IV generation

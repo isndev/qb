@@ -163,6 +163,7 @@ TEST_F(ConnectionTimeoutTest, NonBlockingSocketBehavior) {
     
     // Start a non-blocking connection to a non-routable address
     int result = socket.n_connect_v4("192.0.2.1", 12345); // Using TEST-NET-1 reserved IP range
+    EXPECT_NE(result, 0);
     
     // Check if the connection is in progress
     int err = errno;

@@ -185,8 +185,8 @@ public:
      * @param timeout Timeout before execution in seconds (0 = immediate)
      */
     Timeout(_Func &&func, double timeout = 0.)
-        : _func(std::forward<_Func>(func))
-        , with_timeout<Timeout<_Func>>(timeout) {
+        : with_timeout<Timeout<_Func>>(timeout)
+        , _func(std::forward<_Func>(func)) {
         if (!timeout) {
             _func();
             delete this;
