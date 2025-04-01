@@ -32,18 +32,22 @@ set(CORE_TESTS
     test-event.cpp
     test-io.cpp
     test-session-text.cpp
+    test-event-combined.cpp
+    test-connection-timeout.cpp
 )
 
 # Create core test targets
 foreach(TEST_SOURCE ${CORE_TESTS})
     # Extract test name from filename (removing extension)
     get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
+    
     # Create test target with a descriptive name
     cxx_gtest(
         ${PROJECT_NAME}-gtest-${TEST_NAME}  # Target name
         "${PROJECT_NAME}"                   # Library dependency
         ${TEST_SOURCE}                      # Source file
     )
+    
     # Set properties for the test target (optional)
     set_target_properties(${PROJECT_NAME}-gtest-${TEST_NAME} PROPERTIES
         FOLDER "Tests/IO/System"
@@ -54,16 +58,58 @@ endforeach()
 # Optional feature tests
 # -----------------------------------------------------------------------------
 
+# Optional crypto tests (requires OpenSSL)
+if (OPENSSL_FOUND)
+    # List of crypto tests
+    set(CRYPTO_TESTS
+        test-crypto.cpp
+        test-crypto-advanced.cpp
+        test-crypto-asymmetric.cpp
+    )
+    
+    # Generate targets for each crypto test
+    foreach(TEST_SOURCE ${CRYPTO_TESTS})
+        # Extract test name from filename
+        get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
+        
+        cxx_gtest(
+            ${PROJECT_NAME}-gtest-${TEST_NAME}
+            "${PROJECT_NAME}"
+            ${TEST_SOURCE}
+        )
+        
+        set_target_properties(${PROJECT_NAME}-gtest-${TEST_NAME} PROPERTIES
+            FOLDER "Tests/IO/System"
+        )
+    endforeach()
+    
+    message(STATUS "[IO Tests] Building OpenSSL crypto tests")
+endif ()
+
 # Optional compression tests (requires ZLIB)
 if (ZLIB_FOUND)
-    cxx_gtest(
-        ${PROJECT_NAME}-gtest-compression
-        "${PROJECT_NAME}"
+    # Liste des tests de compression
+    set(COMPRESSION_TESTS
         test-compression.cpp
+        test-compression-levels.cpp
     )
-    set_target_properties(${PROJECT_NAME}-gtest-compression PROPERTIES
-        FOLDER "Tests/IO/System"
-    )
+    
+    # Générer les cibles pour chaque test de compression
+    foreach(TEST_SOURCE ${COMPRESSION_TESTS})
+        # Extract test name from filename
+        get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
+        
+        cxx_gtest(
+            ${PROJECT_NAME}-gtest-${TEST_NAME}
+            "${PROJECT_NAME}"
+            ${TEST_SOURCE}
+        )
+        
+        set_target_properties(${PROJECT_NAME}-gtest-${TEST_NAME} PROPERTIES
+            FOLDER "Tests/IO/System"
+        )
+    endforeach()
+    
     message(STATUS "[IO Tests] Building ZLIB compression tests")
 endif ()
 

@@ -95,6 +95,24 @@ if (OPENSSL_FOUND)
         list(APPEND CURRENT_INCLUDES ${OPENSSL_INCLUDE_DIR})
     endif()
     
+    # Ajout de la bibliothèque Argon2 pour les fonctionnalités cryptographiques avancées
+    find_library(ARGON2_LIBRARY NAMES argon2 libargon2)
+    if(ARGON2_LIBRARY)
+        list(APPEND CURRENT_DEPENDENCIES ${ARGON2_LIBRARY})
+        message(STATUS "[${PROJECT_NAME}] Building with Argon2 support for advanced crypto")
+    else()
+        message(WARNING "[${PROJECT_NAME}] Argon2 library not found - advanced crypto functions may not work")
+    endif()
+    
+    # Ajout de nlohmann_json pour les métadonnées
+    find_package(nlohmann_json QUIET)
+    if(nlohmann_json_FOUND)
+        list(APPEND CURRENT_DEPENDENCIES nlohmann_json::nlohmann_json)
+        message(STATUS "[${PROJECT_NAME}] Building with nlohmann_json support")
+    else()
+        message(WARNING "[${PROJECT_NAME}] nlohmann_json library not found - metadata functions may not work")
+    endif()
+    
     message(STATUS "[${PROJECT_NAME}] Building with OpenSSL support")
 endif ()
 

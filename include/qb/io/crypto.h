@@ -42,10 +42,18 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <stdexcept>
+#include <optional>
 #include <openssl/buffer.h>
 #include <openssl/evp.h>
 #include <openssl/md5.h>
 #include <openssl/sha.h>
+#include <openssl/hmac.h>
+#include <openssl/rand.h>
+#include <openssl/ec.h>
+#include <openssl/pem.h>
+#include <openssl/aes.h>
+#include <openssl/rsa.h>
 
 #undef hex_to_string
 
@@ -107,6 +115,47 @@ public:
     
     /** @brief Character range for lowercase hexadecimal values (0-9, a-f) */
     constexpr static const std::string_view range_hex_lower = "0123456789abcdef";
+
+    /** @brief Character range for binary bytes (0-255) */
+    constexpr static const std::string_view range_byte = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F"
+                                                         "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
+                                                         "\x20\x21\x22\x23\x24\x25\x26\x27\x28\x29\x2A\x2B\x2C\x2D\x2E\x2F"
+                                                         "\x30\x31\x32\x33\x34\x35\x36\x37\x38\x39\x3A\x3B\x3C\x3D\x3E\x3F"
+                                                         "\x40\x41\x42\x43\x44\x45\x46\x47\x48\x49\x4A\x4B\x4C\x4D\x4E\x4F"
+                                                         "\x50\x51\x52\x53\x54\x55\x56\x57\x58\x59\x5A\x5B\x5C\x5D\x5E\x5F"
+                                                         "\x60\x61\x62\x63\x64\x65\x66\x67\x68\x69\x6A\x6B\x6C\x6D\x6E\x6F"
+                                                         "\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x7B\x7C\x7D\x7E\x7F"
+                                                         "\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8A\x8B\x8C\x8D\x8E\x8F"
+                                                         "\x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9A\x9B\x9C\x9D\x9E\x9F"
+                                                         "\xA0\xA1\xA2\xA3\xA4\xA5\xA6\xA7\xA8\xA9\xAA\xAB\xAC\xAD\xAE\xAF"
+                                                         "\xB0\xB1\xB2\xB3\xB4\xB5\xB6\xB7\xB8\xB9\xBA\xBB\xBC\xBD\xBE\xBF"
+                                                         "\xC0\xC1\xC2\xC3\xC4\xC5\xC6\xC7\xC8\xC9\xCA\xCB\xCC\xCD\xCE\xCF"
+                                                         "\xD0\xD1\xD2\xD3\xD4\xD5\xD6\xD7\xD8\xD9\xDA\xDB\xDC\xDD\xDE\xDF"
+                                                         "\xE0\xE1\xE2\xE3\xE4\xE5\xE6\xE7\xE8\xE9\xEA\xEB\xEC\xED\xEE\xEF"
+                                                         "\xF0\xF1\xF2\xF3\xF4\xF5\xF6\xF7\xF8\xF9\xFA\xFB\xFC\xFD\xFE\xFF";
+
+    /** @brief Supported symmetric cipher algorithms */
+    enum class SymmetricAlgorithm {
+        AES_128_CBC,
+        AES_192_CBC,
+        AES_256_CBC,
+        AES_128_GCM,
+        AES_192_GCM,
+        AES_256_GCM,
+        CHACHA20_POLY1305
+    };
+
+    /** @brief Supported digest algorithms */
+    enum class DigestAlgorithm {
+        MD5,
+        SHA1,
+        SHA224,
+        SHA256,
+        SHA384,
+        SHA512,
+        BLAKE2B512,
+        BLAKE2S256
+    };
 
     /**
      * @brief Create a cryptographically secure random number generator
@@ -414,6 +463,668 @@ public:
      * @throws std::runtime_error if the arrays have different sizes
      */
     static std::vector<unsigned char> xor_bytes(const std::vector<unsigned char>& a, const std::vector<unsigned char>& b);
+
+    /**
+     * @brief Generate cryptographically secure random bytes
+     * 
+     * Uses OpenSSL's RAND_bytes to generate secure random bytes.
+     * 
+     * @param size Number of random bytes to generate
+     * @return Vector containing the random bytes
+     */
+    static std::vector<unsigned char> generate_random_bytes(size_t size);
+    
+    /**
+     * @brief Generate a random initialization vector (IV)
+     * 
+     * Creates an IV of appropriate size for the specified algorithm.
+     * 
+     * @param algorithm The symmetric algorithm for which to generate the IV
+     * @return Vector containing the random IV
+     */
+    static std::vector<unsigned char> generate_iv(SymmetricAlgorithm algorithm);
+    
+    /**
+     * @brief Generate a random key
+     * 
+     * Creates a key of appropriate size for the specified algorithm.
+     * 
+     * @param algorithm The symmetric algorithm for which to generate the key
+     * @return Vector containing the random key
+     */
+    static std::vector<unsigned char> generate_key(SymmetricAlgorithm algorithm);
+    
+    /**
+     * @brief Encrypt data using a symmetric algorithm
+     * 
+     * Encrypts the provided data using the specified algorithm, key, and IV.
+     * For GCM mode, also computes and appends an authentication tag.
+     * 
+     * @param plaintext The data to encrypt
+     * @param key The encryption key
+     * @param iv The initialization vector
+     * @param algorithm The encryption algorithm to use
+     * @param aad Additional authenticated data (for AEAD modes like GCM)
+     * @return Vector containing the encrypted data
+     */
+    static std::vector<unsigned char> encrypt(
+        const std::vector<unsigned char>& plaintext,
+        const std::vector<unsigned char>& key,
+        const std::vector<unsigned char>& iv,
+        SymmetricAlgorithm algorithm,
+        const std::vector<unsigned char>& aad = {});
+    
+    /**
+     * @brief Decrypt data using a symmetric algorithm
+     * 
+     * Decrypts the provided data using the specified algorithm, key, and IV.
+     * For GCM mode, also verifies the authentication tag.
+     * 
+     * @param ciphertext The data to decrypt
+     * @param key The decryption key
+     * @param iv The initialization vector
+     * @param algorithm The encryption algorithm that was used
+     * @param aad Additional authenticated data (for AEAD modes like GCM)
+     * @return Vector containing the decrypted data or empty if authentication fails
+     */
+    static std::vector<unsigned char> decrypt(
+        const std::vector<unsigned char>& ciphertext,
+        const std::vector<unsigned char>& key,
+        const std::vector<unsigned char>& iv,
+        SymmetricAlgorithm algorithm,
+        const std::vector<unsigned char>& aad = {});
+    
+    /**
+     * @brief Compute a generic hash using the specified algorithm
+     * 
+     * @param data The data to hash
+     * @param algorithm The hash algorithm to use
+     * @return Vector containing the hash
+     */
+    static std::vector<unsigned char> hash(
+        const std::vector<unsigned char>& data,
+        DigestAlgorithm algorithm);
+    
+    /**
+     * @brief Compute an HMAC using the specified algorithm
+     * 
+     * @param data The data to authenticate
+     * @param key The authentication key
+     * @param algorithm The hash algorithm to use
+     * @return Vector containing the HMAC
+     */
+    static std::vector<unsigned char> hmac(
+        const std::vector<unsigned char>& data,
+        const std::vector<unsigned char>& key,
+        DigestAlgorithm algorithm);
+    
+    /**
+     * @brief Generate an RSA key pair
+     * 
+     * @param bits The key size in bits (e.g., 2048, 3072, 4096)
+     * @return Pair of strings containing PEM-encoded private and public keys
+     */
+    static std::pair<std::string, std::string> generate_rsa_keypair(int bits = 2048);
+    
+    /**
+     * @brief Generate an EC key pair
+     * 
+     * @param curve The curve name (e.g., "prime256v1", "secp384r1", "secp521r1")
+     * @return Pair of strings containing PEM-encoded private and public keys
+     */
+    static std::pair<std::string, std::string> generate_ec_keypair(const std::string& curve = "prime256v1");
+    
+    /**
+     * @brief Sign data using an RSA private key
+     * 
+     * @param data The data to sign
+     * @param private_key PEM-encoded private key
+     * @param digest The digest algorithm to use
+     * @return Vector containing the signature
+     */
+    static std::vector<unsigned char> rsa_sign(
+        const std::vector<unsigned char>& data,
+        const std::string& private_key,
+        DigestAlgorithm digest = DigestAlgorithm::SHA256);
+    
+    /**
+     * @brief Verify an RSA signature
+     * 
+     * @param data The data that was signed
+     * @param signature The signature to verify
+     * @param public_key PEM-encoded public key
+     * @param digest The digest algorithm that was used
+     * @return True if the signature is valid
+     */
+    static bool rsa_verify(
+        const std::vector<unsigned char>& data,
+        const std::vector<unsigned char>& signature,
+        const std::string& public_key,
+        DigestAlgorithm digest = DigestAlgorithm::SHA256);
+    
+    /**
+     * @brief Sign data using an EC private key
+     * 
+     * @param data The data to sign
+     * @param private_key PEM-encoded private key
+     * @param digest The digest algorithm to use
+     * @return Vector containing the signature
+     */
+    static std::vector<unsigned char> ec_sign(
+        const std::vector<unsigned char>& data,
+        const std::string& private_key,
+        DigestAlgorithm digest = DigestAlgorithm::SHA256);
+    
+    /**
+     * @brief Verify an EC signature
+     * 
+     * @param data The data that was signed
+     * @param signature The signature to verify
+     * @param public_key PEM-encoded public key
+     * @param digest The digest algorithm that was used
+     * @return True if the signature is valid
+     */
+    static bool ec_verify(
+        const std::vector<unsigned char>& data,
+        const std::vector<unsigned char>& signature,
+        const std::string& public_key,
+        DigestAlgorithm digest = DigestAlgorithm::SHA256);
+    
+    /**
+     * @brief Derive a shared secret using ECDH
+     * 
+     * @param private_key PEM-encoded EC private key
+     * @param peer_public_key PEM-encoded EC public key
+     * @return Vector containing the shared secret
+     */
+    static std::vector<unsigned char> ecdh_derive_secret(
+        const std::string& private_key,
+        const std::string& peer_public_key);
+    
+    /**
+     * @brief Fill a vector with secure random bytes
+     * 
+     * @param buffer The vector to fill
+     * @return True if successful
+     */
+    static bool secure_random_fill(std::vector<unsigned char>& buffer);
+    
+    /**
+     * @brief Convert a digest algorithm enum to its corresponding EVP_MD
+     * 
+     * @param algorithm The digest algorithm
+     * @return Pointer to the EVP_MD structure
+     */
+    static const EVP_MD* get_evp_md(DigestAlgorithm algorithm);
+
+    // Nouveaux types pour les fonctions ajoutées
+    /** @brief Paramètres pour l'algorithme Argon2 */
+    struct Argon2Params {
+        uint32_t t_cost;        // Coût en temps (nombre d'itérations)
+        uint32_t m_cost;        // Coût en mémoire (KiB)
+        uint32_t parallelism;   // Degré de parallélisme
+        std::string salt;       // Sel (optionnel)
+        
+        Argon2Params() 
+            : t_cost(3)
+            , m_cost(1 << 16)
+            , parallelism(1)
+        {}
+    };
+
+    /** @brief Variantes de l'algorithme Argon2 */
+    enum class Argon2Variant {
+        Argon2d,    // Optimisé pour la résistance aux attaques GPU, mais vulnérable aux attaques par canal auxiliaire
+        Argon2i,    // Optimisé pour la résistance aux attaques par canal auxiliaire
+        Argon2id    // Hybride, recommandé pour la plupart des usages
+    };
+
+    /** @brief Algorithmes de dérivation de clé */
+    enum class KdfAlgorithm {
+        PBKDF2,
+        HKDF,
+        Argon2
+    };
+
+    /** @brief Modes d'opération pour le chiffrement par courbe elliptique */
+    enum class ECIESMode {
+        STANDARD,
+        AES_GCM,
+        CHACHA20
+    };
+
+    /** @brief Format pour les sorties du chiffrement par enveloppe */
+    enum class EnvelopeFormat {
+        RAW,        // Données brutes (IV + ciphertext + tag)
+        JSON,       // Format JSON avec métadonnées
+        BASE64      // Format base64 avec délimiteurs
+    };
+
+    /**
+     * @brief Dérivation de clé basée sur Argon2
+     *
+     * Implémente l'algorithme Argon2 (2id par défaut) pour dériver une clé sécurisée à partir
+     * d'un mot de passe. Argon2 est conçu pour être résistant aux attaques par matériel dédié,
+     * en utilisant une grande quantité de mémoire et des opérations parallèles.
+     *
+     * @param password Mot de passe d'entrée
+     * @param key_length Longueur de la clé à générer (en octets)
+     * @param params Paramètres pour l'algorithme Argon2
+     * @param variant Variante d'Argon2 à utiliser
+     * @return La clé dérivée
+     */
+    static std::vector<unsigned char> argon2_kdf(
+        const std::string& password,
+        size_t key_length,
+        const Argon2Params& params,
+        Argon2Variant variant = Argon2Variant::Argon2id);
+
+    /**
+     * @brief Dérivation de clé avec HKDF (HMAC-based Key Derivation Function)
+     *
+     * Implémente HKDF selon RFC 5869 pour dériver une ou plusieurs clés à partir
+     * d'un matériel de clé d'entrée. HKDF est particulièrement utile pour extraire
+     * de l'entropie d'une source non uniforme et l'étendre à la taille souhaitée.
+     *
+     * @param input_key_material Matériel de clé d'entrée
+     * @param salt Sel optionnel pour l'étape d'extraction
+     * @param info Informations contextuelles pour l'étape d'expansion
+     * @param output_length Longueur de la clé à générer
+     * @param digest Algorithme de hachage à utiliser
+     * @return La clé dérivée
+     */
+    static std::vector<unsigned char> hkdf(
+        const std::vector<unsigned char>& input_key_material,
+        const std::vector<unsigned char>& salt,
+        const std::vector<unsigned char>& info,
+        size_t output_length,
+        DigestAlgorithm digest = DigestAlgorithm::SHA256);
+
+    /**
+     * @brief Fonction haut niveau pour dériver une clé à partir d'un mot de passe
+     *
+     * Fournit une interface unifiée pour différents algorithmes de dérivation de clé.
+     * Recommandations :
+     * - Pour les mots de passe : Argon2
+     * - Pour dériver des clés supplémentaires à partir d'une clé existante : HKDF
+     * - Pour la compatibilité avec les systèmes existants : PBKDF2
+     *
+     * @param password Mot de passe ou clé d'entrée
+     * @param salt Sel pour la dérivation
+     * @param key_length Longueur de la clé à générer
+     * @param algorithm Algorithme de dérivation à utiliser
+     * @param iterations Nombre d'itérations (pour PBKDF2)
+     * @param argon2_params Paramètres pour Argon2 (ignorés si un autre algorithme est utilisé)
+     * @return La clé dérivée
+     */
+    static std::vector<unsigned char> derive_key(
+        const std::string& password,
+        const std::vector<unsigned char>& salt,
+        size_t key_length,
+        KdfAlgorithm algorithm = KdfAlgorithm::Argon2,
+        int iterations = 10000,
+        const Argon2Params& argon2_params = Argon2Params());
+
+    /**
+     * @brief Chiffrement intégré par courbe elliptique (ECIES)
+     *
+     * Implémente ECIES (Elliptic Curve Integrated Encryption Scheme), qui combine
+     * cryptographie à clé publique par courbe elliptique et chiffrement symétrique
+     * pour fournir un système hybride sécurisé.
+     *
+     * @param plaintext Données à chiffrer
+     * @param recipient_public_key Clé publique du destinataire (PEM)
+     * @param mode Mode d'opération ECIES
+     * @param digest Algorithme de hachage à utiliser
+     * @return Données chiffrées
+     */
+    static std::vector<unsigned char> ecies_encrypt(
+        const std::vector<unsigned char>& plaintext,
+        const std::string& recipient_public_key,
+        ECIESMode mode = ECIESMode::AES_GCM,
+        DigestAlgorithm digest = DigestAlgorithm::SHA256);
+
+    /**
+     * @brief Déchiffrement ECIES
+     *
+     * Déchiffre les données chiffrées avec ECIES.
+     *
+     * @param ciphertext Données chiffrées
+     * @param private_key Clé privée du destinataire (PEM)
+     * @param mode Mode d'opération ECIES utilisé pour le chiffrement
+     * @param digest Algorithme de hachage utilisé pour le chiffrement
+     * @return Données déchiffrées ou vecteur vide en cas d'échec
+     */
+    static std::vector<unsigned char> ecies_decrypt(
+        const std::vector<unsigned char>& ciphertext,
+        const std::string& private_key,
+        ECIESMode mode = ECIESMode::AES_GCM,
+        DigestAlgorithm digest = DigestAlgorithm::SHA256);
+
+    /**
+     * @brief Chiffrement par enveloppe
+     *
+     * Implémente le chiffrement par enveloppe: une clé symétrique est générée,
+     * utilisée pour chiffrer les données, puis elle-même chiffrée avec une clé publique.
+     * Cette méthode est plus efficace qu'ECIES pour les grands volumes de données.
+     *
+     * @param plaintext Données à chiffrer
+     * @param recipient_public_key Clé publique du destinataire (PEM)
+     * @param algorithm Algorithme symétrique à utiliser
+     * @param format Format de sortie des données chiffrées
+     * @return Données chiffrées au format spécifié
+     */
+    static std::string envelope_encrypt(
+        const std::vector<unsigned char>& plaintext,
+        const std::string& recipient_public_key,
+        SymmetricAlgorithm algorithm = SymmetricAlgorithm::AES_256_GCM,
+        EnvelopeFormat format = EnvelopeFormat::BASE64);
+
+    /**
+     * @brief Déchiffrement par enveloppe
+     *
+     * Déchiffre les données chiffrées avec le chiffrement par enveloppe.
+     *
+     * @param ciphertext Données chiffrées
+     * @param private_key Clé privée du destinataire (PEM)
+     * @param format Format des données chiffrées
+     * @return Données déchiffrées ou vecteur vide en cas d'échec
+     */
+    static std::vector<unsigned char> envelope_decrypt(
+        const std::string& ciphertext,
+        const std::string& private_key,
+        EnvelopeFormat format = EnvelopeFormat::BASE64);
+
+    /**
+     * @brief Comparaison sécurisée de chaînes (résistante aux attaques par timing)
+     *
+     * Compare deux chaînes d'octets en temps constant pour éviter les fuites
+     * d'information via des attaques par analyse de temps d'exécution.
+     *
+     * @param a Première chaîne
+     * @param b Seconde chaîne
+     * @return Vrai si les chaînes sont identiques, faux sinon
+     */
+    static bool constant_time_compare(
+        const std::vector<unsigned char>& a,
+        const std::vector<unsigned char>& b);
+
+    /**
+     * @brief Générateur de jetons authentifiés (encrypted token)
+     *
+     * Génère un jeton qui contient des informations authentifiées
+     * et chiffrées. Utile pour créer des jetons d'authentification,
+     * des identifiants de session, etc.
+     *
+     * @param payload Données à inclure dans le jeton
+     * @param key Clé secrète pour le chiffrement
+     * @param ttl Durée de validité du jeton en secondes (0 = pas d'expiration)
+     * @return Jeton encodé en Base64URL
+     */
+    static std::string generate_token(
+        const std::string& payload,
+        const std::vector<unsigned char>& key,
+        uint64_t ttl = 0);
+
+    /**
+     * @brief Vérification et décodage d'un jeton authentifié
+     *
+     * Vérifie et décode un jeton généré par generate_token.
+     *
+     * @param token Jeton à vérifier
+     * @param key Clé secrète utilisée pour le chiffrement
+     * @return Payload du jeton ou chaîne vide si le jeton est invalide ou expiré
+     */
+    static std::string verify_token(
+        const std::string& token,
+        const std::vector<unsigned char>& key);
+
+    /**
+     * @brief Encodage Base64URL
+     *
+     * Encode des données en Base64URL (variante de Base64 qui est
+     * utilisable dans les URLs).
+     *
+     * @param data Données à encoder
+     * @return Chaîne encodée en Base64URL
+     */
+    static std::string base64url_encode(const std::vector<unsigned char>& data);
+
+    /**
+     * @brief Décodage Base64URL
+     *
+     * Décode des données encodées en Base64URL.
+     *
+     * @param input Chaîne encodée en Base64URL
+     * @return Données décodées
+     */
+    static std::vector<unsigned char> base64url_decode(const std::string& input);
+
+    /**
+     * @brief Génération de sel cryptographique
+     *
+     * Génère un sel aléatoire de la longueur spécifiée.
+     *
+     * @param length Longueur du sel en octets
+     * @return Sel généré
+     */
+    static std::vector<unsigned char> generate_salt(size_t length = 16);
+
+    /**
+     * @brief Hachage sécurisé de mot de passe
+     *
+     * Hache un mot de passe de manière sécurisée en utilisant Argon2.
+     * Cette fonction est conçue spécifiquement pour le stockage de mots
+     * de passe et inclut directement le sel dans la sortie.
+     *
+     * @param password Mot de passe à hacher
+     * @param variant Variante d'Argon2 à utiliser
+     * @return Chaîne contenant le hash formaté avec paramètres
+     */
+    static std::string hash_password(
+        const std::string& password,
+        Argon2Variant variant = Argon2Variant::Argon2id);
+
+    /**
+     * @brief Vérification de mot de passe
+     *
+     * Vérifie si un mot de passe correspond à un hash généré par hash_password.
+     *
+     * @param password Mot de passe à vérifier
+     * @param hash Hash à comparer
+     * @return Vrai si le mot de passe correspond, faux sinon
+     */
+    static bool verify_password(
+        const std::string& password,
+        const std::string& hash);
+
+    /**
+     * @brief Génération de clés de signature Ed25519
+     *
+     * Génère une paire de clés de signature Ed25519, conçue 
+     * pour être rapide et sécurisée.
+     *
+     * @return Paire de clés au format PEM (privée, publique)
+     */
+    static std::pair<std::string, std::string> generate_ed25519_keypair();
+
+    /**
+     * @brief Generate Ed25519 keypair returning raw byte vectors
+     *
+     * @return Paire de clés au format PEM (privée, publique)
+     */
+    static std::pair<std::vector<unsigned char>, std::vector<unsigned char>> 
+    generate_ed25519_keypair_bytes();
+
+    /**
+     * @brief Sign data using Ed25519
+     *
+     * Signe des données avec l'algorithme Ed25519.
+     *
+     * @param data Données à signer
+     * @param private_key Clé privée Ed25519 au format PEM
+     * @return Signature
+     */
+    static std::vector<unsigned char> ed25519_sign(
+        const std::vector<unsigned char>& data,
+        const std::string& private_key);
+    
+    /**
+     * @brief Sign data using Ed25519 with raw private key bytes
+     *
+     * Signe des données avec l'algorithme Ed25519.
+     *
+     * @param data Données à signer
+     * @param private_key Clé privée Ed25519 au format PEM
+     * @return Signature
+     */
+    static std::vector<unsigned char> ed25519_sign(
+        const std::vector<unsigned char>& data,
+        const std::vector<unsigned char>& private_key);
+
+    /**
+     * @brief Verify Ed25519 signature
+     *
+     * Vérifie une signature Ed25519.
+     *
+     * @param data Données qui ont été signées
+     * @param signature Signature à vérifier
+     * @param public_key Clé publique Ed25519 au format PEM
+     * @return Vrai si la signature est valide
+     */
+    static bool ed25519_verify(
+        const std::vector<unsigned char>& data,
+        const std::vector<unsigned char>& signature,
+        const std::string& public_key);
+    
+    /**
+     * @brief Verify Ed25519 signature with raw public key bytes
+     *
+     * Vérifie une signature Ed25519.
+     *
+     * @param data Données qui ont été signées
+     * @param signature Signature à vérifier
+     * @param public_key Clé publique Ed25519 au format PEM
+     * @return Vrai si la signature est valide
+     */
+    static bool ed25519_verify(
+        const std::vector<unsigned char>& data,
+        const std::vector<unsigned char>& signature,
+        const std::vector<unsigned char>& public_key);
+
+    /**
+     * @brief Génération de clés X25519 pour échange de clés
+     *
+     * Génère une paire de clés X25519 pour l'échange de clés
+     * Diffie-Hellman sur courbe elliptique.
+     *
+     * @return Paire de clés au format PEM (privée, publique)
+     */
+    static std::pair<std::string, std::string> generate_x25519_keypair();
+
+    /**
+     * @brief Generate X25519 keypair returning raw byte vectors
+     *
+     * Génère une paire de clés X25519 pour l'échange de clés
+     * Diffie-Hellman sur courbe elliptique.
+     *
+     * @return Paire de clés au format PEM (privée, publique)
+     */
+    static std::pair<std::vector<unsigned char>, std::vector<unsigned char>> 
+    generate_x25519_keypair_bytes();
+
+    /**
+     * @brief Échange de clés X25519
+     *
+     * Dérive un secret partagé à l'aide de l'algorithme X25519.
+     *
+     * @param private_key Clé privée X25519 au format PEM
+     * @param peer_public_key Clé publique du pair au format PEM
+     * @return Secret partagé
+     */
+    static std::vector<unsigned char> x25519_key_exchange(
+        const std::string& private_key,
+        const std::string& peer_public_key);
+    
+    /**
+     * @brief Perform X25519 key exchange with raw key bytes
+     *
+     * Dérive un secret partagé à l'aide de l'algorithme X25519.
+     *
+     * @param private_key Clé privée X25519 au format PEM
+     * @param peer_public_key Clé publique du pair au format PEM
+     * @return Secret partagé
+     */
+    static std::vector<unsigned char> x25519_key_exchange(
+        const std::vector<unsigned char>& private_key,
+        const std::vector<unsigned char>& peer_public_key);
+
+    /**
+     * @brief Vecteur d'initialisation aléatoire pour une utilisation à usage unique
+     *
+     * Génère un vecteur d'initialisation aléatoire garanti unique, en incluant
+     * un compteur et un timestamp pour éviter les doublons.
+     *
+     * @param size Taille du vecteur d'initialisation en octets
+     * @return IV à usage unique
+     */
+    static std::vector<unsigned char> generate_unique_iv(size_t size = 12);
+
+    /**
+     * @brief Chiffrement authentifié de données avec authentification supplémentaire
+     *
+     * Chiffre des données avec authentification, en ajoutant des métadonnées
+     * protégées par intégrité (ex: identifiant d'utilisateur, timestamp).
+     * Les métadonnées sont incluses dans les AAD pour le chiffrement authentifié.
+     *
+     * @param plaintext Données à chiffrer
+     * @param key Clé de chiffrement
+     * @param metadata Métadonnées à protéger (non chiffrées mais authentifiées)
+     * @param algorithm Algorithme à utiliser
+     * @return Données chiffrées (avec IV, AAD et tag) au format structuré
+     */
+    static std::string encrypt_with_metadata(
+        const std::vector<unsigned char>& plaintext,
+        const std::vector<unsigned char>& key,
+        const std::string& metadata,
+        SymmetricAlgorithm algorithm = SymmetricAlgorithm::AES_256_GCM);
+
+    /**
+     * @brief Déchiffrement et vérification de l'intégrité des données et métadonnées
+     *
+     * Déchiffre des données protégées par encrypt_with_metadata et vérifie
+     * l'intégrité des métadonnées.
+     *
+     * @param ciphertext Données chiffrées structurées
+     * @param key Clé de déchiffrement
+     * @param algorithm Algorithme utilisé pour le chiffrement
+     * @return Structure contenant les données déchiffrées et les métadonnées vérifiées,
+     *         ou valeur optionnelle vide si l'authentification échoue
+     */
+    static std::optional<std::pair<std::vector<unsigned char>, std::string>>
+    decrypt_with_metadata(
+        const std::string& ciphertext,
+        const std::vector<unsigned char>& key,
+        SymmetricAlgorithm algorithm = SymmetricAlgorithm::AES_256_GCM);
+
+    // ECIES functions
+    
+    // ECIES encryption (using X25519 and AEAD)
+    static std::pair<std::vector<unsigned char>, std::vector<unsigned char>> 
+    ecies_encrypt(
+        const std::vector<unsigned char>& data,
+        const std::vector<unsigned char>& recipient_public_key,
+        const std::vector<unsigned char>& optional_shared_info = {},
+        ECIESMode mode = ECIESMode::AES_GCM);
+    
+    // ECIES decryption
+    static std::vector<unsigned char> 
+    ecies_decrypt(
+        const std::vector<unsigned char>& encrypted_data,
+        const std::vector<unsigned char>& ephemeral_public_key,
+        const std::vector<unsigned char>& recipient_private_key,
+        const std::vector<unsigned char>& optional_shared_info = {},
+        ECIESMode mode = ECIESMode::AES_GCM);
 };
 } // namespace qb
 
