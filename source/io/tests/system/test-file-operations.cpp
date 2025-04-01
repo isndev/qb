@@ -449,6 +449,7 @@ TEST_F(FileSystemTest, FileToPipeAdvanced) {
     // Even if the first read got everything, try read_all to ensure it handles that case
     int additional_bytes = f2p.read_all();
     // This might be 0 if first read got everything
+    EXPECT_EQ(additional_bytes, 0);
     
     // Verify we've read the entire file
     EXPECT_EQ(f2p.read_bytes(), test_content.size());
