@@ -70,12 +70,11 @@ public:
 
 // Broadcaster actor that sends broadcasts
 class BroadcasterActor : public qb::Actor {
-    int _num_receivers;
     int _num_broadcasts;
 
 public:
     BroadcasterActor(int num_receivers, int num_broadcasts)
-        : _num_receivers(num_receivers), _num_broadcasts(num_broadcasts) {}
+        : _num_broadcasts(num_broadcasts) {}
 
     bool onInit() override {
         registerEvent<qb::KillEvent>(*this);

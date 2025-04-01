@@ -60,12 +60,11 @@ std::atomic<int> g_error_actors_terminated{0};
 
 // Error-inducing actor that will deliberately cause errors
 class ErrorActor : public qb::Actor {
-    int _id;
     bool _should_recover;
     
 public:
     ErrorActor(int id, bool should_recover) 
-        : _id(id), _should_recover(should_recover) {}
+        : _should_recover(should_recover) {}
     
     bool onInit() override {
         registerEvent<ErrorInducingEvent>(*this);

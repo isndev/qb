@@ -97,15 +97,15 @@ TEST_F(CryptoAdvancedTest, HKDF) {
 // Tests for Argon2 key derivation
 TEST_F(CryptoAdvancedTest, Argon2KeyDerivation) {
 #if defined(QB_IO_WITH_ARGON2)
-    // Test sur la variante Argon2id (la plus couramment utilisée)
+    // Test with Argon2id variant (most commonly used)
     qb::crypto::Argon2Variant variant = qb::crypto::Argon2Variant::Argon2id;
     
-    // Paramètres par défaut
+    // Default parameters with reduced values for testing
     qb::crypto::Argon2Params params;
-    params.t_cost = 1;        // Réduire pour accélérer le test
+    params.t_cost = 1;        // Reduce for faster testing
     params.m_cost = 1 << 12;  // 4 MiB
     
-    // Test avec un même mot de passe pour vérifier la constance
+    // Test with the same password to verify consistency
     std::vector<unsigned char> key1 = qb::crypto::argon2_kdf(
         "password123",
         32,  // 256 bits
@@ -120,10 +120,10 @@ TEST_F(CryptoAdvancedTest, Argon2KeyDerivation) {
         variant
     );
     
-    // Les clés doivent être différentes car le sel est généré aléatoirement
+    // Keys should be different since salt is randomly generated
     EXPECT_NE(key1, key2);
     
-    // Test avec sel personnalisé pour vérifier la reproductibilité
+    // Test with custom salt to verify reproducibility
     params.salt = "fixed_salt_for_test";
     
     std::vector<unsigned char> key3 = qb::crypto::argon2_kdf(
@@ -140,10 +140,10 @@ TEST_F(CryptoAdvancedTest, Argon2KeyDerivation) {
         variant
     );
     
-    // Les clés doivent être identiques avec le même sel
+    // Keys should be identical with the same salt
     EXPECT_EQ(key3, key4);
 #else
-    // Test de l'implémentation de secours (PBKDF2)
+    // Test the fallback implementation (PBKDF2)
     qb::crypto::Argon2Params params;
     params.salt = "fixed_salt_for_test";
     
@@ -159,10 +159,10 @@ TEST_F(CryptoAdvancedTest, Argon2KeyDerivation) {
         params
     );
     
-    // Les clés doivent être identiques avec les mêmes paramètres
+    // Keys should be identical with the same parameters
     EXPECT_EQ(key1, key2);
     
-    // Vérification que différents mots de passe produisent des clés différentes
+    // Verify that different passwords produce different keys
     std::vector<unsigned char> key3 = qb::crypto::argon2_kdf(
         "different_password",
         32,
@@ -175,7 +175,7 @@ TEST_F(CryptoAdvancedTest, Argon2KeyDerivation) {
 
 // Tests for high-level key derivation
 TEST_F(CryptoAdvancedTest, KeyDerivation) {
-    // Test avec PBKDF2
+    // Test with PBKDF2
     std::vector<unsigned char> salt = qb::crypto::generate_salt(16);
     
     std::vector<unsigned char> key_pbkdf2 = qb::crypto::derive_key(
@@ -188,7 +188,7 @@ TEST_F(CryptoAdvancedTest, KeyDerivation) {
     
     EXPECT_EQ(key_pbkdf2.size(), 32);
     
-    // Test avec HKDF
+    // Test with HKDF
     std::vector<unsigned char> key_hkdf = qb::crypto::derive_key(
         "test_password",
         salt,
@@ -198,7 +198,7 @@ TEST_F(CryptoAdvancedTest, KeyDerivation) {
     
     EXPECT_EQ(key_hkdf.size(), 32);
     
-    // Test avec Argon2
+    // Test with Argon2
     std::vector<unsigned char> key_argon2 = qb::crypto::derive_key(
         "test_password",
         salt,
@@ -208,7 +208,7 @@ TEST_F(CryptoAdvancedTest, KeyDerivation) {
     
     EXPECT_EQ(key_argon2.size(), 32);
     
-    // Les trois méthodes doivent produire des clés différentes
+    // All three methods should produce different keys
     EXPECT_NE(key_pbkdf2, key_hkdf);
     EXPECT_NE(key_pbkdf2, key_argon2);
     EXPECT_NE(key_hkdf, key_argon2);
@@ -316,45 +316,45 @@ TEST_F(CryptoAdvancedTest, Tokens) {
     EXPECT_TRUE(verified_payload.empty());
 }
 
-// Test pour le hachage de mot de passe
+// Test for password hashing
 TEST_F(CryptoAdvancedTest, DISABLED_PasswordHashing) {
 #if defined(QB_IO_WITH_ARGON2)
-    // Test simple de hachage et vérification
+    // Simple test of hashing and verification
     std::string password = "test_password";
     std::string hash = qb::crypto::hash_password(password);
     
-    // Le hash ne doit pas être égal au mot de passe
+    // Hash should not equal the password
     EXPECT_NE(hash, password);
     
-    // Le hash doit commencer par "$argon2id$"
+    // Hash should start with "$argon2id$"
     EXPECT_EQ(hash.substr(0, 10), "$argon2id$");
     
-    // Vérifier que le mot de passe correct est accepté
+    // Verify that the correct password is accepted
     EXPECT_TRUE(qb::crypto::verify_password(password, hash));
     
-    // Vérifier qu'un mot de passe incorrect est rejeté
+    // Verify that an incorrect password is rejected
     EXPECT_FALSE(qb::crypto::verify_password("wrong_password", hash));
     
-    // Tester la vérification avec un hash invalide
+    // Test verification with an invalid hash
     EXPECT_FALSE(qb::crypto::verify_password(password, "invalid_hash_format"));
 #else
-    // Test de l'implémentation de secours PBKDF2
+    // Test the fallback PBKDF2 implementation
     std::string password = "test_password";
     std::string hash = qb::crypto::hash_password(password);
     
-    // Le hash ne doit pas être égal au mot de passe
+    // Hash should not equal the password
     EXPECT_NE(hash, password);
     
-    // Le hash doit commencer par "$pbkdf2-sha256"
+    // Hash should start with "$pbkdf2-sha256"
     EXPECT_TRUE(hash.substr(0, 13) == "$pbkdf2-sha256");
     
-    // Vérifier que le mot de passe correct est accepté
+    // Verify that the correct password is accepted
     EXPECT_TRUE(qb::crypto::verify_password(password, hash));
     
-    // Vérifier qu'un mot de passe incorrect est rejeté
+    // Verify that an incorrect password is rejected
     EXPECT_FALSE(qb::crypto::verify_password("wrong_password", hash));
     
-    // Tester la vérification avec un hash invalide
+    // Test verification with an invalid hash
     EXPECT_FALSE(qb::crypto::verify_password(password, "invalid_hash_format"));
 #endif
 }
