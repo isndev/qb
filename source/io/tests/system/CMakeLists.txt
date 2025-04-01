@@ -34,6 +34,8 @@ set(CORE_TESTS
     test-session-text.cpp
     test-event-combined.cpp
     test-connection-timeout.cpp
+    test-file-operations.cpp
+    test-stream-operations.cpp
 )
 
 # Create core test targets
