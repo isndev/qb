@@ -1,11 +1,11 @@
 /**
  * @file qb/core/tests/benchmark/benchmark_example.cpp
  * @brief Example benchmark for the QB Actor Framework
- * 
+ *
  * This file contains a simple benchmark example that demonstrates how to write and
  * register benchmarks for the QB Actor Framework. It provides a basic test case that
  * measures the performance of creating, starting, and joining a Main instance.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");

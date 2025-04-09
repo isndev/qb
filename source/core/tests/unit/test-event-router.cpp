@@ -1,12 +1,12 @@
 /**
  * @file qb/core/tests/unit/test-event-router.cpp
  * @brief Unit tests for event routing mechanisms
- * 
+ *
  * This file contains tests for the event routing mechanisms in the QB framework.
  * It tests single event single handler (SESH), single event multiple handler (SEMH),
  * multiple event single handler (MESH), and multiple event multiple handler (MEMH)
  * routing patterns.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,7 +33,8 @@ struct ActorId {
     explicit ActorId(uint32_t id) noexcept
         : _id(id) {}
 
-    explicit operator uint32_t() const noexcept {
+    explicit
+    operator uint32_t() const noexcept {
         return _id;
     }
 
@@ -72,10 +73,10 @@ struct type {
 };
 
 struct RawEvent {
-    RawEvent() = default;
+    RawEvent()                 = default;
     RawEvent(RawEvent const &) = delete;
-    using id_type = const char *;
-    using id_handler_type = ActorId;
+    using id_type              = const char *;
+    using id_handler_type      = ActorId;
 
     //    template<typename T>
     //    constexpr static id_type type_to_id() { return
@@ -87,10 +88,10 @@ struct RawEvent {
         return typeid(T).name();
     }
 
-    id_type id = "RawEvent";
+    id_type         id = "RawEvent";
     id_handler_type dest{};
     id_handler_type source{};
-    bool alive = true;
+    bool            alive = true;
 
     [[nodiscard]] id_type
     getID() const noexcept {
@@ -127,7 +128,7 @@ struct TestDestroyEvent : public RawEvent {
 
     TestDestroyEvent() {
         alive = false;
-        id = RawEvent::type_to_id<TestDestroyEvent>();
+        id    = RawEvent::type_to_id<TestDestroyEvent>();
     }
 
     ~TestDestroyEvent() {
@@ -135,14 +136,14 @@ struct TestDestroyEvent : public RawEvent {
     }
 };
 
-std::size_t TestEvent::_count = 0;
-std::size_t TestConstEvent::_count = 0;
+std::size_t TestEvent::_count        = 0;
+std::size_t TestConstEvent::_count   = 0;
 std::size_t TestDestroyEvent::_count = 0;
 
 void
 reset_all_event_counts() {
-    TestEvent::_count = 0;
-    TestConstEvent::_count = 0;
+    TestEvent::_count        = 0;
+    TestConstEvent::_count   = 0;
     TestDestroyEvent::_count = 0;
 }
 
@@ -180,7 +181,7 @@ struct FakeActor {
 template <typename _Event, bool _CleanEvent = true>
 void
 Test_SESH(std::size_t expected_count) {
-    _Event event;
+    _Event    event;
     FakeActor actor(1);
 
     _Event::_count = 0;
@@ -201,9 +202,9 @@ template <typename _Event, typename _Handler = void, bool _CleanEvent = true>
 void
 Test_SEMH(std::size_t expected_count) {
     std::remove_const_t<_Event> event;
-    FakeActor actor1(1);
-    FakeActor actor2(2);
-    FakeActor actor3(3);
+    FakeActor                   actor1(1);
+    FakeActor                   actor2(2);
+    FakeActor                   actor3(3);
 
     qb::router::semh<_Event, _Handler> semhRouter;
 
@@ -239,7 +240,7 @@ template <typename _Event, bool _CleanEvent = true>
 void
 Test_MESH(std::size_t expected_count) {
     std::remove_const_t<_Event> event;
-    FakeActor actor1(1);
+    FakeActor                   actor1(1);
 
     qb::router::mesh<RawEvent, FakeActor, _CleanEvent> meshRouter(actor1);
 
@@ -262,12 +263,12 @@ TEST(EventRouting, MESH) {
 template <typename _Event, bool _CleanEvent = true, typename _Handler = void>
 void
 Test_MEMH(std::size_t expected_count) {
-    std::remove_const_t<_Event> event;
-    FakeActor actor1(1);
-    FakeActor actor2(2);
-    FakeActor actor3(3);
-    FakeActor actor4(4);
-    FakeActor actor5(5);
+    std::remove_const_t<_Event>                       event;
+    FakeActor                                         actor1(1);
+    FakeActor                                         actor2(2);
+    FakeActor                                         actor3(3);
+    FakeActor                                         actor4(4);
+    FakeActor                                         actor5(5);
     qb::router::memh<RawEvent, _CleanEvent, _Handler> memhRouter;
 
     memhRouter.template subscribe<_Event>(actor1);
@@ -279,7 +280,7 @@ Test_MEMH(std::size_t expected_count) {
     memhRouter.unsubscribe(actor2);
     memhRouter.template unsubscribe<_Event>(actor3);
 
-    _Event::_count = 0;
+    _Event::_count     = 0;
     const auto onError = [](auto &) {};
     for (auto i = 0; i < 1024; ++i) {
         for (auto j = 1; j < 6; ++j) {

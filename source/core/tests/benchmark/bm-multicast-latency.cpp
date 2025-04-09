@@ -1,11 +1,11 @@
 /**
  * @file qb/core/tests/benchmark/bm-multicast-latency.cpp
  * @brief Multicast latency benchmark for the QB Actor Framework
- * 
+ *
  * This file contains benchmark tests measuring the latency of multicast communication
  * in the QB Actor Framework. It tests how efficiently a producer actor can send events
  * to multiple consumer actors across different cores.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,20 +22,20 @@
  * @ingroup Core
  */
 
+#include <benchmark/benchmark.h>
+#include <qb/main.h>
 #include "../shared/TestConsumer.h"
 #include "../shared/TestEvent.h"
 #include "../shared/TestProducer.h"
-#include <benchmark/benchmark.h>
-#include <qb/main.h>
 
 template <typename Event>
 static void
 BM_Multicast_Latency(benchmark::State &state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        const auto nb_actor = state.range(1);
-        const auto nb_core = static_cast<uint32_t>(state.range(2));
-        qb::Main main;
+        const auto nb_actor  = state.range(1);
+        const auto nb_core   = static_cast<uint32_t>(state.range(2));
+        qb::Main   main;
 
         qb::ActorIdList ids = {};
         for (auto i = 0; i < nb_actor; ++i) {

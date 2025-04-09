@@ -1,10 +1,10 @@
 /**
  * @file qb/io/transport/accept.h
  * @brief Connection acceptance transport implementation for the QB IO library
- * 
+ *
  * This file provides a transport implementation for accepting incoming
  * TCP connections, wrapping the TCP listener functionality.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,19 +30,19 @@ namespace qb::io::transport {
 /**
  * @class accept
  * @brief Connection acceptance transport class
- * 
+ *
  * This class implements a transport layer for accepting incoming TCP connections.
  * It wraps a TCP listener and provides methods for accepting and managing
  * new socket connections.
  */
 class accept {
-    io::tcp::listener _io;         /**< TCP listener for accepting connections */
-    io::tcp::socket _accepted_io;  /**< Socket for the accepted connection */
+    io::tcp::listener _io;          /**< TCP listener for accepting connections */
+    io::tcp::socket   _accepted_io; /**< Socket for the accepted connection */
 
 public:
     /** @brief Type of the underlying transport I/O */
     using transport_io_type = io::tcp::listener;
-    
+
     /** @brief Type of the accepted socket */
     using socket_type = io::tcp::socket;
 
@@ -58,7 +58,7 @@ public:
     /**
      * @brief Accept a new connection
      * @return Native handle of the accepted socket, or -1 on failure
-     * 
+     *
      * Attempts to accept a new connection. If successful, returns the
      * native handle of the accepted socket which can be used for
      * further communication.
@@ -73,7 +73,7 @@ public:
     /**
      * @brief Release the accepted socket handle
      * @param Unused parameter
-     * 
+     *
      * Releases the handle of the last accepted socket to prevent
      * it from being closed when the socket object is destroyed.
      */
@@ -84,7 +84,7 @@ public:
 
     /**
      * @brief End-of-file handling (no-op)
-     * 
+     *
      * This is a placeholder method with no implementation as
      * connection acceptance doesn't have an EOF concept.
      */
@@ -93,7 +93,7 @@ public:
 
     /**
      * @brief Close the listener
-     * 
+     *
      * Closes the underlying TCP listener, stopping the acceptance
      * of new connections.
      */
@@ -105,7 +105,7 @@ public:
     /**
      * @brief Get the accepted socket
      * @return Reference to the last accepted socket
-     * 
+     *
      * Returns a reference to the socket object representing
      * the last accepted connection.
      */

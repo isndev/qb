@@ -1,11 +1,11 @@
 /**
  * @file qb/core/src/ActorId.cpp
  * @brief Implementation of the ActorId class for the QB framework
- * 
+ *
  * This file contains the implementation of the ActorId class which provides
  * unique identifiers for actors in the QB framework, combining service ID
  * and core ID components.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");

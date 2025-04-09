@@ -29,16 +29,16 @@
 
 # Messaging pattern benchmarks
 set(MESSAGING_BENCHMARKS
-    bm-ping-pong.cpp
-    bm-ping-pong-latency.cpp
+        bm-ping-pong.cpp
+        bm-ping-pong-latency.cpp
 )
 
 # Throughput pattern benchmarks
 set(THROUGHPUT_BENCHMARKS
-    bm-disruptor-latency.cpp
-    bm-multicast-latency.cpp
-    bm-pipeline-latency.cpp
-    bm-producer-consumer.cpp
+        bm-disruptor-latency.cpp
+        bm-multicast-latency.cpp
+        bm-pipeline-latency.cpp
+        bm-producer-consumer.cpp
 )
 
 # Example benchmark is commented out
@@ -55,32 +55,32 @@ function(create_benchmark BENCHMARK_SOURCE CATEGORY)
     # Extract benchmark name from filename (removing extension)
     get_filename_component(BENCHMARK_NAME ${BENCHMARK_SOURCE} NAME_WE)
     string(REPLACE "bm-" "" BENCHMARK_TARGET_NAME ${BENCHMARK_NAME})
-    
+
     # Create benchmark target
     cxx_benchmark(
-        ${PROJECT_NAME}-benchmark-${BENCHMARK_TARGET_NAME}  # Target name
-        "${PROJECT_NAME}"                                    # Library dependency
-        ${BENCHMARK_SOURCE}                                  # Source file
+            ${PROJECT_NAME}-benchmark-${BENCHMARK_TARGET_NAME}  # Target name
+            "${PROJECT_NAME}"                                    # Library dependency
+            ${BENCHMARK_SOURCE}                                  # Source file
     )
-    
+
     # Set properties for organization in IDEs
     set_target_properties(${PROJECT_NAME}-benchmark-${BENCHMARK_TARGET_NAME} PROPERTIES
-        FOLDER "Benchmarks/Core/${CATEGORY}"
+            FOLDER "Benchmarks/Core/${CATEGORY}"
     )
-    
+
     # Report benchmark setup
     message(STATUS "[Core Benchmarks] Added ${CATEGORY} benchmark: ${BENCHMARK_TARGET_NAME}")
 endfunction()
 
 # Create messaging benchmark targets
-foreach(BENCHMARK_SOURCE ${MESSAGING_BENCHMARKS})
+foreach (BENCHMARK_SOURCE ${MESSAGING_BENCHMARKS})
     create_benchmark(${BENCHMARK_SOURCE} "Messaging")
-endforeach()
+endforeach ()
 
 # Create throughput benchmark targets
-foreach(BENCHMARK_SOURCE ${THROUGHPUT_BENCHMARKS})
+foreach (BENCHMARK_SOURCE ${THROUGHPUT_BENCHMARKS})
     create_benchmark(${BENCHMARK_SOURCE} "Throughput")
-endforeach()
+endforeach ()
 
 # Create example benchmark targets (currently disabled)
 # foreach(BENCHMARK_SOURCE ${EXAMPLE_BENCHMARKS})

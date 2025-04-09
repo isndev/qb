@@ -1,11 +1,11 @@
 /**
  * @file qb/io/async/event/signal.h
  * @brief System signal event handler for asynchronous I/O
- * 
+ *
  * This file defines the signal event structure which is used to handle
  * system signals (like SIGINT, SIGTERM, etc.) in an asynchronous manner.
  * It wraps libev's signal watcher functionality.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,18 +32,18 @@ namespace qb::io::async::event {
 /**
  * @struct signal
  * @brief Event for handling system signals
- * 
+ *
  * This template class extends the base event with ev::sig functionality from libev.
  * It is used to watch for specific system signals and trigger callbacks when they occur.
  * The template parameter allows specifying which signal to watch at compile time.
- * 
+ *
  * @tparam _SIG The signal number to watch, or -1 for dynamic signal specification
- * 
+ *
  * Usage:
  * @code
  * // Create a SIGINT handler
  * using sigint_handler = qb::io::async::event::signal<SIGINT>;
- * 
+ *
  * // In the derived class:
  * void on(sigint_handler &&sig) {
  *     // Handle SIGINT signal
@@ -56,9 +56,9 @@ struct signal : public base<ev::sig> {
 
     /**
      * @brief Constructor
-     * 
+     *
      * Creates a signal watcher for the specified signal.
-     * 
+     *
      * @param loop Reference to the libev event loop
      */
     explicit signal(ev::loop_ref loop)
@@ -70,7 +70,7 @@ struct signal : public base<ev::sig> {
 /**
  * @struct signal<-1>
  * @brief Specialization for dynamic signal specification
- * 
+ *
  * This specialization allows the signal to be specified dynamically
  * rather than at compile time.
  */
@@ -80,10 +80,10 @@ struct signal<-1> : public base<ev::sig> {
 
     /**
      * @brief Constructor
-     * 
+     *
      * Creates a signal watcher without initializing the signal number.
      * The signal must be set later using the set() method.
-     * 
+     *
      * @param loop Reference to the libev event loop
      */
     explicit signal(ev::loop_ref loop)

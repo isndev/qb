@@ -1,10 +1,10 @@
 /**
  * @file qb/io/tcp/listener.h
  * @brief Implementation of a TCP listener for the QB IO library
- * 
+ *
  * This file provides the implementation of a TCP listener for accepting
  * incoming connections. It supports IPv4, IPv6, and Unix sockets.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,7 +24,7 @@
 #include "socket.h"
 
 #ifndef QB_IO_TCP_LISTENER_H_
-#    define QB_IO_TCP_LISTENER_H_
+#define QB_IO_TCP_LISTENER_H_
 
 namespace qb::io::tcp {
 
@@ -32,7 +32,7 @@ namespace qb::io::tcp {
  * @class listener tcp/listener.h qb/io/tcp/listener.h
  * @ingroup TCP
  * @brief Class implementing a TCP listener
- * 
+ *
  * This class provides functionality for listening for incoming TCP connections.
  * It inherits from the base qb::io::socket class and provides methods for
  * listening and accepting connections on different types of addresses.
@@ -57,14 +57,14 @@ public:
      * @return 0 on success, error code on failure
      */
     int listen(io::endpoint const &ep) noexcept;
-    
+
     /**
      * @brief Start listening on a URI
      * @param uri URI to listen on
      * @return 0 on success, error code on failure
      */
     int listen(io::uri const &uri) noexcept;
-    
+
     /**
      * @brief Start listening on an IPv4 address
      * @param port Port number
@@ -72,7 +72,7 @@ public:
      * @return 0 on success, error code on failure
      */
     int listen_v4(uint16_t port, std::string const &host = "0.0.0.0") noexcept;
-    
+
     /**
      * @brief Start listening on an IPv6 address
      * @param port Port number
@@ -80,7 +80,7 @@ public:
      * @return 0 on success, error code on failure
      */
     int listen_v6(uint16_t port, std::string const &host = "::") noexcept;
-    
+
     /**
      * @brief Start listening on a Unix socket
      * @param path Path to the Unix socket
@@ -93,7 +93,7 @@ public:
      * @return Newly created TCP socket for the accepted connection
      */
     tcp::socket accept() const noexcept;
-    
+
     /**
      * @brief Accept a new connection into an existing socket
      * @param sock TCP socket to use for the connection

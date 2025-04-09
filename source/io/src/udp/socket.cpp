@@ -1,11 +1,12 @@
 /**
  * @file qb/io/src/udp/socket.cpp
  * @brief Implementation of UDP socket functionality
- * 
+ *
  * This file contains the implementation of UDP socket operations in the QB framework,
  * including initialization, reading, writing, and binding operations for UDP sockets.
- * It provides cross-platform socket handling with support for IPv4, IPv6, and Unix domains.
- * 
+ * It provides cross-platform socket handling with support for IPv4, IPv6, and Unix
+ * domains.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -70,12 +71,12 @@ socket::bind(qb::io::endpoint const &ep) noexcept {
 int
 socket::bind(io::uri const &u) noexcept {
     switch (u.af()) {
-    case AF_INET:
-    case AF_INET6:
-        return bind(io::endpoint().as_in(std::string(u.host()).c_str(), u.u_port()));
-    case AF_UNIX:
-        const auto path = std::string(u.path()) + std::string(u.host());
-        return bind_un(path.c_str());
+        case AF_INET:
+        case AF_INET6:
+            return bind(io::endpoint().as_in(std::string(u.host()).c_str(), u.u_port()));
+        case AF_UNIX:
+            const auto path = std::string(u.path()) + std::string(u.host());
+            return bind_un(path.c_str());
     }
     return -1;
 }

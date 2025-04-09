@@ -1,11 +1,11 @@
 /**
  * @file qb/core/tests/system/test-actor-service-event.cpp
  * @brief Unit tests for service actor event handling
- * 
+ *
  * This file contains tests for event handling between service actors in the
  * QB Actor Framework. It verifies that service actors can properly send, receive,
  * and validate events using various communication mechanisms.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,14 +29,14 @@
 #include <random>
 
 struct TestEvent : public qb::Event {
-    uint8_t _data[32];
+    uint8_t  _data[32];
     uint32_t _sum;
-    bool has_extra_data = false;
+    bool     has_extra_data = false;
 
     TestEvent()
         : _sum(0) {
         std::random_device rand_dev;
-        std::mt19937 generator(rand_dev());
+        std::mt19937       generator(rand_dev());
 
         std::uniform_int_distribution<int> random_number(0, 255);
         std::generate(std::begin(_data), std::end(_data), [&]() {
@@ -115,7 +115,7 @@ struct PipePushActor : public BaseActorSender<PipePushActor> {
 struct AllocatedPipePushActor : public BaseActorSender<AllocatedPipePushActor> {
     void
     doSend() {
-        auto &e = getPipe(_to).allocated_push<TestEvent>(32);
+        auto &e          = getPipe(_to).allocated_push<TestEvent>(32);
         e.has_extra_data = true;
         memcpy(reinterpret_cast<uint8_t *>(&e) + sizeof(TestEvent), e._data,
                sizeof(e._data));
@@ -126,7 +126,7 @@ template <typename ActorSender>
 class ActorEventMulti : public testing::Test {
 protected:
     const uint32_t max_core;
-    qb::Main main;
+    qb::Main       main;
     ActorEventMulti()
         : max_core(std::thread::hardware_concurrency()) {}
 

@@ -1,10 +1,10 @@
 /**
  * @file qb/io/transport/file.h
  * @brief File transport implementation for the QB IO library
- * 
+ *
  * This file provides a transport implementation for file operations,
  * extending the stream class with file-specific functionality.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +31,7 @@ namespace qb::io::transport {
 /**
  * @class file
  * @brief File transport class
- * 
+ *
  * This class implements a transport layer for file operations by extending
  * the generic stream class with file-specific implementation. It provides
  * file I/O operations through the stream interface.
@@ -41,7 +41,7 @@ public:
     /**
      * @brief Write data to the file
      * @return Always returns 0 as file writes are handled separately
-     * 
+     *
      * This method is a placeholder as file writing is handled through
      * other mechanisms in the file implementation.
      */

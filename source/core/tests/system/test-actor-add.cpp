@@ -1,11 +1,11 @@
 /**
  * @file qb/core/tests/system/test-actor-add.cpp
  * @brief Unit tests for actor creation and management
- * 
+ *
  * This file contains tests for actor creation, initialization, and lifecycle management
- * in the QB Actor Framework. It tests adding actors to cores, service actor registration,
- * referenced actors, and actor termination via kill events.
- * 
+ * in the QB Actor Framework. It tests adding actors to cores, service actor
+ * registration, referenced actors, and actor termination via kill events.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");

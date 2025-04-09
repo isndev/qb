@@ -32,7 +32,7 @@
 #include <string>
 
 #ifndef QB_STRING_H_
-#    define QB_STRING_H_
+#define QB_STRING_H_
 
 namespace qb {
 
@@ -83,7 +83,7 @@ struct best_size<_Size, false, true> {
  */
 template <std::size_t _Size = 30>
 class string : public std::array<char, _Size + 1> {
-    using base_t = std::array<char, _Size + 1>;
+    using base_t    = std::array<char, _Size + 1>;
     using size_type = typename internal::best_size<_Size + 1>::type;
     size_type _size = 0;
 

@@ -1,11 +1,12 @@
 /**
  * @file qb/io/src/stream.cpp
  * @brief Implementation of templated stream classes for file, TCP and UDP sockets.
- * 
+ *
  * @details This file contains explicit template instantiations for stream classes
- * with different underlying I/O mechanisms (files, TCP sockets, UDP sockets, and SSL sockets when enabled).
- * These instantiations ensure that the templated classes are available at link time.
- * 
+ * with different underlying I/O mechanisms (files, TCP sockets, UDP sockets, and SSL
+ * sockets when enabled). These instantiations ensure that the templated classes are
+ * available at link time.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");

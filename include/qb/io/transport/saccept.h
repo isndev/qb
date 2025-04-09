@@ -1,10 +1,10 @@
 /**
  * @file qb/io/transport/saccept.h
  * @brief Secure connection acceptance transport implementation for the QB IO library
- * 
+ *
  * This file provides a transport implementation for accepting incoming
  * secure (SSL/TLS) TCP connections, wrapping the SSL TCP listener functionality.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,19 +30,19 @@ namespace qb::io::transport {
 /**
  * @class saccept
  * @brief Secure connection acceptance transport class
- * 
+ *
  * This class implements a transport layer for accepting incoming secure (SSL/TLS)
  * TCP connections. It wraps an SSL TCP listener and provides methods for accepting
  * and managing new secure socket connections.
  */
 class saccept {
-    io::tcp::ssl::listener _io;         /**< SSL TCP listener for accepting connections */
-    io::tcp::ssl::socket _accepted_io;  /**< SSL socket for the accepted connection */
+    io::tcp::ssl::listener _io; /**< SSL TCP listener for accepting connections */
+    io::tcp::ssl::socket   _accepted_io; /**< SSL socket for the accepted connection */
 
 public:
     /** @brief Type of the underlying transport I/O */
     using transport_io_type = io::tcp::ssl::listener;
-    
+
     /** @brief Type of the accepted socket */
     using socket_type = io::tcp::ssl::socket;
 
@@ -58,7 +58,7 @@ public:
     /**
      * @brief Accept a new secure connection
      * @return Native handle of the accepted socket, or -1 on failure
-     * 
+     *
      * Attempts to accept a new secure connection. If successful, returns the
      * native handle of the accepted socket which can be used for
      * further secure communication.
@@ -73,7 +73,7 @@ public:
     /**
      * @brief Reset the accepted socket
      * @param Unused parameter
-     * 
+     *
      * Resets the last accepted socket by replacing it with a new default-constructed
      * socket, effectively releasing the previous connection.
      */
@@ -84,7 +84,7 @@ public:
 
     /**
      * @brief End-of-file handling (no-op)
-     * 
+     *
      * This is a placeholder method with no implementation as
      * connection acceptance doesn't have an EOF concept.
      */
@@ -93,7 +93,7 @@ public:
 
     /**
      * @brief Close the listener
-     * 
+     *
      * Closes the underlying SSL TCP listener, stopping the acceptance
      * of new secure connections.
      */
@@ -105,7 +105,7 @@ public:
     /**
      * @brief Get the accepted secure socket
      * @return Reference to the last accepted secure socket
-     * 
+     *
      * Returns a reference to the SSL socket object representing
      * the last accepted secure connection.
      */

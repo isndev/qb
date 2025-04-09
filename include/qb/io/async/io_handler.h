@@ -1,11 +1,11 @@
 /**
  * @file qb/io/async/io_handler.h
  * @brief Session management for the asynchronous IO framework
- * 
+ *
  * This file defines the io_handler class which provides session management
  * functionality for asynchronous IO operations. It handles the registration,
  * tracking, and cleanup of IO sessions.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,11 +33,11 @@ namespace qb::io::async {
 /**
  * @class io_handler
  * @brief Session manager for asynchronous IO
- * 
+ *
  * This template class manages sessions for asynchronous IO operations.
  * It provides methods for registering, tracking, and unregistering sessions,
  * as well as utilities for broadcasting data to all or selected sessions.
- * 
+ *
  * @tparam _Derived The derived class type (CRTP pattern)
  * @tparam _Session The session class type
  */
@@ -47,10 +47,10 @@ class io_handler {
 
     /**
      * @brief Handle a disconnected session
-     * 
+     *
      * This method is called when a session is disconnected. It removes
      * the session from the sessions map.
-     * 
+     *
      * @param ident The UUID of the disconnected session
      */
     void
@@ -62,7 +62,7 @@ class io_handler {
 public:
     /**
      * @brief Type alias for the map of sessions
-     * 
+     *
      * Maps session UUIDs to shared pointers of session objects.
      */
     using session_map_t = qb::unordered_map<uuid, std::shared_ptr<_Session>>;
@@ -80,7 +80,7 @@ public:
      * @brief Default constructor
      */
     io_handler() = default;
-    
+
     /**
      * @brief Default destructor
      */
@@ -97,22 +97,23 @@ public:
 
     /**
      * @brief Get a session by its UUID
-     * 
+     *
      * @param id The UUID of the session to retrieve
      * @return Shared pointer to the session, or nullptr if not found
      */
-    std::shared_ptr<_Session> session(uuid id) {
+    std::shared_ptr<_Session>
+    session(uuid id) {
         auto it = _sessions.find(id);
         return (it != std::end(_sessions)) ? it->second : nullptr;
     }
 
     /**
      * @brief Register a new session
-     * 
+     *
      * Creates and registers a new session with the given IO object and
      * additional arguments. The session is started immediately after
      * registration.
-     * 
+     *
      * @tparam Args Types of additional arguments for session construction
      * @param new_io The IO object for the new session
      * @param args Additional arguments for session construction
@@ -121,7 +122,8 @@ public:
     template <typename... Args>
     _Session &
     registerSession(typename _Session::transport_io_type &&new_io, Args &&...args) {
-        auto session = std::make_shared<_Session>(static_cast<_Derived &>(*this), std::forward<Args>(args)...);
+        auto session = std::make_shared<_Session>(static_cast<_Derived &>(*this),
+                                                  std::forward<Args>(args)...);
         sessions().emplace(session->id(), session);
         session->transport() = std::move(new_io);
         session->start();
@@ -132,9 +134,9 @@ public:
 
     /**
      * @brief Unregister a session
-     * 
+     *
      * Disconnects and eventually removes the session with the given UUID.
-     * 
+     *
      * @param ident The UUID of the session to unregister
      */
     void
@@ -146,9 +148,9 @@ public:
 
     /**
      * @brief Extract a session's IO object
-     * 
+     *
      * Removes the session with the given UUID and returns its IO object.
-     * 
+     *
      * @param ident The UUID of the session to extract
      * @return A pair containing the IO object and a boolean indicating success
      */
@@ -165,9 +167,9 @@ public:
 
     /**
      * @brief Broadcast data to all sessions
-     * 
+     *
      * Sends the provided data to all active sessions.
-     * 
+     *
      * @tparam _Args Types of data to send
      * @param args Data to send to all sessions
      * @return Reference to the derived object for method chaining
@@ -182,9 +184,9 @@ public:
 
     /**
      * @brief Broadcast data to selected sessions
-     * 
+     *
      * Sends the provided data to sessions that match the given predicate.
-     * 
+     *
      * @tparam _Func Type of the selection predicate
      * @tparam _Args Types of data to send
      * @param func Predicate to select sessions to receive the data

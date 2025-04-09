@@ -1,11 +1,11 @@
 /**
  * @file qb/core/src/VirtualCore.cpp
  * @brief Implementation of the VirtualCore class for the QB Actor Framework
- * 
+ *
  * This file contains the implementation of the VirtualCore class which manages
  * actor execution within a single thread. It handles event routing, actor lifecycle,
  * and inter-core communication within the QB Actor Framework.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,8 +29,8 @@
 #include <qb/system/timestamp.h>
 
 #ifdef __APPLE__
-#    include <sys/sysctl.h>
-#    include <sys/types.h>
+#include <sys/sysctl.h>
+#include <sys/types.h>
 
 typedef struct cpu_set {
     uint32_t count;
@@ -57,7 +57,7 @@ pthread_getaffinity_np(pthread_t thread, size_t cpusetsize, cpu_set_t *cpuset) {
         return false;
 
     // Only logical cores count on macOS
-    int num_cores;
+    int    num_cores;
     size_t len = sizeof(num_cores);
     if (sysctlbyname("hw.logicalcpu", &num_cores, &len, nullptr, 0))
         return 1;
@@ -75,7 +75,7 @@ pthread_getaffinity_np(pthread_t thread, size_t cpusetsize, cpu_set_t *cpuset) {
 static int
 pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
     thread_port_t mach_thread;
-    int core = 0;
+    int           core = 0;
 
     for (core = 0; core < 8 * cpu_size; core++) {
         if (CPU_ISSET(core, cpu_set))
@@ -84,9 +84,9 @@ pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
     if (core >= std::thread::hardware_concurrency())
         return -1;
     thread_affinity_policy_data_t policy = {core};
-    mach_thread = pthread_mach_thread_np(thread);
+    mach_thread                          = pthread_mach_thread_np(thread);
     const auto ret = thread_policy_set(mach_thread, THREAD_AFFINITY_POLICY,
-                                       (thread_policy_t)&policy, 1);
+                                       (thread_policy_t) &policy, 1);
     return !(ret == KERN_SUCCESS || ret == KERN_NOT_SUPPORTED);
 }
 #endif
@@ -101,7 +101,6 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     , _pipes(engine.getNbCore())
     , _mono_pipe_swap(_pipes[_resolved_index])
     , _mono_pipe(std::make_unique<VirtualPipe>()) {
-
     for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
         _ids.insert(static_cast<ServiceId>(i));
     }
@@ -172,10 +171,10 @@ VirtualCore::__receive__() {
 bool
 VirtualCore::__flush_all__() noexcept {
     bool ret = false;
-    auto in = 0u;
+    auto in  = 0u;
     for (auto &pipe : _pipes) {
         if (in != _resolved_index && pipe.size()) {
-            ret = true;
+            ret    = true;
             auto i = pipe.begin();
             while (i < pipe.end()) {
                 const auto &event = *reinterpret_cast<const Event *>(i);
@@ -235,16 +234,16 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
         if (!ret)
             LOG_WARN("set thread affinity failed: " << strerror(errno));
 #elif defined(_WIN32) || defined(_WIN64)
-#    ifdef _MSC_VER
+#ifdef _MSC_VER
         DWORD_PTR mask = 0u;
         for (const auto core : affinity_cores)
             mask |= static_cast<DWORD_PTR>(1u) << core;
         ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
         if (!ret)
             LOG_WARN("set thread affinity failed");
-#    else
-#        warning "Cannot set affinity on windows with GNU Compiler"
-#    endif
+#else
+#warning "Cannot set affinity on windows with GNU Compiler"
+#endif
 #endif
     }
     _actor_to_remove.reserve(_actors.size());
@@ -403,7 +402,7 @@ VirtualCore::reply(Event &event) noexcept {
 
 void
 VirtualCore::forward(ActorId const dest, Event &event) noexcept {
-    event.dest = dest;
+    event.dest        = dest;
     event.state.alive = 1;
     send(event);
 }
@@ -424,8 +423,8 @@ VirtualCore::time() const noexcept {
     return _metrics._nanotimer;
 }
 
-ServiceId VirtualCore::_nb_service = 0;
-thread_local VirtualCore *VirtualCore::_handler = nullptr;
+ServiceId                 VirtualCore::_nb_service = 0;
+thread_local VirtualCore *VirtualCore::_handler    = nullptr;
 } // namespace qb
 #ifdef QB_LOGGER
 qb::io::log::stream &

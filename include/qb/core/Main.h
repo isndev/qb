@@ -1,16 +1,16 @@
 /**
  * @file qb/core/Main.h
  * @brief Main control for the QB Actor Framework
- * 
+ *
  * This file defines the Main class which serves as the primary entry point and control
  * mechanism for the QB Actor Framework. It provides functionality for initializing,
  * configuring, and running the actor system, including management of virtual cores,
  * actor creation, and system-wide signal handling.
- * 
+ *
  * The file also defines supporting classes such as CoreInitializer which handles
  * per-core configuration, and SharedCoreCommunication which manages inter-core
  * message passing.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,14 +29,14 @@
 
 #ifndef QB_MAIN_H
 #define QB_MAIN_H
+#include <condition_variable>
 #include <qb/system/container/unordered_map.h>
 #include <thread>
-#include <condition_variable>
 #include <vector>
 // include from qb
+#include <qb/system/lockfree/mpsc.h>
 #include "CoreSet.h"
 #include "Event.h"
-#include <qb/system/lockfree/mpsc.h>
 
 namespace qb {
 
@@ -63,13 +63,13 @@ public:
         friend class CoreInitializer;
 
         CoreInitializer &_initializer;
-        ActorIdList _ret_ids;
-        bool _valid;
+        ActorIdList      _ret_ids;
+        bool             _valid;
 
         explicit ActorBuilder(CoreInitializer &initializer) noexcept;
 
     public:
-        ActorBuilder() = delete;
+        ActorBuilder()                        = delete;
         ActorBuilder(ActorBuilder const &rhs) = default;
 
         /*!
@@ -90,10 +90,10 @@ public:
          * This function is not available while engine is running.
          */
         template <typename _Actor, typename... _Args>
-        ActorBuilder &addActor(_Args &&... args) noexcept;
+        ActorBuilder &addActor(_Args &&...args) noexcept;
 
         [[nodiscard]] bool valid() const noexcept;
-        explicit operator bool() const noexcept;
+        explicit           operator bool() const noexcept;
 
         /*!
          * @brief Get list of created ActorId by the ActorBuilder
@@ -104,9 +104,9 @@ public:
 
 private:
     const CoreId _index;
-    ServiceId _next_id;
-    CoreIdSet _affinity;
-    uint64_t _latency;
+    ServiceId    _next_id;
+    CoreIdSet    _affinity;
+    uint64_t     _latency;
 
     qb::unordered_set<ServiceId> _registered_services;
     std::vector<IActorFactory *> _actor_factories;
@@ -134,7 +134,7 @@ public:
      * This function is not available while engine is running.
      */
     template <typename _Actor, typename... _Args>
-    ActorId addActor(_Args &&... args) noexcept;
+    ActorId addActor(_Args &&...args) noexcept;
 
     /*!
      * @brief Get ActorBuilder from CoreIntializer
@@ -159,7 +159,8 @@ public:
     CoreInitializer &setAffinity(CoreIdSet const &cores = {}) noexcept;
 
     /*!
-     * @brief Set VirtualCore max wait latency in nanosecond if it hasn't received any core/io events
+     * @brief Set VirtualCore max wait latency in nanosecond if it hasn't received any
+     * core/io events
      * @param latency in nanoseconds (default 0)
      * @return Reference to this CoreInitializer for method chaining
      * @note
@@ -168,9 +169,9 @@ public:
      */
     CoreInitializer &setLatency(uint64_t latency = 0) noexcept;
 
-    [[nodiscard]] CoreId getIndex() const noexcept;
+    [[nodiscard]] CoreId           getIndex() const noexcept;
     [[nodiscard]] CoreIdSet const &getAffinity() const noexcept;
-    [[nodiscard]] uint64_t getLatency() const noexcept;
+    [[nodiscard]] uint64_t         getLatency() const noexcept;
 };
 
 using CoreInitializerMap = qb::unordered_map<CoreId, CoreInitializer>;
@@ -181,13 +182,12 @@ class SharedCoreCommunication : nocopy {
     constexpr static const uint64_t MaxRingEvents =
         (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
     //////// Types
-    class Mailbox
-        : public lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0> {
-        const uint64_t _latency;
-        std::mutex _mtx;
+    class Mailbox : public lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0> {
+        const uint64_t          _latency;
+        std::mutex              _mtx;
         std::condition_variable _cv;
-    public:
 
+    public:
         explicit Mailbox(std::size_t const nb_producer, uint64_t const latency)
             : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer)
             , _latency(latency) {}
@@ -214,16 +214,16 @@ class SharedCoreCommunication : nocopy {
         getLatency() const noexcept {
             return _latency;
         }
-
     };
 
-    const CoreSet _core_set;
+    const CoreSet                  _core_set;
     std::vector<std::atomic<bool>> _event_safe_deadlock;
-    std::vector<Mailbox *> _mail_boxes;
+    std::vector<Mailbox *>         _mail_boxes;
 
 public:
     SharedCoreCommunication() = delete;
-    explicit SharedCoreCommunication(CoreInitializerMap const &core_initializers) noexcept;
+    explicit SharedCoreCommunication(
+        CoreInitializerMap const &core_initializers) noexcept;
 
     ~SharedCoreCommunication() noexcept;
 
@@ -233,14 +233,14 @@ public:
      * @return true if the event was successfully sent, false otherwise
      */
     [[nodiscard]] bool send(Event const &event) const noexcept;
-    
+
     /**
      * @brief Get the mailbox for a specific core
      * @param id The core ID to get the mailbox for
      * @return Reference to the mailbox for the specified core
      */
     [[nodiscard]] Mailbox &getMailBox(CoreId id) const noexcept;
-    
+
     /**
      * @brief Get the number of cores in the system
      * @return The number of cores
@@ -249,10 +249,10 @@ public:
 };
 
 struct CoreSpawnerParameter {
-    const CoreId id;
-    CoreInitializer &initializer;
+    const CoreId             id;
+    CoreInitializer         &initializer;
     SharedCoreCommunication &shared_com;
-    std::atomic<uint64_t> &sync_start;
+    std::atomic<uint64_t>   &sync_start;
 };
 
 /*!
@@ -272,20 +272,20 @@ class Main {
     using Mailbox = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
 
     static std::vector<Main *> _instances;
-    static std::mutex _instances_lock;
+    static std::mutex          _instances_lock;
 
     std::atomic<uint64_t> _sync_start;
-    static void onSignal(int signal) noexcept;
-    static void start_thread(CoreSpawnerParameter const &params) noexcept;
-    static bool __wait__all__cores__ready(std::size_t nb_core,
-                                          std::atomic<uint64_t> &sync_start) noexcept;
+    static void           onSignal(int signal) noexcept;
+    static void           start_thread(CoreSpawnerParameter const &params) noexcept;
+    static bool           __wait__all__cores__ready(std::size_t            nb_core,
+                                                    std::atomic<uint64_t> &sync_start) noexcept;
 
 private:
     std::vector<std::thread> _cores;
     // Core Factory
-    CoreInitializerMap _core_initializers;
+    CoreInitializerMap                       _core_initializers;
     std::unique_ptr<SharedCoreCommunication> _shared_com;
-    bool _is_running;
+    bool                                     _is_running;
 
 public:
     using ActorIdList = CoreInitializer::ActorBuilder::ActorIdList;
@@ -336,7 +336,7 @@ public:
      * This function is not available while engine is running.
      */
     template <typename _Actor, typename... _Args>
-    ActorId addActor(CoreId index, _Args &&... args);
+    ActorId addActor(CoreId index, _Args &&...args);
 
     /*!
      * @brief Get CoreIntializer from index
@@ -395,4 +395,3 @@ using engine = Main;
 
 } // namespace qb
 #endif // QB_MAIN_H
-

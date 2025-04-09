@@ -1,12 +1,12 @@
 /**
  * @file qb/io/async/event/pending_read.h
  * @brief Event for pending read data in asynchronous I/O
- * 
+ *
  * This file defines the pending_read event structure which is triggered
  * to notify about unprocessed bytes remaining in the read buffer after
  * protocol message processing. Derived classes can handle this event by
  * implementing the `void on(pending_read &&)` method.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,12 +31,12 @@ namespace qb::io::async::event {
 /**
  * @struct pending_read
  * @brief Event triggered when unprocessed data remains in the read buffer
- * 
+ *
  * This event is passed to the derived class's on() method to inform about
  * unprocessed bytes remaining in the read buffer after the protocol has
  * finished processing messages. This can be useful for monitoring buffer
  * utilization or implementing custom buffer management.
- * 
+ *
  * Usage:
  * @code
  * void on(qb::io::async::event::pending_read &&event) {

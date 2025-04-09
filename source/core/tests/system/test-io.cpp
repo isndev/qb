@@ -1,11 +1,11 @@
 /**
  * @file qb/core/tests/system/test-io.cpp
  * @brief Unit tests for I/O functionality in the QB framework
- * 
+ *
  * This file contains tests for I/O functionality in the QB framework, including
  * string operations, logging, and actor-based I/O in both mono-core and multi-core
  * environments.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -60,11 +60,11 @@ public:
 };
 
 TEST(IO, STRING_TEST) {
-    const char c_str[] = "0123456789012345678901234567890123456789";
+    const char  c_str[] = "0123456789012345678901234567890123456789";
     std::string std_str(c_str);
 
-    qb::string qb_str1(c_str);
-    qb::string qb_str2(std_str);
+    qb::string     qb_str1(c_str);
+    qb::string     qb_str2(std_str);
     qb::string<40> qb_str3(c_str);
     qb::string<40> qb_str4(qb_str1);
 

@@ -1,11 +1,11 @@
 /**
  * @file qb/io/async/event/eof.h
  * @brief End-of-file event for asynchronous I/O
- * 
+ *
  * This file defines the eof (End-Of-File) event structure which is triggered
  * when there is nothing more to read from an I/O stream. Derived classes can
  * handle this event by implementing the `void on(eof &&)` method.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,11 +30,11 @@ namespace qb::io::async::event {
 /**
  * @struct eof
  * @brief Event triggered when no more data is available for reading
- * 
+ *
  * This event is passed to the derived class's on() method when
  * there is nothing more to read from an I/O stream. It signals
  * that the end of the input has been reached.
- * 
+ *
  * Usage:
  * @code
  * void on(qb::io::async::event::eof &&) {

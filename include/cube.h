@@ -1,11 +1,11 @@
 /**
  * @file cube.h
  * @brief Main include file for the QB Actor Framework
- * 
+ *
  * This is the main include file for the QB Actor Framework, which provides
  * a simple way to include the entire framework in a project. It includes
  * all necessary headers and definitions for using the framework.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,29 +26,29 @@
 
 /**
  * @mainpage QB Actor Framework
- * 
+ *
  * @section intro Introduction
- * 
+ *
  * QB is a C++ Actor Framework designed for high-performance concurrent
  * and distributed applications. It provides a comprehensive set of tools
  * for building systems based on the Actor Model paradigm.
- * 
+ *
  * The framework consists of several modules:
  * - Core: The fundamental actor system components
  * - IO: Input/output operations and network communication
  * - System: System-level facilities and abstractions
  * - Utility: General-purpose utility libraries
- * 
+ *
  * @section usage Usage
- * 
+ *
  * To use the framework, include this header file:
- * 
+ *
  * ```cpp
  * #include <qb/cube.h>
  * ```
- * 
+ *
  * Or include the specific components you need:
- * 
+ *
  * ```cpp
  * #include <qb/actor.h>
  * #include <qb/io.h>

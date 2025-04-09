@@ -1,11 +1,12 @@
 /**
  * @file qb/io/async/event/file.h
  * @brief File monitoring event for asynchronous I/O
- * 
+ *
  * This file defines the file event structure which is used by the directory_watcher
- * to notify about file or directory updates. It wraps libev's stat watcher functionality.
- * Derived classes can handle this event by implementing the `void on(file &&)` method.
- * 
+ * to notify about file or directory updates. It wraps libev's stat watcher
+ * functionality. Derived classes can handle this event by implementing the `void on(file
+ * &&)` method.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,11 +33,11 @@ namespace qb::io::async::event {
 /**
  * @struct file
  * @brief Event for file and directory monitoring
- * 
+ *
  * This event extends the base event with ev::stat functionality from libev.
  * It is used primarily by the directory_watcher component to notify when
  * monitored files or directories are modified.
- * 
+ *
  * Usage:
  * @code
  * void on(qb::io::async::event::file &&event) {
@@ -50,7 +51,7 @@ struct file : base<ev::stat> {
 
     /**
      * @brief Constructor
-     * 
+     *
      * @param loop Reference to the libev event loop
      */
     explicit file(ev::loop_ref loop)

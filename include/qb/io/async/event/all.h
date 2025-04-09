@@ -1,15 +1,15 @@
 /**
  * @file qb/io/async/event/all.h
  * @brief Aggregation of all event types for the asynchronous I/O system
- * 
+ *
  * This file includes all the event types defined in the qb::io::async::event
  * namespace. Including this file gives access to the complete set of events
  * that can be used with the asynchronous I/O system.
- * 
- * Event handling in QB IO is based on the observer pattern. Classes derived 
- * from io/input/output can receive event notifications by implementing 
+ *
+ * Event handling in QB IO is based on the observer pattern. Classes derived
+ * from io/input/output can receive event notifications by implementing
  * handlers with the signature: void on(event_type &&);
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,14 +30,14 @@
 #define QB_IO_ASYNC_EVENT_ALL_H
 
 #include "disconnected.h"  // Event for connection loss
+#include "dispose.h"       // Resource disposal event
+#include "eof.h"           // End-of-file event
+#include "eos.h"           // End-of-stream event
 #include "file.h"          // Event for file/directory changes
 #include "io.h"            // Low-level I/O event
 #include "pending_read.h"  // Event for unprocessed read data
-#include "eof.h"           // End-of-file event
 #include "pending_write.h" // Event for unsent write data
-#include "eos.h"           // End-of-stream event
 #include "signal.h"        // System signal event
 #include "timer.h"         // Timer/timeout event
-#include "dispose.h"       // Resource disposal event
 
 #endif // QB_IO_ASYNC_EVENT_ALL_H

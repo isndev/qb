@@ -8,11 +8,11 @@
 #include <random>
 
 #ifndef QB_TESTEVENT_H
-#    define QB_TESTEVENT_H
+#define QB_TESTEVENT_H
 
 struct LightEvent : public qb::Event {
     std::chrono::high_resolution_clock::time_point _timepoint;
-    uint32_t _ttl;
+    uint32_t                                       _ttl;
 
     LightEvent()
         : _timepoint(std::chrono::high_resolution_clock::now())
@@ -24,11 +24,11 @@ struct LightEvent : public qb::Event {
 };
 
 struct TestEvent : public qb::Event {
-    uint8_t _data[32];
-    uint32_t _sum;
+    uint8_t                                        _data[32];
+    uint32_t                                       _sum;
     std::chrono::high_resolution_clock::time_point _timepoint;
-    uint32_t _ttl;
-    bool has_extra_data = false;
+    uint32_t                                       _ttl;
+    bool                                           has_extra_data = false;
 
     TestEvent() {
         __init__();
@@ -55,7 +55,7 @@ private:
     void
     __init__() {
         std::random_device rand_dev;
-        std::mt19937 generator(rand_dev());
+        std::mt19937       generator(rand_dev());
 
         std::uniform_int_distribution<int> random_number(0, 255);
         std::generate(std::begin(_data), std::end(_data), [&]() {

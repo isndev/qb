@@ -1,15 +1,15 @@
 /**
  * @file qb/core/ActorId.h
  * @brief Actor and core identification for the QB Actor Framework
- * 
+ *
  * This file defines the core identification types and the ActorId class which is used
  * for uniquely identifying actors within the QB Actor Framework. It provides types for
- * core IDs, service IDs, and actor IDs, as well as utilities for set operations on 
+ * core IDs, service IDs, and actor IDs, as well as utilities for set operations on
  * collections of core IDs.
- * 
+ *
  * The ActorId is a compound identifier that includes both the core ID where an actor
  * is located and a service ID that uniquely identifies the actor within that core.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -42,10 +42,10 @@
 
 namespace qb {
 
-using CoreId = uint16_t;
+using CoreId    = uint16_t;
 using ServiceId = uint16_t;
-using TypeId = uint16_t;
-using EventId = TypeId;
+using TypeId    = uint16_t;
+using EventId   = TypeId;
 
 /**
  * @brief Maximum number of cores supported in a system
@@ -213,7 +213,7 @@ public:
     class iterator {
     private:
         const CoreIdBitSet &_set;
-        size_t _pos;
+        size_t              _pos;
 
         // Advance to the next set bit
         void
@@ -225,10 +225,10 @@ public:
 
     public:
         using iterator_category = std::forward_iterator_tag;
-        using value_type = CoreId;
-        using difference_type = std::ptrdiff_t;
-        using pointer = const CoreId *;
-        using reference = const CoreId &;
+        using value_type        = CoreId;
+        using difference_type   = std::ptrdiff_t;
+        using pointer           = const CoreId *;
+        using reference         = const CoreId &;
 
         iterator(const CoreIdBitSet &set, size_t pos)
             : _set(set)
@@ -309,13 +309,13 @@ class ActorId {
 
 private:
     ServiceId _service_id;
-    CoreId _core_id;
+    CoreId    _core_id;
 
 protected:
     ActorId(ServiceId id, CoreId index) noexcept;
 
 public:
-    static constexpr uint32_t NotFound = 0;
+    static constexpr uint32_t  NotFound     = 0;
     static constexpr ServiceId BroadcastSid = (std::numeric_limits<ServiceId>::max)();
 
     /*!
@@ -366,15 +366,15 @@ public:
         : ActorId(BroadcastSid, static_cast<CoreId>(core_id)) {}
 };
 
-using ActorIdList = std::vector<ActorId>;
-using ActorIdSet = std::unordered_set<ActorId>;
-using core_id = CoreId;
-using service_id = ServiceId;
-using actor_id = ActorId;
-using broadcast_id = BroadcastId;
+using ActorIdList   = std::vector<ActorId>;
+using ActorIdSet    = std::unordered_set<ActorId>;
+using core_id       = CoreId;
+using service_id    = ServiceId;
+using actor_id      = ActorId;
+using broadcast_id  = BroadcastId;
 using actor_id_list = ActorIdList;
-using actor_is_set = ActorIdSet;
-using core_id_set = CoreIdSet;
+using actor_is_set  = ActorIdSet;
+using core_id_set   = CoreIdSet;
 #ifdef QB_LOGGER
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
 #endif

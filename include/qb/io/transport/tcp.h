@@ -1,10 +1,10 @@
 /**
  * @file qb/io/transport/tcp.h
  * @brief TCP transport implementation for the QB IO library
- * 
+ *
  * This file provides a transport implementation for TCP sockets,
  * extending the stream class with TCP-specific functionality.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +31,7 @@ namespace qb::io::transport {
 /**
  * @class tcp
  * @brief TCP transport class
- * 
+ *
  * This class implements a transport layer for TCP sockets by extending
  * the generic stream class with TCP-specific socket implementation.
  * It inherits all the stream functionality and applies it to TCP connections.

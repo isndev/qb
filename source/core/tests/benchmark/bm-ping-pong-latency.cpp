@@ -1,11 +1,11 @@
 /**
  * @file qb/core/tests/benchmark/bm-ping-pong-latency.cpp
  * @brief Ping-pong latency benchmark for the QB Actor Framework
- * 
+ *
  * This file contains benchmark tests measuring the latency of ping-pong communication
  * patterns in the QB Actor Framework. It includes tests for mono-threaded and
  * multi-threaded scenarios, as well as a reference implementation using raw ringbuffers.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,11 +22,11 @@
  * @ingroup Core
  */
 
-#include "../shared/TestEvent.h"
-#include "../shared/TestLatency.h"
 #include <benchmark/benchmark.h>
 #include <qb/actor.h>
 #include <qb/main.h>
+#include "../shared/TestEvent.h"
+#include "../shared/TestLatency.h"
 
 class PongActor final : public qb::Actor {
 public:
@@ -79,7 +79,7 @@ public:
 bool run = true;
 void
 thread_ping(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
-    auto &latency = *new pg::latency<1000 * 1000, 900000>{};
+    auto      &latency = *new pg::latency<1000 * 1000, 900000>{};
     LightEvent events[4096];
 
     spsc[1].enqueue(LightEvent(1000000));
@@ -123,7 +123,7 @@ thread_pong(qb::lockfree::spsc::ringbuffer<LightEvent, 4096> *spsc) {
 static void
 BM_Reference_Multi_PingPong_Latency(benchmark::State &state) {
     for (auto _ : state) {
-        auto spsc = new qb::lockfree::spsc::ringbuffer<LightEvent, 4096>[2];
+        auto        spsc = new qb::lockfree::spsc::ringbuffer<LightEvent, 4096>[2];
         std::thread threads[2];
 
         threads[0] = std::thread(thread_ping, spsc);

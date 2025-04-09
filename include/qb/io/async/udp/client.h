@@ -45,7 +45,6 @@ template <typename _Derived>
 class client
     : public io<_Derived>
     , public transport::udp {
-
 public:
     constexpr static const bool has_server =
         false; /**< Flag indicating server association (false for UDP clients) */

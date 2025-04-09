@@ -1,11 +1,11 @@
 /**
  * @file qb/io/async/tcp/acceptor.h
  * @brief Asynchronous TCP connection acceptor implementation
- * 
- * This file defines the acceptor template class which handles incoming TCP 
+ *
+ * This file defines the acceptor template class which handles incoming TCP
  * connections for an asynchronous server. It uses the input class for asynchronous
  * operations and a protocol for accepting and processing incoming connections.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,12 +33,12 @@ namespace qb::io::async::tcp {
 /**
  * @class acceptor
  * @brief Handles accepting incoming TCP connections asynchronously
- * 
+ *
  * This template class provides functionality for accepting incoming TCP connections
  * in an asynchronous manner. It uses the input class for asynchronous operations
  * and a protocol for accepting and processing incoming connections. When a new
  * connection is accepted, it passes the new socket to the derived class for handling.
- * 
+ *
  * @tparam _Derived The derived class type (CRTP pattern)
  * @tparam _Prot The protocol class type to use with the acceptor
  */
@@ -46,20 +46,22 @@ template <typename _Derived, typename _Prot>
 class acceptor
     : public input<acceptor<_Derived, _Prot>>
     , public _Prot {
-
     friend class input<acceptor<_Derived, _Prot>>;
     using base_t = input<acceptor<_Derived, _Prot>>;
-    using Protocol = protocol::accept<acceptor, typename _Prot::socket_type>; /**< Protocol type for accepting connections */
+    using Protocol =
+        protocol::accept<acceptor,
+                         typename _Prot::socket_type>; /**< Protocol type for accepting
+                                                          connections */
 
 public:
     /**
      * @brief Handler for disconnection events
-     * 
+     *
      * This method is called when the acceptor is disconnected.
      * If the derived class has a handler for disconnection events,
      * it forwards the event to that handler. Otherwise, it throws
      * a runtime error.
-     * 
+     *
      * @param e The disconnection event
      * @throws std::runtime_error If the derived class doesn't handle disconnection
      */
@@ -80,7 +82,7 @@ public:
 public:
     /**
      * @brief Constructor
-     * 
+     *
      * Creates a new acceptor with the accept protocol.
      */
     acceptor() noexcept
@@ -93,10 +95,10 @@ public:
 
     /**
      * @brief Handler for new connections
-     * 
+     *
      * This method is called when a new connection is accepted.
      * It forwards the new socket to the derived class for handling.
-     * 
+     *
      * @param new_socket The new socket for the accepted connection
      */
     void

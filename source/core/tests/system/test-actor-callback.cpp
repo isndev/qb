@@ -1,10 +1,10 @@
 /**
  * @file qb/core/tests/system/test-actor-callback.cpp
  * @brief Unit tests for actor callback functionality
- * 
+ *
  * This file contains tests for the callback mechanism in the QB Actor Framework.
  * It verifies that actor callbacks are properly registered, executed, and unregistered.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,7 +29,7 @@ class TestActor final
     : public qb::Actor
     , public qb::ICallback {
     const uint64_t _max_loop;
-    uint64_t _count_loop;
+    uint64_t       _count_loop;
 
 public:
     TestActor() = delete;

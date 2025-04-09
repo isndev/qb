@@ -1,12 +1,12 @@
 /**
  * @file qb/io/src/crypto.cpp
  * @brief Implementation of cryptographic utilities
- * 
+ *
  * This file contains the implementation of various cryptographic functions
  * including hash functions (MD5, SHA1, SHA256, SHA512), encoding/decoding
  * (Base64, Hex), and key derivation (PBKDF2). It provides a comprehensive
  * set of cryptographic utilities for the QB framework.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +31,7 @@ std::string
 crypto::base64::encode(const std::string &input) noexcept {
     std::string base64;
 
-    BIO *bio, *b64;
+    BIO     *bio, *b64;
     BUF_MEM *bptr = BUF_MEM_new();
 
     b64 = BIO_new(BIO_f_base64());
@@ -45,8 +45,8 @@ crypto::base64::encode(const std::string &input) noexcept {
         round(4 * ceil(static_cast<double>(input.size()) / 3.0)));
     base64.resize(base64_length);
     bptr->length = 0;
-    bptr->max = base64_length + 1;
-    bptr->data = &base64[0];
+    bptr->max    = base64_length + 1;
+    bptr->data   = &base64[0];
 
     if (BIO_write(b64, &input[0], static_cast<int>(input.size())) <= 0 ||
         BIO_flush(b64) <= 0)
@@ -54,8 +54,8 @@ crypto::base64::encode(const std::string &input) noexcept {
 
     // To keep &base64[0] through BIO_free_all(b64)
     bptr->length = 0;
-    bptr->max = 0;
-    bptr->data = nullptr;
+    bptr->max    = 0;
+    bptr->data   = nullptr;
 
     BIO_free_all(b64);
 
@@ -96,7 +96,8 @@ crypto::base64::decode(const std::string &base64) noexcept {
 
 /// Returns hex string from bytes in input string.
 std::string
-crypto::to_hex_string(const std::string &input, std::string_view const &hex_digits) noexcept {
+crypto::to_hex_string(const std::string      &input,
+                      std::string_view const &hex_digits) noexcept {
     std::string output;
     output.reserve(input.length() * 2);
     for (unsigned char c : input) {
@@ -154,7 +155,7 @@ crypto::evp(std::istream &stream, const EVP_MD *md) noexcept {
     std::string hash;
 
     if (context && EVP_DigestInit_ex(context, md, NULL)) {
-        std::streamsize read_length;
+        std::streamsize   read_length;
         std::vector<char> buffer(buffer_size);
         while ((read_length = stream.read(&buffer[0], buffer_size).gcount()) > 0)
             EVP_DigestUpdate(context, buffer.data(),
@@ -311,19 +312,19 @@ crypto::pbkdf2(const std::string &password, const std::string &salt, int iterati
 
 // base64 encode (without new line)
 std::string
-crypto::base64_encode(const unsigned char* data, size_t len) {
-    BIO* bio = BIO_new(BIO_s_mem());
-    BIO* b64 = BIO_new(BIO_f_base64());
+crypto::base64_encode(const unsigned char *data, size_t len) {
+    BIO *bio = BIO_new(BIO_s_mem());
+    BIO *b64 = BIO_new(BIO_f_base64());
     if (!bio || !b64) {
         throw std::runtime_error("Error during BIO creation");
     }
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL); // pas de retour à la ligne
     bio = BIO_push(b64, bio);
-    if(BIO_write(bio, data, len) <= 0 || BIO_flush(bio) != 1) {
+    if (BIO_write(bio, data, len) <= 0 || BIO_flush(bio) != 1) {
         BIO_free_all(bio);
         throw std::runtime_error("Error reading BIO");
     }
-    BUF_MEM* bufferPtr = nullptr;
+    BUF_MEM *bufferPtr = nullptr;
     BIO_get_mem_ptr(bio, &bufferPtr);
     std::string encoded(bufferPtr->data, bufferPtr->length);
     BIO_free_all(bio);
@@ -331,9 +332,9 @@ crypto::base64_encode(const unsigned char* data, size_t len) {
 }
 // base64 decode
 std::vector<unsigned char>
-crypto::base64_decode(const std::string& input) {
-    BIO* bio = BIO_new_mem_buf(input.data(), static_cast<int>(input.size()));
-    BIO* b64 = BIO_new(BIO_f_base64());
+crypto::base64_decode(const std::string &input) {
+    BIO *bio = BIO_new_mem_buf(input.data(), static_cast<int>(input.size()));
+    BIO *b64 = BIO_new(BIO_f_base64());
     if (!bio || !b64) {
         throw std::runtime_error("Error during BIO creation");
     }
@@ -366,19 +367,21 @@ crypto::hmac_sha256(const std::vector<unsigned char> &key, const std::string &da
     }
     // Spécifier l'algorithme de hachage à utiliser : "SHA256"
     OSSL_PARAM params[2];
-    params[0] = OSSL_PARAM_construct_utf8_string("digest", const_cast<char *>("SHA256"), 0);
+    params[0] =
+        OSSL_PARAM_construct_utf8_string("digest", const_cast<char *>("SHA256"), 0);
     params[1] = OSSL_PARAM_construct_end();
     if (EVP_MAC_init(ctx, key.data(), key.size(), params) != 1) {
         EVP_MAC_CTX_free(ctx);
         EVP_MAC_free(mac);
         throw std::runtime_error("EVP_MAC_init failed");
     }
-    if (EVP_MAC_update(ctx, reinterpret_cast<const unsigned char *>(data.data()), data.size()) != 1) {
+    if (EVP_MAC_update(ctx, reinterpret_cast<const unsigned char *>(data.data()),
+                       data.size()) != 1) {
         EVP_MAC_CTX_free(ctx);
         EVP_MAC_free(mac);
         throw std::runtime_error("EVP_MAC_update failed");
     }
-    size_t out_len = 0;
+    size_t out_len     = 0;
     size_t out_buf_len = EVP_MAX_MD_SIZE; // taille maximale possible
     result.resize(out_buf_len);
     if (EVP_MAC_final(ctx, result.data(), &out_len, result.size()) != 1) {
@@ -403,7 +406,8 @@ crypto::sha256(const std::vector<unsigned char> &data) {
 
 // xor two vector of same size
 std::vector<unsigned char>
-crypto::xor_bytes(const std::vector<unsigned char> &a, const std::vector<unsigned char> &b) {
+crypto::xor_bytes(const std::vector<unsigned char> &a,
+                  const std::vector<unsigned char> &b) {
     if (a.size() != b.size()) {
         throw std::runtime_error("vectors must have the same size to XOR");
     }

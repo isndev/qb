@@ -1,11 +1,12 @@
 /**
  * @file qb/system/lockfree/spinlock.h
  * @brief Spinlock synchronization primitives
- * 
+ *
  * This file provides various spinlock implementations for low-latency synchronization.
  * Spinlocks are a type of mutex that uses busy-waiting instead of context switching,
- * making them efficient for short critical sections where the expected contention is low.
- * 
+ * making them efficient for short critical sections where the expected contention is
+ * low.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,12 +45,12 @@ public:
      */
     SpinLock() noexcept
         : _lock(false) {}
-    
+
     /**
      * @brief Copy constructor is deleted to prevent copying of locks
      */
     SpinLock(const SpinLock &) = delete;
-    
+
     /**
      * @brief Move constructor is deleted to prevent moving of locks
      */
@@ -64,7 +65,7 @@ public:
      * @brief Copy assignment operator is deleted to prevent copying of locks
      */
     SpinLock &operator=(const SpinLock &) = delete;
-    
+
     /**
      * @brief Move assignment operator is deleted to prevent moving of locks
      */
@@ -176,7 +177,7 @@ public:
     }
 
 private:
-    std::atomic<bool> _lock;  ///< The underlying atomic flag used for the lock state
+    std::atomic<bool> _lock; ///< The underlying atomic flag used for the lock state
 };
 
 } // namespace qb::lockfree

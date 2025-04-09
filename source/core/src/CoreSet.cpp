@@ -1,11 +1,11 @@
 /**
  * @file qb/core/src/CoreSet.cpp
  * @brief Implementation of the CoreSet class for managing core IDs
- * 
+ *
  * This file contains the implementation of the CoreSet class which manages
  * sets of core IDs and provides functionality for mapping between logical
  * and physical core IDs in the QB Actor Framework.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");

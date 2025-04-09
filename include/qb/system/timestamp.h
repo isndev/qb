@@ -1,11 +1,11 @@
 /**
  * @file qb/system/timestamp.h
  * @brief High-precision timing utilities
- * 
- * This file provides a set of classes for precise time handling, measurement, 
+ *
+ * This file provides a set of classes for precise time handling, measurement,
  * and representation. It includes platform-independent implementations for
  * time spans and timestamps with nanosecond precision.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,32 +29,32 @@
 #include <ctime>
 #include <exception>
 #if defined(__APPLE__)
-#    include <mach/mach.h>
-#    include <mach/mach_time.h>
-#    include <math.h>
-#    include <sys/time.h>
-#    include <time.h>
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+#include <math.h>
+#include <sys/time.h>
+#include <time.h>
 #elif defined(unix) || defined(__unix) || defined(__unix__)
-#    include <ctime>
+#include <ctime>
 #elif defined(_WIN32) || defined(_WIN64)
-#    ifndef WIN32_LEAN_AND_MEAN
-#        define WIN32_LEAN_AND_MEAN
-#    endif // !WIN32_LEAN_AND_MEAN
-#    ifndef NOMINMAX
-#        define NOMINMAX
-#    endif
-#    include <windows.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif // !WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
 #endif
 #include <iostream>
-#include <thread>
 #include <qb/io.h>
+#include <thread>
 
 namespace qb {
 
 /**
  * @class Timespan
  * @brief Represents a duration with nanosecond precision
- * 
+ *
  * Timespan provides a platform-independent way to represent time durations with
  * high precision. It supports arithmetic operations and various time unit
  * conversions (days, hours, minutes, seconds, milliseconds, microseconds, nanoseconds).
@@ -69,19 +69,19 @@ public:
 
     /**
      * @brief Constructs a timespan with the specified duration in nanoseconds
-     * 
+     *
      * @param duration Duration in nanoseconds
      */
     explicit Timespan(int64_t duration) noexcept
         : _duration(duration) {}
     Timespan(const Timespan &) noexcept = default;
-    Timespan(Timespan &&) noexcept = default;
+    Timespan(Timespan &&) noexcept      = default;
 
     ~Timespan() noexcept = default;
 
     /**
      * @brief Assigns a duration in nanoseconds to this timespan
-     * 
+     *
      * @param duration Duration in nanoseconds
      * @return Reference to this timespan after assignment
      */
@@ -91,32 +91,32 @@ public:
         return *this;
     }
     Timespan &operator=(const Timespan &) noexcept = default;
-    Timespan &operator=(Timespan &&) noexcept = default;
+    Timespan &operator=(Timespan &&) noexcept      = default;
 
     // Timespan offset operations
     /**
      * @brief Unary plus operator
-     * 
+     *
      * @return A copy of this timespan with the same duration
      */
     Timespan
     operator+() const {
         return Timespan(+_duration);
     }
-    
+
     /**
      * @brief Unary minus operator
-     * 
+     *
      * @return A timespan with negated duration
      */
     Timespan
     operator-() const {
         return Timespan(-_duration);
     }
-    
+
     /**
      * @brief Adds a duration in nanoseconds to this timespan
-     * 
+     *
      * @param offset Duration in nanoseconds to add
      * @return Reference to this timespan after addition
      */
@@ -125,10 +125,10 @@ public:
         _duration += offset;
         return *this;
     }
-    
+
     /**
      * @brief Adds another timespan to this timespan
-     * 
+     *
      * @param offset Timespan to add
      * @return Reference to this timespan after addition
      */
@@ -137,10 +137,10 @@ public:
         _duration += offset.total();
         return *this;
     }
-    
+
     /**
      * @brief Subtracts a duration in nanoseconds from this timespan
-     * 
+     *
      * @param offset Duration in nanoseconds to subtract
      * @return Reference to this timespan after subtraction
      */
@@ -149,10 +149,10 @@ public:
         _duration -= offset;
         return *this;
     }
-    
+
     /**
      * @brief Subtracts another timespan from this timespan
-     * 
+     *
      * @param offset Timespan to subtract
      * @return Reference to this timespan after subtraction
      */
@@ -264,7 +264,7 @@ public:
 
     /**
      * @brief Converts to std::chrono duration
-     * 
+     *
      * @return A std::chrono::nanoseconds duration
      */
     [[nodiscard]] std::chrono::duration<int64_t, std::nano>
@@ -274,7 +274,7 @@ public:
 
     /**
      * @brief Creates a Timespan from a std::chrono duration
-     * 
+     *
      * @tparam Rep Type of the count representation
      * @tparam Period Type of the period representation
      * @param duration The std::chrono duration to convert
@@ -289,77 +289,77 @@ public:
 
     /**
      * @brief Gets the duration in days
-     * 
+     *
      * @return Number of days
      */
     [[nodiscard]] int64_t
     days() const noexcept {
         return _duration / (24 * 60 * 60 * 1000000000ll);
     }
-    
+
     /**
      * @brief Gets the duration in hours
-     * 
+     *
      * @return Number of hours
      */
     [[nodiscard]] int64_t
     hours() const noexcept {
         return _duration / (60 * 60 * 1000000000ll);
     }
-    
+
     /**
      * @brief Gets the duration in minutes
-     * 
+     *
      * @return Number of minutes
      */
     [[nodiscard]] int64_t
     minutes() const noexcept {
         return _duration / (60 * 1000000000ll);
     }
-    
+
     /**
      * @brief Gets the duration in seconds
-     * 
+     *
      * @return Number of seconds
      */
     [[nodiscard]] int64_t
     seconds() const noexcept {
         return _duration / 1000000000;
     }
-    
+
     /**
      * @brief Gets the duration in milliseconds
-     * 
+     *
      * @return Number of milliseconds
      */
     [[nodiscard]] int64_t
     milliseconds() const noexcept {
         return _duration / 1000000;
     }
-    
+
     /**
      * @brief Gets the duration in microseconds
-     * 
+     *
      * @return Number of microseconds
      */
     [[nodiscard]] int64_t
     microseconds() const noexcept {
         return _duration / 1000;
     }
-    
+
     /**
      * @brief Gets the duration in nanoseconds
-     * 
+     *
      * @return Number of nanoseconds
      */
     [[nodiscard]] int64_t
     nanoseconds() const noexcept {
         return _duration;
     }
-    
+
     /**
      * @brief Gets the total duration in nanoseconds
-     * 
+     *
      * @return Duration in nanoseconds
      */
     [[nodiscard]] int64_t
@@ -369,7 +369,7 @@ public:
 
     /**
      * @brief Creates a Timespan representing a specified number of days
-     * 
+     *
      * @param days Number of days
      * @return A Timespan representing the specified duration
      */
@@ -377,10 +377,10 @@ public:
     days(int64_t days) noexcept {
         return Timespan(days * 24 * 60 * 60 * 1000000000ll);
     }
-    
+
     /**
      * @brief Creates a Timespan representing a specified number of hours
-     * 
+     *
      * @param hours Number of hours
      * @return A Timespan representing the specified duration
      */
@@ -388,10 +388,10 @@ public:
     hours(int64_t hours) noexcept {
         return Timespan(hours * 60 * 60 * 1000000000ll);
     }
-    
+
     /**
      * @brief Creates a Timespan representing a specified number of minutes
-     * 
+     *
      * @param minutes Number of minutes
      * @return A Timespan representing the specified duration
      */
@@ -399,10 +399,10 @@ public:
     minutes(int64_t minutes) noexcept {
         return Timespan(minutes * 60 * 1000000000ll);
     }
-    
+
     /**
      * @brief Creates a Timespan representing a specified number of seconds
-     * 
+     *
      * @param seconds Number of seconds
      * @return A Timespan representing the specified duration
      */
@@ -410,10 +410,10 @@ public:
     seconds(int64_t seconds) noexcept {
         return Timespan(seconds * 1000000000);
     }
-    
+
     /**
      * @brief Creates a Timespan representing a specified number of milliseconds
-     * 
+     *
      * @param milliseconds Number of milliseconds
      * @return A Timespan representing the specified duration
      */
@@ -421,10 +421,10 @@ public:
     milliseconds(int64_t milliseconds) noexcept {
         return Timespan(milliseconds * 1000000);
     }
-    
+
     /**
      * @brief Creates a Timespan representing a specified number of microseconds
-     * 
+     *
      * @param microseconds Number of microseconds
      * @return A Timespan representing the specified duration
      */
@@ -432,10 +432,10 @@ public:
     microseconds(int64_t microseconds) noexcept {
         return Timespan(microseconds * 1000);
     }
-    
+
     /**
      * @brief Creates a Timespan representing a specified number of nanoseconds
-     * 
+     *
      * @param nanoseconds Number of nanoseconds
      * @return A Timespan representing the specified duration
      */
@@ -443,10 +443,10 @@ public:
     nanoseconds(int64_t nanoseconds) noexcept {
         return Timespan(nanoseconds);
     }
-    
+
     /**
      * @brief Creates a zero Timespan
-     * 
+     *
      * @return A Timespan with zero duration
      */
     static Timespan
@@ -461,7 +461,7 @@ private:
 /**
  * @class Timestamp
  * @brief Represents a point in time with nanosecond precision
- * 
+ *
  * Timestamp provides a platform-independent way to represent moments in time
  * with high precision. It supports arithmetic operations with Timespan objects
  * and provides various time unit conversions.
@@ -476,18 +476,18 @@ public:
 
     /**
      * @brief Constructs a timestamp with the specified value in nanoseconds
-     * 
+     *
      * @param timestamp Value in nanoseconds since epoch
      */
     explicit Timestamp(uint64_t timestamp) noexcept
         : _timestamp(timestamp) {}
     Timestamp(const Timestamp &) noexcept = default;
-    Timestamp(Timestamp &&) noexcept = default;
-    ~Timestamp() noexcept = default;
+    Timestamp(Timestamp &&) noexcept      = default;
+    ~Timestamp() noexcept                 = default;
 
     /**
      * @brief Assigns a timestamp value in nanoseconds to this timestamp
-     * 
+     *
      * @param timestamp Value in nanoseconds since epoch
      * @return Reference to this timestamp after assignment
      */
@@ -497,7 +497,7 @@ public:
         return *this;
     }
     Timestamp &operator=(const Timestamp &) noexcept = default;
-    Timestamp &operator=(Timestamp &&) noexcept = default;
+    Timestamp &operator=(Timestamp &&) noexcept      = default;
 
     // Timestamp offset operations
     Timestamp &
@@ -656,7 +656,7 @@ public:
 
     /**
      * @brief Gets the time in days since epoch
-     * 
+     *
      * @return Number of days
      */
     [[nodiscard]] uint64_t
@@ -690,7 +690,7 @@ public:
 
     /**
      * @brief Gets the total time in nanoseconds since epoch
-     * 
+     *
      * @return Time in nanoseconds
      */
     [[nodiscard]] uint64_t
@@ -700,7 +700,7 @@ public:
 
     /**
      * @brief Creates a Timestamp at a specified number of days since epoch
-     * 
+     *
      * @param days Number of days
      * @return A Timestamp at the specified time
      */
@@ -735,7 +735,7 @@ public:
 
     /**
      * @brief Gets the epoch (time zero) value
-     * 
+     *
      * @return Zero as nanoseconds
      */
     static uint64_t
@@ -768,7 +768,7 @@ public:
 #elif defined(__x86_64__)
         unsigned hi, lo;
         __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
-        return ((uint64_t)lo) | (((uint64_t)hi) << 32u);
+        return ((uint64_t) lo) | (((uint64_t) hi) << 32u);
 #else
         return 0;
 #endif
@@ -781,7 +781,7 @@ protected:
 /**
  * @class UtcTimestamp
  * @brief Represents a UTC timestamp with nanosecond precision
- * 
+ *
  * Extends Timestamp to specifically represent times in Coordinated Universal Time (UTC).
  */
 class UtcTimestamp : public Timestamp {
@@ -793,10 +793,10 @@ public:
      */
     UtcTimestamp()
         : Timestamp(Timestamp::nano()) {}
-        
+
     /**
      * @brief Constructs a UTC timestamp from another timestamp
-     * 
+     *
      * @param timestamp Source timestamp
      */
     UtcTimestamp(const Timestamp &timestamp)
@@ -806,7 +806,7 @@ public:
 /**
  * @class LocalTimestamp
  * @brief Represents a local timestamp with nanosecond precision
- * 
+ *
  * Extends Timestamp to specifically represent times in the local timezone.
  */
 class LocalTimestamp : public Timestamp {
@@ -818,10 +818,10 @@ public:
      */
     LocalTimestamp()
         : Timestamp(Timestamp::nano()) {}
-        
+
     /**
      * @brief Constructs a local timestamp from another timestamp
-     * 
+     *
      * @param timestamp Source timestamp
      */
     LocalTimestamp(const Timestamp &timestamp)
@@ -831,7 +831,7 @@ public:
 /**
  * @class NanoTimestamp
  * @brief Represents a high-precision nanosecond timestamp
- * 
+ *
  * Extends Timestamp to specifically represent high-precision times from
  * the system's high-resolution timer.
  */
@@ -844,10 +844,10 @@ public:
      */
     NanoTimestamp()
         : Timestamp(Timestamp::nano()) {}
-        
+
     /**
      * @brief Constructs a nanosecond timestamp from another timestamp
-     * 
+     *
      * @param timestamp Source timestamp
      */
     NanoTimestamp(const Timestamp &timestamp)
@@ -857,7 +857,7 @@ public:
 /**
  * @class RdtsTimestamp
  * @brief Represents a timestamp based on CPU's timestamp counter
- * 
+ *
  * Extends Timestamp to specifically represent times from the CPU's
  * timestamp counter, which provides very high precision but may
  * vary between CPU cores.
@@ -871,10 +871,10 @@ public:
      */
     RdtsTimestamp()
         : Timestamp(Timestamp::rdts()) {}
-        
+
     /**
      * @brief Constructs an RDTS timestamp from another timestamp
-     * 
+     *
      * @param timestamp Source timestamp
      */
     RdtsTimestamp(const Timestamp &timestamp)
@@ -884,32 +884,32 @@ public:
 /**
  * @class LogTimer
  * @brief Utility for logging execution time of code blocks
- * 
+ *
  * Creates a timer that logs the elapsed time when it goes out of scope.
  * Useful for performance measurements and debugging.
  */
 class LogTimer {
     const std::string reason; ///< Description of what is being timed
-    NanoTimestamp ts;         ///< Start timestamp
+    NanoTimestamp     ts;     ///< Start timestamp
 
 public:
     /**
      * @brief Constructs a timer with a descriptive reason
-     * 
+     *
      * @param reason Description of what is being timed
      */
     inline LogTimer(std::string const &reason)
         : reason(reason)
         , ts() {}
-        
+
     /**
      * @brief Destructor that logs elapsed time
-     * 
+     *
      * When the timer goes out of scope, logs the elapsed time since construction.
      */
     inline ~LogTimer() {
-        qb::io::cout() << reason << ": " << (qb::NanoTimestamp() - ts).microseconds() << "us"
-                  << std::endl;
+        qb::io::cout() << reason << ": " << (qb::NanoTimestamp() - ts).microseconds()
+                       << "us" << std::endl;
     }
 };
 

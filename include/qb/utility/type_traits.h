@@ -8,6 +8,17 @@
  * support. It provides compile-time introspection capabilities to detect
  * container properties and specialized behavior based on types.
  *
+ * Key features include:
+ * - Container detection traits (is_container)
+ * - Improved CRTP implementation with access helpers
+ * - Extensions for standard library constructs
+ * - Improved forward/move utilities with cleaner syntax
+ * - SFINAE utilities for type introspection
+ * - Specialized traits for containers and mapping types
+ *
+ * These utilities enable advanced template metaprogramming techniques
+ * and type-based optimizations throughout the codebase.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,44 +37,47 @@
 
 #ifndef QB_TYPE_TRAITS_H
 #define QB_TYPE_TRAITS_H
-#include <utility>
-#include <type_traits>
-#include <valarray>
 #include <string_view>
+#include <type_traits>
+#include <utility>
+#include <valarray>
 
 /**
  * @brief Alias for std::move with cleaner syntax
- * 
+ *
  * @tparam T Type of the value to move
  * @param t Value to move
  * @return Value cast to an rvalue reference
  */
 template <typename T>
-inline std::remove_reference_t<T>&& mv(T&& t) noexcept {
-    return static_cast<std::remove_reference_t<T>&&>(t);
+inline std::remove_reference_t<T> &&
+mv(T &&t) noexcept {
+    return static_cast<std::remove_reference_t<T> &&>(t);
 }
 
 /**
  * @brief Alias for std::forward with cleaner syntax (lvalue overload)
- * 
+ *
  * @tparam T Type to forward
  * @param t Lvalue reference to forward
  * @return Forwarded reference preserving value category
  */
 template <typename T>
-inline T&& fwd(std::remove_reference_t<T>& t) noexcept {
+inline T &&
+fwd(std::remove_reference_t<T> &t) noexcept {
     return std::forward<T>(t);
 }
 
 /**
  * @brief Alias for std::forward with cleaner syntax (rvalue overload)
- * 
+ *
  * @tparam T Type to forward
  * @param t Rvalue reference to forward
  * @return Forwarded reference preserving value category
  */
 template <typename T>
-inline T&& fwd(std::remove_reference_t<T>&& t) noexcept {
+inline T &&
+fwd(std::remove_reference_t<T> &&t) noexcept {
     return std::forward<T>(t);
 }
 
@@ -71,29 +85,31 @@ namespace qb {
 
 /**
  * @brief Base class for implementing the Curiously Recurring Template Pattern (CRTP)
- * 
+ *
  * This class provides helper methods to access the derived class from the base class,
  * which is the core mechanism of CRTP.
- * 
+ *
  * @tparam T The derived class type
  */
 template <typename T>
 struct crtp {
     /**
      * @brief Access the derived class instance
-     * 
+     *
      * @return Reference to the derived class
      */
-    inline T &impl() noexcept {
+    inline T &
+    impl() noexcept {
         return static_cast<T &>(*this);
     }
 
     /**
      * @brief Access the derived class instance (const version)
-     * 
+     *
      * @return Const reference to the derived class
      */
-    inline T const &impl() const noexcept {
+    inline T const &
+    impl() const noexcept {
         return static_cast<T &>(*this);
     }
 };
@@ -103,17 +119,17 @@ namespace detail {
 
 /**
  * @brief Base class for SFINAE (Substitution Failure Is Not An Error) type traits
- * 
+ *
  * Provides yes/no types used to determine sizes in SFINAE detection techniques.
  */
 struct sfinae_base {
     using yes = char;
-    using no = yes[2];
+    using no  = yes[2];
 };
 
 /**
  * @brief Type trait to detect whether T has a const_iterator type
- * 
+ *
  * @tparam T Type to check
  */
 template <typename T>
@@ -126,14 +142,14 @@ private:
 
 public:
     static const bool value = sizeof(test<T>(nullptr)) == sizeof(yes);
-    using type = T;
+    using type              = T;
 };
 
 /**
  * @brief Type trait to detect whether T has begin() and end() methods
- * 
+ *
  * Checks if the type has proper const_iterator returning begin and end methods.
- * 
+ *
  * @tparam T Type to check
  */
 template <typename T>
@@ -162,14 +178,14 @@ private:
 public:
     /** @brief Whether the type has a valid begin() method */
     static bool const beg_value = sizeof(f<T>(nullptr)) == sizeof(yes);
-    
+
     /** @brief Whether the type has a valid end() method */
     static bool const end_value = sizeof(g<T>(nullptr)) == sizeof(yes);
 };
 
 /**
  * @brief Internal implementation to detect map-like types
- * 
+ *
  * @tparam T Type to check
  * @tparam U SFINAE enabler
  */
@@ -178,7 +194,7 @@ struct is_mappish_impl : std::false_type {};
 
 /**
  * @brief Specialization for types that have key_type, mapped_type, and operator[]
- * 
+ *
  * @tparam T Type to check
  */
 template <typename T>
@@ -192,9 +208,9 @@ struct is_mappish_impl<
 
 /**
  * @brief Type trait to check if a type is a container
- * 
+ *
  * A container must have const_iterator type and begin()/end() methods.
- * 
+ *
  * @tparam T Type to check
  */
 template <typename T>
@@ -205,7 +221,7 @@ struct is_container
 
 /**
  * @brief Specialization for array types, which are containers
- * 
+ *
  * @tparam T Element type
  * @tparam N Array size
  */
@@ -214,7 +230,7 @@ struct is_container<T[N]> : std::true_type {};
 
 /**
  * @brief Specialization for character arrays, which are not considered containers
- * 
+ *
  * @tparam N Array size
  */
 template <std::size_t N>
@@ -222,7 +238,7 @@ struct is_container<char[N]> : std::false_type {};
 
 /**
  * @brief Specialization for std::valarray, which is a container
- * 
+ *
  * @tparam T Element type
  */
 template <typename T>
@@ -230,7 +246,7 @@ struct is_container<std::valarray<T>> : std::true_type {};
 
 /**
  * @brief Specialization for std::pair, which is a container
- * 
+ *
  * @tparam T1 First element type
  * @tparam T2 Second element type
  */
@@ -239,7 +255,7 @@ struct is_container<std::pair<T1, T2>> : std::true_type {};
 
 /**
  * @brief Specialization for std::tuple, which is a container
- * 
+ *
  * @tparam Args Element types
  */
 template <typename... Args>
@@ -247,7 +263,7 @@ struct is_container<std::tuple<Args...>> : std::true_type {};
 
 /**
  * @brief Conditionally removes reference from a type
- * 
+ *
  * @tparam T Type to process
  * @tparam cond Whether to remove reference
  */
@@ -261,7 +277,7 @@ struct remove_reference_if {
 
 /**
  * @brief Specialization that actually removes the reference
- * 
+ *
  * @tparam T Type to process
  */
 template <typename T>
@@ -273,8 +289,9 @@ struct remove_reference_if<T, true> {
 };
 
 /**
- * @brief Type trait to check if a type is map-like (has key_type, mapped_type, and operator[])
- * 
+ * @brief Type trait to check if a type is map-like (has key_type, mapped_type, and
+ * operator[])
+ *
  * @tparam T Type to check
  */
 template <typename T>
@@ -282,9 +299,9 @@ struct is_mappish : detail::is_mappish_impl<T>::type {};
 
 /**
  * @brief Type trait to check if a type is a std::pair
- * 
+ *
  * Default implementation is false.
- * 
+ *
  * @tparam Args Template parameters
  */
 template <typename...>
@@ -292,7 +309,7 @@ struct is_pair : std::false_type {};
 
 /**
  * @brief Specialization for std::pair, which returns true
- * 
+ *
  * @tparam T First element type
  * @tparam U Second element type
  */
@@ -301,7 +318,7 @@ struct is_pair<std::pair<T, U>> : std::true_type {};
 
 /**
  * @brief Helper alias to create a void type for SFINAE purposes
- * 
+ *
  * @tparam Args Ignored template parameters
  */
 template <typename...>
@@ -309,9 +326,9 @@ using Void = void;
 
 /**
  * @brief Type trait to check if a type is an inserter iterator
- * 
+ *
  * Default implementation is false.
- * 
+ *
  * @tparam T Type to check
  * @tparam U SFINAE enabler
  */
@@ -320,7 +337,7 @@ struct is_inserter : std::false_type {};
 
 /**
  * @brief Specialization for types that have a container_type
- * 
+ *
  * @tparam T Type to check
  */
 template <typename T>
@@ -330,9 +347,9 @@ struct is_inserter<
 
 /**
  * @brief Type trait to extract the value type from an iterator
- * 
+ *
  * Default implementation uses std::iterator_traits.
- * 
+ *
  * @tparam Iter Iterator type
  * @tparam T SFINAE enabler
  */
@@ -344,23 +361,22 @@ struct iterator_type {
 
 /**
  * @brief Specialization for inserter iterators
- * 
+ *
  * For inserter iterators, the value type comes from the container.
- * 
+ *
  * @tparam Iter Iterator type
  */
 template <typename Iter>
-struct iterator_type<Iter,
-                     typename std::enable_if<is_inserter<Iter>::value>::type> {
+struct iterator_type<Iter, typename std::enable_if<is_inserter<Iter>::value>::type> {
     /** @brief The value type of the underlying container */
     using type = typename std::decay<typename Iter::container_type::value_type>::type;
 };
 
 /**
  * @brief Type trait to check if a type is an iterator
- * 
+ *
  * Default implementation is false.
- * 
+ *
  * @tparam Iter Type to check
  * @tparam T SFINAE enabler
  */
@@ -369,7 +385,7 @@ struct is_terator : std::false_type {};
 
 /**
  * @brief Specialization for inserter iterators
- * 
+ *
  * @tparam Iter Iterator type
  */
 template <typename Iter>
@@ -378,9 +394,9 @@ struct is_terator<Iter, typename std::enable_if<is_inserter<Iter>::value>::type>
 
 /**
  * @brief Specialization for standard iterators
- * 
+ *
  * Excludes types that can be converted to string_view.
- * 
+ *
  * @tparam Iter Iterator type
  */
 template <typename Iter>
@@ -392,7 +408,7 @@ struct is_terator<Iter,
 
 /**
  * @brief Type trait to check if an iterator points to map elements (pairs)
- * 
+ *
  * @tparam T Iterator type
  */
 template <typename T>
@@ -400,9 +416,9 @@ struct is_map_iterator : is_pair<typename iterator_type<T>::type> {};
 
 /**
  * @brief Type trait to check if a container has push_back method
- * 
+ *
  * Default implementation is false.
- * 
+ *
  * @tparam T Type to check
  * @tparam SFINAE enabler
  */
@@ -411,7 +427,7 @@ struct has_push_back : std::false_type {};
 
 /**
  * @brief Specialization for types with a valid push_back method
- * 
+ *
  * @tparam T Type to check
  */
 template <typename T>
@@ -421,9 +437,9 @@ struct has_push_back<
 
 /**
  * @brief Type trait to check if a container has insert method
- * 
+ *
  * Default implementation is false.
- * 
+ *
  * @tparam T Type to check
  * @tparam SFINAE enabler
  */
@@ -432,7 +448,7 @@ struct has_insert : std::false_type {};
 
 /**
  * @brief Specialization for types with a valid insert method
- * 
+ *
  * @tparam T Type to check
  */
 template <typename T>
@@ -444,9 +460,9 @@ struct has_insert<
 
 /**
  * @brief Type trait to check if a type is a sequence container
- * 
+ *
  * A sequence container has push_back and is not a string.
- * 
+ *
  * @tparam T Type to check
  */
 template <typename T>
@@ -457,22 +473,136 @@ struct is_sequence_container
 
 /**
  * @brief Type trait to check if a type is an associative container
- * 
+ *
  * An associative container has insert but not push_back.
- * 
+ *
  * @tparam T Type to check
  */
 template <typename T>
 struct is_associative_container
     : std::integral_constant<bool, has_insert<T>::value && !has_push_back<T>::value> {};
 
+/**
+ * @brief Metafunction for calculating Nth type in variadic template parameters
+ *
+ * Provides a way to access the Nth type in a parameter pack at compile time.
+ * This is a recursive template that unwraps the parameter pack until the
+ * desired type is reached.
+ *
+ * @tparam num Index of the type to select (0-based)
+ * @tparam T Parameter pack of types to select from
+ */
+template <size_t num, typename... T>
+struct nth_type;
+
+/**
+ * @brief Recursive case for nth_type template
+ *
+ * Continues the recursion by decrementing the index and
+ * removing the first type from the parameter pack.
+ *
+ * @tparam num Current index
+ * @tparam T Current head type
+ * @tparam Y Remaining types in the parameter pack
+ */
+template <size_t num, typename T, typename... Y>
+struct nth_type<num, T, Y...> : nth_type<num - 1, Y...> {};
+
+/**
+ * @brief Base case for nth_type template
+ *
+ * When the index reaches 0, this specialization is selected,
+ * which defines the target type as the first type in the current pack.
+ *
+ * @tparam T The selected type (when index is 0)
+ * @tparam Y Remaining types (not used in this specialization)
+ */
+template <typename T, typename... Y>
+struct nth_type<0, T, Y...> {
+    typedef T type; ///< The type at the specified index
+};
+
+/**
+ * @brief A tuple of indexes used for template parameter pack expansion
+ *
+ * This is commonly used for tuple manipulation, function argument unpacking,
+ * and other compile-time sequence operations.
+ *
+ * @tparam Indexes A parameter pack of size_t indices
+ */
+template <size_t... Indexes>
+struct indexes_tuple {
+    enum { size = sizeof...(Indexes) }; ///< Number of indices in the tuple
+};
+
+/**
+ * @brief Generator for a sequence of indices
+ *
+ * Builds a compile-time sequence of indices from 0 to num-1.
+ * This is implemented using recursive template instantiation.
+ *
+ * @tparam num The number of indices to generate
+ * @tparam tp The current indices tuple (default is empty)
+ */
+template <size_t num, typename tp = indexes_tuple<>>
+struct index_builder;
+
+/**
+ * @brief Recursive case for index_builder
+ *
+ * Adds the next index to the tuple and continues the recursion.
+ *
+ * @tparam num Current count of remaining indices to add
+ * @tparam Indexes Current sequence of indices
+ */
+template <size_t num, size_t... Indexes>
+struct index_builder<num, indexes_tuple<Indexes...>>
+    : index_builder<num - 1, indexes_tuple<Indexes..., sizeof...(Indexes)>> {};
+
+/**
+ * @brief Base case for index_builder
+ *
+ * When num reaches 0, the recursion stops and the final tuple type is defined.
+ *
+ * @tparam Indexes The complete sequence of indices
+ */
+template <size_t... Indexes>
+struct index_builder<0, indexes_tuple<Indexes...>> {
+    typedef indexes_tuple<Indexes...> type; ///< The final tuple type with all indices
+    enum { size = sizeof...(Indexes) };     ///< Size of the index sequence
+};
+
+/**
+ * @brief Utility for parameter pack expansion
+ *
+ * This struct provides a constructor that takes a variable number of
+ * arguments, allowing for the expansion of a parameter pack in contexts
+ * where direct expansion is not possible.
+ *
+ * It's particularly useful for calling a function on each element of a
+ * parameter pack without having to define a separate function for this purpose.
+ */
+struct expand {
+    /**
+     * @brief Constructor that expands a parameter pack
+     *
+     * Takes an arbitrary number of arguments of any type and does nothing with them.
+     * This is used purely for the side effect of expanding the parameter pack.
+     *
+     * @tparam U Types of parameters in the pack
+     * @param ... Parameters to expand (not used)
+     */
+    template <typename... U>
+    expand(U const &...) {}
+};
+
 } // namespace qb
 
 /**
  * @brief Helper class to force ambiguity of class members
- * 
+ *
  * Used in the implementation of member detection techniques.
- * 
+ *
  * @tparam Args Types to inherit from
  */
 template <typename... Args>
@@ -480,9 +610,9 @@ struct ambiguate : public Args... {};
 
 /**
  * @brief Type trait to check if a type exists
- * 
+ *
  * Default implementation is false.
- * 
+ *
  * @tparam A Type to check
  * @tparam SFINAE enabler
  */
@@ -491,7 +621,7 @@ struct got_type : std::false_type {};
 
 /**
  * @brief Specialization that indicates the type exists
- * 
+ *
  * @tparam A Type that exists
  */
 template <typename A>
@@ -502,7 +632,7 @@ struct got_type<A> : std::true_type {
 
 /**
  * @brief Helper for signature checking
- * 
+ *
  * @tparam T Type of the signature
  * @tparam The actual signature to check
  */
@@ -511,7 +641,7 @@ struct sig_check : std::true_type {};
 
 /**
  * @brief Type trait to check if a type has a specific member
- * 
+ *
  * @tparam Alias Alias type that may contain the member
  * @tparam AmbiguitySeed Seed type for ambiguity resolution
  */
@@ -534,10 +664,10 @@ struct has_member {
 
 /**
  * @brief Macro to create a type trait to check for any member with a given name
- * 
- * Creates has_member_[member] trait that can detect variables, functions, 
+ *
+ * Creates has_member_[member] trait that can detect variables, functions,
  * classes, unions, or enums.
- * 
+ *
  * @param member Name of the member to check for
  */
 #define CREATE_MEMBER_CHECK(member)                                               \
@@ -564,9 +694,9 @@ struct has_member {
 
 /**
  * @brief Macro to create a type trait to check for a member variable with given name
- * 
+ *
  * Creates has_member_var_[var_name] trait.
- * 
+ *
  * @param var_name Name of the variable to check for
  */
 #define CREATE_MEMBER_VAR_CHECK(var_name)                                              \
@@ -582,9 +712,9 @@ struct has_member {
 
 /**
  * @brief Macro to create a type trait to check for a member class with given name
- * 
+ *
  * Creates has_member_class_[class_name] trait.
- * 
+ *
  * @param class_name Name of the class to check for
  */
 #define CREATE_MEMBER_CLASS_CHECK(class_name)                                       \
@@ -600,9 +730,9 @@ struct has_member {
 
 /**
  * @brief Macro to create a type trait to check for a member union with given name
- * 
+ *
  * Creates has_member_union_[union_name] trait.
- * 
+ *
  * @param union_name Name of the union to check for
  */
 #define CREATE_MEMBER_UNION_CHECK(union_name)                                       \
@@ -618,9 +748,9 @@ struct has_member {
 
 /**
  * @brief Macro to create a type trait to check for a member enum with given name
- * 
+ *
  * Creates has_member_enum_[enum_name] trait.
- * 
+ *
  * @param enum_name Name of the enum to check for
  */
 #define CREATE_MEMBER_ENUM_CHECK(enum_name)                                             \
@@ -637,10 +767,10 @@ struct has_member {
 
 /**
  * @brief Macro to create a type trait to check for a member function with given name
- * 
+ *
  * Creates has_member_func_[func] trait that identifies functions specifically
  * (not variables, classes, unions, or enums).
- * 
+ *
  * @param func Name of the function to check for
  */
 #define CREATE_MEMBER_FUNC_CHECK(func)                                                  \
@@ -654,9 +784,9 @@ struct has_member {
 
 /**
  * @brief Macro to create all member check variants for a single member name
- * 
+ *
  * Creates checks for any member type, variables, classes, unions, enums, and functions.
- * 
+ *
  * @param member Name of the member to check for
  */
 #define CREATE_MEMBER_CHECKS(member)   \
@@ -669,10 +799,10 @@ struct has_member {
 
 /**
  * @brief Macro to generate a type trait to check for a method with a specific signature
- * 
+ *
  * Creates has_method_[method] trait that checks if a type has a method with the
  * given name and matches the specified signature (return type and parameters).
- * 
+ *
  * @param method Name of the method to check for
  */
 #define GENERATE_HAS_METHOD(method)                                                  \
@@ -694,10 +824,10 @@ struct has_member {
 
 /**
  * @brief Macro to generate a type trait to check for a member of any kind
- * 
+ *
  * Creates has_member_[member] trait using a different technique that avoids
  * ambiguity issues in some contexts.
- * 
+ *
  * @param member Name of the member to check for
  */
 #define GENERATE_HAS_MEMBER(member)                                                   \
@@ -706,7 +836,7 @@ struct has_member {
     class HasMember_##member {                                                        \
     private:                                                                          \
         using Yes = char[2];                                                          \
-        using No = char[1];                                                           \
+        using No  = char[1];                                                          \
                                                                                       \
         struct Fallback {                                                             \
             int member;                                                               \
@@ -730,10 +860,10 @@ struct has_member {
 
 /**
  * @brief Macro to generate a type trait to check for a member type
- * 
+ *
  * Creates has_member_type_[Type] trait that checks if a type has a nested type
  * definition with the given name.
- * 
+ *
  * @param Type Name of the type to check for
  */
 #define GENERATE_HAS_MEMBER_TYPE(Type)                                                \
@@ -742,7 +872,7 @@ struct has_member {
     class HasMemberType_##Type {                                                      \
     private:                                                                          \
         using Yes = char[2];                                                          \
-        using No = char[1];                                                           \
+        using No  = char[1];                                                          \
                                                                                       \
         struct Fallback {                                                             \
             struct Type {};                                                           \

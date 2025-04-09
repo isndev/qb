@@ -1,11 +1,11 @@
 /**
  * @file qb/io/src/system/file.cpp
  * @brief Implementation of the file I/O classes
- * 
+ *
  * This file contains the implementation of classes for file I/O operations,
  * including direct file access, file-to-pipe and pipe-to-file transformations.
  * It provides cross-platform file operations for the QB framework.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -117,7 +117,7 @@ file_to_pipe::open(std::string const &path) noexcept {
     if (!stat(path.c_str(), &st)) {
         _handle.open(path, O_RDONLY);
         if (_handle.is_open()) {
-            _read_bytes = 0;
+            _read_bytes    = 0;
             _expected_size = st.st_size;
             return true;
         }
@@ -129,7 +129,7 @@ int
 file_to_pipe::read() noexcept {
     if (!eof() && is_open()) {
         const auto to_read = _expected_size - _read_bytes;
-        const auto ret = _handle.read(_pipe.allocate_back(to_read), to_read);
+        const auto ret     = _handle.read(_pipe.allocate_back(to_read), to_read);
         if (ret < 0) {
             _pipe.free_back(to_read);
             close();

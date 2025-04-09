@@ -1,11 +1,11 @@
 /**
  * @file qb/core/src/Main.cpp
  * @brief Implementation of the Main class for the QB Actor Framework
- * 
+ *
  * This file contains the implementation of the Main class and related components
  * such as CoreInitializer and SharedCoreCommunication which form the foundation
  * of the QB Actor Framework's runtime system.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -133,7 +133,7 @@ SharedCoreCommunication::~SharedCoreCommunication() noexcept {
 bool
 SharedCoreCommunication::send(Event const &event) const noexcept {
     const CoreId source_index = _core_set.resolve(event.source.index());
-    const CoreId dest_index = _core_set.resolve(event.dest.index());
+    const CoreId dest_index   = _core_set.resolve(event.dest.index());
 
     if (static_cast<bool>(_mail_boxes[dest_index]->enqueue(
             source_index, reinterpret_cast<const EventBucket *>(&event),
@@ -156,8 +156,8 @@ SharedCoreCommunication::getNbCore() const noexcept {
 }
 // !SharedCoreCommunication
 
-std::vector<Main *> Main::_instances = {};
-std::mutex Main::_instances_lock = {};
+std::vector<Main *> Main::_instances      = {};
+std::mutex          Main::_instances_lock = {};
 
 void
 Main::onSignal(int const signum) noexcept {
@@ -193,7 +193,7 @@ Main::~Main() noexcept {
 
 void
 Main::start_thread(CoreSpawnerParameter const &params) noexcept {
-    auto &initializer = params.initializer;
+    auto       &initializer = params.initializer;
     VirtualCore core(initializer.getIndex(), params.shared_com);
     VirtualCore::_handler = &core;
     io::async::init();
@@ -234,7 +234,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
 }
 
 bool
-Main::__wait__all__cores__ready(std::size_t const nb_core,
+Main::__wait__all__cores__ready(std::size_t const      nb_core,
                                 std::atomic<uint64_t> &sync_start) noexcept {
     sync_start.fetch_add(1, std::memory_order_acq_rel);
     uint64_t ret = 0;
@@ -280,9 +280,9 @@ Main::start(bool async) noexcept {
             Main::registerSignal(SIGINT);
             start_thread({it.first, it.second, *_shared_com, _sync_start});
         } else
-            _cores[i] = std::thread(start_thread,
-                                    CoreSpawnerParameter{it.first, it.second,
-                                                         *_shared_com, _sync_start});
+            _cores[i] = std::thread(
+                start_thread,
+                CoreSpawnerParameter{it.first, it.second, *_shared_com, _sync_start});
         ++i;
     }
 

@@ -1,12 +1,13 @@
 /**
  * @file qb/io/src/system/sys__socket.cpp
  * @brief Implementation of the socket abstraction layer with cross-platform support
- * 
- * @details This file provides a comprehensive socket implementation that abstracts platform-specific 
- * socket APIs (Windows Winsock and POSIX sockets) into a unified interface. It includes functions for 
- * connection establishment, data transmission, socket configuration, and network address operations.
- * The implementation supports both blocking and non-blocking operations, as well as IPv4 and IPv6.
- * 
+ *
+ * @details This file provides a comprehensive socket implementation that abstracts
+ * platform-specific socket APIs (Windows Winsock and POSIX sockets) into a unified
+ * interface. It includes functions for connection establishment, data transmission,
+ * socket configuration, and network address operations. The implementation supports both
+ * blocking and non-blocking operations, as well as IPv4 and IPv6.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,33 +28,33 @@
 #define QB__SOCKET_CPP
 #include <assert.h>
 #ifdef _DEBUG
-#    include <stdio.h>
+#include <stdio.h>
 #endif
 
 #if !defined(QB_HEADER_ONLY)
-#    include <qb/io/system/sys__socket.h>
+#include <qb/io/system/sys__socket.h>
 #endif
 
 #include <qb/io/system/sys__utils.h>
 
 #if !defined(_WIN32)
-#    include <qb/io/system/sys__ifaddrs.h>
+#include <qb/io/system/sys__ifaddrs.h>
 #endif
 
 // For apple bsd socket implemention
 #if !defined(TCP_KEEPIDLE)
-#    define TCP_KEEPIDLE TCP_KEEPALIVE
+#define TCP_KEEPIDLE TCP_KEEPALIVE
 #endif
 
 #if defined(_MSC_VER)
-#    pragma warning(push)
-#    pragma warning(disable : 4996)
+#pragma warning(push)
+#pragma warning(disable : 4996)
 #endif
 
 #if defined(_WIN32) && !defined(_WINSTORE)
-static LPFN_ACCEPTEX __accept_ex = nullptr;
+static LPFN_ACCEPTEX             __accept_ex               = nullptr;
 static LPFN_GETACCEPTEXSOCKADDRS __get_accept_ex_sockaddrs = nullptr;
-static LPFN_CONNECTEX __connect_ex = nullptr;
+static LPFN_CONNECTEX            __connect_ex              = nullptr;
 #endif
 
 #if !QB__HAS_NTOP
@@ -63,7 +64,7 @@ namespace inet {
 QB__NS_INLINE
 namespace ip {
 namespace compat {
-#    include "sys__inet_compat.inl"
+#include "sys__inet_compat.inl"
 } // namespace compat
 } // namespace ip
 } // namespace inet
@@ -83,21 +84,21 @@ socket::xpconnect(const char *hostname, u_short port, u_short local_port) {
     socket::resolve_i(
         [&](const endpoint &ep) {
             switch (ep.af()) {
-            case AF_INET:
-                if (flags & ipsv_ipv4) {
-                    error = pconnect(ep, local_port);
-                } else if (flags & ipsv_ipv6) {
-                    socket::resolve_i(
-                        [&](const endpoint &ep6) {
-                            return 0 == (error = pconnect(ep6, local_port));
-                        },
-                        hostname, port, AF_INET6, AI_V4MAPPED);
-                }
-                break;
-            case AF_INET6:
-                if (flags & ipsv_ipv6)
-                    error = pconnect(ep, local_port);
-                break;
+                case AF_INET:
+                    if (flags & ipsv_ipv4) {
+                        error = pconnect(ep, local_port);
+                    } else if (flags & ipsv_ipv6) {
+                        socket::resolve_i(
+                            [&](const endpoint &ep6) {
+                                return 0 == (error = pconnect(ep6, local_port));
+                            },
+                            hostname, port, AF_INET6, AI_V4MAPPED);
+                    }
+                    break;
+                case AF_INET6:
+                    if (flags & ipsv_ipv6)
+                        error = pconnect(ep, local_port);
+                    break;
             }
 
             return error == 0;
@@ -111,25 +112,26 @@ int
 socket::xpconnect_n(const char *hostname, u_short port,
                     const std::chrono::microseconds &wtimeout, u_short local_port) {
     auto flags = getipsv();
-    int error = -1;
+    int  error = -1;
     socket::resolve_i(
         [&](const endpoint &ep) {
             switch (ep.af()) {
-            case AF_INET:
-                if (flags & ipsv_ipv4)
-                    error = pconnect_n(ep, wtimeout, local_port);
-                else if (flags & ipsv_ipv6) {
-                    socket::resolve_i(
-                        [&](const endpoint &ep6) {
-                            return 0 == (error = pconnect_n(ep6, wtimeout, local_port));
-                        },
-                        hostname, port, AF_INET6, AI_V4MAPPED);
-                }
-                break;
-            case AF_INET6:
-                if (flags & ipsv_ipv6)
-                    error = pconnect_n(ep, wtimeout, local_port);
-                break;
+                case AF_INET:
+                    if (flags & ipsv_ipv4)
+                        error = pconnect_n(ep, wtimeout, local_port);
+                    else if (flags & ipsv_ipv6) {
+                        socket::resolve_i(
+                            [&](const endpoint &ep6) {
+                                return 0 ==
+                                       (error = pconnect_n(ep6, wtimeout, local_port));
+                            },
+                            hostname, port, AF_INET6, AI_V4MAPPED);
+                    }
+                    break;
+                case AF_INET6:
+                    if (flags & ipsv_ipv6)
+                        error = pconnect_n(ep, wtimeout, local_port);
+                    break;
             }
 
             return error == 0;
@@ -277,12 +279,12 @@ socket::getipsv(void) {
     int flags = 0;
     socket::traverse_local_address([&](const ip::endpoint &ep) -> bool {
         switch (ep.af()) {
-        case AF_INET:
-            flags |= ipsv_ipv4;
-            break;
-        case AF_INET6:
-            flags |= ipsv_ipv6;
-            break;
+            case AF_INET:
+                flags |= ipsv_ipv4;
+                break;
+            case AF_INET6:
+                flags |= ipsv_ipv6;
+                break;
         }
         return (flags == ipsv_dual_stack);
     });
@@ -292,8 +294,8 @@ socket::getipsv(void) {
 
 void
 socket::traverse_local_address(std::function<bool(const ip::endpoint &)> handler) {
-    int family = AF_UNSPEC;
-    bool done = false;
+    int  family = AF_UNSPEC;
+    bool done   = false;
     /* Only windows support use getaddrinfo to get local ip address(not loopback or
       linklocal), Because nullptr same as "localhost": always return loopback address and
       at unix/linux the gethostname always return "localhost"
@@ -307,9 +309,9 @@ socket::traverse_local_address(std::function<bool(const ip::endpoint &)> handler
     ::memset(&hint, 0x0, sizeof(hint));
 
     endpoint ep;
-#    if defined(_DEBUG)
+#if defined(_DEBUG)
     // QB_LOG("socket::traverse_local_address: localhost=%s", hostname);
-#    endif
+#endif
     int iret = getaddrinfo(hostname, nullptr, &hint, &ailist);
 
     const char *errmsg = nullptr;
@@ -321,15 +323,15 @@ socket::traverse_local_address(std::function<bool(const ip::endpoint &)> handler
                 // QB_LOGV("socket::traverse_local_address: ip=%s",
                 // ep.ip().c_str());
                 switch (ep.af()) {
-                case AF_INET:
-                    if (!IN4_IS_ADDR_LOOPBACK(&ep.in4_.sin_addr) &&
-                        !IN4_IS_ADDR_LINKLOCAL(&ep.in4_.sin_addr))
-                        done = handler(ep);
-                    break;
-                case AF_INET6:
-                    if (IN6_IS_ADDR_GLOBAL(&ep.in6_.sin6_addr))
-                        done = handler(ep);
-                    break;
+                    case AF_INET:
+                        if (!IN4_IS_ADDR_LOOPBACK(&ep.in4_.sin_addr) &&
+                            !IN4_IS_ADDR_LINKLOCAL(&ep.in4_.sin_addr))
+                            done = handler(ep);
+                        break;
+                    case AF_INET6:
+                        if (IN6_IS_ADDR_GLOBAL(&ep.in6_.sin6_addr))
+                            done = handler(ep);
+                        break;
                 }
                 if (done)
                     break;
@@ -366,15 +368,15 @@ socket::traverse_local_address(std::function<bool(const ip::endpoint &)> handler
             ep.as_is(ifa->ifa_addr);
             // QB_LOGV("socket::traverse_local_address: ip=%s", ep.ip().c_str());
             switch (ep.af()) {
-            case AF_INET:
-                if (!IN4_IS_ADDR_LOOPBACK(&ep.in4_.sin_addr) &&
-                    !IN4_IS_ADDR_LINKLOCAL(&ep.in4_.sin_addr))
-                    done = handler(ep);
-                break;
-            case AF_INET6:
-                if (IN6_IS_ADDR_GLOBAL(&ep.in6_.sin6_addr))
-                    done = handler(ep);
-                break;
+                case AF_INET:
+                    if (!IN4_IS_ADDR_LOOPBACK(&ep.in4_.sin_addr) &&
+                        !IN4_IS_ADDR_LINKLOCAL(&ep.in4_.sin_addr))
+                        done = handler(ep);
+                    break;
+                case AF_INET6:
+                    if (IN6_IS_ADDR_GLOBAL(&ep.in6_.sin6_addr))
+                        done = handler(ep);
+                    break;
             }
             if (done)
                 break;
@@ -438,42 +440,42 @@ socket::reopen(int af, int type, int protocol) {
 #if defined(_WIN32) && !defined(_WINSTORE)
 bool
 socket::open_ex(int af, int type, int protocol) {
-#    if !defined(WP8)
+#if !defined(WP8)
     if (invalid_socket == this->fd) {
         SOCKET sock = ::WSASocket(af, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
         DWORD dwBytes = 0;
         if (nullptr == __accept_ex) {
             GUID guidAcceptEx = WSAID_ACCEPTEX;
-            (void)WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidAcceptEx,
-                           sizeof(guidAcceptEx), &__accept_ex, sizeof(__accept_ex),
-                           &dwBytes, nullptr, nullptr);
+            (void) WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidAcceptEx,
+                            sizeof(guidAcceptEx), &__accept_ex, sizeof(__accept_ex),
+                            &dwBytes, nullptr, nullptr);
         }
 
         if (nullptr == __connect_ex) {
             GUID guidConnectEx = WSAID_CONNECTEX;
-            (void)WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidConnectEx,
-                           sizeof(guidConnectEx), &__connect_ex, sizeof(__connect_ex),
-                           &dwBytes, nullptr, nullptr);
+            (void) WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidConnectEx,
+                            sizeof(guidConnectEx), &__connect_ex, sizeof(__connect_ex),
+                            &dwBytes, nullptr, nullptr);
         }
 
         if (nullptr == __get_accept_ex_sockaddrs) {
             GUID guidGetAcceptExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS;
-            (void)WSAIoctl(sock, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                           &guidGetAcceptExSockaddrs, sizeof(guidGetAcceptExSockaddrs),
-                           &__get_accept_ex_sockaddrs, sizeof(__get_accept_ex_sockaddrs),
-                           &dwBytes, nullptr, nullptr);
+            (void) WSAIoctl(
+                sock, SIO_GET_EXTENSION_FUNCTION_POINTER, &guidGetAcceptExSockaddrs,
+                sizeof(guidGetAcceptExSockaddrs), &__get_accept_ex_sockaddrs,
+                sizeof(__get_accept_ex_sockaddrs), &dwBytes, nullptr, nullptr);
         }
 
         this->fd = OPEN_FD_FROM_SOCKET(sock);
     }
     return is_open();
-#    else
+#else
     return false;
-#    endif
+#endif
 }
 
-#    if !defined(WP8)
+#if !defined(WP8)
 bool
 socket::accept_ex(SOCKET sockfd_listened, SOCKET sockfd_prepared, PVOID lpOutputBuffer,
                   DWORD dwReceiveDataLength, DWORD dwLocalAddressLength,
@@ -501,7 +503,7 @@ socket::translate_sockaddrs(PVOID lpOutputBuffer, DWORD dwReceiveDataLength,
                               dwRemoteAddressLength, LocalSockaddr, LocalSockaddrLength,
                               RemoteSockaddr, RemoteSockaddrLength);
 }
-#    endif
+#endif
 
 #endif
 
@@ -517,7 +519,7 @@ socket::native_handle(void) const {
 socket_type
 socket::release_handle(void) {
     socket_type result = this->fd;
-    this->fd = invalid_socket;
+    this->fd           = invalid_socket;
     return result;
 }
 
@@ -544,7 +546,7 @@ socket::test_nonblocking() const {
 int
 socket::test_nonblocking(socket_type s) {
 #if defined(_WIN32)
-    int r = 0;
+    int           r = 0;
     unsigned char b[1];
     r = socket::recv(s, b, 0, 0);
     if (r == 0)
@@ -636,9 +638,8 @@ socket::connect_n(const endpoint &ep, const std::chrono::microseconds &wtimeout)
     return this->connect_n(this->fd, ep, wtimeout);
 }
 int
-socket::connect_n(socket_type s, const endpoint &ep,
-                  const std::chrono::microseconds &) {
-//    fd_set rset, wset;
+socket::connect_n(socket_type s, const endpoint &ep, const std::chrono::microseconds &) {
+    //    fd_set rset, wset;
     int n, error = 0;
 
     set_nonblocking(s, true);
@@ -651,28 +652,29 @@ socket::connect_n(socket_type s, const endpoint &ep,
 
     return n;
     /* Do whatever we want while the connect is taking place. */
-//    if (n == 0)
-//        goto done; /* connect completed immediately */
-//
-//    if ((n = socket::select(s, &rset, &wset, NULL, wtimeout)) <= 0)
-//        error = socket::get_last_errno();
-//    else if ((FD_ISSET(s, &rset) || FD_ISSET(s, &wset))) { /* Everythings are ok */
-//        socklen_t len = sizeof(error);
-//        if (::getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&error, &len) < 0)
-//            return (-1); /* Solaris pending error */
-//    }
-//
-//done:
-//    if (error != 0) {
-//        ::closesocket(s); /* just in case */
-//        return (-1);
-//    }
-//
-//    /* Since v3.31.2, we don't restore file status flags for unify behavior for all
-//     * platforms */
-//    // pitfall: because on win32, there is no way to test whether the s is non-blocking
-//    // so, can't restore properly
-//    return (0);
+    //    if (n == 0)
+    //        goto done; /* connect completed immediately */
+    //
+    //    if ((n = socket::select(s, &rset, &wset, NULL, wtimeout)) <= 0)
+    //        error = socket::get_last_errno();
+    //    else if ((FD_ISSET(s, &rset) || FD_ISSET(s, &wset))) { /* Everythings are ok */
+    //        socklen_t len = sizeof(error);
+    //        if (::getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&error, &len) < 0)
+    //            return (-1); /* Solaris pending error */
+    //    }
+    //
+    // done:
+    //    if (error != 0) {
+    //        ::closesocket(s); /* just in case */
+    //        return (-1);
+    //    }
+    //
+    //    /* Since v3.31.2, we don't restore file status flags for unify behavior for all
+    //     * platforms */
+    //    // pitfall: because on win32, there is no way to test whether the s is
+    //    non-blocking
+    //    // so, can't restore properly
+    //    return (0);
 }
 
 int
@@ -716,7 +718,7 @@ socket::send_n(socket_type s, const void *buf, int len,
         // Try to transfer as much of the remaining data as possible.
         // Since the socket is in non-blocking mode, this call will not
         // block.
-        n = socket::send(s, (const char *)buf + bytes_transferred,
+        n = socket::send(s, (const char *) buf + bytes_transferred,
                          len - bytes_transferred, flags);
         if (n > 0) {
             bytes_transferred += n;
@@ -727,8 +729,8 @@ socket::send_n(socket_type s, const void *buf, int len,
         error = socket::get_last_errno();
         if (n == -1 && socket::not_send_error(error)) {
             // Wait upto <timeout> for the blocking to subside.
-            auto start = qb::highp_clock();
-            int const rtn = handle_write_ready(s, wtimeout);
+            auto      start = qb::highp_clock();
+            int const rtn   = handle_write_ready(s, wtimeout);
             wtimeout -= std::chrono::microseconds(qb::highp_clock() - start);
 
             // Did select() succeed?
@@ -776,8 +778,8 @@ socket::recv_n(socket_type s, void *buf, int len, std::chrono::microseconds wtim
         error = socket::get_last_errno();
         if (n == -1 && socket::not_recv_error(error)) {
             // Wait upto <timeout> for the blocking to subside.
-            auto start = qb::highp_clock();
-            int const rtn = handle_read_ready(s, wtimeout);
+            auto      start = qb::highp_clock();
+            int const rtn   = handle_read_ready(s, wtimeout);
             wtimeout -= std::chrono::microseconds(qb::highp_clock() - start);
 
             // Did select() succeed?
@@ -799,11 +801,11 @@ socket::recv_n(socket_type s, void *buf, int len, std::chrono::microseconds wtim
 int
 socket::send(const void *buf, int len, int flags) const {
     return static_cast<int>(
-        ::send(FD_TO_SOCKET(this->fd), (const char *)buf, len, flags));
+        ::send(FD_TO_SOCKET(this->fd), (const char *) buf, len, flags));
 }
 int
 socket::send(socket_type s, const void *buf, int len, int flags) {
-    return static_cast<int>(::send(FD_TO_SOCKET(s), (const char *)buf, len, flags));
+    return static_cast<int>(::send(FD_TO_SOCKET(s), (const char *) buf, len, flags));
 }
 
 int
@@ -812,19 +814,19 @@ socket::recv(void *buf, int len, int flags) const {
 }
 int
 socket::recv(socket_type s, void *buf, int len, int flags) {
-    return static_cast<int>(::recv(FD_TO_SOCKET(s), (char *)buf, len, flags));
+    return static_cast<int>(::recv(FD_TO_SOCKET(s), (char *) buf, len, flags));
 }
 
 int
 socket::sendto(const void *buf, int len, const endpoint &to, int flags) const {
-    return static_cast<int>(::sendto(FD_TO_SOCKET(this->fd), (const char *)buf, len,
+    return static_cast<int>(::sendto(FD_TO_SOCKET(this->fd), (const char *) buf, len,
                                      flags, &to.sa_, to.len()));
 }
 
 int
 socket::recvfrom(void *buf, int len, endpoint &from, int flags) const {
     socklen_t addrlen{sizeof(from)};
-    int n = static_cast<int>(::recvfrom(FD_TO_SOCKET(this->fd), (char *)buf, len, flags,
+    int n = static_cast<int>(::recvfrom(FD_TO_SOCKET(this->fd), (char *) buf, len, flags,
                                         &from.sa_, &addrlen));
     from.len(addrlen);
     return n;
@@ -864,7 +866,7 @@ socket::select(socket_type s, fd_set *readfds, fd_set *writefds, fd_set *exceptf
             static_cast<decltype(timeval::tv_sec)>(wtimeout.count() / std::micro::den),
             static_cast<decltype(timeval::tv_usec)>(wtimeout.count() % std::micro::den)};
         long long start = highp_clock();
-        n = ::select(s + 1, readfds, writefds, exceptfds, &waitd_tv);
+        n               = ::select(s + 1, readfds, writefds, exceptfds, &waitd_tv);
         wtimeout -= std::chrono::microseconds(highp_clock() - start);
 
         if (n < 0 && socket::get_last_errno() == EINTR) {
@@ -895,7 +897,7 @@ socket::local_endpoint(void) const {
 }
 endpoint
 socket::local_endpoint(socket_type fd) {
-    endpoint ep;
+    endpoint  ep;
     socklen_t socklen = sizeof(ep);
     getsockname(FD_TO_SOCKET(fd), &ep.sa_, &socklen);
     ep.len(socklen);
@@ -908,7 +910,7 @@ socket::peer_endpoint(void) const {
 }
 endpoint
 socket::peer_endpoint(socket_type fd) {
-    endpoint ep;
+    endpoint  ep;
     socklen_t socklen = sizeof(ep);
     getpeername(FD_TO_SOCKET(fd), &ep.sa_, &socklen);
     ep.len(socklen);
@@ -923,12 +925,12 @@ int
 socket::set_keepalive(socket_type s, int flag, int idle, int interval, int probes) {
 #if defined(_WIN32) && !defined(WP8) && !defined(_WINSTORE)
     tcp_keepalive buffer_in;
-    buffer_in.onoff = flag;
-    buffer_in.keepalivetime = idle * 1000;
+    buffer_in.onoff             = flag;
+    buffer_in.keepalivetime     = idle * 1000;
     buffer_in.keepaliveinterval = interval * 1000;
 
     return WSAIoctl(FD_TO_SOCKET(s), SIO_KEEPALIVE_VALS, &buffer_in, sizeof(buffer_in),
-                    nullptr, 0, (DWORD *)&probes, nullptr, nullptr);
+                    nullptr, 0, (DWORD *) &probes, nullptr, nullptr);
 #else
     int n = set_optval(s, SOL_SOCKET, SO_KEEPALIVE, flag);
     n += set_optval(s, IPPROTO_TCP, TCP_KEEPIDLE, idle);
@@ -956,7 +958,7 @@ socket::exclusive_address(bool exclusive) {
 #elif defined(SO_EXCLBIND)
     this->set_optval(SOL_SOCKET, SO_EXCLBIND, exclusive ? 1 : 0);
 #else
-    (void)exclusive;
+    (void) exclusive;
 #endif
 }
 
@@ -993,17 +995,17 @@ socket::tcp_rtt() const {
 unsigned int
 socket::tcp_rtt(socket_type s) {
 #if defined(_WIN32)
-#    if defined(NTDDI_WIN10_RS2) && NTDDI_VERSION >= NTDDI_WIN10_RS2
+#if defined(NTDDI_WIN10_RS2) && NTDDI_VERSION >= NTDDI_WIN10_RS2
     TCP_INFO_v0 info;
-    DWORD tcpi_ver = 0, bytes_transferred = 0;
-    int status = WSAIoctl(
+    DWORD       tcpi_ver = 0, bytes_transferred = 0;
+    int         status = WSAIoctl(
         FD_TO_SOCKET(s), SIO_TCP_INFO,
-        (LPVOID)&tcpi_ver,       // lpvInBuffer pointer to a DWORD, version of tcp info
-        (DWORD)sizeof(tcpi_ver), // size, in bytes, of the input buffer
-        (LPVOID)&info,           // pointer to a TCP_INFO_v0 structure
-        (DWORD)sizeof(info),     // size of the output buffer
-        (LPDWORD)&bytes_transferred, // number of bytes returned
-        (LPWSAOVERLAPPED) nullptr,   // OVERLAPPED structure
+        (LPVOID) &tcpi_ver, // lpvInBuffer pointer to a DWORD, version of tcp info
+        (DWORD) sizeof(tcpi_ver),     // size, in bytes, of the input buffer
+        (LPVOID) &info,               // pointer to a TCP_INFO_v0 structure
+        (DWORD) sizeof(info),         // size of the output buffer
+        (LPDWORD) &bytes_transferred, // number of bytes returned
+        (LPWSAOVERLAPPED) nullptr,    // OVERLAPPED structure
         (LPWSAOVERLAPPED_COMPLETION_ROUTINE) nullptr);
     /*
     info.RttUs: The current estimated round-trip time for the connection, in
@@ -1011,7 +1013,7 @@ socket::tcp_rtt(socket_type s) {
     */
     if (status == 0)
         return info.RttUs;
-#    endif
+#endif
 #elif defined(__linux__)
     struct tcp_info info;
     // int length = sizeof(struct tcp_info);
@@ -1019,7 +1021,7 @@ socket::tcp_rtt(socket_type s) {
         return info.tcpi_rtt;
 #elif defined(__APPLE__)
     struct tcp_connection_info info;
-    int length = sizeof(struct tcp_connection_info);
+    int                        length = sizeof(struct tcp_connection_info);
     /*
     info.tcpi_srtt: average RTT in ms
     info.tcpi_rttcur: most recent RTT in ms
@@ -1086,7 +1088,7 @@ socket::gai_strerror(int error) {
 #endif
 }
 } // namespace inet
-} // namespace qb
+} // namespace qb::io
 
 // initialize win32 socket library
 #ifdef _WIN32
@@ -1098,9 +1100,9 @@ struct ws2_32_gc {
         WSAStartup(0x0202, &dat);
     }
     ~ws2_32_gc(void) {
-#    ifndef QB_IO_WITH_SSL
+#ifndef QB_IO_WITH_SSL
         WSACleanup();
-#    endif // QB_IO_WITH_SSL
+#endif // QB_IO_WITH_SSL
     }
 };
 
@@ -1109,7 +1111,7 @@ ws2_32_gc __ws32_lib_gc;
 #endif
 
 #if defined(_MSC_VER)
-#    pragma warning(pop)
+#pragma warning(pop)
 #endif
 
 #endif

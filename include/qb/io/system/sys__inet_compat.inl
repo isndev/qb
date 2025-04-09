@@ -1,18 +1,18 @@
 /**
  * @file qb/io/system/sys__inet_compat.inl
  * @brief IP address conversion compatibility utilities
- * 
+ *
  * This file provides implementations of inet_ntop and inet_pton functions
  * for converting IP addresses between their binary (network) representation and
- * their text (presentation) representation. These implementations are platform-independent
- * and serve as fallbacks when native functions are not available.
- * 
+ * their text (presentation) representation. These implementations are
+ * platform-independent and serve as fallbacks when native functions are not available.
+ *
  * The implementations support both IPv4 (AF_INET) and IPv6 (AF_INET6) and
  * comply with RFC specifications.
- * 
+ *
  * @note This file should not be included directly; it is intended for internal
  * use by the QB IO library.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -35,11 +35,11 @@
 
 // from glibc
 #ifdef SPRINTF_CHAR
-#    define SPRINTF(x) strlen(sprintf /**/ x)
+#define SPRINTF(x) strlen(sprintf /**/ x)
 #else
-#    ifndef SPRINTF
-#        define SPRINTF(x) (/*(size_t)*/ sprintf x)
-#    endif
+#ifndef SPRINTF
+#define SPRINTF(x) (/*(size_t)*/ sprintf x)
+#endif
 #endif
 
 /**
@@ -70,7 +70,7 @@
 
 /**
  * @brief Converts a binary IPv4 address to text format
- * 
+ *
  * @param src Pointer to the binary IPv4 address
  * @param dst Destination buffer to store the text representation
  * @param size Size of the destination buffer
@@ -80,7 +80,7 @@ static const char *inet_ntop4(const u_char *src, char *dst, socklen_t size);
 
 /**
  * @brief Converts a binary IPv6 address to text format
- * 
+ *
  * @param src Pointer to the binary IPv6 address
  * @param dst Destination buffer to store the text representation
  * @param size Size of the destination buffer
@@ -90,10 +90,10 @@ static const char *inet_ntop6(const u_char *src, char *dst, socklen_t size);
 
 /**
  * @brief Converts a binary network address to presentation text format
- * 
+ *
  * This function is a portable implementation of inet_ntop that converts a binary
  * IP address to its human-readable text representation.
- * 
+ *
  * @param af Address family (AF_INET for IPv4, AF_INET6 for IPv6)
  * @param src Pointer to the source binary address
  * @param dst Destination buffer to store the text representation
@@ -103,23 +103,23 @@ static const char *inet_ntop6(const u_char *src, char *dst, socklen_t size);
 const char *
 inet_ntop(int af, const void *src, char *dst, socklen_t size) {
     switch (af) {
-    case AF_INET:
-        return (inet_ntop4((const u_char *)src, dst, size));
-    case AF_INET6:
-        return (inet_ntop6((const u_char *)src, dst, size));
-    default:
-        errno = EAFNOSUPPORT;
-        return (NULL);
+        case AF_INET:
+            return (inet_ntop4((const u_char *) src, dst, size));
+        case AF_INET6:
+            return (inet_ntop6((const u_char *) src, dst, size));
+        default:
+            errno = EAFNOSUPPORT;
+            return (NULL);
     }
     /* NOTREACHED */
 }
 
 /**
  * @brief Implementation of IPv4 binary to text conversion
- * 
+ *
  * This function formats a binary IPv4 address into the standard dotted-decimal notation
  * (e.g., "192.168.1.1").
- * 
+ *
  * @param src Pointer to the source IPv4 binary address (4 bytes)
  * @param dst Destination buffer to store the text representation
  * @param size Size of the destination buffer
@@ -139,10 +139,10 @@ inet_ntop4(const u_char *src, char *dst, socklen_t size) {
 
 /**
  * @brief Implementation of IPv6 binary to text conversion
- * 
+ *
  * This function formats a binary IPv6 address into its standard text representation
  * (e.g., "2001:db8::1"). It supports compression of zero sequences.
- * 
+ *
  * @param src Pointer to the source IPv6 binary address (16 bytes)
  * @param dst Destination buffer to store the text representation
  * @param size Size of the destination buffer
@@ -162,7 +162,7 @@ inet_ntop6(const u_char *src, char *dst, socklen_t size) {
         int base, len;
     } best, cur;
     u_int words[NS_IN6ADDRSZ / NS_INT16SZ];
-    int i;
+    int   i;
 
     /*
      * Preprocessing:
@@ -173,14 +173,14 @@ inet_ntop6(const u_char *src, char *dst, socklen_t size) {
     for (i = 0; i < NS_IN6ADDRSZ; i += 2)
         words[i / 2] = (src[i] << 8) | src[i + 1];
     best.base = -1;
-    cur.base = -1;
-    best.len = 0;
-    cur.len = 0;
+    cur.base  = -1;
+    best.len  = 0;
+    cur.len   = 0;
     for (i = 0; i < (NS_IN6ADDRSZ / NS_INT16SZ); i++) {
         if (words[i] == 0) {
             if (cur.base == -1) {
                 cur.base = i;
-                cur.len = 1;
+                cur.len  = 1;
             } else
                 cur.len++;
         } else {
@@ -231,7 +231,7 @@ inet_ntop6(const u_char *src, char *dst, socklen_t size) {
     /*
      * Check for overflow, copy, and we're done.
      */
-    if ((socklen_t)(tp - tmp) > size) {
+    if ((socklen_t) (tp - tmp) > size) {
         errno = (ENOSPC);
         return (NULL);
     }
@@ -247,7 +247,7 @@ inet_ntop6(const u_char *src, char *dst, socklen_t size) {
 
 /**
  * @brief Converts a text IPv4 address to binary format
- * 
+ *
  * @param src String containing the IPv4 address in text form
  * @param dst Destination buffer for the binary address
  * @return 1 if conversion succeeded, 0 if the address is invalid
@@ -256,7 +256,7 @@ static int inet_pton4(const char *src, u_char *dst);
 
 /**
  * @brief Converts a text IPv6 address to binary format
- * 
+ *
  * @param src String containing the IPv6 address in text form
  * @param dst Destination buffer for the binary address
  * @return 1 if conversion succeeded, 0 if the address is invalid
@@ -265,10 +265,10 @@ static int inet_pton6(const char *src, u_char *dst);
 
 /**
  * @brief Converts an IP address from presentation format to network format
- * 
+ *
  * This function is a portable implementation of inet_pton that converts a text
  * IP address to its binary representation used by the network.
- * 
+ *
  * @param af Address family (AF_INET for IPv4, AF_INET6 for IPv6)
  * @param src String containing the address in text form
  * @param dst Destination buffer for the binary address
@@ -277,37 +277,36 @@ static int inet_pton6(const char *src, u_char *dst);
 int
 inet_pton(int af, const char *src, void *dst) {
     switch (af) {
-    case AF_INET:
-        return (inet_pton4(src, (u_char *)dst));
-    case AF_INET6:
-        return (inet_pton6(src, (u_char *)dst));
-    default:
-        errno = (EAFNOSUPPORT);
-        return (-1);
+        case AF_INET:
+            return (inet_pton4(src, (u_char *) dst));
+        case AF_INET6:
+            return (inet_pton6(src, (u_char *) dst));
+        default:
+            errno = (EAFNOSUPPORT);
+            return (-1);
     }
     /* NOTREACHED */
 }
 
 /**
  * @brief Implementation of IPv4 text to binary conversion
- * 
+ *
  * This function parses an IPv4 address in dotted-decimal notation
  * (e.g., "192.168.1.1") and converts it to its binary equivalent.
- * 
+ *
  * @param src String containing the IPv4 address in text form
  * @param dst Destination buffer for the binary address (4 bytes)
  * @return 1 if conversion succeeded, 0 if the address is invalid
  */
 static int
 inet_pton4(const char *src, u_char *dst) {
-    int saw_digit, octets, ch;
+    int    saw_digit, octets, ch;
     u_char tmp[NS_INADDRSZ], *tp;
 
-    saw_digit = 0;
-    octets = 0;
+    saw_digit   = 0;
+    octets      = 0;
     *(tp = tmp) = 0;
     while ((ch = *src++) != '\0') {
-
         if (ch >= '0' && ch <= '9') {
             u_int newv = *tp * 10 + (ch - '0');
 
@@ -324,7 +323,7 @@ inet_pton4(const char *src, u_char *dst) {
         } else if (ch == '.' && saw_digit) {
             if (octets == 4)
                 return (0);
-            *++tp = 0;
+            *++tp     = 0;
             saw_digit = 0;
         } else
             return (0);
@@ -337,11 +336,11 @@ inet_pton4(const char *src, u_char *dst) {
 
 /**
  * @brief Implementation of IPv6 text to binary conversion
- * 
+ *
  * This function parses an IPv6 address in its standard text form
  * (e.g., "2001:db8::1") and converts it to its binary equivalent.
  * It supports compressed notation with "::".
- * 
+ *
  * @param src String containing the IPv6 address in text form
  * @param dst Destination buffer for the binary address (16 bytes)
  * @return 1 if conversion succeeded, 0 if the address is invalid
@@ -349,21 +348,21 @@ inet_pton4(const char *src, u_char *dst) {
 static int
 inet_pton6(const char *src, u_char *dst) {
     static const char xdigits[] = "0123456789abcdef";
-    u_char tmp[NS_IN6ADDRSZ], *tp, *endp, *colonp;
-    const char *curtok;
-    int ch, saw_xdigit;
-    u_int val;
+    u_char            tmp[NS_IN6ADDRSZ], *tp, *endp, *colonp;
+    const char       *curtok;
+    int               ch, saw_xdigit;
+    u_int             val;
 
-    tp = (u_char *)memset(tmp, '\0', NS_IN6ADDRSZ);
-    endp = tp + NS_IN6ADDRSZ;
+    tp     = (u_char *) memset(tmp, '\0', NS_IN6ADDRSZ);
+    endp   = tp + NS_IN6ADDRSZ;
     colonp = NULL;
     /* Leading :: requires special handling. */
     if (*src == ':')
         if (*++src != ':')
             return (0);
-    curtok = src;
+    curtok     = src;
     saw_xdigit = 0;
-    val = 0;
+    val        = 0;
     while ((ch = tolower(*src++)) != '\0') {
         const char *pch;
 
@@ -388,10 +387,10 @@ inet_pton6(const char *src, u_char *dst) {
             }
             if (tp + NS_INT16SZ > endp)
                 return (0);
-            *tp++ = (u_char)(val >> 8) & 0xff;
-            *tp++ = (u_char)val & 0xff;
+            *tp++      = (u_char) (val >> 8) & 0xff;
+            *tp++      = (u_char) val & 0xff;
             saw_xdigit = 0;
-            val = 0;
+            val        = 0;
             continue;
         }
         if (ch == '.' && ((tp + NS_INADDRSZ) <= endp) && inet_pton4(curtok, tp) > 0) {
@@ -404,8 +403,8 @@ inet_pton6(const char *src, u_char *dst) {
     if (saw_xdigit) {
         if (tp + NS_INT16SZ > endp)
             return (0);
-        *tp++ = (u_char)(val >> 8) & 0xff;
-        *tp++ = (u_char)val & 0xff;
+        *tp++ = (u_char) (val >> 8) & 0xff;
+        *tp++ = (u_char) val & 0xff;
     }
     if (colonp != NULL) {
         /*
@@ -413,12 +412,12 @@ inet_pton6(const char *src, u_char *dst) {
          * overlapping regions, we'll do the shift by hand.
          */
         const auto n = tp - colonp;
-        int i;
+        int        i;
 
         if (tp == endp)
             return (0);
         for (i = 1; i <= n; i++) {
-            endp[-i] = colonp[n - i];
+            endp[-i]      = colonp[n - i];
             colonp[n - i] = 0;
         }
         tp = endp;

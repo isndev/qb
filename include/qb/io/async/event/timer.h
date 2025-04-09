@@ -1,11 +1,11 @@
 /**
  * @file qb/io/async/event/timer.h
  * @brief Timer event for asynchronous I/O
- * 
+ *
  * This file defines the timer event structure which is used to handle
  * timed operations in the asynchronous I/O system. It wraps libev's timer
  * watcher functionality to provide timeout and periodic callbacks.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,11 +32,11 @@ namespace qb::io::async::event {
 /**
  * @struct timer
  * @brief Event for handling time-based operations
- * 
+ *
  * This event extends the base event with ev::timer functionality from libev.
  * It provides the ability to schedule callbacks after a certain delay or at
  * regular intervals.
- * 
+ *
  * Usage:
  * @code
  * void on(qb::io::async::event::timer &&event) {
@@ -50,7 +50,7 @@ struct timer : base<ev::timer> {
 
     /**
      * @brief Constructor
-     * 
+     *
      * @param loop Reference to the libev event loop
      */
     explicit timer(ev::loop_ref loop)
@@ -60,7 +60,7 @@ struct timer : base<ev::timer> {
 /**
  * @typedef timeout
  * @brief Alias for timer to be used in timeout scenarios
- * 
+ *
  * This type is functionally identical to timer but provides semantic
  * clarification when used specifically for timeout handling.
  */

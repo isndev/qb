@@ -372,6 +372,7 @@ endif()
 # Share configuration with parent CMake context if this is a subproject
 get_directory_property(hasParent PARENT_DIRECTORY)
 if(hasParent)
+    set(QB_FOUND "ON" PARENT_SCOPE)
     set(CMAKE_CXX_FLAGS "${${QB_PREFIX_UPPER}_CXX_FLAGS}" PARENT_SCOPE)
     set(QB_PREFIX "${QB_PREFIX}" PARENT_SCOPE)
     set(QB_PREFIX_UPPER "${QB_PREFIX_UPPER}" PARENT_SCOPE)

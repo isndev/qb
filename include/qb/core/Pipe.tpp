@@ -1,11 +1,11 @@
 /**
  * @file qb/core/Pipe.tpp
  * @brief Template implementation for the Pipe class
- * 
+ *
  * This file contains the template implementation of the Pipe class methods defined
  * in Pipe.h. It provides the actual implementation of event construction and pushing
  * through the communication channel between actors.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,11 +29,11 @@ namespace qb {
 
 template <typename T, typename... _Args>
 T &
-Pipe::push(_Args &&... args) const noexcept {
+Pipe::push(_Args &&...args) const noexcept {
     constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, EventBucket>();
-    auto &data = pipe->template allocate_back<T>(std::forward<_Args>(args)...);
-    data.id = data.template type_to_id<T>();
-    data.dest = dest;
+    auto &data  = pipe->template allocate_back<T>(std::forward<_Args>(args)...);
+    data.id     = data.template type_to_id<T>();
+    data.dest   = dest;
     data.source = source;
     if constexpr (std::is_base_of_v<ServiceEvent, T>) {
         data.forward = source;
@@ -46,14 +46,14 @@ Pipe::push(_Args &&... args) const noexcept {
 
 template <typename T, typename... _Args>
 T &
-Pipe::allocated_push(std::size_t size, _Args &&... args) const noexcept {
+Pipe::allocated_push(std::size_t size, _Args &&...args) const noexcept {
     size += sizeof(T);
     size = size / sizeof(EventBucket) + static_cast<bool>(size % sizeof(EventBucket));
     auto &data = *(new (reinterpret_cast<T *>(pipe->allocate_back(size)))
                        T(std::forward<_Args>(args)...));
 
-    data.id = data.template type_to_id<T>();
-    data.dest = dest;
+    data.id     = data.template type_to_id<T>();
+    data.dest   = dest;
     data.source = source;
     if constexpr (std::is_base_of_v<ServiceEvent, T>) {
         data.forward = source;

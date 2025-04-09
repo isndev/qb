@@ -26,22 +26,23 @@
 
 namespace qb::io::tcp::ssl {
 
-void bristou(SSL_CTX *ctx) {
+void
+bristou(SSL_CTX *ctx) {
     SSL_CTX_free(ctx);
 }
 
-
-listener::~listener() noexcept {
-}
+listener::~listener() noexcept {}
 
 listener::listener() noexcept
     : _ctx(nullptr, bristou) {}
 
-void listener::init(SSL_CTX *ctx) noexcept {
+void
+listener::init(SSL_CTX *ctx) noexcept {
     _ctx.reset(ctx);
 }
 
-ssl::socket listener::accept() const noexcept {
+ssl::socket
+listener::accept() const noexcept {
     auto sock = tcp::listener::accept();
     if (!sock.is_open())
         return {};
@@ -51,9 +52,10 @@ ssl::socket listener::accept() const noexcept {
     return {ctx, sock};
 }
 
-int listener::accept(ssl::socket &ssock) const noexcept {
+int
+listener::accept(ssl::socket &ssock) const noexcept {
     tcp::socket sock;
-    auto ret = tcp::listener::accept(sock);
+    auto        ret = tcp::listener::accept(sock);
     if (!ret) {
         const auto ctx = SSL_new(ssl_handle());
         SSL_set_accept_state(ctx);
@@ -63,7 +65,8 @@ int listener::accept(ssl::socket &ssock) const noexcept {
     return ret;
 }
 
-[[nodiscard]] SSL_CTX *listener::ssl_handle() const noexcept {
+[[nodiscard]] SSL_CTX *
+listener::ssl_handle() const noexcept {
     return _ctx.get();
 }
 

@@ -1,11 +1,11 @@
 /**
  * @file qb/io/src/pipe.cpp
  * @brief Implementation of the pipe class specialized for characters
- * 
+ *
  * This file contains template specializations for the pipe<char> class
  * which provide optimized implementations for character-based operations
  * like string handling, appending, and conversion.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");

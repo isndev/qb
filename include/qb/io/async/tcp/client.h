@@ -1,12 +1,12 @@
 /**
  * @file qb/io/async/tcp/client.h
  * @brief Asynchronous TCP client implementation for the QB IO library
- * 
+ *
  * This file defines the client template class which provides functionality
  * for asynchronous TCP client connections. It supports both server-associated
  * clients (typically created when a connection is accepted by a server) and
  * standalone clients (for outgoing connections).
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -34,11 +34,11 @@ namespace qb::io::async::tcp {
 /**
  * @class client
  * @brief Server-associated asynchronous TCP client
- * 
+ *
  * This specialization of the client template is used for clients that are
  * associated with a server, typically created when a connection is accepted.
  * It maintains a reference to the server and has a unique identifier.
- * 
+ *
  * @tparam _Derived The derived class type (CRTP pattern)
  * @tparam _Transport The transport class type
  * @tparam _Server The server class type
@@ -52,32 +52,34 @@ class client
 
 public:
     using base_io_t = io<_Derived>; /**< Base I/O type */
-    using transport_io_type = typename _Transport::transport_io_type; /**< Transport I/O type */
-    using _Transport::in; /**< Import the in method from the transport */
-    using _Transport::out; /**< Import the out method from the transport */
+    using transport_io_type =
+        typename _Transport::transport_io_type; /**< Transport I/O type */
+    using _Transport::in;        /**< Import the in method from the transport */
+    using _Transport::out;       /**< Import the out method from the transport */
     using _Transport::transport; /**< Import the transport method from the transport */
-    using base_t::publish; /**< Import the publish method from the base class */
+    using base_t::publish;       /**< Import the publish method from the base class */
 
 protected:
-    const uuid _uuid; /**< Unique identifier for this client */
-    _Server &_server; /**< Reference to the associated server */
+    const uuid _uuid;   /**< Unique identifier for this client */
+    _Server   &_server; /**< Reference to the associated server */
 
 public:
     using IOServer = _Server; /**< Type alias for the server type */
-    constexpr static const bool has_server = true; /**< Flag indicating server association */
+    constexpr static const bool has_server =
+        true; /**< Flag indicating server association */
 
     /**
      * @brief Default constructor (deleted)
      */
     client() = delete;
-    
+
     /**
      * @brief Constructor with server reference
-     * 
+     *
      * Creates a new client associated with the given server.
      * If the derived class defines a Protocol type that is not void,
      * an instance of that protocol is created and attached to the client.
-     * 
+     *
      * @param server Reference to the associated server
      */
     explicit client(_Server &server)
@@ -127,10 +129,10 @@ public:
 /**
  * @class client
  * @brief Standalone asynchronous TCP client
- * 
+ *
  * This specialization of the client template is used for standalone clients
  * that are not associated with a server, typically for outgoing connections.
- * 
+ *
  * @tparam _Derived The derived class type (CRTP pattern)
  * @tparam _Transport The transport class type
  */
@@ -142,16 +144,17 @@ class client<_Derived, _Transport, void>
     friend base_t;
 
 public:
-    using transport_io_type = typename _Transport::transport_io_type; /**< Transport I/O type */
-    using _Transport::in; /**< Import the in method from the transport */
-    using _Transport::out; /**< Import the out method from the transport */
+    using transport_io_type =
+        typename _Transport::transport_io_type; /**< Transport I/O type */
+    using _Transport::in;        /**< Import the in method from the transport */
+    using _Transport::out;       /**< Import the out method from the transport */
     using _Transport::transport; /**< Import the transport method from the transport */
-    using base_t::publish; /**< Import the publish method from the base class */
+    using base_t::publish;       /**< Import the publish method from the base class */
 
 public:
     /**
      * @brief Default constructor
-     * 
+     *
      * Creates a new standalone client.
      * If the derived class defines a Protocol type that is not void,
      * an instance of that protocol is created and attached to the client.
@@ -167,7 +170,7 @@ public:
 
     /**
      * @brief Destructor
-     * 
+     *
      * Ensures proper cleanup of resources.
      * If the derived class does not have a dispose event handler
      * and the transport is still open, it calls dispose.

@@ -1,11 +1,11 @@
 /**
  * @file qb/io.h
  * @brief Core I/O and logging utilities for the qb framework
- * 
+ *
  * This file provides basic I/O functionality and logging utilities
  * for the qb framework. It includes a thread-safe console output class
  * and logging macros that can be configured at compile time.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,7 +32,7 @@
 #include <utility>
 
 #ifdef QB_LOGGER
-#    include <nanolog/nanolog.h>
+#include <nanolog/nanolog.h>
 #endif
 
 namespace qb {
@@ -46,26 +46,26 @@ namespace io {
 #ifdef QB_LOGGER
 namespace log {
 using stream = nanolog::NanoLogLine;
-using Level = nanolog::LogLevel;
+using Level  = nanolog::LogLevel;
 /**
  * @brief Set the logging level
- * 
+ *
  * Configures the minimum severity level for log messages that will be recorded.
  * Messages with a severity level lower than the specified level will be ignored.
- * 
+ *
  * @param lvl The minimum log level to record
  */
 void setLevel(Level lvl);
 
 /**
  * @brief Initialize the logging system
- * 
+ *
  * Sets up the logging system with the specified file path and roll size.
  * This must be called before any logging operations can be performed.
- * 
+ *
  * @param file_path Path to the log file
  * @param roll_MB Maximum size of a log file in MB before rolling to a new file
- * 
+ *
  * Available log levels:
  * @code
  * enum class LogLevel : uint8_t {
@@ -84,16 +84,16 @@ void init(std::string const &file_path, uint32_t roll_MB = 128);
 /**
  * @class cout
  * @brief Thread-safe console output class
- * 
+ *
  * This class provides a thread-safe wrapper around std::cout. It uses
  * a mutex to ensure that output operations from multiple threads don't
  * interleave, resulting in garbled output.
- * 
+ *
  * Example usage:
  * @code
  * qb::io::cout() << "Thread " << thread_id << " is running";
  * @endcode
- * 
+ *
  * @note For production code, it's preferable to use the logging system
  *       rather than direct console output.
  */
@@ -106,15 +106,15 @@ public:
      * @brief Default constructor
      */
     cout() = default;
-    
+
     /**
      * @brief Deleted copy constructor
      */
     cout(cout const &) = delete;
-    
+
     /**
      * @brief Destructor that flushes output
-     * 
+     *
      * When the cout object is destroyed, its buffered content is
      * output to std::cout in a thread-safe manner.
      */
@@ -122,10 +122,10 @@ public:
 
     /**
      * @brief Stream insertion operator
-     * 
+     *
      * Allows data to be inserted into the output stream using the
      * standard C++ stream insertion syntax.
-     * 
+     *
      * @tparam T Type of data to insert
      * @param data The data to insert
      * @return Reference to the internal stringstream
@@ -141,69 +141,69 @@ public:
 } // namespace qb
 
 #ifndef QB_LOGGER
-#    ifdef QB_STDOUT_LOG
+#ifdef QB_STDOUT_LOG
 /**
  * @brief Debug-level log macro
  * @param X Message to log
  */
-#        define LOG_DEBUG(X) qb::io::cout() << X << std::endl;
+#define LOG_DEBUG(X) qb::io::cout() << X << std::endl;
 /**
  * @brief Verbose-level log macro
  * @param X Message to log
  */
-#        define LOG_VERB(X) qb::io::cout() << X << std::endl;
+#define LOG_VERB(X) qb::io::cout() << X << std::endl;
 /**
  * @brief Info-level log macro
  * @param X Message to log
  */
-#        define LOG_INFO(X) qb::io::cout() << X << std::endl;
+#define LOG_INFO(X) qb::io::cout() << X << std::endl;
 /**
  * @brief Warning-level log macro
  * @param X Message to log
  */
-#        define LOG_WARN(X) qb::io::cout() << X << std::endl;
+#define LOG_WARN(X) qb::io::cout() << X << std::endl;
 /**
  * @brief Critical-level log macro
  * @param X Message to log
  */
-#        define LOG_CRIT(X) qb::io::cout() << X << std::endl;
-#    else
+#define LOG_CRIT(X) qb::io::cout() << X << std::endl;
+#else
 /**
  * @brief Debug-level log macro (no-op if QB_STDOUT_LOG is not defined)
  * @param X Message to log
  */
-#        define LOG_DEBUG(X) \
-            do {             \
-            } while (false)
+#define LOG_DEBUG(X) \
+    do {             \
+    } while (false)
 /**
  * @brief Verbose-level log macro (no-op if QB_STDOUT_LOG is not defined)
  * @param X Message to log
  */
-#        define LOG_VERB(X) \
-            do {            \
-            } while (false)
+#define LOG_VERB(X) \
+    do {            \
+    } while (false)
 /**
  * @brief Info-level log macro (no-op if QB_STDOUT_LOG is not defined)
  * @param X Message to log
  */
-#        define LOG_INFO(X) \
-            do {            \
-            } while (false)
+#define LOG_INFO(X) \
+    do {            \
+    } while (false)
 /**
  * @brief Warning-level log macro (no-op if QB_STDOUT_LOG is not defined)
  * @param X Message to log
  */
-#        define LOG_WARN(X) \
-            do {            \
-            } while (false)
+#define LOG_WARN(X) \
+    do {            \
+    } while (false)
 /**
  * @brief Critical-level log macro (no-op if QB_STDOUT_LOG is not defined)
  * @param X Message to log
  */
-#        define LOG_CRIT(X) \
-            do {            \
-            } while (false)
-#    endif
+#define LOG_CRIT(X) \
+    do {            \
+    } while (false)
+#endif
 #endif
 
 #endif // QB_TYPES_H

@@ -29,17 +29,17 @@
 #include <utility>
 #include <vector>
 // include from qb
-#include "Event.h"
-#include "ICallback.h"
-#include "Pipe.h"
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/nocopy.h>
 #include <qb/utility/type_traits.h>
+#include "Event.h"
+#include "ICallback.h"
+#include "Pipe.h"
 
 #ifdef __GNUG__
-#    include <cstdlib>
-#    include <cxxabi.h>
-#    include <memory>
+#include <cstdlib>
+#include <cxxabi.h>
+#include <memory>
 #endif
 
 namespace qb {
@@ -109,9 +109,9 @@ class Actor : nocopy {
     friend class ActorProxy;
     friend class Service;
 
-    const char *name = "unnamed";
-    ActorId _id;
-    mutable bool _alive = true;
+    const char   *name = "unnamed";
+    ActorId       _id;
+    mutable bool  _alive  = true;
     std::uint32_t id_type = 0u;
 
     /**
@@ -316,7 +316,7 @@ public:
         explicit EventBuilder(Pipe const &pipe) noexcept;
 
     public:
-        EventBuilder() = delete;
+        EventBuilder()                                 = delete;
         EventBuilder(EventBuilder const &rhs) noexcept = default;
 
         /**
@@ -737,8 +737,8 @@ public:
 
 class IActorFactory {
 public:
-    virtual ~IActorFactory() = default;
-    virtual Actor *create() = 0;
+    virtual ~IActorFactory()                     = default;
+    virtual Actor             *create()          = 0;
     [[nodiscard]] virtual bool isService() const = 0;
 };
 

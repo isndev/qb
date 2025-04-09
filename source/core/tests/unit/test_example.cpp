@@ -1,11 +1,11 @@
 /**
  * @file qb/core/tests/unit/test_example.cpp
  * @brief Example unit test for the QB Actor Framework
- * 
+ *
  * This file contains a simple example unit test that demonstrates how to write
  * tests for the QB Actor Framework. It tests the basic functionality of starting
  * and joining a Main instance without any actors, which should result in an error.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");

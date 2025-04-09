@@ -1,11 +1,11 @@
 /**
  * @file qb/core/src/Actor.cpp
  * @brief Implementation of the Actor class for the QB framework
- * 
+ *
  * This file contains the implementation of the Actor class which forms the foundation
  * of the actor model in the QB framework. It includes event handling, actor lifecycle
  * management, and inter-actor communication mechanisms.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");

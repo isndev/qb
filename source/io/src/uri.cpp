@@ -1,12 +1,12 @@
 /**
  * @file qb/io/src/uri.cpp
  * @brief Implementation of the URI parser and manipulator
- * 
+ *
  * This file contains the implementation of the uri class which provides
  * parsing and manipulation of Uniform Resource Identifiers (URIs).
  * It handles scheme, authority, path, query, and fragment components
  * according to RFC 3986.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -77,21 +77,21 @@ bool
 uri::parse() noexcept {
     _queries.clear();
 
-    const char *p = _source.c_str();
-    const char *scheme_begin = nullptr;
-    const char *scheme_end = nullptr;
-    const char *uinfo_begin = nullptr;
-    const char *uinfo_end = nullptr;
-    const char *host_begin = nullptr;
-    const char *host_end = nullptr;
-    const char *port_begin = nullptr;
-    const char *port_end = nullptr;
-    const char *path_begin = nullptr;
-    const char *path_end = nullptr;
-    const char *query_begin = nullptr;
-    const char *query_end = nullptr;
+    const char *p              = _source.c_str();
+    const char *scheme_begin   = nullptr;
+    const char *scheme_end     = nullptr;
+    const char *uinfo_begin    = nullptr;
+    const char *uinfo_end      = nullptr;
+    const char *host_begin     = nullptr;
+    const char *host_end       = nullptr;
+    const char *port_begin     = nullptr;
+    const char *port_end       = nullptr;
+    const char *path_begin     = nullptr;
+    const char *path_end       = nullptr;
+    const char *query_begin    = nullptr;
+    const char *query_end      = nullptr;
     const char *fragment_begin = nullptr;
-    const char *fragment_end = nullptr;
+    const char *fragment_end   = nullptr;
 
     // IMPORTANT -- A uri may either be an absolute uri, or an relative-reference
     // Absolute: 'http://host.com'
@@ -99,8 +99,8 @@ uri::parse() noexcept {
     // A Relative-Reference can be disambiguated by parsing for a ':' before the first
     // slash
 
-    bool is_relative_reference = true;
-    const char *p2 = p;
+    bool        is_relative_reference = true;
+    const char *p2                    = p;
     for (; *p2 != '/' && *p2 != '\0'; p2++) {
         if (*p2 == ':') {
             // found a colon, the first portion is a scheme
@@ -131,7 +131,7 @@ uri::parse() noexcept {
     // if we see two slashes next, then we're going to parse the authority portion
     // later on we'll break up the authority into the port and host
     const char *authority_begin = nullptr;
-    const char *authority_end = nullptr;
+    const char *authority_end   = nullptr;
     if (*p == '/' && p[1] == '/') {
         // skip over the slashes
         p += 2;
@@ -160,7 +160,7 @@ uri::parse() noexcept {
             if (*port_begin == ':') {
                 // has a port
                 host_begin = authority_begin;
-                host_end = port_begin;
+                host_end   = port_begin;
 
                 // skip the colon
                 port_begin++;
@@ -168,7 +168,7 @@ uri::parse() noexcept {
             } else {
                 // no port
                 host_begin = authority_begin;
-                host_end = authority_end;
+                host_end   = authority_end;
             }
 
             // look for a user_info component
@@ -177,9 +177,9 @@ uri::parse() noexcept {
             }
 
             if (*u_end == '@') {
-                host_begin = u_end + 1;
+                host_begin  = u_end + 1;
                 uinfo_begin = authority_begin;
-                uinfo_end = u_end;
+                uinfo_end   = u_end;
             }
         }
     }
@@ -261,12 +261,11 @@ uri::parse() noexcept {
         _raw_queries = {query_begin, static_cast<std::size_t>(query_end - query_begin)};
         static const std::regex query_regex("(&?)([^=]*)=([^&]*)");
 
-        auto search = query_begin;
-        const auto end = query_end;
+        auto        search = query_begin;
+        const auto  end    = query_end;
         std::cmatch what;
         while (std::regex_search(search, end, what, query_regex)) {
-            _queries[decode(what[2].first,
-                                 static_cast<std::size_t>(what[2].length()))]
+            _queries[decode(what[2].first, static_cast<std::size_t>(what[2].length()))]
                 .push_back(
                     decode(what[3].first,
                            what[3].first + static_cast<std::size_t>(what[3].length())));
@@ -275,7 +274,8 @@ uri::parse() noexcept {
     }
 
     if (fragment_begin)
-        _fragment = {fragment_begin, static_cast<std::size_t>(fragment_end - fragment_begin)};
+        _fragment = {fragment_begin,
+                     static_cast<std::size_t>(fragment_end - fragment_begin)};
 
     return true;
 }

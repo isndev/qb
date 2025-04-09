@@ -1,11 +1,12 @@
 /**
  * @file qb/core/tests/benchmark/bm-ping-pong.cpp
  * @brief Ping-pong throughput benchmark for the QB Actor Framework
- * 
+ *
  * This file contains benchmark tests measuring the throughput of ping-pong communication
- * patterns in the QB Actor Framework with different event types (tiny, big, and dynamic).
- * It tests how efficiently actors can exchange messages with various sizes and complexity.
- * 
+ * patterns in the QB Actor Framework with different event types (tiny, big, and
+ * dynamic). It tests how efficiently actors can exchange messages with various sizes and
+ * complexity.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,11 +28,11 @@
 #include <qb/main.h>
 
 #ifdef NDEBUG
-#    define MAX_BENCHMARK_ITERATION 10
-#    define SHIFT_NB_EVENT 15
+#define MAX_BENCHMARK_ITERATION 10
+#define SHIFT_NB_EVENT 15
 #else
-#    define SHIFT_NB_EVENT 4
-#    define MAX_BENCHMARK_ITERATION 1
+#define SHIFT_NB_EVENT 4
+#define MAX_BENCHMARK_ITERATION 1
 #endif
 
 struct TinyEvent : qb::Event {
@@ -49,7 +50,7 @@ struct BigEvent : qb::Event {
 };
 
 struct DynamicEvent : qb::Event {
-    uint64_t _ttl;
+    uint64_t         _ttl;
     std::vector<int> vec;
     explicit DynamicEvent(uint64_t y)
         : _ttl(y)
@@ -74,7 +75,7 @@ public:
 
 template <typename TestEvent>
 class PingActor final : public qb::Actor {
-    const uint64_t max_sends;
+    const uint64_t    max_sends;
     const qb::ActorId actor_to_send;
 
 public:
@@ -107,9 +108,9 @@ BM_PINGPONG(benchmark::State &state) {
     for (auto _ : state) {
         state.PauseTiming();
         const auto nb_core = static_cast<uint32_t>(state.range(2));
-        qb::Main main;
+        qb::Main   main;
         const auto max_events = state.range(1);
-        const auto nb_actor = std::thread::hardware_concurrency() * 2 * state.range(0);
+        const auto nb_actor   = std::thread::hardware_concurrency() * 2 * state.range(0);
         for (int i = nb_actor; i > 0;) {
             for (auto j = 0u; j < nb_core && i > 0; ++j) {
                 main.addActor<PingActor<EventTrait>>(

@@ -1,12 +1,12 @@
 /**
  * @file qb/core/tests/system/test-main.cpp
  * @brief Unit tests for Main class functionality
- * 
+ *
  * This file contains tests for the Main class in the QB Actor Framework,
  * which is responsible for initializing and managing the actor system.
  * It tests various scenarios including starting/stopping actors in mono-core
  * and multi-core environments, error handling, and signal handling.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,13 +23,13 @@
  * @ingroup Core
  */
 
-#include <gtest/gtest.h>
-#include <qb/main.h>
-#include <qb/actor.h>
 #include <csignal>
+#include <gtest/gtest.h>
+#include <qb/actor.h>
+#include <qb/main.h>
 
 class TestActor : public qb::Actor {
-    bool keep_live = false;
+    bool keep_live    = false;
     bool throw_except = false;
 
 public:
@@ -48,7 +48,8 @@ public:
         return true;
     }
 
-    void on(qb::SignalEvent const &event) {
+    void
+    on(qb::SignalEvent const &event) {
         if (event.signum == SIGINT)
             kill();
         if (event.signum == SIGABRT)

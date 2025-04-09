@@ -1,11 +1,12 @@
 /**
  * @file qb/io/tests/system/test-session-text.cpp
  * @brief Unit tests for text-based session protocols
- * 
- * This file contains tests for the text-based communication protocols in the QB framework,
- * including command-based protocols over TCP, Unix sockets, secure TCP, and UDP connections.
- * It verifies correct session establishment, message transmission, and session cleanup.
- * 
+ *
+ * This file contains tests for the text-based communication protocols in the QB
+ * framework, including command-based protocols over TCP, Unix sockets, secure TCP, and
+ * UDP connections. It verifies correct session establishment, message transmission, and
+ * session cleanup.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,12 +31,12 @@
 
 using namespace qb::io;
 
-constexpr const std::size_t NB_ITERATION = 1000;
-constexpr const std::size_t NB_CLIENTS = 5;
-constexpr const char STRING_MESSAGE[] = "Here is my content test";
-constexpr const char UNIX_SOCK_PATH[] = "qb-test.sock";
-std::atomic<std::size_t> msg_count_server_side = 0;
-std::atomic<std::size_t> msg_count_client_side = 0;
+constexpr const std::size_t NB_ITERATION          = 1000;
+constexpr const std::size_t NB_CLIENTS            = 5;
+constexpr const char        STRING_MESSAGE[]      = "Here is my content test";
+constexpr const char        UNIX_SOCK_PATH[]      = "qb-test.sock";
+std::atomic<std::size_t>    msg_count_server_side = 0;
+std::atomic<std::size_t>    msg_count_client_side = 0;
 
 bool
 all_done() {
@@ -240,8 +241,7 @@ TEST(Session, COMMAND_OVER_SECURE_TCP) {
         for (auto i = 0; i < NB_CLIENTS; ++i) {
             msg_count_client_side = 0;
             TestSecureClient client;
-            if (SocketStatus::Done !=
-                client.transport().connect_v4("127.0.0.1", 9999)) {
+            if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", 9999)) {
                 throw std::runtime_error("could not connect");
             }
             client.start();
@@ -261,7 +261,7 @@ TEST(Session, COMMAND_OVER_SECURE_TCP) {
     tc.join();
 }
 
-#    ifndef _WIN32
+#ifndef _WIN32
 
 TEST(Session, COMMAND_OVER_SECURE_UTCP) {
     unlink(UNIX_SOCK_PATH);
@@ -298,7 +298,7 @@ TEST(Session, COMMAND_OVER_SECURE_UTCP) {
     tc.join();
 }
 
-#    endif
+#endif
 
 #endif
 

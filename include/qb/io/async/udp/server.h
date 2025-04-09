@@ -1,11 +1,11 @@
 /**
  * @file qb/io/async/udp/server.h
  * @brief Asynchronous UDP server implementation
- * 
+ *
  * This file defines the server template class which implements an asynchronous
  * UDP server. It uses the io class for asynchronous operations and the UDP
  * transport for handling UDP communications.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,41 +30,41 @@
 
 namespace qb::io::async::udp {
 
-        /**
-         * @class server
-         * @brief Asynchronous UDP server implementation
-         * 
-         * This template class implements a simple asynchronous UDP server.
-         * It combines the io class for asynchronous operations with the UDP
-         * transport for handling UDP communications. If the derived class
-         * defines a Protocol type, it will be used for processing UDP messages.
-         * 
-         * @tparam _Derived The derived class type (CRTP pattern)
-         */
-        template <typename _Derived>
-        class server
-                : public io<_Derived>
-                , public transport::udp {
-        public:
-            constexpr static const bool has_server = false; /**< Flag indicating server association (false for UDP servers) */
+/**
+ * @class server
+ * @brief Asynchronous UDP server implementation
+ *
+ * This template class implements a simple asynchronous UDP server.
+ * It combines the io class for asynchronous operations with the UDP
+ * transport for handling UDP communications. If the derived class
+ * defines a Protocol type, it will be used for processing UDP messages.
+ *
+ * @tparam _Derived The derived class type (CRTP pattern)
+ */
+template <typename _Derived>
+class server
+    : public io<_Derived>
+    , public transport::udp {
+public:
+    constexpr static const bool has_server =
+        false; /**< Flag indicating server association (false for UDP servers) */
 
-            /**
-             * @brief Constructor
-             * 
-             * Creates a new UDP server. If the derived class defines a Protocol type
-             * that is not void, an instance of that protocol is created and attached
-             * to the server.
-             */
-            server() noexcept {
-                if constexpr (has_member_Protocol<_Derived>::value) {
-                    if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
-                        this->template switch_protocol<typename _Derived::Protocol>(
-                                static_cast<_Derived &>(*this));
-                    }
-                }
+    /**
+     * @brief Constructor
+     *
+     * Creates a new UDP server. If the derived class defines a Protocol type
+     * that is not void, an instance of that protocol is created and attached
+     * to the server.
+     */
+    server() noexcept {
+        if constexpr (has_member_Protocol<_Derived>::value) {
+            if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
+                this->template switch_protocol<typename _Derived::Protocol>(
+                    static_cast<_Derived &>(*this));
             }
-        };
-
+        }
+    }
+};
 
 // Note: The following code is commented out in the original file but preserved
 // for reference. It represents an alternative implementation of a UDP server
@@ -73,24 +73,24 @@ namespace qb::io::async::udp {
 ///**
 // * @class server
 // * @brief Alternative UDP server implementation with session tracking
-// * 
+// *
 // * This template class implements a more complex UDP server that tracks
 // * client sessions based on their endpoint identity.
-// * 
+// *
 // * @tparam _Derived The derived class type (CRTP pattern)
 // * @tparam _Session The session class type for handling client communications
 // */
-//template <typename _Derived, typename _Session>
-//class server : public io<server<_Derived, _Session>> {
-//public:
+// template <typename _Derived, typename _Session>
+// class server : public io<server<_Derived, _Session>> {
+// public:
 //    using base_t = io<server<_Derived, _Session>>;
 //    using session_map_t = qb::unordered_map<transport::udp::identity, _Session,
 //                                            transport::udp::identity::hasher>;
 //
-//private:
+// private:
 //    session_map_t _sessions{};
 //
-//public:
+// public:
 //    using IOSession = _Session;
 //    server() = default;
 //
@@ -103,8 +103,8 @@ namespace qb::io::async::udp {
 //    on(transport::udp::message message, std::size_t size) {
 //        auto it = _sessions.find(message.ident);
 //        if (it == _sessions.end()) {
-//            it = _sessions.emplace(message.ident, static_cast<_Derived &>(*this)).first;
-//            it->second.ident() = message.ident;
+//            it = _sessions.emplace(message.ident, static_cast<_Derived
+//            &>(*this)).first; it->second.ident() = message.ident;
 //        }
 //        //                            return; // drop the message
 //
