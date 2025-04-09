@@ -17,7 +17,7 @@
 
 # -----------------------------------------------------------------------------
 # qb - Main CMake Configuration
-# 
+#
 # This file configures the build system for the qb Actor Framework, handling
 # compiler settings, dependencies, build targets, and testing infrastructure.
 # -----------------------------------------------------------------------------
@@ -31,7 +31,7 @@ if(POLICY CMP0074)
 endif()
 
 # Define the project with language and description
-project(qb 
+project(qb
     VERSION 2.0.0.0
     LANGUAGES CXX
     DESCRIPTION "C++17 Actor Framework"
@@ -162,12 +162,12 @@ if (${QB_PREFIX_UPPER}_BUILD_TEST)
         message(STATUS "Adding Google Benchmark: ${GOOGLEBENCHMARK_DIR}")
         add_subdirectory(${GOOGLEBENCHMARK_DIR})
     endif()
-    
+
     # Configure Google Test with MSVC shared runtime if needed
     if (MSVC)
         set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     endif()
-    
+
     # Add Google Test framework
     set(GOOGLETEST_DIR ${CMAKE_CURRENT_SOURCE_DIR}/modules/googletest)
     add_subdirectory(${GOOGLETEST_DIR})
@@ -180,12 +180,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND ${QB_PREFIX_UPPER}_BUILD_
     message(STATUS "Code coverage enabled")
     include(cmake/CodeCoverage.cmake)
     APPEND_COVERAGE_COMPILER_FLAGS()
-    
+
     # Check for required tools
     find_program(LCOV_PATH lcov REQUIRED)
     find_program(GCOV_PATH gcov REQUIRED)
     find_package(Python REQUIRED)
-    
+
     if (LCOV_PATH AND GCOV_PATH AND Python_FOUND)
         set(${QB_PREFIX_UPPER}_COVERAGE ON)
     else()
@@ -224,8 +224,8 @@ find_package(OpenSSL)
 if(OPENSSL_FOUND)
     message(STATUS "OpenSSL found: ${OPENSSL_VERSION}")
     # SSL resources needed for tests
-    set(${QB_PREFIX_UPPER}_SSL_RESOURCES 
-        ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/key.pem 
+    set(${QB_PREFIX_UPPER}_SSL_RESOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/key.pem
         ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/cert.pem
     )
 else()
@@ -290,7 +290,7 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
     SETUP_TARGET_FOR_COVERAGE_LCOV(NAME ${PROJECT_NAME}-coverage
             EXECUTABLE ctest
             DEPENDENCIES qb-core)
-            
+
     set(COVERAGE_GCOVR_EXCLUDES
             ".*benchmark.*"
             ".*modules.*"
@@ -308,7 +308,7 @@ endif()
 # -----------------------------------------------------------------------------
 if(${QB_PREFIX_UPPER}_INSTALL)
     include(GNUInstallDirs)
-    
+
     # Install headers
     install(
         DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
@@ -316,17 +316,17 @@ if(${QB_PREFIX_UPPER}_INSTALL)
         FILES_MATCHING PATTERN "*.h"
                        PATTERN "*.hpp"
     )
-    
+
     # Generate and install CMake package configuration files
     include(CMakePackageConfigHelpers)
-    
+
     # Create version file
     write_basic_package_version_file(
         "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
         VERSION ${QB_VERSION}
         COMPATIBILITY SameMajorVersion
     )
-    
+
     # Create a config file that loads all our exported targets
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/qbConfig.cmake"
         "# qb CMake configuration file\n\n"
@@ -349,15 +349,15 @@ if(${QB_PREFIX_UPPER}_INSTALL)
         "set(QB_LIBRARIES qb::qb-core)\n"
         "set(QB_IO_LIBRARIES qb::qb-io)\n"
     )
-    
+
     # Install the config and version files
     install(
-        FILES 
+        FILES
             "${CMAKE_CURRENT_BINARY_DIR}/qbConfig.cmake"
             "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
     )
-    
+
     # Display installation summary
     message(STATUS "Installation configuration:")
     message(STATUS "  Install prefix: ${CMAKE_INSTALL_PREFIX}")
