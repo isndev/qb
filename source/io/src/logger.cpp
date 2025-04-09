@@ -1,11 +1,11 @@
 /**
  * @file qb/io/src/logger.cpp
  * @brief Implementation of the logging system
- * 
+ *
  * This file contains the implementation of the logging system for the QB framework.
  * It provides functionality for initializing the logger, setting log levels,
  * and thread-safe console output.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,11 +46,11 @@ struct LogInitializer {
     static LogInitializer initializer;
     LogInitializer() noexcept {
         qb::io::log::init("./qb", 512);
-#    ifdef NDEBUG
+#ifdef NDEBUG
         qb::io::log::setLevel(qb::io::log::Level::INFO);
-#    else
+#else
         qb::io::log::setLevel(qb::io::log::Level::DEBUG);
-#    endif
+#endif
     }
 };
 

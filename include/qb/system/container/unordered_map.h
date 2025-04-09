@@ -1,12 +1,12 @@
 /**
  * @file qb/system/container/unordered_map.h
  * @brief Optimized unordered map implementations
- * 
- * This file provides optimized and specialized unordered map implementations 
+ *
+ * This file provides optimized and specialized unordered map implementations
  * for the QB framework. It includes high-performance alternatives to the
  * standard unordered_map using flat hash maps from the ska_hash library,
  * and case-insensitive string map implementations.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,11 +33,11 @@ namespace qb {
 
 /**
  * @brief A high-performance flat hash map implementation
- * 
+ *
  * This is a type alias for ska::flat_hash_map which provides better performance
  * characteristics than std::unordered_map for many use cases. It uses open addressing
  * with robin hood hashing for better cache locality and performance.
- * 
+ *
  * @tparam K The key type
  * @tparam V The value type
  * @tparam H The hash function type (defaults to std::hash<K>)
@@ -52,11 +52,11 @@ using unordered_flat_map = ska::flat_hash_map<K, V, H, E, A>;
 #ifdef NDEBUG
 /**
  * @brief The primary unordered map implementation
- * 
- * In release builds, this uses the high-performance ska::unordered_map 
+ *
+ * In release builds, this uses the high-performance ska::unordered_map
  * implementation. In debug builds, it falls back to std::unordered_map
  * for better debugging support.
- * 
+ *
  * @tparam K The key type
  * @tparam V The value type
  * @tparam H The hash function type (defaults to std::hash<K>)
@@ -76,14 +76,14 @@ using unordered_map = std::unordered_map<K, V, H, E, A>;
 
 /**
  * @brief Utility class for case-insensitive string operations
- * 
- * Provides functions to convert strings to lowercase for case-insensitive 
+ *
+ * Provides functions to convert strings to lowercase for case-insensitive
  * comparisons and lookups, with both compile-time and runtime implementations.
  */
 class string_to_lower {
     /**
      * @brief Helper function that converts a character to lowercase at compile time
-     * 
+     *
      * @param c The character to convert
      * @return The lowercase version of the character
      */
@@ -94,7 +94,7 @@ class string_to_lower {
 
     /**
      * @brief Compile-time string class for storing converted lowercase strings
-     * 
+     *
      * @tparam N Size of the string
      */
     template <std::size_t N>
@@ -105,7 +105,7 @@ class string_to_lower {
     public:
         /**
          * @brief Constructor that converts a string to lowercase at compile-time
-         * 
+         *
          * @tparam T Integer sequence type
          * @tparam Nums Parameter pack of indices
          * @param str The input string
@@ -117,7 +117,7 @@ class string_to_lower {
 
         /**
          * @brief Compile-time access operator to access characters in the string
-         * 
+         *
          * @param i Index of the character to access
          * @return The character at the given index
          */
@@ -128,7 +128,7 @@ class string_to_lower {
 
         /**
          * @brief Conversion operator to const char* for runtime access
-         * 
+         *
          * @return Pointer to the internal string array
          */
         operator const char *() const {
@@ -138,7 +138,7 @@ class string_to_lower {
 
     /**
      * @brief Creates a lowercase version of a string at compile-time
-     * 
+     *
      * @tparam N Size of the string
      * @param str The input string
      * @return Lowercase version of the input string
@@ -152,7 +152,7 @@ class string_to_lower {
 public:
     /**
      * @brief Converts a character array to lowercase
-     * 
+     *
      * @tparam N Size of the character array
      * @param str The input character array
      * @return std::string Lowercase version of the input string
@@ -165,7 +165,7 @@ public:
 
     /**
      * @brief Converts a string to lowercase
-     * 
+     *
      * @param str The input string
      * @return std::string Lowercase version of the input string
      */
@@ -180,7 +180,7 @@ public:
 
     /**
      * @brief Converts a string_view to lowercase
-     * 
+     *
      * @param str The input string_view
      * @return std::string Lowercase version of the input string
      */
@@ -196,10 +196,10 @@ public:
 
 /**
  * @brief A case-insensitive map implementation
- * 
+ *
  * This template class wraps any map type to provide case-insensitive
  * string keys by converting keys to lowercase before operations.
- * 
+ *
  * @tparam _Map The underlying map type
  * @tparam _Trait The trait class for string conversion (defaults to string_to_lower)
  */
@@ -210,32 +210,32 @@ class icase_basic_map : _Map {
 public:
     /** @brief Default constructor */
     icase_basic_map() = default;
-    
+
     /** @brief Copy constructor */
     icase_basic_map(icase_basic_map const &) = default;
-    
+
     /** @brief Move constructor */
     icase_basic_map(icase_basic_map &&) noexcept = default;
-    
+
     /**
      * @brief Initializer list constructor
-     * 
+     *
      * @param il Initializer list of key-value pairs
      */
     icase_basic_map(std::initializer_list<typename _Map::value_type> il) {
         for (auto &it : il)
             emplace(it.first, std::move(it.second));
     }
-    
+
     /** @brief Copy assignment operator */
     icase_basic_map &operator=(icase_basic_map const &) = default;
-    
+
     /** @brief Move assignment operator */
     icase_basic_map &operator=(icase_basic_map &&) noexcept = default;
 
     /**
      * @brief Emplace a new key-value pair with the key converted to lowercase
-     * 
+     *
      * @tparam T Key type
      * @tparam _Args Value constructor argument types
      * @param key The key (will be converted to lowercase)
@@ -244,14 +244,14 @@ public:
      */
     template <typename T, typename... _Args>
     auto
-    emplace(T &&key, _Args &&... args) {
+    emplace(T &&key, _Args &&...args) {
         return static_cast<base_t &>(*this).emplace(
             _Trait::convert(std::forward<T>(key)), std::forward<_Args>(args)...);
     }
 
     /**
      * @brief Try to emplace a new key-value pair with the key converted to lowercase
-     * 
+     *
      * @tparam T Key type
      * @tparam _Args Value constructor argument types
      * @param key The key (will be converted to lowercase)
@@ -260,14 +260,14 @@ public:
      */
     template <typename T, typename... _Args>
     auto
-    try_emplace(T &&key, _Args &&... args) {
+    try_emplace(T &&key, _Args &&...args) {
         return static_cast<base_t &>(*this).try_emplace(
             _Trait::convert(std::forward<T>(key)), std::forward<_Args>(args)...);
     }
 
     /**
      * @brief Access a value by key, with the key converted to lowercase
-     * 
+     *
      * @tparam T Key type
      * @param key The key (will be converted to lowercase)
      * @return Reference to the value associated with the key
@@ -281,7 +281,7 @@ public:
 
     /**
      * @brief Access a value by key, with the key converted to lowercase (const version)
-     * 
+     *
      * @tparam T Key type
      * @param key The key (will be converted to lowercase)
      * @return Reference to the value associated with the key
@@ -296,7 +296,7 @@ public:
 
     /**
      * @brief Access or insert a value by key, with the key converted to lowercase
-     * 
+     *
      * @tparam T Key type
      * @param key The key (will be converted to lowercase)
      * @return Reference to the value associated with the key
@@ -309,7 +309,7 @@ public:
 
     /**
      * @brief Find a key-value pair by key, with the key converted to lowercase
-     * 
+     *
      * @tparam T Key type
      * @param key The key (will be converted to lowercase)
      * @return Iterator to the key-value pair if found, or end() if not found
@@ -321,8 +321,9 @@ public:
     }
 
     /**
-     * @brief Find a key-value pair by key, with the key converted to lowercase (const version)
-     * 
+     * @brief Find a key-value pair by key, with the key converted to lowercase (const
+     * version)
+     *
      * @tparam T Key type
      * @param key The key (will be converted to lowercase)
      * @return Iterator to the key-value pair if found, or end() if not found
@@ -336,7 +337,7 @@ public:
 
     /**
      * @brief Check if a key exists in the map
-     * 
+     *
      * @tparam T Key type
      * @param key The key (will be converted to lowercase)
      * @return true if the key exists, false otherwise
@@ -358,9 +359,9 @@ public:
 
     /**
      * @brief Convert a key to lowercase
-     * 
+     *
      * Utility method to convert a key to lowercase outside of map operations.
-     * 
+     *
      * @tparam T Key type
      * @param key The key to convert
      * @return std::string The lowercase version of the key
@@ -374,7 +375,7 @@ public:
 
 /**
  * @brief Case-insensitive ordered map using std::map
- * 
+ *
  * @tparam Value The value type
  * @tparam _Trait The trait class for string conversion (defaults to string_to_lower)
  */
@@ -383,7 +384,7 @@ using icase_map = icase_basic_map<std::map<std::string, Value>, _Trait>;
 
 /**
  * @brief Case-insensitive unordered map using qb::unordered_map
- * 
+ *
  * @tparam Value The value type
  * @tparam _Trait The trait class for string conversion (defaults to string_to_lower)
  */

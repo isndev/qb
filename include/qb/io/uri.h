@@ -1,15 +1,15 @@
 /**
  * @file qb/io/uri.h
  * @brief URI parsing and manipulation utilities
- * 
+ *
  * This file provides a comprehensive URI (Uniform Resource Identifier) implementation
  * that follows RFC 3986 standards. It includes functionality for parsing, encoding,
  * decoding, and manipulating URIs with support for schemes, authority components,
  * paths, queries, and fragments.
- * 
+ *
  * The implementation supports both IPv4 and IPv6 addressing formats and provides
  * utility functions for character classification according to URI specifications.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +26,7 @@
  * @ingroup IO
  */
 
+#include <charconv>
 #include <qb/io/config.h>
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/build_macros.h>
@@ -33,10 +34,9 @@
 #include <string>
 #include <string_view>
 #include <vector>
-#include <charconv>
 
 #ifndef QB_IO_URI_H_
-#    define QB_IO_URI_H_
+#define QB_IO_URI_H_
 
 namespace qb::io {
 
@@ -57,7 +57,7 @@ is_alnum(int c) {
  */
 inline bool
 is_unreserved(int c) {
-    return is_alnum((char)c) || c == '-' || c == '.' || c == '_' || c == '~';
+    return is_alnum((char) c) || c == '-' || c == '.' || c == '_' || c == '~';
 }
 
 /**
@@ -79,20 +79,20 @@ is_gen_delim(int c) {
 inline bool
 is_sub_delim(int c) {
     switch (c) {
-    case '!':
-    case '$':
-    case '&':
-    case '\'':
-    case '(':
-    case ')':
-    case '*':
-    case '+':
-    case ',':
-    case ';':
-    case '=':
-        return true;
-    default:
-        return false;
+        case '!':
+        case '$':
+        case '&':
+        case '\'':
+        case '(':
+        case ')':
+        case '*':
+        case '+':
+        case ',':
+        case ';':
+        case '=':
+            return true;
+        default:
+            return false;
     }
 }
 
@@ -113,7 +113,7 @@ is_reserved(int c) {
  */
 inline bool
 is_scheme_character(int c) {
-    return is_alnum((char)c) || c == '+' || c == '-' || c == '.';
+    return is_alnum((char) c) || c == '+' || c == '-' || c == '.';
 }
 
 /**
@@ -172,43 +172,45 @@ is_fragment_character(int c) {
 /**
  * @class uri
  * @brief Class for parsing, manipulating, and representing URIs
- * 
+ *
  * This class implements URIs according to RFC 3986 and supports
  * URI components such as scheme, authority (including host and port),
  * path, query, and fragment. It also handles encoding and decoding
  * of special characters and supports IPv4 and IPv6 addressing formats.
  */
 class uri {
-    int _af = AF_INET;                                      /**< Address family (AF_INET, AF_INET6, AF_UNIX) */
-    std::string _source;                                    /**< Source string of the URI */
-    std::string_view _scheme;                               /**< URI scheme (e.g., http, https, ftp) */
-    std::string_view _user_info;                            /**< User information in the URI */
-    std::string_view _host;                                 /**< Host name or IP address in the URI */
-    std::string_view _port;                                 /**< Port number in the URI */
-    std::string_view _path;                                 /**< Path in the URI */
-    std::string_view _raw_queries;                          /**< Raw query string in the URI */
-    std::string_view _fragment;                             /**< Fragment in the URI */
-    qb::icase_unordered_map<std::vector<std::string>> _queries; /**< Parsed and decoded query parameters */
+    int              _af = AF_INET; /**< Address family (AF_INET, AF_INET6, AF_UNIX) */
+    std::string      _source;       /**< Source string of the URI */
+    std::string_view _scheme;       /**< URI scheme (e.g., http, https, ftp) */
+    std::string_view _user_info;    /**< User information in the URI */
+    std::string_view _host;         /**< Host name or IP address in the URI */
+    std::string_view _port;         /**< Port number in the URI */
+    std::string_view _path;         /**< Path in the URI */
+    std::string_view _raw_queries;  /**< Raw query string in the URI */
+    std::string_view _fragment;     /**< Fragment in the URI */
+    qb::icase_unordered_map<std::vector<std::string>>
+        _queries; /**< Parsed and decoded query parameters */
 
-    constexpr static const char no_path[] = "/";            /**< Default path */
+    constexpr static const char no_path[] = "/"; /**< Default path */
 
-    bool parse_queries(std::size_t pos) noexcept;           /**< Parse query parameters */
-//    bool parse_v6(std::size_t pos) noexcept;                /**< Parse an IPv6 address */
-//    bool parse_v4() noexcept;                               /**< Parse an IPv4 address */
-    
+    bool parse_queries(std::size_t pos) noexcept; /**< Parse query parameters */
+    //    bool parse_v6(std::size_t pos) noexcept;                /**< Parse an IPv6
+    //    address */ bool parse_v4() noexcept;                               /**< Parse
+    //    an IPv4 address */
+
     /**
      * @brief Parse the source URI and fill the object fields
      * @return true if parsing succeeded, false otherwise
      */
     bool parse() noexcept;
-    
+
     /**
      * @brief Initialize the URI from a string
      * @param rhs The source string for the URI
      * @return true if initialization succeeded, false otherwise
      */
     bool from(std::string const &rhs) noexcept;
-    
+
     /**
      * @brief Initialize the URI from a string (move version)
      * @param rhs The source string for the URI (will be moved)
@@ -221,26 +223,26 @@ public:
      * @brief Default constructor
      */
     uri() = default;
-    
+
     /**
      * @brief Move constructor
      * @param rhs Source URI to move from
      */
     uri(uri &&rhs) noexcept;
-    
+
     /**
      * @brief Copy constructor
      * @param rhs Source URI to copy from
      */
     uri(uri const &rhs);
-    
+
     /**
      * @brief Constructor from a string
      * @param str The source string for the URI
      * @param af The address family (defaults to AF_INET)
      */
     uri(std::string const &str, int af = AF_INET);
-    
+
     /**
      * @brief Constructor from a string (move version)
      * @param str The source string for the URI (will be moved)
@@ -256,9 +258,9 @@ public:
 
     /**
      * @brief Decodes a sequence of URI-encoded characters
-     * 
+     *
      * Converts %XX sequences to corresponding characters
-     * 
+     *
      * @tparam _IT Iterator type
      * @param begin Begin iterator
      * @param end End iterator
@@ -268,13 +270,13 @@ public:
     static std::string
     decode(_IT begin, _IT end) noexcept {
         std::string out;
-        char c, v1, v2{};
+        char        c, v1, v2{};
 
         while (begin != end) {
             c = *(begin++);
             if (c == '%') {
-                if ((v1 = tbl[(unsigned char)*(begin++)]) < 0 ||
-                    (v2 = tbl[(unsigned char)*(begin++)]) < 0) {
+                if ((v1 = tbl[(unsigned char) *(begin++)]) < 0 ||
+                    (v2 = tbl[(unsigned char) *(begin++)]) < 0) {
                     break;
                 }
                 c = (v1 << 4) | v2;
@@ -289,12 +291,12 @@ public:
      * @brief Hexadecimal characters for encoding
      */
     constexpr static const char hex[] = "0123456789ABCDEF";
-    
+
     /**
      * @brief Encodes a sequence of characters in URI format
-     * 
+     *
      * Converts special characters to %XX sequences
-     * 
+     *
      * @tparam _IT Iterator type
      * @param begin Begin iterator
      * @param end End iterator
@@ -306,21 +308,18 @@ public:
         std::string encoded;
 
         encoded.reserve(static_cast<ptrdiff_t>(end - begin) * 3);
-        for (auto iter = begin; iter != end; ++iter)
-        {
+        for (auto iter = begin; iter != end; ++iter) {
             // for utf8 encoded string, char ASCII can be greater than 127.
             int ch = static_cast<unsigned char>(*iter);
             // ch should be same under both utf8 and utf16.
-            if (!is_unreserved(ch) && !is_reserved(ch))
-            {
+            if (!is_unreserved(ch) && !is_reserved(ch)) {
                 encoded.push_back('%');
                 encoded.push_back(hex[(ch >> 4) & 0xF]);
                 encoded.push_back(hex[ch & 0xF]);
-            }
-            else
-            {
-                // ASCII don't need to be encoded, which should be same on both utf8 and utf16.
-                encoded.push_back((char)ch);
+            } else {
+                // ASCII don't need to be encoded, which should be same on both utf8 and
+                // utf16.
+                encoded.push_back((char) ch);
             }
         }
 
@@ -333,28 +332,28 @@ public:
      * @return The decoded string
      */
     static std::string decode(std::string const &input) noexcept;
-    
+
     /**
      * @brief Encodes a string in URI format
      * @param input The string to encode
      * @return The encoded string
      */
     static std::string encode(std::string const &input) noexcept;
-    
+
     /**
      * @brief Decodes a URI-encoded string view
      * @param input The string view to decode
      * @return The decoded string
      */
     static std::string decode(std::string_view const &input) noexcept;
-    
+
     /**
      * @brief Encodes a string view in URI format
      * @param input The string view to encode
      * @return The encoded string
      */
     static std::string encode(std::string_view const &input) noexcept;
-    
+
     /**
      * @brief Decodes a URI-encoded memory block
      * @param input Pointer to the data to decode
@@ -362,7 +361,7 @@ public:
      * @return The decoded string
      */
     static std::string decode(const char *input, std::size_t size) noexcept;
-    
+
     /**
      * @brief Encodes a memory block in URI format
      * @param input Pointer to the data to encode
@@ -370,7 +369,7 @@ public:
      * @return The encoded string
      */
     static std::string encode(const char *input, std::size_t size) noexcept;
-    
+
     /**
      * @brief Creates and parses a URI from a string
      * @param str The source string for the URI
@@ -385,21 +384,21 @@ public:
      * @return Reference to this URI
      */
     uri &operator=(uri const &rhs);
-    
+
     /**
      * @brief Move assignment operator
      * @param rhs Source URI to move from
      * @return Reference to this URI
      */
     uri &operator=(uri &&rhs) noexcept;
-    
+
     /**
      * @brief String assignment operator
      * @param str The source string for the URI
      * @return Reference to this URI
      */
     uri &operator=(std::string const &str);
-    
+
     /**
      * @brief String move assignment operator
      * @param str The source string for the URI (will be moved)
@@ -415,7 +414,7 @@ public:
     af() const {
         return _af;
     }
-    
+
     /**
      * @brief Returns the source string of this URI
      * @return The source string
@@ -424,7 +423,7 @@ public:
     source() const {
         return _source;
     }
-    
+
     /**
      * @brief Returns the scheme of this URI
      * @return The scheme (e.g., http, https, ftp)
@@ -433,7 +432,7 @@ public:
     scheme() const {
         return _scheme;
     }
-    
+
     /**
      * @brief Returns the user information of this URI
      * @return The user information
@@ -451,7 +450,7 @@ public:
     host() const {
         return _host;
     }
-    
+
     /**
      * @brief Returns the port number of this URI
      * @return The port number as a string
@@ -460,7 +459,7 @@ public:
     port() const {
         return _port;
     }
-    
+
     /**
      * @brief Returns the port number of this URI as a numeric value
      * @return The port number as an unsigned 16-bit integer
@@ -472,7 +471,7 @@ public:
         std::from_chars(port().data(), port().data() + port().size(), p);
         return static_cast<uint16_t>(p);
     }
-    
+
     /**
      * @brief Returns the path of this URI
      * @return The path
@@ -481,7 +480,7 @@ public:
     path() const {
         return _path;
     }
-    
+
     /**
      * @brief Returns the raw query string of this URI
      * @return The raw query string
@@ -490,7 +489,7 @@ public:
     encoded_queries() const {
         return _raw_queries;
     }
-    
+
     /**
      * @brief Returns the parsed query parameters of this URI
      * @return The query parameters as a map
@@ -502,7 +501,7 @@ public:
 
     /**
      * @brief Returns the value of a specific query parameter
-     * 
+     *
      * @tparam T Parameter name type
      * @param name Name of the parameter to retrieve
      * @param index Index of the value to retrieve (for multi-value parameters)
@@ -519,7 +518,7 @@ public:
 
         return not_found;
     }
-    
+
     /**
      * @brief Returns the fragment of this URI
      * @return The fragment

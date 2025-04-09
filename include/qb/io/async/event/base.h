@@ -1,11 +1,11 @@
 /**
  * @file qb/io/async/event/base.h
  * @brief Base class for asynchronous events in the QB IO library
- * 
+ *
  * This file defines the base infrastructure for events in the asynchronous I/O system.
  * It provides an interface for kernel event registration and a base template class
  * that wraps libev events to be used throughout the library.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,7 +32,7 @@ namespace qb::io::async {
 /**
  * @interface IRegisteredKernelEvent
  * @brief Interface for kernel event registration
- * 
+ *
  * This interface provides a common abstraction for event registration
  * in the event loop system. Classes implementing this interface can be
  * invoked when the corresponding event occurs.
@@ -46,7 +46,7 @@ public:
 
     /**
      * @brief Event invocation method
-     * 
+     *
      * Called when the registered event is triggered. Implementing classes
      * should define their specific event handling logic in this method.
      */
@@ -58,22 +58,22 @@ namespace event {
 /**
  * @class base
  * @brief Base template class for all event types
- * 
+ *
  * This template class serves as the foundation for all event types in the system.
  * It wraps libev events and provides a connection to the registered kernel event
  * interface.
- * 
+ *
  * @tparam _EV_EVENT The libev event type to wrap (e.g. ev::io, ev::timer)
  */
 template <typename _EV_EVENT>
 struct base : public _EV_EVENT {
-    using ev_t = _EV_EVENT; /**< The underlying libev event type */
+    using ev_t = _EV_EVENT;             /**< The underlying libev event type */
     IRegisteredKernelEvent *_interface; /**< Pointer to the kernel event interface */
-    int _revents; /**< Event flags received from libev */
+    int                     _revents;   /**< Event flags received from libev */
 
     /**
      * @brief Constructor
-     * 
+     *
      * @param loop Reference to the libev event loop
      */
     explicit base(ev::loop_ref loop)

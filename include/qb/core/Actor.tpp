@@ -1,11 +1,11 @@
 /**
  * @file qb/core/Actor.tpp
  * @brief Template implementation for the Actor class
- * 
+ *
  * This file contains the template implementation of the Actor class methods defined
  * in Actor.h. It provides the actual implementation of event handling, actor creation,
  * and inter-actor communication mechanisms.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,7 +26,7 @@
 #include "VirtualCore.tpp"
 
 #ifndef QB_ACTOR_TPL
-#    define QB_ACTOR_TPL
+#define QB_ACTOR_TPL
 
 namespace qb {
 

@@ -1,12 +1,12 @@
 /**
  * @file qb/io/transport/udp.h
  * @brief UDP transport implementation for the QB IO library
- * 
+ *
  * This file provides a transport implementation for UDP sockets,
  * extending the stream class with UDP-specific functionality including
  * support for datagram-based communication, endpoint identity management,
  * and message buffering.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,16 +25,16 @@
 
 #ifndef QB_IO_TRANSPORT_UDP_H_
 #define QB_IO_TRANSPORT_UDP_H_
+#include <qb/utility/functional.h>
 #include "../stream.h"
 #include "../udp/socket.h"
-#include <qb/utility/functional.h>
 
 namespace qb::io::transport {
 
 /**
  * @class udp
  * @brief UDP transport class
- * 
+ *
  * This class implements a transport layer for UDP sockets by extending
  * the generic stream class with UDP-specific functionality. It provides
  * support for identity tracking, message buffering, and datagram-based
@@ -46,7 +46,7 @@ class udp : public stream<io::udp::socket> {
 public:
     /**
      * @brief Indicates that the implementation resets pending reads
-     * 
+     *
      * This flag indicates that this transport implementation resets
      * when a read operation is pending.
      */
@@ -55,7 +55,7 @@ public:
     /**
      * @struct identity
      * @brief Identifies a UDP endpoint
-     * 
+     *
      * This structure extends qb::io::endpoint to provide identity
      * management for UDP connections, including support for hashing
      * and comparison operations.
@@ -63,7 +63,7 @@ public:
     struct identity : public qb::io::endpoint {
         /** @brief Default constructor */
         identity() = default;
-        
+
         /**
          * @brief Construct from an endpoint
          * @param ep Endpoint to copy from
@@ -74,7 +74,7 @@ public:
         /**
          * @struct hasher
          * @brief Hash function for UDP identities
-         * 
+         *
          * This struct provides a hashing operation for using identity
          * objects in unordered containers.
          */
@@ -106,7 +106,7 @@ public:
     /**
      * @class ProxyOut
      * @brief Proxy for output operations
-     * 
+     *
      * This class provides a stream-like interface for sending data
      * through the UDP transport.
      */
@@ -130,7 +130,7 @@ public:
         template <typename T>
         auto &
         operator<<(T &&data) {
-            auto &out_buffer = static_cast<udp::base_t &>(proxy).out();
+            auto      &out_buffer = static_cast<udp::base_t &>(proxy).out();
             const auto start_size = out_buffer.size();
             out_buffer << std::forward<T>(data);
             auto p = reinterpret_cast<udp::pushed_message *>(out_buffer.begin() +
@@ -153,21 +153,21 @@ public:
     friend ProxyOut;
 
 private:
-    ProxyOut _out{*this};         /**< Output proxy */
+    ProxyOut      _out{*this};    /**< Output proxy */
     udp::identity _remote_source; /**< Source identity for received messages */
     udp::identity _remote_dest;   /**< Destination identity for outgoing messages */
 
     /**
      * @struct pushed_message
      * @brief Structure representing a message in the output buffer
-     * 
+     *
      * This structure contains metadata about a message that has been
      * pushed to the output buffer but not yet sent.
      */
     struct pushed_message {
-        udp::identity ident; /**< Destination identity */
-        int size = 0;        /**< Size of the message in bytes */
-        int offset = 0;      /**< Current offset in the message for partial sends */
+        udp::identity ident;      /**< Destination identity */
+        int           size   = 0; /**< Size of the message in bytes */
+        int           offset = 0; /**< Current offset in the message for partial sends */
     };
 
     int _last_pushed_offset = -1; /**< Offset of the last pushed message in the buffer */
@@ -185,7 +185,7 @@ public:
     /**
      * @brief Set the destination for outgoing messages
      * @param to Destination identity
-     * 
+     *
      * Sets the destination for subsequent outgoing messages.
      * If the destination changes or the output buffer is empty,
      * a new message header will be created on the next write.
@@ -193,7 +193,7 @@ public:
     void
     setDestination(udp::identity const &to) noexcept {
         if (to != _remote_dest || !_out_buffer.size()) {
-            _remote_dest = to;
+            _remote_dest        = to;
             _last_pushed_offset = -1;
         }
     }
@@ -201,7 +201,7 @@ public:
     /**
      * @brief Get the output proxy
      * @return Reference to the output proxy
-     * 
+     *
      * Prepares the output buffer for writing if necessary by
      * creating a new message header if the last pushed offset
      * is negative.
@@ -210,9 +210,9 @@ public:
     out() {
         if (_last_pushed_offset < 0) {
             _last_pushed_offset = static_cast<int>(_out_buffer.size());
-            auto &m = _out_buffer.allocate_back<pushed_message>();
-            m.ident = _remote_dest;
-            m.size = 0;
+            auto &m             = _out_buffer.allocate_back<pushed_message>();
+            m.ident             = _remote_dest;
+            m.size              = 0;
         }
 
         return _out;
@@ -221,7 +221,7 @@ public:
     /**
      * @brief Read data from the UDP socket
      * @return Number of bytes read on success, error code on failure
-     * 
+     *
      * Reads a datagram from the UDP socket into the input buffer
      * and sets the destination for replies to the source of the
      * received message.
@@ -241,7 +241,7 @@ public:
     /**
      * @brief Write data to the UDP socket
      * @return Number of bytes written on success, error code on failure
-     * 
+     *
      * Writes the next message from the output buffer to the UDP socket.
      * If the message is completely sent, it is removed from the output buffer.
      */
@@ -250,8 +250,8 @@ public:
         if (!_out_buffer.size())
             return 0;
 
-        auto &msg = *reinterpret_cast<pushed_message *>(_out_buffer.begin());
-        auto begin = _out_buffer.begin() + sizeof(pushed_message) + msg.offset;
+        auto &msg   = *reinterpret_cast<pushed_message *>(_out_buffer.begin());
+        auto  begin = _out_buffer.begin() + sizeof(pushed_message) + msg.offset;
 
         const auto ret = transport().write(
             begin,
@@ -279,7 +279,7 @@ public:
      * @param data Pointer to the data to publish
      * @param size Size of the data to publish
      * @return Pointer to the copied data in the output buffer
-     * 
+     *
      * Copies the data into the output buffer for sending to the
      * current destination.
      */
@@ -294,7 +294,7 @@ public:
      * @param data Pointer to the data to publish
      * @param size Size of the data to publish
      * @return Pointer to the copied data in the output buffer
-     * 
+     *
      * Copies the data into the output buffer for sending to the
      * specified destination.
      */
@@ -302,7 +302,7 @@ public:
     publish_to(udp::identity const &to, char const *data, std::size_t size) noexcept {
         auto &m = _out_buffer.allocate_back<pushed_message>();
         m.ident = to;
-        m.size = static_cast<int>(size);
+        m.size  = static_cast<int>(size);
 
         return static_cast<char *>(
             std::memcpy(_out_buffer.allocate_back(size), data, size));

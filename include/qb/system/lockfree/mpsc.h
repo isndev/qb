@@ -1,13 +1,13 @@
 /**
  * @file qb/system/lockfree/mpsc.h
  * @brief Multiple-Producer Single-Consumer lockfree queue
- * 
+ *
  * This file provides lockfree queue implementations that allow multiple producer
  * threads to safely enqueue items while a single consumer thread dequeues them,
  * all without using locks. These data structures are optimized for high-throughput
  * concurrent systems where multiple threads need to communicate with a single
  * processing thread.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,10 +26,10 @@
 
 #ifndef QB_LOCKFREE_MPSC_H
 #define QB_LOCKFREE_MPSC_H
-#include "spinlock.h"
-#include "spsc.h"
 #include <chrono>
 #include <mutex>
+#include "spinlock.h"
+#include "spsc.h"
 
 namespace qb::lockfree::mpsc {
 
@@ -57,7 +57,7 @@ using Nanoseconds = std::chrono::nanoseconds;
 template <typename T, std::size_t max_size, size_t nb_producer = 0>
 class ringbuffer : public nocopy {
     typedef std::size_t size_t;
-    
+
     /**
      * @brief Producer data structure containing a lock and dedicated ring buffer
      *
@@ -67,9 +67,10 @@ class ringbuffer : public nocopy {
     struct Producer {
         constexpr static const int padding_size =
             QB_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
-        SpinLock lock;                         ///< Lock for this producer
-        char padding1[padding_size]{};         ///< Padding to avoid false sharing
-        spsc::ringbuffer<T, max_size> _ringbuffer; ///< The producer's dedicated ring buffer
+        SpinLock lock;                     ///< Lock for this producer
+        char     padding1[padding_size]{}; ///< Padding to avoid false sharing
+        spsc::ringbuffer<T, max_size>
+            _ringbuffer; ///< The producer's dedicated ring buffer
     };
 
     std::array<Producer, nb_producer> _producers; ///< Array of producer structures
@@ -235,7 +236,8 @@ public:
 };
 
 /**
- * @brief Multi-Producer Single-Consumer ring buffer with runtime-determined number of producers
+ * @brief Multi-Producer Single-Consumer ring buffer with runtime-determined number of
+ * producers
  *
  * This specialization provides a MPSC ring buffer with a runtime-determined
  * number of producers specified during construction.
@@ -246,7 +248,7 @@ public:
 template <typename T, std::size_t max_size>
 class ringbuffer<T, max_size, 0> : public nocopy {
     typedef std::size_t size_t;
-    
+
     /**
      * @brief Producer data structure containing a lock and dedicated ring buffer
      *
@@ -256,20 +258,21 @@ class ringbuffer<T, max_size, 0> : public nocopy {
     struct Producer {
         constexpr static const int padding_size =
             QB_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
-        SpinLock lock;                         ///< Lock for this producer
-        char padding1[padding_size]{};         ///< Padding to avoid false sharing
-        spsc::ringbuffer<T, max_size> _ringbuffer; ///< The producer's dedicated ring buffer
+        SpinLock lock;                     ///< Lock for this producer
+        char     padding1[padding_size]{}; ///< Padding to avoid false sharing
+        spsc::ringbuffer<T, max_size>
+            _ringbuffer; ///< The producer's dedicated ring buffer
     };
 
     std::vector<Producer> _producers;   ///< Vector of producer structures
-    const std::size_t _nb_producer;     ///< Number of producers
+    const std::size_t     _nb_producer; ///< Number of producers
 
 public:
     /**
      * @brief Default constructor is deleted - must specify number of producers
      */
     ringbuffer() = delete;
-    
+
     /**
      * @brief Constructor with runtime number of producers
      *

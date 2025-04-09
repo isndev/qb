@@ -1,12 +1,12 @@
 /**
  * @file qb/core/CoreSet.h
  * @brief Core set management for the QB Actor Framework
- * 
- * This file defines the CoreSet class which manages sets of core IDs for the 
- * QB Actor Framework. It provides functionality to specify which cores should be 
- * used for actor execution and inter-core communication, allowing for efficient 
+ *
+ * This file defines the CoreSet class which manages sets of core IDs for the
+ * QB Actor Framework. It provides functionality to specify which cores should be
+ * used for actor execution and inter-core communication, allowing for efficient
  * distribution of actors across available processing resources.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,9 +49,9 @@ class CoreSet {
     friend class VirtualCore;
     friend class Main;
 
-    const CoreIdSet _raw_set;
-    const std::size_t _nb_core;
-    const std::size_t _size;
+    const CoreIdSet               _raw_set;
+    const std::size_t             _nb_core;
+    const std::size_t             _size;
     std::array<uint8_t, MaxCores> _set;
 
 public:

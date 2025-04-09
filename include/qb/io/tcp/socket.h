@@ -1,10 +1,10 @@
 /**
  * @file qb/io/tcp/socket.h
  * @brief Implementation of TCP sockets for the QB IO library
- * 
+ *
  * This file provides the implementation of TCP sockets supporting
  * synchronous and asynchronous connections to IPv4, IPv6, and Unix sockets.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +25,7 @@
 #include "../uri.h"
 
 #ifndef QB_IO_TCP_SOCKET_H_
-#    define QB_IO_TCP_SOCKET_H_
+#define QB_IO_TCP_SOCKET_H_
 
 namespace qb::io::tcp {
 
@@ -33,13 +33,12 @@ namespace qb::io::tcp {
  * @class socket tcp/socket.h qb/io/tcp/socket.h
  * @ingroup TCP
  * @brief Class implementing TCP socket functionality
- * 
+ *
  * This class provides TCP socket functionality for stream-based communication.
  * It inherits from the base qb::io::socket class and provides methods for
  * connecting, sending, and receiving TCP streams.
  */
 class QB_API socket : protected qb::io::socket {
-
     /**
      * @brief Internal method to connect to an address with a specific address family
      * @param af Address family (AF_INET for IPv4, AF_INET6 for IPv6)
@@ -48,7 +47,7 @@ class QB_API socket : protected qb::io::socket {
      * @return 0 on success, error code on failure
      */
     int connect_in(int af, std::string const &host, uint16_t port) noexcept;
-    
+
     /**
      * @brief Internal method to perform a non-blocking connect
      * @param af Address family (AF_INET for IPv4, AF_INET6 for IPv6)
@@ -75,29 +74,29 @@ public:
      * @brief Default constructor
      */
     socket() = default;
-    
+
     /**
      * @brief Copy constructor (deleted)
      */
     socket(socket const &) = delete;
-    
+
     /**
      * @brief Move constructor
      */
     socket(socket &&) = default;
-    
+
     /**
      * @brief Move assignment operator
      * @return Reference to the moved socket
      */
     socket &operator=(socket &&) = default;
-    
+
     /**
      * @brief Constructor from an IO socket
      * @param sock Socket to move from
      */
     socket(io::socket &&sock) noexcept;
-    
+
     /**
      * @brief Move assignment operator from an IO socket
      * @param sock Socket to move from
@@ -111,14 +110,14 @@ public:
      * @return 0 on success, error code on failure
      */
     int init(int af = AF_INET) noexcept;
-    
+
     /**
      * @brief Bind the socket to an endpoint
      * @param ep Endpoint to bind to
      * @return 0 on success, error code on failure
      */
     int bind(qb::io::endpoint const &ep) noexcept;
-    
+
     /**
      * @brief Bind the socket to a URI
      * @param u URI to bind to
@@ -132,14 +131,14 @@ public:
      * @return 0 on success, error code on failure
      */
     int connect(qb::io::endpoint const &ep) noexcept;
-    
+
     /**
      * @brief Connect to a URI
      * @param u URI to connect to
      * @return 0 on success, error code on failure
      */
     int connect(uri const &u) noexcept;
-    
+
     /**
      * @brief Connect to an IPv4 address
      * @param host Host address to connect to
@@ -147,7 +146,7 @@ public:
      * @return 0 on success, error code on failure
      */
     int connect_v4(std::string const &host, uint16_t port) noexcept;
-    
+
     /**
      * @brief Connect to an IPv6 address
      * @param host Host address to connect to
@@ -155,7 +154,7 @@ public:
      * @return 0 on success, error code on failure
      */
     int connect_v6(std::string const &host, uint16_t port) noexcept;
-    
+
     /**
      * @brief Connect to a Unix socket
      * @param path Path to the Unix socket
@@ -169,19 +168,20 @@ public:
      * @return 0 on success, error code on failure
      */
     int n_connect(qb::io::endpoint const &ep) noexcept;
-    
+
     /**
      * @brief Called when a non-blocking connection is established
      */
-    inline void connected() noexcept {}
-    
+    inline void
+    connected() noexcept {}
+
     /**
      * @brief Non-blocking connect to a URI
      * @param u URI to connect to
      * @return 0 on success, error code on failure
      */
     int n_connect(uri const &u) noexcept;
-    
+
     /**
      * @brief Non-blocking connect to an IPv4 address
      * @param host Host address to connect to
@@ -189,7 +189,7 @@ public:
      * @return 0 on success, error code on failure
      */
     int n_connect_v4(std::string const &host, uint16_t port) noexcept;
-    
+
     /**
      * @brief Non-blocking connect to an IPv6 address
      * @param host Host address to connect to
@@ -197,7 +197,7 @@ public:
      * @return 0 on success, error code on failure
      */
     int n_connect_v6(std::string const &host, uint16_t port) noexcept;
-    
+
     /**
      * @brief Non-blocking connect to a Unix socket
      * @param path Path to the Unix socket
@@ -212,7 +212,7 @@ public:
      * @return Number of bytes read on success, error code on failure
      */
     int read(void *dest, std::size_t len) const noexcept;
-    
+
     /**
      * @brief Write data to the socket
      * @param data Data to send
@@ -220,7 +220,7 @@ public:
      * @return Number of bytes sent on success, error code on failure
      */
     int write(const void *data, std::size_t size) const noexcept;
-    
+
     /**
      * @brief Disconnect the socket
      * @return 0 on success, error code on failure

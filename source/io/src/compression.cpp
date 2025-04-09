@@ -1,12 +1,12 @@
 /**
  * @file qb/io/src/compression.cpp
  * @brief Implementation of compression and decompression interfaces
- * 
- * @details This file provides implementations for various compression algorithms including 
- * GZIP and DEFLATE using zlib. It includes compressors, decompressors, and factory classes 
- * for creating compression/decompression providers. The implementation supports both streaming 
- * and one-shot compression operations.
- * 
+ *
+ * @details This file provides implementations for various compression algorithms
+ * including GZIP and DEFLATE using zlib. It includes compressors, decompressors, and
+ * factory classes for creating compression/decompression providers. The implementation
+ * supports both streaming and one-shot compression operations.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,11 +26,11 @@
 #include <qb/io/compression.h>
 
 #if defined(QB_IO_WITH_ZLIB)
-#    include <zlib.h>
+#include <zlib.h>
 // zconf.h may define compress
-#    ifdef compress
-#        undef compress
-#    endif
+#ifdef compress
+#undef compress
+#endif
 #endif
 #define _XPLATSTR(x) x
 
@@ -70,7 +70,7 @@ public:
         if (m_state == Z_STREAM_END ||
             (hint != operation_hint::is_last && !input_size)) {
             input_bytes_processed = 0;
-            done = (m_state == Z_STREAM_END);
+            done                  = (m_state == Z_STREAM_END);
             return 0;
         }
 
@@ -79,22 +79,22 @@ public:
                                      std::to_string(m_state));
         }
 
-#    if defined(__clang__)
-#        pragma clang diagnostic push
-#        pragma clang diagnostic ignored "-Wtautological-constant-compare"
-#    endif // __clang__
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wtautological-constant-compare"
+#endif // __clang__
         if (input_size > (std::numeric_limits<unsigned int>::max)() ||
             output_size > (std::numeric_limits<unsigned int>::max)())
-#    if defined(__clang__)
-#        pragma clang diagnostic pop
-#    endif // __clang__
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif // __clang__
         {
             throw std::runtime_error("Compression input or output size out of range");
         }
 
-        m_stream.next_in = const_cast<uint8_t *>(input);
-        m_stream.avail_in = static_cast<unsigned int>(input_size);
-        m_stream.next_out = const_cast<uint8_t *>(output);
+        m_stream.next_in   = const_cast<uint8_t *>(input);
+        m_stream.avail_in  = static_cast<unsigned int>(input_size);
+        m_stream.next_out  = const_cast<uint8_t *>(output);
         m_stream.avail_out = static_cast<unsigned int>(output_size);
 
         m_state = ::deflate(
@@ -107,7 +107,7 @@ public:
         }
 
         input_bytes_processed = input_size - m_stream.avail_in;
-        done = (m_state == Z_STREAM_END);
+        done                  = (m_state == Z_STREAM_END);
         return output_size - m_stream.avail_out;
     }
 
@@ -121,12 +121,12 @@ public:
     }
 
     ~zlib_compressor_base() {
-        (void)deflateEnd(&m_stream);
+        (void) deflateEnd(&m_stream);
     }
 
 private:
-    int m_state{Z_BUF_ERROR};
-    z_stream m_stream{};
+    int                m_state{Z_BUF_ERROR};
+    z_stream           m_stream{};
     const std::string &m_algorithm;
 };
 
@@ -153,7 +153,7 @@ public:
                bool &done) {
         if (m_state == Z_STREAM_END || !input_size) {
             input_bytes_processed = 0;
-            done = (m_state == Z_STREAM_END);
+            done                  = (m_state == Z_STREAM_END);
             return 0;
         }
 
@@ -162,22 +162,22 @@ public:
                                      std::to_string(m_state));
         }
 
-#    if defined(__clang__)
-#        pragma clang diagnostic push
-#        pragma clang diagnostic ignored "-Wtautological-constant-compare"
-#    endif // __clang__
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wtautological-constant-compare"
+#endif // __clang__
         if (input_size > (std::numeric_limits<unsigned int>::max)() ||
             output_size > (std::numeric_limits<unsigned int>::max)())
-#    if defined(__clang__)
-#        pragma clang diagnostic pop
-#    endif // __clang__
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif // __clang__
         {
             throw std::runtime_error("Compression input or output size out of range");
         }
 
-        m_stream.next_in = const_cast<uint8_t *>(input);
-        m_stream.avail_in = static_cast<unsigned int>(input_size);
-        m_stream.next_out = const_cast<uint8_t *>(output);
+        m_stream.next_in   = const_cast<uint8_t *>(input);
+        m_stream.avail_in  = static_cast<unsigned int>(input_size);
+        m_stream.next_out  = const_cast<uint8_t *>(output);
         m_stream.avail_out = static_cast<unsigned int>(output_size);
 
         m_state = inflate(
@@ -191,7 +191,7 @@ public:
         }
 
         input_bytes_processed = input_size - m_stream.avail_in;
-        done = (m_state == Z_STREAM_END);
+        done                  = (m_state == Z_STREAM_END);
         return output_size - m_stream.avail_out;
     }
 
@@ -205,12 +205,12 @@ public:
     }
 
     ~zlib_decompressor_base() {
-        (void)inflateEnd(&m_stream);
+        (void) inflateEnd(&m_stream);
     }
 
 private:
-    int m_state{Z_BUF_ERROR};
-    z_stream m_stream{};
+    int                m_state{Z_BUF_ERROR};
+    z_stream           m_stream{};
     const std::string &m_algorithm;
 };
 
@@ -255,7 +255,7 @@ class generic_compress_factory : public compress_factory {
 public:
     ~generic_compress_factory() noexcept {}
     generic_compress_factory(
-        const std::string &algorithm,
+        const std::string                                  &algorithm,
         std::function<std::unique_ptr<compress_provider>()> make_compressor)
         : m_algorithm(algorithm)
         , _make_compressor(make_compressor) {}
@@ -271,7 +271,7 @@ public:
     }
 
 private:
-    const std::string m_algorithm;
+    const std::string                                   m_algorithm;
     std::function<std::unique_ptr<compress_provider>()> _make_compressor;
 };
 
@@ -302,8 +302,8 @@ public:
     }
 
 private:
-    const std::string m_algorithm;
-    uint16_t m_weight;
+    const std::string                                     m_algorithm;
+    uint16_t                                              m_weight;
     std::function<std::unique_ptr<decompress_provider>()> _make_decompressor;
 };
 
@@ -356,7 +356,7 @@ algorithm::supported(const std::string &algorithm) {
 
 static std::unique_ptr<compress_provider>
 _make_compressor(const std::vector<std::shared_ptr<compress_factory>> &factories,
-                 const std::string &algorithm) {
+                 const std::string                                    &algorithm) {
     for (auto &factory : factories) {
         if (factory && iequals(algorithm, factory->algorithm())) {
             return factory->make_compressor();
@@ -373,7 +373,7 @@ make_compressor(const std::string &algorithm) {
 
 static std::unique_ptr<decompress_provider>
 _make_decompressor(const std::vector<std::shared_ptr<decompress_factory>> &factories,
-                   const std::string &algorithm) {
+                   const std::string                                      &algorithm) {
     for (auto &factory : factories) {
         if (factory && iequals(algorithm, factory->algorithm())) {
             return factory->make_decompressor();
@@ -426,10 +426,10 @@ make_gzip_compressor(int compressionLevel, int method, int strategy, int memLeve
     return std::make_unique<gzip_compressor>(compressionLevel, method, strategy,
                                              memLevel);
 #else  // QB_IO_WITH_ZLIB
-    (void)compressionLevel;
-    (void)method;
-    (void)strategy;
-    (void)memLevel;
+    (void) compressionLevel;
+    (void) method;
+    (void) strategy;
+    (void) memLevel;
     return std::unique_ptr<compress_provider>();
 #endif // QB_IO_WITH_ZLIB
 }
@@ -440,10 +440,10 @@ make_deflate_compressor(int compressionLevel, int method, int strategy, int memL
     return std::make_unique<deflate_compressor>(compressionLevel, method, strategy,
                                                 memLevel);
 #else  // QB_IO_WITH_ZLIB
-    (void)compressionLevel;
-    (void)method;
-    (void)strategy;
-    (void)memLevel;
+    (void) compressionLevel;
+    (void) method;
+    (void) strategy;
+    (void) memLevel;
     return std::unique_ptr<compress_provider>();
 #endif // QB_IO_WITH_ZLIB
 }
@@ -451,7 +451,7 @@ make_deflate_compressor(int compressionLevel, int method, int strategy, int memL
 
 std::shared_ptr<compress_factory>
 make_compress_factory(
-    const std::string &algorithm,
+    const std::string                                  &algorithm,
     std::function<std::unique_ptr<compress_provider>()> make_compressor) {
     return std::make_shared<builtin::generic_compress_factory>(algorithm,
                                                                make_compressor);
@@ -473,7 +473,6 @@ template <>
 size_t
 compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
          int level, int window_bits) {
-
 #ifdef DEBUG
     // Verify if size input will fit into unsigned int, type used for zlib's avail_in
     if (size > std::numeric_limits<unsigned int>::max()) {
@@ -482,11 +481,11 @@ compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
 #endif
 
     z_stream deflate_s;
-    deflate_s.zalloc = Z_NULL;
-    deflate_s.zfree = Z_NULL;
-    deflate_s.opaque = Z_NULL;
+    deflate_s.zalloc   = Z_NULL;
+    deflate_s.zfree    = Z_NULL;
+    deflate_s.opaque   = Z_NULL;
     deflate_s.avail_in = 0;
-    deflate_s.next_in = Z_NULL;
+    deflate_s.next_in  = Z_NULL;
 
     constexpr int mem_level = 8;
     // The memory requirements for deflate are (in bytes):
@@ -503,7 +502,7 @@ compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
     DISABLE_WARNING_POP
 
     const std::size_t out_size = output.size();
-    deflate_s.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
+    deflate_s.next_in  = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
     deflate_s.avail_in = static_cast<unsigned int>(size);
 
     std::size_t size_compressed = 0;
@@ -536,11 +535,11 @@ uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size
            std::size_t max, int window_bits) {
     z_stream inflate_s;
 
-    inflate_s.zalloc = Z_NULL;
-    inflate_s.zfree = Z_NULL;
-    inflate_s.opaque = Z_NULL;
+    inflate_s.zalloc   = Z_NULL;
+    inflate_s.zfree    = Z_NULL;
+    inflate_s.opaque   = Z_NULL;
     inflate_s.avail_in = 0;
-    inflate_s.next_in = Z_NULL;
+    inflate_s.next_in  = Z_NULL;
 
     // The windowBits parameter is the base two logarithm of the window size (the size of
     // the history buffer). It should be in the range 8..15 for this version of the
@@ -573,9 +572,9 @@ uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size
         throw std::runtime_error(
             "size may use more memory than intended when decompressing");
     }
-    inflate_s.avail_in = static_cast<unsigned int>(size);
-    const std::size_t out_size = output.size();
-    std::size_t size_uncompressed = 0;
+    inflate_s.avail_in                  = static_cast<unsigned int>(size);
+    const std::size_t out_size          = output.size();
+    std::size_t       size_uncompressed = 0;
     do {
         std::size_t resize_to = size_uncompressed + 2 * size;
         if (max && resize_to > max) {

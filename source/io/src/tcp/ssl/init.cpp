@@ -4,7 +4,8 @@
  *
  * This file contains the implementation for initializing and configuring the SSL/TLS
  * library used by the QB framework. It handles the setup of the cryptographic subsystem,
- * loading of security certificates, and configuration of cipher suites and security options.
+ * loading of security certificates, and configuration of cipher suites and security
+ * options.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -36,4 +37,4 @@ struct OpenSSLInitializer {
     }
 } initializer = {};
 
-}
+} // namespace

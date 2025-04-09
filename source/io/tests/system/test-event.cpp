@@ -1,11 +1,11 @@
 /**
  * @file qb/io/tests/system/test-event.cpp
  * @brief Unit tests for asynchronous event handling
- * 
+ *
  * This file contains tests for the asynchronous event handling capabilities of the
  * QB framework, including signal events, timer events, file events, and I/O events.
  * It verifies that events are properly registered, triggered, and handled.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,7 +32,7 @@
 
 struct FakeActor {
     int nb_events = 0;
-    int fd_test = 0;
+    int fd_test   = 0;
 
     bool
     is_alive() {
@@ -72,7 +72,7 @@ struct FakeActor {
 TEST(KernelEvents, Signal) {
     qb::io::async::init();
     qb::io::async::listener handler;
-    FakeActor actor;
+    FakeActor               actor;
 
     handler.registerEvent<qb::io::async::event::signal<SIGINT>>(actor).start();
 
@@ -85,7 +85,7 @@ TEST(KernelEvents, Signal) {
 
 TEST(KernelEvents, Timer) {
     qb::io::async::listener handler;
-    FakeActor actor;
+    FakeActor               actor;
 
     handler.registerEvent<qb::io::async::event::timer>(actor, 1, 1).start();
 
@@ -96,7 +96,7 @@ TEST(KernelEvents, Timer) {
 
 TEST(KernelEvents, File) {
     qb::io::async::listener handler;
-    FakeActor actor;
+    FakeActor               actor;
 
     handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", 0).start();
 
@@ -112,12 +112,13 @@ TEST(KernelEvents, File) {
 
 TEST(KernelEvents, BasicIO) {
     qb::io::async::listener handler;
-    qb::io::sys::file f("test.file");
-    FakeActor actor;
+    qb::io::sys::file       f("test.file");
+    FakeActor               actor;
 
     actor.fd_test = f.native_handle();
 
-    handler.registerEvent<qb::io::async::event::io>(actor, f.native_handle(), EV_READ).start();
+    handler.registerEvent<qb::io::async::event::io>(actor, f.native_handle(), EV_READ)
+        .start();
 
     for (auto i = 0; i < 10 && !actor.nb_events; ++i)
         handler.run(EVRUN_ONCE);

@@ -1,12 +1,12 @@
 /**
  * @file qb/core/tests/benchmark/bm-producer-consumer.cpp
  * @brief Producer-consumer benchmark for the QB Actor Framework
- * 
+ *
  * This file contains benchmark tests measuring the throughput of the producer-consumer
  * pattern in the QB Actor Framework. It tests how efficiently a producer actor can
  * send a large number of events to a consumer actor in both mono-core and multi-core
  * scenarios.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,6 +33,7 @@ struct TestEvent : public qb::Event {
 
 class ConsumerActor final : public qb::Actor {
     uint64_t started_at;
+
 public:
     ConsumerActor() {
         registerEvent<TestEvent>(*this);
@@ -41,23 +42,27 @@ public:
     void
     on(TestEvent const &event) {
         switch (event.ttl) {
-        case 1000000:
-            qb::io::cout() << "Thoughput 1 event ~=" << (qb::Timestamp::nano() - started_at) / 1000000 << std::endl;
-            broadcast<qb::KillEvent>();
-            break;
-        case 1:
-            started_at = qb::Timestamp::nano();
-        default:
-            break;
+            case 1000000:
+                qb::io::cout()
+                    << "Thoughput 1 event ~="
+                    << (qb::Timestamp::nano() - started_at) / 1000000 << std::endl;
+                broadcast<qb::KillEvent>();
+                break;
+            case 1:
+                started_at = qb::Timestamp::nano();
+            default:
+                break;
         }
     }
 };
 
 class ProducerActor final : public qb::Actor {
     const qb::pipe _to_pipe;
+
 public:
     ProducerActor() = delete;
-    ProducerActor(qb::ActorId to) : _to_pipe(getPipe(to)) {}
+    ProducerActor(qb::ActorId to)
+        : _to_pipe(getPipe(to)) {}
     ~ProducerActor() = default;
 
     bool

@@ -1,11 +1,11 @@
 /**
  * @file qb/io/async/event/pending_write.h
  * @brief Event for pending write data in asynchronous I/O
- * 
+ *
  * This file defines the pending_write event structure which is triggered
  * to notify about unsent bytes remaining in the write buffer. Derived classes
  * can handle this event by implementing the `void on(pending_write &&)` method.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,12 +30,12 @@ namespace qb::io::async::event {
 /**
  * @struct pending_write
  * @brief Event triggered when unsent data remains in the write buffer
- * 
+ *
  * This event is passed to the derived class's on() method to inform about
- * unsent bytes remaining in the write buffer. This can be useful for 
+ * unsent bytes remaining in the write buffer. This can be useful for
  * monitoring buffer utilization, implementing flow control, or tracking
  * the progress of large data transfers.
- * 
+ *
  * Usage:
  * @code
  * void on(qb::io::async::event::pending_write &&event) {

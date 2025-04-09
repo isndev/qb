@@ -1,12 +1,12 @@
 /**
  * @file qb/utility/branch_hints.h
  * @brief Branch prediction hint utilities
- * 
+ *
  * This file provides utility functions that give branch prediction hints
  * to the compiler. These functions can improve performance by helping
  * the compiler make better decisions about code generation for conditional
  * branches.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,19 +23,17 @@
  * @ingroup Utility
  */
 
-
-
 #ifndef QB_UTILS_BRANCH_HINTS_H
 #define QB_UTILS_BRANCH_HINTS_H
 
 namespace qb {
 /**
  * @brief Hint for branch prediction when the condition is likely true
- * 
+ *
  * Use this function to indicate to the compiler that the expression is
  * expected to evaluate to true most of the time. This can help optimize
  * code paths that are frequently taken.
- * 
+ *
  * @param expr Boolean expression to evaluate
  * @return The result of evaluating expr
  */
@@ -50,11 +48,11 @@ likely(bool expr) {
 
 /**
  * @brief Hint for branch prediction when the condition is likely false
- * 
+ *
  * Use this function to indicate to the compiler that the expression is
  * expected to evaluate to false most of the time. This can help optimize
  * code paths that are rarely taken.
- * 
+ *
  * @param expr Boolean expression to evaluate
  * @return The result of evaluating expr
  */

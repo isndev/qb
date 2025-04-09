@@ -1,11 +1,11 @@
 /**
  * @file qb/io/async/listener.h
  * @brief Core event loop manager for the asynchronous IO framework
- * 
+ *
  * This file defines the listener class which serves as the central event loop manager
  * for the asynchronous IO framework. It provides thread-local access to the event loop,
  * registration and management of event handlers, and methods to run the event loop.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,24 +25,24 @@
 #ifndef QB_IO_ASYNC_LISTENER_H_
 #define QB_IO_ASYNC_LISTENER_H_
 
-#include "event/base.h"
 #include <algorithm>
 #include <qb/system/container/unordered_set.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 #include <thread>
 #include <vector>
+#include "event/base.h"
 
 namespace qb::io::async {
 
 /**
  * @class listener
  * @brief Central event loop manager for asynchronous IO operations
- * 
+ *
  * The listener class is the core of the asynchronous event system. It manages
  * an event loop that handles all asynchronous events (IO, timer, signal, etc.)
  * and dispatches them to registered handlers.
- * 
+ *
  * Each thread has its own listener instance accessible via the thread_local
  * static member 'current'.
  */
@@ -50,7 +50,7 @@ class listener {
 public:
     /**
      * @brief Thread-local instance of the listener
-     * 
+     *
      * Each thread has its own listener accessible through this static member.
      * This provides a way to access the current thread's event loop without
      * passing a reference explicitly.
@@ -60,10 +60,10 @@ public:
     /**
      * @class RegisteredKernelEvent
      * @brief Template wrapper for event handlers
-     * 
+     *
      * This class wraps an event and its associated actor (handler) and provides
      * a way to invoke the actor's handler method when the event is triggered.
-     * 
+     *
      * @tparam _Event The event type
      * @tparam _Actor The actor (handler) type
      */
@@ -71,8 +71,8 @@ public:
     class RegisteredKernelEvent final : public IRegisteredKernelEvent {
         friend class listener;
 
-        _Actor &_actor;      /**< Reference to the actor that handles the event */
-        _Event _event;       /**< The event object */
+        _Actor &_actor; /**< Reference to the actor that handles the event */
+        _Event  _event; /**< The event object */
 
         /**
          * @brief Destructor
@@ -90,7 +90,7 @@ public:
 
         /**
          * @brief Invoke the actor's handler for this event
-         * 
+         *
          * This method is called when the event is triggered. It checks if the
          * actor is still alive (if it provides an is_alive method) and calls
          * the actor's on() method with the event.
@@ -106,14 +106,15 @@ public:
     };
 
 private:
-    ev::dynamic_loop _loop;  /**< The libev event loop */
-    qb::unordered_set<IRegisteredKernelEvent *> _registeredEvents; /**< Set of registered event handlers */
+    ev::dynamic_loop _loop; /**< The libev event loop */
+    qb::unordered_set<IRegisteredKernelEvent *>
+                _registeredEvents;      /**< Set of registered event handlers */
     std::size_t _nb_invoked_events = 0; /**< Counter for the number of invoked events */
 
 public:
     /**
      * @brief Constructor
-     * 
+     *
      * Creates a new listener with a dynamic event loop using automatic detection
      * of the best available backend.
      */
@@ -122,7 +123,7 @@ public:
 
     /**
      * @brief Clear all registered events
-     * 
+     *
      * Removes all registered events and runs the event loop once to process
      * any pending events.
      */
@@ -136,7 +137,7 @@ public:
 
     /**
      * @brief Destructor
-     * 
+     *
      * Cleans up by clearing all registered events.
      */
     ~listener() noexcept {
@@ -145,10 +146,10 @@ public:
 
     /**
      * @brief Event callback handler
-     * 
+     *
      * This method is called by libev when an event is triggered. It updates
      * the event's revents field and invokes the associated handler.
-     * 
+     *
      * @tparam EV_EVENT The event type
      * @param event The event that was triggered
      * @param revents The triggered event flags
@@ -156,7 +157,7 @@ public:
     template <typename EV_EVENT>
     void
     on(EV_EVENT &event, int revents) {
-        auto &w = *reinterpret_cast<event::base<EV_EVENT> *>(&event);
+        auto &w    = *reinterpret_cast<event::base<EV_EVENT> *>(&event);
         w._revents = revents;
         w._interface->invoke();
         ++_nb_invoked_events;
@@ -164,10 +165,10 @@ public:
 
     /**
      * @brief Register an event handler
-     * 
+     *
      * Creates and registers a new event handler for the specified event type
      * and actor.
-     * 
+     *
      * @tparam _Event The event type
      * @tparam _Actor The actor (handler) type
      * @tparam _Args Types of additional arguments for event initialization
@@ -192,9 +193,9 @@ public:
 
     /**
      * @brief Unregister an event handler
-     * 
+     *
      * Removes and deletes the specified event handler.
-     * 
+     *
      * @param kevent Pointer to the event handler to unregister
      */
     void
@@ -214,15 +215,20 @@ public:
 
     /**
      * @brief Run the event loop
-     * 
+     *
      * Executes the event loop with the specified flag.
-     * 
+     *
      * @param flag The libev run flag (e.g., EVRUN_NOWAIT, EVRUN_ONCE)
      */
     inline void
     run(int flag = 0) {
         _nb_invoked_events = 0;
         _loop.run(flag);
+    }
+
+    inline void
+    break_one() {
+        _loop.break_loop();
     }
 
     /**
@@ -246,7 +252,7 @@ public:
 
 /**
  * @brief Initialize the asynchronous event system
- * 
+ *
  * Clears the current thread's listener, preparing it for use.
  */
 inline void
@@ -256,9 +262,9 @@ init() {
 
 /**
  * @brief Run the event loop
- * 
+ *
  * Executes the current thread's event loop with the specified flag.
- * 
+ *
  * @param flag The libev run flag (e.g., EVRUN_NOWAIT, EVRUN_ONCE)
  * @return The number of events that were invoked
  */
@@ -270,9 +276,9 @@ run(int flag = 0) {
 
 /**
  * @brief Run the event loop until a condition is met
- * 
+ *
  * Repeatedly runs the event loop until the specified status becomes false.
- * 
+ *
  * @param status Reference to a boolean condition to check
  */
 inline void
@@ -284,6 +290,11 @@ inline void
 run_until(bool const &status) {
     while (status)
         listener::current.run(EVRUN_NOWAIT);
+}
+
+inline void
+break_parent() {
+    listener::current.break_one();
 }
 
 } // namespace qb::io::async

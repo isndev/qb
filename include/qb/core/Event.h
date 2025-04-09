@@ -1,15 +1,15 @@
 /**
  * @file qb/core/Event.h
  * @brief Event system for the QB Actor Framework
- * 
+ *
  * This file defines the event system used by the QB Actor Framework for
  * communication between actors. It includes the base Event class and several
  * specialized event types for different purposes, including quality of service
  * levels, service events, and system events like kill and signal events.
- * 
+ *
  * Events are the primary means of communication between actors, ensuring
  * isolation and thread safety in the actor system.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -102,12 +102,12 @@ private:
                            4 | ((QB_LOCKFREE_EVENT_BUCKET_BYTES / 16) << 3)};
     } state;
     uint16_t bucket_size;
-    id_type id;
+    id_type  id;
     // for users
     id_handler_type dest;
     id_handler_type source;
 
-//    Event &operator=(Event const &) = default;
+    //    Event &operator=(Event const &) = default;
 
 public:
     Event() = default;
@@ -186,7 +186,7 @@ struct EventQOS0 : public Event {
  */
 struct ServiceEvent : public Event {
     id_handler_type forward;
-    id_type service_event_id;
+    id_type         service_event_id;
 
     /*!
      * @brief Mark the event as received and swap source/destination
@@ -246,10 +246,10 @@ struct PingEvent : public Event {
  * @brief Event used to query actor status
  */
 struct RequireEvent : public Event {
-    const uint32_t type;
+    const uint32_t    type;
     const ActorStatus status;
 
-    explicit RequireEvent(uint32_t const actor_type,
+    explicit RequireEvent(uint32_t const    actor_type,
                           ActorStatus const actor_status) noexcept
         : type(actor_type)
         , status(actor_status) {}
@@ -263,7 +263,7 @@ template <typename... _Args>
 struct WithData : public Event {
     std::tuple<_Args...> data;
 
-    explicit WithData(_Args &&... args)
+    explicit WithData(_Args &&...args)
         : data(std::forward<_Args>(args)...) {}
 };
 
@@ -288,13 +288,13 @@ struct AskData : public WithoutData<_Args...> {};
 template <typename... _Args>
 struct FillEvent : public WithData<_Args...> {
     using base_t = WithData<_Args...>;
-    FillEvent() = default;
-    explicit FillEvent(_Args &&... args)
+    FillEvent()  = default;
+    explicit FillEvent(_Args &&...args)
         : base_t(std::forward<_Args>(args)...) {}
 };
 
-using VirtualPipe = allocator::pipe<EventBucket>;
-using event = Event;
+using VirtualPipe   = allocator::pipe<EventBucket>;
+using event         = Event;
 using service_event = ServiceEvent;
 
 } // namespace qb

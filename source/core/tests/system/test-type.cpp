@@ -1,12 +1,12 @@
 /**
  * @file qb/core/tests/system/test-type.cpp
  * @brief Unit tests for type characteristics in the QB framework
- * 
- * This file contains tests that verify the size and characteristics of 
+ *
+ * This file contains tests that verify the size and characteristics of
  * various types in the QB framework. It ensures that critical types like
  * CoreId, ActorId, and EventId maintain their expected sizes, and that
  * event classes have the expected trivial destruction properties.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,13 +29,13 @@
 #include <qb/system/timestamp.h>
 
 struct TriviallyDestructibleEvent : public qb::Event {
-    bool b{};
-    std::byte by{};
-    char c{};
-    double d{};
-    float f{};
-    char e[10];
-    std::size_t s{};
+    bool         b{};
+    std::byte    by{};
+    char         c{};
+    double       d{};
+    float        f{};
+    char         e[10];
+    std::size_t  s{};
     qb::string<> str{};
 };
 

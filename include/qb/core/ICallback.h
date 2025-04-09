@@ -1,12 +1,12 @@
 /**
  * @file qb/core/ICallback.h
  * @brief Callback interface for the QB Actor Framework
- * 
+ *
  * This file defines the ICallback interface which provides a mechanism for actors
  * to receive periodic callbacks during each VirtualCore loop iteration. This allows
  * actors to perform background tasks, periodic operations, or polling without relying
  * on event-driven behavior.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,7 +36,7 @@ namespace qb {
  * ICallback provides an interface for implementing actor callbacks that are executed
  * during each VirtualCore loop iteration. This allows actors to perform periodic tasks
  * or background operations.
- * 
+ *
  * Example usage:
  * @code
  * class MyActor : public Actor, public ICallback {
@@ -66,4 +66,3 @@ using icallback = ICallback;
 
 } // namespace qb
 #endif // QB_ICALLBACK_H
-

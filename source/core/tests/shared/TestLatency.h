@@ -14,11 +14,11 @@ namespace pg {
 template <std::uint64_t TMaxDurationNs, std::uint64_t TBucketCount = 1000000>
 class latency {
 private:
-    size_t count{0};
-    std::chrono::nanoseconds bucketDuration{TMaxDurationNs / TBucketCount};
+    size_t                           count{0};
+    std::chrono::nanoseconds         bucketDuration{TMaxDurationNs / TBucketCount};
     std::array<size_t, TBucketCount> buckets{0};
-    size_t outOufBoundCount{0};
-    std::chrono::nanoseconds maxDuration{0};
+    size_t                           outOufBoundCount{0};
+    std::chrono::nanoseconds         maxDuration{0};
 
 public:
     template <typename T>
@@ -26,7 +26,7 @@ public:
     add(T duration) {
         count++;
 
-        auto bucketIndex = (std::uint64_t)(duration / bucketDuration);
+        auto bucketIndex = (std::uint64_t) (duration / bucketDuration);
         if (bucketIndex <= TBucketCount) {
             buckets[bucketIndex]++;
             return;
@@ -45,9 +45,9 @@ public:
         //                    << std::setw(20) << "count"
         //                    << std::endl;
 
-        size_t cum = 0;
-        size_t q50 = 0;
-        size_t q99 = 0;
+        size_t cum  = 0;
+        size_t q50  = 0;
+        size_t q99  = 0;
         size_t q999 = 0;
         double mean = 0;
 
@@ -82,7 +82,7 @@ public:
 
         cum += current;
 
-        auto percentile = (double)cum / count * 100.0;
+        auto percentile = (double) cum / count * 100.0;
         //            output  << std::setw(20) << duration.count() << unit
         //                    << std::setw(20) << percentile << "%"
         //                    << std::setw(20) << current

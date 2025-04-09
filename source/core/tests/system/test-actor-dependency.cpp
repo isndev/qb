@@ -1,11 +1,11 @@
 /**
  * @file qb/core/tests/system/test-actor-dependency.cpp
  * @brief Unit tests for actor dependency resolution
- * 
- * This file contains tests for the actor dependency resolution mechanisms in the 
+ *
+ * This file contains tests for the actor dependency resolution mechanisms in the
  * QB Actor Framework. It verifies that actors can properly discover and communicate
  * with other actors through different dependency resolution approaches.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");

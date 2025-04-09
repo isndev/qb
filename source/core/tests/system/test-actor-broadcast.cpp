@@ -1,10 +1,11 @@
 /**
  * @file qb/core/tests/system/test-actor-broadcast.cpp
  * @brief Unit tests for actor broadcast communication
- * 
- * This file contains tests for the broadcast communication mechanism in the QB Actor Framework.
- * It verifies that broadcast events are properly distributed to multiple actors.
- * 
+ *
+ * This file contains tests for the broadcast communication mechanism in the QB Actor
+ * Framework. It verifies that broadcast events are properly distributed to multiple
+ * actors.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,15 +22,16 @@
  * @ingroup Core
  */
 
+#include <atomic>
 #include <gtest/gtest.h>
 #include <qb/actor.h>
 #include <qb/main.h>
-#include <atomic>
 
 // Define test events
 struct BroadcastTestEvent : public qb::Event {
     int value;
-    explicit BroadcastTestEvent(int val) : value(val) {}
+    explicit BroadcastTestEvent(int val)
+        : value(val) {}
 };
 
 struct EndTestEvent : public qb::Event {};
@@ -41,7 +43,8 @@ std::atomic<int> g_value_sum{0};
 // Receiver actor that processes broadcast messages
 class ReceiverActor : public qb::Actor {
 public:
-    bool onInit() override {
+    bool
+    onInit() override {
         // Register for broadcast events
         registerEvent<BroadcastTestEvent>(*this);
         registerEvent<EndTestEvent>(*this);
@@ -50,20 +53,23 @@ public:
     }
 
     // Handler for broadcast events
-    void on(const BroadcastTestEvent& event) {
+    void
+    on(const BroadcastTestEvent &event) {
         // Increment global counters
         g_received_count++;
         g_value_sum += event.value;
     }
 
     // Handler for end test signal
-    void on(const EndTestEvent&) {
+    void
+    on(const EndTestEvent &) {
         // End the test by killing itself
         kill();
     }
-    
+
     // Handler for KillEvent
-    void on(const qb::KillEvent&) {
+    void
+    on(const qb::KillEvent &) {
         kill();
     }
 };
@@ -76,9 +82,10 @@ public:
     BroadcasterActor(int num_receivers, int num_broadcasts)
         : _num_broadcasts(num_broadcasts) {}
 
-    bool onInit() override {
+    bool
+    onInit() override {
         registerEvent<qb::KillEvent>(*this);
-        
+
         // Send broadcast messages
         for (int i = 1; i <= _num_broadcasts; ++i) {
             broadcast<BroadcastTestEvent>(i);
@@ -86,10 +93,10 @@ public:
 
         // Send end test signal to all receivers
         broadcast<EndTestEvent>();
-        
+
         // Kill self after broadcasting
         kill();
-        
+
         return true;
     }
 };
@@ -97,30 +104,30 @@ public:
 TEST(BroadcastActor, ShouldReceiveBroadcastsByAllReceivers) {
     // Reset global counters
     g_received_count = 0;
-    g_value_sum = 0;
-    
+    g_value_sum      = 0;
+
     // Test parameters
-    const int num_receivers = 5;
+    const int num_receivers  = 5;
     const int num_broadcasts = 10;
-    
+
     // Create main instance
     qb::Main main;
-    
+
     // Add receiver actors
     for (int i = 0; i < num_receivers; ++i) {
         main.addActor<ReceiverActor>(0);
     }
-    
+
     // Add broadcaster actor
     main.addActor<BroadcasterActor>(0, num_receivers, num_broadcasts);
-    
+
     // Start and run engine
     main.start(false);
     EXPECT_FALSE(main.hasError());
-    
+
     // Verify that all receivers got all broadcasts
     EXPECT_EQ(g_received_count, num_receivers * num_broadcasts);
-    
+
     // Verify the sum of values received (sum of 1..num_broadcasts * num_receivers)
     int expected_sum = num_receivers * (num_broadcasts * (num_broadcasts + 1)) / 2;
     EXPECT_EQ(g_value_sum, expected_sum);
@@ -129,28 +136,28 @@ TEST(BroadcastActor, ShouldReceiveBroadcastsByAllReceivers) {
 TEST(BroadcastActor, ShouldHandleZeroBroadcasts) {
     // Reset global counters
     g_received_count = 0;
-    g_value_sum = 0;
-    
+    g_value_sum      = 0;
+
     // Test with no broadcasts
-    const int num_receivers = 3;
+    const int num_receivers  = 3;
     const int num_broadcasts = 0;
-    
+
     // Create main instance
     qb::Main main;
-    
+
     // Add receiver actors
     for (int i = 0; i < num_receivers; ++i) {
         main.addActor<ReceiverActor>(0);
     }
-    
+
     // Add broadcaster with zero broadcasts
     main.addActor<BroadcasterActor>(0, num_receivers, num_broadcasts);
-    
+
     // Start and run engine
     main.start(false);
     EXPECT_FALSE(main.hasError());
-    
+
     // Verify no broadcasts were received
     EXPECT_EQ(g_received_count, 0);
     EXPECT_EQ(g_value_sum, 0);
-} 
+}

@@ -1,16 +1,16 @@
 /**
  * @file qb/core/Pipe.h
  * @brief Actor communication channel for the QB Actor Framework
- * 
+ *
  * This file defines the Pipe class which provides a communication channel between
  * actors in the QB Actor Framework. Pipes enable actors to send events to each other
- * in a type-safe and efficient manner, maintaining the actor model's isolation properties
- * while facilitating message passing.
- * 
+ * in a type-safe and efficient manner, maintaining the actor model's isolation
+ * properties while facilitating message passing.
+ *
  * Each pipe has a source actor and a destination actor, and provides methods for
  * pushing events to the destination actor with optional pre-allocated sizes for
  * improved performance with larger messages.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -47,8 +47,8 @@ class Pipe {
     friend class VirtualCore;
 
     VirtualPipe *pipe;
-    ActorId dest;
-    ActorId source;
+    ActorId      dest;
+    ActorId      source;
 
     Pipe(VirtualPipe &i_pipe, ActorId i_dest, ActorId i_source) noexcept
         : pipe(&i_pipe)
@@ -56,8 +56,8 @@ class Pipe {
         , source(i_source) {}
 
 public:
-    Pipe() = default;
-    Pipe(Pipe const &) = default;
+    Pipe()                        = default;
+    Pipe(Pipe const &)            = default;
     Pipe &operator=(Pipe const &) = default;
 
     /*!
@@ -71,7 +71,7 @@ public:
      * The event will be delivered to the destination actor.
      */
     template <typename _Event, typename... _Args>
-    _Event &push(_Args &&... args) const noexcept;
+    _Event &push(_Args &&...args) const noexcept;
 
     /*!
      * @brief Push an event with pre-allocated size to the pipe
@@ -82,10 +82,12 @@ public:
      * @return Reference to the constructed event
      * @details
      * This function creates a new event of type _Event with a pre-allocated size
-     * and sends it through the pipe. The event will be delivered to the destination actor.
+     * and sends it through the pipe. The event will be delivered to the destination
+     * actor.
      */
     template <typename _Event, typename... _Args>
-    [[nodiscard]] _Event &allocated_push(std::size_t size, _Args &&... args) const noexcept;
+    [[nodiscard]] _Event &allocated_push(std::size_t size,
+                                         _Args &&...args) const noexcept;
 
     /*!
      * @brief Get the destination actor ID
@@ -110,4 +112,3 @@ using pipe = Pipe;
 
 } // namespace qb
 #endif // QB_PROXYPIPE_H
-

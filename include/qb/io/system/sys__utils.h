@@ -1,11 +1,11 @@
 /**
  * @file qb/io/system/sys__utils.h
  * @brief System utilities and high-precision clock functions
- * 
- * This file provides utility functions related to time measurement and 
+ *
+ * This file provides utility functions related to time measurement and
  * performance tracking, particularly high-precision clocks. It also offers
  * helper functions for value manipulation and object management.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,14 +29,14 @@
 #include <qb/utility/build_macros.h>
 
 namespace qb {
-/** 
+/**
  * @brief Type for representing high-precision time values (nanoseconds)
  */
 typedef long long highp_time_t;
 
 /**
  * @brief High-resolution clock for performance measurements
- * 
+ *
  * This clock is used to measure time intervals with high precision,
  * particularly for benchmarking and performance measurement.
  */
@@ -44,7 +44,7 @@ typedef std::chrono::high_resolution_clock steady_clock_t;
 
 /**
  * @brief System clock that can be adjusted
- * 
+ *
  * This clock represents the system time, which can be modified by the user
  * or synchronized with an NTP server.
  */
@@ -52,10 +52,10 @@ typedef std::chrono::system_clock system_clock_t;
 
 /**
  * @brief Gets a timestamp in nanoseconds since epoch
- * 
+ *
  * This function returns a high-precision timestamp in nanoseconds
  * since the epoch (January 1, 1970).
- * 
+ *
  * @tparam _Ty Clock type to use (default: steady_clock_t)
  * @return Timestamp in nanoseconds
  */
@@ -68,10 +68,10 @@ xhighp_clock() {
 
 /**
  * @brief Gets a timestamp in microseconds since epoch
- * 
+ *
  * This function returns a high-precision timestamp in microseconds
  * since the epoch (January 1, 1970).
- * 
+ *
  * @tparam _Ty Clock type to use (default: steady_clock_t)
  * @return Timestamp in microseconds
  */
@@ -83,10 +83,10 @@ highp_clock() {
 
 /**
  * @brief Gets a timestamp in milliseconds since epoch
- * 
+ *
  * This function returns a normal-precision timestamp in milliseconds
  * since the epoch (January 1, 1970).
- * 
+ *
  * @tparam _Ty Clock type to use (default: steady_clock_t)
  * @return Timestamp in milliseconds
  */
@@ -98,11 +98,11 @@ clock() {
 
 /**
  * @brief Gets the current time in seconds since epoch
- * 
+ *
  * This function offers better performance than chrono on Win32.
  * See: win10 sdk ucrt/time/time.cpp:common_time
  * https://docs.microsoft.com/en-us/windows/desktop/sysinfo/acquiring-high-resolution-time-stamps
- * 
+ *
  * @return Timestamp in seconds
  */
 inline highp_time_t
@@ -115,10 +115,10 @@ using std::clamp;
 #else
 /**
  * @brief Constrains a value between a lower and upper bound
- * 
+ *
  * This function is a compatibility implementation of std::clamp for
  * versions prior to C++17.
- * 
+ *
  * @tparam _Ty Type of the value and bounds
  * @param v Value to constrain
  * @param lo Lower bound
@@ -135,10 +135,10 @@ clamp(const _Ty &v, const _Ty &lo, const _Ty &hi) {
 
 /**
  * @brief Explicitly invokes the destructor of an object without freeing its memory
- * 
+ *
  * This function is useful for manual memory management, particularly
  * when objects are allocated with placement new.
- * 
+ *
  * @tparam _Ty Type of the object
  * @param p Pointer to the object whose destructor should be called
  */

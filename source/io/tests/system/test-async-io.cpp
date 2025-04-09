@@ -1,10 +1,11 @@
 /**
  * @file qb/io/tests/system/test-async-io.cpp
  * @brief Unit tests for asynchronous I/O operations
- * 
- * This file contains tests for the core asynchronous I/O functionality in the QB framework,
- * including timers, event handling, signal processing, and file watching capabilities.
- * 
+ *
+ * This file contains tests for the core asynchronous I/O functionality in the QB
+ * framework, including timers, event handling, signal processing, and file watching
+ * capabilities.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,29 +23,31 @@
  */
 
 #include <atomic>
+#include <csignal>
+#include <fcntl.h>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <iostream>
 #include <qb/io/async.h>
 #include <qb/io/protocol/text.h>
-#include <thread>
-#include <fstream>
-#include <csignal>
-#include <qb/io/tcp/socket.h>
-#include <qb/io/tcp/listener.h>
 #include <qb/io/system/file.h>
-#include <fcntl.h>
-#include <iostream>
+#include <qb/io/tcp/listener.h>
+#include <qb/io/tcp/socket.h>
 #include <set>
+#include <thread>
 
 using namespace qb::io;
 
 // Test fixture for async I/O tests
 class AsyncIOTest : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         async::init();
     }
 
-    void TearDown() override {
+    void
+    TearDown() override {
         // Cleanup after each test
     }
 };
@@ -53,12 +56,13 @@ protected:
 class TimerHandler : public async::with_timeout<TimerHandler> {
 public:
     std::atomic<bool> timer_triggered{false};
-    std::atomic<int> timer_count{0};
+    std::atomic<int>  timer_count{0};
 
     explicit TimerHandler(double timeout = 0.1)
         : with_timeout(timeout) {}
 
-    void on(async::event::timer const &) {
+    void
+    on(async::event::timer const &) {
         timer_triggered = true;
         timer_count++;
     }
@@ -143,11 +147,7 @@ TEST_F(AsyncIOTest, TimeoutUtility) {
 
     // Create a timeout that will execute after 100ms
     new async::Timeout<std::function<void()>>(
-        [&callback_executed]() {
-            callback_executed = true;
-        },
-        0.1
-    );
+        [&callback_executed]() { callback_executed = true; }, 0.1);
 
     // Run event loop until callback is executed
     for (int i = 0; i < 10 && !callback_executed; ++i) {
@@ -164,11 +164,7 @@ TEST_F(AsyncIOTest, ImmediateTimeoutUtility) {
 
     // Create a timeout that will execute immediately (timeout = 0)
     new async::Timeout<std::function<void()>>(
-        [&callback_executed]() {
-            callback_executed = true;
-        },
-        0.0
-    );
+        [&callback_executed]() { callback_executed = true; }, 0.0);
 
     // Should be executed immediately without running the event loop
     EXPECT_TRUE(callback_executed);
@@ -182,8 +178,10 @@ public:
 
     SignalHandler() {
         // Register signal handlers
-        sigint_watcher = new async::event::signal<SIGINT>(async::listener::current.loop());
-        sigusr1_watcher = new async::event::signal<SIGUSR1>(async::listener::current.loop());
+        sigint_watcher =
+            new async::event::signal<SIGINT>(async::listener::current.loop());
+        sigusr1_watcher =
+            new async::event::signal<SIGUSR1>(async::listener::current.loop());
 
         // Set callbacks
         sigint_watcher->set<SignalHandler, &SignalHandler::handle_sigint>(this);
@@ -205,16 +203,18 @@ public:
         }
     }
 
-    void handle_sigint(ev::sig &, int) {
+    void
+    handle_sigint(ev::sig &, int) {
         sigint_received = true;
     }
 
-    void handle_sigusr1(ev::sig &, int) {
+    void
+    handle_sigusr1(ev::sig &, int) {
         sigusr1_received = true;
     }
 
 private:
-    async::event::signal<SIGINT> *sigint_watcher = nullptr;
+    async::event::signal<SIGINT>  *sigint_watcher  = nullptr;
     async::event::signal<SIGUSR1> *sigusr1_watcher = nullptr;
 };
 
@@ -238,7 +238,8 @@ TEST_F(AsyncIOTest, SignalHandling) {
     });
 
     // Run event loop until signals are received
-    for (int i = 0; i < 20 && (!handler.sigint_received || !handler.sigusr1_received); ++i) {
+    for (int i = 0; i < 20 && (!handler.sigint_received || !handler.sigusr1_received);
+         ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -255,12 +256,13 @@ class SimpleClient {
 public:
     std::atomic<bool> connected{false};
     std::atomic<bool> data_received{false};
-    std::string received_data;
-    tcp::socket socket;
+    std::string       received_data;
+    tcp::socket       socket;
 
     SimpleClient() = default;
 
-    bool connect(const std::string& ip, unsigned short port) {
+    bool
+    connect(const std::string &ip, unsigned short port) {
         // Use a blocking connection for more reliable tests
         int result = socket.connect_v4(ip, port);
         if (result == 0) {
@@ -272,17 +274,19 @@ public:
         return false;
     }
 
-    bool send(const std::string& data) {
+    bool
+    send(const std::string &data) {
         return socket.write(data.c_str(), data.size()) == static_cast<int>(data.size());
     }
 
-    void receive() {
+    void
+    receive() {
         char buffer[1024] = {0};
-        auto received = socket.read(buffer, sizeof(buffer) - 1);
+        auto received     = socket.read(buffer, sizeof(buffer) - 1);
         if (received > 0) {
             buffer[received] = 0;
-            received_data = buffer;
-            data_received = true;
+            received_data    = buffer;
+            data_received    = true;
         }
     }
 };
@@ -292,18 +296,19 @@ class SimpleServer {
 public:
     std::atomic<bool> client_connected{false};
     std::atomic<bool> data_received{false};
-    std::string received_data;
-    tcp::listener listener;
-    tcp::socket client_socket;
+    std::string       received_data;
+    tcp::listener     listener;
+    tcp::socket       client_socket;
 
-    SimpleServer() {
-    }
+    SimpleServer() {}
 
-    bool listen(unsigned short port) {
+    bool
+    listen(unsigned short port) {
         return listener.listen_v4(port) == 0;
     }
 
-    bool accept() {
+    bool
+    accept() {
         auto status = listener.accept(client_socket);
         if (status == 0) {
             client_socket.set_nonblocking(true);
@@ -313,25 +318,28 @@ public:
         return false;
     }
 
-    bool send(const std::string& data) {
-        return client_socket.write(data.c_str(), data.size()) == static_cast<int>(data.size());
+    bool
+    send(const std::string &data) {
+        return client_socket.write(data.c_str(), data.size()) ==
+               static_cast<int>(data.size());
     }
 
-    void receive() {
+    void
+    receive() {
         char buffer[1024] = {0};
-        auto received = client_socket.read(buffer, sizeof(buffer) - 1);
+        auto received     = client_socket.read(buffer, sizeof(buffer) - 1);
         if (received > 0) {
             buffer[received] = 0;
-            received_data = buffer;
-            data_received = true;
+            received_data    = buffer;
+            data_received    = true;
         }
     }
 };
 
 TEST_F(AsyncIOTest, TCPNonBlockingIO) {
-    const unsigned short TEST_PORT = 9876;
-    const std::string TEST_MESSAGE = "Hello, QB Async IO!";
-    const std::string RESPONSE_MESSAGE = "Hello from server!";
+    const unsigned short TEST_PORT        = 9876;
+    const std::string    TEST_MESSAGE     = "Hello, QB Async IO!";
+    const std::string    RESPONSE_MESSAGE = "Hello from server!";
 
     // Set up the server
     SimpleServer server;
@@ -391,7 +399,7 @@ TEST_F(AsyncIOTest, TCPNonBlockingIO) {
 TEST_F(AsyncIOTest, FileOperations) {
     // Create a test file
     const std::string test_file = "test_file_operations.txt";
-    const std::string content = "Test content for file operations";
+    const std::string content   = "Test content for file operations";
 
     {
         std::ofstream file(test_file);
@@ -432,7 +440,7 @@ TEST_F(AsyncIOTest, FileOperations) {
 // Test event priorities
 TEST_F(AsyncIOTest, EventPriorities) {
     std::vector<int> execution_order;
-    std::mutex mutex;
+    std::mutex       mutex;
 
     // Create events with different timeouts that will execute in order
     new async::Timeout<std::function<void()>>(
@@ -440,24 +448,21 @@ TEST_F(AsyncIOTest, EventPriorities) {
             std::lock_guard<std::mutex> lock(mutex);
             execution_order.push_back(1);
         },
-        0.1
-    );
+        0.1);
 
     new async::Timeout<std::function<void()>>(
         [&execution_order, &mutex]() {
             std::lock_guard<std::mutex> lock(mutex);
             execution_order.push_back(2);
         },
-        0.2
-    );
+        0.2);
 
     new async::Timeout<std::function<void()>>(
         [&execution_order, &mutex]() {
             std::lock_guard<std::mutex> lock(mutex);
             execution_order.push_back(3);
         },
-        0.3
-    );
+        0.3);
 
     // Run event loop
     for (int i = 0; i < 30; ++i) {
@@ -480,10 +485,10 @@ TEST_F(AsyncIOTest, EventPriorities) {
 
 // Constants for text-based communication test
 constexpr const unsigned short TEXT_PROTOCOL_PORT = 9877;
-constexpr const char TEXT_MESSAGE[] = "Hello, Text Protocol!";
-std::atomic<std::size_t> msg_count_server = 0;
-std::atomic<std::size_t> msg_count_client = 0;
-constexpr const std::size_t TEXT_ITERATIONS = 10;
+constexpr const char           TEXT_MESSAGE[]     = "Hello, Text Protocol!";
+std::atomic<std::size_t>       msg_count_server   = 0;
+std::atomic<std::size_t>       msg_count_client   = 0;
+constexpr const std::size_t    TEXT_ITERATIONS    = 10;
 
 // Test with a text protocol (similar to test-session-text.cpp)
 class TextServer;
@@ -499,7 +504,8 @@ public:
         EXPECT_EQ(msg_count_server, TEXT_ITERATIONS);
     }
 
-    void on(Protocol::message &&msg) {
+    void
+    on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(TEXT_MESSAGE) - 1);
         *this << msg.text << Protocol::end;
         ++msg_count_server;
@@ -514,7 +520,8 @@ public:
         EXPECT_EQ(connection_count, 1u);
     }
 
-    void on(IOSession &) {
+    void
+    on(IOSession &) {
         ++connection_count;
     }
 };
@@ -527,7 +534,8 @@ public:
         EXPECT_EQ(msg_count_client, TEXT_ITERATIONS);
     }
 
-    void on(Protocol::message &&msg) {
+    void
+    on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(TEXT_MESSAGE) - 1);
         ++msg_count_client;
     }
@@ -546,7 +554,8 @@ TEST_F(AsyncIOTest, TextProtocolCommunication) {
         async::init();
         TextClient client;
 
-        if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", TEXT_PROTOCOL_PORT)) {
+        if (SocketStatus::Done !=
+            client.transport().connect_v4("127.0.0.1", TEXT_PROTOCOL_PORT)) {
             throw std::runtime_error("could not connect to text server");
         }
 
@@ -558,16 +567,19 @@ TEST_F(AsyncIOTest, TextProtocolCommunication) {
         }
 
         // Run event loop until all messages are processed
-        for (auto i = 0; i < (TEXT_ITERATIONS * 5) &&
-             (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS); ++i) {
+        for (auto i = 0;
+             i < (TEXT_ITERATIONS * 5) &&
+             (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS);
+             ++i) {
             async::run(EVRUN_ONCE);
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     });
 
     // Run server event loop
-    for (auto i = 0; i < (TEXT_ITERATIONS * 5) &&
-         (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS); ++i) {
+    for (auto i = 0; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS ||
+                                                   msg_count_client < TEXT_ITERATIONS);
+         ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -582,7 +594,8 @@ TEST_F(AsyncIOTest, TextProtocolCommunication) {
 // Test SSL/TLS communication
 class SecureServer;
 
-class SecureServerClient : public use<SecureServerClient>::tcp::ssl::client<SecureServer> {
+class SecureServerClient
+    : public use<SecureServerClient>::tcp::ssl::client<SecureServer> {
 public:
     using Protocol = qb::protocol::text::command<SecureServerClient>;
 
@@ -593,7 +606,8 @@ public:
         EXPECT_EQ(msg_count_server, TEXT_ITERATIONS);
     }
 
-    void on(Protocol::message &&msg) {
+    void
+    on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(TEXT_MESSAGE) - 1);
         *this << msg.text << Protocol::end;
         ++msg_count_server;
@@ -608,7 +622,8 @@ public:
         EXPECT_EQ(connection_count, 1u);
     }
 
-    void on(IOSession &) {
+    void
+    on(IOSession &) {
         ++connection_count;
     }
 };
@@ -621,7 +636,8 @@ public:
         EXPECT_EQ(msg_count_client, TEXT_ITERATIONS);
     }
 
-    void on(Protocol::message &&msg) {
+    void
+    on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(TEXT_MESSAGE) - 1);
         ++msg_count_client;
     }
@@ -632,7 +648,7 @@ TEST_F(AsyncIOTest, SSLCommunication) {
 
     // Check for certificate files
     const std::string cert_file = "./cert.pem";
-    const std::string key_file = "./key.pem";
+    const std::string key_file  = "./key.pem";
 
     std::ifstream cert_check(cert_file);
     std::ifstream key_check(key_file);
@@ -670,16 +686,19 @@ TEST_F(AsyncIOTest, SSLCommunication) {
         }
 
         // Run event loop until all messages are processed
-        for (auto i = 0; i < (TEXT_ITERATIONS * 5) &&
-             (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS); ++i) {
+        for (auto i = 0;
+             i < (TEXT_ITERATIONS * 5) &&
+             (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS);
+             ++i) {
             async::run(EVRUN_ONCE);
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
     });
 
     // Run server event loop
-    for (auto i = 0; i < (TEXT_ITERATIONS * 5) &&
-         (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS); ++i) {
+    for (auto i = 0; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS ||
+                                                   msg_count_client < TEXT_ITERATIONS);
+         ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -695,10 +714,11 @@ TEST_F(AsyncIOTest, SSLCommunication) {
 class FileWatchHandler {
 public:
     std::atomic<bool> file_changed{false};
-    std::string filename;
-    ev::stat *stat_watcher = nullptr;
+    std::string       filename;
+    ev::stat         *stat_watcher = nullptr;
 
-    FileWatchHandler(const std::string &path) : filename(path) {
+    FileWatchHandler(const std::string &path)
+        : filename(path) {
         stat_watcher = new ev::stat(async::listener::current.loop());
         stat_watcher->set<FileWatchHandler, &FileWatchHandler::handle_file_change>(this);
 
@@ -714,15 +734,16 @@ public:
         }
     }
 
-    void handle_file_change(ev::stat &, int events) {
+    void
+    handle_file_change(ev::stat &, int events) {
         file_changed = true;
     }
 };
 
 TEST_F(AsyncIOTest, FileWatcherFunctionality) {
     // Create a test file
-    const std::string test_file = "test_file_watcher.txt";
-    const std::string initial_content = "Initial test content";
+    const std::string test_file        = "test_file_watcher.txt";
+    const std::string initial_content  = "Initial test content";
     const std::string modified_content = "Modified test content";
 
     {
@@ -769,7 +790,7 @@ TEST_F(AsyncIOTest, FileWatcherFunctionality) {
 // Test for the async::io::sys::file class (not async::file as this class is different)
 TEST_F(AsyncIOTest, AsyncFileOperations) {
     // Create a test file
-    const std::string test_file = "test_async_file_io.txt";
+    const std::string test_file    = "test_async_file_io.txt";
     const std::string file_content = "Async file operations test content";
 
     {
@@ -787,7 +808,7 @@ TEST_F(AsyncIOTest, AsyncFileOperations) {
 
     // Read content
     char buffer[1024] = {0};
-    auto bytes_read = file.read(buffer, sizeof(buffer) - 1);
+    auto bytes_read   = file.read(buffer, sizeof(buffer) - 1);
     EXPECT_GT(bytes_read, 0);
     EXPECT_EQ(std::string(buffer), file_content);
 
@@ -800,8 +821,8 @@ TEST_F(AsyncIOTest, AsyncFileOperations) {
 
 // Test UDP communication with datagram-based API
 TEST_F(AsyncIOTest, UDPDatagram) {
-    const unsigned short UDP_PORT = 9879;
-    const std::string UDP_MESSAGE = "Hello, UDP Async IO!";
+    const unsigned short UDP_PORT    = 9879;
+    const std::string    UDP_MESSAGE = "Hello, UDP Async IO!";
 
     // Create and bind a UDP socket for sending
     udp::socket send_socket;
@@ -821,9 +842,9 @@ TEST_F(AsyncIOTest, UDPDatagram) {
               static_cast<int>(UDP_MESSAGE.size()));
 
     // Receive the message
-    char buffer[1024] = {0};
+    char     buffer[1024] = {0};
     endpoint sender;
-    int received = recv_socket.read(buffer, sizeof(buffer) - 1, sender);
+    int      received = recv_socket.read(buffer, sizeof(buffer) - 1, sender);
 
     ASSERT_GT(received, 0);
     EXPECT_EQ(std::string(buffer, received), UDP_MESSAGE);
@@ -833,11 +854,12 @@ TEST_F(AsyncIOTest, UDPDatagram) {
 class PeriodicTimerHandler {
 public:
     std::atomic<int> timer_count{0};
-    ev::timer *timer_watcher = nullptr;
+    ev::timer       *timer_watcher = nullptr;
 
     PeriodicTimerHandler(double interval) {
         timer_watcher = new ev::timer(async::listener::current.loop());
-        timer_watcher->set<PeriodicTimerHandler, &PeriodicTimerHandler::handle_timer>(this);
+        timer_watcher->set<PeriodicTimerHandler, &PeriodicTimerHandler::handle_timer>(
+            this);
 
         // Start timer with 0 initial delay and specified interval for repeat
         timer_watcher->start(0.0, interval);
@@ -850,11 +872,13 @@ public:
         }
     }
 
-    void handle_timer(ev::timer &, int) {
+    void
+    handle_timer(ev::timer &, int) {
         timer_count++;
     }
 
-    void stop() {
+    void
+    stop() {
         if (timer_watcher) {
             timer_watcher->stop();
         }
@@ -898,14 +922,16 @@ public:
     explicit CancellableTimerHandler(double timeout = 0.5)
         : with_timeout(timeout) {}
 
-    void on(async::event::timer const &) {
+    void
+    on(async::event::timer const &) {
         timer_triggered = true;
     }
 
     // Method to forcefully stop the timer
-    void stop() {
-        // From the with_timeout class, we can see the timer is controlled by _async_event
-        // The setTimeout(0.0) should stop it, but we'll force it to be sure
+    void
+    stop() {
+        // From the with_timeout class, we can see the timer is controlled by
+        // _async_event The setTimeout(0.0) should stop it, but we'll force it to be sure
         this->_async_event.stop();
     }
 };
@@ -922,7 +948,8 @@ TEST_F(AsyncIOTest, TimerCancellation) {
     // Cancel the timer by setting timeout to 0
     timer.setTimeout(0.0);
 
-    // Force the timer stop (this is needed since setTimeout may not immediately stop the timer)
+    // Force the timer stop (this is needed since setTimeout may not immediately stop the
+    // timer)
     timer.stop();
 
     // Reset the flag in case it was triggered
@@ -947,21 +974,22 @@ TEST_F(AsyncIOTest, MultipleConcurrentTimers) {
     // Create timers with different timeouts
     new async::Timeout<std::function<void()>>(
         [&timer1_triggered]() { timer1_triggered = true; },
-        0.05  // 50ms
+        0.05 // 50ms
     );
 
     new async::Timeout<std::function<void()>>(
         [&timer2_triggered]() { timer2_triggered = true; },
-        0.1   // 100ms
+        0.1 // 100ms
     );
 
     new async::Timeout<std::function<void()>>(
         [&timer3_triggered]() { timer3_triggered = true; },
-        0.15  // 150ms
+        0.15 // 150ms
     );
 
     // Run event loop until all timers trigger
-    for (int i = 0; i < 20 && (!timer1_triggered || !timer2_triggered || !timer3_triggered); ++i) {
+    for (int i = 0;
+         i < 20 && (!timer1_triggered || !timer2_triggered || !timer3_triggered); ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -976,14 +1004,12 @@ TEST_F(AsyncIOTest, TimerPrecision) {
     using clock = std::chrono::high_resolution_clock;
 
     std::atomic<bool> timer_triggered{false};
-    const double timeout_seconds = 0.1; // 100ms timeout
+    const double      timeout_seconds = 0.1; // 100ms timeout
 
     auto start_time = clock::now();
 
     new async::Timeout<std::function<void()>>(
-        [&timer_triggered]() { timer_triggered = true; },
-        timeout_seconds
-    );
+        [&timer_triggered]() { timer_triggered = true; }, timeout_seconds);
 
     // Run event loop until timer triggers
     for (int i = 0; i < 20 && !timer_triggered; ++i) {
@@ -992,22 +1018,25 @@ TEST_F(AsyncIOTest, TimerPrecision) {
     }
 
     auto end_time = clock::now();
-    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+    auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time)
+            .count();
 
     EXPECT_TRUE(timer_triggered);
 
     // Allow some flexibility in timing, but should be reasonably close to the target
-    EXPECT_GE(elapsed_ms, timeout_seconds * 1000 * 0.8);  // At least 80% of the timeout
-    EXPECT_LE(elapsed_ms, timeout_seconds * 1000 * 1.5);  // At most 150% of the timeout
+    EXPECT_GE(elapsed_ms, timeout_seconds * 1000 * 0.8); // At least 80% of the timeout
+    EXPECT_LE(elapsed_ms, timeout_seconds * 1000 * 1.5); // At most 150% of the timeout
 }
 
 // Class to test synchronization using standard C++ mutexes between timers
 class MutexTester {
 public:
     std::vector<int> results;
-    std::mutex result_mutex;
+    std::mutex       result_mutex;
 
-    void critical_section(int id) {
+    void
+    critical_section(int id) {
         // Use standard C++ mutex to protect the results vector
         {
             std::lock_guard<std::mutex> lock(result_mutex);
@@ -1023,10 +1052,8 @@ TEST_F(AsyncIOTest, TimerSynchronization) {
     // Create multiple timers accessing the same resource
     for (int i = 0; i < 5; ++i) {
         new async::Timeout<std::function<void()>>(
-            [&tester, i]() {
-                tester.critical_section(i);
-            },
-            0.05 * (i + 1)  // Staggered timeouts
+            [&tester, i]() { tester.critical_section(i); },
+            0.05 * (i + 1) // Staggered timeouts
         );
     }
 
@@ -1047,11 +1074,11 @@ TEST_F(AsyncIOTest, TimerSynchronization) {
 
 // Test for multiple threads using async operations
 TEST_F(AsyncIOTest, MultiThreadedAsyncOperations) {
-    const int NUM_THREADS = 4;
+    const int NUM_THREADS           = 4;
     const int ITERATIONS_PER_THREAD = 5;
 
     std::vector<std::thread> threads;
-    std::atomic<int> total_completed{0};
+    std::atomic<int>         total_completed{0};
 
     // Create multiple threads, each with their own timers
     for (int t = 0; t < NUM_THREADS; ++t) {
@@ -1069,7 +1096,7 @@ TEST_F(AsyncIOTest, MultiThreadedAsyncOperations) {
                         // This is executed when the timer triggers
                         completed++;
                     },
-                    0.05 * (t + 1)  // Different timeout for each thread
+                    0.05 * (t + 1) // Different timeout for each thread
                 );
 
                 // Run the event loop a few times
@@ -1119,9 +1146,7 @@ TEST_F(AsyncIOTest, NestedTimedOperations) {
 
             // Create a nested timer
             new async::Timeout<std::function<void()>>(
-                [&operation_count]() {
-                    operation_count++;
-                },
+                [&operation_count]() { operation_count++; },
                 0.05 // 50ms
             );
         },
@@ -1145,17 +1170,18 @@ public:
 
 class StatefulTimer : public async::with_timeout<StatefulTimer> {
 public:
-    StateHolder state;
+    StateHolder       state;
     std::atomic<bool> timer_triggered{false};
 
     explicit StatefulTimer(double timeout = 0.1)
         : with_timeout(timeout) {}
 
-    void on(async::event::timer const &) {
+    void
+    on(async::event::timer const &) {
         // Verify state is intact
         EXPECT_EQ(state.state_value, 42);
         state.state_value = 84;
-        timer_triggered = true;
+        timer_triggered   = true;
     }
 };
 
@@ -1179,10 +1205,8 @@ TEST_F(AsyncIOTest, DroppedTimers) {
     // Create multiple timeout objects but don't store references to them
     for (int i = 0; i < 10; ++i) {
         new async::Timeout<std::function<void()>>(
-            [&completed_count]() {
-                completed_count++;
-            },
-            0.02 * (i + 1)  // Stagger timeouts from 20ms to 200ms
+            [&completed_count]() { completed_count++; },
+            0.02 * (i + 1) // Stagger timeouts from 20ms to 200ms
         );
     }
 
@@ -1200,7 +1224,7 @@ TEST_F(AsyncIOTest, AsyncInitCleanupThreads) {
     std::atomic<int> init_success{0};
     std::atomic<int> run_success{0};
 
-    const int num_threads = 4;
+    const int                num_threads = 4;
     std::vector<std::thread> threads;
 
     for (int i = 0; i < num_threads; ++i) {
@@ -1218,7 +1242,7 @@ TEST_F(AsyncIOTest, AsyncInitCleanupThreads) {
     }
 
     // Wait for all threads to complete
-    for (auto& thread : threads) {
+    for (auto &thread : threads) {
         thread.join();
     }
 
@@ -1231,9 +1255,7 @@ TEST_F(AsyncIOTest, TimeoutBehavior) {
     // Test immediate execution with zero timeout
     std::atomic<bool> zero_timer_triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&zero_timer_triggered]() { zero_timer_triggered = true; },
-        0.0
-    );
+        [&zero_timer_triggered]() { zero_timer_triggered = true; }, 0.0);
 
     // Should be triggered immediately without running event loop
     EXPECT_TRUE(zero_timer_triggered);
@@ -1241,9 +1263,7 @@ TEST_F(AsyncIOTest, TimeoutBehavior) {
     // Test very small positive timeout
     std::atomic<bool> small_timer_triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&small_timer_triggered]() { small_timer_triggered = true; },
-        0.001
-    );
+        [&small_timer_triggered]() { small_timer_triggered = true; }, 0.001);
 
     // Run event loop a few times
     for (int i = 0; i < 5 && !small_timer_triggered; ++i) {
@@ -1256,9 +1276,7 @@ TEST_F(AsyncIOTest, TimeoutBehavior) {
     // Test negative timeout (should be treated as a positive timeout)
     std::atomic<bool> negative_timer_triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&negative_timer_triggered]() { negative_timer_triggered = true; },
-        -1.0
-    );
+        [&negative_timer_triggered]() { negative_timer_triggered = true; }, -1.0);
 
     // Run event loop a few times
     for (int i = 0; i < 5 && !negative_timer_triggered; ++i) {
@@ -1288,16 +1306,11 @@ TEST_F(AsyncIOTest, ExceptionHandlingInCallbacks) {
             // Instead of throwing, just set the flag
             // throw std::runtime_error("Test exception");
         },
-        0.1
-    );
+        0.1);
 
     // Create a timer that should still trigger
     new async::Timeout<std::function<void()>>(
-        [&second_timer_triggered]() {
-            second_timer_triggered = true;
-        },
-        0.1
-    );
+        [&second_timer_triggered]() { second_timer_triggered = true; }, 0.1);
 
     // Run event loop
     for (int i = 0; i < 10 && !second_timer_triggered; ++i) {
@@ -1311,7 +1324,7 @@ TEST_F(AsyncIOTest, ExceptionHandlingInCallbacks) {
 
 // Test resource cleanup
 TEST_F(AsyncIOTest, ResourceCleanup) {
-    const int NUM_TIMERS = 10;  // Reduced from 100 to avoid memory issues
+    const int NUM_TIMERS = 10; // Reduced from 100 to avoid memory issues
     std::vector<std::unique_ptr<TimerHandler>> timers;
     timers.reserve(NUM_TIMERS);
 
@@ -1349,8 +1362,8 @@ TEST_F(AsyncIOTest, ResourceCleanup) {
 
 // Test intensive async operations
 TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
-    const int NUM_OPERATIONS = 1000;
-    std::atomic<int> completed_operations{0};
+    const int                NUM_OPERATIONS = 1000;
+    std::atomic<int>         completed_operations{0};
     std::vector<std::thread> threads;
 
     // Create multiple threads performing async operations
@@ -1360,9 +1373,7 @@ TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
 
             for (int i = 0; i < NUM_OPERATIONS; ++i) {
                 new async::Timeout<std::function<void()>>(
-                    [&completed_operations]() { completed_operations++; },
-                    0.01
-                );
+                    [&completed_operations]() { completed_operations++; }, 0.01);
 
                 // Run event loop occasionally
                 if (i % 100 == 0) {
@@ -1379,7 +1390,7 @@ TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
     }
 
     // Wait for all threads to complete
-    for (auto& thread : threads) {
+    for (auto &thread : threads) {
         thread.join();
     }
 
@@ -1388,7 +1399,7 @@ TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
 
 // Test performance with many concurrent timers
 TEST_F(AsyncIOTest, ManyConcurrentTimers) {
-    const int NUM_TIMERS = 50;  // Reduced from 100 to avoid memory issues
+    const int        NUM_TIMERS = 50; // Reduced from 100 to avoid memory issues
     std::atomic<int> completed_count{0};
     std::vector<std::unique_ptr<TimerHandler>> timers;
     timers.reserve(NUM_TIMERS);
@@ -1405,7 +1416,7 @@ TEST_F(AsyncIOTest, ManyConcurrentTimers) {
 
         // Count completed timers
         completed_count = 0;
-        for (const auto& timer : timers) {
+        for (const auto &timer : timers) {
             if (timer->timer_triggered) {
                 completed_count++;
             }
@@ -1421,7 +1432,7 @@ TEST_F(AsyncIOTest, ManyConcurrentTimers) {
 
 // Test memory usage with many timers
 TEST_F(AsyncIOTest, TimerMemoryUsage) {
-    const int NUM_TIMERS = 100;  // Reduced from 1000 to avoid memory issues
+    const int        NUM_TIMERS = 100; // Reduced from 1000 to avoid memory issues
     std::atomic<int> completed_count{0};
     std::vector<std::unique_ptr<TimerHandler>> timers;
     timers.reserve(NUM_TIMERS);
@@ -1438,7 +1449,7 @@ TEST_F(AsyncIOTest, TimerMemoryUsage) {
 
         // Count completed timers
         completed_count = 0;
-        for (const auto& timer : timers) {
+        for (const auto &timer : timers) {
             if (timer->timer_triggered) {
                 completed_count++;
             }
@@ -1469,9 +1480,7 @@ TEST_F(AsyncIOTest, EventLoopReinitialization) {
     // Create a timer
     std::atomic<bool> timer_triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&timer_triggered]() { timer_triggered = true; },
-        0.1
-    );
+        [&timer_triggered]() { timer_triggered = true; }, 0.1);
 
     // Run event loop once
     async::run(EVRUN_ONCE);
@@ -1482,9 +1491,7 @@ TEST_F(AsyncIOTest, EventLoopReinitialization) {
     // Create another timer
     std::atomic<bool> timer2_triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&timer2_triggered]() { timer2_triggered = true; },
-        0.1
-    );
+        [&timer2_triggered]() { timer2_triggered = true; }, 0.1);
 
     // Run event loop until both timers trigger
     for (int i = 0; i < 10 && (!timer_triggered || !timer2_triggered); ++i) {
@@ -1496,7 +1503,8 @@ TEST_F(AsyncIOTest, EventLoopReinitialization) {
     EXPECT_TRUE(timer2_triggered);
 }
 
-int main(int argc, char **argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
-} 
+}

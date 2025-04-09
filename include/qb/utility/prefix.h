@@ -37,13 +37,14 @@
 
 /**
  * @brief Determines the optimal cache line size for the current platform
- * 
+ *
  * Uses compile-time detection or defaults to 64 bytes if the actual
  * cache line size cannot be determined.
- * 
+ *
  * @return The cache line size in bytes
  */
-constexpr std::size_t cache_line_size() {
+constexpr std::size_t
+cache_line_size() {
 #ifdef KNOWN_L1_CACHE_LINE_SIZE
     return KNOWN_L1_CACHE_LINE_SIZE;
 #elif defined(__cpp_lib_hardware_interference_size)
@@ -58,39 +59,38 @@ constexpr std::size_t cache_line_size() {
 
 #ifdef _MSC_VER
 
-#    define QB_LOCKFREE_CACHELINE_ALIGNMENT \
-        __declspec(align(QB_LOCKFREE_CACHELINE_BYTES))
-#    define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT \
-        __declspec(align(QB_LOCKFREE_EVENT_BUCKET_BYTES))
+#define QB_LOCKFREE_CACHELINE_ALIGNMENT __declspec(align(QB_LOCKFREE_CACHELINE_BYTES))
+#define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT \
+    __declspec(align(QB_LOCKFREE_EVENT_BUCKET_BYTES))
 
-#    if defined(_M_IX86)
-#        define QB_LOCKFREE_DCAS_ALIGNMENT
-#    elif defined(_M_X64) || defined(_M_IA64)
-#        define QB_LOCKFREE_PTR_COMPRESSION 1
-#        define QB_LOCKFREE_DCAS_ALIGNMENT __declspec(align(16))
-#    endif
+#if defined(_M_IX86)
+#define QB_LOCKFREE_DCAS_ALIGNMENT
+#elif defined(_M_X64) || defined(_M_IA64)
+#define QB_LOCKFREE_PTR_COMPRESSION 1
+#define QB_LOCKFREE_DCAS_ALIGNMENT __declspec(align(16))
+#endif
 
 #endif /* _MSC_VER */
 
 #ifdef __GNUC__
 
-#    define QB_LOCKFREE_CACHELINE_ALIGNMENT alignas(QB_LOCKFREE_CACHELINE_BYTES)
-#    define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT alignas(QB_LOCKFREE_EVENT_BUCKET_BYTES)
+#define QB_LOCKFREE_CACHELINE_ALIGNMENT alignas(QB_LOCKFREE_CACHELINE_BYTES)
+#define QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT alignas(QB_LOCKFREE_EVENT_BUCKET_BYTES)
 
-#    if defined(__i386__) || defined(__ppc__)
-#        define QB_LOCKFREE_DCAS_ALIGNMENT
-#    elif defined(__x86_64__)
-#        define QB_LOCKFREE_PTR_COMPRESSION 1
-#        define QB_LOCKFREE_DCAS_ALIGNMENT __attribute__((aligned(16)))
-#    elif defined(__alpha__)
-#        define QB_LOCKFREE_PTR_COMPRESSION 1
-#        define QB_LOCKFREE_DCAS_ALIGNMENT
-#    endif
+#if defined(__i386__) || defined(__ppc__)
+#define QB_LOCKFREE_DCAS_ALIGNMENT
+#elif defined(__x86_64__)
+#define QB_LOCKFREE_PTR_COMPRESSION 1
+#define QB_LOCKFREE_DCAS_ALIGNMENT __attribute__((aligned(16)))
+#elif defined(__alpha__)
+#define QB_LOCKFREE_PTR_COMPRESSION 1
+#define QB_LOCKFREE_DCAS_ALIGNMENT
+#endif
 #endif /* __GNUC__ */
 
 /**
  * @brief Structure aligned to cache line boundaries
- * 
+ *
  * This structure is padded to the size of a full cache line to prevent
  * false sharing between adjacent structures in memory.
  */
@@ -100,7 +100,7 @@ struct QB_LOCKFREE_CACHELINE_ALIGNMENT CacheLine {
 
 /**
  * @brief Structure aligned to event bucket boundaries
- * 
+ *
  * This structure is padded to the size of a full event bucket to optimize
  * event processing and prevent contention between event handlers.
  */

@@ -1,10 +1,10 @@
 /**
  * @file qb/io/protocol/base.h
  * @brief Base protocol implementations for the IO system
- * 
+ *
  * This file defines the basic protocols used for communication in the IO system,
  * including size-based message framing and data transformations.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,19 +23,19 @@
 
 #ifndef QB_IO_PROT_BASE_H_
 #define QB_IO_PROT_BASE_H_
-#include "../async/protocol.h"
 #include <cstring>
 #include <qb/system/allocator/pipe.h>
+#include "../async/protocol.h"
 
 namespace qb::protocol::base {
 
 /**
  * @class byte_terminated
  * @brief Protocol for messages terminated by a specific byte
- * 
+ *
  * This class implements a protocol where messages are delimited by
  * a specific termination byte (e.g., '\0' or '\n').
- * 
+ *
  * @tparam _IO_ The I/O type that will use this protocol
  * @tparam _EndByte The byte that marks the end of a message (default '\0')
  */
@@ -44,22 +44,23 @@ class byte_terminated : public io::async::AProtocol<_IO_> {
     std::size_t _offset = 0u; /**< Position to resume delimiter search */
 
 public:
-    constexpr static const std::size_t delimiter_size = 1; /**< Delimiter size (1 byte) */
+    constexpr static const std::size_t delimiter_size =
+        1;                                      /**< Delimiter size (1 byte) */
     constexpr static const char end = _EndByte; /**< End character */
 
     /**
      * @brief Default constructor (deleted)
      */
     byte_terminated() = delete;
-    
+
     /**
      * @brief Virtual destructor
      */
     virtual ~byte_terminated() = default;
-    
+
     /**
      * @brief Constructor with I/O reference
-     * 
+     *
      * @param io Reference to the I/O object that uses this protocol
      */
     byte_terminated(_IO_ &io) noexcept
@@ -67,7 +68,7 @@ public:
 
     /**
      * @brief Calculates the message size without the delimiter
-     * 
+     *
      * @param size Total size including the delimiter
      * @return Message size without the delimiter
      */
@@ -78,15 +79,15 @@ public:
 
     /**
      * @brief Determines the size of the next complete message
-     * 
+     *
      * Searches for the termination byte in the input buffer.
-     * 
+     *
      * @return Message size if found, 0 otherwise
      */
     std::size_t
     getMessageSize() noexcept final {
         const auto &buffer = this->_io.in();
-        auto it = buffer.begin() + _offset;
+        auto        it     = buffer.begin() + _offset;
         while (it != buffer.end()) {
             if (*it == _EndByte) {
                 _offset = 0; // reset
@@ -110,35 +111,37 @@ public:
 /**
  * @class bytes_terminated
  * @brief Protocol for messages terminated by a sequence of bytes
- * 
+ *
  * This class implements a protocol where messages are delimited by
  * a specific sequence of bytes (e.g., "\r\n").
- * 
+ *
  * @tparam _IO_ The I/O type that will use this protocol
  * @tparam _Trait Trait containing the termination sequence (_EndBytes)
  */
 template <typename _IO_, typename _Trait>
 class bytes_terminated : public io::async::AProtocol<_IO_> {
-    constexpr static const std::size_t _SizeBytes = sizeof(_Trait::_EndBytes) - 1; /**< Size of the termination sequence */
-    std::size_t _offset = 0u; /**< Position to resume delimiter search */
+    constexpr static const std::size_t _SizeBytes =
+        sizeof(_Trait::_EndBytes) - 1; /**< Size of the termination sequence */
+    std::size_t _offset = 0u;          /**< Position to resume delimiter search */
 
 public:
-    constexpr static const std::size_t delimiter_size = _SizeBytes; /**< Delimiter size */
+    constexpr static const std::size_t delimiter_size =
+        _SizeBytes;                                      /**< Delimiter size */
     constexpr static const auto end = _Trait::_EndBytes; /**< End sequence */
 
     /**
      * @brief Default constructor (deleted)
      */
     bytes_terminated() = delete;
-    
+
     /**
      * @brief Virtual destructor
      */
     virtual ~bytes_terminated() = default;
-    
+
     /**
      * @brief Constructor with I/O reference
-     * 
+     *
      * @param io Reference to the I/O object that uses this protocol
      */
     bytes_terminated(_IO_ &io) noexcept
@@ -146,7 +149,7 @@ public:
 
     /**
      * @brief Calculates the message size without the delimiter
-     * 
+     *
      * @param size Total size including the delimiter
      * @return Message size without the delimiter
      */
@@ -157,15 +160,15 @@ public:
 
     /**
      * @brief Determines the size of the next complete message
-     * 
+     *
      * Searches for the termination sequence in the input buffer.
-     * 
+     *
      * @return Message size if found, 0 otherwise
      */
     std::size_t
     getMessageSize() {
         const auto &buffer = this->_in_buffer;
-        auto i = buffer.begin() + _offset;
+        auto        i      = buffer.begin() + _offset;
 
         if ((buffer.end() - i) < _SizeBytes)
             return 0;
@@ -194,11 +197,11 @@ public:
 /**
  * @class size_as_header
  * @brief Protocol for messages preceded by their size
- * 
+ *
  * This class implements a protocol where each message is preceded
  * by a header containing its size. The format can be uint8_t, uint16_t,
  * or uint32_t depending on needs.
- * 
+ *
  * @tparam _IO_ The I/O type that will use this protocol
  * @tparam _Size Header size type (default uint16_t)
  */
@@ -212,10 +215,10 @@ public:
      * @brief Default constructor
      */
     size_as_header() = delete;
-    
+
     /**
      * @brief Constructor with I/O reference
-     * 
+     *
      * @param io Reference to the I/O object that uses this protocol
      */
     size_as_header(_IO_ &io) noexcept
@@ -223,7 +226,7 @@ public:
 
     /**
      * @brief Returns the size of the header
-     * 
+     *
      * @return Header size in bytes
      */
     inline std::size_t
@@ -233,10 +236,10 @@ public:
 
     /**
      * @brief Determines the size of the next complete message
-     * 
+     *
      * First reads the header to determine the message size,
      * then waits for the complete message to be available.
-     * 
+     *
      * @return Size of the message if complete, 0 otherwise
      */
     std::size_t
@@ -254,7 +257,7 @@ public:
         }
         if (buffer.size() >= _size) {
             const auto ret = _size;
-            _size = 0;
+            _size          = 0;
             return ret;
         }
         return 0;
@@ -262,10 +265,10 @@ public:
 
     /**
      * @brief Creates a size header for a message
-     * 
+     *
      * Converts the message size into an appropriate header,
      * with endianness conversion if necessary.
-     * 
+     *
      * @param size Size of the message
      * @return Formatted size header
      */

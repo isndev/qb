@@ -29,16 +29,16 @@ namespace qb::io::ssl {
 
 Certificate
 get_certificate(SSL *ssl) {
-    X509 *cert;
-    char *line;
+    X509       *cert;
+    char       *line;
     Certificate ret{};
 
     cert = SSL_get_peer_certificate(ssl); /* Get certificates (if available) */
     if (cert != nullptr) {
-        line = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
+        line        = X509_NAME_oneline(X509_get_subject_name(cert), nullptr, 0);
         ret.subject = line;
         free(line);
-        line = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
+        line       = X509_NAME_oneline(X509_get_issuer_name(cert), nullptr, 0);
         ret.issuer = line;
         free(line);
         ret.version = X509_get_version(cert);
@@ -89,8 +89,8 @@ socket::socket(SSL *ctx, tcp::socket &sock) noexcept
 
 socket::~socket() noexcept {
     if (_ssl_handle) {
-        const auto handle = ssl_handle();
-        const auto ctx = SSL_get_SSL_CTX(handle);
+        const auto handle    = ssl_handle();
+        const auto ctx       = SSL_get_SSL_CTX(handle);
         const auto is_client = !SSL_is_server(handle);
         // SSL_shutdown(handle);
         // SSL_free(handle);
@@ -115,12 +115,12 @@ socket::handCheck() noexcept {
     if (ret != 1) {
         auto err = SSL_get_error(ssl_handle(), ret);
         switch (err) {
-        case SSL_ERROR_WANT_WRITE:
-        case SSL_ERROR_WANT_READ:
-            return 0;
-        default:
-            disconnect();
-            return -1;
+            case SSL_ERROR_WANT_WRITE:
+            case SSL_ERROR_WANT_READ:
+                return 0;
+            default:
+                disconnect();
+                return -1;
         }
     }
     _connected = true;
@@ -170,12 +170,12 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
 int
 socket::connect(uri const &u) noexcept {
     switch (u.af()) {
-    case AF_INET:
-    case AF_INET6:
-        return connect_in(u.af(), std::string(u.host()), u.u_port());
-    case AF_UNIX:
-        const auto path = std::string(u.path()) + std::string(u.host());
-        return connect_un(path);
+        case AF_INET:
+        case AF_INET6:
+            return connect_in(u.af(), std::string(u.host()), u.u_port());
+        case AF_UNIX:
+            const auto path = std::string(u.path()) + std::string(u.host());
+            return connect_un(path);
     }
     return -1;
 }
@@ -235,7 +235,8 @@ socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
 }
 
 // used for async
-int socket::connected() noexcept {
+int
+socket::connected() noexcept {
     if (!_ssl_handle)
         return -1;
     const auto h_ssl = ssl_handle();
@@ -246,12 +247,12 @@ int socket::connected() noexcept {
 int
 socket::n_connect(uri const &u) noexcept {
     switch (u.af()) {
-    case AF_INET:
-    case AF_INET6:
-        return n_connect_in(u.af(), std::string(u.host()), u.u_port());
-    case AF_UNIX:
-        const auto path = std::string(u.path()) + std::string(u.host());
-        return n_connect_un(path);
+        case AF_INET:
+        case AF_INET6:
+            return n_connect_in(u.af(), std::string(u.host()), u.u_port());
+        case AF_UNIX:
+            const auto path = std::string(u.path()) + std::string(u.host());
+            return n_connect_un(path);
     }
     return -1;
 }
@@ -274,7 +275,7 @@ socket::n_connect_un(std::string const &path) noexcept {
 int
 socket::disconnect() noexcept {
     _connected = false;
-//    SSL_shutdown(ssl_handle());
+    //    SSL_shutdown(ssl_handle());
     return tcp::socket::disconnect();
 }
 
@@ -286,11 +287,11 @@ socket::read(void *data, std::size_t size) noexcept {
         if (ret < 0) {
             auto err = SSL_get_error(ssl_handle(), ret);
             switch (err) {
-            case SSL_ERROR_WANT_WRITE:
-            case SSL_ERROR_WANT_READ:
-                return 0;
-            default:
-                return -1;
+                case SSL_ERROR_WANT_WRITE:
+                case SSL_ERROR_WANT_READ:
+                    return 0;
+                default:
+                    return -1;
             }
         }
     }
@@ -305,11 +306,11 @@ socket::write(const void *data, std::size_t size) noexcept {
         if (ret < 0) {
             auto err = SSL_get_error(ssl_handle(), ret);
             switch (err) {
-            case SSL_ERROR_WANT_WRITE:
-            case SSL_ERROR_WANT_READ:
-                return 0;
-            default:
-                return -1;
+                case SSL_ERROR_WANT_WRITE:
+                case SSL_ERROR_WANT_READ:
+                    return 0;
+                default:
+                    return -1;
             }
         }
     }

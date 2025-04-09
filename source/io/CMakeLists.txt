@@ -23,10 +23,10 @@
 # -----------------------------------------------------------------------------
 
 # Define project with same version as parent project
-project(${QB_PREFIX}-io 
-    LANGUAGES CXX 
-    VERSION ${QB_VERSION} 
-    DESCRIPTION "I/O and networking library for the qb framework"
+project(${QB_PREFIX}-io
+        LANGUAGES CXX
+        VERSION ${QB_VERSION}
+        DESCRIPTION "I/O and networking library for the qb framework"
 )
 
 # -----------------------------------------------------------------------------
@@ -41,7 +41,7 @@ set(CURRENT_INCLUDES)
 # Library source files
 # -----------------------------------------------------------------------------
 set(IO_SOURCES
-    src/io.cpp
+        src/io.cpp
 )
 
 # -----------------------------------------------------------------------------
@@ -74,12 +74,12 @@ endif ()
 if (ZLIB_FOUND)
     list(APPEND CURRENT_DEPENDENCIES ZLIB::ZLIB)
     list(APPEND CURRENT_DEFINITIONS QB_IO_WITH_ZLIB=1)
-    
+
     # Add ZLIB include directories if not using imported targets
-    if(NOT TARGET ZLIB::ZLIB)
+    if (NOT TARGET ZLIB::ZLIB)
         list(APPEND CURRENT_INCLUDES ${ZLIB_INCLUDE_DIRS})
-    endif()
-    
+    endif ()
+
     message(STATUS "[${PROJECT_NAME}] Building with ZLIB compression support")
 endif ()
 
@@ -89,38 +89,38 @@ endif ()
 if (OPENSSL_FOUND)
     list(APPEND CURRENT_DEPENDENCIES OpenSSL::SSL)
     list(APPEND CURRENT_DEFINITIONS QB_IO_WITH_SSL=1)
-    
+
     # Add OpenSSL include directories if not using imported targets
-    if(NOT TARGET OpenSSL::SSL)
+    if (NOT TARGET OpenSSL::SSL)
         list(APPEND CURRENT_INCLUDES ${OPENSSL_INCLUDE_DIR})
-    endif()
-    
+    endif ()
+
     # Option for Argon2 (can be disabled)
     option(QB_WITH_ARGON2 "Enable Argon2 support for password hashing" ON)
-    
+
     # Add Argon2 library for advanced cryptographic functionality
-    if(QB_WITH_ARGON2)
+    if (QB_WITH_ARGON2)
         find_library(ARGON2_LIBRARY NAMES argon2 libargon2)
-        if(ARGON2_LIBRARY)
+        if (ARGON2_LIBRARY)
             list(APPEND CURRENT_DEPENDENCIES ${ARGON2_LIBRARY})
             list(APPEND CURRENT_DEFINITIONS QB_IO_WITH_ARGON2=1)
             message(STATUS "[${PROJECT_NAME}] Building with Argon2 support for advanced crypto")
-        else()
+        else ()
             message(WARNING "[${PROJECT_NAME}] Argon2 library not found - advanced crypto functions will use fallback methods")
-        endif()
-    else()
+        endif ()
+    else ()
         message(STATUS "[${PROJECT_NAME}] Argon2 support disabled - advanced crypto functions will use fallback methods")
-    endif()
-    
+    endif ()
+
     # Add nlohmann_json for metadata functions
     find_package(nlohmann_json QUIET)
-    if(nlohmann_json_FOUND)
+    if (nlohmann_json_FOUND)
         list(APPEND CURRENT_DEPENDENCIES nlohmann_json::nlohmann_json)
         message(STATUS "[${PROJECT_NAME}] Building with nlohmann_json support")
-    else()
+    else ()
         message(WARNING "[${PROJECT_NAME}] nlohmann_json library not found - metadata functions may not work")
-    endif()
-    
+    endif ()
+
     message(STATUS "[${PROJECT_NAME}] Building with OpenSSL support")
 endif ()
 
@@ -134,20 +134,20 @@ endif ()
 # -----------------------------------------------------------------------------
 # Define the IO library using the custom cxx_library macro from parent project
 cxx_library(
-    NAME ${PROJECT_NAME}
-    FLAGS ${cxx_default_lib}
-    SOURCES ${IO_SOURCES}
-    DEPENDENCIES ${CURRENT_DEPENDENCIES}
+        NAME ${PROJECT_NAME}
+        FLAGS ${cxx_default_lib}
+        SOURCES ${IO_SOURCES}
+        DEPENDENCIES ${CURRENT_DEPENDENCIES}
 )
 
 # Configure library properties and interface includes
-set_target_properties(${PROJECT_NAME} PROPERTIES 
-    VERSION ${QB_VERSION}
-    SOVERSION ${QB_VERSION_MAJOR}
-    POSITION_INDEPENDENT_CODE ON
-    CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF
+set_target_properties(${PROJECT_NAME} PROPERTIES
+        VERSION ${QB_VERSION}
+        SOVERSION ${QB_VERSION_MAJOR}
+        POSITION_INDEPENDENT_CODE ON
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
 )
 
 # Apply public compile definitions
@@ -156,41 +156,41 @@ foreach (def ${CURRENT_DEFINITIONS})
 endforeach ()
 
 # Setup include directories for both build and install interfaces
-target_include_directories(${PROJECT_NAME} 
-    PUBLIC
+target_include_directories(${PROJECT_NAME}
+        PUBLIC
         "$<BUILD_INTERFACE:${QB_DIRECTORY}/include>"
-    PRIVATE
+        PRIVATE
         "$<BUILD_INTERFACE:${QB_DIRECTORY}/source/io/include>"
-    INTERFACE
+        INTERFACE
         "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 )
 
 # Add module directories to the include path
-target_include_directories(${PROJECT_NAME} 
-    PUBLIC "$<BUILD_INTERFACE:${QB_DIRECTORY}/modules>"
+target_include_directories(${PROJECT_NAME}
+        PUBLIC "$<BUILD_INTERFACE:${QB_DIRECTORY}/modules>"
 )
 
 # -----------------------------------------------------------------------------
 # Installation configuration
 # -----------------------------------------------------------------------------
-if(${QB_PREFIX_UPPER}_INSTALL)
+if (${QB_PREFIX_UPPER}_INSTALL)
     include(GNUInstallDirs)
-    
+
     install(TARGETS ${PROJECT_NAME}
-        EXPORT ${PROJECT_NAME}Targets
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+            EXPORT ${PROJECT_NAME}Targets
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     )
-    
+
     # Generate and install export file
     install(EXPORT ${PROJECT_NAME}Targets
-        FILE ${PROJECT_NAME}Targets.cmake
-        NAMESPACE qb::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+            FILE ${PROJECT_NAME}Targets.cmake
+            NAMESPACE qb::
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
     )
-endif()
+endif ()
 
 # -----------------------------------------------------------------------------
 # Tests configuration

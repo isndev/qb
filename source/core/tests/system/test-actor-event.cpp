@@ -1,12 +1,12 @@
 /**
  * @file qb/core/tests/system/test-actor-event.cpp
  * @brief Unit tests for actor event communication
- * 
+ *
  * This file contains tests for the event communication mechanisms between actors
  * in the QB Actor Framework. It tests various patterns of communication including
  * push/send operations, event routing through different cores, and broadcast events,
  * in both mono-core and multi-core scenarios.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,14 +30,14 @@
 #include <random>
 
 struct TestEvent : public qb::Event {
-    uint8_t _data[32];
+    uint8_t  _data[32];
     uint32_t _sum;
-    bool has_extra_data = false;
+    bool     has_extra_data = false;
 
     TestEvent()
         : _sum(0) {
         std::random_device rand_dev;
-        std::mt19937 generator(rand_dev());
+        std::mt19937       generator(rand_dev());
 
         std::uniform_int_distribution<int> random_number(0, 255);
         std::generate(std::begin(_data), std::end(_data), [&]() {
@@ -64,7 +64,7 @@ struct RemovedEvent : public qb::Event {};
 
 class TestActorReceiver final : public qb::Actor {
     const uint32_t _max_events;
-    uint32_t _count;
+    uint32_t       _count;
 
 public:
     explicit TestActorReceiver(uint32_t const max_events)
@@ -92,9 +92,9 @@ public:
 
 class BaseSender {
 public:
-    const uint32_t _max_events;
+    const uint32_t    _max_events;
     const qb::ActorId _to;
-    uint32_t _count;
+    uint32_t          _count;
 
 public:
     explicit BaseSender(uint32_t const max_events, qb::ActorId const to)
@@ -170,7 +170,7 @@ struct AllocatedPipePushActor : public BaseActorSender<AllocatedPipePushActor> {
         : BaseActorSender(max_events, to) {}
     void
     doSend() {
-        auto &e = getPipe(_to).allocated_push<TestEvent>(32);
+        auto &e          = getPipe(_to).allocated_push<TestEvent>(32);
         e.has_extra_data = true;
         memcpy(reinterpret_cast<uint8_t *>(&e) + sizeof(TestEvent), e._data,
                sizeof(e._data));
@@ -205,7 +205,7 @@ template <typename ActorSender>
 class ActorEventMulti : public testing::Test {
 protected:
     const uint32_t max_core;
-    qb::Main main;
+    qb::Main       main;
     ActorEventMulti()
         : max_core(std::thread::hardware_concurrency()) {}
 
@@ -227,7 +227,7 @@ template <typename ActorSender>
 class ActorEventMultiHighLatency : public testing::Test {
 protected:
     const uint32_t max_core;
-    qb::Main main;
+    qb::Main       main;
     ActorEventMultiHighLatency()
         : max_core(std::thread::hardware_concurrency()) {}
 
@@ -266,7 +266,7 @@ template <typename ActorSender>
 class ActorEventBroadcastMulti : public testing::Test {
 protected:
     const uint32_t max_core;
-    qb::Main main;
+    qb::Main       main;
     ActorEventBroadcastMulti()
         : max_core(std::thread::hardware_concurrency()) {}
 
@@ -331,7 +331,7 @@ struct EventForward : public TestEvent {};
 
 class TestSendReply final : public qb::Actor {
     const qb::ActorId _to;
-    uint32_t counter = 0;
+    uint32_t          counter = 0;
 
 public:
     explicit TestSendReply(qb::ActorId const to)

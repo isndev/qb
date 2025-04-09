@@ -1,11 +1,11 @@
 /**
  * @file qb/io/async/event/eos.h
  * @brief End-of-stream event for asynchronous I/O
- * 
+ *
  * This file defines the eos (End-Of-Stream) event structure which is triggered
  * when all data has been written and sent through an I/O stream. Derived classes
  * can handle this event by implementing the `void on(eos &&)` method.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,11 +30,11 @@ namespace qb::io::async::event {
 /**
  * @struct eos
  * @brief Event triggered when all data has been written and sent
- * 
+ *
  * This event is passed to the derived class's on() method when
  * all pending data has been successfully written and sent through
  * an I/O stream. It signals that the output buffer is now empty.
- * 
+ *
  * Usage:
  * @code
  * void on(qb::io::async::event::eos &&) {

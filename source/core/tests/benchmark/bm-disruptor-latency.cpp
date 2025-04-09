@@ -1,11 +1,12 @@
 /**
  * @file qb/core/tests/benchmark/bm-disruptor-latency.cpp
- * @brief Benchmark tests for latency measurement across different actor communication patterns
+ * @brief Benchmark tests for latency measurement across different actor communication
+ * patterns
  *
- * This file contains benchmarks that measure the latency of different communication patterns
- * in the QB Actor Framework, including unicast, pipeline, multicast, and diamond configurations.
- * Each benchmark measures how quickly events can propagate through different topologies
- * with both distributed and shared core configurations.
+ * This file contains benchmarks that measure the latency of different communication
+ * patterns in the QB Actor Framework, including unicast, pipeline, multicast, and
+ * diamond configurations. Each benchmark measures how quickly events can propagate
+ * through different topologies with both distributed and shared core configurations.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -23,18 +24,18 @@
  * @ingroup Core
  */
 
+#include <benchmark/benchmark.h>
+#include <qb/main.h>
 #include "../shared/TestConsumer.h"
 #include "../shared/TestEvent.h"
 #include "../shared/TestProducer.h"
-#include <benchmark/benchmark.h>
-#include <qb/main.h>
 
 template <typename Event>
 static void
 BM_Unicast_Latency(benchmark::State &state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main main;
+        qb::Main   main;
 
         main.addActor<ProducerActor<Event>>(
             0, qb::ActorIdList{main.addActor<ConsumerActor<Event>>(1)}, nb_events);
@@ -49,7 +50,7 @@ static void
 BM_Pipeline_Latency(benchmark::State &state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main main;
+        qb::Main   main;
 
         main.addActor<ProducerActor<Event>>(
             0,
@@ -68,7 +69,7 @@ static void
 BM_Pipeline_Shared_Latency(benchmark::State &state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main main;
+        qb::Main   main;
 
         main.addActor<ProducerActor<Event>>(
             0,
@@ -87,7 +88,7 @@ static void
 BM_Multicast_Latency(benchmark::State &state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main main;
+        qb::Main   main;
 
         main.addActor<ProducerActor<Event>>(
             0,
@@ -106,7 +107,7 @@ static void
 BM_Multicast_Shared_Latency(benchmark::State &state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main main;
+        qb::Main   main;
 
         main.core(0).addActor<ProducerActor<Event>>(
             main.core(1)
@@ -127,7 +128,7 @@ static void
 BM_Diamond_Latency(benchmark::State &state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main main;
+        qb::Main   main;
 
         auto id_end = main.addActor<ConsumerActor<Event>>(3);
         main.addActor<ProducerActor<Event>>(
@@ -147,7 +148,7 @@ static void
 BM_Diamond_Shared_Latency(benchmark::State &state) {
     for (auto _ : state) {
         const auto nb_events = state.range(0);
-        qb::Main main;
+        qb::Main   main;
 
         auto id_end = main.addActor<ConsumerActor<Event>>(2);
         main.addActor<ProducerActor<Event>>(

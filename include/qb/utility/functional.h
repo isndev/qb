@@ -30,9 +30,9 @@ namespace qb {
 
 /**
  * @brief Internal function to combine a single value into a hash seed
- * 
+ *
  * Uses the FNV-1a hash combining approach to mix a new value into an existing seed.
- * 
+ *
  * @tparam T Type of the value to hash
  * @param seed The seed value to combine with (modified in-place)
  * @param val The value to combine into the seed
@@ -45,19 +45,19 @@ _hash_combine(size_t &seed, const T &val) {
 
 /**
  * @brief Combines the hash values of multiple objects into a single hash
- * 
+ *
  * This is particularly useful for creating hash functions for composite objects
  * or when you need to hash multiple fields together.
- * 
+ *
  * @tparam Types Parameter pack of types to hash
  * @param args The values to combine into a single hash
  * @return A hash value combining all input values
- * 
+ *
  * @example
  * struct MyStruct {
  *     int a;
  *     std::string b;
- *     
+ *
  *     struct Hash {
  *         size_t operator()(const MyStruct& s) const {
  *             return qb::hash_combine(s.a, s.b);
@@ -67,7 +67,7 @@ _hash_combine(size_t &seed, const T &val) {
  */
 template <typename... Types>
 size_t
-hash_combine(const Types &... args) {
+hash_combine(const Types &...args) {
     size_t seed = 0;
     (_hash_combine(seed, args), ...); // create hash value with seed over all args
     return seed;

@@ -36,12 +36,13 @@ listener::listen(io::endpoint const &ep) noexcept {
 int
 listener::listen(io::uri const &u) noexcept {
     switch (u.af()) {
-    case AF_INET:
-    case AF_INET6:
-        return listen(io::endpoint().as_in(std::string(u.host()).c_str(), u.u_port()));
-    case AF_UNIX:
-        const auto path = std::string(u.path()) + std::string(u.host());
-        return listen_un(path.c_str());
+        case AF_INET:
+        case AF_INET6:
+            return listen(
+                io::endpoint().as_in(std::string(u.host()).c_str(), u.u_port()));
+        case AF_UNIX:
+            const auto path = std::string(u.path()) + std::string(u.host());
+            return listen_un(path.c_str());
     }
     return -1;
 }
@@ -71,7 +72,7 @@ listener::accept(tcp::socket &sock) const noexcept {
     socket_type nt_sock = qb::io::inet::invalid_socket;
 
     auto ret = io::socket::accept_n(nt_sock);
-    sock = nt_sock;
+    sock     = nt_sock;
     sock.set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
     return ret;
 }

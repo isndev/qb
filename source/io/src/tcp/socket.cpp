@@ -59,12 +59,12 @@ socket::bind(qb::io::endpoint const &ep) noexcept {
 int
 socket::bind(io::uri const &u) noexcept {
     switch (u.af()) {
-    case AF_INET:
-    case AF_INET6:
-        return bind(io::endpoint().as_in(std::string(u.host()).c_str(), u.u_port()));
-    case AF_UNIX:
-        const auto path = std::string(u.path()) + std::string(u.host());
-        return bind(io::endpoint().as_un(path.c_str()));
+        case AF_INET:
+        case AF_INET6:
+            return bind(io::endpoint().as_in(std::string(u.host()).c_str(), u.u_port()));
+        case AF_UNIX:
+            const auto path = std::string(u.path()) + std::string(u.host());
+            return bind(io::endpoint().as_un(path.c_str()));
     }
     return -1;
 }
@@ -100,12 +100,12 @@ socket::connect(qb::io::endpoint const &ep) noexcept {
 int
 socket::connect(uri const &u) noexcept {
     switch (u.af()) {
-    case AF_INET:
-    case AF_INET6:
-        return connect_in(u.af(), std::string(u.host()), u.u_port());
-    case AF_UNIX:
-        const auto path = std::string(u.path()) + std::string(u.host());
-        return connect_un(path);
+        case AF_INET:
+        case AF_INET6:
+            return connect_in(u.af(), std::string(u.host()), u.u_port());
+        case AF_UNIX:
+            const auto path = std::string(u.path()) + std::string(u.host());
+            return connect_un(path);
     }
     return -1;
 }
@@ -158,12 +158,12 @@ socket::n_connect(qb::io::endpoint const &ep) noexcept {
 int
 socket::n_connect(uri const &u) noexcept {
     switch (u.af()) {
-    case AF_INET:
-    case AF_INET6:
-        return n_connect_in(u.af(), std::string(u.host()), u.u_port());
-    case AF_UNIX:
-        const auto path = std::string(u.path()) + std::string(u.host());
-        return n_connect_un(path);
+        case AF_INET:
+        case AF_INET6:
+            return n_connect_in(u.af(), std::string(u.host()), u.u_port());
+        case AF_UNIX:
+            const auto path = std::string(u.path()) + std::string(u.host());
+            return n_connect_un(path);
     }
     return -1;
 }

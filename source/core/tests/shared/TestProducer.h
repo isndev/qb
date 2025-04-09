@@ -3,15 +3,15 @@
 #ifndef QB_TESTPRODUCER_H
 #define QB_TESTPRODUCER_H
 
-#include "TestLatency.h"
 #include <qb/actor.h>
+#include "TestLatency.h"
 
 #include <utility>
 
 template <typename Event>
 class ProducerActor final : public qb::Actor {
-    const qb::ActorIdList _idList;
-    uint64_t _max_events;
+    const qb::ActorIdList            _idList;
+    uint64_t                         _max_events;
     pg::latency<1000 * 1000, 900000> _latency;
 
 public:

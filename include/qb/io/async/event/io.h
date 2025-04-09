@@ -1,11 +1,11 @@
 /**
  * @file qb/io/async/event/io.h
  * @brief I/O notification event for asynchronous operations
- * 
+ *
  * This file defines the io event structure which is used internally by the library
  * to handle low-level I/O notifications from libev. It wraps libev's io watcher
  * functionality for read/write readiness on file descriptors.
- * 
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,14 +32,14 @@ namespace qb::io::async::event {
 /**
  * @struct io
  * @brief Event for file descriptor I/O notifications
- * 
+ *
  * This event extends the base event with ev::io functionality from libev.
  * It is used internally by the I/O subsystem to monitor file descriptors
  * for read/write readiness and other I/O conditions.
- * 
+ *
  * Note: This event is primarily used internally by the library and is not
  * typically meant to be handled directly by user code.
- * 
+ *
  * @note This event wrapper is used internally by the I/O subsystem
  * and is not typically meant to be handled directly by application code.
  */
@@ -48,7 +48,7 @@ struct io : base<ev::io> {
 
     /**
      * @brief Constructor
-     * 
+     *
      * @param loop Reference to the libev event loop
      */
     explicit io(ev::loop_ref loop)
