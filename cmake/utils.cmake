@@ -340,7 +340,7 @@ function(qb_load_modules path)
     include_directories(${path})
     foreach (subdir ${list})
         message(${path}/${subdir})
-        add_subdirectory(${path}/${subdir} ${CMAKE_CURRENT_BINARY_DIR}/qb-module/${subdir})
+        add_subdirectory(${path}/${subdir})
     endforeach ()
 endfunction()
 
