@@ -69,6 +69,7 @@ if (OPENSSL_FOUND)
             test-crypto.cpp
             test-crypto-advanced.cpp
             test-crypto-asymmetric.cpp
+            test-crypto-jwt.cpp
     )
 
     # Generate targets for each crypto test

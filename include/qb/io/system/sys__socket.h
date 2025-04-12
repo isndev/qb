@@ -1347,6 +1347,7 @@ public:
 
     QB__DECL operator socket_type() const;
 
+public:
     /**
      * @brief this function just for windows platform
      *

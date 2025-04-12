@@ -26,6 +26,7 @@
 #define QB_IO_ASYNC_TCP_CONNECTOR_H
 
 #include <qb/io.h>
+#include <qb/io/system/sys__socket.h>
 #include "../../uri.h"
 #include "../event/io.h"
 #include "../listener.h"
