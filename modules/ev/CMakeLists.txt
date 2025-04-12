@@ -223,6 +223,47 @@ list(APPEND LIBEV_SRCS
 # -----------------------------------------------------------------------------
 # Static library build
 if(BUILD_STATIC_LIBS)
+# -----------------------------------------------------------------------------
+# Platform-specific backend configuration
+# -----------------------------------------------------------------------------
+
+# On Linux (disable BSD/Solaris backends)
+if(UNIX AND NOT APPLE)
+    message(STATUS "Configuring libev for Linux")
+
+    add_definitions(
+        -DEV_USE_KQUEUE=0   # BSD-specific
+        -DEV_USE_PORT=0     # Solaris-specific
+    )
+
+# On macOS (disable epoll/port, allow kqueue)
+elseif(APPLE)
+    message(STATUS "Configuring libev for macOS")
+
+    add_definitions(
+        -DEV_USE_EPOLL=0
+        -DEV_USE_PORT=0
+    )
+
+# On Windows
+elseif(WIN32)
+    message(STATUS "Configuring libev for Windows")
+
+    add_definitions(
+        -DEV_USE_KQUEUE=0
+        -DEV_USE_EPOLL=0
+        -DEV_USE_PORT=0
+        -DEV_USE_SELECT=1  # force fallback to select
+    )
+else()
+    message(WARNING "Unknown platform for libev, enabling only select()")
+    add_definitions(
+        -DEV_USE_KQUEUE=0
+        -DEV_USE_EPOLL=0
+        -DEV_USE_PORT=0
+        -DEV_USE_SELECT=1
+    )
+endif()
     add_library(ev STATIC ${LIBEV_SRCS})
     
     # Windows-specific dependencies

@@ -356,6 +356,7 @@ public:
     using base_t::end;
     using base_t::erase;
     using base_t::size;
+    using base_t::empty;
 
     /**
      * @brief Convert a key to lowercase

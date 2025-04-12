@@ -660,4 +660,238 @@ crypto::ecies_decrypt(const std::vector<unsigned char> &encrypted_data,
     return decrypted_data;
 }
 
+// Implementation of RSA signature
+std::vector<unsigned char>
+crypto::rsa_sign(const std::vector<unsigned char> &data, const std::string &private_key,
+                 DigestAlgorithm digest) {
+    // Parse the private key from PEM format
+    EVP_PKEY *pkey = pem_to_key(private_key, true);
+
+    // Get the EVP_MD for the digest algorithm
+    const EVP_MD *md = get_evp_md(digest);
+    if (!md) {
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Invalid digest algorithm for RSA signing");
+    }
+
+    // Create signature context
+    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
+    if (!md_ctx) {
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to create signing context: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Initialize the signing operation
+    if (EVP_DigestSignInit(md_ctx, nullptr, md, nullptr, pkey) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to initialize RSA signing operation: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Update the context with the data to be signed
+    if (EVP_DigestSignUpdate(md_ctx, data.data(), data.size()) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to update RSA signing context: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Determine the signature size
+    size_t sig_len = 0;
+    if (EVP_DigestSignFinal(md_ctx, nullptr, &sig_len) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to determine RSA signature size: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Allocate memory for the signature
+    std::vector<unsigned char> signature(sig_len);
+
+    // Get the signature
+    if (EVP_DigestSignFinal(md_ctx, signature.data(), &sig_len) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("RSA signing failed: " + get_openssl_asymmetric_error());
+    }
+
+    // Resize to actual signature length
+    signature.resize(sig_len);
+
+    // Cleanup
+    EVP_MD_CTX_free(md_ctx);
+    EVP_PKEY_free(pkey);
+
+    return signature;
+}
+
+// Implementation of RSA verification
+bool
+crypto::rsa_verify(const std::vector<unsigned char> &data,
+                   const std::vector<unsigned char> &signature,
+                   const std::string                &public_key,
+                   DigestAlgorithm digest) {
+    // Parse the public key from PEM format
+    EVP_PKEY *pkey = pem_to_key(public_key, false);
+
+    // Get the EVP_MD for the digest algorithm
+    const EVP_MD *md = get_evp_md(digest);
+    if (!md) {
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Invalid digest algorithm for RSA verification");
+    }
+
+    // Create verification context
+    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
+    if (!md_ctx) {
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to create verification context: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Initialize the verification operation
+    if (EVP_DigestVerifyInit(md_ctx, nullptr, md, nullptr, pkey) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to initialize RSA verification operation: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Update the context with the data to be verified
+    if (EVP_DigestVerifyUpdate(md_ctx, data.data(), data.size()) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to update RSA verification context: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Verify the signature
+    int result = EVP_DigestVerifyFinal(md_ctx, signature.data(), signature.size());
+
+    // Cleanup
+    EVP_MD_CTX_free(md_ctx);
+    EVP_PKEY_free(pkey);
+
+    return (result == 1);
+}
+
+// Implementation of EC signature
+std::vector<unsigned char>
+crypto::ec_sign(const std::vector<unsigned char> &data, const std::string &private_key,
+                DigestAlgorithm digest) {
+    // Parse the private key from PEM format
+    EVP_PKEY *pkey = pem_to_key(private_key, true);
+
+    // Get the EVP_MD for the digest algorithm
+    const EVP_MD *md = get_evp_md(digest);
+    if (!md) {
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Invalid digest algorithm for EC signing");
+    }
+
+    // Create signature context
+    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
+    if (!md_ctx) {
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to create signing context: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Initialize the signing operation
+    if (EVP_DigestSignInit(md_ctx, nullptr, md, nullptr, pkey) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to initialize EC signing operation: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Update the context with the data to be signed
+    if (EVP_DigestSignUpdate(md_ctx, data.data(), data.size()) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to update EC signing context: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Determine the signature size
+    size_t sig_len = 0;
+    if (EVP_DigestSignFinal(md_ctx, nullptr, &sig_len) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to determine EC signature size: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Allocate memory for the signature
+    std::vector<unsigned char> signature(sig_len);
+
+    // Get the signature
+    if (EVP_DigestSignFinal(md_ctx, signature.data(), &sig_len) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("EC signing failed: " + get_openssl_asymmetric_error());
+    }
+
+    // Resize to actual signature length
+    signature.resize(sig_len);
+
+    // Cleanup
+    EVP_MD_CTX_free(md_ctx);
+    EVP_PKEY_free(pkey);
+
+    return signature;
+}
+
+// Implementation of EC verification
+bool
+crypto::ec_verify(const std::vector<unsigned char> &data,
+                  const std::vector<unsigned char> &signature,
+                  const std::string                &public_key,
+                  DigestAlgorithm digest) {
+    // Parse the public key from PEM format
+    EVP_PKEY *pkey = pem_to_key(public_key, false);
+
+    // Get the EVP_MD for the digest algorithm
+    const EVP_MD *md = get_evp_md(digest);
+    if (!md) {
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Invalid digest algorithm for EC verification");
+    }
+
+    // Create verification context
+    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
+    if (!md_ctx) {
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to create verification context: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Initialize the verification operation
+    if (EVP_DigestVerifyInit(md_ctx, nullptr, md, nullptr, pkey) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to initialize EC verification operation: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Update the context with the data to be verified
+    if (EVP_DigestVerifyUpdate(md_ctx, data.data(), data.size()) != 1) {
+        EVP_MD_CTX_free(md_ctx);
+        EVP_PKEY_free(pkey);
+        throw std::runtime_error("Failed to update EC verification context: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    // Verify the signature
+    int result = EVP_DigestVerifyFinal(md_ctx, signature.data(), signature.size());
+
+    // Cleanup
+    EVP_MD_CTX_free(md_ctx);
+    EVP_PKEY_free(pkey);
+
+    return (result == 1);
+}
+
 } // namespace qb

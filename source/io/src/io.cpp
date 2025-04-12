@@ -58,6 +58,7 @@ generate_random_uuid() {
 #include "crypto_modern.cpp"
 #include "crypto_advanced.cpp"
 #include "crypto_asymmetric.cpp"
+#include "crypto_jwt.cpp"
 #include "tcp/ssl/init.cpp"
 #include "tcp/ssl/listener.cpp"
 #include "tcp/ssl/socket.cpp"
