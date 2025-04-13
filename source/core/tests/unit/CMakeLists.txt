@@ -25,3 +25,6 @@
 # Create unit test for the event router component
 # This uses the custom cxx_gtest macro defined in the parent project
 cxx_gtest(${PROJECT_NAME}-gtest-unit-event-router "${PROJECT_NAME}" test-event-router.cpp)
+
+# Create unit test for the timestamp component
+cxx_gtest(${PROJECT_NAME}-gtest-unit-timestamp "${PROJECT_NAME}" test-timestamp.cpp)
