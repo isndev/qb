@@ -46,7 +46,7 @@
 # ifdef EV_CONFIG_H
 #  include EV_CONFIG_H
 # else
-#  include "config.h"
+#  include "ev_config.h"
 # endif
 
 # if HAVE_FLOOR
@@ -3056,30 +3056,30 @@ evtimerfd_init (EV_P)
 
 /*****************************************************************************/
 
-#if EV_USE_IOCP
-# include "ev_iocp.c"
-#endif
-#if EV_USE_PORT
-# include "ev_port.c"
-#endif
+// #if EV_USE_IOCP
+// # include "ev_iocp.c"
+// #endif
+// #if EV_USE_PORT
+// # include "ev_port.c"
+// #endif
 #if EV_USE_KQUEUE
 # include "ev_kqueue.c"
 #endif
 #if EV_USE_EPOLL
 # include "ev_epoll.c"
 #endif
-#if EV_USE_LINUXAIO
-# include "ev_linuxaio.c"
-#endif
+// #if EV_USE_LINUXAIO
+// # include "ev_linuxaio.c"
+// #endif
 #if EV_USE_IOURING
 # include "ev_iouring.c"
 #endif
-#if EV_USE_POLL
-# include "ev_poll.c"
-#endif
-#if EV_USE_SELECT
-# include "ev_select.c"
-#endif
+// #if EV_USE_POLL
+// # include "ev_poll.c"
+// #endif
+// #if EV_USE_SELECT
+// # include "ev_select.c"
+// #endif
 
 ecb_cold int
 ev_version_major (void) EV_NOEXCEPT
@@ -3126,32 +3126,33 @@ ecb_cold
 unsigned int
 ev_recommended_backends (void) EV_NOEXCEPT
 {
-  unsigned int flags = ev_supported_backends ();
+  return ev_supported_backends();
+//   unsigned int flags = ev_supported_backends ();
 
-#ifndef __NetBSD__
-  /* kqueue is borked on everything but netbsd apparently */
-  /* it usually doesn't work correctly on anything but sockets and pipes */
-  flags &= ~EVBACKEND_KQUEUE;
-#endif
-#ifdef __APPLE__
-  /* only select works correctly on that "unix-certified" platform */
-  flags &= ~EVBACKEND_KQUEUE; /* horribly broken, even for sockets */
-  flags &= ~EVBACKEND_POLL;   /* poll is based on kqueue from 10.5 onwards */
-#endif
-#ifdef __FreeBSD__
-  flags &= ~EVBACKEND_POLL;   /* poll return value is unusable (http://forums.freebsd.org/archive/index.php/t-10270.html) */
-#endif
+// #ifndef __NetBSD__
+//   /* kqueue is borked on everything but netbsd apparently */
+//   /* it usually doesn't work correctly on anything but sockets and pipes */
+//   flags &= ~EVBACKEND_KQUEUE;
+// #endif
+// #ifdef __APPLE__
+//   /* only select works correctly on that "unix-certified" platform */
+//   flags &= ~EVBACKEND_KQUEUE; /* horribly broken, even for sockets */
+//   flags &= ~EVBACKEND_POLL;   /* poll is based on kqueue from 10.5 onwards */
+// #endif
+// #ifdef __FreeBSD__
+//   flags &= ~EVBACKEND_POLL;   /* poll return value is unusable (http://forums.freebsd.org/archive/index.php/t-10270.html) */
+// #endif
 
-  /* TODO: linuxaio is very experimental */
-#if !EV_RECOMMEND_LINUXAIO
-  flags &= ~EVBACKEND_LINUXAIO;
-#endif
-  /* TODO: iouring is super experimental */
-#if !EV_RECOMMEND_IOURING
-  flags &= ~EVBACKEND_IOURING;
-#endif
+//   /* TODO: linuxaio is very experimental */
+// #if !EV_RECOMMEND_LINUXAIO
+//   flags &= ~EVBACKEND_LINUXAIO;
+// #endif
+//   /* TODO: iouring is super experimental */
+// #if !EV_RECOMMEND_IOURING
+//   flags &= ~EVBACKEND_IOURING;
+// #endif
 
-  return flags;
+//   return flags;
 }
 
 ecb_cold

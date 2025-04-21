@@ -37,6 +37,7 @@
 #include <array>
 #include <concepts>
 #include <optional>
+#include <functional>
 
 #if defined(__APPLE__)
 #include <mach/mach.h>

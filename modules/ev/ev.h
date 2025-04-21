@@ -39,7 +39,7 @@
 
 #ifndef EV_H_
 #define EV_H_
-
+#  include "ev_config.h"
 #ifdef __cplusplus
 # define EV_CPP(x) x
 # if __cplusplus >= 201103L
