@@ -280,16 +280,30 @@ run(int flag = 0) {
  * Repeatedly runs the event loop until the specified status becomes false.
  *
  * @param status Reference to a boolean condition to check
+ * @return The number of events that were invoked
  */
-inline void
+inline std::size_t
 run_once() {
     listener::current.run(EVRUN_ONCE);
+    return listener::current.nb_invoked_event();
 }
 
-inline void
+/**
+ * @brief Run the event loop until a condition is met
+ *
+ * Repeatedly runs the event loop until the specified status becomes false.
+ *
+ * @param status Reference to a boolean condition to check
+ * @return The number of events that were invoked
+ */
+inline std::size_t
 run_until(bool const &status) {
-    while (status)
+    std::size_t nb_invoked_events = 0;
+    while (status) {
         listener::current.run(EVRUN_NOWAIT);
+        nb_invoked_events += listener::current.nb_invoked_event();
+    }
+    return nb_invoked_events;
 }
 
 inline void

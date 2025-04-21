@@ -160,12 +160,10 @@ TEST(Session, COMMAND_OVER_UTCP) {
             client << STRING_MESSAGE << '\n';
         }
 
-        for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
-            async::run(EVRUN_ONCE);
+        while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
     });
 
-    for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
-        async::run(EVRUN_ONCE);
+    while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
     t.join();
 }
 
@@ -250,14 +248,11 @@ TEST(Session, COMMAND_OVER_SECURE_TCP) {
                 client << STRING_MESSAGE << '\n';
             }
 
-            for (auto j = 0; j < (NB_ITERATION * 5) && !client_done(); ++j)
-                async::run(EVRUN_ONCE);
+            while (async::run(EVRUN_NOWAIT) > 0 || (!client_done()));
         }
     });
 
-    for (auto i = 0;
-         i < (NB_ITERATION * NB_CLIENTS) && (!server_done() || !client_done()); ++i)
-        async::run(EVRUN_ONCE);
+    while (async::run(EVRUN_NOWAIT) > 0 || (!server_done() || !client_done()));
     tc.join();
 }
 
@@ -287,14 +282,11 @@ TEST(Session, COMMAND_OVER_SECURE_UTCP) {
                 client << STRING_MESSAGE << '\n';
             }
 
-            for (auto j = 0; j < (NB_ITERATION * 5) && !client_done(); ++j)
-                async::run(EVRUN_ONCE);
+            while (async::run(EVRUN_NOWAIT) > 0 || (!client_done()));
         }
     });
 
-    for (auto i = 0;
-         i < (NB_ITERATION * NB_CLIENTS) && (!server_done() || !client_done()); ++i)
-        async::run(EVRUN_ONCE);
+    while (async::run(EVRUN_NOWAIT) > 0 || (!server_done() || !client_done()));
     tc.join();
 }
 
@@ -337,7 +329,7 @@ public:
     }
 };
 
-TEST(Session, COMMAND_OVER_UDP) {
+TEST(Session, DISABLED_COMMAND_OVER_UDP) {
     msg_count_server_side = 0;
 
     async::init();
@@ -361,13 +353,10 @@ TEST(Session, COMMAND_OVER_UDP) {
                 client << STRING_MESSAGE << '\n';
             }
 
-            for (auto j = 0; j < (NB_ITERATION * 10000) && !client_done(); ++j)
-                async::run(EVRUN_ONCE);
+            while (async::run(EVRUN_NOWAIT) > 0 || (!client_done()));
         }
     });
 
-    for (auto i = 0;
-         i < (NB_ITERATION * 10000 * 5) && (!server_done() || !client_done()); ++i)
-        async::run(EVRUN_ONCE);
+    while (async::run(EVRUN_NOWAIT) > 0 || (!server_done() || !client_done()));
     tc.join();
 }

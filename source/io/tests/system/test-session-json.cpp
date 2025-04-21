@@ -111,12 +111,10 @@ TEST(Session, JSON_OVER_TCP) {
             client.publish(qb::json{{"message", STRING_MESSAGE}}, '\0');
         }
 
-        for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
-            async::run(EVRUN_ONCE);
+        while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
     });
 
-    for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
-        async::run(EVRUN_ONCE);
+    while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
     t.join();
 }
 
@@ -202,12 +200,10 @@ TEST(Session, JSON_OVER_SECURE_TCP) {
                    << '\0';
         }
 
-        for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
-            async::run(EVRUN_ONCE);
+        while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
     });
 
-    for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
-        async::run(EVRUN_ONCE);
+    while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
     t.join();
 }
 

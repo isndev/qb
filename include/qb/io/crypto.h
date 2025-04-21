@@ -54,6 +54,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <array>
 
 #undef hex_to_string
 
