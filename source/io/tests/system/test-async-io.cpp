@@ -170,6 +170,7 @@ TEST_F(AsyncIOTest, ImmediateTimeoutUtility) {
     EXPECT_TRUE(callback_executed);
 }
 
+#ifndef _WIN32
 // Test signal handling
 class SignalHandler {
 public:
@@ -218,7 +219,6 @@ private:
     async::event::signal<SIGUSR1> *sigusr1_watcher = nullptr;
 };
 
-#ifndef _WIN32
 TEST_F(AsyncIOTest, SignalHandling) {
     SignalHandler handler;
 
@@ -1072,10 +1072,10 @@ TEST_F(AsyncIOTest, TimerSynchronization) {
     EXPECT_EQ(tester.results, expected);
 }
 
+constexpr int NUM_THREADS           = 4;
+constexpr int ITERATIONS_PER_THREAD = 5;
 // Test for multiple threads using async operations
 TEST_F(AsyncIOTest, MultiThreadedAsyncOperations) {
-    const int NUM_THREADS           = 4;
-    const int ITERATIONS_PER_THREAD = 5;
 
     std::vector<std::thread> threads;
     std::atomic<int>         total_completed{0};
@@ -1360,9 +1360,9 @@ TEST_F(AsyncIOTest, ResourceCleanup) {
     EXPECT_TRUE(true);
 }
 
+constexpr int NUM_OPERATIONS = 1000;
 // Test intensive async operations
 TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
-    const int                NUM_OPERATIONS = 1000;
     std::atomic<int>         completed_operations{0};
     std::vector<std::thread> threads;
 

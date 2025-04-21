@@ -32,7 +32,11 @@
 #include <qb/io/async/listener.h>
 #include <qb/io/system/file.h>
 #include <thread>
+#ifdef _WIN32
+using pid_t = int;
+#else
 #include <unistd.h> // For getpid()
+#endif
 #include <vector>
 
 // Define platform detection macros

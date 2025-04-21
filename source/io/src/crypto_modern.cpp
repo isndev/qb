@@ -240,7 +240,7 @@ crypto::encrypt(const std::vector<unsigned char> &plaintext,
         return ciphertext;
     } catch (const std::exception &e) {
         EVP_CIPHER_CTX_free(ctx);
-        throw;
+        throw e;
     }
 }
 
@@ -370,7 +370,7 @@ crypto::decrypt(const std::vector<unsigned char> &ciphertext,
         return plaintext;
     } catch (const std::exception &e) {
         EVP_CIPHER_CTX_free(ctx);
-        throw;
+        throw e;
     }
 }
 
@@ -411,7 +411,7 @@ crypto::hash(const std::vector<unsigned char> &data, DigestAlgorithm algorithm) 
         return digest;
     } catch (const std::exception &e) {
         EVP_MD_CTX_free(ctx);
-        throw;
+        throw e;
     }
 }
 
@@ -478,7 +478,7 @@ crypto::hmac(const std::vector<unsigned char> &data,
         return hmac_value;
     } catch (const std::exception &e) {
         EVP_MD_CTX_free(mdctx);
-        throw;
+        throw e;
     }
 }
 
