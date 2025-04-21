@@ -95,6 +95,8 @@ set(EV_USE_WSAPOLL 0)
 
 # Detect backend support based on platform
 if(WIN32)
+    set(HAVE_EPOLL_CTL 1)
+    set(HAVE_SYS_EPOLL_H 1)
     set(EV_USE_EPOLL 1)  # We use wepoll on Windows as epoll backend
     list(APPEND PLATFORM_LIBS ws2_32)
 elseif(APPLE)

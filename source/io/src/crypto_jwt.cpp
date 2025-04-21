@@ -332,7 +332,7 @@ jwt::TokenParts jwt::decode(const std::string& token) {
     try {
         std::string header_b64 = base64url_to_base64(parts[0]);
         token_parts.header = crypto::base64::decode(header_b64);
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
         throw std::runtime_error("Invalid JWT header encoding");
     }
     
@@ -340,7 +340,7 @@ jwt::TokenParts jwt::decode(const std::string& token) {
     try {
         std::string payload_b64 = base64url_to_base64(parts[1]);
         token_parts.payload = crypto::base64::decode(payload_b64);
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
         throw std::runtime_error("Invalid JWT payload encoding");
     }
     
