@@ -346,6 +346,11 @@ TEST_F(TimePointTest, SpecializedTimePoints) {
     EXPECT_NEAR(static_cast<double>(utp_now.seconds()),
                 static_cast<double>(hrtp_now.seconds()),
                 1.0); // 1 second tolerance
+                
+    // Also compare ltp_now and tscp_now to avoid unused variable warnings
+    EXPECT_NEAR(static_cast<double>(ltp_now.seconds()),
+                static_cast<double>(tscp_now.seconds()),
+                1.0); // 1 second tolerance
 }
 
 // Timer tests

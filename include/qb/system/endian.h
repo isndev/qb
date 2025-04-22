@@ -58,7 +58,7 @@ enum class order {
  *
  * @return The native byte order of the system
  */
-inline order
+constexpr order
 native_order() {
 #if defined(ENDIAN_NATIVE_LITTLE)
     return order::little;

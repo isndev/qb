@@ -117,7 +117,10 @@ send_signal_to_self() {
 #if !QB_PLATFORM_MACOS
     // Use numeric signal value 2 for SIGINT on Linux with direct PID
     std::string cmd = "kill -2 " + std::to_string(get_process_id());
-    system(cmd.c_str());
+    int ret = system(cmd.c_str());
+    if (ret != 0) {
+        std::cerr << "Failed to send signal via system command, ret=" << ret << std::endl;
+    }
 #else
     std::raise(SIGINT);
 #endif
@@ -310,7 +313,10 @@ TEST(KernelEventsCombined, IOEvents) {
     EXPECT_GT(actor.io_events, 0) << "Should have received at least one IO event";
 
     // Cleanup - but continue even if this fails
-    system("rm -f test-io.file");
+    int cleanup_ret = system("rm -f test-io.file");
+    if (cleanup_ret != 0) {
+        std::cerr << "Warning: Cleanup command failed with return code " << cleanup_ret << std::endl;
+    }
 
     // Already stopped by the handler
 }
