@@ -109,7 +109,8 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
 VirtualCore::~VirtualCore() noexcept {
     for (auto [_, actor] : _actors)
         delete actor;
-    // Les smart pointers sont libérés automatiquement
+    for (auto [_, callback] : _actor_callbacks)
+        delete callback;
 }
 
 ActorId

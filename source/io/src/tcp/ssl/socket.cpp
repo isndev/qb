@@ -161,7 +161,7 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
     SSL_set_quiet_shutdown(h_ssl, 1);
     SSL_set_tlsext_host_name(h_ssl, hostname.c_str());
     SSL_set_connect_state(h_ssl);
-    SSL_set_fd(h_ssl, static_cast<int>(FD_TO_SOCKET(native_handle())));
+    SSL_set_fd(h_ssl, static_cast<int>(native_handle()));
     if (ret != 0)
         return ret;
     return handCheck() < 0 ? -1 : 0;
@@ -240,7 +240,7 @@ socket::connected() noexcept {
     if (!_ssl_handle)
         return -1;
     const auto h_ssl = ssl_handle();
-    SSL_set_fd(h_ssl, static_cast<int>(FD_TO_SOCKET(native_handle())));
+    SSL_set_fd(h_ssl, static_cast<int>(native_handle()));
     return handCheck() < 0 ? -1 : 0;
 }
 

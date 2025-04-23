@@ -175,13 +175,7 @@ public:
      * If the derived class does not have a dispose event handler
      * and the transport is still open, it calls dispose.
      */
-    ~client() {
-        if constexpr (!has_method_on<_Derived, void, event::dispose>::value) {
-            if (transport().is_open()) {
-                this->dispose();
-            }
-        }
-    }
+    ~client() = default;
 };
 
 } // namespace qb::io::async::tcp

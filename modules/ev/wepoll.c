@@ -552,8 +552,7 @@ err:
 }
 
 int
-epoll_ctl(HANDLE ephnd, int op, int fd, struct epoll_event *ev) {
-    SOCKET sock = _get_osfhandle(fd);
+epoll_ctl(HANDLE ephnd, int op, SOCKET sock, struct epoll_event *ev) {
     ts_tree_node_t *tree_node;
     port_state_t *port_state;
     int r;

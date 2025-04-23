@@ -4366,6 +4366,11 @@ ev_io_stop (EV_P_ ev_io *w) EV_NOEXCEPT
   fd_change (EV_A_ w->fd, EV_ANFD_REIFY);
 
   EV_FREQUENT_CHECK;
+#ifdef _WIN32
+    struct epoll_event ev;
+    memset(&ev, 0, sizeof ev);
+    epoll_ctl(backend_fd, EPOLL_CTL_DEL, (SOCKET)w->fd, &ev);
+#endif
 }
 
 ecb_noinline

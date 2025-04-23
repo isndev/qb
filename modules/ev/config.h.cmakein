@@ -51,6 +51,7 @@
 #cmakedefine01 EV_GENWRAP
 
 #define EV_MULTIPLICITY 1
+#define EV_USE_TIMERFD 0
 #define EV_FEATURES 0x7f
 
 /* Project and version macros */
