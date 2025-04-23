@@ -77,7 +77,9 @@ public:
         /**
          * @brief Destructor
          */
-        ~RegisteredKernelEvent() final = default;
+        ~RegisteredKernelEvent() final {
+            _event.stop();
+        }
 
         /**
          * @brief Constructor
@@ -129,10 +131,12 @@ public:
      */
     void
     clear() {
-        // for (auto it : _registeredEvents)
-        //    delete it;
-        _registeredEvents.clear();
-        run(EVRUN_ONCE);
+        if (!_registeredEvents.empty()) {
+            for (auto it : _registeredEvents)
+                delete it;
+            _registeredEvents.clear();
+            run(EVRUN_ONCE);
+        }
     }
 
     /**
@@ -257,7 +261,7 @@ public:
  */
 inline void
 init() {
-    listener::current.clear();
+    // listener::current.clear();
 }
 
 /**

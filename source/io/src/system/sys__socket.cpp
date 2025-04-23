@@ -423,11 +423,7 @@ socket::swap(socket &rhs) {
 bool
 socket::open(int af, int type, int protocol) {
     if (invalid_socket == this->fd)
-#if defined(_WIN32)
-        this->fd = OPEN_FD_FROM_SOCKET(::socket(af, type, protocol));
-#else
         this->fd = ::socket(af, type, protocol);
-#endif
     return is_open();
 }
 
@@ -467,7 +463,7 @@ socket::open_ex(int af, int type, int protocol) {
                 sizeof(__get_accept_ex_sockaddrs), &dwBytes, nullptr, nullptr);
         }
 
-        this->fd = OPEN_FD_FROM_SOCKET(sock);
+        this->fd = sock;
     }
     return is_open();
 #else
@@ -531,7 +527,7 @@ int
 socket::set_nonblocking(socket_type s, bool nonblocking) {
 #if defined(_WIN32)
     u_long argp = nonblocking;
-    return ::ioctlsocket(FD_TO_SOCKET(s), FIONBIO, &argp);
+    return ::ioctlsocket(s, FIONBIO, &argp);
 #else
     int flags = ::fcntl(s, F_GETFL, 0);
     return ::fcntl(s, F_SETFL,
@@ -567,7 +563,7 @@ socket::bind(const char *addr, unsigned short port) const {
 }
 int
 socket::bind(const endpoint &ep) const {
-    return ::bind(FD_TO_SOCKET(this->fd), &ep.sa_, ep.len());
+    return ::bind(this->fd, &ep.sa_, ep.len());
 }
 int
 socket::bind_any(bool ipv6) const {
@@ -576,19 +572,18 @@ socket::bind_any(bool ipv6) const {
 
 int
 socket::listen(int backlog) const {
-    return ::listen(FD_TO_SOCKET(this->fd), backlog);
+    return ::listen(this->fd, backlog);
 }
 
 socket
 socket::accept() const {
-    return OPEN_FD_FROM_SOCKET(::accept(FD_TO_SOCKET(this->fd), nullptr, nullptr));
+    return ::accept(this->fd, nullptr, nullptr);
 }
 int
 socket::accept_n(socket_type &new_sock) const {
     for (;;) {
         // Accept the waiting connection.
-        new_sock =
-            OPEN_FD_FROM_SOCKET(::accept(FD_TO_SOCKET(this->fd), nullptr, nullptr));
+        new_sock = ::accept(this->fd, nullptr, nullptr);
 
         // Check if operation succeeded.
         if (new_sock != invalid_socket) {
@@ -625,7 +620,7 @@ socket::connect(socket_type s, const char *addr, u_short port) {
 }
 int
 socket::connect(socket_type s, const endpoint &ep) {
-    return ::connect(FD_TO_SOCKET(s), &ep.sa_, ep.len());
+    return ::connect(s, &ep.sa_, ep.len());
 }
 
 int
@@ -697,7 +692,7 @@ socket::disconnect(socket_type s) {
     sockaddr addr_unspec;
     memset(&addr_unspec, 0, sizeof(addr_unspec));
     addr_unspec.sa_family = AF_UNSPEC;
-    return ::connect(FD_TO_SOCKET(s), &addr_unspec, sizeof(addr_unspec));
+    return ::connect(s, &addr_unspec, sizeof(addr_unspec));
 }
 
 int
@@ -801,11 +796,11 @@ socket::recv_n(socket_type s, void *buf, int len, std::chrono::microseconds wtim
 int
 socket::send(const void *buf, int len, int flags) const {
     return static_cast<int>(
-        ::send(FD_TO_SOCKET(this->fd), (const char *) buf, len, flags));
+        ::send(this->fd, (const char *) buf, len, flags));
 }
 int
 socket::send(socket_type s, const void *buf, int len, int flags) {
-    return static_cast<int>(::send(FD_TO_SOCKET(s), (const char *) buf, len, flags));
+    return static_cast<int>(::send(s, (const char *) buf, len, flags));
 }
 
 int
@@ -814,19 +809,19 @@ socket::recv(void *buf, int len, int flags) const {
 }
 int
 socket::recv(socket_type s, void *buf, int len, int flags) {
-    return static_cast<int>(::recv(FD_TO_SOCKET(s), (char *) buf, len, flags));
+    return static_cast<int>(::recv(s, (char *) buf, len, flags));
 }
 
 int
 socket::sendto(const void *buf, int len, const endpoint &to, int flags) const {
-    return static_cast<int>(::sendto(FD_TO_SOCKET(this->fd), (const char *) buf, len,
+    return static_cast<int>(::sendto(this->fd, (const char *) buf, len,
                                      flags, &to.sa_, to.len()));
 }
 
 int
 socket::recvfrom(void *buf, int len, endpoint &from, int flags) const {
     socklen_t addrlen{sizeof(from)};
-    int n = static_cast<int>(::recvfrom(FD_TO_SOCKET(this->fd), (char *) buf, len, flags,
+    int n = static_cast<int>(::recvfrom(this->fd, (char *) buf, len, flags,
                                         &from.sa_, &addrlen));
     from.len(addrlen);
     return n;
@@ -899,7 +894,7 @@ endpoint
 socket::local_endpoint(socket_type fd) {
     endpoint  ep;
     socklen_t socklen = sizeof(ep);
-    getsockname(FD_TO_SOCKET(fd), &ep.sa_, &socklen);
+    getsockname(fd, &ep.sa_, &socklen);
     ep.len(socklen);
     return ep;
 }
@@ -912,7 +907,7 @@ endpoint
 socket::peer_endpoint(socket_type fd) {
     endpoint  ep;
     socklen_t socklen = sizeof(ep);
-    getpeername(FD_TO_SOCKET(fd), &ep.sa_, &socklen);
+    getpeername(fd, &ep.sa_, &socklen);
     ep.len(socklen);
     return ep;
 }
@@ -929,7 +924,7 @@ socket::set_keepalive(socket_type s, int flag, int idle, int interval, int probe
     buffer_in.keepalivetime     = idle * 1000;
     buffer_in.keepaliveinterval = interval * 1000;
 
-    return WSAIoctl(FD_TO_SOCKET(s), SIO_KEEPALIVE_VALS, &buffer_in, sizeof(buffer_in),
+    return WSAIoctl(s, SIO_KEEPALIVE_VALS, &buffer_in, sizeof(buffer_in),
                     nullptr, 0, (DWORD *) &probes, nullptr, nullptr);
 #else
     int n = set_optval(s, SOL_SOCKET, SO_KEEPALIVE, flag);
@@ -970,20 +965,15 @@ int
 socket::shutdown(int how) const {
     if (!is_open())
         return -1;
-    return ::shutdown(FD_TO_SOCKET(this->fd), how);
+    return ::shutdown(this->fd, how);
 }
 
 void
 socket::close(int shut_how) {
     if (is_open()) {
         if (shut_how >= 0)
-            ::shutdown(FD_TO_SOCKET(this->fd), shut_how);
-#if defined(_WIN32)
-        ::close(fd);
-#else
+            ::shutdown(this->fd, shut_how);
         ::closesocket(this->fd);
-#endif
-
         this->fd = invalid_socket;
     }
 }
@@ -999,7 +989,7 @@ socket::tcp_rtt(socket_type s) {
     TCP_INFO_v0 info;
     DWORD       tcpi_ver = 0, bytes_transferred = 0;
     int         status = WSAIoctl(
-        FD_TO_SOCKET(s), SIO_TCP_INFO,
+        s, SIO_TCP_INFO,
         (LPVOID) &tcpi_ver, // lpvInBuffer pointer to a DWORD, version of tcp info
         (DWORD) sizeof(tcpi_ver),     // size, in bytes, of the input buffer
         (LPVOID) &info,               // pointer to a TCP_INFO_v0 structure

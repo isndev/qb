@@ -1234,7 +1234,7 @@ public:
     static int
     set_optval(socket_type sockfd, int level, int optname, const void *optval,
                socklen_t optlen) {
-        return ::setsockopt(FD_TO_SOCKET(sockfd), level, optname,
+        return ::setsockopt(sockfd, level, optname,
                             static_cast<const char *>(optval), optlen);
     }
 
@@ -1274,7 +1274,7 @@ public:
     static int
     get_optval(socket_type sockfd, int level, int optname, void *optval,
                socklen_t *optlen) {
-        return ::getsockopt(FD_TO_SOCKET(sockfd), level, optname,
+        return ::getsockopt(sockfd, level, optname,
                             static_cast<char *>(optval), optlen);
     }
 
@@ -1298,7 +1298,7 @@ public:
     inline static int
     ioctl(socket_type s, long cmd, const _Ty &value) {
         u_long argp = static_cast<u_long>(value);
-        return ::ioctlsocket(FD_TO_SOCKET(s), cmd, &argp);
+        return ::ioctlsocket(s, cmd, &argp);
     }
 
     /**

@@ -59,7 +59,7 @@ listener::accept(ssl::socket &ssock) const noexcept {
     if (!ret) {
         const auto ctx = SSL_new(ssl_handle());
         SSL_set_accept_state(ctx);
-        SSL_set_fd(ctx, static_cast<int>(FD_TO_SOCKET(sock.native_handle())));
+        SSL_set_fd(ctx, static_cast<int>(sock.native_handle()));
         ssock = ssl::socket{ctx, sock};
     }
     return ret;

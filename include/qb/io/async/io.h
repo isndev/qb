@@ -70,6 +70,9 @@ protected:
      * Unregisters the event from the current listener.
      */
     ~base() {
+        //std::cout << "handle=" << _async_event.fd
+        //          << " disposed async.stop()" << std::endl;
+        _async_event.stop();
         listener::current.unregisterEvent(_async_event._interface);
     }
 };
@@ -477,15 +480,13 @@ class input : public base<input<_Derived>, event::io> {
     using base_t                   = base<input<_Derived>, event::io>;
     AProtocol<_Derived> *_protocol = nullptr; /**< Protocol for processing input */
     std::vector<AProtocol<_Derived> *> _protocol_list; /**< List of created protocols */
-    bool                               _disconnected_by_user =
-        false;                 /**< Flag indicating user-initiated disconnection */
     bool _on_message  = false; /**< Flag indicating message processing in progress */
     bool _is_disposed = false; /**< Flag indicating resource disposal */
+    int _reason = 0; /**< Flag indicating user-initiated disconnection */
 
 public:
     using base_io_t = input<_Derived>; /**< Base I/O type */
-    constexpr static const bool has_server =
-        false; /**< Flag indicating server association */
+    constexpr static const bool has_server = false; /**< Flag indicating server association */
 
     /**
      * @brief Default constructor
@@ -569,7 +570,7 @@ public:
      */
     void
     start() noexcept {
-        _disconnected_by_user = false;
+        _reason = 0;
         Derived.transport().set_nonblocking(true);
         this->_async_event.start(Derived.transport().native_handle(), EV_READ);
     }
@@ -594,13 +595,9 @@ public:
      * @param reason Reason code for disconnection
      */
     void
-    disconnect(int reason = 0) {
-        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
-            Derived.on(event::disconnected{reason});
-        }
-        _disconnected_by_user = true;
-        listener::current.loop().feed_fd_event(Derived.transport().native_handle(),
-                                               EV_UNDEF);
+    disconnect(int reason = 1) {
+        _reason = reason;
+        this->_async_event.feed_event(EV_UNDEF);
     }
 
 private:
@@ -620,7 +617,7 @@ private:
         std::size_t          ret         = 0u;
         if (_on_message)
             return;
-        if (_disconnected_by_user || !_protocol->ok())
+        if (_reason || !_protocol->ok())
             goto error;
 
         if (likely(event._revents & EV_READ)) {
@@ -651,6 +648,10 @@ private:
             return;
         }
     error:
+#ifdef _WIN32
+        if (socket::get_last_errno() == 10035)
+            return;
+#endif
         dispose();
     }
 
@@ -665,10 +666,12 @@ protected:
     dispose() {
         if (_is_disposed)
             return;
-        _is_disposed = true;
-        if (!_disconnected_by_user)
-            disconnect();
-        Derived.close();
+        _is_disposed = true;    
+
+        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
+            Derived.on(event::disconnected{_reason});
+        }
+
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
         } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
@@ -689,9 +692,8 @@ protected:
 template <typename _Derived>
 class output : public base<output<_Derived>, event::io> {
     using base_t = base<output<_Derived>, event::io>;
-    bool _disconnected_by_user =
-        false;                 /**< Flag indicating user-initiated disconnection */
     bool _is_disposed = false; /**< Flag indicating resource disposal */
+    int _reason = 0; /**< Flag indicating user-initiated disconnection */
 
 public:
     using base_io_t = output<_Derived>; /**< Base I/O type */
@@ -720,7 +722,7 @@ public:
      */
     void
     start() noexcept {
-        _disconnected_by_user = false;
+        _reason = 0;
         Derived.transport().set_nonblocking(true);
         this->_async_event.start(Derived.transport().native_handle(), EV_WRITE);
     }
@@ -776,13 +778,9 @@ public:
      * @param reason Reason code for disconnection
      */
     void
-    disconnect(int reason = 0) {
-        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
-            Derived.on(event::disconnected{reason});
-        }
-        _disconnected_by_user = true;
-        listener::current.loop().feed_fd_event(Derived.transport().native_handle(),
-                                               EV_UNDEF);
+    disconnect(int reason = 1) {
+        _reason = reason;
+        this->_async_event.feed_event(EV_UNDEF);
     }
 
 private:
@@ -800,7 +798,7 @@ private:
     on(event::io const &event) {
         auto ret = 0;
 
-        if (_disconnected_by_user)
+        if (_reason)
             goto error;
 
         if (likely(event._revents & EV_WRITE)) {
@@ -819,6 +817,10 @@ private:
             return;
         }
     error:
+#ifdef _WIN32
+        if (socket::get_last_errno() == 10035)
+            return;
+#endif
         dispose();
     }
 
@@ -834,9 +836,11 @@ protected:
         if (_is_disposed)
             return;
         _is_disposed = true;
-        if (!_disconnected_by_user)
-            disconnect();
-        Derived.close();
+
+        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
+            Derived.on(event::disconnected{_reason});
+        }
+
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
         } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
@@ -860,15 +864,13 @@ class io : public base<io<_Derived>, event::io> {
     using base_t                   = base<io<_Derived>, event::io>;
     AProtocol<_Derived> *_protocol = nullptr; /**< Protocol for processing I/O */
     std::vector<AProtocol<_Derived> *> _protocol_list; /**< List of created protocols */
-    bool                               _disconnected_by_user =
-        false;                 /**< Flag indicating user-initiated disconnection */
     bool _on_message  = false; /**< Flag indicating message processing in progress */
     bool _is_disposed = false; /**< Flag indicating resource disposal */
+    int _reason = 0; /**< Flag indicating user-initiated disconnection */
 
 public:
     typedef io<_Derived>        base_io_t; /**< Base I/O type */
-    constexpr static const bool has_server =
-        false; /**< Flag indicating server association */
+    constexpr static const bool has_server = false; /**< Flag indicating server association */
 
     /**
      * @brief Default constructor
@@ -952,11 +954,11 @@ public:
      */
     void
     start() noexcept {
-        _disconnected_by_user = false;
+        _reason = 0;
         Derived.transport().set_nonblocking(true);
         this->_async_event.start(Derived.transport().native_handle(), EV_READ);
-        // Derived.in().reserve(32768);
-        // Derived.out().reserve(32768);
+        //std::cout << "handle=" << Derived.transport().native_handle()
+        //          << " start=" << EV_READ << std::endl;
     }
 
     /**
@@ -966,8 +968,11 @@ public:
      */
     void
     ready_to_read() noexcept {
-        if (!(this->_async_event.events & EV_READ))
+        if (!(this->_async_event.events & EV_READ)) {
             this->_async_event.set(this->_async_event.events | EV_READ);
+            //std::cout << "handle=" << Derived.transport().native_handle()
+            //          << " set=" << (this->_async_event.events | EV_READ) << std::endl;
+        }
     }
 
     /**
@@ -977,8 +982,11 @@ public:
      */
     void
     ready_to_write() noexcept {
-        if (!(this->_async_event.events & EV_WRITE))
+        if (!(this->_async_event.events & EV_WRITE)) {
             this->_async_event.set(this->_async_event.events | EV_WRITE);
+            //std::cout << "handle=" << Derived.transport().native_handle()
+            //          << " set=" << (this->_async_event.events | EV_READ) << std::endl;
+        }
     }
 
     /**
@@ -1032,12 +1040,11 @@ public:
      * @param reason Reason code for disconnection
      */
     void
-    disconnect(int reason = 0) {
-        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
-            Derived.on(event::disconnected{reason});
-        }
-        _disconnected_by_user = true;
+    disconnect(int reason = 1) {
+        _reason = reason;
         this->_async_event.feed_event(EV_UNDEF);
+        //std::cout << "handle=" << Derived.transport().native_handle()
+        //          << " will disconnect" << std::endl;
     }
 
 private:
@@ -1059,10 +1066,13 @@ private:
 
         if (_on_message)
             return;
-        if (_disconnected_by_user)
+        if (_reason)
             goto error;
         if (event._revents & EV_READ && _protocol->ok()) {
             ret = static_cast<std::size_t>(Derived.read());
+            //std::cout << "handle=" << Derived.transport().native_handle()
+            //          << " read=" << ret << " error=" << socket::get_last_errno()
+            //          << std::endl;
             if (unlikely(ret == invalid_ret))
                 goto error;
 
@@ -1092,6 +1102,9 @@ private:
         }
         if (event._revents & EV_WRITE) {
             ret = static_cast<std::size_t>(Derived.write());
+            //std::cout << "handle=" << Derived.transport().native_handle()
+            //          << " write=" << ret << " error=" << socket::get_last_errno()
+            //          << std::endl;
             if (unlikely(ret == invalid_ret))
                 goto error;
             if (!Derived.pendingWrite()) {
@@ -1110,6 +1123,12 @@ private:
         if (ok)
             return;
     error:
+#ifdef _WIN32
+        if (socket::get_last_errno() == 10035)
+            return;
+        //std::cout << "handle=" << Derived.transport().native_handle()
+        //          << " disconnected async.stop()" << std::endl;
+#endif
         dispose();
     }
 
@@ -1125,9 +1144,11 @@ protected:
         if (_is_disposed)
             return;
         _is_disposed = true;
-        if (!_disconnected_by_user)
-            disconnect();
-        Derived.close();
+
+        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
+            Derived.on(event::disconnected{_reason});
+        }
+
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
         } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {

@@ -129,7 +129,7 @@
 #if QB__HAS_UDS
 #include <afunix.h>
 #endif
-typedef int socket_type;
+typedef SOCKET socket_type;
 typedef int socklen_t;
 #define FD_TO_SOCKET(fd) _get_osfhandle(fd)
 #define OPEN_FD_FROM_SOCKET(sock) _open_osfhandle(sock, 0)
