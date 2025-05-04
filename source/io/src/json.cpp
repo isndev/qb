@@ -8,7 +8,7 @@ template <>
 pipe<char> &
 pipe<char>::put<qb::json>(const qb::json &val) {
     switch (val.type()) {
-        case nlohmann::json::value_t::object: {
+        case qb::json::value_t::object: {
             if (val.empty()) {
                 *this << "{}";
                 return *this;
@@ -37,7 +37,7 @@ pipe<char>::put<qb::json>(const qb::json &val) {
             return *this;
         }
 
-        case nlohmann::json::value_t::array: {
+        case qb::json::value_t::array: {
             if (val.empty()) {
                 *this << "[]";
                 return *this;
@@ -58,12 +58,12 @@ pipe<char>::put<qb::json>(const qb::json &val) {
             return *this;
         }
 
-        case nlohmann::json::value_t::string: {
+        case qb::json::value_t::string: {
             *this << val.dump();
             return *this;
         }
 
-        case nlohmann::json::value_t::boolean: {
+        case qb::json::value_t::boolean: {
             if (val.get<bool>()) {
                 *this << "true";
             } else {
@@ -72,27 +72,27 @@ pipe<char>::put<qb::json>(const qb::json &val) {
             return *this;
         }
 
-        case nlohmann::json::value_t::number_integer: {
+        case qb::json::value_t::number_integer: {
             *this << val.get<int>();
             return *this;
         }
 
-        case nlohmann::json::value_t::number_unsigned: {
+        case qb::json::value_t::number_unsigned: {
             *this << val.get<unsigned int>();
             return *this;
         }
 
-        case nlohmann::json::value_t::number_float: {
+        case qb::json::value_t::number_float: {
             *this << val.get<float>();
             return *this;
         }
 
-        case nlohmann::json::value_t::discarded: {
+        case qb::json::value_t::discarded: {
             *this << "<discarded>";
             return *this;
         }
 
-        case nlohmann::json::value_t::null: {
+        case qb::json::value_t::null: {
             *this << "null";
             return *this;
         }

@@ -30,6 +30,8 @@
 #ifdef _DEBUG
 #include <stdio.h>
 #endif
+#include <cstring> // For memset
+#include <cstdlib> // For strerror
 
 #if !defined(QB_HEADER_ONLY)
 #include <qb/io/system/sys__socket.h>
@@ -690,7 +692,7 @@ socket::disconnect() const {
 int
 socket::disconnect(socket_type s) {
     sockaddr addr_unspec;
-    memset(&addr_unspec, 0, sizeof(addr_unspec));
+    std::memset(&addr_unspec, 0, sizeof(addr_unspec));
     addr_unspec.sa_family = AF_UNSPEC;
     return ::connect(s, &addr_unspec, sizeof(addr_unspec));
 }
@@ -1065,7 +1067,7 @@ socket::strerror(int error) {
 
     return error_msg;
 #else
-    return ::strerror(error);
+    return std::strerror(error);
 #endif
 }
 

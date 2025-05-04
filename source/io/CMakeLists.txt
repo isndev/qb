@@ -140,57 +140,25 @@ cxx_library(
         DEPENDENCIES ${CURRENT_DEPENDENCIES}
 )
 
-# Configure library properties and interface includes
-set_target_properties(${PROJECT_NAME} PROPERTIES
-        VERSION ${QB_VERSION}
-        SOVERSION ${QB_VERSION_MAJOR}
-        POSITION_INDEPENDENT_CODE ON
-        CXX_STANDARD 17
-        CXX_STANDARD_REQUIRED ON
-        CXX_EXTENSIONS OFF
+# Set the export name to io (instead of qb-io)
+set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME io)
+
+# Configure the module using our shared configuration function
+qb_configure_module(
+        NAME ${PROJECT_NAME}
+        COMPONENT IO
+)
+
+# Add private include directories specific to this module
+target_include_directories(${PROJECT_NAME}
+        PRIVATE
+        "$<BUILD_INTERFACE:${QB_DIRECTORY}/source/io/include>"
 )
 
 # Apply public compile definitions
 foreach (def ${CURRENT_DEFINITIONS})
     target_compile_definitions(${PROJECT_NAME} PUBLIC ${def})
 endforeach ()
-
-# Setup include directories for both build and install interfaces
-target_include_directories(${PROJECT_NAME}
-        PUBLIC
-        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include>"
-        PRIVATE
-        "$<BUILD_INTERFACE:${QB_DIRECTORY}/source/io/include>"
-        INTERFACE
-        "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
-)
-
-# Add module directories to the include path
-target_include_directories(${PROJECT_NAME}
-        PUBLIC "$<BUILD_INTERFACE:${QB_DIRECTORY}/modules>"
-)
-
-# -----------------------------------------------------------------------------
-# Installation configuration
-# -----------------------------------------------------------------------------
-if (${QB_PREFIX_UPPER}_INSTALL)
-    include(GNUInstallDirs)
-
-    install(TARGETS ${PROJECT_NAME}
-            EXPORT ${PROJECT_NAME}Targets
-            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-            INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    )
-
-    # Generate and install export file
-    install(EXPORT ${PROJECT_NAME}Targets
-            FILE ${PROJECT_NAME}Targets.cmake
-            NAMESPACE qb::
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
-    )
-endif ()
 
 # -----------------------------------------------------------------------------
 # Tests configuration

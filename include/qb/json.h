@@ -24,7 +24,7 @@
 
 #ifndef QB_JSON_H
 #define QB_JSON_H
-#include "io/protocol/json.h"
+#include "qb/io/protocol/json.h"
 #include "uuid.h"
 
 namespace nlohmann {

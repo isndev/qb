@@ -20,6 +20,23 @@
 #
 # This file configures the build system for the qb Actor Framework, handling
 # compiler settings, dependencies, build targets, and testing infrastructure.
+#
+# There are two ways to use qb in your project:
+#
+# 1. Using find_package():
+#    find_package(qb REQUIRED [COMPONENTS core io])
+#    target_link_libraries(your_target PRIVATE qb::core qb::io)
+#
+# 2. Using add_subdirectory():
+#    add_subdirectory(path/to/qb)
+#    target_link_libraries(your_target PRIVATE qb::core qb::io)
+#
+# Both methods provide the same target names (qb::core, qb::io) for consistent usage.
+# Both methods also define the same variables:
+#   - QB_FOUND: TRUE if qb was found
+#   - QB_CORE_FOUND, QB_IO_FOUND: TRUE if the specific component was found
+#   - QB_INCLUDE_DIRS: Include directories for qb
+#   - QB_LIBRARIES: Core libraries to link against
 # -----------------------------------------------------------------------------
 
 # Minimum required CMake version for C++17 support and modern CMake features
@@ -71,6 +88,10 @@ endif()
 
 # Add custom CMake modules path
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+
+# Include component definitions
+include(cmake/qbComponents.cmake)
+include(cmake/qbModuleConfig.cmake)
 
 # Disable non-standard C++ extensions except on Cygwin
 if(NOT CYGWIN)
@@ -334,20 +355,85 @@ if(${QB_PREFIX_UPPER}_INSTALL)
         "get_filename_component(_IMPORT_PREFIX \"\${CMAKE_CURRENT_LIST_FILE}\" PATH)\n"
         "get_filename_component(_IMPORT_PREFIX \"\${_IMPORT_PREFIX}\" PATH)\n"
         "get_filename_component(_IMPORT_PREFIX \"\${_IMPORT_PREFIX}\" PATH)\n\n"
-        "# Load all exported targets\n"
-        "# First load event loop library\n"
-        "include(\"\${_IMPORT_PREFIX}/lib/cmake/qb/evTargets.cmake\" OPTIONAL)\n"
-        "# Then load IO library which depends on ev\n"
-        "include(\"\${_IMPORT_PREFIX}/lib/cmake/qb/qb-ioTargets.cmake\" OPTIONAL)\n"
-        "# Finally load core library which depends on io\n"
-        "include(\"\${_IMPORT_PREFIX}/lib/cmake/qb/qb-coreTargets.cmake\" OPTIONAL)\n\n"
-        "# Note: If any dependencies are missing, find_package may be used to locate them here\n\n"
+        "# Include the component dependencies helper\n"
+        "include(\"\${_IMPORT_PREFIX}/lib/cmake/qb/qbComponents.cmake\")\n\n"
+        "# Set available components\n"
+        "set(qb_FIND_COMPONENTS_ALL core io ev)\n\n"
+        "# Check if specific components were requested\n"
+        "if(NOT qb_FIND_COMPONENTS)\n"
+        "    # If no components specified, include all\n"
+        "    set(qb_FIND_COMPONENTS \${qb_FIND_COMPONENTS_ALL})\n"
+        "endif()\n\n"
+        "# Process component dependencies\n"
+        "set(_qb_processed_components \"\")\n"
+        "foreach(_comp \${qb_FIND_COMPONENTS})\n"
+        "    # Add component dependencies\n"
+        "    qb_get_component_dependencies(\${_comp} _comp_deps)\n"
+        "    list(APPEND _qb_processed_components \${_comp} \${_comp_deps})\n"
+        "endforeach()\n\n"
+        "# Remove duplicates\n"
+        "if(_qb_processed_components)\n"
+        "    list(REMOVE_DUPLICATES _qb_processed_components)\n"
+        "endif()\n\n"
+        "# Load components in dependency order (dependencies first)\n"
+        "foreach(_comp \${_qb_processed_components})\n"
+        "    # Check if component is required\n"
+        "    if(qb_FIND_REQUIRED_\${_comp})\n"
+        "        set(_comp_required REQUIRED)\n"
+        "    else()\n"
+        "        set(_comp_required \"\")\n"
+        "    endif()\n\n"
+        "    # Convert to uppercase for variable names\n"
+        "    string(TOUPPER \${_comp} _COMP_UPPER)\n\n"
+        "    # Handle specific components\n"
+        "    if(_comp STREQUAL \"ev\")\n"
+        "        include(\"\${_IMPORT_PREFIX}/lib/cmake/qb/evTargets.cmake\" OPTIONAL \${_comp_required})\n"
+        "        if(TARGET ev)\n"
+        "            set(QB_\${_COMP_UPPER}_FOUND TRUE)\n"
+        "            set(qb_\${_comp}_FOUND TRUE)\n"
+        "        else()\n"
+        "            set(QB_\${_COMP_UPPER}_FOUND FALSE)\n"
+        "            set(qb_\${_comp}_FOUND FALSE)\n"
+        "        endif()\n"
+        "    elseif(_comp STREQUAL \"io\")\n"
+        "        include(\"\${_IMPORT_PREFIX}/lib/cmake/qb/qb-ioTargets.cmake\" OPTIONAL \${_comp_required})\n"
+        "        if(TARGET qb::io)\n"
+        "            set(QB_\${_COMP_UPPER}_FOUND TRUE)\n"
+        "            set(qb_\${_comp}_FOUND TRUE)\n"
+        "        else()\n"
+        "            set(QB_\${_COMP_UPPER}_FOUND FALSE)\n"
+        "            set(qb_\${_comp}_FOUND FALSE)\n"
+        "        endif()\n"
+        "    elseif(_comp STREQUAL \"core\")\n"
+        "        include(\"\${_IMPORT_PREFIX}/lib/cmake/qb/qb-coreTargets.cmake\" OPTIONAL \${_comp_required})\n"
+        "        if(TARGET qb::core)\n"
+        "            set(QB_\${_COMP_UPPER}_FOUND TRUE)\n"
+        "            set(qb_\${_comp}_FOUND TRUE)\n"
+        "        else()\n"
+        "            set(QB_\${_COMP_UPPER}_FOUND FALSE)\n"
+        "            set(qb_\${_comp}_FOUND FALSE)\n"
+        "        endif()\n"
+        "    else()\n"
+        "        message(WARNING \"Unknown qb component: \${_comp}\")\n"
+        "        set(QB_\${_COMP_UPPER}_FOUND FALSE)\n"
+        "        set(qb_\${_comp}_FOUND FALSE)\n"
+        "    endif()\n"
+        "endforeach()\n\n"
         "# Set QB_FOUND to TRUE\n"
         "set(QB_FOUND TRUE)\n"
+        "# Keep qb_FOUND for backward compatibility\n"
+        "set(qb_FOUND TRUE)\n"
         "set(QB_VERSION ${QB_VERSION})\n"
         "set(QB_INCLUDE_DIRS \"\${_IMPORT_PREFIX}/include\")\n"
-        "set(QB_LIBRARIES qb::qb-core)\n"
-        "set(QB_IO_LIBRARIES qb::qb-io)\n"
+        "\n"
+        "# Define convenient component variables\n"
+        "set(QB_CORE_TARGET qb::core)\n"
+        "set(QB_IO_TARGET qb::io)\n"
+        "set(QB_EV_TARGET ev)\n"
+        "\n"
+        "# For backward compatibility\n"
+        "set(QB_LIBRARIES \${QB_CORE_TARGET})\n"
+        "set(QB_IO_LIBRARIES \${QB_IO_TARGET})\n"
     )
 
     # Install the config and version files
@@ -355,6 +441,8 @@ if(${QB_PREFIX_UPPER}_INSTALL)
         FILES
             "${CMAKE_CURRENT_BINARY_DIR}/qbConfig.cmake"
             "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/qbComponents.cmake"
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/qbModuleConfig.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
     )
 
@@ -371,8 +459,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Share configuration with parent CMake context if this is a subproject
 get_directory_property(hasParent PARENT_DIRECTORY)
-if(hasParent)
-    set(QB_FOUND "ON" PARENT_SCOPE)
+if(hasParent)    
     set(CMAKE_CXX_FLAGS "${${QB_PREFIX_UPPER}_CXX_FLAGS}" PARENT_SCOPE)
     set(QB_PREFIX "${QB_PREFIX}" PARENT_SCOPE)
     set(QB_PREFIX_UPPER "${QB_PREFIX_UPPER}" PARENT_SCOPE)
@@ -384,4 +471,37 @@ if(hasParent)
     set(${QB_PREFIX_UPPER}_BUILD_BENCHMARK "${${QB_PREFIX_UPPER}_BUILD_BENCHMARK}" PARENT_SCOPE)
     set(${QB_PREFIX_UPPER}_BUILD_COVERAGE "${${QB_PREFIX_UPPER}_BUILD_COVERAGE}" PARENT_SCOPE)
     set(${QB_PREFIX_UPPER}_SSL_RESOURCES "${${QB_PREFIX_UPPER}_SSL_RESOURCES}" PARENT_SCOPE)
+    
+    # Create aliased targets to allow the same usage as with find_package
+    # This ensures code like 'target_link_libraries(app PRIVATE qb::core)' works in both cases
+    if(TARGET ${QB_PREFIX}-core AND NOT TARGET qb::core)
+        add_library(qb::core ALIAS ${QB_PREFIX}-core)
+    endif()
+    if(TARGET ${QB_PREFIX}-io AND NOT TARGET qb::io)
+        add_library(qb::io ALIAS ${QB_PREFIX}-io)
+    endif()
+    
+    # Set the same variables as would be set by find_package
+    set(QB_CORE_TARGET qb::core PARENT_SCOPE)
+    set(QB_IO_TARGET qb::io PARENT_SCOPE)
+    set(QB_LIBRARIES qb::core PARENT_SCOPE)
+    set(QB_IO_LIBRARIES qb::io PARENT_SCOPE)
+    set(QB_INCLUDE_DIRS "${QB_DIRECTORY}/include" PARENT_SCOPE)
+    # Set main QB_FOUND variable for consistency
+    set(QB_FOUND TRUE PARENT_SCOPE)
+    # Keep qb_FOUND for backward compatibility
+    set(qb_FOUND TRUE PARENT_SCOPE)
+    # Set component variables for consistency with find_package
+    # Use QB_<COMPONENT>_FOUND format for consistency
+    set(QB_CORE_FOUND TRUE PARENT_SCOPE)
+    set(QB_IO_FOUND TRUE PARENT_SCOPE)
+    # Keep lowercase format for backward compatibility
+    set(qb_core_FOUND TRUE PARENT_SCOPE)
+    set(qb_io_FOUND TRUE PARENT_SCOPE)
+    
+    if(TARGET ev)
+        set(QB_EV_FOUND TRUE PARENT_SCOPE)
+        set(qb_ev_FOUND TRUE PARENT_SCOPE)
+        set(QB_EV_TARGET ev PARENT_SCOPE)
+    endif()
 endif()
