@@ -33,6 +33,7 @@
 #include "async/event/all.h"
 #include "async/file.h"
 #include "async/io.h"
+#include "async/tcp/connector.h"
 #include "async/tcp/client.h"
 #include "async/tcp/server.h"
 #include "async/udp/client.h"
