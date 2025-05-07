@@ -38,7 +38,14 @@ std::mutex qb::io::cout::io_lock;
 
 qb::io::cout::~cout() {
     std::lock_guard<std::mutex> lock(io_lock);
-    std::cout << ss.str() << std::flush;
+    std::cout << ss.rdbuf() << std::flush;
+}
+
+std::mutex qb::io::cerr::io_lock;
+
+qb::io::cerr::~cerr() {
+    std::lock_guard<std::mutex> lock(io_lock);
+    std::cerr << ss.rdbuf() << std::flush;
 }
 
 #ifdef QB_LOGGER
