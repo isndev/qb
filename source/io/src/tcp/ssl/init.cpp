@@ -29,8 +29,9 @@ namespace {
 
 struct OpenSSLInitializer {
     OpenSSLInitializer() noexcept {
-        SSL_load_error_strings();
         SSL_library_init();
+        SSL_load_error_strings();
+        OpenSSL_add_all_algorithms(); // Still potentially useful
 #ifndef _WIN32
         signal(SIGPIPE, SIG_IGN);
 #endif // !_WIN32

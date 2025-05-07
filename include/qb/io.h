@@ -137,6 +137,34 @@ public:
         return ss;
     }
 };
+
+/**
+ * @class cerr
+ * @brief Thread-safe error output class
+ *
+ * This class provides a thread-safe wrapper around std::cerr. It uses
+ * a mutex to ensure that output operations from multiple threads don't
+ * interleave, resulting in garbled output.
+ *
+ * Example usage:
+ * @code
+ * qb::io::cerr() << "Error: " << error_message;
+ * @endcode
+ */
+class cerr {
+    static std::mutex io_lock;
+    std::stringstream ss;
+public:
+    cerr() = default;
+    cerr(cerr const &) = delete;
+    ~cerr();
+    template <typename T>
+    inline std::stringstream &
+    operator<<(T const &data) {
+        ss << data; 
+        return ss;
+    }
+};  
 } // namespace io
 } // namespace qb
 
