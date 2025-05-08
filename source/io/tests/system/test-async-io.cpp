@@ -1376,7 +1376,7 @@ TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
                     [&completed_operations]() { completed_operations++; }, 0.01);
 
                 // Run event loop occasionally
-                if (i % 100 == 0) {
+                if (i % 1000 == 0) {
                     async::run(EVRUN_NOWAIT);
                 }
             }

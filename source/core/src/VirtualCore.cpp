@@ -253,8 +253,15 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
 
 bool
 VirtualCore::__init__actors__() const {
-    // Init StaticActors
-    return !std::any_of(_actors.begin(), _actors.end(), [](auto &pair) {
+    // Create a vector of pairs of ActorId and Actor*
+    // This is done to avoid modifying the _actors map while iterating over it
+    // This is safe because we are not modifying the map while iterating over it
+    std::vector<std::pair<ActorId, Actor *>> actors_to_init;
+    for (auto &actor : _actors) {
+        actors_to_init.push_back(actor);
+    }
+    // Init Static Actors
+    return !std::any_of(actors_to_init.begin(), actors_to_init.end(), [](auto &pair) {
         auto ret = !pair.second->onInit();
         if (ret)
             LOG_CRIT(*pair.second << " failed to init");
