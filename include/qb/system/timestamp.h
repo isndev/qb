@@ -36,6 +36,7 @@
 #include <array>
 #include <optional>
 #include <functional>
+#include <thread>
 
 #if defined(__APPLE__)
 #include <mach/mach.h>
@@ -1035,14 +1036,43 @@ public:
     /**
      * @brief Default constructor, initializes to current TSC time
      */
-    TscTimePoint() : TimePoint(TimePoint::read_tsc()) {}
+    TscTimePoint() : TimePoint(now().count()) {}
     
     /**
-     * @brief Gets current TSC time
-     * @return TscTimePoint based on CPU timestamp counter
+     * @brief Gets current TSC time calibrated to system time
+     * @return TscTimePoint based on CPU timestamp counter but aligned with system time
      */
     static TscTimePoint now() noexcept {
-        return TscTimePoint(TimePoint::read_tsc());
+        static const auto system_time_at_init = TimePoint::now();
+        static const auto tsc_at_init = TimePoint::read_tsc();
+        static const auto tsc_frequency = calibrate_tsc_frequency();
+        
+        const auto tsc_elapsed = TimePoint::read_tsc() - tsc_at_init;
+        const auto seconds_elapsed = static_cast<double>(tsc_elapsed) / tsc_frequency;
+        const auto nanoseconds_elapsed = static_cast<uint64_t>(seconds_elapsed * 1e9);
+        
+        return TscTimePoint(system_time_at_init.count() + nanoseconds_elapsed);
+    }
+    
+private:
+    /**
+     * @brief Calibrates the TSC frequency by measuring over a short interval
+     * @return Estimated TSC ticks per second
+     */
+    static double calibrate_tsc_frequency() noexcept {
+        const auto start_time = TimePoint::now();
+        const auto start_tsc = TimePoint::read_tsc();
+        
+        // Sleep for a short time to get a measurement
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        
+        const auto end_time = TimePoint::now();
+        const auto end_tsc = TimePoint::read_tsc();
+        
+        const auto time_diff_ns = end_time.count() - start_time.count();
+        const auto tsc_diff = end_tsc - start_tsc;
+        
+        return static_cast<double>(tsc_diff) * 1e9 / static_cast<double>(time_diff_ns);
     }
 };
 

@@ -120,9 +120,15 @@ public:
     }
 
     /**
-     * @brief Copy assignment operator (deleted)
+     * @brief Copy assignment operator
      */
-    base_pipe &operator=(base_pipe const &) = delete;
+    base_pipe &operator=(base_pipe const &rhs) {
+        if (this != &rhs) {
+            reset();
+            std::memcpy(allocate_back(rhs.size()), rhs._data, rhs.size() * sizeof(T));
+        }
+        return *this;
+    };
 
     /**
      * @brief Move assignment operator
@@ -612,6 +618,12 @@ public:
 template <>
 class pipe<char> : public base_pipe<char> {
 public:
+    pipe() = default;
+    pipe(pipe const &) = default;
+    pipe(pipe &&) noexcept = default;
+    pipe &operator=(pipe const &) = default;
+    pipe &operator=(pipe &&) noexcept = default;
+
     /**
      * @brief Adds a value converted to text
      *
