@@ -136,6 +136,12 @@ public:
         ss << data;
         return ss;
     }
+
+    inline std::stringstream &
+    operator<<(std::ostream &(*manip)(std::ostream &)) {
+        ss << manip;
+        return ss;
+    }
 };
 
 /**
@@ -162,6 +168,12 @@ public:
     inline std::stringstream &
     operator<<(T const &data) {
         ss << data; 
+        return ss;
+    }
+
+    inline std::stringstream &
+    operator<<(std::ostream &(*manip)(std::ostream &)) {
+        ss << manip;
         return ss;
     }
 };  
