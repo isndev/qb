@@ -777,38 +777,78 @@ public:
     }
 };
 
+// ======= Utility: detect std::reference_wrapper<T> =========
+
+template <template <typename...> class Template, typename T>
+struct is_specialization_of : std::false_type {};
+
+template <template <typename...> class Template, typename... Args>
+struct is_specialization_of<Template, Template<Args...>> : std::true_type {};
+
+// ======= Meta: type stored in tuple per argument ===========
+
+template <typename T>
+struct actor_factory_param {
+    using no_ref = std::remove_reference_t<T>;
+
+    static constexpr bool is_ref_wrapper =
+        is_specialization_of<std::reference_wrapper, std::decay_t<no_ref>>::value;
+
+    using type = std::conditional_t<
+        is_ref_wrapper,
+        no_ref, // Keep ref_wrapper untouched
+
+        std::conditional_t<
+            std::is_array_v<T> && std::is_same_v<std::remove_extent_t<T>, const char>,
+            std::string,  // string literals → std::string
+
+            std::decay_t<T> // fallback
+            >
+        >;
+};
+
+// ======= Argument transformer: cast string literals, keep ref_wrapper =========
+
+template <typename T>
+inline auto actor_factory_forward(T&& val) {
+    using Target = typename actor_factory_param<T>::type;
+
+    if constexpr (std::is_same_v<Target, std::string>) {
+        return std::string(std::forward<T>(val)); // copy literal
+    } else {
+        return std::forward<T>(val); // forward all others
+    }
+}
+
+// ======= Factory class ===========
+
 template <typename _Actor, typename... _Args>
-class TActorFactory
-    : public IActorFactory
-    , public ActorProxy {
+class TActorFactory : public IActorFactory, public ActorProxy {
+    using Tuple = std::tuple<typename actor_factory_param<_Args>::type...>;
+
     ActorId _id;
-    std::tuple<typename remove_reference_if<
-        _Args, std::is_trivially_copyable<std::remove_reference_t<
-                   std::remove_all_extents_t<_Args>>>::value>::type...>
-        _parameters;
+    Tuple _parameters;
 
 public:
-    explicit TActorFactory(ActorId const id, _Args &&...args)
+    explicit TActorFactory(ActorId const id, _Args&&... args)
         : _id(id)
-        , _parameters(std::forward<_Args>(args)...) {}
+        , _parameters(actor_factory_forward<_Args>(std::forward<_Args>(args))...) {}
 
+    Actor* create() final {
+        return create_impl(std::index_sequence_for<_Args...>{});
+    }
+
+    [[nodiscard]] bool isService() const final {
+        return std::is_base_of_v<Service, _Actor>;
+    }
+
+private:
     template <std::size_t... Is>
-    Actor *
-    create_impl(std::index_sequence<Is...>) {
+    Actor* create_impl(std::index_sequence<Is...>) {
         auto actor = new _Actor(std::get<Is>(_parameters)...);
         ActorProxy::setType<_Actor>(*actor);
         ActorProxy::setName<_Actor>(*actor);
         return actor;
-    }
-
-    Actor *
-    create() final {
-        return create_impl(std::index_sequence_for<_Args...>{});
-    }
-
-    [[nodiscard]] bool
-    isService() const final {
-        return std::is_base_of<Service, _Actor>::value;
     }
 };
 
