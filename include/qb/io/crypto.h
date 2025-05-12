@@ -24,7 +24,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup IO
+ * @ingroup Crypto
  */
 
 #ifndef QB_IO_CRYPTO_H
@@ -661,10 +661,10 @@ public:
     // New types for added functions
     /** @brief Parameters for the Argon2 algorithm */
     struct Argon2Params {
-        uint32_t    t_cost;      // Time cost (number of iterations)
-        uint32_t    m_cost;      // Memory cost (KiB)
-        uint32_t    parallelism; // Degree of parallelism
-        std::string salt;        // Salt (optional)
+        uint32_t    t_cost;      /**< @brief Time cost (number of iterations, e.g., passes over memory). */
+        uint32_t    m_cost;      /**< @brief Memory cost in KiB (kilobytes). */
+        uint32_t    parallelism; /**< @brief Degree of parallelism (number of threads). */
+        std::string salt;        /**< @brief Salt for the hash function. If empty, a random salt might be used or implied by specific functions. */
 
         Argon2Params()
             : t_cost(3)
@@ -911,12 +911,11 @@ public:
     static bool verify_password(const std::string &password, const std::string &hash);
 
     /**
-     * @brief Génération de clés de signature Ed25519
+     * @brief Generate Ed25519 signing key pair.
      *
-     * Génère une paire de clés de signature Ed25519, conçue
-     * pour être rapide et sécurisée.
+     * Generates an Ed25519 signing key pair, designed for speed and security.
      *
-     * @return Paire de clés au format PEM (privée, publique)
+     * @return Pair of PEM-encoded strings (private key, public key).
      */
     static std::pair<std::string, std::string> generate_ed25519_keypair();
 
@@ -929,13 +928,13 @@ public:
     generate_ed25519_keypair_bytes();
 
     /**
-     * @brief Sign data using Ed25519
+     * @brief Sign data using Ed25519 private key.
      *
-     * Signe des données avec l'algorithme Ed25519.
+     * Signs data with the Ed25519 algorithm using a PEM-encoded private key.
      *
-     * @param data Données à signer
-     * @param private_key Clé privée Ed25519 au format PEM
-     * @return Signature
+     * @param data Data to sign.
+     * @param private_key Ed25519 private key in PEM format.
+     * @return Signature bytes.
      */
     static std::vector<unsigned char>
     ed25519_sign(const std::vector<unsigned char> &data, const std::string &private_key);
@@ -954,14 +953,14 @@ public:
                  const std::vector<unsigned char> &private_key);
 
     /**
-     * @brief Verify Ed25519 signature
+     * @brief Verify Ed25519 signature.
      *
-     * Vérifie une signature Ed25519.
+     * Verifies an Ed25519 signature using a PEM-encoded public key.
      *
-     * @param data Données qui ont été signées
-     * @param signature Signature à vérifier
-     * @param public_key Clé publique Ed25519 au format PEM
-     * @return Vrai si la signature est valide
+     * @param data Data that was signed.
+     * @param signature Signature to verify.
+     * @param public_key Ed25519 public key in PEM format.
+     * @return True if the signature is valid.
      */
     static bool ed25519_verify(const std::vector<unsigned char> &data,
                                const std::vector<unsigned char> &signature,
@@ -982,12 +981,11 @@ public:
                                const std::vector<unsigned char> &public_key);
 
     /**
-     * @brief Génération de clés X25519 pour échange de clés
+     * @brief Generate X25519 key pair for key exchange.
      *
-     * Génère une paire de clés X25519 pour l'échange de clés
-     * Diffie-Hellman sur courbe elliptique.
+     * Generates an X25519 key pair for Elliptic Curve Diffie-Hellman (ECDH) key exchange.
      *
-     * @return Paire de clés au format PEM (privée, publique)
+     * @return Pair of PEM-encoded strings (private key, public key).
      */
     static std::pair<std::string, std::string> generate_x25519_keypair();
 

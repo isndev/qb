@@ -19,7 +19,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup System
+ * @ingroup Time
  */
 
 #ifndef FEATURES_TIMESTAMP_H
@@ -67,6 +67,12 @@ class TscTimePoint;  // TSC = Time Stamp Counter (formerly RDTS)
 }
 
 namespace qb {
+
+/**
+ * @defgroup TimeUtilities Time Utilities
+ * @brief Utilities for handling and measuring time with high precision
+ * @ingroup Time
+ */ 
 
 /**
  * @class Duration
@@ -376,72 +382,167 @@ private:
     rep _duration{0}; ///< Duration in nanoseconds
 };
 
-// Binary arithmetic operators
+// Binary arithmetic operators for Duration
+/**
+ * @brief Adds two durations
+ * @param lhs First duration
+ * @param rhs Second duration
+ * @return New duration equal to lhs + rhs
+ * @ingroup Time
+ */
 constexpr Duration operator+(const Duration& lhs, const Duration& rhs) noexcept {
     return Duration(lhs.count() + rhs.count());
 }
 
+/**
+ * @brief Subtracts second duration from first
+ * @param lhs First duration
+ * @param rhs Second duration
+ * @return New duration equal to lhs - rhs
+ * @ingroup Time
+ */
 constexpr Duration operator-(const Duration& lhs, const Duration& rhs) noexcept {
     return Duration(lhs.count() - rhs.count());
 }
 
+/**
+ * @brief Multiplies a duration by a scalar value
+ * @param lhs Duration 
+ * @param rhs Scalar multiplier
+ * @return Duration scaled by rhs
+ * @ingroup Time
+ */
 constexpr Duration operator*(const Duration& lhs, Duration::rep rhs) noexcept {
     return Duration(lhs.count() * rhs);
 }
 
+/**
+ * @brief Multiplies a scalar value by a duration
+ * @param lhs Scalar multiplier
+ * @param rhs Duration
+ * @return Duration scaled by lhs
+ * @ingroup Time
+ */
 constexpr Duration operator*(Duration::rep lhs, const Duration& rhs) noexcept {
     return Duration(lhs * rhs.count());
 }
 
+/**
+ * @brief Divides a duration by a scalar value
+ * @param lhs Duration
+ * @param rhs Scalar divisor
+ * @return Duration divided by rhs
+ * @ingroup Time
+ */
 constexpr Duration operator/(const Duration& lhs, Duration::rep rhs) noexcept {
     return Duration(lhs.count() / rhs);
 }
 
+/**
+ * @brief Divides one duration by another
+ * @param lhs Numerator duration
+ * @param rhs Denominator duration
+ * @return Scalar ratio of lhs to rhs
+ * @ingroup Time
+ */
 constexpr Duration::rep operator/(const Duration& lhs, const Duration& rhs) noexcept {
     return lhs.count() / rhs.count();
 }
 
+/**
+ * @brief Calculates the remainder of dividing a duration by a scalar
+ * @param lhs Duration
+ * @param rhs Scalar divisor
+ * @return Duration representing the remainder
+ * @ingroup Time
+ */
 constexpr Duration operator%(const Duration& lhs, Duration::rep rhs) noexcept {
     return Duration(lhs.count() % rhs);
 }
 
+/**
+ * @brief Calculates the remainder of dividing one duration by another
+ * @param lhs Numerator duration
+ * @param rhs Denominator duration
+ * @return Duration representing the remainder
+ * @ingroup Time
+ */
 constexpr Duration operator%(const Duration& lhs, const Duration& rhs) noexcept {
     return Duration(lhs.count() % rhs.count());
 }
 
 // Literal operators for convenient duration creation
 namespace literals {
+    /**
+     * @brief Creates a Duration from literal days
+     * @param days Number of days
+     * @return Duration object representing the specified days
+     * @ingroup Time
+     */
     constexpr Duration operator""_d(unsigned long long days) noexcept {
         return Duration::from_days(days);
     }
     
+    /**
+     * @brief Creates a Duration from literal hours
+     * @param hours Number of hours
+     * @return Duration object representing the specified hours
+     * @ingroup Time
+     */
     constexpr Duration operator""_h(unsigned long long hours) noexcept {
         return Duration::from_hours(hours);
     }
     
+    /**
+     * @brief Creates a Duration from literal minutes
+     * @param minutes Number of minutes
+     * @return Duration object representing the specified minutes
+     * @ingroup Time
+     */
     constexpr Duration operator""_min(unsigned long long minutes) noexcept {
         return Duration::from_minutes(minutes);
     }
     
+    /**
+     * @brief Creates a Duration from literal seconds
+     * @param seconds Number of seconds
+     * @return Duration object representing the specified seconds
+     * @ingroup Time
+     */
     constexpr Duration operator""_s(unsigned long long seconds) noexcept {
         return Duration::from_seconds(seconds);
     }
     
+    /**
+     * @brief Creates a Duration from literal milliseconds
+     * @param milliseconds Number of milliseconds
+     * @return Duration object representing the specified milliseconds
+     * @ingroup Time
+     */
     constexpr Duration operator""_ms(unsigned long long milliseconds) noexcept {
         return Duration::from_milliseconds(milliseconds);
     }
     
+    /**
+     * @brief Creates a Duration from literal microseconds
+     * @param microseconds Number of microseconds
+     * @return Duration object representing the specified microseconds
+     * @ingroup Time
+     */
     constexpr Duration operator""_us(unsigned long long microseconds) noexcept {
         return Duration::from_microseconds(microseconds);
     }
     
+    /**
+     * @brief Creates a Duration from literal nanoseconds
+     * @param nanoseconds Number of nanoseconds
+     * @return Duration object representing the specified nanoseconds
+     * @ingroup Time
+     */
     constexpr Duration operator""_ns(unsigned long long nanoseconds) noexcept {
         return Duration::from_nanoseconds(nanoseconds);
     }
 }
-
-// For backward compatibility
-using Timespan = Duration;
 
 /**
  * @class TimePoint
@@ -865,51 +966,138 @@ protected:
     rep _time_since_epoch{0}; ///< Time in nanoseconds since epoch
 };
 
-// Binary arithmetic operators
+// Binary arithmetic operators for TimePoint and Duration
+/**
+ * @brief Adds a duration to a time point
+ * @param lhs The time point
+ * @param rhs The duration to add
+ * @return A new time point equal to lhs + rhs
+ * @ingroup Time
+ */
 inline TimePoint operator+(const TimePoint& lhs, const Duration& rhs) noexcept {
     TimePoint result(lhs);
     result += rhs;
     return result;
 }
 
+/**
+ * @brief Adds a time point to a duration
+ * @param lhs The duration
+ * @param rhs The time point
+ * @return A new time point equal to rhs + lhs
+ * @ingroup Time
+ */
 inline TimePoint operator+(const Duration& lhs, const TimePoint& rhs) noexcept {
     return rhs + lhs;
 }
 
+/**
+ * @brief Subtracts a duration from a time point
+ * @param lhs The time point
+ * @param rhs The duration to subtract
+ * @return A new time point equal to lhs - rhs
+ * @ingroup Time
+ */
 inline TimePoint operator-(const TimePoint& lhs, const Duration& rhs) noexcept {
     TimePoint result(lhs);
     result -= rhs;
     return result;
 }
 
+/**
+ * @brief Calculates the duration between two time points
+ * @param lhs The later time point
+ * @param rhs The earlier time point
+ * @return The duration between the two time points (lhs - rhs)
+ * @ingroup Time
+ */
 inline Duration operator-(const TimePoint& lhs, const TimePoint& rhs) noexcept {
     return Duration(static_cast<Duration::rep>(lhs.count() - rhs.count()));
 }
 
-// Comparison operators
+// Comparison operators for TimePoint
+/**
+ * @brief Equality comparison for time points
+ * @param lhs First time point
+ * @param rhs Second time point
+ * @return true if the time points are equal, false otherwise
+ * @ingroup Time
+ */
 constexpr bool operator==(const TimePoint& lhs, const TimePoint& rhs) noexcept {
     return lhs.count() == rhs.count();
 }
 
+/**
+ * @brief Inequality comparison for time points
+ * @param lhs First time point
+ * @param rhs Second time point
+ * @return true if the time points are not equal, false otherwise
+ * @ingroup Time
+ */
 constexpr bool operator!=(const TimePoint& lhs, const TimePoint& rhs) noexcept {
     return lhs.count() != rhs.count();
 }
 
+/**
+ * @brief Less than comparison for time points
+ * @param lhs First time point
+ * @param rhs Second time point
+ * @return true if lhs is earlier than rhs, false otherwise
+ * @ingroup Time
+ */
 constexpr bool operator<(const TimePoint& lhs, const TimePoint& rhs) noexcept {
     return lhs.count() < rhs.count();
 }
 
+/**
+ * @brief Less than or equal comparison for time points
+ * @param lhs First time point
+ * @param rhs Second time point
+ * @return true if lhs is earlier than or equal to rhs, false otherwise
+ * @ingroup Time
+ */
 constexpr bool operator<=(const TimePoint& lhs, const TimePoint& rhs) noexcept {
     return lhs.count() <= rhs.count();
 }
 
+/**
+ * @brief Greater than comparison for time points
+ * @param lhs First time point
+ * @param rhs Second time point
+ * @return true if lhs is later than rhs, false otherwise
+ * @ingroup Time
+ */
 constexpr bool operator>(const TimePoint& lhs, const TimePoint& rhs) noexcept {
     return lhs.count() > rhs.count();
 }
 
+/**
+ * @brief Greater than or equal comparison for time points
+ * @param lhs First time point
+ * @param rhs Second time point
+ * @return true if lhs is later than or equal to rhs, false otherwise
+ * @ingroup Time
+ */
 constexpr bool operator>=(const TimePoint& lhs, const TimePoint& rhs) noexcept {
     return lhs.count() >= rhs.count();
 }
+
+// Backward compatibility typedefs
+/**
+ * @typedef Timespan
+ * @brief Backward compatibility alias for Duration
+ * @details Provided for compatibility with older code
+ * @ingroup Time
+ */
+using Timespan = Duration;
+
+/**
+ * @typedef Timestamp
+ * @brief Backward compatibility alias for TimePoint
+ * @details Provided for compatibility with older code
+ * @ingroup Time
+ */
+using Timestamp = TimePoint;
 
 /**
  * @class UtcTimePoint
@@ -1076,11 +1264,36 @@ private:
     }
 };
 
-// For backward compatibility
-using Timestamp = TimePoint;
+/**
+ * @typedef UtcTimestamp
+ * @brief Backward compatibility alias for UtcTimePoint
+ * @details Provided for compatibility with older code
+ * @ingroup Time
+ */
 using UtcTimestamp = UtcTimePoint;
+
+/**
+ * @typedef LocalTimestamp
+ * @brief Backward compatibility alias for LocalTimePoint
+ * @details Provided for compatibility with older code
+ * @ingroup Time
+ */
 using LocalTimestamp = LocalTimePoint;
+
+/**
+ * @typedef NanoTimestamp
+ * @brief Backward compatibility alias for HighResTimePoint
+ * @details Provided for compatibility with older code
+ * @ingroup Time
+ */
 using NanoTimestamp = HighResTimePoint;
+
+/**
+ * @typedef RdtsTimestamp
+ * @brief Backward compatibility alias for TscTimePoint
+ * @details Provided for compatibility with older code
+ * @ingroup Time
+ */
 using RdtsTimestamp = TscTimePoint;
 
 /**
@@ -1196,11 +1409,25 @@ private:
 
 } // namespace qb
 
-// Stream operator
+// Stream operators
+/**
+ * @brief Stream insertion operator for TimePoint
+ * @param os Output stream
+ * @param tp TimePoint to output
+ * @return Reference to the output stream
+ * @ingroup Time
+ */
 inline std::ostream& operator<<(std::ostream& os, const qb::TimePoint& tp) {
     return os << tp.to_iso8601();
 }
 
+/**
+ * @brief Stream insertion operator for Duration
+ * @param os Output stream
+ * @param d Duration to output
+ * @return Reference to the output stream
+ * @ingroup Time
+ */
 inline std::ostream& operator<<(std::ostream& os, const qb::Duration& d) {
     auto seconds = d.seconds();
     auto nanoseconds = d.nanoseconds() % 1000000000LL;
@@ -1218,15 +1445,43 @@ inline std::ostream& operator<<(std::ostream& os, const qb::Duration& d) {
 
 // Hash support for unordered containers
 namespace std {
+    /**
+     * @struct hash<qb::Duration>
+     * @brief Specialization of std::hash for qb::Duration
+     * @details 
+     * This hash specialization enables Duration objects to be used as keys in unordered
+     * associative containers like std::unordered_set and std::unordered_map.
+     * The hash is computed from the internal duration count in nanoseconds.
+     * @ingroup Time
+     */
     template<>
     struct hash<qb::Duration> {
+        /**
+         * @brief Hash function operator for Duration
+         * @param duration The Duration to hash
+         * @return Hash value based on the duration's nanosecond count
+         */
         size_t operator()(const qb::Duration& duration) const noexcept {
             return std::hash<int64_t>{}(duration.count());
         }
     };
     
+    /**
+     * @struct hash<qb::TimePoint>
+     * @brief Specialization of std::hash for qb::TimePoint
+     * @details
+     * This hash specialization enables TimePoint objects to be used as keys in unordered
+     * associative containers like std::unordered_set and std::unordered_map.
+     * The hash is computed from the internal nanoseconds-since-epoch count.
+     * @ingroup Time
+     */
     template<>
     struct hash<qb::TimePoint> {
+        /**
+         * @brief Hash function operator for TimePoint
+         * @param time_point The TimePoint to hash
+         * @return Hash value based on the time point's nanosecond count
+         */
         size_t operator()(const qb::TimePoint& time_point) const noexcept {
             return std::hash<uint64_t>{}(time_point.count());
         }

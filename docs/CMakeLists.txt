@@ -20,26 +20,39 @@ option(BUILD_DOC "Build Documentation" ON)
 
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
-    set(DOXYGEN_INPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-    set(DOXYGEN_OUTPUT_DIR ${CMAKE_SOURCE_DIR}/build/docs)
+    set(DOXYGEN_INPUT_DIR ${CMAKE_CURRENT_SOURCE_DIR}) # This will be qb/docs
+    set(DOXYGEN_OUTPUT_DIR ${CMAKE_SOURCE_DIR}/build/docs) # CMAKE_SOURCE_DIR is qb/
     set(BUILD_DOC_DIR ${CMAKE_SOURCE_DIR}/build/docs)
     if(NOT EXISTS ${BUILD_DOC_DIR})
         file(MAKE_DIRECTORY ${BUILD_DOC_DIR})
     endif()
 
 
-    set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in)
-    set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
+    set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile.in) # qb/docs/Doxyfile.in
+    set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile) # e.g. qb/build/docs_cmake_build/Doxyfile
+
+    # Variables needed for Doxyfile.in
+    # set(QB_DIRECTORY ${CMAKE_SOURCE_DIR}) # Root of the qb project
+
+    if(NOT DEFINED QB_PREFIX)
+        set(QB_PREFIX "QB Actor Framework") # Default project name
+        message(STATUS "QB_PREFIX not set by parent, using default: ${QB_PREFIX}")
+    endif()
+    if(NOT DEFINED QB_VERSION)
+        set(QB_VERSION "0.0.0-dev") # Default version
+        message(STATUS "QB_VERSION not set by parent, using default: ${QB_VERSION}")
+    endif()
+
     configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
 
-    if (${QB_PREFIX_UPPER}_BUILD_DOC)
-        message(STATUS "INFO: Doxygen build added to solution")
+    if (BUILD_DOC)
+        message(STATUS "INFO: Doxygen build target '${QB_PREFIX}-docs' added to solution")
         add_custom_target(${QB_PREFIX}-docs ALL
                 COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
                 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-                COMMENT "Generating API documentation with Doxygen"
+                COMMENT "Generating API documentation with Doxygen for ${QB_PREFIX} v${QB_VERSION}"
                 VERBATIM)
     endif()
 else(DOXYGEN_FOUND)
-    message("Doxygen needs to be installed to generate the documentation.")
+    message(WARNING "Doxygen executable NOT found. Documentation target will not be added.")
 endif(DOXYGEN_FOUND)

@@ -1,10 +1,11 @@
 /**
  * @file qb/utility/functional.h
- * @brief Functional utilities for hash computations
+ * @brief Functional utilities, primarily for hash computations.
  *
  * This file provides utility functions for combining hash values of multiple objects,
  * which is useful for creating composite hash functions for custom types or
- * in containers like unordered maps and sets.
+ * for use in containers like `qb::unordered_map` and `qb::unordered_set` when a custom
+ * hasher for a key type is needed.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -29,13 +30,12 @@
 namespace qb {
 
 /**
- * @brief Internal function to combine a single value into a hash seed
- *
- * Uses the FNV-1a hash combining approach to mix a new value into an existing seed.
- *
- * @tparam T Type of the value to hash
- * @param seed The seed value to combine with (modified in-place)
- * @param val The value to combine into the seed
+ * @brief Internal helper function to combine a single value into a hash seed.
+ * @private
+ * @tparam T Type of the value to hash.
+ * @param seed The seed value to combine with (modified in-place by XORing and bit manipulation).
+ * @param val The value whose hash is to be combined into the seed.
+ * @details Uses a common hash combining approach similar to FNV-1a or boost::hash_combine.
  */
 template <typename T>
 void
@@ -44,26 +44,39 @@ _hash_combine(size_t &seed, const T &val) {
 }
 
 /**
- * @brief Combines the hash values of multiple objects into a single hash
+ * @brief Combines the hash values of multiple objects into a single hash value.
+ * @ingroup MiscUtils
+ * @tparam Types Variadic template parameter pack of the types of objects to hash.
+ * @param args The values whose hash codes are to be combined.
+ * @return A single `size_t` hash value representing the combination of all input values.
+ * @details This function is particularly useful for creating custom hash functions for composite
+ *          objects (structs or classes) to be used as keys in hash-based containers like
+ *          `qb::unordered_map` or `std::unordered_map`. It iteratively combines the hash
+ *          of each argument into a seed.
  *
- * This is particularly useful for creating hash functions for composite objects
- * or when you need to hash multiple fields together.
+ * @code
+ * struct MyKey {
+ *     int id;
+ *     std::string name;
+ *     double value;
  *
- * @tparam Types Parameter pack of types to hash
- * @param args The values to combine into a single hash
- * @return A hash value combining all input values
- *
- * @example
- * struct MyStruct {
- *     int a;
- *     std::string b;
- *
- *     struct Hash {
- *         size_t operator()(const MyStruct& s) const {
- *             return qb::hash_combine(s.a, s.b);
- *         }
- *     };
+ *     bool operator==(const MyKey& other) const {
+ *         return id == other.id && name == other.name && value == other.value;
+ *     }
  * };
+ *
+ * namespace std {
+ *   template <>
+ *   struct hash<MyKey> {
+ *     std::size_t operator()(const MyKey& k) const {
+ *       return qb::hash_combine(k.id, k.name, k.value);
+ *     }
+ *   };
+ * } // namespace std
+ *
+ * // ... later ...
+ * // qb::unordered_map<MyKey, SomeData> my_map;
+ * @endcode
  */
 template <typename... Types>
 size_t

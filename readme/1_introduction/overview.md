@@ -1,58 +1,63 @@
-# QB Framework Overview
+@page intro_overview_md QB Framework: A High-Performance C++ Actor Toolkit
+@brief Discover the QB Actor Framework – your C++17 toolkit for crafting powerful, concurrent, and distributed applications with ease and efficiency.
 
-## Introduction
+# QB Framework: A High-Performance C++ Actor Toolkit
 
-The QB Actor Framework is a C++17 library designed for building **high-performance, concurrent, and distributed systems**. It integrates two core ideas:
+Welcome to the QB Actor Framework! If you're looking to build sophisticated, high-performance concurrent or distributed systems in C++17, you're in the right place. QB is engineered to simplify the complexities of modern C++ development by elegantly integrating two powerful paradigms:
 
-1.  **The Actor Model:** For structuring concurrent logic using isolated entities (actors) that communicate via asynchronous messages.
-2.  **Asynchronous I/O (`qb-io`):** A robust, non-blocking I/O layer for efficient network and file operations.
+1.  **The Actor Model:** Structure your concurrent logic around actors – independent, isolated entities that communicate through asynchronous messages. This model naturally manages state and simplifies reasoning about concurrency.
+2.  **Asynchronous I/O (`qb-io`):** Leverage a robust, non-blocking I/O engine for highly efficient network and file operations, ensuring your application remains responsive under load.
 
-By combining these, QB aims to simplify the creation of complex, scalable C++ applications, handling low-level concurrency and I/O details internally.
+QB empowers you to focus on your application's business logic while it handles the intricate details of concurrency, parallelism, and low-level I/O.
 
-## Target Audience
+## Who Is This For?
 
-This documentation assumes you are an **experienced C++ developer** with a good understanding of:
+This documentation is tailored for **skilled C++ developers**. We assume you have a solid grasp of:
 
-*   Modern C++ features (C++17 or later).
-*   Concurrency principles (threading, race conditions, deadlocks, asynchronous patterns).
-*   Network programming fundamentals (TCP/IP, UDP, sockets).
-*   Build systems, specifically CMake.
+*   Modern C++ (C++17 and beyond).
+*   Fundamental concurrency concepts (threads, asynchronous operations, potential pitfalls like race conditions).
+*   Basic network programming (TCP/IP, UDP).
+*   CMake for building projects.
 
-The Actor Model itself simplifies certain concurrency aspects, but leveraging the framework effectively benefits from understanding the underlying system concepts.
+While the Actor Model simplifies many concurrency challenges, a foundational understanding of these areas will help you unlock QB's full potential.
 
-## Key Features
+## What Can QB Do For You? Key Capabilities
 
-*   **Actor Model Engine (`qb-core`):**
-    *   `qb::Actor` base class for stateful, message-driven components.
-    *   Managed actor lifecycle (`onInit`, `kill`, destructors).
-    *   Type-safe, asynchronous event system (`qb::Event`, `push`, `send`, `broadcast`).
-*   **Asynchronous I/O Engine (`qb-io`):**
-    *   Efficient event loop based on `libev` (`qb::io::async::listener`).
-    *   Non-blocking TCP, UDP, File I/O, and optional SSL/TLS transports.
-    *   Extensible protocol framework for message framing/parsing (`qb::io::async::AProtocol`).
-    *   Asynchronous timers and callbacks (`qb::io::async::with_timeout`, `qb::io::async::callback`).
-*   **Concurrency & Scalability:**
-    *   Multi-core execution via `qb::Main` and `qb::VirtualCore`.
-    *   Efficient inter-core communication using lock-free queues.
-    *   Configurable core affinity and event loop latency.
-*   **Utilities (`qb-io`):**
-    *   URI parsing (`qb::io::uri`).
-    *   Cryptography (Hashing, Encryption - requires OpenSSL).
-    *   Compression (Gzip, Deflate - requires Zlib).
-    *   High-precision time (`qb::Timestamp`, `qb::Duration`).
-    *   High-performance containers (`qb::allocator::pipe`, `qb::string`, `qb::unordered_map`).
+QB offers a rich set of features designed for demanding applications:
 
-## Benefits
+*   **Core Actor Engine (`qb-core`):**
+    *   **`qb::Actor`:** The cornerstone for building your message-driven components.
+    *   **Managed Lifecycles:** Simplified actor creation, initialization (`onInit`), and termination (`kill`).
+    *   **Type-Safe Messaging:** Asynchronous, type-safe event system using `qb::Event` for reliable communication (`push`, `send`, `broadcast`).
+*   **High-Performance Async I/O (`qb-io`):**
+    *   **`qb::io::async::listener`:** An efficient event loop, powered by `libev`, at the heart of each processing core.
+    *   **Versatile Transports:** Non-blocking TCP, UDP, File I/O, and optional SSL/TLS.
+    *   **Customizable Protocols:** An extensible framework (`qb::io::async::AProtocol`) to parse and frame your specific message formats.
+    *   **Timers & Callbacks:** Schedule tasks and manage time-based events with `qb::io::async::with_timeout` and `qb::io::async::callback`.
+*   **Built for Concurrency & Scale:**
+    *   **Multi-Core Ready:** Effortlessly distribute actors across `qb::VirtualCore` instances using `qb::Main`.
+    *   **Efficient Inter-Core Messaging:** Optimized with lock-free queues.
+    *   **Fine-Grained Control:** Configure CPU core affinity and event loop latency.
+*   **Comprehensive Utilities (within `qb-io`):**
+    *   **`qb::io::uri`:** Robust URI parsing.
+    *   **Cryptography:** Hashing, encryption, and more (requires OpenSSL).
+    *   **Compression:** Gzip and Deflate (requires Zlib).
+    *   **`qb::Timestamp` & `qb::Duration`:** Precise time measurement.
+    *   **Optimized Containers:** Performance-focused data structures like `qb::allocator::pipe`, `qb::string`, and `qb::unordered_map`.
 
-*   **Simplified Concurrency:** Reduces bugs related to shared state and locking.
-*   **High Performance:** Built for speed using non-blocking I/O and efficient messaging.
-*   **Scalability:** Leverages multiple CPU cores effectively.
-*   **Modularity:** `qb-io` can be used independently of `qb-core`.
-*   **Testability:** Isolated actors are often easier to unit test.
+## Why Choose QB?
 
-## Next Steps
+*   **Simplified Concurrency:** Write more robust concurrent code by minimizing shared state and complex locking.
+*   **Peak Performance:** Engineered for speed with non-blocking I/O, efficient messaging, and minimal overhead.
+*   **Scalable by Design:** Naturally leverages multi-core architectures.
+*   **Modular Architecture:** Use the `qb-io` library independently if the full actor system isn't needed.
+*   **Enhanced Testability:** Isolated actor components are inherently easier to unit test.
 
-*   Understand the **[Core Philosophy](./philosophy.md)** guiding the framework's design.
-*   Explore the **[Core Concepts](../2_core_concepts/)**.
-*   Dive into the **[QB-IO Module](../3_qb_io/)** or **[QB-Core Module](../4_qb_core/)** documentation.
-*   Follow the **[Getting Started Guide](../6_guides/getting_started.md)**. 
+## Dive Deeper
+
+Ready to explore further?
+
+*   Understand the **[Core Philosophy](./philosophy.md)** that shapes the framework.
+*   Grasp the **[Fundamental Core Concepts](../2_core_concepts/README.md)**.
+*   Explore the capabilities of the **[QB-IO Module](../3_qb_io/README.md)** and the **[QB-Core Module](../4_qb_core/README.md)**.
+*   Walk through the **[Getting Started Guide](../6_guides/getting_started.md)** to build your first QB application. 

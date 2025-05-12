@@ -1,25 +1,19 @@
 /**
  * @file qb/utility/build_macros.h
- * @brief Platform and compiler detection macros
+ * @brief Platform, compiler, and C++ feature detection macros for the QB Framework.
  *
  * This file provides a comprehensive set of preprocessor macros for detecting
- * compiler features, platform specifics, and C++ language version support.
- * It defines platform-independent APIs, export/import directives for DLLs,
- * and compatibility macros for different compiler environments.
+ * compiler features (e.g., C++11/14/17/20 support), platform specifics (Windows, Linux, macOS),
+ * CPU architecture (32/64-bit), and for controlling build configurations (e.g., dynamic/static linking,
+ * enabling/disabling exceptions, UDS support).
  *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * It defines platform-independent API export/import directives (`QB_API`),
+ * utility macros like `QB_ARRAYSIZE`, and warning suppression macros for various compilers.
+ * These macros are crucial for maintaining cross-platform compatibility and build flexibility
+ * throughout the QB framework.
  *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * @note This header is foundational and typically included by other qb headers; direct inclusion
+ *       by application code is usually not necessary unless interacting with these specific macros.
  * @ingroup Utility
  */
 

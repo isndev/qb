@@ -23,7 +23,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup IO
+ * @ingroup Compression
  */
 
 #include <functional>
@@ -46,6 +46,7 @@ namespace compression {
 
 /**
  * @enum operation_hint
+ * @ingroup Compression
  * @brief Hints for compression/decompression operations
  *
  * These hints indicate whether an operation is the last in a sequence or whether
@@ -61,6 +62,7 @@ enum operation_hint {
 
 /**
  * @struct operation_result
+ * @ingroup Compression
  * @brief Result of a compression/decompression operation
  *
  * This structure contains information about the outcome of a compression or
@@ -79,6 +81,7 @@ struct operation_result {
 
 /**
  * @class compress_provider
+ * @ingroup Compression
  * @brief Abstract interface for compression algorithm providers
  *
  * This class defines the interface that all compression algorithm implementations
@@ -126,6 +129,7 @@ public:
 
 /**
  * @class decompress_provider
+ * @ingroup Compression
  * @brief Abstract interface for decompression algorithm providers
  *
  * This class defines the interface that all decompression algorithm implementations
@@ -173,6 +177,7 @@ public:
 
 /**
  * @class compress_factory
+ * @ingroup Compression
  * @brief Factory interface for creating compression providers
  *
  * This class defines the interface for factories that create compressor
@@ -201,6 +206,7 @@ public:
 
 /**
  * @class decompress_factory
+ * @ingroup Compression
  * @brief Factory interface for creating decompression providers
  *
  * This class defines the interface for factories that create decompressor
@@ -595,6 +601,12 @@ compress(Output &output, const char *data, std::size_t size,
 
 /**
  * @brief Specialization of deflate compress for pipe allocator
+ * 
+ * @param output Pipe allocator for the compressed data
+ * @param data Pointer to the data to compress
+ * @param size Size of the data in bytes
+ * @param level Compression level (1-9, where 9 is max compression)
+ * @return Size of the compressed data in bytes
  */
 template <>
 size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
@@ -602,9 +614,10 @@ size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t
 
 /**
  * @struct to_compress
- * @brief Structure for passing compression parameters
+ * @ingroup Compression
+ * @brief Structure for passing compression parameters for deflate.
  *
- * This structure encapsulates the parameters for a compression operation
+ * This structure encapsulates the parameters for a deflate compression operation
  * and provides a place to store the result.
  */
 struct to_compress {
@@ -660,6 +673,12 @@ uncompress(Output &output, const char *data, std::size_t size, std::size_t max =
 
 /**
  * @brief Specialization of deflate uncompress for pipe allocator
+ * 
+ * @param output Pipe allocator for the uncompressed data
+ * @param data Pointer to the compressed data
+ * @param size Size of the compressed data in bytes
+ * @param level Maximum allowed output size (0 for unlimited)
+ * @return Size of the uncompressed data in bytes
  */
 template <>
 size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
@@ -667,9 +686,10 @@ size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size
 
 /**
  * @struct to_uncompress
- * @brief Structure for passing decompression parameters
+ * @ingroup Compression
+ * @brief Structure for passing decompression parameters for deflate.
  *
- * This structure encapsulates the parameters for a decompression operation
+ * This structure encapsulates the parameters for a deflate decompression operation
  * and provides a place to store the result.
  */
 struct to_uncompress {
@@ -715,6 +735,7 @@ std::string uncompress(const char *data, std::size_t size);
 namespace gzip {
 /**
  * @brief Check if data is compressed using gzip or zlib format
+ * @ingroup Compression
  *
  * Examines the data header to determine if it's in a recognized compressed format.
  *
@@ -756,6 +777,12 @@ compress(Output &output, const char *data, std::size_t size,
 
 /**
  * @brief Specialization of gzip compress for pipe allocator
+ * 
+ * @param output Pipe allocator for the compressed data
+ * @param data Pointer to the data to compress
+ * @param size Size of the data in bytes
+ * @param level Compression level (1-9, where 9 is max compression)
+ * @return Size of the compressed data in bytes
  */
 template <>
 size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
@@ -763,9 +790,10 @@ size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t
 
 /**
  * @struct to_compress
- * @brief Structure for passing gzip compression parameters
+ * @ingroup Compression
+ * @brief Structure for passing gzip compression parameters.
  *
- * This structure encapsulates the parameters for a compression operation
+ * This structure encapsulates the parameters for a gzip compression operation
  * and provides a place to store the result.
  */
 struct to_compress {
@@ -821,6 +849,12 @@ uncompress(Output &output, const char *data, std::size_t size, std::size_t max =
 
 /**
  * @brief Specialization of gzip uncompress for pipe allocator
+ * 
+ * @param output Pipe allocator for the uncompressed data
+ * @param data Pointer to the compressed data
+ * @param size Size of the compressed data in bytes
+ * @param level Maximum allowed output size (0 for unlimited)
+ * @return Size of the uncompressed data in bytes
  */
 template <>
 size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
@@ -828,9 +862,10 @@ size_t uncompress(qb::allocator::pipe<char> &output, const char *data, std::size
 
 /**
  * @struct to_uncompress
- * @brief Structure for passing gzip decompression parameters
+ * @ingroup Compression
+ * @brief Structure for passing gzip decompression parameters.
  *
- * This structure encapsulates the parameters for a decompression operation
+ * This structure encapsulates the parameters for a gzip decompression operation
  * and provides a place to store the result.
  */
 struct to_uncompress {

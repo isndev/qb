@@ -1,9 +1,10 @@
 /**
  * @file qb/io/tcp/listener.h
- * @brief Implementation of a TCP listener for the QB IO library
+ * @brief Implementation of a TCP listener for the QB IO library.
  *
  * This file provides the implementation of a TCP listener for accepting
- * incoming connections. It supports IPv4, IPv6, and Unix sockets.
+ * incoming connections. It supports IPv4, IPv6, and Unix sockets,
+ * building upon the generic `qb::io::socket`.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -29,17 +30,18 @@
 namespace qb::io::tcp {
 
 /*!
- * @class listener tcp/listener.h qb/io/tcp/listener.h
+ * @class listener
  * @ingroup TCP
- * @brief Class implementing a TCP listener
+ * @brief Class implementing a TCP listener for accepting incoming connections.
  *
  * This class provides functionality for listening for incoming TCP connections.
- * It inherits from the base qb::io::socket class and provides methods for
- * listening and accepting connections on different types of addresses.
+ * It inherits protectedly from the base `qb::io::socket` class and provides methods for
+ * binding to a local address, listening for connections, and accepting them.
+ * It supports IPv4, IPv6, and Unix Domain Sockets (if enabled).
  */
 class QB_API listener : private io::socket {
 public:
-    // Methods inherited from the base socket
+    // Methods inherited from the base socket (made public via using-declarations)
     using qb::io::socket::close;
     using qb::io::socket::get_optval;
     using qb::io::socket::is_open;
@@ -52,58 +54,76 @@ public:
     using qb::io::socket::test_nonblocking;
 
     /**
-     * @brief Start listening on an endpoint
-     * @param ep Endpoint to listen on
-     * @return 0 on success, error code on failure
+     * @brief Start listening on a specific local endpoint.
+     * @param ep The `qb::io::endpoint` specifying the local IP address and port to listen on.
+     * @return 0 on success, or a non-zero error code on failure (e.g., if binding or listening fails).
+     * @details This method first opens a socket with the address family of the endpoint,
+     *          then binds to the endpoint and starts listening for incoming connections.
+     *          Default backlog is `SOMAXCONN`.
      */
     int listen(io::endpoint const &ep) noexcept;
 
     /**
-     * @brief Start listening on a URI
-     * @param uri URI to listen on
-     * @return 0 on success, error code on failure
+     * @brief Start listening on an endpoint specified by a URI.
+     * @param uri The `qb::io::uri` specifying the scheme (e.g., "tcp", "unix"), address, and port.
+     * @return 0 on success, or a non-zero error code on failure.
+     * @details Parses the URI to determine the address and port, then calls the appropriate
+     *          `listen_v4`, `listen_v6`, or `listen_un` method.
      */
     int listen(io::uri const &uri) noexcept;
 
     /**
-     * @brief Start listening on an IPv4 address
-     * @param port Port number
-     * @param host Host address (default: "0.0.0.0" for all interfaces)
-     * @return 0 on success, error code on failure
+     * @brief Start listening on a specific IPv4 address and port.
+     * @param port The port number to listen on.
+     * @param host The IPv4 host address string (e.g., "0.0.0.0" for all interfaces, or a specific IP).
+     *             Defaults to "0.0.0.0".
+     * @return 0 on success, or a non-zero error code on failure.
      */
     int listen_v4(uint16_t port, std::string const &host = "0.0.0.0") noexcept;
 
     /**
-     * @brief Start listening on an IPv6 address
-     * @param port Port number
-     * @param host Host address (default: "::" for all interfaces)
-     * @return 0 on success, error code on failure
+     * @brief Start listening on a specific IPv6 address and port.
+     * @param port The port number to listen on.
+     * @param host The IPv6 host address string (e.g., "::" for all interfaces, or a specific IP).
+     *             Defaults to "::".
+     * @return 0 on success, or a non-zero error code on failure.
      */
     int listen_v6(uint16_t port, std::string const &host = "::") noexcept;
 
     /**
-     * @brief Start listening on a Unix socket
-     * @param path Path to the Unix socket
-     * @return 0 on success, error code on failure
+     * @brief Start listening on a Unix domain socket.
+     * @param path The file system path for the Unix domain socket.
+     * @return 0 on success, or a non-zero error code on failure.
+     * @note This is only effective if `QB_ENABLE_UDS` is active and the system supports AF_UNIX.
+     *       The socket file will be created if it doesn't exist, and may need to be unlinked manually
+     *       before reuse if the program terminates abnormally.
      */
     int listen_un(std::string const &path) noexcept;
 
     /**
-     * @brief Accept a new connection and create a TCP socket
-     * @return Newly created TCP socket for the accepted connection
+     * @brief Accept a new incoming TCP connection and return it as a new `tcp::socket`.
+     * @return A new `tcp::socket` instance representing the connected client.
+     *         If an error occurs during accept, the returned socket will not be open (`is_open()` will be false).
+     * @details This is a blocking call by default if the listener socket is blocking.
+     *          For non-blocking accept, the listener socket should be set to non-blocking, and this
+     *          method would typically be called when `select` or an event loop indicates readability.
      */
     tcp::socket accept() const noexcept;
 
     /**
-     * @brief Accept a new connection into an existing socket
-     * @param sock TCP socket to use for the connection
-     * @return 0 on success, error code on failure
+     * @brief Accept a new incoming TCP connection into an existing `tcp::socket` object.
+     * @param sock A reference to a `tcp::socket` object where the new connection will be placed.
+     *             If a connection is accepted, `sock` will wrap the new client socket descriptor.
+     * @return 0 on success, indicating `sock` now represents the new connection.
+     *         A non-zero error code (typically negative) on failure (e.g., `EWOULDBLOCK` if non-blocking).
+     * @details Similar to the other `accept()` method, but uses a pre-existing socket object.
      */
     int accept(tcp::socket &sock) const noexcept;
 
     /**
-     * @brief Disconnect the listener
-     * @return 0 on success, error code on failure
+     * @brief Disconnect the listener socket, stopping it from accepting new connections.
+     * @return 0 on success, or a non-zero error code on failure.
+     * @details This typically calls `qb::io::socket::shutdown()` and `close()` on the underlying listener socket.
      */
     int disconnect() const noexcept;
 };

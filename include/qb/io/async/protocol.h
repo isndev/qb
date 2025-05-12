@@ -1,10 +1,12 @@
 /**
  * @file qb/io/async/protocol.h
- * @brief Protocol interfaces for message processing in the asynchronous IO framework
+ * @brief Protocol interfaces for message processing in the asynchronous IO framework.
  *
  * This file defines the protocol interfaces used for message processing in the
  * asynchronous IO framework. It provides base classes for implementing custom
  * protocols that can parse and process messages from IO streams.
+ * These protocols are crucial for defining how raw byte streams are interpreted as
+ * distinct application-level messages.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -30,109 +32,145 @@
 namespace qb::io::async {
 
 /**
- * @class IProtocol
- * @brief Base interface for all protocols
+ * @interface IProtocol
+ * @ingroup Protocol
+ * @brief Base interface for all message processing protocols.
  *
- * This interface defines the basic methods that all protocols must implement
- * for message parsing and processing.
+ * This interface defines the essential methods that all protocol implementations
+ * must provide for message framing (identifying message boundaries in a byte stream)
+ * and processing.
  */
 class IProtocol {
 public:
     /**
-     * @brief Virtual destructor
+     * @brief Virtual destructor.
+     * Ensures proper cleanup for derived protocol classes.
      */
     virtual ~IProtocol() = default;
 
     /**
-     * @brief Get the size of the next complete message in the buffer
+     * @brief Determines the size of the next complete message in the input buffer.
      *
-     * This method should examine the current buffer contents and determine
-     * if a complete message is available. If so, it should return the size
-     * of that message. If no complete message is available, it should return 0.
+     * This method must be implemented by concrete protocols to examine the current
+     * input buffer (typically accessed via the associated I/O component) and determine
+     * if a complete message is available according to the protocol's framing rules.
      *
-     * @return Size of the next complete message, or 0 if no complete message is
-     * available
+     * @return Size of the next complete message in bytes (including any headers or delimiters
+     *         that are part of the message unit). Returns `0` if no complete message is yet
+     *         available in the buffer, indicating more data is needed.
+     * @note This method should not consume data from the buffer; it only inspects it.
      */
     virtual std::size_t getMessageSize() noexcept = 0;
 
     /**
-     * @brief Process a complete message
+     * @brief Processes a complete message that has been identified in the input buffer.
      *
-     * This method is called when a complete message has been identified.
-     * It should process the message of the given size from the current
-     * buffer position.
+     * This method is called by the framework when `getMessageSize()` has returned a non-zero size.
+     * The implementation should process the message of the given `size` starting from the
+     * beginning of the current input buffer. After processing, the derived I/O component
+     * is usually responsible for flushing these `size` bytes from its input buffer.
      *
-     * @param size Size of the message to process
+     * @param size The size of the complete message to process, as determined by `getMessageSize()`.
+     * @note The protocol should typically dispatch the parsed message to a handler in its associated
+     *       I/O component (e.g., by calling `_io.on(MyProtocol::message{...})`).
      */
     virtual void onMessage(std::size_t size) noexcept = 0;
 
     /**
-     * @brief Reset the protocol state
+     * @brief Resets the internal state of the protocol.
      *
-     * This method should reset any internal state of the protocol,
-     * preparing it to start parsing from the beginning of a new message.
+     * This method should be called to clear any partial parsing state, preparing the protocol
+     * to start parsing a new message from a fresh state. This is important after errors,
+     * disconnections, or when switching protocols.
      */
     virtual void reset() noexcept = 0;
 };
 
 /**
  * @class AProtocol
- * @brief Abstract base class for IO-specific protocols
+ * @ingroup Protocol
+ * @brief Abstract base class for I/O-component-aware protocols (CRTP).
  *
- * This template class extends the IProtocol interface with IO-specific
- * functionality. It serves as a base class for protocols that need access
- * to the underlying IO object.
+ * This template class extends the `IProtocol` interface and is designed to be used
+ * with the Curiously Recurring Template Pattern (CRTP). It provides the protocol
+ * implementation with a reference (`_io`) to its associated I/O component (`_IO_`),
+ * allowing the protocol to interact with the I/O component's buffers and dispatch
+ * parsed messages to its handlers.
  *
- * @tparam _IO_ The IO type that this protocol works with
+ * @tparam _IO_ The I/O component type (e.g., `MyTcpSession`) that this protocol works with.
+ *              This `_IO_` type is expected to provide access to input/output buffers (e.g., `_io.in()`, `_io.out()`)
+ *              and an `on(typename ProtocolType::message&&)` handler for received messages.
  */
 template <typename _IO_>
 class AProtocol : public IProtocol {
+    /**
+     * @brief Friend declaration for the base I/O class of the associated I/O component
+     * @details 
+     * This friendship declaration allows the base I/O template class of the associated I/O component
+     * to access protected members of this protocol. The base_io_t is typically defined within the
+     * I/O component class (_IO_) as an alias to one of several possible base template classes:
+     * - qb::io::async::io<_Derived>
+     * - qb::io::async::file_watcher<_Derived>
+     * - qb::io::async::directory_watcher<_Derived>
+     * - qb::io::async::input<_Derived>
+     * - qb::io::async::output<_Derived>
+     * - qb::io::async::tcp::client<_Derived, _Transport, _Server>
+     * 
+     * The exact base_io_t is determined at compile time based on the template parameter _IO_.
+     */
     friend typename _IO_::base_io_t;
 
-    bool _status = true; /**< Protocol status flag */
+    bool _status = true; /**< Protocol status flag. `true` if the protocol is in a valid operational state, `false` otherwise (e.g., after a parsing error). */
 
 protected:
-    _IO_ &_io; /**< Reference to the IO object */
+    _IO_ &_io; /**< Reference to the I/O component instance that this protocol is associated with. */
 
     /**
-     * @brief Default constructor is deleted
+     * @brief Default constructor is deleted to ensure an I/O component is always associated.
      */
     AProtocol() = delete;
 
     /**
-     * @brief Constructor
-     * @param io Reference to the IO object
+     * @brief Constructor that associates the protocol with an I/O component.
+     * @param io Reference to the I/O component (`_IO_&`) that will use this protocol instance.
      */
     AProtocol(_IO_ &io) noexcept
         : _io(io) {}
 
     /**
-     * @brief Virtual destructor
+     * @brief Virtual destructor.
      */
     virtual ~AProtocol() = default;
 
+    // Pure virtual methods inherited from IProtocol, to be implemented by concrete protocols.
+
     /**
-     * @brief Get the size of the next complete message in the buffer
-     * @return Size of the next complete message, or 0 if no complete message is
-     * available
+     * @brief Determines the size of the next complete message in the input buffer of the associated I/O component.
+     * @return Size of the next complete message in bytes, or `0` if not enough data is available.
+     * @details Concrete protocols must implement this to define their message framing logic by inspecting `this->_io.in()`.
+     * @see IProtocol::getMessageSize()
      */
     virtual std::size_t getMessageSize() noexcept = 0;
 
     /**
-     * @brief Process a complete message
-     * @param size Size of the message to process
+     * @brief Processes a complete message from the input buffer of the associated I/O component.
+     * @param size The size of the complete message to process.
+     * @details Concrete protocols must implement this to parse the message and typically call `this->_io.on(typename ConcreteProtocol::message{...})`.
+     * @see IProtocol::onMessage()
      */
     virtual void onMessage(std::size_t size) noexcept = 0;
 
     /**
-     * @brief Reset the protocol state
+     * @brief Resets the internal parsing state of the protocol.
+     * @see IProtocol::reset()
      */
     virtual void reset() noexcept = 0;
 
 public:
     /**
-     * @brief Check if the protocol is in a valid state
-     * @return true if the protocol is valid, false otherwise
+     * @brief Checks if the protocol is in a valid operational state.
+     * @return `true` if the protocol is considered okay and can continue processing,
+     *         `false` if it has encountered an unrecoverable error or has been marked as not okay.
      */
     [[nodiscard]] bool
     ok() const noexcept {
@@ -140,10 +178,11 @@ public:
     }
 
     /**
-     * @brief Mark the protocol as invalid
-     *
-     * This method can be called to indicate that the protocol has
-     * encountered an error and is no longer in a valid state.
+     * @brief Marks the protocol as being in an invalid or non-operational state.
+     * @details This method can be called by the protocol implementation (or externally)
+     *          to indicate that it has encountered an unrecoverable parsing error or that
+     *          the connection should be closed after processing any pending data.
+     *          The I/O component might check this status via `ok()`.
      */
     void
     not_ok() noexcept {

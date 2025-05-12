@@ -1,107 +1,135 @@
-# QB-IO: Asynchronous System (`qb::io::async`)
+@page qb_io_async_system_md QB-IO: The Asynchronous Engine (`qb::io::async`)
+@brief A deep dive into `qb-io`'s event loop, timers, callbacks, and event management for standalone asynchronous programming.
 
-The `qb::io::async` namespace provides the core mechanisms for non-blocking, event-driven programming in `qb-io`. It integrates with an underlying event loop (libev) to handle timers, callbacks, I/O events, and signals.
+# QB-IO: The Asynchronous Engine (`qb::io::async`)
 
-## How it Works: The Event Loop
+The `qb::io::async` namespace is the powerhouse behind `qb-io`'s non-blocking capabilities. It provides a complete, event-driven asynchronous programming model built around a high-performance event loop. While it seamlessly integrates with the `qb-core` actor system, `qb::io::async` is also designed to be fully usable as a standalone toolkit for any C++17 application requiring efficient asynchronous operations.
 
-*   **`qb::io::async::listener` (`listener.h`):** This class manages the event loop for a given thread. Each thread using async features typically has one associated `listener` (accessible via `listener::current`). When used with `qb-core`, each `VirtualCore` manages its own `listener` implicitly.
-*   **Event Sources:** The listener monitors various sources:
-    *   File descriptors (sockets, files) for read/write readiness (`event::io`).
-    *   Timers for scheduled execution (`event::timer`).
-    *   System signals (`event::signal`).
-    *   File system paths for changes (`event::file`).
-*   **Event Dispatching:** When an event occurs (e.g., data arrives on a socket), the OS notifies the listener. The listener identifies the corresponding handler (often an I/O object like a session or a timer wrapper) and invokes its callback method (e.g., `on(event::io&)`, `on(event::timer&)`).
-*   **Running the Loop:** The loop must be actively run to process events. `qb::Main` handles this automatically for actors. For standalone use, you need to call `qb::io::async::run(flag)` in your thread(s).
+## The Event Loop: `qb::io::async::listener`
 
-## Key Components & Usage
+At the heart of the asynchronous system is the `qb::io::async::listener` class (defined in `qb/io/async/listener.h`). This class is your primary interface to the event loop.
 
-### Scheduling Callbacks (`qb::io::async::callback`)
+*   **Underlying Engine:** `listener` wraps the `libev` C library, known for its high performance and portability across POSIX systems (epoll, kqueue) and Windows (IOCP, select).
+*   **Thread-Local Instance (`listener::current`):** Crucially, `qb-io` provides a **thread-local static instance** of the `listener` named `qb::io::async::listener::current`. This means each thread that intends to perform asynchronous operations with `qb-io` has its own dedicated event loop manager. You don't need to pass listener objects around; you simply access `listener::current` from the thread where you want to register or manage events.
+*   **Initialization (Standalone Usage):** If you're using `qb-io` without `qb-core`, you must initialize the listener for each participating thread by calling `qb::io::async::init();` once per thread before using other `qb::io::async` features. (When using `qb-core`, `qb::Main` handles this for its `VirtualCore` threads).
 
-(`io.h`)
+### Responsibilities of the `listener`:
 
-This is the simplest way to schedule a function (lambda, functor, function pointer) to run asynchronously after a delay.
+1.  **Monitoring Event Sources:** The `listener` continuously monitors various sources of events:
+    *   **I/O Events (`qb::io::async::event::io`):** Readiness of file descriptors (sockets, pipes, files) for reading or writing.
+    *   **Timer Events (`qb::io::async::event::timer`):** Expiration of scheduled timers for delayed or periodic actions.
+    *   **Signal Events (`qb::io::async::event::signal`):** Asynchronous notification of operating system signals (e.g., SIGINT, SIGTERM).
+    *   **File System Stat Events (`qb::io::async::event::file`):** Notifications about changes to file attributes (used by `file_watcher` and `directory_watcher`).
+2.  **Event Dispatching:** When an event source becomes active (e.g., data arrives on a socket, a timer expires), the `listener` identifies the corresponding registered handler (an object implementing `IRegisteredKernelEvent`) and invokes its `invoke()` method. This, in turn, typically calls the user-defined `on(SpecificEvent&)` method within the I/O component or handler class.
 
-*   **How to Use:**
-    ```cpp
-    #include <qb/io/async.h>
-    #include <iostream>
+### Driving the Event Loop (Standalone Usage)
 
-    void myDelayedFunction() {
-        std::cout << "Executed after delay!" << std::endl;
-    }
+For the `listener` to process events, its loop must be actively run:
 
-    // Schedule immediately (next loop iteration)
-    qb::io::async::callback([]{ std::cout << "Immediate callback." << std::endl; });
-
-    // Schedule after 1.2 seconds
-    double delay = 1.2;
-    qb::io::async::callback(myDelayedFunction, delay);
-    ```
-*   **Lifecycle:** The `callback` function creates a temporary `Timeout` object internally, which registers itself with the listener and deletes itself after the callback executes. You don't need to manage its lifetime.
-*   **Use Cases:** Delaying operations, breaking work into chunks, scheduling retries.
-
-**(Ref:** `example1_async_io.cpp`, `test-async-io.cpp`, `test-actor-delayed-events.cpp`**)
-
-### Handling Timeouts (`qb::io::async::with_timeout`)
-
-(`io.h`)
-
-A mix-in class (using CRTP) to add timeout logic to your own classes (including `qb::Actor` if needed, though `async::callback` is often simpler for actors).
-
-*   **How to Use:**
-    1.  Inherit: `class MyClass : public qb::io::async::with_timeout<MyClass> { ... };`
-    2.  Constructor: Call the base constructor `with_timeout(timeout_seconds);`.
-    3.  Handler: Implement `void on(qb::io::async::event::timer const &) { /* handle timeout */ }`.
-    4.  Activity Reset: Call `updateTimeout()` whenever relevant activity occurs to reset the timer.
-    5.  Control: Use `setTimeout(new_duration)` to change or disable (with 0.0) the timeout.
+*   **`qb::io::async::run(int flag = 0)`:** This function executes the event loop for `listener::current`. The `flag` argument controls its behavior:
+    *   `0` (default): Runs the loop until `qb::io::async::break_parent()` is called or no active event watchers remain. This is a blocking call.
+    *   `EVRUN_ONCE`: Waits for at least one event to occur, processes the block of available events, and then returns.
+    *   `EVRUN_NOWAIT`: Checks for any immediately pending events, processes them, and returns without waiting if none are pending.
+*   **`qb::io::async::run_once()`:** Convenience for `run(EVRUN_ONCE)`.
+*   **`qb::io::async::run_until(const bool& status_flag)`:** Runs the loop with `EVRUN_NOWAIT` repeatedly as long as `status_flag` is true.
+*   **`qb::io::async::break_parent()`:** Signals `listener::current` to stop its current `run()` cycle.
 
 ```cpp
-// Example: Session with inactivity timeout
-class ClientSession : public qb::io::async::with_timeout<ClientSession>, /* other bases */ {
-public:
-    ClientSession(/*...*/) : with_timeout(60.0) { /* 60s timeout */ }
+// Standalone qb-io example sketch
+#include <qb/io/async.h>
+#include <iostream>
+#include <atomic>
 
-    void processIncomingData() {
-        // ... process ...
-        updateTimeout(); // Reset timer on activity
+std::atomic<bool> g_is_running = true;
+
+void my_periodic_task() {
+    std::cout << "Periodic task executed at: " << qb::UtcTimePoint::now().to_iso8601() << std::endl;
+    if (g_is_running) {
+        // Reschedule self
+        qb::io::async::callback(my_periodic_task, 1.0); // Every 1 second
     }
+}
 
-    void on(qb::io::async::event::timer const&) {
-        std::cout << "Session timed out due to inactivity." << std::endl;
-        disconnect(); // Method to close the connection
-    }
+int main() {
+    qb::io::async::init(); // Initialize listener for the main thread
 
-    void disconnect() { setTimeout(0.0); /* ... close socket ... */ }
-};
+    std::cout << "Starting standalone qb-io event loop demo.\n";
+    std::cout << "Press Ctrl+C to exit (if signal handling is set up, or wait for tasks).\n";
+
+    // Schedule an initial periodic task
+    qb::io::async::callback(my_periodic_task, 1.0);
+
+    // Schedule a one-shot task to stop the loop after 5 seconds
+    qb::io::async::callback([]() {
+        std::cout << "5 seconds elapsed. Signaling application to stop.\n";
+        g_is_running = false;
+        qb::io::async::break_parent(); // Request the run loop to exit
+    }, 5.0);
+
+    // Run the event loop until break_parent() is called or g_is_running is false
+    // In a real app, this might be: while(g_is_running) { qb::io::async::run(EVRUN_ONCE); /* other logic */ }
+    qb::io::async::run(); // Runs until break_parent() or no more active watchers
+
+    std::cout << "Event loop finished.\n";
+    return 0;
+}
 ```
-**(Ref:** `test-async-io.cpp::TimerHandler`, `chat_tcp/server/ChatSession.h`**)
 
-### Handling Asynchronous Events (`qb::io::async::event::*`)
+## Registering Event Handlers
 
-(`event/all.h`)
+The `listener::current.registerEvent<_Event, _Actor, _Args...>(actor, args...)` method is the core mechanism for associating an event watcher (like `qb::io::async::event::io` or `timer`) with a handler object (`_Actor`) and the event loop.
 
-I/O components built using the `qb::io::async::io` or `qb::io::async::file_watcher` base classes (often via `qb::io::use<>` helpers) receive notifications through `on(EventType&)` handlers.
+*   `_Event`: The qb-io event type (e.g., `qb::io::async::event::timer`). This wraps a specific `libev` watcher.
+*   `_Actor`: The class instance that will handle the event (must have an `on(_Event&)` method).
+*   `_Args...`: Arguments specific to the `libev` watcher being set up (e.g., file descriptor and `EV_READ`/`EV_WRITE` flags for an `event::io` watcher, or timeout values for an `event::timer`).
 
-*   **Common Handlers:**
-    *   `on(event::disconnected const&)`: Connection closed by peer or error.
-    *   `on(event::eof const&)`: Input stream ended.
-    *   `on(event::eos const&)`: All output flushed.
-    *   `on(event::file const&)`: File/directory changed (used by watchers).
-*   **Implementation:** Override the relevant `on(...)` method in your class inheriting from the async base (e.g., `qb::io::use<MyActor>::tcp::client`).
+Most `qb-io` components designed for asynchronous operations (e.g., those inheriting from `qb::io::async::io`, `qb::io::async::file_watcher`, or `qb::io::async::with_timeout`) handle this registration internally when they are constructed or started.
 
-```cpp
-class MyTcpClient : public qb::io::use<MyTcpClient>::tcp::client<> {
-public:
-    // ... protocol definition ...
-    using Protocol = qb::protocol::text::command<MyTcpClient>;
+## Asynchronous Callbacks: `qb::io::async::callback`
 
-    void on(Protocol::message&& msg) { /* Handle received message */ }
+(`qb/io/async/io.h`)
 
-    // Handle disconnection
-    void on(qb::io::async::event::disconnected const& event) {
-        std::cerr << "Disconnected from server (reason: " << event.reason << ")" << std::endl;
-        // Attempt reconnect or cleanup
-    }
-};
-```
-**(Ref:** `test-event-combined.cpp`, `test-async-io.cpp`, `chat_tcp`, `message_broker` examples**) 
+This utility function provides a straightforward way to schedule a callable (lambda, function pointer, functor) for execution by the current thread's event loop, optionally after a delay.
+
+*   **Execution:** The callback runs on the same thread that scheduled it.
+*   **Lifetime:** The internal timer object (`qb::io::async::Timeout`) created by `callback` is self-managing; it registers with the listener and deletes itself after the callback is invoked.
+*   **Usage:** `qb::io::async::callback(my_function, delay_seconds);` or `qb::io::async::callback([]{ /* lambda body */ });`
+*   **Use Cases:** Delaying operations, breaking work into smaller non-blocking chunks, scheduling retries, and simple periodic tasks (by re-scheduling from within the callback).
+
+**(See practical examples in:** `[Core Concepts: Asynchronous I/O Model in QB](./../2_core_concepts/async_io.md)` for actor-centric usage, and `example1_async_io.cpp` for general usage.**)**
+
+## Timeout Management: `qb::io::async::with_timeout<Derived>`
+
+(`qb/io/async/io.h`)
+
+This CRTP base class allows you to easily add timeout functionality to your own classes.
+
+*   **Inheritance:** `class MyClass : public qb::io::async::with_timeout<MyClass> { ... };`
+*   **Handler Method:** Implement `void on(qb::io::async::event::timer const& event)` in `MyClass` to define what happens when the timeout occurs.
+*   **Control:**
+    *   The constructor `with_timeout(timeout_in_seconds)` initializes and starts the timer.
+    *   Call `updateTimeout()` on any activity that should reset the timeout countdown.
+    *   Use `setTimeout(new_duration_seconds)` to change the timeout period or disable it (by passing `0.0`).
+
+This mechanism is ideal for implementing inactivity timeouts in network sessions, operation timeouts, or any scenario where an action needs to be taken if something doesn't happen within a specific timeframe.
+
+**(A detailed example is available in:** `[Core Concepts: Asynchronous I/O Model in QB](./../2_core_concepts/async_io.md)` and `test-async-io.cpp::TimerHandler`**)**
+
+## Standard Asynchronous Event Types (`qb::io::async::event::*`)
+
+(`qb/io/async/event/all.h`)
+
+`qb-io` defines a suite of event structures used to notify components about various asynchronous occurrences. When building custom I/O components (often by inheriting from `qb::io::async::input`, `qb::io::async::output`, or `qb::io::async::io`), you will typically override `on(SpecificEvent&)` methods to handle these:
+
+*   `disconnected`: A network connection was closed or an error occurred.
+*   `eof`: End-of-file reached on an input stream; no more data to read.
+*   `eos`: End-of-stream reached on an output stream; all buffered data has been sent.
+*   `file`: Attributes of a monitored file or directory have changed (used by `file_watcher`).
+*   `io`: Raw low-level I/O readiness on a file descriptor (e.g., socket is readable/writable).
+*   `pending_read`/`pending_write`: Data remains in input/output buffers after a partial operation.
+*   `signal`: An OS signal was caught.
+*   `timer`/`timeout`: A previously set timer or timeout has expired.
+
+These events form the backbone of communication between the `listener` and the I/O handling components, enabling a fully event-driven architecture.
+
+**(Next:** `[QB-IO: Transports](./transports.md)` to see how these async mechanisms are applied to TCP, UDP, etc.**) 

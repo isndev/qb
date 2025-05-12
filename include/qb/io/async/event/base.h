@@ -31,24 +31,27 @@ namespace qb::io::async {
 
 /**
  * @interface IRegisteredKernelEvent
- * @brief Interface for kernel event registration
+ * @ingroup Async
+ * @brief Interface for kernel event registration and invocation.
  *
- * This interface provides a common abstraction for event registration
- * in the event loop system. Classes implementing this interface can be
- * invoked when the corresponding event occurs.
+ * This interface provides a common abstraction for objects that can be registered
+ * with the `listener` to handle specific kernel-level events (wrapped by libev).
+ * When a monitored event occurs, the `listener` calls the `invoke()` method
+ * of the corresponding `IRegisteredKernelEvent` implementation.
  */
 class IRegisteredKernelEvent {
 public:
     /**
-     * @brief Virtual destructor
+     * @brief Virtual destructor.
      */
     virtual ~IRegisteredKernelEvent() = default;
 
     /**
-     * @brief Event invocation method
+     * @brief Event invocation method, called by the listener when the event triggers.
      *
-     * Called when the registered event is triggered. Implementing classes
-     * should define their specific event handling logic in this method.
+     * Implementing classes should define their specific event handling logic in this method.
+     * This typically involves casting to the concrete event type and calling the user's
+     * `on(SpecificEvent&)` handler.
      */
     virtual void invoke() = 0;
 };
@@ -57,24 +60,25 @@ namespace event {
 
 /**
  * @class base
- * @brief Base template class for all event types
+ * @ingroup AsyncEvent
+ * @brief Base template class for all qb-io specific asynchronous event types.
  *
- * This template class serves as the foundation for all event types in the system.
- * It wraps libev events and provides a connection to the registered kernel event
- * interface.
+ * This template class serves as the foundation for specific event wrappers like
+ * `qb::io::async::event::io`, `qb::io::async::event::timer`, etc. It wraps the
+ * corresponding libev event watcher (e.g. `ev::io`, `ev::timer`) and holds a pointer
+ * to the `IRegisteredKernelEvent` interface for dispatching.
  *
- * @tparam _EV_EVENT The libev event type to wrap (e.g. ev::io, ev::timer)
+ * @tparam _EV_EVENT The libev event watcher type (e.g. `ev::io`, `ev::timer`) being wrapped.
  */
 template <typename _EV_EVENT>
 struct base : public _EV_EVENT {
-    using ev_t = _EV_EVENT;             /**< The underlying libev event type */
-    IRegisteredKernelEvent *_interface; /**< Pointer to the kernel event interface */
-    int                     _revents;   /**< Event flags received from libev */
+    using ev_t = _EV_EVENT;             /**< Alias for the underlying libev event watcher type. */
+    IRegisteredKernelEvent *_interface; /**< Pointer to the kernel event interface responsible for handling this event. */
+    int                     _revents;   /**< Stores the event flags (e.g., EV_READ, EV_WRITE) received from libev when the event triggers. */
 
     /**
-     * @brief Constructor
-     *
-     * @param loop Reference to the libev event loop
+     * @brief Constructor.
+     * @param loop Reference to the libev event loop (`ev::loop_ref`) this event will be associated with.
      */
     explicit base(ev::loop_ref loop)
         : _EV_EVENT(loop)

@@ -50,6 +50,16 @@
 
 namespace qb::io {
 
+/**
+ * @struct use
+ * @ingroup Async
+ * @brief Helper template providing type aliases for integrating qb-io asynchronous components.
+ * @details This CRTP helper simplifies the declaration of actors or classes that use qb-io's
+ *          asynchronous features (like TCP clients/servers, UDP endpoints, file watchers)
+ *          by providing convenient nested type aliases for the underlying asynchronous
+ *          base classes and transports.
+ * @tparam _Derived The class that will inherit from one of the `use` helper's nested types.
+ */
 template <typename _Derived>
 struct use {
     template <typename _Protocol>
@@ -59,6 +69,7 @@ struct use {
     template <typename _Protocol>
     using io = async::io<_Derived>;
 
+    /** @brief Provides type aliases for TCP-based asynchronous components. */
     struct tcp {
         using acceptor = async::tcp::acceptor<_Derived, transport::accept>;
 
@@ -72,6 +83,7 @@ struct use {
         using client = async::tcp::client<_Derived, transport::tcp, _Server>;
 
 #ifdef QB_IO_WITH_SSL
+        /** @brief Provides type aliases for SSL/TLS-secured TCP asynchronous components. */
         struct ssl {
             using acceptor = async::tcp::acceptor<_Derived, transport::saccept>;
 
@@ -87,6 +99,7 @@ struct use {
 #endif
     };
 
+    /** @brief Provides type aliases for UDP-based asynchronous components. */
     struct udp {
         using server = async::udp::server<_Derived>;
         using client = async::udp::client<_Derived>;

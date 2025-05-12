@@ -1,9 +1,11 @@
 /**
  * @file qb/io/protocol/base.h
- * @brief Base protocol implementations for the IO system
+ * @brief Base protocol implementations for message framing in the QB IO system.
  *
- * This file defines the basic protocols used for communication in the IO system,
- * including size-based message framing and data transformations.
+ * This file defines fundamental protocol templates used for common message framing
+ * techniques, such as messages terminated by specific byte(s) or messages
+ * prefixed by their size. These serve as building blocks for more specific
+ * application-level or data-format-level protocols.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -18,7 +20,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup Transport
+ * @ingroup IO
  */
 
 #ifndef QB_IO_PROT_BASE_H_
@@ -31,13 +33,16 @@ namespace qb::protocol::base {
 
 /**
  * @class byte_terminated
- * @brief Protocol for messages terminated by a specific byte
+ * @ingroup Protocol
+ * @brief Protocol for messages delimited by a specific single byte character.
  *
- * This class implements a protocol where messages are delimited by
- * a specific termination byte (e.g., '\0' or '\n').
+ * This class implements a protocol where messages are framed by a specific
+ * termination byte (e.g., '\0' for null-terminated strings, '\n' for line-based messages).
+ * It inherits from `qb::io::async::AProtocol`.
  *
- * @tparam _IO_ The I/O type that will use this protocol
- * @tparam _EndByte The byte that marks the end of a message (default '\0')
+ * @tparam _IO_ The I/O component type (e.g., a TCP session class) that will use this protocol.
+ *              It needs to provide an `in()` method returning a reference to its input buffer (e.g., `qb::allocator::pipe<char>`).
+ * @tparam _EndByte The single byte character that marks the end of a message. Defaults to '\0'.
  */
 template <typename _IO_, char _EndByte = '\0'>
 class byte_terminated : public io::async::AProtocol<_IO_> {
@@ -110,13 +115,18 @@ public:
 
 /**
  * @class bytes_terminated
- * @brief Protocol for messages terminated by a sequence of bytes
+ * @ingroup Protocol
+ * @brief Protocol for messages delimited by a specific sequence of bytes (a string literal).
  *
- * This class implements a protocol where messages are delimited by
- * a specific sequence of bytes (e.g., "\r\n").
+ * This class implements a protocol where messages are framed by a specific sequence
+ * of bytes, defined via a trait struct providing the `_EndBytes` sequence.
+ * For example, it can be used for HTTP-like messages ending in "\r\n\r\n".
+ * It inherits from `qb::io::async::AProtocol`.
  *
- * @tparam _IO_ The I/O type that will use this protocol
- * @tparam _Trait Trait containing the termination sequence (_EndBytes)
+ * @tparam _IO_ The I/O component type that will use this protocol.
+ *              It needs to provide an `in()` method for input buffer access.
+ * @tparam _Trait A trait class that must define a static constexpr char array `_EndBytes`
+ *                representing the termination sequence (e.g., `struct CRLF { static constexpr char _EndBytes[] = "\r\n"; };`).
  */
 template <typename _IO_, typename _Trait>
 class bytes_terminated : public io::async::AProtocol<_IO_> {
@@ -196,14 +206,18 @@ public:
 
 /**
  * @class size_as_header
- * @brief Protocol for messages preceded by their size
+ * @ingroup Protocol
+ * @brief Protocol for messages where the payload is preceded by a fixed-size header indicating its length.
  *
- * This class implements a protocol where each message is preceded
- * by a header containing its size. The format can be uint8_t, uint16_t,
- * or uint32_t depending on needs.
+ * This class implements a protocol where each message payload is prefixed
+ * by an integer header (e.g., `uint8_t`, `uint16_t`, `uint32_t`) that specifies
+ * the size of the upcoming payload. It handles network byte order conversion (e.g., `ntohs`, `ntohl`)
+ * for 16-bit and 32-bit headers.
+ * It inherits from `qb::io::async::AProtocol`.
  *
- * @tparam _IO_ The I/O type that will use this protocol
- * @tparam _Size Header size type (default uint16_t)
+ * @tparam _IO_ The I/O component type that will use this protocol.
+ *              It needs to provide an `in()` method for input buffer access.
+ * @tparam _Size The integer type of the size header (e.g., `uint16_t`, `uint32_t`). Defaults to `uint16_t`.
  */
 template <typename _IO_, typename _Size = uint16_t>
 class size_as_header : public io::async::AProtocol<_IO_> {

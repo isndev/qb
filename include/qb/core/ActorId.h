@@ -42,9 +42,36 @@
 
 namespace qb {
 
+/**
+ * @typedef CoreId
+ * @brief Type definition for core identifiers
+ * @details A 16-bit unsigned integer that uniquely identifies a core in the system
+ * @ingroup Core
+ */
 using CoreId    = uint16_t;
+
+/**
+ * @typedef ServiceId
+ * @brief Type definition for service identifiers
+ * @details A 16-bit unsigned integer that uniquely identifies a service within a core
+ * @ingroup Core
+ */
 using ServiceId = uint16_t;
+
+/**
+ * @typedef TypeId
+ * @brief Type definition for type identifiers
+ * @details A 16-bit unsigned integer that uniquely identifies types in the type system
+ * @ingroup Core
+ */
 using TypeId    = uint16_t;
+
+/**
+ * @typedef EventId
+ * @brief Type definition for event identifiers
+ * @details Equivalent to TypeId, used for identifying event types
+ * @ingroup Core
+ */
 using EventId   = TypeId;
 
 /**
@@ -66,12 +93,14 @@ private:
 public:
     /**
      * @brief Default constructor - creates an empty set
+     * @ingroup Actor
      */
     CoreIdBitSet() = default;
 
     /**
      * @brief Constructor from a set of core IDs
      * @param coreIds Set of core IDs to include
+     * @ingroup Actor
      */
     explicit CoreIdBitSet(const qb::unordered_set<CoreId> &coreIds) {
         for (const auto id : coreIds) {
@@ -82,6 +111,7 @@ public:
     /**
      * @brief Constructor from an initializer list
      * @param ids List of core IDs to include
+     * @ingroup Actor
      */
     CoreIdBitSet(std::initializer_list<CoreId> ids) {
         for (const auto id : ids) {
@@ -210,6 +240,15 @@ public:
     }
 
     // Iteration support
+    /**
+     * @class iterator
+     * @brief Iterator for traversing set bits in a CoreIdBitSet
+     * @details
+     * Provides forward iterator functionality for efficiently iterating over
+     * the core IDs stored in a CoreIdBitSet. The iterator automatically
+     * advances to the next set bit and provides standard iterator operations.
+     * @ingroup Core
+     */
     class iterator {
     private:
         const CoreIdBitSet &_set;
@@ -230,17 +269,30 @@ public:
         using pointer           = const CoreId *;
         using reference         = const CoreId &;
 
+        /**
+         * @brief Constructs an iterator for a CoreIdBitSet
+         * @param set Reference to the CoreIdBitSet to iterate
+         * @param pos Starting position for iteration
+         */
         iterator(const CoreIdBitSet &set, size_t pos)
             : _set(set)
             , _pos(pos) {
             advance();
         }
 
+        /**
+         * @brief Dereference operator
+         * @return The current CoreId value
+         */
         CoreId
         operator*() const {
             return static_cast<CoreId>(_pos);
         }
 
+        /**
+         * @brief Pre-increment operator
+         * @return Reference to this iterator after advancement
+         */
         iterator &
         operator++() {
             ++_pos;
@@ -248,6 +300,10 @@ public:
             return *this;
         }
 
+        /**
+         * @brief Post-increment operator
+         * @return Copy of iterator before advancement
+         */
         iterator
         operator++(int) {
             iterator tmp = *this;
@@ -255,11 +311,21 @@ public:
             return tmp;
         }
 
+        /**
+         * @brief Equality comparison operator
+         * @param other Iterator to compare with
+         * @return True if iterators point to the same position
+         */
         bool
         operator==(const iterator &other) const {
             return &_set == &other._set && _pos == other._pos;
         }
 
+        /**
+         * @brief Inequality comparison operator
+         * @param other Iterator to compare with
+         * @return True if iterators point to different positions
+         */
         bool
         operator!=(const iterator &other) const {
             return !(*this == other);
@@ -286,11 +352,19 @@ public:
 };
 
 // Define CoreIdSet as our new efficient implementation
+/**
+ * @typedef CoreIdSet
+ * @brief Efficient set implementation for storing CoreId values
+ * @details 
+ * Uses the CoreIdBitSet implementation for memory-efficient and
+ * high-performance storage and manipulation of core identifier sets.
+ * @ingroup Core
+ */
 using CoreIdSet = CoreIdBitSet;
 
 /*!
- * @class ActorId core/ActorId.h qb/actorid.h
- * @ingroup Core
+ * @class ActorId
+ * @ingroup Actor
  * @brief Unique identifier for actors
  * @details
  * ActorId combines a service/actor identifier with a core identifier to form a unique
@@ -359,21 +433,97 @@ public:
     [[nodiscard]] bool is_valid() const noexcept;
 };
 
+/**
+ * @class BroadcastId
+ * @brief Specialized ActorId for broadcasting messages to all actors on a core
+ * @details 
+ * BroadcastId is used to send messages to all actors on a specific core.
+ * It uses the special BroadcastSid value as the service ID to indicate
+ * that the message should be delivered to all actors on the specified core.
+ * @ingroup Actor
+ */
 class BroadcastId : public ActorId {
 public:
     BroadcastId() = delete;
+    /**
+    * @brief Constructor for BroadcastId.
+    * @param core_id The core ID to broadcast to.
+    * @ingroup Actor
+    */
     explicit BroadcastId(uint32_t const core_id) noexcept
         : ActorId(BroadcastSid, static_cast<CoreId>(core_id)) {}
 };
 
+/**
+ * @typedef ActorIdList
+ * @brief List of actor identifiers
+ * @details A vector containing ActorId objects for storing and manipulating collections of actor identifiers
+ * @ingroup Core
+ */
 using ActorIdList   = std::vector<ActorId>;
+
+/**
+ * @typedef ActorIdSet
+ * @brief Set of unique actor identifiers
+ * @details An unordered set containing unique ActorId objects with fast lookup capabilities
+ * @ingroup Core
+ */
 using ActorIdSet    = std::unordered_set<ActorId>;
+
+/**
+ * @typedef core_id
+ * @brief Alias for CoreId
+ * @details Provided for naming consistency with other lowercase aliases
+ * @ingroup Core
+ */
 using core_id       = CoreId;
+
+/**
+ * @typedef service_id
+ * @brief Alias for ServiceId
+ * @details Provided for naming consistency with other lowercase aliases
+ * @ingroup Core
+ */
 using service_id    = ServiceId;
+
+/**
+ * @typedef actor_id
+ * @brief Alias for ActorId
+ * @details Provided for naming consistency with other lowercase aliases
+ * @ingroup Core
+ */
 using actor_id      = ActorId;
+
+/**
+ * @typedef broadcast_id
+ * @brief Alias for BroadcastId
+ * @details Provided for naming consistency with other lowercase aliases
+ * @ingroup Core
+ */
 using broadcast_id  = BroadcastId;
+
+/**
+ * @typedef actor_id_list
+ * @brief Alias for ActorIdList
+ * @details Provided for naming consistency with other lowercase aliases
+ * @ingroup Core
+ */
 using actor_id_list = ActorIdList;
+
+/**
+ * @typedef actor_is_set
+ * @brief Alias for ActorIdSet
+ * @details Provided for naming consistency with other lowercase aliases
+ * @ingroup Core
+ */
 using actor_is_set  = ActorIdSet;
+
+/**
+ * @typedef core_id_set
+ * @brief Alias for CoreIdSet
+ * @details Provided for naming consistency with other lowercase aliases
+ * @ingroup Core
+ */
 using core_id_set   = CoreIdSet;
 #ifdef QB_LOGGER
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
@@ -381,8 +531,22 @@ qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
 } // namespace qb
 
 namespace std {
+/**
+ * @struct hash<qb::ActorId>
+ * @brief Specialization of std::hash for qb::ActorId
+ * @details
+ * This hash specialization allows ActorId objects to be used efficiently 
+ * in unordered associative containers like std::unordered_set and 
+ * std::unordered_map. The hash function simply uses the numeric representation
+ * of the ActorId.
+ */
 template <>
 struct hash<qb::ActorId> {
+    /**
+     * @brief Hash function operator for ActorId
+     * @param val The ActorId to hash
+     * @return Hash value generated from the numeric representation of the ActorId
+     */
     std::size_t
     operator()(qb::ActorId const &val) const noexcept {
         return static_cast<uint32_t>(val);

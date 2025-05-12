@@ -1,9 +1,11 @@
 /**
  * @file qb/io/transport/saccept.h
- * @brief Secure connection acceptance transport implementation for the QB IO library
+ * @brief Secure (SSL/TLS) TCP connection acceptance transport for the QB IO library.
  *
  * This file provides a transport implementation for accepting incoming
- * secure (SSL/TLS) TCP connections, wrapping the SSL TCP listener functionality.
+ * secure (SSL/TLS) TCP connections, wrapping the `qb::io::tcp::ssl::listener` functionality.
+ * It is used by asynchronous secure acceptor components.
+ * Requires OpenSSL.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -18,7 +20,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup TCP
+ * @ingroup SSL
  */
 
 #ifndef QB_IO_TRANSPORT_SACCEPT_H_
@@ -29,15 +31,19 @@ namespace qb::io::transport {
 
 /**
  * @class saccept
- * @brief Secure connection acceptance transport class
+ * @ingroup Transport
+ * @brief Secure connection acceptance transport for SSL/TLS TCP connections.
  *
  * This class implements a transport layer for accepting incoming secure (SSL/TLS)
- * TCP connections. It wraps an SSL TCP listener and provides methods for accepting
- * and managing new secure socket connections.
+ * TCP connections. It wraps a `qb::io::tcp::ssl::listener` and is used similarly
+ * to `qb::io::transport::accept`, but for encrypted connections.
+ *
+ * Its `read()` method attempts to accept a new secure connection, performing the SSL handshake,
+ * and `getAccepted()` provides access to the newly established `qb::io::tcp::ssl::socket`.
  */
 class saccept {
-    io::tcp::ssl::listener _io; /**< SSL TCP listener for accepting connections */
-    io::tcp::ssl::socket   _accepted_io; /**< SSL socket for the accepted connection */
+    io::tcp::ssl::listener _io; /**< SSL TCP listener for accepting secure connections. */
+    io::tcp::ssl::socket   _accepted_io; /**< SSL socket for the most recently accepted secure connection. */
 
 public:
     /** @brief Type of the underlying transport I/O */

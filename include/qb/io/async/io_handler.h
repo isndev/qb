@@ -19,7 +19,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup IO
+ * @ingroup Async
  */
 
 #ifndef QB_IO_ASYNC_IO_HANDLER_H
@@ -32,6 +32,7 @@ namespace qb::io::async {
 
 /**
  * @class io_handler
+ * @ingroup Async
  * @brief Session manager for asynchronous IO
  *
  * This template class manages sessions for asynchronous IO operations.
@@ -43,6 +44,19 @@ namespace qb::io::async {
  */
 template <typename _Derived, typename _Session>
 class io_handler {
+    /**
+     * @brief Friendship declaration for the base_io_t of the session class
+     * @details
+     * This gives the base I/O class of the session access to private members
+     * of the io_handler, particularly the disconnected() method. The base_io_t
+     * is typically a specialization of the io<> template from one of:
+     * - qb::io::async::io<_Derived>
+     * - qb::io::async::file_watcher<_Derived>
+     * - qb::io::async::directory_watcher<_Derived>
+     * - qb::io::async::input<_Derived>
+     * - qb::io::async::output<_Derived>
+     * - qb::io::async::tcp::client<_Derived, _Transport, _Server>
+     */
     friend typename _Session::base_io_t;
 
     /**

@@ -1,10 +1,10 @@
 /**
  * @file qb/io/async/event/signal.h
- * @brief System signal event handler for asynchronous I/O
+ * @brief System signal event handler for asynchronous I/O.
  *
  * This file defines the signal event structure which is used to handle
  * system signals (like SIGINT, SIGTERM, etc.) in an asynchronous manner.
- * It wraps libev's signal watcher functionality.
+ * It wraps libev's signal watcher functionality (`ev::sig`).
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -19,7 +19,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup IO
+ * @ingroup AsyncEvent
  */
 
 #ifndef QB_IO_ASYNC_EVENT_SIGNAL_H
@@ -31,60 +31,90 @@ namespace qb::io::async::event {
 
 /**
  * @struct signal
- * @brief Event for handling system signals
+ * @ingroup AsyncEvent
+ * @brief Event for handling system signals asynchronously.
  *
- * This template class extends the base event with ev::sig functionality from libev.
- * It is used to watch for specific system signals and trigger callbacks when they occur.
- * The template parameter allows specifying which signal to watch at compile time.
+ * This template class extends `qb::io::async::event::base<ev::sig>` and thus wraps an `ev::sig`
+ * watcher from libev. It is used to watch for specific system signals (e.g., SIGINT, SIGTERM)
+ * and trigger callbacks when they occur. The signal to watch is typically specified as a
+ * template parameter.
  *
- * @tparam _SIG The signal number to watch, or -1 for dynamic signal specification
+ * @tparam _SIG The signal number to watch (e.g., `SIGINT`, `SIGTERM`).
+ *              If `-1` (the default for the specialized version), the signal number must be set
+ *              dynamically using the `set()` method of the underlying `ev::sig` watcher.
  *
- * Usage:
+ * Usage Example:
  * @code
- * // Create a SIGINT handler
- * using sigint_handler = qb::io::async::event::signal<SIGINT>;
+ * #include <csignal> // For SIGINT
  *
- * // In the derived class:
- * void on(sigint_handler &&sig) {
- *     // Handle SIGINT signal
- * }
+ * // Define a handler for SIGINT
+ * class InterruptHandler : public qb::io::async::listener::IRegisteredKernelEvent { // Or an actor, etc.
+ * public:
+ *   qb::io::async::event::signal<SIGINT> sigint_watcher;
+ *
+ *   InterruptHandler(ev::loop_ref loop) : sigint_watcher(loop) {
+ *     // Register this handler with the listener for the sigint_watcher
+ *     // In a real scenario, this would be done via listener::current.registerEvent(*this, ... for the watcher)
+ *     // For simplicity, assume registration happens elsewhere or use a base class like qb::io::async::io
+ *     sigint_watcher.set<&InterruptHandler::on_signal_event_cb>(this); // Simplified libev callback setup
+ *     sigint_watcher.start();
+ *   }
+ *
+ *   // This is a simplified libev-style callback, not the qb::io::async::io on() signature
+ *   void on_signal_event_cb(ev::sig &watcher, int revents) {
+ *     if (watcher.signum == SIGINT) {
+ *        LOG_INFO("SIGINT received, shutting down gracefully...");
+ *        // application_is_running = false; // Signal main loop to exit
+ *        watcher.loop.break_loop(ev::ALL); // Stop the event loop
+ *     }
+ *   }
+ *
+ *   // If using qb::io::async::io or similar base, you'd implement:
+ *   // void on(qb::io::async::event::signal<SIGINT>& event) {
+ *   //   LOG_INFO("SIGINT received via qb event system, signum: " << event.signum);
+ *   //   // application_is_running = false;
+ *   //   event.loop.break_loop(ev::ALL);
+ *   // }
+ * };
  * @endcode
  */
 template <int _SIG = -1>
 struct signal : public base<ev::sig> {
-    using base_t = base<ev::sig>; /**< Base type alias */
+    using base_t = base<ev::sig>; /**< Base type alias for `base<ev::sig>`. */
 
     /**
-     * @brief Constructor
+     * @brief Constructor.
      *
-     * Creates a signal watcher for the specified signal.
-     *
-     * @param loop Reference to the libev event loop
+     * Creates a signal watcher for the specified signal number (if provided as template argument).
+     * @param loop Reference to the libev event loop (`ev::loop_ref`) this watcher will be associated with.
      */
     explicit signal(ev::loop_ref loop)
         : base_t(loop) {
-        set(_SIG);
+        if constexpr (_SIG != -1) {
+            this->set(_SIG); // `this->` is needed here for dependent name in template
+        }
     }
 };
 
 /**
  * @struct signal<-1>
- * @brief Specialization for dynamic signal specification
+ * @ingroup AsyncEvent
+ * @brief Specialization for dynamic signal specification.
  *
- * This specialization allows the signal to be specified dynamically
- * rather than at compile time.
+ * This specialization of `qb::io::async::event::signal` allows the signal number
+ * to be specified dynamically at runtime using the `set()` method of the underlying
+ * `ev::sig` watcher, rather than at compile time via a template argument.
  */
 template <>
 struct signal<-1> : public base<ev::sig> {
-    using base_t = base<ev::sig>; /**< Base type alias */
+    using base_t = base<ev::sig>; /**< Base type alias for `base<ev::sig>`. */
 
     /**
-     * @brief Constructor
+     * @brief Constructor.
      *
      * Creates a signal watcher without initializing the signal number.
-     * The signal must be set later using the set() method.
-     *
-     * @param loop Reference to the libev event loop
+     * The signal must be set later using the `set(int signum)` method of the `ev::sig` watcher.
+     * @param loop Reference to the libev event loop (`ev::loop_ref`) this watcher will be associated with.
      */
     explicit signal(ev::loop_ref loop)
         : base_t(loop) {}

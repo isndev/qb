@@ -1,9 +1,10 @@
 /**
  * @file qb/io/protocol/json.h
- * @brief JSON protocol implementation
+ * @brief JSON protocol implementations for the QB IO system.
  *
- * This file contains the implementation of the JSON protocol for the IO system.
- * It provides protocols for parsing and handling JSON messages in different formats.
+ * This file contains protocol implementations for parsing and handling JSON messages.
+ * It leverages the `nlohmann/json` library for JSON manipulation and provides
+ * protocols for handling null-terminated JSON strings and MessagePack encoded JSON.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -18,7 +19,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup Transport
+ * @ingroup IO
  */
 
 #ifndef QB_IO_PROTOCOL_JSON_H
@@ -31,14 +32,20 @@ namespace protocol {
 
 /**
  * @class json
- * @brief Protocol for parsing JSON messages
+ * @ingroup Protocol
+ * @brief Protocol for parsing null-terminated JSON messages.
  *
- * This class implements a protocol to handle JSON messages
- * that are terminated by a NULL character. It uses the
- * byte_terminated protocol as a base and parses the received
- * data as JSON.
+ * This class implements a protocol to handle JSON messages that are expected
+ * to be terminated by a NULL character (`'\0'`). It uses the
+ * `qb::protocol::base::byte_terminated` protocol as its base and parses the received
+ * data (excluding the terminator) as a JSON object using `nlohmann::json`.
  *
- * @tparam IO_ The I/O type that will use this protocol
+ * The `onMessage` method, when invoked by the framework, will provide a
+ * `message` struct containing the raw data, its size, and the parsed `nlohmann::json` object
+ * to the associated I/O component's handler.
+ *
+ * @tparam IO_ The I/O component type (e.g., a TCP session class) that will use this protocol.
+ *             It must be compatible with `base::byte_terminated`.
  */
 template <typename IO_>
 class json : public base::byte_terminated<IO_, '\0'> {
@@ -90,13 +97,18 @@ public:
 
 /**
  * @class json_packed
- * @brief Protocol for parsing MessagePack encoded JSON
+ * @ingroup Protocol
+ * @brief Protocol for parsing null-terminated, MessagePack encoded JSON messages.
  *
- * This class implements a protocol to handle MessagePack encoded JSON
- * that is terminated by a NULL character. It uses the byte_terminated
- * protocol as a base and parses the received data from MessagePack format.
+ * This class implements a protocol to handle messages that are MessagePack encoded JSON,
+ * terminated by a NULL character (`'\0'`). It uses `base::byte_terminated` for framing
+ * and then deserializes the MessagePack data into an `nlohmann::json` object.
  *
- * @tparam IO_ The I/O type that will use this protocol
+ * The `onMessage` method provides a `message` struct containing the raw MessagePack data,
+ * its size, and the deserialized `nlohmann::json` object to the I/O component's handler.
+ *
+ * @tparam IO_ The I/O component type that will use this protocol.
+ *             It must be compatible with `base::byte_terminated`.
  */
 template <typename IO_>
 class json_packed : public base::byte_terminated<IO_, '\0'> {

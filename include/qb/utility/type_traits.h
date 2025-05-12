@@ -1,37 +1,19 @@
 /**
  * @file qb/utility/type_traits.h
- * @brief Advanced type traits and metaprogramming utilities
+ * @brief Advanced type traits and metaprogramming utilities for the QB Framework.
  *
- * This file extends the standard library's type_traits with additional
- * type traits and metaprogramming utilities for container detection,
- * iterator properties, and CRTP (Curiously Recurring Template Pattern)
- * support. It provides compile-time introspection capabilities to detect
- * container properties and specialized behavior based on types.
+ * This file extends the standard library's `<type_traits>` with additional
+ * type traits and metaprogramming utilities. These are used for compile-time
+ * introspection and template metaprogramming, enabling features such as:
+ * - Detection of container properties (e.g., `is_container`, `is_sequence_container`).
+ * - Iterator category detection and value type extraction (`is_map_iterator`, `iterator_type`).
+ * - CRTP (Curiously Recurring Template Pattern) base helper (`qb::crtp`).
+ * - SFINAE utilities for detecting member types and functions (e.g., `has_push_back`, macros like `CREATE_MEMBER_CHECK`).
+ * - Helper aliases for `std::move` and `std::forward` (`qb::mv`, `qb::fwd`).
+ * - Utilities for variadic template expansion (`qb::indexes_tuple`, `qb::expand`).
  *
- * Key features include:
- * - Container detection traits (is_container)
- * - Improved CRTP implementation with access helpers
- * - Extensions for standard library constructs
- * - Improved forward/move utilities with cleaner syntax
- * - SFINAE utilities for type introspection
- * - Specialized traits for containers and mapping types
- *
- * These utilities enable advanced template metaprogramming techniques
- * and type-based optimizations throughout the codebase.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * These utilities are primarily for internal framework use but can also be leveraged
+ * by application code for advanced template programming.
  * @ingroup Utility
  */
 
@@ -43,11 +25,11 @@
 #include <valarray>
 
 /**
- * @brief Alias for std::move with cleaner syntax
- *
- * @tparam T Type of the value to move
- * @param t Value to move
- * @return Value cast to an rvalue reference
+ * @brief Alias for `std::move` with a concise syntax.
+ * @ingroup MiscUtils
+ * @tparam T Type of the value to move.
+ * @param t Value to move.
+ * @return Value cast to an rvalue reference (`std::remove_reference_t<T>&&`).
  */
 template <typename T>
 inline std::remove_reference_t<T> &&
@@ -56,11 +38,11 @@ mv(T &&t) noexcept {
 }
 
 /**
- * @brief Alias for std::forward with cleaner syntax (lvalue overload)
- *
- * @tparam T Type to forward
- * @param t Lvalue reference to forward
- * @return Forwarded reference preserving value category
+ * @brief Alias for `std::forward` with a concise syntax (lvalue overload).
+ * @ingroup MiscUtils
+ * @tparam T Type to forward.
+ * @param t Lvalue reference to forward.
+ * @return Forwarded reference, preserving value category and const/volatile qualifiers of `T`.
  */
 template <typename T>
 inline T &&
@@ -69,11 +51,11 @@ fwd(std::remove_reference_t<T> &t) noexcept {
 }
 
 /**
- * @brief Alias for std::forward with cleaner syntax (rvalue overload)
- *
- * @tparam T Type to forward
- * @param t Rvalue reference to forward
- * @return Forwarded reference preserving value category
+ * @brief Alias for `std::forward` with a concise syntax (rvalue overload).
+ * @ingroup MiscUtils
+ * @tparam T Type to forward.
+ * @param t Rvalue reference to forward.
+ * @return Forwarded reference, preserving value category and const/volatile qualifiers of `T`.
  */
 template <typename T>
 inline T &&
@@ -84,12 +66,15 @@ fwd(std::remove_reference_t<T> &&t) noexcept {
 namespace qb {
 
 /**
- * @brief Base class for implementing the Curiously Recurring Template Pattern (CRTP)
+ * @struct crtp
+ * @ingroup TypeTraits
+ * @brief Base class for implementing the Curiously Recurring Template Pattern (CRTP).
  *
- * This class provides helper methods to access the derived class from the base class,
- * which is the core mechanism of CRTP.
+ * This class provides helper methods `impl()` to safely cast the base class pointer/reference
+ * to the derived class type `T`. This is the core mechanism of CRTP, enabling static polymorphism
+ * and code reuse by allowing base classes to access members of their derived classes.
  *
- * @tparam T The derived class type
+ * @tparam T The derived class type that inherits from `crtp<T>`.
  */
 template <typename T>
 struct crtp {
@@ -115,13 +100,7 @@ struct crtp {
 };
 
 namespace detail {
-// SFINAE type trait to detect whether T::const_iterator exists.
-
-/**
- * @brief Base class for SFINAE (Substitution Failure Is Not An Error) type traits
- *
- * Provides yes/no types used to determine sizes in SFINAE detection techniques.
- */
+/** @private */
 struct sfinae_base {
     using yes = char;
     using no  = yes[2];
@@ -207,11 +186,14 @@ struct is_mappish_impl<
 } // namespace detail
 
 /**
- * @brief Type trait to check if a type is a container
- *
- * A container must have const_iterator type and begin()/end() methods.
- *
- * @tparam T Type to check
+ * @struct is_container
+ * @ingroup TypeTraits
+ * @brief Type trait to check if a type `T` is a container.
+ * @details A type `T` is considered a container if it has a `const_iterator` nested type,
+ *          and `begin()` and `end()` member functions that return this `const_iterator`.
+ *          Specializations exist for C-style arrays, `std::valarray`, `std::pair`, and `std::tuple`.
+ * @tparam T The type to check.
+ * @return `std::true_type` if `T` is a container, `std::false_type` otherwise.
  */
 template <typename T>
 struct is_container
@@ -262,10 +244,13 @@ template <typename... Args>
 struct is_container<std::tuple<Args...>> : std::true_type {};
 
 /**
- * @brief Conditionally removes reference from a type
- *
- * @tparam T Type to process
- * @tparam cond Whether to remove reference
+ * @struct remove_reference_if
+ * @ingroup TypeTraits
+ * @brief Conditionally removes a reference from type `T` if `cond` is true.
+ * @tparam T The type to process.
+ * @tparam cond A boolean condition. If true, `std::remove_reference<T>::type` is used.
+ * @return `type` is `T` if `cond` is false, or `std::remove_reference_t<T>` if `cond` is true.
+ *         `value` indicates if the reference was actually removed.
  */
 template <typename T, bool cond>
 struct remove_reference_if {
@@ -289,20 +274,23 @@ struct remove_reference_if<T, true> {
 };
 
 /**
- * @brief Type trait to check if a type is map-like (has key_type, mapped_type, and
- * operator[])
- *
- * @tparam T Type to check
+ * @struct is_mappish
+ * @ingroup TypeTraits
+ * @brief Type trait to check if a type `T` is map-like.
+ * @details A type is considered map-like if it has `key_type` and `mapped_type` nested types,
+ *          and an `operator[]` that takes a `const key_type&`.
+ * @tparam T The type to check.
+ * @return `std::true_type` if `T` is map-like, `std::false_type` otherwise.
  */
 template <typename T>
 struct is_mappish : detail::is_mappish_impl<T>::type {};
 
 /**
- * @brief Type trait to check if a type is a std::pair
- *
- * Default implementation is false.
- *
- * @tparam Args Template parameters
+ * @struct is_pair
+ * @ingroup TypeTraits
+ * @brief Type trait to check if a type is a `std::pair`.
+ * @tparam Args Deduced template parameters of the type being checked.
+ * @return `std::true_type` if the type is `std::pair<T,U>`, `std::false_type` otherwise.
  */
 template <typename...>
 struct is_pair : std::false_type {};
@@ -317,20 +305,23 @@ template <typename T, typename U>
 struct is_pair<std::pair<T, U>> : std::true_type {};
 
 /**
- * @brief Helper alias to create a void type for SFINAE purposes
- *
- * @tparam Args Ignored template parameters
+ * @typedef Void
+ * @ingroup TypeTraits
+ * @brief Helper alias to `void` for SFINAE purposes.
+ * @tparam Args Ignored template parameters.
+ * @details Used in `std::enable_if` and other SFINAE contexts to create a dependent void type.
  */
 template <typename...>
 using Void = void;
 
 /**
- * @brief Type trait to check if a type is an inserter iterator
- *
- * Default implementation is false.
- *
- * @tparam T Type to check
- * @tparam U SFINAE enabler
+ * @struct is_inserter
+ * @ingroup TypeTraits
+ * @brief Type trait to check if a type `T` is an inserter iterator (e.g., `std::back_inserter`).
+ * @details Checks for the presence of a nested `container_type`.
+ * @tparam T The type to check.
+ * @tparam U SFINAE helper.
+ * @return `std::true_type` if `T` is an inserter, `std::false_type` otherwise.
  */
 template <typename T, typename U = Void<>>
 struct is_inserter : std::false_type {};
@@ -346,12 +337,14 @@ struct is_inserter<
     : std::true_type {};
 
 /**
- * @brief Type trait to extract the value type from an iterator
- *
- * Default implementation uses std::iterator_traits.
- *
- * @tparam Iter Iterator type
- * @tparam T SFINAE enabler
+ * @struct iterator_type
+ * @ingroup TypeTraits
+ * @brief Type trait to extract the `value_type` from an iterator `Iter`.
+ * @details Uses `std::iterator_traits<Iter>::value_type` by default.
+ *          Specialized for inserter iterators to use `Iter::container_type::value_type`.
+ * @tparam Iter The iterator type.
+ * @tparam T SFINAE helper.
+ * @return `type` is the deduced value type of the iterator.
  */
 template <typename Iter, typename T = Void<>>
 struct iterator_type {
@@ -373,12 +366,14 @@ struct iterator_type<Iter, typename std::enable_if<is_inserter<Iter>::value>::ty
 };
 
 /**
- * @brief Type trait to check if a type is an iterator
- *
- * Default implementation is false.
- *
- * @tparam Iter Type to check
- * @tparam T SFINAE enabler
+ * @struct is_terator
+ * @ingroup TypeTraits
+ * @brief Type trait to check if a type `Iter` is an iterator.
+ * @details Checks for inserters or types with a valid `std::iterator_traits<Iter>::value_type`,
+ *          excluding types convertible to `std::string_view` to avoid misclassifying strings.
+ * @tparam Iter The type to check.
+ * @tparam T SFINAE helper.
+ * @return `std::true_type` if `Iter` is considered an iterator, `std::false_type` otherwise.
  */
 template <typename Iter, typename T = Void<>>
 struct is_terator : std::false_type {};
@@ -407,20 +402,21 @@ struct is_terator<Iter,
 };
 
 /**
- * @brief Type trait to check if an iterator points to map elements (pairs)
- *
- * @tparam T Iterator type
+ * @struct is_map_iterator
+ * @ingroup TypeTraits
+ * @brief Type trait to check if an iterator `T` points to map elements (i.e., `std::pair`).
+ * @tparam T The iterator type to check.
+ * @return `std::true_type` if `iterator_type<T>::type` is a `std::pair`, `std::false_type` otherwise.
  */
 template <typename T>
 struct is_map_iterator : is_pair<typename iterator_type<T>::type> {};
 
 /**
- * @brief Type trait to check if a container has push_back method
- *
- * Default implementation is false.
- *
- * @tparam T Type to check
- * @tparam SFINAE enabler
+ * @struct has_push_back
+ * @ingroup TypeTraits
+ * @brief Type trait to check if a type `T` has a `push_back(T::value_type)` member function.
+ * @tparam T The type to check.
+ * @return `std::true_type` if `T` has `push_back`, `std::false_type` otherwise.
  */
 template <typename T, typename = Void<>>
 struct has_push_back : std::false_type {};
@@ -436,12 +432,11 @@ struct has_push_back<
            std::declval<typename T::value_type>()))>::value>::type> : std::true_type {};
 
 /**
- * @brief Type trait to check if a container has insert method
- *
- * Default implementation is false.
- *
- * @tparam T Type to check
- * @tparam SFINAE enabler
+ * @struct has_insert
+ * @ingroup TypeTraits
+ * @brief Type trait to check if a type `T` has an `insert(T::const_iterator, T::value_type)` member function.
+ * @tparam T The type to check.
+ * @return `std::true_type` if `T` has such an `insert` method, `std::false_type` otherwise.
  */
 template <typename T, typename = Void<>>
 struct has_insert : std::false_type {};
@@ -459,11 +454,11 @@ struct has_insert<
            typename T::iterator>::value>::type> : std::true_type {};
 
 /**
- * @brief Type trait to check if a type is a sequence container
- *
- * A sequence container has push_back and is not a string.
- *
- * @tparam T Type to check
+ * @struct is_sequence_container
+ * @ingroup TypeTraits
+ * @brief Type trait to check if type `T` is a sequence container.
+ * @details Considered true if `T` has `push_back` and is not `std::string`.
+ * @tparam T The type to check.
  */
 template <typename T>
 struct is_sequence_container
@@ -472,25 +467,23 @@ struct is_sequence_container
                     !std::is_same<typename std::decay<T>::type, std::string>::value> {};
 
 /**
- * @brief Type trait to check if a type is an associative container
- *
- * An associative container has insert but not push_back.
- *
- * @tparam T Type to check
+ * @struct is_associative_container
+ * @ingroup TypeTraits
+ * @brief Type trait to check if type `T` is an associative container.
+ * @details Considered true if `T` has `insert` but not `push_back`.
+ * @tparam T The type to check.
  */
 template <typename T>
 struct is_associative_container
     : std::integral_constant<bool, has_insert<T>::value && !has_push_back<T>::value> {};
 
 /**
- * @brief Metafunction for calculating Nth type in variadic template parameters
- *
- * Provides a way to access the Nth type in a parameter pack at compile time.
- * This is a recursive template that unwraps the parameter pack until the
- * desired type is reached.
- *
- * @tparam num Index of the type to select (0-based)
- * @tparam T Parameter pack of types to select from
+ * @struct nth_type
+ * @ingroup TypeTraits
+ * @brief Metafunction for selecting the Nth type in a variadic template parameter pack.
+ * @tparam num 0-based index of the type to select.
+ * @tparam T Variadic parameter pack of types.
+ * @return `type` is an alias to the Nth type in `T...`.
  */
 template <size_t num, typename... T>
 struct nth_type;
@@ -523,12 +516,12 @@ struct nth_type<0, T, Y...> {
 };
 
 /**
- * @brief A tuple of indexes used for template parameter pack expansion
- *
- * This is commonly used for tuple manipulation, function argument unpacking,
- * and other compile-time sequence operations.
- *
- * @tparam Indexes A parameter pack of size_t indices
+ * @struct indexes_tuple
+ * @ingroup TypeTraits
+ * @brief Represents a compile-time tuple of `size_t` indexes.
+ * @tparam Indexes A parameter pack of `size_t` indices.
+ * @details Used with `index_builder` for variadic template expansion and manipulation.
+ *          `size` enum gives the number of indexes.
  */
 template <size_t... Indexes>
 struct indexes_tuple {
@@ -536,13 +529,12 @@ struct indexes_tuple {
 };
 
 /**
- * @brief Generator for a sequence of indices
- *
- * Builds a compile-time sequence of indices from 0 to num-1.
- * This is implemented using recursive template instantiation.
- *
- * @tparam num The number of indices to generate
- * @tparam tp The current indices tuple (default is empty)
+ * @struct index_builder
+ * @ingroup TypeTraits
+ * @brief Generates a compile-time sequence of indices as an `indexes_tuple`.
+ * @tparam num The number of indices to generate (from 0 to `num-1`).
+ * @tparam tp Internal helper for recursive construction.
+ * @return `type` is an `indexes_tuple<0, 1, ..., num-1>`.
  */
 template <size_t num, typename tp = indexes_tuple<>>
 struct index_builder;
@@ -573,14 +565,18 @@ struct index_builder<0, indexes_tuple<Indexes...>> {
 };
 
 /**
- * @brief Utility for parameter pack expansion
- *
- * This struct provides a constructor that takes a variable number of
- * arguments, allowing for the expansion of a parameter pack in contexts
- * where direct expansion is not possible.
- *
- * It's particularly useful for calling a function on each element of a
- * parameter pack without having to define a separate function for this purpose.
+ * @struct expand
+ * @ingroup TypeTraits
+ * @brief Utility for forcing parameter pack expansion in certain contexts.
+ * @details The constructor takes a variadic pack of arguments. This is useful when you need to
+ *          perform an operation on each element of a pack, often using a comma operator inside
+ *          an initializer list or braced-init-list for the constructor call.
+ * @code
+ * // template<typename... Args>
+ * // void print_all(Args... args) {
+ * //   qb::expand{ (std::cout << args << std::endl, 0)... };
+ * // }
+ * @endcode
  */
 struct expand {
     /**

@@ -155,6 +155,7 @@ crypto::argon2_kdf(const std::string &password, size_t key_length,
                                  std::string(argon2_error_message(result)));
     }
 #else
+    (void)variant;
     // Fallback implementation using PBKDF2 with higher iterations when Argon2 is not
     // available
     std::vector<unsigned char> salt_bytes;
@@ -444,6 +445,7 @@ crypto::hash_password(const std::string &password, Argon2Variant variant) {
 
     return std::string(encoded);
 #else
+    (void)variant;
     // Fallback implementation using PBKDF2-HMAC-SHA256
     std::vector<unsigned char> salt = generate_salt(16);
 

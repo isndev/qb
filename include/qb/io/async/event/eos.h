@@ -1,6 +1,6 @@
 /**
  * @file qb/io/async/event/eos.h
- * @brief End-of-stream event for asynchronous I/O
+ * @brief End-of-stream event for asynchronous output streams.
  *
  * This file defines the eos (End-Of-Stream) event structure which is triggered
  * when all data has been written and sent through an I/O stream. Derived classes
@@ -19,7 +19,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup IO
+ * @ingroup AsyncEvent
  */
 
 #ifndef QB_IO_ASYNC_EVENT_EOS_H
@@ -29,18 +29,37 @@ namespace qb::io::async::event {
 
 /**
  * @struct eos
- * @brief Event triggered when all data has been written and sent
+ * @ingroup AsyncEvent
+ * @brief Event triggered when all buffered data has been successfully written and sent to an output stream.
  *
- * This event is passed to the derived class's on() method when
- * all pending data has been successfully written and sent through
- * an I/O stream. It signals that the output buffer is now empty.
+ * This event is passed to the derived class's `on(qb::io::async::event::eos&&)` method when
+ * the output buffer for an I/O object (e.g., TCP socket) becomes empty after a write operation.
+ * It signifies that all data previously queued for sending via `publish()` or `operator<<`
+ * has been flushed to the underlying transport.
  *
- * Usage:
+ * This is often used to signal completion of a data transfer or to manage flow control
+ * (e.g., stop listening for write readiness on the socket until more data is available).
+ *
+ * Usage Example:
  * @code
- * void on(qb::io::async::event::eos &&) {
- *     // Handle end-of-stream condition
- *     // e.g. close the connection, log completion, etc.
- * }
+ * class MyOutputHandler : public qb::io::async::output<MyOutputHandler> { // Or similar base
+ * public:
+ *   // ... other methods ...
+ *
+ *   void sendLargeData(const char* data, size_t size) {
+ *     this->publish(data, size); // Add data to output buffer
+ *     // The async::output base will handle writing and trigger eos when done.
+ *   }
+ *
+ *   void on(qb::io::async::event::eos &&) {
+ *     LOG_INFO("All pending data has been sent.");
+ *     // Optionally, close the connection if this was the last piece of data,
+ *     // or notify another component about the completion.
+ *     // if (isLastChunk()) {
+ *     //   this->disconnect();
+ *     // }
+ *   }
+ * };
  * @endcode
  */
 struct eos {};

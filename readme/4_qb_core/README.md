@@ -1,45 +1,36 @@
-# QB-Core Module Overview
+@page qb_core_readme_md QB-Core Module: The Actor Engine
+@brief An introduction to `qb-core`, the heart of the QB Actor Framework, enabling concurrent application logic via actors, events, and multi-core scheduling. Provides an overview and navigation for the QB-Core module documentation.
 
-`qb-core` builds upon the foundation laid by `qb-io` to provide a complete, high-performance **Actor Model engine** for C++17. It manages actor lifecycles, schedules their execution across multiple cores, and facilitates communication between them using a type-safe event system.
+# QB-Core Module: The Actor Model Engine
 
-## Purpose & Design Goals
+Welcome to the `qb-core` module documentation. `qb-core` is the high-performance C++17 library that brings the **Actor Model** to life within the QB Framework. Building directly upon the asynchronous foundation provided by `qb-io`, `qb-core` empowers you to design and implement complex concurrent applications by composing independent, message-driven actors.
 
-*   **Simplify Concurrency:** Abstract low-level threading, locking, and synchronization using the Actor Model.
-*   **Enable Parallelism:** Distribute actors across `VirtualCore` instances (threads) for execution on multi-core hardware.
-*   **Promote Isolation:** Ensure actor state is encapsulated and accessed only via asynchronous messages.
-*   **Provide Robust Communication:** Offer efficient and type-safe event passing mechanisms.
-*   **Integrate with IO:** Seamlessly integrate with `qb-io` for actors that need asynchronous networking or file operations.
+This section provides a detailed exploration of `qb-core`'s architecture, its fundamental abstractions like actors and events, the engine that drives them, and common patterns for their use.
 
-## Key Abstractions
+## Key Topics in This Section:
 
-*   **`qb::Actor`:** The user-defined unit of concurrency and state. ([Details](./actor.md))
-*   **`qb::Event`:** The messages actors exchange. ([Details](./messaging.md))
-*   **`qb::Main`:** The main engine controller, managing threads and system lifecycle. ([Details](./engine.md))
-*   **`qb::VirtualCore`:** A worker thread executing actors and their event loop. ([Details](./engine.md))
-*   **`qb::ActorId`:** Unique identifier used to address actors.
-*   **`qb::ICallback`:** Interface for actors requiring periodic execution.
-*   **`qb::ServiceActor<Tag>`:** Pattern for singleton actors per core.
-*   **`qb::Pipe` / `EventBuilder`:** Tools for optimized event sending.
+*   **[QB-Core: Key Features & Capabilities](./features.md)**
+    *   A summary of the core features provided by the QB Actor Engine, including actor lifecycle management, the event system, concurrency and scheduling capabilities, and common actor utilities.
 
-## Core Features
+*   **[QB-Core: Mastering `qb::Actor`](./actor.md)**
+    *   A comprehensive guide to defining, initializing, and managing the lifecycle of actors using the `qb::Actor` base class, including state management and event handler implementation.
 
-*   **Actor Lifecycle Management:** Controlled creation (`addActor`), initialization (`onInit`), termination (`kill`), and destruction.
-*   **Event-Driven Execution:** Actors react to incoming events via `on(Event&)` handlers.
-*   **Type-Safe Messaging:** Compile-time checks for event handling.
-*   **Flexible Communication:** Ordered (`push`), unordered (`send`), broadcast, reply, forward.
-*   **Multi-Core Scheduling:** Automatic distribution of actors and work across cores.
-*   **Efficient Inter-Core Communication:** Transparent message routing using lock-free queues.
-*   **Configurable Concurrency:** Control over core affinity and event loop latency.
-*   **Common Actor Patterns:** Support for services, periodic tasks, dependency discovery.
+*   **[QB-Core: Event Messaging Between Actors](./messaging.md)**
+    *   Detailed information on defining custom events derived from `qb::Event`, the various methods actors use to send events (`push`, `send`, `broadcast`, `reply`, `forward`), and how events are received and processed.
 
-## Relationship with `qb-io`
+*   **[QB-Core: Engine - `qb::Main` & `VirtualCore`](./engine.md)**
+    *   An explanation of the QB actor system's engine, detailing how `qb::Main` orchestrates `VirtualCore` worker threads and how actors are scheduled and executed within this environment.
 
-`qb-core` is fundamentally dependent on `qb-io`:
+*   **[QB-Core: Common Actor Patterns & Utilities](./patterns.md)**
+    *   Discover and learn how to implement common and effective actor-based design patterns with QB, such as Finite State Machines, Service Actors, Periodic Callbacks, Referenced Actors, and Dependency Resolution.
 
-*   The `VirtualCore` event loop *is* the `qb::io::async::listener`.
-*   Actor timers and delayed actions rely on `qb::io::async::callback`.
-*   Actors performing network or file I/O use `qb-io` transports and protocols, integrated via `qb::io::use<>`.
+## How to Use This Section
 
-While `qb-io` provides the *mechanisms* for async operations, `qb-core` provides the *framework* for organizing concurrent application logic using those mechanisms within the Actor Model.
+*   Begin with the **Key Features & Capabilities** for a high-level understanding.
+*   Study **Mastering `qb::Actor`** and **Event Messaging** to learn the fundamentals of creating and communicating with actors.
+*   Understand the **Engine (`qb::Main` & `VirtualCore`)** to grasp how the system operates and scales.
+*   Explore **Common Actor Patterns** for practical ways to structure your application logic.
 
-**(See also:** `[Engine](./engine.md)`, `[Actor](./actor.md)`, `[Messaging](./messaging.md)`, `[Patterns](./patterns.md)`, `[Core & IO Integration](./../5_core_io_integration/)`**)** 
+By mastering `qb-core`, you can build sophisticated, concurrent applications that are both performant and easier to reason about compared to traditional multi-threaded approaches.
+
+**(Next:** If you haven't already, ensure you understand the `[QB-IO Module Overview](../3_qb_io/README.md)` as `qb-core` builds upon it. Then, proceed to `[Core & IO Integration Overview](../5_core_io_integration/README.md)` to see how these two modules work together in practice.**) 
