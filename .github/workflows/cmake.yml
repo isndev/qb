@@ -64,7 +64,7 @@ jobs:
 
       - name: Install dependencies on macOS
         if: matrix.os == 'macos-latest'
-        run: brew install openssl, argon2, zlib
+        run: brew install openssl@3, argon2, zlib
 
 #      - name: Install dependencies on Windows
 #        if: matrix.os == 'windows-latest'
