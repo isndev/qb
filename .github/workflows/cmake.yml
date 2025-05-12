@@ -60,11 +60,11 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: | 
           sudo apt-get update
-          sudo apt-get install -y libssl-dev
+          sudo apt-get install -y libssl-dev, libargon2-dev, zlib1g-dev
 
       - name: Install dependencies on macOS
         if: matrix.os == 'macos-latest'
-        run: brew install openssl
+        run: brew install openssl, argon2, zlib
 
 #      - name: Install dependencies on Windows
 #        if: matrix.os == 'windows-latest'
