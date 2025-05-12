@@ -1,10 +1,14 @@
 /**
- * @file cube.h
- * @brief Main include file for the QB Actor Framework
+ * @file qb/config.h
+ * @brief Configuration and platform-specific definitions for the QB Actor Framework.
  *
- * This is the main include file for the QB Actor Framework, which provides
- * a simple way to include the entire framework in a project. It includes
- * all necessary headers and definitions for using the framework.
+ * This file provides platform-specific definitions, macros, and configuration
+ * options for the QB framework. It handles cross-platform compatibility issues,
+ * defines platform-specific settings, and includes the necessary system headers
+ * for socket programming on different operating systems.
+ *
+ * The file includes macros for configuring features like Unix Domain Sockets,
+ * header-only implementation, and compatibility settings for different platforms.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -19,15 +23,8 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup QB
+ * @ingroup Utility
  */
 
-#ifndef QB_QB_H
-#define QB_QB_H
-
-// Include main components
-#include <qb/actor.h>
-#include <qb/io.h>
-#include <qb/main.h>
-
-#endif // QB_QB_H
+#include <qb/utility/build_macros.h>
+// ... existing code ... 

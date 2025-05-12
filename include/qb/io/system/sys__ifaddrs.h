@@ -1,28 +1,15 @@
 /**
  * @file qb/io/system/sys__ifaddrs.h
- * @brief Network interface address information utilities
+ * @brief Network interface address information utilities.
  *
  * This file provides functionality to retrieve network interface addresses
- * through the getifaddrs() and freeifaddrs() functions. It contains
+ * through the `getifaddrs()` and `freeifaddrs()` functions. It contains
  * platform-specific implementations for various systems including Android.
  *
- * On systems with native ifaddrs.h support, this header simply provides
+ * On systems with native `ifaddrs.h` support, this header simply provides
  * namespace wrappers. For Android versions prior to API level 24, it provides
- * a complete implementation.
- *
- * @author qb - C++ Actor Framework
- * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *         http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * a complete custom implementation using netlink sockets to query the kernel.
+ * @ingroup Networking
  */
 
 #ifndef QB_IO_IFADDRS_H
@@ -33,7 +20,21 @@
 #if !(defined(ANDROID) || defined(__ANDROID__)) || __ANDROID_API__ >= 24
 #include <ifaddrs.h>
 namespace qb::io {
+/**
+ * @brief Frees the linked list of structures returned by `getifaddrs()`.
+ * @ingroup Networking
+ * @param ifa A pointer to the head of the list of `ifaddrs` structures.
+ * @note This is a wrapper around the system's `freeifaddrs` when available.
+ */
 using ::freeifaddrs;
+/**
+ * @brief Creates a linked list of structures describing the network interfaces of the local system.
+ * @ingroup Networking
+ * @param ifap A pointer to a pointer where the head of the linked list of `ifaddrs` structures will be stored.
+ *             The caller is responsible for freeing this list using `freeifaddrs()`.
+ * @return 0 on success, or -1 on error (with `errno` set).
+ * @note This is a wrapper around the system's `getifaddrs` when available.
+ */
 using ::getifaddrs;
 } // namespace qb::io
 #else
@@ -241,37 +242,38 @@ using ::getifaddrs;
 
 /**
  * @struct ifaddrs
- * @brief Structure for managing network interface information
+ * @ingroup Networking
+ * @brief Structure representing a single network interface address.
  *
  * This structure provides information about a network interface, including
- * its name, flags, addresses, and related data. It forms a linked list with
- * the ifa_next pointer pointing to the next interface entry.
+ * its name, flags, network address, netmask, and broadcast or point-to-point
+ * destination address. Instances of this structure form a linked list, with
+ * `ifa_next` pointing to the next interface address entry in the list.
+ * Memory for this structure and its members is allocated by `getifaddrs()` and
+ * must be freed by `freeifaddrs()`.
  */
 struct ifaddrs {
-    struct ifaddrs *ifa_next; /* Pointer to the next structure.      */
+    struct ifaddrs *ifa_next; /**< Pointer to the next structure in the list. */
 
-    char        *ifa_name;  /* Name of this network interface.     */
-    unsigned int ifa_flags; /* Flags as from SIOCGIFFLAGS ioctl.   */
+    char        *ifa_name;  /**< Name of this network interface (e.g., "eth0", "wlan0"). */
+    unsigned int ifa_flags; /**< Flags associated with the interface (e.g., IFF_UP, IFF_LOOPBACK, IFF_BROADCAST).
+                                 Corresponds to flags from SIOCGIFFLAGS ioctl. */
 
-    struct sockaddr *ifa_addr;    /* Network address of this interface.  */
-    struct sockaddr *ifa_netmask; /* Netmask of this interface.          */
+    struct sockaddr *ifa_addr;    /**< Network address of this interface. The actual type (e.g., `sockaddr_in`, `sockaddr_in6`)
+                                     depends on the address family. */
+    struct sockaddr *ifa_netmask; /**< Netmask associated with `ifa_addr`. */
     union {
-        /* At most one of the following two is valid.  If the IFF_BROADCAST
-           bit is set in `ifa_flags', then `ifa_broadaddr' is valid.  If the
-           IFF_POINTOPOINT bit is set, then `ifa_dstaddr' is valid.
-           It is never the case that both these bits are set at once.  */
-        struct sockaddr *ifu_broadaddr; /* Broadcast address of this interface. */
-        struct sockaddr *ifu_dstaddr;   /* Point-to-point destination address.  */
+        struct sockaddr *ifu_broadaddr; /**< Broadcast address, if IFF_BROADCAST is set in `ifa_flags`. */
+        struct sockaddr *ifu_dstaddr;   /**< Point-to-point destination address, if IFF_POINTOPOINT is set in `ifa_flags`. */
     } ifa_ifu;
-    /* These very same macros are defined by <net/if.h> for `struct ifaddr'.
-       So if they are defined already, the existing definitions will be fine.  */
+
 #ifndef ifa_broadaddr
-#define ifa_broadaddr ifa_ifu.ifu_broadaddr
+#define ifa_broadaddr ifa_ifu.ifu_broadaddr /**< Convenience macro for accessing the broadcast address. */
 #endif
 #ifndef ifa_dstaddr
-#define ifa_dstaddr ifa_ifu.ifu_dstaddr
+#define ifa_dstaddr ifa_ifu.ifu_dstaddr /**< Convenience macro for accessing the point-to-point destination address. */
 #endif
-    void *ifa_data; /* Address-specific data (may be unused).  */
+    void *ifa_data; /**< Address-specific data. For AF_PACKET, this may contain interface statistics. May be unused for other families. */
 };
 
 namespace qb::io {
@@ -504,6 +506,13 @@ append_ifaddr(struct ifaddrs *addr, struct ifaddrs **ifaddrs_head,
     return 0;
 }
 
+/**
+ * @brief Parses a netlink reply message containing interface and address information.
+ * @param session Pointer to the active netlink_session.
+ * @param ifaddrs_head Pointer to the head of the ifaddrs linked list being built.
+ * @param last_ifaddr Pointer to the last ifaddr in the list, for efficient appending.
+ * @return 0 on success, -1 on error.
+ */
 static int
 parse_netlink_reply(netlink_session *session, struct ifaddrs **ifaddrs_head,
                     struct ifaddrs **last_ifaddr) {
@@ -594,6 +603,14 @@ cleanup:
     return ret;
 }
 
+/**
+ * @brief Populates a sockaddr structure from netlink address data.
+ * @param sa Pointer to a struct sockaddr pointer to be allocated and filled.
+ * @param net_address Pointer to the ifaddrmsg containing address family and scope.
+ * @param rta_data Pointer to the raw address data.
+ * @param rta_payload_length Length of the raw address data.
+ * @return 0 on success, -1 on failure (e.g., allocation error).
+ */
 static int
 fill_sa_address(struct sockaddr **sa, struct ifaddrmsg *net_address, void *rta_data,
                 size_t rta_payload_length) {
@@ -647,6 +664,14 @@ fill_sa_address(struct sockaddr **sa, struct ifaddrmsg *net_address, void *rta_d
     return 0;
 }
 
+/**
+ * @brief Populates an extended sockaddr_ll structure from netlink interface data.
+ * @param sa Pointer to a sockaddr_ll_extended pointer to be allocated and filled.
+ * @param net_interface Pointer to the ifinfomsg containing interface index and type.
+ * @param rta_data Pointer to the raw link-layer address data.
+ * @param rta_payload_length Length of the raw link-layer address data.
+ * @return 0 on success, -1 on failure.
+ */
 static int
 fill_ll_address(struct sockaddr_ll_extended **sa, struct ifinfomsg *net_interface,
                 void *rta_data, size_t rta_payload_length) {
@@ -689,6 +714,12 @@ fill_ll_address(struct sockaddr_ll_extended **sa, struct ifinfomsg *net_interfac
                return 0;
 }
 
+/**
+ * @brief Finds an interface in the current list by its kernel index.
+ * @param index The interface index to search for.
+ * @param ifaddrs_head Pointer to the head of the ifaddrs linked list.
+ * @return Pointer to the found ifaddrs structure, or NULL if not found.
+ */
 static struct ifaddrs *
 find_interface_by_index(int index, struct ifaddrs **ifaddrs_head) {
     struct ifaddrs *cur;
@@ -711,6 +742,12 @@ find_interface_by_index(int index, struct ifaddrs **ifaddrs_head) {
     return NULL;
 }
 
+/**
+ * @brief Retrieves the name of an interface by its kernel index.
+ * @param index The interface index.
+ * @param ifaddrs_head Pointer to the head of the ifaddrs linked list.
+ * @return Pointer to the interface name string (owned by an ifaddrs struct), or NULL.
+ */
 static char *
 get_interface_name_by_index(int index, struct ifaddrs **ifaddrs_head) {
     struct ifaddrs *iface = find_interface_by_index(index, ifaddrs_head);
@@ -720,6 +757,12 @@ get_interface_name_by_index(int index, struct ifaddrs **ifaddrs_head) {
     return iface->ifa_name;
 }
 
+/**
+ * @brief Retrieves the flags of an interface by its kernel index.
+ * @param index The interface index.
+ * @param ifaddrs_head Pointer to the head of the ifaddrs linked list.
+ * @return Interface flags, or 0 if not found.
+ */
 static int
 get_interface_flags_by_index(int index, struct ifaddrs **ifaddrs_head) {
     struct ifaddrs *iface = find_interface_by_index(index, ifaddrs_head);
@@ -729,6 +772,12 @@ get_interface_flags_by_index(int index, struct ifaddrs **ifaddrs_head) {
     return static_cast<int>(iface->ifa_flags);
 }
 
+/**
+ * @brief Calculates and populates the netmask for a given interface address.
+ * @param ifa Pointer to the ifaddrs structure for which to calculate the netmask.
+ * @param net_address Pointer to the ifaddrmsg containing prefix length information.
+ * @return 0 on success, -1 on error.
+ */
 static int
 calculate_address_netmask(struct ifaddrs *ifa, struct ifaddrmsg *net_address) {
     if (ifa->ifa_addr && ifa->ifa_addr->sa_family != AF_UNSPEC &&
@@ -796,6 +845,11 @@ calculate_address_netmask(struct ifaddrs *ifa, struct ifaddrmsg *net_address) {
     return 0;
 }
 
+/**
+ * @brief Processes a netlink message (RTM_NEWLINK) to extract link information.
+ * @param message Pointer to the nlmsghdr of the netlink message.
+ * @return A newly allocated ifaddrs structure populated with link info, or NULL on error.
+ */
 static struct ifaddrs *
 get_link_address(const struct nlmsghdr *message, struct ifaddrs **ifaddrs_head) {
     ssize_t           length = 0;
@@ -949,6 +1003,12 @@ error: {
 }
 }
 
+/**
+ * @brief Processes a netlink message (RTM_NEWADDR) to extract address information.
+ * @param message Pointer to the nlmsghdr of the netlink message.
+ * @param ifaddrs_head Pointer to the head of the ifaddrs list (used to find matching interface name/flags).
+ * @return A newly allocated ifaddrs structure populated with address info, or NULL on error.
+ */
 static struct ifaddrs *
 get_link_info(const struct nlmsghdr *message) {
     ssize_t                      length;
@@ -1030,13 +1090,12 @@ getifaddrs_init() {
 } // namespace internal
 
 /**
- * @brief Frees memory allocated by getifaddrs()
- *
- * This function releases all memory allocated for the interface address
- * information returned by getifaddrs(). It traverses the linked list and
- * frees each structure and its associated data.
- *
- * @param ifa Pointer to the interface address list to free
+ * @brief Frees the linked list of structures returned by `getifaddrs()`.
+ * @ingroup Networking
+ * @param ifa A pointer to the head of the list of `ifaddrs` structures that was allocated by `getifaddrs()`.
+ * @details This function deallocates all memory associated with the linked list, including the structures
+ *          themselves and the data pointed to by their members (like `ifa_name`, `ifa_addr`, etc.).
+ *          This is the custom implementation for platforms like Android < 24.
  */
 inline void
 freeifaddrs(struct ifaddrs *ifa) {
@@ -1059,14 +1118,15 @@ freeifaddrs(struct ifaddrs *ifa) {
 }
 
 /**
- * @brief Gets a list of network interfaces and their addresses
- *
- * This function creates a linked list of structures describing the network
- * interfaces on the local system. For each interface that has addresses
- * associated with it, the structure describes the addresses and flags.
- *
- * @param ifap Pointer to a pointer where the interface list will be stored
- * @return 0 on success, -1 on failure (with errno set appropriately)
+ * @brief Creates a linked list of structures describing the network interfaces of the local system.
+ * @ingroup Networking
+ * @param ifap A pointer to a `struct ifaddrs*`. On successful return, `*ifap` will point to the
+ *             head of the newly allocated linked list of `ifaddrs` structures.
+ *             The caller is responsible for freeing this list using `qb::io::freeifaddrs()`.
+ * @return 0 on success, or -1 on error (with `errno` set appropriately).
+ * @details This function queries the system for all available network interfaces and their configured
+ *          addresses (IPv4, IPv6, link-layer). Each element in the returned list corresponds to a single
+ *          address on an interface. This is the custom implementation for platforms like Android < 24.
  */
 inline int
 getifaddrs(struct ifaddrs **ifap) {

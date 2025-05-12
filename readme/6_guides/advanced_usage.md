@@ -1,170 +1,82 @@
-# QB Framework: Advanced Usage & Patterns
+@page guides_advanced_usage_md QB Framework: Advanced Techniques & System Design
+@brief Explore sophisticated usage patterns, advanced system design considerations, and performance optimization strategies for complex QB applications.
 
-This guide explores more advanced techniques and common patterns for building applications with the QB framework, leveraging insights from the included examples and tests.
+# QB Framework: Advanced Techniques & System Design
 
-## Implementing State Machines
+Once you're comfortable with the core concepts and basic patterns of the QB Actor Framework, you can begin to explore more advanced techniques to build truly sophisticated, scalable, and resilient systems. This guide delves into such practices, often drawing inspiration from the more complex examples provided with the framework.
 
-Actors are naturally suited for implementing Finite State Machines (FSMs). The actor's internal state represents the FSM state, and incoming events trigger state transitions and actions.
+## 1. Complex Actor Hierarchies & Supervision
 
-*   **State Representation:** Use an `enum class` or similar type as a member variable to hold the current state.
-*   **Transitions:** Event handlers (`on(Event&)` methods) implement the transition logic. Based on the current state and the received event, the handler performs actions, updates the state variable, and potentially sends new events.
-*   **Actions:** Actions associated with states or transitions (entry/exit actions, actions during transitions) are performed within the event handlers.
+While QB doesn't enforce a built-in supervisor hierarchy like some other actor systems, you can implement robust supervision trees using standard actor patterns.
 
-```cpp
-// Conceptual Example (See example/core/example8_state_machine.cpp for full implementation)
-#include <qb/actor.h>
+*   **Parent-Child Relationships (Logical):**
+    *   An actor (supervisor) can create other actors (workers/children) and store their `ActorId`s.
+    *   The supervisor is responsible for the *logical* lifecycle of its children: sending them initial configuration, work, and potentially `qb::KillEvent`s when the supervisor itself is shutting down.
+*   **Health Monitoring & Restart Strategies:**
+    *   **Heartbeats/Pings:** Supervisors can periodically send `PingEvent`s to children. Children reply with `PongEvent`. If a pong is missed (detected via a timeout scheduled with `qb::io::async::callback` in the supervisor), the child might be considered unresponsive.
+    *   **Explicit Failure Reporting:** Children can `push` a specific `ChildFailedEvent(reason)` to their supervisor upon encountering an unrecoverable internal error before terminating themselves.
+    *   **Restart Logic:** Upon detecting a child failure, the supervisor can:
+        *   **Restart:** Create a new instance of the failed child actor (`addActor` or `addRefActor`). The new actor might need to recover state (e.g., from a persistent store or by requesting it from peers).
+        *   **Delegate:** Reassign the failed child's pending tasks to other available workers.
+        *   **Escalate:** If the failure is critical or repeated, the supervisor might notify its own supervisor or a system-level manager actor.
+*   **Fault Isolation:** A key benefit is that the failure of a child actor (even an unhandled exception causing its `VirtualCore` to terminate, if not designed carefully) can be contained. The supervisor, ideally on a different `VirtualCore`, can detect this and react without being directly affected by the crash itself (though it needs to handle the loss of the child).
 
-enum class MachineState { IDLE, PROCESSING, ERROR };
-struct StartProcessing : qb::Event { /* ... */ };
-struct DataPacket : qb::Event { /* ... */ };
-struct ProcessingError : qb::Event { /* ... */ };
-struct Reset : qb::Event { /* ... */ };
+**(Reference:** The `example/core/example10_distributed_computing.cpp` showcases a `SystemMonitorActor` that launches and (conceptually) oversees other top-level actors. The `TaskSchedulerActor` in the same example implicitly supervises workers by tracking their heartbeats and status.)**
 
-class FsmActor : public qb::Actor {
-private:
-    MachineState _current_state = MachineState::IDLE;
+## 2. Advanced Message Design & Serialization
 
-public:
-    bool onInit() override {
-        registerEvent<StartProcessing>(*this);
-        registerEvent<DataPacket>(*this);
-        registerEvent<ProcessingError>(*this);
-        registerEvent<Reset>(*this);
-        return true;
-    }
+For highly performance-sensitive applications or when integrating with external systems, consider these advanced messaging aspects:
 
-    void on(const StartProcessing& event) {
-        if (_current_state == MachineState::IDLE) {
-            std::cout << "Transitioning to PROCESSING" << std::endl;
-            _current_state = MachineState::PROCESSING;
-            // Start some async work...
-        }
-    }
+*   **Custom Serialization for Large/Complex Events:**
+    *   While `std::shared_ptr` is excellent for passing large data within events without copying the payload, if you need to send events over a network to non-QB systems or require a very compact representation, you might implement custom serialization/deserialization directly within your event types or specialized `Protocol` classes.
+    *   This could involve using libraries like Protocol Buffers, FlatBuffers, Cap'n Proto, or a custom binary format. Your `Protocol::onMessage` would deserialize, and your sending logic would serialize.
+*   **Zero-Copy Techniques (Conceptual within QB):**
+    *   **`qb::string_view` Protocols:** Using protocols like `text::string_view` or `text::command_view` allows your actor to receive a view of the data directly from the `qb-io` input buffer without copying the payload into a `std::string` or `qb::string` within the `Protocol::message` struct. This is effective if the message is processed immediately and the buffer isn't modified or invalidated before the view is used.
+    *   **`qb::allocator::pipe` and `allocated_push`:** When sending large, self-constructed messages, using `actor.getPipe(...).allocated_push<MyEvent>(total_size_hint, ...)` can help pre-allocate a sufficiently large contiguous block in the communication pipe. If `MyEvent` is designed to then directly use parts of this pre-allocated block for its payload (e.g., by constructing an internal `qb::string_view` that points into this tail data), you can minimize intermediate buffer copies.
+*   **Message Batching:** For very high-throughput scenarios where individual event overhead is a concern, actors can implement a batching pattern: accumulate multiple small logical messages into a single larger `BatchEvent` before sending. The recipient then iterates through the items in the batch.
 
-    void on(const DataPacket& event) {
-        if (_current_state == MachineState::PROCESSING) {
-            // Process data...
-        } else {
-            // Ignore or error
-        }
-    }
+## 3. Dynamic Load Balancing & Work Distribution
 
-    void on(const ProcessingError& event) {
-        if (_current_state == MachineState::PROCESSING) {
-            std::cout << "Transitioning to ERROR" << std::endl;
-            _current_state = MachineState::ERROR;
-        }
-    }
+Beyond simple round-robin, more sophisticated load balancing can be implemented:
 
-    void on(const Reset& event) {
-        std::cout << "Transitioning to IDLE" << std::endl;
-        _current_state = MachineState::IDLE;
-        // Reset internal state...
-    }
-};
-```
-**(Ref:** `example/core/example8_state_machine.cpp`**)
+*   **Metrics-Based Dispatch:** A dispatcher/scheduler actor can collect metrics from worker actors (e.g., current queue depth, CPU utilization, processing time per task via `WorkerStatusMessage`). It then uses these metrics to route new tasks to the least loaded or most performant available worker.
+    *   Workers would periodically `push` `WorkerStatusUpdate` events to the scheduler.
+*   **Work-Stealing (Conceptual):** Idle worker actors could proactively request work from a central queue or even from other busy worker actors (requires careful protocol design to avoid contention).
+*   **Adaptive Concurrency:** A manager actor could monitor system load and dynamically create or terminate worker actors to match demand (though actor creation/destruction has overhead, so this is for longer-term load changes).
 
-## Publish/Subscribe Pattern
+**(Reference:** `example/core/example10_distributed_computing.cpp`'s `TaskSchedulerActor` implements a basic form of load awareness by checking worker availability and (conceptually) utilization before assigning tasks.)**
 
-A central "Broker" or "Topic Manager" actor can manage subscriptions and distribute messages.
+## 4. Advanced State Management & Persistence
 
-*   **Broker Actor:**
-    *   Maintains a map of topics (e.g., `std::string`) to sets of subscriber `ActorId`s.
-    *   Handles `SubscribeEvent`: Adds the sender's `ActorId` to the topic's subscriber set.
-    *   Handles `UnsubscribeEvent`: Removes the sender from the set.
-    *   Handles `PublishEvent`: Iterates through all subscribers for the given topic and `push`es the message content (often wrapped in a new `MessageDataEvent`) to each subscriber.
-*   **Publisher Actors:** Send `PublishEvent` messages to the Broker.
-*   **Subscriber Actors:** Send `SubscribeEvent`/`UnsubscribeEvent` to the Broker and handle the `MessageDataEvent` pushed by the Broker.
+For actors requiring durable state or complex state recovery:
 
-**(Ref:** `example/core/example7_pub_sub.cpp`, `example/core_io/message_broker/`**)
+*   **Event Sourcing:** Instead of just storing the current state, an actor persists the sequence of events that led to its current state. To recover, it replays these events. This can be complex but offers powerful auditing and debugging capabilities.
+    *   The actor would, upon processing a state-changing event, also send this event (or a derivative) to a dedicated `PersistenceActor`.
+*   **Snapshotting:** Periodically, or after a certain number_of_events, an actor can serialize its current full state (a snapshot) and send it to a `PersistenceActor`. Recovery involves loading the latest snapshot and then replaying only the events that occurred after that snapshot.
+*   **Dedicated Persistence Actor(s):** Abstract database or file system interactions into one or more `PersistenceActor`s. Other actors send `SaveStateEvent` or `LoadStateRequest` events. This centralizes and serializes access to the storage medium.
 
-## Managing Shared Resources
+**(Reference:** `qb/source/core/tests/system/test-actor-state-persistence.cpp` demonstrates a basic in-memory persistence and recovery simulation.)**
 
-Avoid sharing resources directly between actors. Instead, encapsulate the resource within a dedicated actor.
+## 5. Interfacing with Blocking/External Systems Safely
 
-*   **Resource Actor:** An actor that owns and manages exclusive access to a resource (e.g., a database connection pool, a hardware device, a shared data structure like a queue in `example6_shared_queue.cpp`).
-*   **Interaction:** Other actors interact with the resource *only* by sending request events to the Resource Actor.
-*   **Replies:** The Resource Actor performs the operation and sends response events back to the requester.
-*   **Concurrency:** The Resource Actor processes requests sequentially, ensuring safe access to the resource.
+When actors must interact with legacy blocking libraries or external systems that don't offer asynchronous APIs:
 
-```cpp
-// Simplified concept
-struct DbQuery : qb::Event { /* ... */ };
-struct DbResult : qb::Event { /* ... */ };
+*   **Dedicated Worker Actor Pool:** Create a pool of worker actors (potentially on `VirtualCore`s configured with higher latency to reduce CPU spin when blocked) whose sole job is to handle these blocking calls.
+    *   Your main application actors `push` a `BlockingRequestEvent` to a dispatcher.
+    *   The dispatcher forwards the request to an available worker from the pool.
+    *   The worker actor performs the blocking call (its `VirtualCore` will block for that actor, but other cores/actors remain responsive).
+    *   Upon completion, the worker `push`es a `BlockingResponseEvent` back to the original requester.
+*   **`qb::io::async::callback` (for short, infrequent calls):** As detailed in `[Integrating Core & IO: Asynchronous Operations within Actors](./../5_core_io_integration/async_in_actors.md)`, you can wrap a blocking call in a lambda scheduled by `async::callback`. While the callback itself will block its turn on the `VirtualCore`, it prevents the main event handler from blocking.
 
-class DatabaseActor : public qb::Actor {
-private:
-    DatabaseConnection _connection; // The managed resource
-public:
-    bool onInit() override { registerEvent<DbQuery>(*this); /* ... connect ... */ return true; }
+**(Reference:** `example/core_io/file_processor/` uses `async::callback` within its `FileWorker` actors to handle blocking file I/O.)**
 
-    void on(const DbQuery& event) {
-        // Execute query using _connection
-        ResultData result = _connection.execute(event.sql);
-        // Send result back
-        reply(DbResult(result)); // Or push<DbResult>(event.getSource(), result);
-    }
-};
+## 6. Custom Actor Schedulers & `VirtualCore` Customization (Conceptual/Advanced)
 
-class ClientActor : public qb::Actor {
-private:
-    qb::ActorId _db_actor_id;
-public:
-    // ... onInit to get _db_actor_id ...
-    void queryDatabase() {
-        push<DbQuery>(_db_actor_id, "SELECT ...");
-    }
-    void on(const DbResult& event) {
-        // Process result
-    }
-};
-```
-**(Ref:** `example6_shared_queue.cpp` (uses a thread-safe queue shared via `shared_ptr`, but the principle of a central manager actor applies)**)
+While `qb-core` provides a robust general-purpose scheduler within each `VirtualCore`, extremely advanced scenarios *could* (with framework modification or careful hooking, if possible) involve:
 
-## Request/Reply Pattern
+*   **Priority Queues for Events:** Modifying `VirtualCore` to use priority queues for actor mailboxes if certain actors or event types have stringent real-time requirements over others on the same core.
+*   **Custom `VirtualCore` Logic:** For deeply embedded systems or specialized hardware, one might envision a scenario requiring modifications to the `VirtualCore`'s main loop itself. This is far beyond typical usage and would involve in-depth understanding of QB's internals.
 
-While actors are asynchronous, request/reply interactions are common.
+These advanced patterns and techniques require a solid understanding of both the Actor Model and QB's specific implementation. Always start with simpler patterns and only introduce more complexity when performance measurements or system requirements clearly justify it. The provided examples are excellent resources for seeing many of these concepts in action.
 
-*   **Mechanism:**
-    1.  Actor A sends a `RequestEvent` (containing a unique request ID) to Actor B.
-    2.  Actor A might store the request ID and its own state related to the request (e.g., in a map).
-    3.  Actor B processes the request.
-    4.  Actor B sends a `ResponseEvent` (containing the same request ID and the result) back to Actor A (using `event.getSource()` from the request or `reply()`).
-    5.  Actor A receives the `ResponseEvent`, uses the request ID to look up the original context, and processes the result.
-*   **Timeouts:** Actor A might use `qb::io::async::callback` to schedule a timeout check for the request ID. If the response doesn't arrive in time, it can handle the timeout (e.g., retry, report error).
-
-**(Ref:** Many examples implicitly use this, e.g., `example8_state_machine.cpp::StatusRequestEvent/StatusResponseEvent`, `example/core_io/file_processor/`**)
-
-## Error Handling and Supervision
-
-QB Core itself doesn't impose a specific supervision strategy, but the Actor Model enables various approaches:
-
-*   **Let It Crash:** Often the simplest. If an actor encounters a critical error (e.g., unhandled exception, logic error), let its `VirtualCore` catch it (which sets `main.hasError()`) or let the actor `kill()` itself. The rest of the system continues running. This relies on other parts of the system being resilient to the failure of one actor.
-*   **Explicit Error Events:** Actors can catch exceptions or detect errors and send specific `ErrorEvent` messages to designated error handlers or supervisors.
-*   **Supervisor Actors:** A parent/supervisor actor can monitor its children (e.g., using `require<T>` or by tracking child IDs). If a child fails (detected perhaps by a lack of response or an explicit error event), the supervisor can decide whether to restart it, delegate its work, or escalate the failure.
-*   **Timeouts:** Use timeouts (via `with_timeout` or `async::callback`) to detect unresponsive actors.
-
-**(Ref:** `test-actor-error-handling.cpp` explores basic error simulation, `test-main.cpp` checks `hasError()`**)
-
-## Performance Tuning
-
-*   **Core Affinity (`setAffinity`):** Pin critical actors or groups of communicating actors to specific CPU cores to improve cache locality and reduce context switching.
-*   **Core Latency (`setLatency`):** Use `0` for cores handling latency-sensitive tasks (e.g., network polling, real-time processing). Use small positive values for cores with less critical timing requirements to save CPU cycles.
-*   **`push` vs. `send`:** Prefer `push` for ordered delivery and non-trivial events. Consider `send` *only* for same-core, unordered, trivially destructible events where minimal latency is paramount.
-*   **Pipes & Builders (`getPipe`, `to`):** Use `pipe.allocated_push` for potentially large events to avoid reallocations. Use `to(...).push(...).push(...)` if sending many events sequentially to the same destination for minor efficiency gains.
-*   **Referenced Actors (`addRefActor`):** Can reduce event passing overhead for tightly coupled actors *on the same core*, but introduces direct coupling and potential state consistency risks if not used carefully.
-*   **Event Design:** Pass large data via `std::shared_ptr` within events rather than copying large objects.
-
-**(Ref:** `[QB-Core: Engine](./../4_qb_core/engine.md)`, `[QB-Core: Messaging](./../4_qb_core/messaging.md)`, `[Guides: Performance Tuning](./performance_tuning.md)`**)
-
-## Distributed Computation Patterns
-
-QB actors can form the basis of distributed task processing systems.
-
-*   **Manager/Worker:** A central manager actor distributes tasks to multiple worker actors (potentially across cores).
-*   **Load Balancing:** The manager can track worker availability/load (e.g., via heartbeats or status events) to distribute tasks intelligently.
-*   **Result Aggregation:** A dedicated collector actor can receive results from workers.
-*   **Monitoring:** A monitor actor can oversee the system, track statistics, and manage startup/shutdown.
-
-**(Ref:** `example/core/example10_distributed_computing.cpp` provides a sophisticated example of this.**) 
+**(Next:** Consider exploring `[Guides: Performance Tuning Guide](./performance_tuning.md)` or `[Guides: Error Handling & Resilience Guide](./error_handling.md)` for more specialized advice.**) 

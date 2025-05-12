@@ -128,13 +128,16 @@ public:
 
 /**
  * @class client
- * @brief Standalone asynchronous TCP client
- *
- * This specialization of the client template is used for standalone clients
- * that are not associated with a server, typically for outgoing connections.
+ * @brief Standalone asynchronous TCP client specialization without server association
+ * @details
+ * This specialization of the client template is used for standalone clients that are not
+ * associated with any server, typically for outgoing connections. It includes all the
+ * basic functionality of the generic client but without server-specific features.
  *
  * @tparam _Derived The derived class type (CRTP pattern)
- * @tparam _Transport The transport class type
+ * @tparam _Transport The transport layer implementation type
+ *
+ * @ingroup TCP
  */
 template <typename _Derived, typename _Transport>
 class client<_Derived, _Transport, void>
@@ -144,6 +147,7 @@ class client<_Derived, _Transport, void>
     friend base_t;
 
 public:
+    using base_io_t = io<_Derived>; /**< Base I/O type */
     using transport_io_type =
         typename _Transport::transport_io_type; /**< Transport I/O type */
     using _Transport::in;        /**< Import the in method from the transport */

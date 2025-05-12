@@ -37,10 +37,13 @@
 */
 // #define QB_HEADER_ONLY 1
 
-/*
-** Uncomment or add compiler flag -DQB_ENABLE_UDS to enable unix domain socket via
-*SOCK_STREAM
-*/
+/**
+ * @def QB_ENABLE_UDS
+ * @brief Enables Unix Domain Socket support via SOCK_STREAM
+ * @details When defined as 1, enables support for Unix Domain Sockets which
+ * provide efficient inter-process communication on Unix-like systems
+ * @ingroup IO
+ */
 #ifndef QB_ENABLE_UDS
 #define QB_ENABLE_UDS 1
 #endif
@@ -52,29 +55,59 @@
 */
 // #define QB_NT_COMPAT_GAI 1
 
+/**
+ * @def QB__DECL
+ * @brief Function declaration specifier that changes based on whether header-only mode is enabled
+ * @details When QB_HEADER_ONLY is defined, functions are marked as inline
+ * @ingroup IO
+ */
 #if defined(QB_HEADER_ONLY)
 #define QB__DECL inline
 #else
 #define QB__DECL
 #endif
 
-/*
-** The interop decl, it's useful for store managed c# function as c++ function pointer
-*properly.
-*/
+/**
+ * @def QB_INTEROP_DECL
+ * @brief Interoperability declaration for function pointers
+ * @details Used for properly storing managed C# functions as C++ function pointers
+ * Uses __stdcall on 32-bit Windows platforms
+ * @ingroup IO
+ */
 #if !defined(_WIN32) || QB__64BITS
 #define QB_INTEROP_DECL
 #else
 #define QB_INTEROP_DECL __stdcall
 #endif
 
+/**
+ * @def QB_ARRAYSIZE(A)
+ * @brief Macro to calculate the number of elements in a statically-allocated array
+ * @param A Array to determine the size of
+ * @return Number of elements in the array
+ * @ingroup IO
+ */
 #define QB_ARRAYSIZE(A) (sizeof(A) / sizeof((A)[0]))
+
+/**
+ * @def QB_SSIZEOF(T)
+ * @brief Macro to get the size of a type as a signed integer
+ * @param T Type to get the size of
+ * @return Size of the type as a signed integer
+ * @ingroup IO
+ */
 #define QB_SSIZEOF(T) static_cast<int>(sizeof(T))
 
 // clang-format off
-/*
-** QB_OBSOLETE_DEPRECATE
-*/
+/**
+ * @def QB_OBSOLETE_DEPRECATE(_Replacement)
+ * @brief Marks functions as deprecated with a replacement suggestion
+ * @details Cross-platform macro that applies the appropriate compiler-specific
+ * deprecation annotation. On GCC/Clang, it uses __attribute__((deprecated)),
+ * on MSVC it uses __declspec(deprecated) with a message suggesting the replacement.
+ * @param _Replacement The recommended replacement function name
+ * @ingroup IO
+ */
 #if defined(__GNUC__) && ((__GNUC__ >= 4) || ((__GNUC__ == 3) && (__GNUC_MINOR__ >= 1)))
 #  define QB_OBSOLETE_DEPRECATE(_Replacement) __attribute__((deprecated))
 #elif _MSC_VER >= 1400 // vs 2005 or higher
@@ -93,19 +126,46 @@
 /*
 **  The qb version macros
 */
+/**
+ * @def QB_VERSION_NUM
+ * @brief Defines the QB library version number in hexadecimal format
+ * @details Format is 0xMMNNRR where MM=major, NN=minor, RR=revision
+ * @ingroup IO
+ */
 #define QB_VERSION_NUM 0x033705
 
-// The default ttl of multicast
+/**
+ * @def QB_DEFAULT_MULTICAST_TTL
+ * @brief Default Time-To-Live value for multicast packets
+ * @details Sets the default number of hops a multicast packet can traverse
+ * @ingroup IO
+ */
 #define QB_DEFAULT_MULTICAST_TTL (int) 128
 
-// The max internet buffer size
+/**
+ * @def QB_INET_BUFFER_SIZE
+ * @brief Maximum size for internet protocol buffers
+ * @details Defines the maximum buffer size for TCP/IP communication (65536 bytes)
+ * @ingroup IO
+ */
 #define QB_INET_BUFFER_SIZE 65536
 
-// The max pdu buffer length, avoid large memory allocation when application decode a
-// huge length.
+/**
+ * @def QB_MAX_PDU_BUFFER_SIZE
+ * @brief Maximum Protocol Data Unit buffer size
+ * @details Limits the size of PDU buffers to avoid large memory allocations
+ * when decoding (1MB)
+ * @ingroup IO
+ */
 #define QB_MAX_PDU_BUFFER_SIZE static_cast<int>(1 * 1024 * 1024)
 
-// The max Initial Bytes To Strip for unpack.
+/**
+ * @def QB_UNPACK_MAX_STRIP
+ * @brief Maximum number of initial bytes that can be stripped during unpacking
+ * @details Limits the number of bytes that can be removed from the beginning
+ * of a message during protocol unpacking operations
+ * @ingroup IO
+ */
 #define QB_UNPACK_MAX_STRIP 32
 
 #ifdef _WIN32
@@ -155,28 +215,89 @@ typedef int socklen_t;
 #include <sys/socket.h>
 #include <sys/un.h>
 #if !defined(SD_RECEIVE)
+/**
+ * @def SD_RECEIVE
+ * @brief Socket shutdown flag for disabling receive operations
+ * @details Cross-platform macro that maps to platform-specific constants
+ * (SHUT_RD on Unix, SD_RECEIVE on Windows)
+ * @ingroup IO
+ */
 #define SD_RECEIVE SHUT_RD
 #endif
 #if !defined(SD_SEND)
+/**
+ * @def SD_SEND
+ * @brief Socket shutdown flag for disabling send operations
+ * @details Cross-platform macro that maps to platform-specific constants
+ * (SHUT_WR on Unix, SD_SEND on Windows)
+ * @ingroup IO
+ */
 #define SD_SEND SHUT_WR
 #endif
 #if !defined(SD_BOTH)
+/**
+ * @def SD_BOTH
+ * @brief Socket shutdown flag for disabling both send and receive operations
+ * @details Cross-platform macro that maps to platform-specific constants
+ * (SHUT_RDWR on Unix, SD_BOTH on Windows)
+ * @ingroup IO
+ */
 #define SD_BOTH SHUT_RDWR
 #endif
 #if !defined(closesocket)
+/**
+ * @def closesocket
+ * @brief Cross-platform macro for closing a socket
+ * @details Maps to close() on Unix systems, keeps closesocket() on Windows
+ * @ingroup IO
+ */
 #define closesocket close
 #endif
 #if !defined(ioctlsocket)
+/**
+ * @def ioctlsocket
+ * @brief Cross-platform macro for socket I/O control
+ * @details Maps to ioctl() on Unix systems, keeps ioctlsocket() on Windows
+ * @ingroup IO
+ */
 #define ioctlsocket ioctl
 #endif
 #if defined(__linux__)
 #define SO_NOSIGPIPE MSG_NOSIGNAL
 #endif
+/**
+ * @typedef socket_type
+ * @brief Cross-platform socket handle type
+ * @details int on Unix systems, SOCKET (unsigned integer) on Windows
+ * @ingroup IO
+ */
 typedef int socket_type;
+/**
+ * @def FD_TO_SOCKET(fd)
+ * @brief Converts a file descriptor to a socket handle
+ * @details On Unix, returns fd unchanged. On Windows, converts using _get_osfhandle()
+ * @param fd File descriptor to convert
+ * @return Equivalent socket handle
+ * @ingroup IO
+ */
 #define FD_TO_SOCKET(fd) fd
+/**
+ * @def OPEN_FD_FROM_SOCKET(sock)
+ * @brief Converts a socket handle to a file descriptor
+ * @details On Unix, returns sock unchanged. On Windows, converts using _open_osfhandle()
+ * @param sock Socket handle to convert
+ * @return Equivalent file descriptor
+ * @ingroup IO
+ */
 #define OPEN_FD_FROM_SOCKET(sock) sock
 #undef socket
 #endif
+/**
+ * @def SD_NONE
+ * @brief Special value indicating no socket shutdown operation
+ * @details Used to indicate that no shutdown operation should be performed
+ * @ingroup IO
+ */
 #define SD_NONE -1
 
 #include <fcntl.h> // common platform header
@@ -267,9 +388,21 @@ typedef int socket_type;
 #endif
 
 #if !defined(MAXNS)
+/**
+ * @def MAXNS
+ * @brief Maximum number of nameservers
+ * @details Defines the maximum number of DNS nameservers that can be configured
+ * @ingroup IO
+ */
 #define MAXNS 3
 #endif
 
+/**
+ * @def IN_MAX_ADDRSTRLEN
+ * @brief Maximum length of string representation for an IP address
+ * @details Set to INET6_ADDRSTRLEN to accommodate IPv6 addresses, which are longer than IPv4
+ * @ingroup IO
+ */
 #define IN_MAX_ADDRSTRLEN INET6_ADDRSTRLEN
 
 #endif

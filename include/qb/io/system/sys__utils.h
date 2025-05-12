@@ -1,10 +1,10 @@
 /**
  * @file qb/io/system/sys__utils.h
- * @brief System utilities and high-precision clock functions
+ * @brief System utilities including high-precision clock functions and generic helpers.
  *
  * This file provides utility functions related to time measurement and
  * performance tracking, particularly high-precision clocks. It also offers
- * helper functions for value manipulation and object management.
+ * helper functions for value manipulation (like `clamp`) and object management (`invoke_dtor`).
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -19,6 +19,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ * @ingroup System
  */
 
 #ifndef QB_IO_UTILS_H
@@ -30,34 +31,38 @@
 
 namespace qb {
 /**
- * @brief Type for representing high-precision time values (nanoseconds)
+ * @typedef highp_time_t
+ * @ingroup Time
+ * @brief Type for representing high-precision time values, typically in nanoseconds.
+ *        Defined as `long long`.
  */
 typedef long long highp_time_t;
 
 /**
- * @brief High-resolution clock for performance measurements
- *
- * This clock is used to measure time intervals with high precision,
- * particularly for benchmarking and performance measurement.
+ * @typedef steady_clock_t
+ * @ingroup Time
+ * @brief Alias for `std::chrono::high_resolution_clock`.
+ * @details This clock is used to measure time intervals with high precision, suitable for
+ *          benchmarking and performance measurement. It is generally monotonic.
  */
 typedef std::chrono::high_resolution_clock steady_clock_t;
 
 /**
- * @brief System clock that can be adjusted
- *
- * This clock represents the system time, which can be modified by the user
- * or synchronized with an NTP server.
+ * @typedef system_clock_t
+ * @ingroup Time
+ * @brief Alias for `std::chrono::system_clock`.
+ * @details This clock represents the system-wide real time wall clock. It may be adjusted
+ *          (e.g., by the user or NTP synchronization) and is not guaranteed to be monotonic.
  */
 typedef std::chrono::system_clock system_clock_t;
 
 /**
- * @brief Gets a timestamp in nanoseconds since epoch
- *
- * This function returns a high-precision timestamp in nanoseconds
- * since the epoch (January 1, 1970).
- *
- * @tparam _Ty Clock type to use (default: steady_clock_t)
- * @return Timestamp in nanoseconds
+ * @brief Gets a timestamp in nanoseconds since epoch from a specified clock.
+ * @ingroup Time
+ * @tparam _Ty Clock type to use (e.g., `steady_clock_t`, `system_clock_t`). Defaults to `steady_clock_t`.
+ * @return Timestamp in nanoseconds as `highp_time_t` (`long long`).
+ * @details This function returns a high-precision timestamp by converting the duration
+ *          since the clock's epoch to nanoseconds.
  */
 template <typename _Ty = steady_clock_t>
 inline highp_time_t
@@ -67,13 +72,11 @@ xhighp_clock() {
 }
 
 /**
- * @brief Gets a timestamp in microseconds since epoch
- *
- * This function returns a high-precision timestamp in microseconds
- * since the epoch (January 1, 1970).
- *
- * @tparam _Ty Clock type to use (default: steady_clock_t)
- * @return Timestamp in microseconds
+ * @brief Gets a timestamp in microseconds since epoch from a specified clock.
+ * @ingroup Time
+ * @tparam _Ty Clock type to use. Defaults to `steady_clock_t`.
+ * @return Timestamp in microseconds as `highp_time_t`.
+ * @details This is a convenience wrapper around `xhighp_clock`, dividing by 1000.
  */
 template <typename _Ty = steady_clock_t>
 inline highp_time_t
@@ -82,13 +85,11 @@ highp_clock() {
 }
 
 /**
- * @brief Gets a timestamp in milliseconds since epoch
- *
- * This function returns a normal-precision timestamp in milliseconds
- * since the epoch (January 1, 1970).
- *
- * @tparam _Ty Clock type to use (default: steady_clock_t)
- * @return Timestamp in milliseconds
+ * @brief Gets a timestamp in milliseconds since epoch from a specified clock.
+ * @ingroup Time
+ * @tparam _Ty Clock type to use. Defaults to `steady_clock_t`.
+ * @return Timestamp in milliseconds as `highp_time_t`.
+ * @details This is a convenience wrapper around `xhighp_clock`, dividing by 1,000,000.
  */
 template <typename _Ty = steady_clock_t>
 inline highp_time_t
@@ -97,13 +98,12 @@ clock() {
 }
 
 /**
- * @brief Gets the current time in seconds since epoch
- *
- * This function offers better performance than chrono on Win32.
- * See: win10 sdk ucrt/time/time.cpp:common_time
- * https://docs.microsoft.com/en-us/windows/desktop/sysinfo/acquiring-high-resolution-time-stamps
- *
- * @return Timestamp in seconds
+ * @brief Gets the current calendar time in seconds since epoch (00:00:00 UTC, January 1, 1970).
+ * @ingroup Time
+ * @return Timestamp in seconds as `highp_time_t` (effectively `time_t` cast to `long long`).
+ * @details This function calls `::time(nullptr)`. It may offer better performance than
+ *          chrono-based equivalents on some platforms for second-precision wall time.
+ * @note Subject to system clock adjustments.
  */
 inline highp_time_t
 time_now() {
@@ -114,16 +114,16 @@ time_now() {
 using std::clamp;
 #else
 /**
- * @brief Constrains a value between a lower and upper bound
- *
- * This function is a compatibility implementation of std::clamp for
- * versions prior to C++17.
- *
- * @tparam _Ty Type of the value and bounds
- * @param v Value to constrain
- * @param lo Lower bound
- * @param hi Upper bound
- * @return The value constrained between lo and hi
+ * @brief Constrains a value to be within a specified range [lo, hi].
+ * @ingroup MiscUtils
+ * @tparam _Ty Type of the value and bounds. Must support comparison operators.
+ * @param v The value to constrain.
+ * @param lo The lower bound of the range.
+ * @param hi The upper bound of the range.
+ * @return The value `v` clamped to the range [`lo`, `hi`]. If `v < lo`, returns `lo`.
+ *         If `v > hi`, returns `hi`. Otherwise, returns `v`.
+ * @note This is a compatibility implementation of `std::clamp` for C++ versions prior to C++17.
+ *       Asserts that `!(hi < lo)`.
  */
 template <typename _Ty>
 const _Ty &
@@ -134,13 +134,13 @@ clamp(const _Ty &v, const _Ty &lo, const _Ty &hi) {
 #endif
 
 /**
- * @brief Explicitly invokes the destructor of an object without freeing its memory
- *
- * This function is useful for manual memory management, particularly
- * when objects are allocated with placement new.
- *
- * @tparam _Ty Type of the object
- * @param p Pointer to the object whose destructor should be called
+ * @brief Explicitly invokes the destructor of an object without deallocating its memory.
+ * @ingroup MiscUtils
+ * @tparam _Ty Type of the object.
+ * @param p Pointer to the object whose destructor should be called.
+ * @details This function is typically used in advanced scenarios involving manual memory management,
+ *          such as when objects are constructed using placement new in a custom memory buffer.
+ *          Misuse can lead to undefined behavior (e.g., double destruction).
  */
 template <typename _Ty>
 inline void

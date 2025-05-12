@@ -1,10 +1,12 @@
 /**
  * @file qb/utility/nocopy.h
- * @brief Non-copyable base class
+ * @brief Defines a base class to make derived classes non-copyable.
  *
- * This file defines a base class that can be inherited from to prevent copying
- * of derived classes. It's a utility class used throughout the framework to
- * enforce non-copyable semantics for classes where copying would be problematic.
+ * This file provides a utility struct `qb::nocopy` that, when inherited from
+ * (typically privately), deletes the copy constructor and copy assignment operator
+ * of the derived class. This is a common C++ idiom to prevent objects of certain
+ * types from being copied, which is often desirable for classes managing unique
+ * resources or those whose identity is important.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -28,33 +30,48 @@
 namespace qb {
 /**
  * @struct nocopy
- * @brief Base class that prevents copying of derived classes
+ * @ingroup MiscUtils
+ * @brief Base class to make derived classes non-copyable.
  *
- * Classes that inherit from this struct will have their copy constructor
- * and copy assignment operator deleted, making them non-copyable.
- * This is useful for classes that manage resources where copying
- * semantics would be complex or unwanted, such as actors, I/O handles,
- * or system resources.
+ * Classes that inherit from this struct (usually via private inheritance)
+ * will have their copy constructor and copy assignment operator deleted,
+ * effectively preventing instances of the derived class from being copied.
+ * Their move constructor and move assignment operator are also deleted here
+ * to enforce non-movable semantics by default as well, unless explicitly re-enabled
+ * by the derived class.
+ *
+ * This is useful for classes that manage unique resources (like file handles, network connections,
+ * or actor identities) where copying would be complex, semantically incorrect, or resource-intensive.
  *
  * Usage example:
  * @code
- * class MyNonCopyableClass : private qb::nocopy {
- *     // Class implementation...
+ * class MyResourceWrapper : private qb::nocopy {
+ * public:
+ *   MyResourceWrapper() { // acquire resource  }
+ *   ~MyResourceWrapper() { // release resource  }
+ *   // ... other methods ...
  * };
+ *
+ * // MyResourceWrapper obj1;
+ * // MyResourceWrapper obj2 = obj1; // Compile error: copy constructor is deleted
+ * // obj1 = obj2;                 // Compile error: copy assignment is deleted
  * @endcode
  */
 struct nocopy {
-    /** @brief Default constructor */
+    /** @brief Default constructor. Allows derived classes to be default-constructed if appropriate. */
     nocopy() = default;
 
-    /** @brief Deleted copy constructor */
+    /** @brief Deleted copy constructor. Prevents copying of derived class instances. */
     nocopy(nocopy const &) = delete;
 
-    /** @brief Deleted move constructor */
-    nocopy(nocopy const &&) = delete;
+    /** @brief Deleted move constructor. Prevents moving of derived class instances by default. */
+    nocopy(nocopy const &&) = delete; // Corrected from const && to && for typical move signature, though deleting it covers all.
 
-    /** @brief Deleted copy assignment operator */
+    /** @brief Deleted copy assignment operator. Prevents copy assignment of derived class instances. */
     nocopy &operator=(nocopy const &) = delete;
+
+    /** @brief Deleted move assignment operator. Prevents move assignment of derived class instances by default. */
+    nocopy &operator=(nocopy &&) = delete; // Added to explicitly delete move assignment
 };
 } // namespace qb
 

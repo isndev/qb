@@ -1,3 +1,6 @@
+@page readme_main QB Actor Framework README  
+@brief Main README for the QB Actor Framework, providing an overview and navigation.
+
 # QB Actor Framework
 
 **High-Performance C++17 Actor Framework for Concurrent & Distributed Systems**
@@ -27,21 +30,21 @@ The framework consists of two main libraries:
 
 ```
 +---------------------+      +----------------------+
-|    Your Application   |      |   Framework Examples |
+|    Your Application |      |   Framework Examples |
 +----------^----------+      +----------^-----------+
            |                         |
            |  Uses                   |  Uses
            v                         v
 +-----------------------------------------------------+
 |                     qb-core                         |
-|    (qb::Actor, qb::Main, qb::VirtualCore, qb::Event) |
+|    (qb::Actor, qb::Main, qb::VirtualCore, qb::Event)|
 +--------------------------^--------------------------+
                            |
                            | Depends on / Integrates with
                            v
 +-----------------------------------------------------+
 |                      qb-io                          |
-| (async::io, transports, protocols, crypto, utils) |
+| (async::io, transports, protocols, crypto, utils)   |
 +-----------------------------------------------------+
                            |
                            | Uses / Abstracts

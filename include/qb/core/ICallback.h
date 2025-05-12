@@ -29,8 +29,8 @@
 namespace qb {
 
 /*!
- * @interface ICallback core/ICallback.h qb/icallback.h
- * @ingroup Core
+ * @interface ICallback
+ * @ingroup Callback
  * @brief Interface for actor callbacks
  * @details
  * ICallback provides an interface for implementing actor callbacks that are executed
@@ -62,6 +62,12 @@ public:
     virtual void onCallback() = 0;
 };
 
+/**
+ * @typedef icallback
+ * @brief Alias for the ICallback interface
+ * @details Provided for naming consistency with other lowercase aliases in the framework
+ * @ingroup Callback
+ */
 using icallback = ICallback;
 
 } // namespace qb

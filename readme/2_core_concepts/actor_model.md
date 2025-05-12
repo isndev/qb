@@ -1,113 +1,152 @@
+@page core_concepts_actor_model_md Core Concept: The Actor Model in QB
+@brief Understand how QB implements the Actor Model for robust, concurrent programming, focusing on `qb::Actor` and `qb::ActorId`.
+
 # Core Concept: The Actor Model in QB
 
-The QB framework implements the [Actor Model](https://en.wikipedia.org/wiki/Actor_model) as its core concurrency paradigm. Actors are the fundamental primitives for computation and state management.
+The QB framework is built upon the [Actor Model](https://en.wikipedia.org/wiki/Actor_model), a powerful paradigm for designing concurrent and distributed systems. Instead of directly managing threads and locks, you work with **actors**: independent, isolated units of computation and state.
 
-## `qb::Actor` - The Building Block
+## `qb::Actor`: The Heart of Your Concurrent Logic
 
-All actors in the system derive publicly from the `qb::Actor` base class.
+Every actor in your system will inherit from the `qb::Actor` base class (`qb/core/Actor.h`). Think of an actor as a specialized object with these key characteristics:
 
-**Key Characteristics:**
+*   **Autonomous and Isolated:** Each actor is a self-contained entity. Its internal data (member variables, or "state") is strictly private and protected from direct access by any other actor. This is fundamental to preventing data races and simplifying concurrent state management.
+*   **Message-Driven:** Actors interact *exclusively* by sending asynchronous messages (called **events**) to one another. An actor's behavior is defined by how it reacts to the events it receives.
+*   **Sequential Processing:** Each actor has an implicit mailbox where incoming events are queued. The actor processes these events one at a time, in the order they are effectively received by its managing `VirtualCore`. This sequential processing of its own events guarantees that an actor's internal state is modified safely, without internal race conditions.
 
-*   **Autonomous Unit:** Each actor is an independent unit with its own state and behavior.
-*   **State Encapsulation:** An actor's internal state (member variables) is private and logically protected. Direct access from outside the actor is impossible. All interactions that might modify state occur via message passing.
-*   **Message-Driven Behavior:** An actor's logic is defined by how it reacts to incoming messages (events). This logic resides in `on(Event&)` handler methods.
-*   **Sequential Processing:** Each actor processes messages from its implicit mailbox one at a time, in the order they are received by its `VirtualCore`. This guarantees that an actor's internal state is never subject to data races from concurrent event handling *within that actor*.
-*   **Asynchronous Communication:** Actors send messages (`qb::Event`) to other actors via their `qb::ActorId` without waiting for processing or reply.
+A simplified view of actor interaction:
+```text
++-----------+      +-----------------+      +-----------+
+|  Actor A  |----->|   Event Message |----->|  Actor B  |
+| (Sender)  |      | (e.g., MyEvent) |      | (Receiver)|
++-----------+      +-----------------+      +-----------+
+     |                                           ^
+     | 1. push<MyEvent>(actor_b_id, ...)         | 3. Processes MyEvent
+     +-------------------------------------------+
+                                                 | 2. Event arrives in
+                                                 |    Actor B's mailbox
+```
+
+### Defining a Simple Actor
+
+Let's look at a basic example. (A runnable version can be found in `example/core/example1_simple_actor.cpp`.)
 
 ```cpp
-// Simplified Example (See example/core/simple_actor.cpp for a runnable version)
-#include <qb/actor.h>
-#include <qb/event.h>
-#include <qb/io.h> // For qb::io::cout
-#include <iostream>
+// Include necessary QB headers
+#include <qb/actor.h> // For qb::Actor, qb::ActorId
+#include <qb/event.h>   // For qb::Event
+#include <qb/io.h>      // For qb::io::cout (thread-safe console output)
+#include <iostream>     // For std::endl
 
+// --- 1. Define Your Event(s) ---
+// Events are simple structs or classes inheriting from qb::Event
 struct CountEvent : qb::Event {
-    int increment;
+    int increment_by;
+    // Constructor to easily create the event with data
+    explicit CountEvent(int amount) : increment_by(amount) {}
 };
 
+// --- 2. Define Your Actor ---
 class CounterActor : public qb::Actor {
 private:
-    int _count = 0;
+    // --- Actor's Private State ---
+    int _current_count = 0;
 
 public:
-    // Initialization - Called once after construction and ID assignment
+    // --- Constructor (optional) ---
+    CounterActor() = default;
+
+    // --- Initialization (Essential) ---
+    // Called once after construction and after the actor is assigned its unique ID.
     bool onInit() override {
-        qb::io::cout() << "CounterActor [" << id() << "] Initialized." << std::endl;
-        // *** Crucial: Register event handlers here ***
-        registerEvent<CountEvent>(*this);
-        registerEvent<qb::KillEvent>(*this); // Best practice: handle shutdown
-        return true; // Return false to abort actor creation
+        qb::io::cout() << "CounterActor [" << id() << "] initialized on core " << getIndex() << ".\n";
+        
+        // *** CRUCIAL: Register event handlers here! ***
+        registerEvent<CountEvent>(*this);       // This actor will now handle CountEvent
+        registerEvent<qb::KillEvent>(*this);  // Best practice: always handle KillEvent for graceful shutdown
+        
+        return true; // Return false to prevent the actor from starting
     }
 
-    // Event Handler for CountEvent
+    // --- Event Handlers ---
+    // Implement public methods to handle registered events.
+    // The method signature must match the event type.
     void on(const CountEvent& event) {
-        _count += event.increment;
-        qb::io::cout() << "CounterActor [" << id() << "] received CountEvent. Count is now: " << _count << std::endl;
+        _current_count += event.increment_by;
+        qb::io::cout() << "CounterActor [" << id() << "] received CountEvent. Count is now: " << _current_count << ".\n";
 
-        // Example termination condition
-        if (_count >= 5) {
-            qb::io::cout() << "CounterActor [" << id() << "] reached target count, terminating." << std::endl;
-            kill();
+        // Example: Actor decides to terminate itself based on its state
+        if (_current_count >= 10) {
+            qb::io::cout() << "CounterActor [" << id() << "] reached target. Terminating.\n";
+            kill(); // Request self-termination
         }
     }
 
-    // Event Handler for KillEvent
-    void on(const qb::KillEvent& event) {
-        qb::io::cout() << "CounterActor [" << id() << "] received KillEvent. Shutting down." << std::endl;
-        // Perform any pre-shutdown cleanup here if necessary
-        kill(); // MUST call base kill() to actually terminate
+    void on(const qb::KillEvent& /*event*/) { // Parameter often unused for KillEvent
+        qb::io::cout() << "CounterActor [" << id() << "] received KillEvent. Shutting down.\n";
+        // Perform any pre-shutdown cleanup specific to this actor if necessary
+        kill(); // IMPORTANT: Must call base kill() to complete termination
     }
 
-    // Destructor - Called after the actor is terminated and removed
+    // --- Destructor (Optional but good for RAII) ---
+    // Called after the actor has fully terminated and is being removed from the system.
     ~CounterActor() override {
-        qb::io::cout() << "CounterActor [" << id() << "] destroyed. Final count: " << _count << std::endl;
+        qb::io::cout() << "CounterActor [" << id() << "] destroyed. Final count: " << _current_count << ".\n";
     }
 };
 ```
 
-## Actor Identification: `qb::ActorId`
+Key takeaways from the example:
+*   **`onInit()` is Vital:** This is where you *must* call `registerEvent<YourEventType>(*this)` for every type of event your actor intends to process.
+*   **Event Handlers:** Public methods named `on` with a parameter of the event type (e.g., `void on(const CountEvent& event)`).
+*   **Self-Termination:** An actor can decide to shut itself down by calling `kill()`.
+*   **RAII:** Use member variables with destructors (like `std::unique_ptr`, `std::fstream`, custom classes) for resource management. They will be cleaned up when the actor is destroyed.
 
-Every actor running in the system has a unique `qb::ActorId` (`qb/include/qb/core/ActorId.h`). This ID is crucial for addressing messages.
+## Actor Identity: `qb::ActorId`
 
-*   **Structure:** A 32-bit identifier combining:
-    *   `CoreId` (typically uint16_t): The index of the `VirtualCore` thread hosting the actor.
-    *   `ServiceId` (typically uint16_t): A unique ID *within* that core.
-*   **Obtaining:** `id()` method within an actor; returned by `main.addActor()`, `core.addActor()`, `actor.addRefActor()->id()`.
-*   **Methods:**
-    *   `sid()`: Get the Service ID part.
-    *   `index()`: Get the Core ID part.
-    *   `is_valid()`: Check if the ID is not the default/invalid ID (`ActorId()`).
-    *   `is_broadcast()`: Check if it's a broadcast ID.
-*   **Special IDs:**
-    *   `ActorId()`: Default-constructed, invalid ID.
-    *   `qb::BroadcastId(core_id)`: An `ActorId` specifically constructed to target all actors on a given core (used with `push`/`send`). `ActorId::BroadcastSid` is the underlying `ServiceId` constant.
+Every active actor in the QB system possesses a unique `qb::ActorId` (`qb/core/ActorId.h`). This ID is the "address" you use to send events to a specific actor.
+
+*   **Composition:** It's a 32-bit identifier combining:
+    *   `CoreId` (uint16_t): The index of the `VirtualCore` (worker thread) hosting the actor.
+    *   `ServiceId` (uint16_t): An ID unique *within that specific core*.
+*   **How to Get It:**
+    *   Inside an actor: Call the `id()` method.
+    *   When creating an actor: Returned by `main.addActor<MyActor>(core_id, ...)`, `core.addActor<MyActor>(...)`, or `parent_actor.addRefActor<ChildActor>()->id()`.
+*   **Key `qb::ActorId` Methods:**
+    *   `sid()`: Returns the `ServiceId` part.
+    *   `index()`: Returns the `CoreId` part.
+    *   `is_valid()`: Checks if the ID is a valid, assigned ID (not the default-constructed, invalid `ActorId()`).
+    *   `is_broadcast()`: Checks if it's a special broadcast ID.
+*   **Special `ActorId` Values:**
+    *   `qb::ActorId()`: A default-constructed, invalid ID. Useful for uninitialized ID members.
+    *   `qb::BroadcastId(core_id)`: A special ID used with `push<Event>(BroadcastId(core_id), ...)` to send an event to *all* actors running on the specified `core_id`. The underlying `ServiceId` for this is `ActorId::BroadcastSid`.
 
 ```cpp
-qb::ActorId self = id();
-qb::ActorId target = ...; // Get target ID
-qb::ActorId invalid_id;
+// Inside an actor method:
+qb::ActorId self_id = id();
+qb::ActorId some_target_actor_id = getTarget(); // Assume getTarget() returns a valid ActorId
 
-if (target.is_valid()) {
-    push<MyEvent>(target);
+if (some_target_actor_id.is_valid()) {
+    push<MyEvent>(some_target_actor_id, /* event data */);
 }
 
-// Broadcast to all actors on core 1
-push<SystemUpdate>(qb::BroadcastId(1));
+// To broadcast an event to all actors on core 1:
+qb::ActorId core1_broadcast_target = qb::BroadcastId(1);
+push<SystemUpdateEvent>(core1_broadcast_target, /* update data */);
 ```
 
-## Actor Lifecycle
+## Actor Lifecycle: A Brief Overview
 
-**(Detailed lifecycle steps:** `[QB-Core: Actor Lifecycle](./lifecycle.md)`**)**
+The journey of an actor involves several stages, from creation to destruction. The `onInit()` and `~Actor()` methods are critical hooks into this lifecycle.
 
-The lifecycle involves construction, initialization (`onInit`), event processing, termination (`kill`), and destruction (`~Actor`). `onInit` is critical for registration. RAII should be used for resource management tied to the destructor.
+**(For a detailed step-by-step breakdown, see:** `[QB-Core: Actor Lifecycle](./lifecycle.md)`**)**
 
-**(Ref:** `test-actor-lifecycle-hooks.cpp`**)
+## Managing Actor State
 
-## State Management Principles
+*   **Encapsulation is Key:** Always keep an actor's state (its member variables) `private` or `protected`.
+*   **Sequential Access = Thread Safety:** Because a `VirtualCore` processes events for an actor one by one, you don't need mutexes or other locks to protect the actor's *own* member variables from race conditions caused by *its own event handlers*.
+*   **Avoid Blocking:** Event handlers (`on(Event&)` methods) and `ICallback::onCallback()` implementations **must never block**. Long computations, synchronous I/O (like reading a file directly in a handler), or waiting on external locks will freeze the entire `VirtualCore`, preventing it from processing events for *any* actor assigned to it. Offload such tasks using `qb::io::async::callback` or by delegating to other specialized actors.
+*   **Interacting with External Shared State:** If an actor *must* interact with resources shared outside the actor model (e.g., a global static variable, a non-thread-safe third-party library), you are responsible for ensuring thread-safe access to that external resource. Consider encapsulating such resources within a dedicated "manager" actor to serialize access.
 
-*   **Encapsulation:** Keep actor state in private/protected member variables.
-*   **Sequential Access:** The framework guarantees that only one event handler (or callback) for a specific actor instance runs at any given time on its `VirtualCore`. This eliminates the need for internal locks to protect the actor's own state against concurrent access *by its own methods*.
-*   **No Blocking:** Handlers (`on(Event&)`) and callbacks (`onCallback()`) **must not block**. Blocking operations (long computations, synchronous I/O, waiting on locks) will stall the entire `VirtualCore`, preventing other actors on that core from executing.
-*   **External State:** If an actor needs to interact with shared state *outside* the actor model (e.g., a global resource, a non-thread-safe library), use appropriate C++ synchronization mechanisms (mutexes, atomics) or, preferably, encapsulate that shared resource within another dedicated actor (See [Shared Resource Manager Pattern](./../6_guides/patterns_cookbook.md#pattern-shared-resource-manager)).
+By adhering to these principles, you can build complex, concurrent applications where state management is significantly simplified and common concurrency bugs are inherently avoided.
 
-**(Ref:** `example6_shared_queue.cpp` uses an external thread-safe queue, but access logic could be encapsulated in an actor.**) 
+**(Next:** `[Core Concepts: QB Event System](./event_system.md)`**)** 

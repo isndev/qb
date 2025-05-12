@@ -1,9 +1,11 @@
 /**
  * @file qb/io/transport/stcp.h
- * @brief Secure TCP transport implementation for the QB IO library
+ * @brief Secure TCP (SSL/TLS) stream transport for the QB IO library.
  *
  * This file provides a transport implementation for secure (SSL/TLS) TCP sockets,
- * extending the stream class with secure TCP-specific functionality.
+ * extending the `qb::io::stream` class with `qb::io::tcp::ssl::socket` specific functionality.
+ * It handles encrypted stream-based communication.
+ * Requires OpenSSL.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -18,7 +20,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup TCP
+ * @ingroup SSL
  */
 
 #ifndef QB_IO_TRANSPORT_STCP_H
@@ -30,11 +32,14 @@ namespace qb::io::transport {
 
 /**
  * @class stcp
- * @brief Secure TCP transport class
+ * @ingroup Transport
+ * @brief Secure TCP (SSL/TLS) transport providing encrypted stream communication.
  *
  * This class implements a transport layer for secure (SSL/TLS) TCP sockets by extending
- * the generic stream class with secure TCP-specific implementation. It handles
- * SSL-specific behavior such as managing pending encrypted data in the SSL buffer.
+ * the generic `qb::io::stream` class, specializing it with `qb::io::tcp::ssl::socket`
+ * as the underlying I/O mechanism. It handles SSL-specific behavior such as managing
+ * pending encrypted data in the SSL buffer during read operations to ensure all application
+ * data is retrieved.
  */
 class stcp : public stream<io::tcp::ssl::socket> {
 public:

@@ -1,15 +1,12 @@
 /**
  * @file qb/core/VirtualCore.h
- * @brief Virtual core management for the QB Actor Framework
+ * @brief Defines the VirtualCore class, representing a worker thread in the QB Actor Framework.
  *
- * This file defines the VirtualCore class, which is responsible for managing a logical
- * processing unit in the QB Actor Framework. It handles actor lifecycle, event routing,
- * and inter-core communication, enabling efficient parallel execution of actors.
- *
- * Each VirtualCore represents a worker thread that processes actors assigned to it,
- * managing their event queues and executing event handlers in response to received
- * messages. The virtual cores coordinate to enable communication between actors
- * regardless of which core they are assigned to.
+ * This file contains the definition for the `VirtualCore` class, which is a fundamental
+ * component of the QB Actor Framework. Each `VirtualCore` instance typically runs in its
+ * own thread and is responsible for managing the lifecycle and event processing for a
+ * set of actors assigned to it. It handles event queues, inter-core communication
+ * via mailboxes, and the execution of actor event handlers.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -65,13 +62,15 @@
 namespace qb {
 
 /*!
- * @class VirtualCore core/VirtualCore.h qb/core.h
- * @ingroup Core
- * @brief Manages a virtual processing core in the actor system
+ * @class VirtualCore
+ * @ingroup Engine
+ * @brief Manages a virtual processing core (worker thread) in the actor system.
  * @details
- * VirtualCore represents a logical processing unit that manages actors, events,
- * and communication within the actor system. It handles event routing, actor lifecycle,
- * and inter-core communication.
+ * A VirtualCore is responsible for executing actors assigned to it. It runs an
+ * event loop that processes incoming events for its actors, manages actor lifecycles
+ * (initialization, termination), and handles inter-core communication by dispatching
+ * events to and from other VirtualCores via mailboxes.
+ * Each VirtualCore typically runs in its own dedicated thread.
  */
 class VirtualCore {
     thread_local static VirtualCore *_handler;
@@ -84,14 +83,16 @@ class VirtualCore {
 
 public:
     /*!
-     * @enum Error core/VirtualCore.h qb/core.h
-     * @brief Error codes for virtual core operations
+     * @enum Error
+     * @ingroup Engine
+     * @brief Error codes for virtual core operations and states.
+     *        These flags can be combined to represent multiple error conditions.
      */
     enum Error : uint64_t {
-        BadInit         = (1u << 9u),  ///< Initialization error
-        NoActor         = (1u << 10u), ///< Actor not found
-        BadActorInit    = (1u << 11u), ///< Actor initialization error
-        ExceptionThrown = (1u << 12u)  ///< Exception occurred during execution
+        BadInit         = (1u << 9u),  ///< General initialization error for the VirtualCore.
+        NoActor         = (1u << 10u), ///< An expected actor was not found or couldn't be processed.
+        BadActorInit    = (1u << 11u), ///< An actor's `onInit()` method returned false or threw an exception.
+        ExceptionThrown = (1u << 12u)  ///< An unhandled exception occurred during VirtualCore execution (e.g., in an actor event handler).
     };
 
 private:
@@ -276,20 +277,33 @@ public:
     VirtualCore() = delete;
 
     /*!
-     * @brief Get the core's index
-     * @return Current core index identifier
+     * @brief Get the core's index.
+     * @ingroup Engine
+     * @return `CoreId` (unsigned short) representing the unique index of this VirtualCore.
+     * @details This ID is assigned during engine initialization and is used in `ActorId` construction.
      */
     [[nodiscard]] CoreId getIndex() const noexcept;
 
     /*!
-     * @brief Get the set of cores this core can communicate with
-     * @return Set of core IDs this core is connected to
+     * @brief Get the set of cores this VirtualCore is configured to communicate with.
+     * @ingroup Engine
+     * @return Const reference to a `CoreIdSet`.
+     * @details This set typically includes all other VirtualCores in the system, allowing
+     *          this core to send events to actors on those cores.
      */
     [[nodiscard]] const CoreIdSet &getCoreSet() const noexcept;
 
     /*!
-     * @brief Get the current time in nanoseconds
-     * @return Current time in nanoseconds
+     * @brief Get the current cached time for this VirtualCore's processing loop.
+     * @ingroup Engine
+     * @return `uint64_t` timestamp in nanoseconds since epoch.
+     * @details
+     * This timestamp is updated once at the beginning of each iteration of the VirtualCore's
+     * main processing loop. All actors running on this core during that single iteration
+     * will see the same value when calling `Actor::time()` (which internally calls this).
+     * This is optimized for performance within a loop iteration but means it does not update
+     * with true nanosecond precision *during* a single actor's event handling.
+     * For a continuously updating high-precision clock, use `qb::NanoTimestamp()`.
      */
     [[nodiscard]] uint64_t time() const noexcept;
 };

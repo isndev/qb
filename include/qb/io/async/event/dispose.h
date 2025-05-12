@@ -1,6 +1,6 @@
 /**
  * @file qb/io/async/event/dispose.h
- * @brief Resource disposal event for asynchronous I/O
+ * @brief Resource disposal event for asynchronous I/O components.
  *
  * This file defines the dispose event structure which is triggered
  * before an I/O object is destroyed. It allows derived classes to
@@ -19,7 +19,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup IO
+ * @ingroup AsyncEvent
  */
 
 #ifndef QB_IO_ASYNC_EVENT_DISPOSE_H
@@ -29,18 +29,31 @@ namespace qb::io::async::event {
 
 /**
  * @struct dispose
- * @brief Event triggered before an I/O object is destroyed
+ * @ingroup AsyncEvent
+ * @brief Event triggered just before an asynchronous I/O object is destroyed or cleaned up.
  *
- * This event is passed to the derived class's on() method
- * before the I/O object is destroyed. It provides an opportunity
- * for the derived class to perform cleanup operations.
+ * This event is passed to the derived class's `on(qb::io::async::event::dispose&&)` method
+ * as a final opportunity to perform cleanup operations before the I/O object and its
+ * associated resources (like event watchers) are released. This is typically part of the
+ * `dispose()` method in base classes like `qb::io::async::io`.
  *
- * Usage:
+ * Usage Example:
  * @code
- * void on(qb::io::async::event::dispose &&) {
- *     // Perform cleanup operations
- *     // e.g. release resources, close handles, etc.
- * }
+ * class MyResourcefulIO : public qb::io::async::io<MyResourcefulIO> {
+ * public:
+ *   // ... constructor, other methods ...
+ *
+ *   void on(qb::io::async::event::dispose &&) {
+ *     LOG_INFO("MyResourcefulIO disposing: cleaning up custom resources.");
+ *     // Perform final cleanup operations specific to MyResourcefulIO
+ *     // Note: Base class dispose() will handle listener unregistration.
+ *   }
+ *
+ *   void someErrorCondition() {
+ *     // ... error detected ...
+ *     this->disconnect(); // This will eventually lead to dispose() being called internally.
+ *   }
+ * };
  * @endcode
  */
 struct dispose {};

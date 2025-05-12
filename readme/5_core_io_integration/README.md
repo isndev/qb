@@ -1,33 +1,29 @@
-# Core & IO Integration Overview
+@page core_io_integration_readme_md QB Framework: Integrating Core Actors with Asynchronous I/O
+@brief Understand how `qb-core` actors seamlessly leverage `qb-io` for non-blocking network operations, timers, and file handling.
 
-While `qb-io` can function independently, its primary role within the QB framework is to serve as the asynchronous foundation for `qb-core`. Actors seamlessly integrate with `qb-io` components to handle networking, file operations, and timers without blocking their execution threads.
+# QB Framework: Integrating Core Actors with Asynchronous I/O
 
-## The Synergy: How They Work Together
+The QB Actor Framework achieves its power and efficiency through the tight and seamless integration of its two primary components: the `qb-core` actor engine and the `qb-io` asynchronous I/O library. While `qb-io` can function as a standalone library, its design is pivotal to how actors in `qb-core` interact with the outside world (networks, file systems) and manage time-based events without blocking.
 
-*   **Shared Event Loop:** The key integration point is the event loop (`qb::io::async::listener`). Each `qb::VirtualCore` (the execution context for actors) runs its own `listener`. This *single loop* per core manages both:
-    *   **Actor Events:** Messages (`qb::Event`) passed between actors.
-    *   **I/O Events:** Notifications from the OS about socket readiness, file changes, timer expirations (`qb::io::async::event::*`).
-*   **Non-Blocking Actors:** When an actor performs an I/O operation using `qb-io` (e.g., reads from a socket using `qb::io::use<...>::tcp::client`), the operation is initiated non-blockingly. The actor (and its `VirtualCore`) doesn't wait. The `listener` later notifies the actor when the operation completes or data is ready, typically by invoking an `on(...)` handler (like `on(Protocol::message&)` or `on(event::disconnected&)`).
-*   **Unified Scheduling:** Timers scheduled via `qb::io::async::callback` or `with_timeout` are handled by the same `listener` that dispatches actor events, ensuring integrated scheduling of both actor logic and timed operations.
+This section explores how these two modules work in concert, enabling you to build truly concurrent and responsive applications.
 
-## Key Integration Points & Usage Patterns
+## Core Principles of Integration
 
-1.  **Networked Actors (`qb::io::use<>`):**
-    *   Actors become network endpoints (clients/servers) by inheriting from `qb::io::use<MyActor>::tcp::*`, `::udp::*`, or `::tcp::ssl::*` templates.
-    *   These base classes provide the necessary `transport()`, `in()`, `out()` methods and integrate with the `listener` for async operations.
-    *   Network events (like received messages or disconnections) are dispatched to the actor's `on(...)` handlers.
-    *   **See:** `[Network Actors](./network_actors.md)`
-    *   **Examples:** `chat_tcp`, `message_broker`.
+*   **Shared Event Loop:** The key integration point is the event loop (`qb::io::async::listener`). Each `qb::VirtualCore` (the execution context for actors) runs its own `listener`. This *single loop* per core manages both actor events and I/O events.
+*   **Non-Blocking Actors:** When an actor performs an I/O operation using `qb-io` (e.g., network reads/writes), the operation is initiated non-blockingly. The `listener` notifies the actor when the operation completes or data is ready, typically by invoking an `on(...)` handler.
+*   **Unified Scheduling:** Timers and delayed tasks scheduled via `qb::io::async::callback` or `qb::io::async::with_timeout` are handled by the same `listener` that dispatches actor events.
 
-2.  **Asynchronous Operations within Actors:**
-    *   Actors can directly use `qb::io::async::callback` to schedule future work or break down long tasks without blocking.
-    *   Actors can use `qb::io::async::with_timeout` for internal timeout logic, although `async::callback` is often simpler for actor-specific timeouts.
-    *   Blocking file I/O can be wrapped in `async::callback`, but dedicated file processing actors are often a cleaner pattern for complex scenarios.
-    *   **See:** `[Async Operations in Actors](./async_in_actors.md)`
-    *   **Examples:** `file_monitor`, `file_processor`, `example3_lifecycle.cpp`, `example8_state_machine.cpp`.
+## Key Topics in This Section:
 
-3.  **Example Analysis:**
-    *   Detailed breakdowns of how the `core_io` examples leverage this integration are provided.
-    *   **See:** `[Example Analysis](./examples/)`
+*   **[Asynchronous Operations within Actors](./async_in_actors.md)**
+    *   Learn how actors can use `qb::io::async::callback` for timers and deferred tasks, and `qb::io::async::with_timeout` for managing inactivity or operational timeouts. Also covers strategies for handling blocking file I/O from actors asynchronously.
 
-Understanding this integration is key to building efficient and responsive applications with QB, where actors can handle both computation and I/O concurrently without performance degradation due to blocking. 
+*   **[Building Network-Enabled Actors](./network_actors.md)**
+    *   Discover how to make your actors network clients or servers using the `qb::io::use<>` helper template, integrating TCP, UDP, and SSL/TLS capabilities directly into actor logic.
+
+*   **[Case Studies: Example Analyses](./examples/README.md)**
+    *   Explore detailed walkthroughs of complex examples (`chat_tcp`, `distributed_computing`, `file_monitor`, `file_processor`, `message_broker`) to see how `qb-core` and `qb-io` are used together to build substantial applications.
+
+Understanding this integration is key to unlocking the full potential of the QB Actor Framework, enabling you to build applications that are not only concurrently sound but also exceptionally performant and responsive to external events and I/O demands.
+
+**(Next:** Dive into `[Integrating Core & IO: Async Operations in Actors](./async_in_actors.md)` or `[Integrating Core & IO: Network Actors](./network_actors.md)` for more specific details.**) 

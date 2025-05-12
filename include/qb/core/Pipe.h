@@ -35,8 +35,8 @@
 namespace qb {
 
 /*!
- * @class Pipe core/Pipe.h qb/actor.h
- * @ingroup Core
+ * @class Pipe
+ * @ingroup PipeCore
  * @brief Represents a communication channel between actors
  * @details
  * A Pipe object is returned by Actor::getPipe() and provides a way to send events
@@ -108,6 +108,12 @@ public:
     }
 };
 
+/**
+ * @typedef pipe
+ * @brief Alias for the Pipe class
+ * @details Provided for naming consistency with other lowercase aliases in the framework
+ * @ingroup PipeCore
+ */
 using pipe = Pipe;
 
 } // namespace qb

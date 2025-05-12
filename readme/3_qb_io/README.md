@@ -1,41 +1,39 @@
-# QB-IO Module Overview
+@page qb_io_readme_md QB-IO Module: High-Performance Asynchronous I/O & Utilities
+@brief Discover `qb-io`, the powerful C++17 library underpinning QB's non-blocking I/O, also available for standalone use. Provides an overview and navigation for the QB-IO module documentation.
 
-`qb-io` is the **foundational asynchronous Input/Output library** for the QB Actor Framework. Designed for C++17, it provides a robust, cross-platform, and efficient layer for handling network and file system operations without blocking threads. It can also be used as a **standalone library** independent of the `qb-core` actor engine.
+# QB-IO Module: High-Performance Asynchronous I/O & Utilities
 
-## Purpose & Design Goals
+Welcome to the `qb-io` module documentation. `qb-io` is the foundational C++17 library that powers the QB Actor Framework's responsive, non-blocking input/output capabilities. More than just a component of the actor system, `qb-io` is a comprehensive, cross-platform toolkit designed for building high-performance, event-driven applications. It can be used **effectively as a standalone library** for any project requiring efficient asynchronous I/O.
 
-*   **Asynchronous Operations:** Eliminate blocking I/O calls to maximize thread utilization and application responsiveness.
-*   **High Performance:** Leverage efficient event notification systems (like epoll, kqueue via libev) and minimize data copying.
-*   **Cross-Platform:** Provide a consistent API across Linux, Windows, and macOS.
-*   **Modularity:** Offer distinct components for different I/O types (TCP, UDP, File, SSL) and utilities.
-*   **Extensibility:** Allow developers to implement custom application-level protocols.
+This section provides a detailed exploration of `qb-io`'s features, architecture, and usage.
 
-## Key Abstractions
+## Key Topics in This Section:
 
-*   **Async System (`qb::io::async`):** Manages the event loop (`listener`), event types (`event::*`), timers (`with_timeout`), and callbacks (`callback`). This is the core engine for asynchronous behavior.
-*   **Stream (`qb::io::stream`, `istream`, `ostream`):** Base templates for buffered I/O, providing `in()` and `out()` buffers (`qb::allocator::pipe`) and common operations (`read`, `write`, `flush`, `close`).
-*   **Transport (`qb::io::transport::*`):** Concrete implementations built on top of `stream` templates and system wrappers, handling the specifics of TCP, UDP, File, or SSL I/O.
-*   **Protocol (`qb::io::async::AProtocol`):** Interface for defining how byte streams are framed and parsed into meaningful application messages.
-*   **System Wrappers (`qb::io::socket`, `qb::io::sys::file`):** Low-level, cross-platform wrappers for native sockets and file descriptors.
-*   **URI & Endpoint (`qb::io::uri`, `qb::io::endpoint`):** Utilities for parsing URIs and representing network addresses.
+*   **[QB-IO: Feature Showcase](./features.md)**
+    *   A comprehensive rundown of the capabilities offered by the `qb-io` library, from its core asynchronous engine to networking, protocol handling, file system operations, and essential utilities like crypto and compression.
 
-## Relationship with `qb-core`
+*   **[QB-IO: The Asynchronous Engine (`qb::io::async`)](./async_system.md)**
+    *   A deep dive into `qb-io`'s event loop (`listener`), timers, asynchronous callbacks, and event management framework, crucial for standalone asynchronous programming and for understanding the base of `qb-core`.
 
-`qb-core` relies entirely on `qb-io` for its asynchronous foundation:
+*   **[QB-IO: Understanding Transports](./transports.md)**
+    *   Explore how `qb-io`'s transport layer bridges abstract streams with concrete I/O mechanisms like TCP, UDP, SSL/TLS, and local files.
 
-*   Each `qb::VirtualCore` runs a `qb::io::async::listener`.
-*   Actors needing network or file capabilities inherit from `qb::io::use<>` templates, which integrate `qb-io` components.
-*   Timers and delayed actions within actors use `qb::io::async::callback`.
+*   **[QB-IO: Framing Messages with Protocols](./protocols.md)**
+    *   Learn how `qb-io` uses protocols (both built-in and custom via `AProtocol`) to define message boundaries and parse data from byte streams for various transports.
 
-## Standalone Usage
+*   **[QB-IO: Secure TCP with SSL/TLS](./ssl_transport.md)**
+    *   Detailed information on enabling and using SSL/TLS for secure, encrypted TCP communication within `qb-io`, leveraging OpenSSL.
 
-To use `qb-io` without `qb-core`:
+*   **[QB-IO: Essential Utilities & Helpers](./utilities.md)**
+    *   Discover the rich set of utility classes and functions in `qb-io` for common system programming tasks, including URI parsing, cryptography, compression, high-precision time, optimized containers, and system information.
 
-1.  Include `<qb/io.h>` and specific headers as needed (e.g., `<qb/io/async.h>`, `<qb/io/tcp/socket.h>`).
-2.  Initialize the async system on your thread(s): `qb::io::async::init();`
-3.  Create and configure transport objects (e.g., `qb::io::tcp::socket`, `qb::io::tcp::listener`).
-4.  If needed, implement or use existing protocols (`AProtocol`).
-5.  Integrate components with the event loop (often done via base classes like `qb::io::async::io` or `qb::io::async::with_timeout`).
-6.  **Drive the event loop:** Explicitly call `qb::io::async::run()` in your application's main loop or worker threads.
+## How to Use This Section
 
-**(See also:** `[Async System](./async_system.md)`, `[Transports](./transports.md)`, `[Protocols](./protocols.md)`, `[Utilities](./utilities.md)`**)** 
+*   Start with the **Feature Showcase** for a broad overview.
+*   Dive into **The Asynchronous Engine** to understand the fundamentals of `qb-io`'s event-driven model.
+*   Explore **Transports** and **Protocols** to learn how to handle specific types of I/O and data framing.
+*   Refer to **Secure TCP** and **Utilities** for specialized needs.
+
+By understanding these components, you can leverage `qb-io` to build highly concurrent and performant C++ applications, either as part of the full QB Actor Framework or as a powerful standalone I/O solution.
+
+**(Next:** After exploring `qb-io`, you might want to see how it integrates with the actor model in the `[QB-Core Module Overview](../4_qb_core/README.md)` or review the `[Core & IO Integration Overview](../5_core_io_integration/README.md)`.)** 

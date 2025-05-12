@@ -1,197 +1,268 @@
-# Getting Started with QB Actor Framework
+@page guides_getting_started_md Getting Started with the QB Actor Framework
+@brief Your first steps to building high-performance concurrent applications with QB.
 
-This guide walks through setting up, building, and running a basic application using the QB framework.
+# Getting Started with the QB Actor Framework
 
-## 1. Prerequisites
+Welcome to the QB Actor Framework! This guide will walk you through setting up your environment, building the framework, and running your first simple actor-based application. Our goal is to get you from zero to a running QB application quickly.
 
-Ensure you have:
+## 1. What You'll Need (Prerequisites)
 
-*   A C++17 compliant compiler (GCC 7+, Clang 5+, MSVC 2017+).
-*   CMake (version 3.14+).
-*   Git.
-*   *(Optional)* OpenSSL development libraries (for SSL/Crypto features).
-*   *(Optional)* Zlib development libraries (for Compression features).
+Before you begin, ensure your development environment meets these requirements:
 
-## 2. Getting the Code
+*   **C++17 Compliant Compiler:** GCC 7+, Clang 5+, or MSVC 2017+.
+*   **CMake:** Version 3.14 or higher.
+*   **Git:** For cloning the QB Framework repository.
+*   **(Optional but Recommended for Full Features)**
+    *   **OpenSSL Development Libraries:** If you plan to use SSL/TLS for secure networking or QB's cryptography features (`qb::crypto`, `qb::jwt`).
+    *   **Zlib Development Libraries:** If you intend to use data compression features (`qb::compression`).
 
-Clone the repository:
+## 2. Obtain the QB Framework Code
+
+First, clone the QB Actor Framework repository to your local machine:
 
 ```bash
-git clone <repository_url> qb-framework
+git clone <your_repository_url> qb-framework
 cd qb-framework
-# If submodules are used (check .gitmodules), initialize them:
-# git submodule update --init --recursive
 ```
 
-## 3. Building the Framework
-
-Use CMake to configure and build the libraries, examples, and tests.
+If the QB framework uses Git submodules for dependencies (check for a `.gitmodules` file), initialize and update them:
 
 ```bash
-# Create a build directory (out-of-source build recommended)
+# If submodules are present:
+git submodule update --init --recursive
+```
+
+## 3. Build the QB Framework Libraries
+
+QB uses CMake for its build system. Here's a typical out-of-source build process:
+
+```bash
+# From the root of the qb-framework directory
+
+# 1. Create a build directory
 mkdir build
 cd build
 
-# Configure (adjust options as needed)
-c# Example: Release build with tests enabled
-c# Use -DCMAKE_INSTALL_PREFIX=/path/to/install for installation location
-c# Use -DQB_IO_WITH_SSL=ON -DQB_IO_WITH_ZLIB=ON to enable optional features
-c# Use -DQB_BUILD_TEST=ON to build tests (often default)
-c# Use -DCMAKE_BUILD_TYPE=Release (or Debug)
-c
-cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TEST=ON
+# 2. Configure the build (from within the 'build' directory)
+#    This example creates a Release build and enables tests.
+#    Adjust QB_IO_WITH_SSL and QB_IO_WITH_ZLIB if you have OpenSSL/Zlib and need those features.
+cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TEST=ON -DQB_IO_WITH_SSL=OFF -DQB_IO_WITH_ZLIB=OFF
 
-# Build
-c# This builds libraries (qb-io, qb-core), examples, and tests
-ccmake --build . --config Release # Or use 'make -jN' on Linux/macOS
-
-# Optional: Install headers and libraries
-c# cmake --install . --prefix /usr/local --config Release
+# 3. Build the framework (libraries, examples, tests)
+cmake --build . --config Release
+# On Linux/macOS, you can often speed this up with: make -j$(nproc) or make -j<number_of_cores>
 ```
 
-Executables for examples and tests are typically found in `build/bin/<module>/<type>/`.
+This process compiles the `qb-io` and `qb-core` libraries. For more detailed build options and installation instructions, please refer to the `[Reference: Building the QB Framework](./../7_reference/building.md)`.
 
-**(See:** `[Reference: Building](./../7_reference/building.md)` for all options**)
+## 4. Your First QB Application: "PingPongActor"
 
-## 4. Your First Actor Application ("Hello Actor")
+Let's create a minimal application with two actors: one sends a "Ping", and the other replies with a "Pong".
 
-Let's create a minimal application.
+**a) Create a Project Directory:**
 
-**a) `hello_main.cpp`:**
+Outside the `qb-framework` directory, create a new directory for your project, for example, `my_qb_app`.
+
+```bash
+mkdir my_qb_app
+cd my_qb_app
+```
+
+**b) `ping_pong_main.cpp`:**
+
+Create a file named `ping_pong_main.cpp` in your `my_qb_app` directory with the following content:
 
 ```cpp
-#include <qb/main.h>     // Engine controller
-#include <qb/actor.h>    // Actor base class
-#include <qb/event.h>    // Event base class
-#include <qb/io.h>       // For thread-safe qb::io::cout
-#include <iostream>
-#include <string>
+#include <qb/main.h>     // QB Engine: qb::Main
+#include <qb/actor.h>    // Actor base class: qb::Actor, qb::ActorId
+#include <qb/event.h>    // Event base class: qb::Event
+#include <qb/io.h>       // For qb::io::cout (thread-safe console output)
+#include <iostream>      // For std::endl
 
-// --- Define an Event --- 
-struct HelloEvent : qb::Event {
-    std::string greeting;
-    // Constructor to pass data
-    explicit HelloEvent(std::string msg) : greeting(std::move(msg)) {}
+// --- 1. Define Events ---
+// Event sent from Pinger to Ponger
+struct PingEvent : qb::Event {
+    qb::ActorId pinger_id; // So Ponger knows who to reply to
+    int ping_value;
+
+    PingEvent(qb::ActorId sender, int val) : pinger_id(sender), ping_value(val) {}
 };
 
-// --- Define an Actor --- 
-class HelloActor : public qb::Actor {
+// Event sent from Ponger back to Pinger
+struct PongEvent : qb::Event {
+    int pong_value;
+
+    explicit PongEvent(int val) : pong_value(val) {}
+};
+
+// --- 2. Define Pinger Actor ---
+class PingerActor : public qb::Actor {
+private:
+    qb::ActorId _ponger_actor_id;
+    int _pings_sent = 0;
+    const int _max_pings = 3;
+
 public:
-    // Called after actor creation and ID assignment
+    // Constructor: Takes the ID of the Ponger actor
+    explicit PingerActor(qb::ActorId ponger_id) : _ponger_actor_id(ponger_id) {}
+
     bool onInit() override {
-        qb::io::cout() << "HelloActor [" << id() << "] initialized on core " << getIndex() << ". Waiting for greetings...\n";
-        // Subscribe this actor to handle HelloEvent messages
-        registerEvent<HelloEvent>(*this);
-        // Always good practice to handle shutdown
+        qb::io::cout() << "PingerActor [" << id() << "] initialized. Target Ponger: " << _ponger_actor_id << ".\n";
+        registerEvent<PongEvent>(*this); // Pinger needs to handle Pong replies
         registerEvent<qb::KillEvent>(*this);
-        return true; // Indicate successful initialization
+
+        // Send the first Ping
+        sendNextPing();
+        return true;
     }
 
-    // Event handler for HelloEvent
-    void on(const HelloEvent& event) {
-        qb::io::cout() << "HelloActor [" << id() << "] received: '" << event.greeting << "' from Actor " << event.getSource() << "\n";
-        // Terminate after receiving one greeting
+    void on(const PongEvent& event) {
+        qb::io::cout() << "PingerActor [" << id() << "] received Pong with value: " << event.pong_value << ".\n";
+        if (_pings_sent < _max_pings) {
+            sendNextPing();
+        } else {
+            qb::io::cout() << "PingerActor [" << id() << "] finished sending pings. Requesting Ponger to stop.\n";
+            push<qb::KillEvent>(_ponger_actor_id); // Tell Ponger to stop
+            kill(); // Pinger stops itself
+        }
+    }
+
+    void on(const qb::KillEvent& /*event*/) {
+        qb::io::cout() << "PingerActor [" << id() << "] shutting down.\n";
         kill();
     }
 
-    // Event handler for KillEvent (for graceful shutdown)
-    void on(const qb::KillEvent& event) {
-        qb::io::cout() << "HelloActor [" << id() << "] shutting down.\n";
-        kill(); // Call base kill()
-    }
-
-    // Destructor (called after kill() completes)
-    ~HelloActor() override {
-        qb::io::cout() << "HelloActor [" << id() << "] destroyed.\n";
+private:
+    void sendNextPing() {
+        _pings_sent++;
+        qb::io::cout() << "PingerActor [" << id() << "] sending Ping #" << _pings_sent << " to " << _ponger_actor_id << ".\n";
+        push<PingEvent>(_ponger_actor_id, id(), _pings_sent); // Send my ID and ping value
     }
 };
 
-// --- Main Function --- 
-int main() {
-    qb::io::cout() << "--- QB Hello Actor Example ---\n";
+// --- 3. Define Ponger Actor ---
+class PongerActor : public qb::Actor {
+public:
+    bool onInit() override {
+        qb::io::cout() << "PongerActor [" << id() << "] initialized and ready for Pings.\n";
+        registerEvent<PingEvent>(*this); // Ponger handles Ping requests
+        registerEvent<qb::KillEvent>(*this);
+        return true;
+    }
 
-    // 1. Create the QB Engine
+    void on(const PingEvent& event) {
+        qb::io::cout() << "PongerActor [" << id() << "] received Ping #" << event.ping_value << " from " << event.pinger_id << ".\n";
+        // Reply with a Pong, echoing the ping value
+        push<PongEvent>(event.pinger_id, event.ping_value);
+    }
+
+    void on(const qb::KillEvent& /*event*/) {
+        qb::io::cout() << "PongerActor [" << id() << "] shutting down.\n";
+        kill();
+    }
+};
+
+// --- 4. Main Application Logic ---
+int main() {
+    qb::io::cout() << "--- QB Ping-Pong Actor Example ---\n";
+
+    // Create the QB Engine instance
     qb::Main engine;
 
-    // 2. Add Actors to Cores
-    // Add HelloActor instance to core 0. Store its ID.
-    qb::ActorId hello_actor_id = engine.addActor<HelloActor>(0);
-
-    if (!hello_actor_id.is_valid()) {
-        std::cerr << "Failed to add HelloActor!\n";
+    // Add the PongerActor to core 0. We need its ID to pass to PingerActor.
+    qb::ActorId ponger_id = engine.addActor<PongerActor>(0);
+    if (!ponger_id.is_valid()) {
+        qb::io::cout() << "Error: Failed to add PongerActor!\n";
         return 1;
     }
-    qb::io::cout() << "Added HelloActor with ID: " << hello_actor_id << "\n";
+    qb::io::cout() << "PongerActor created on core 0 with ID: " << ponger_id << ".\n";
 
-    // 3. Start the Engine (Synchronously for this simple example)
-    qb::io::cout() << "Starting engine...\n";
-    engine.start(false); // false = block until engine stops
+    // Add the PingerActor to core 0, providing it with the PongerActor's ID.
+    qb::ActorId pinger_id = engine.addActor<PingerActor>(0, ponger_id);
+    if (!pinger_id.is_valid()) {
+        qb::io::cout() << "Error: Failed to add PingerActor!\n";
+        return 1;
+    }
+    qb::io::cout() << "PingerActor created on core 0 with ID: " << pinger_id << ".\n";
 
-    // --- Engine has started and actors are initializing ---
-    // --- At this point, we could send the initial event, but since start(false)
-    // --- blocks, we need another way. For simplicity, let's assume another actor
-    // --- or an external mechanism sends the event. In a real app, you might
-    // --- start asynchronously and send from the main thread, or have an
-    // --- initializer actor send the first message.
+    // Start the engine. This call will block until all actors have terminated.
+    qb::io::cout() << "Starting QB engine...\n";
+    engine.start(false); // false = run synchronously in this thread
 
-    // --- For demonstration, imagine an event was pushed after start():
-    // --- engine.core(0).push<HelloEvent>(hello_actor_id, hello_actor_id, "Hello from Main!");
-    // --- Note: Directly accessing core() or push() after start() is not thread-safe
-    // ---       if start(true) was used. Send events *from other actors*.
+    qb::io::cout() << "QB engine has stopped.\n";
 
-    // 4. Engine stops (because HelloActor calls kill())
-    qb::io::cout() << "Engine stopped.\n";
-
-    // 5. Check for Errors
+    // Check if any VirtualCore encountered an error during execution
     if (engine.hasError()) {
-        std::cerr << "Engine stopped with an error!\n";
+        qb::io::cout() << "Error: Engine stopped due to an error in a VirtualCore!\n";
         return 1;
     }
 
-    qb::io::cout() << "--- Example Finished ---\n";
+    qb::io::cout() << "--- Ping-Pong Example Finished Successfully ---\n";
     return 0;
 }
 
 ```
 
-**b) `CMakeLists.txt` (Example):**
+**c) `CMakeLists.txt` for Your Application:**
+
+Create a `CMakeLists.txt` file in your `my_qb_app` directory:
 
 ```cmake
 cmake_minimum_required(VERSION 3.14)
-project(hello_actor_example CXX)
+project(MyQBApp CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find QB package (Adjust PATHS to your QB install location or build directory)
-# If building QB alongside your project, you might use add_subdirectory(path/to/qb)
-find_package(qb REQUIRED CONFIG PATHS /path/to/qb/install/lib/cmake/qb)
+# Find the QB package. 
+# You might need to adjust CMAKE_PREFIX_PATH if QB was installed to a custom location,
+# or if you are building QB alongside your project using add_subdirectory.
+# Example for an installed QB:
+# list(APPEND CMAKE_PREFIX_PATH "/path/to/your/qb-framework/build" "/path/to/your/qb-install-dir")
+find_package(qb REQUIRED CONFIG)
 
-add_executable(hello_actor hello_main.cpp)
+# If QB was built as part of the same CMake project (e.g. via add_subdirectory)
+# ensure you link to the targets directly (qb::qb-core, qb::qb-io)
 
-# Link to qb::core (which includes qb::io)
-target_link_libraries(hello_actor PRIVATE qb::core)
+add_executable(ping_pong_app ping_pong_main.cpp)
+
+# Link your application against the qb-core library (which includes qb-io)
+target_link_libraries(ping_pong_app PRIVATE qb::core)
+
 ```
 
-**c) Build and Run:**
+**d) Build and Run Your Application:**
 
-Compile using CMake as shown in step 3, then run the `hello_actor` executable.
+Navigate to your `my_qb_app` directory, then create a build directory, configure, and build:
 
-**(Important Note:** The example above doesn't send the initial `HelloEvent`. A more complete example would involve another actor sending the event after `engine.start()`, or starting the engine asynchronously `engine.start(true)` and having the main thread (or another mechanism) send the event *before* calling `engine.join()`.)**
+```bash
+# From within my_qb_app directory
+mkdir build
+cd build
 
-## Running Included Examples
+# Configure - Point to your QB build or install directory if needed
+# If QB was installed to /usr/local, CMake should find it.
+# If QB was built in ../qb-framework/build, you might use:
+# cmake .. -DCMAKE_PREFIX_PATH=../../qb-framework/build
+cmake .. 
 
-The framework includes numerous examples in the `example/` directory, categorized under `core`, `io`, and `core_io`.
+# Build
+cmake --build . --config Release
 
-1.  **Build them:** Ensure they were built (`cmake --build .`).
-2.  **Locate:** Find the executables in your build directory (e.g., `build/bin/qb-core/examples/example1_basic_actors`).
-3.  **Run:** Execute them from the command line.
-    ```bash
-    # Example: Run the basic actor communication test
-    ./build/bin/qb-core/examples/example1_basic_actors
+# Run
+./ping_pong_app 
+# On Windows, the executable might be in a subdirectory like ./Release/ping_pong_app.exe
+```
 
-    # Example: Run the chat server (needs client started separately)
-    ./build/bin/qb-core/examples/core_io/chat_tcp/server/chat_server
-    ```
+You should see output from both actors, demonstrating the ping-pong message exchange!
 
-Explore these examples to see practical implementations of various features. 
+## 5. Exploring Further
+
+Congratulations on running your first QB application!
+
+*   **Included Examples:** The QB framework comes with many more examples in its `example/` directory (e.g., `example/core/`, `example/io/`, `example/core_io/`). Build them as part of the main QB build and explore their code to see various features in action.
+*   **Core Concepts:** Dive deeper into the `[Core Concepts](./../2_core_concepts/README.md)` to solidify your understanding of actors, events, and asynchronous I/O.
+*   **Module Documentation:** Explore the detailed documentation for `[QB-IO Module](./../3_qb_io/README.md)` and `[QB-Core Module](./../4_qb_core/README.md)`.
+*   **Other Guides:** Check out other guides for patterns, performance tuning, and error handling.
+
+Happy coding with the QB Actor Framework! 

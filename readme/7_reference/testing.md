@@ -1,65 +1,107 @@
-# Reference: Testing the QB Framework
+@page ref_testing_md Reference: Testing the QB Actor Framework
+@brief A guide to building, running, and writing tests for the QB Actor Framework using Google Test and CTest.
 
-The QB framework includes a suite of unit and system tests built using the Google Test framework. These tests verify the correctness of individual components and their interactions.
+# Reference: Testing the QB Actor Framework
 
-## Test Philosophy
+The QB Actor Framework includes a comprehensive suite of unit and system tests designed to ensure correctness, stability, and robustness. These tests are built using the Google Test framework and managed via CTest.
 
-*   **Unit Tests (`qb/source/*/tests/unit/`):** Focus on isolating and testing specific classes or small modules (e.g., `Timestamp`, `event::router`, `crypto` functions) with minimal dependencies.
-*   **System Tests (`qb/source/*/tests/system/`):** Test the integration and interaction of multiple components, often involving the `qb::Main` engine and multiple actors running across cores. These verify higher-level behaviors like message passing, lifecycle management, concurrency, and error handling.
+## Test Philosophy in QB
 
-## Building Tests
+Our testing strategy is divided into two main categories:
 
-Tests are built automatically if the `QB_BUILD_TEST` CMake option is enabled (which is often the default).
+*   **Unit Tests (typically found in `qb/source/<module>/tests/unit/`):**
+    *   Focus on testing individual classes, functions, or small, isolated modules in detail.
+    *   Aim for minimal dependencies to verify component logic in isolation.
+    *   Examples: Testing `qb::Timestamp` functionality, `qb::io::uri` parsing, or specific cryptographic functions.
 
-```bash
-# Configure with tests enabled (if not default)
-cd build
-cmake .. -DQB_BUILD_TEST=ON
+*   **System/Integration Tests (typically found in `qb/source/<module>/tests/system/`):**
+    *   Focus on testing the interaction and integration of multiple framework components.
+    *   Often involve creating `qb::Main` engine instances, launching multiple actors (potentially across different `VirtualCore`s), and verifying their collective behavior, message passing, lifecycle management, and concurrency aspects.
+    *   Examples: Testing actor event delivery, inter-core communication, service actor resolution, or full client-server interactions using `qb-io` components within actors.
 
-# Build all targets, including tests
-cmake --build .
+## Building the Tests
 
-# Or build a specific test target (names derived from source files)
-cmake --build . --target qb-core-gtest-system-test-actor-event
-cake --build . --target qb-io-gtest-test-crypto
-```
+Tests are compiled as part of the standard QB Framework build process if the `QB_BUILD_TEST` CMake option is enabled (it is often `ON` by default).
 
-Test executables are typically placed in the `build/bin/` directory under their respective module and test type (e.g., `build/bin/qb-core/tests/system/`).
-
-## Running Tests
-
-1.  **Using CTest (Recommended):** After building, navigate to the `build` directory and run CTest.
+1.  **Ensure `QB_BUILD_TEST=ON`:** When configuring CMake:
     ```bash
+    # In your build directory
+    cmake .. -DQB_BUILD_TEST=ON # Add other options as needed (e.g., -DCMAKE_BUILD_TYPE=Debug)
+    ```
+2.  **Build the Project:**
+    ```bash
+    # In your build directory
+    cmake --build . --config Debug # Or Release
+    # Alternatively: make -jN (Linux/macOS) or build the solution in Visual Studio (Windows)
+    ```
+
+Test executables are typically generated in your build directory, often under a path like `build/bin/qb/source/<module>/tests/<type>/` (e.g., `build/bin/qb/source/core/tests/system/qb-core-gtest-system-test-actor-event`).
+
+## Running the Tests
+
+Once built, you have two primary ways to run the tests:
+
+1.  **Using CTest (Recommended for CI and Full Test Suite Execution):**
+    CTest is CMake's testing tool and is the preferred way to run all or a subset of tests.
+    ```bash
+    # Navigate to your build directory first
     cd build
-    ctest # Run all tests
-    ctest -R test-actor # Run tests matching regex "test-actor"
-    ctest -V # Run tests with verbose output
+
+    # Run all discovered tests
+    ctest
+
+    # Run tests with verbose output (shows individual test case results)
+    ctest -V
+
+    # Run only tests whose names match a regular expression (e.g., all actor event tests)
+    ctest -R test-actor-event
+
+    # Run tests in parallel (if supported by your CTest version and test properties)
+    # ctest -jN 
     ```
-2.  **Running Executables Directly:** Navigate to the test executable location and run it.
+
+2.  **Running Individual Test Executables Directly:**
+    You can also navigate to the directory containing a specific test executable and run it directly. This allows you to use Google Test-specific command-line flags.
     ```bash
-    cd build/bin/qb-core/tests/system
-    ./qb-core-gtest-system-test-actor-add
+    # Example for a specific core system test
+    cd build/bin/qb/source/core/tests/system/
+    ./qb-core-gtest-system-test-actor-add --gtest_color=yes
+
+    # Example: Run only specific tests within that executable using a filter
+    ./qb-core-gtest-system-test-actor-add --gtest_filter=ActorAddTestSuite.SpecificAddTest
     ```
-    You can use Google Test command-line flags (e.g., `--gtest_filter=TestSuiteName.TestName`).
+    Refer to the Google Test documentation for a full list of its command-line options.
 
-## Test Structure
+## Test Structure & Conventions
 
-*   **Location:** Tests reside within the `qb/source/<module>/tests/` directories (`unit` or `system`).
-*   **Naming:** Test files generally follow the pattern `test-<feature_or_component>.cpp`.
-*   **Framework:** Google Test (`gtest/gtest.h`). Tests use `TEST(TestSuiteName, TestName)` or `TEST_F(TestFixtureName, TestName)` macros.
-*   **System Tests:** Often involve creating a `qb::Main` instance, adding specific test actors, running the engine synchronously (`main.start(false)`), waiting for completion (`main.join()`), and then asserting conditions (e.g., checking `main.hasError()` or global atomic counters modified by actors).
+*   **Location:** Test source files (`test-*.cpp`) reside within the `qb/source/<module>/tests/unit/` or `qb/source/<module>/tests/system/` directories.
+*   **Naming:** Test files are generally named `test-<feature_or_component>.cpp` (e.g., `test-actor-event.cpp`, `test-uri.cpp`).
+*   **Framework:** Google Test (`gtest/gtest.h`) is used. Tests are defined using `TEST(TestSuiteName, TestName)` or, if using a test fixture, `TEST_F(TestFixtureClassName, TestName)`.
+*   **System Test Approach:** Many system tests involve:
+    *   Instantiating `qb::Main`.
+    *   Adding specific test actor configurations to one or more cores.
+    *   Running the engine synchronously for test determinism: `engine.start(false); engine.join();`.
+    *   Using `std::atomic` variables, shared counters (protected by mutexes if accessed outside actor context during assertions), or specific response events to gather results or state from actors for assertion.
+    *   Asserting expected outcomes using Google Test macros (`EXPECT_EQ`, `ASSERT_TRUE`, etc.), often also checking `engine.hasError()`.
 
 ## Writing New Tests
 
-1.  **Choose Location:** Decide if it's a unit test (isolating a class) or system test (integrating actors/modules) and place it in the appropriate `unit` or `system` directory under the relevant module (`qb-io` or `qb-core`).
-2.  **Include Headers:** Include `<gtest/gtest.h>` and necessary QB headers.
-3.  **Create Test Fixture (Optional):** Use `class MyTest : public ::testing::Test` for shared setup/teardown logic (`SetUp()`, `TearDown()`).
-4.  **Write Test Case:** Use `TEST(...)` or `TEST_F(...)`.
-5.  **System Test Setup:**
-    *   Instantiate `qb::Main`.
-    *   Add necessary test actors using `main.addActor<T>(...)` or `main.core(...).addActor<T>(...)`.
-    *   Use `qb::io::async::callback` within actors if delays or specific sequences are needed.
-    *   Use `std::atomic` variables or shared state (with mutexes *only if absolutely necessary outside actors*) for communication between test assertions and actor logic.
-6.  **Run Engine:** `main.start(false); main.join();` (Synchronous execution is usually easiest for system tests).
-7.  **Assert:** Use Google Test assertions (`EXPECT_EQ`, `ASSERT_TRUE`, etc.) to verify the outcome (check `main.hasError()`, atomic counters, actor states if accessible through specific events).
-8.  **Add to CMake:** Add the new test source file to the appropriate list (`CORE_TESTS`, `ACTOR_SYSTEM_TESTS`, etc.) in the relevant `tests/system/CMakeLists.txt` or `tests/unit/CMakeLists.txt` file. 
+Contributions of new tests are highly encouraged!
+
+1.  **Determine Scope:** Decide if it's a unit test (isolating a class/function) or a system/integration test (multiple components, actors).
+2.  **Choose Location:** Place your new `test-myfeature.cpp` file in the appropriate `unit` or `system` subdirectory under the relevant module (e.g., `qb/source/core/tests/system/`).
+3.  **Include Headers:** Always include `<gtest/gtest.h>`. Include necessary QB framework headers and any standard C++ headers your test requires.
+4.  **Test Fixtures (Optional):** For tests requiring common setup/teardown logic, create a test fixture class inheriting from `public ::testing::Test`. Use `SetUp()` and `TearDown()` virtual methods.
+5.  **Define Test Cases:** Use `TEST(MyFeatureTestSuite, DescriptiveTestName)` or `TEST_F(MyFixtureClass, DescriptiveTestName)`.
+6.  **System Test Specifics:**
+    *   Instantiate `qb::Main engine;`.
+    *   Add your test actors using `engine.addActor<MyTestActor>(core_id, ...)` or `engine.core(core_id).builder()...`.
+    *   If your test requires actors to perform a sequence of actions or wait for certain conditions, use `qb::io::async::callback` within your test actors to schedule subsequent steps or self-terminating events.
+    *   For verifying state across actors or after the engine run, `std::atomic` variables (declared globally or as static members of a test fixture) are often useful for safe communication of results from actors back to the main test thread for assertions. Use mutexes only if absolutely necessary for more complex shared state between the test and actors.
+    *   Run the engine synchronously for deterministic system tests: `engine.start(false); engine.join();`.
+7.  **Assert Outcomes:** Use Google Test assertions (`EXPECT_TRUE`, `ASSERT_EQ`, `EXPECT_FALSE`, `ASSERT_NE`, `EXPECT_THROW`, etc.) to verify the behavior and state of your components or the overall system.
+8.  **Update CMake:** Add your new `.cpp` file to the list of sources in the relevant `CMakeLists.txt` file (e.g., in `qb/source/core/tests/system/CMakeLists.txt`). The target names are usually derived from the filename. Follow the existing patterns in those files.
+
+By following these guidelines, you can contribute effective tests that help maintain the quality and reliability of the QB Actor Framework.
+
+**(Next:** Consult the `[QB Actor Framework: Frequently Asked Questions (FAQ)](./faq.md)` or the `[QB Actor Framework: Glossary of Terms](./glossary.md)` for more framework information.**) 

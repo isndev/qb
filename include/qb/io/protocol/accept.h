@@ -1,10 +1,10 @@
 /**
  * @file qb/io/protocol/accept.h
- * @brief Protocol for accepting connections in asynchronous I/O
+ * @brief Protocol for accepting new connections in asynchronous I/O.
  *
  * This file defines the accept protocol template class which is used
- * by acceptors to handle the process of accepting new connections in
- * an asynchronous manner.
+ * by acceptors (e.g., `qb::io::async::tcp::acceptor`) to handle the process of
+ * identifying a newly accepted connection from the underlying listener socket.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -29,40 +29,49 @@ namespace qb::io::protocol {
 
 /**
  * @class accept
- * @brief Protocol for handling connection acceptance
+ * @ingroup Protocol
+ * @brief Protocol for handling the acceptance of new network connections.
  *
- * This template class implements a protocol for handling the acceptance
- * of new connections. It extends the AProtocol base class and implements
- * its abstract methods for detecting and processing new connections.
+ * This template class implements the `AProtocol` interface specifically for
+ * connection-accepting components (like `qb::io::async::tcp::acceptor`).
+ * Its primary role is to detect when a new connection has been successfully
+ * accepted by the underlying listener socket and to deliver the new connection's
+ * socket (as `_Socket` type) to the I/O component.
  *
- * @tparam _IO_ The I/O type (typically an acceptor)
- * @tparam _Socket The socket type for accepted connections
+ * @tparam _IO_ The I/O component type that uses this protocol (typically an acceptor class).
+ *              It must provide a `getAccepted()` method returning a reference to the newly accepted socket.
+ * @tparam _Socket The type of socket that represents the newly accepted connection (e.g., `qb::io::tcp::socket`).
  */
 template <typename _IO_, typename _Socket>
 class accept : public async::AProtocol<_IO_> {
 public:
+    /** 
+     * @typedef message
+     * @brief The type of message this protocol produces, which is the accepted socket itself.
+     */
     using message = _Socket; /**< Type alias for the socket type */
 
     /**
-     * @brief Default constructor (deleted)
+     * @brief Default constructor is deleted as an I/O component reference is required.
      */
     accept() = delete;
 
     /**
-     * @brief Constructor with I/O reference
-     *
-     * @param io Reference to the I/O object using this protocol
+     * @brief Constructor with I/O reference.
+     * @param io Reference to the I/O component (e.g., an acceptor) that will use this protocol.
      */
     accept(_IO_ &io) noexcept
         : async::AProtocol<_IO_>(io) {}
 
     /**
-     * @brief Check if a new connection is available
+     * @brief Checks if a new connection is available to be processed.
      *
-     * Determines if a new connection has been accepted by checking
-     * if the accepted socket is open.
+     * This method determines if a new connection has been accepted by checking
+     * if the socket obtained from `this->_io.getAccepted()` is currently open.
      *
-     * @return 1 if a new connection is available, 0 otherwise
+     * @return `1` if a new, open connection is available, `0` otherwise.
+     *         The return type `std::size_t` is used to conform to the `AProtocol` interface,
+     *         but effectively it's a boolean check.
      */
     std::size_t
     getMessageSize() noexcept final {
@@ -70,22 +79,24 @@ public:
     }
 
     /**
-     * @brief Process a new connection
+     * @brief Processes a newly accepted connection.
      *
-     * Calls the I/O object's handler for new connections with the
-     * newly accepted socket.
+     * This method is called when `getMessageSize()` returns a non-zero value (i.e., an open socket was found).
+     * It then calls the I/O component's `on()` handler, passing the newly accepted socket
+     * (obtained via `this->_io.getAccepted()`) by moving it.
      *
-     * @param size Ignored parameter (required by interface)
+     * @param size Ignored parameter (required by `AProtocol` interface, but its value is not used here
+     *             as `getMessageSize()` for this protocol effectively returns a boolean status).
      */
     void
-    onMessage(std::size_t) noexcept final {
+    onMessage(std::size_t /*size*/) noexcept final { // size is unused
         this->_io.on(std::move(this->_io.getAccepted()));
     }
 
     /**
-     * @brief Reset the protocol state
-     *
-     * This protocol doesn't maintain state, so this is a no-op.
+     * @brief Resets the protocol state.
+     * @details This protocol is stateless regarding message parsing (it only checks socket status),
+     *          so this method is a no-op.
      */
     void
     reset() noexcept final {}

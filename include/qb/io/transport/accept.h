@@ -1,9 +1,10 @@
 /**
  * @file qb/io/transport/accept.h
- * @brief Connection acceptance transport implementation for the QB IO library
+ * @brief TCP connection acceptance transport implementation for the QB IO library.
  *
  * This file provides a transport implementation for accepting incoming
- * TCP connections, wrapping the TCP listener functionality.
+ * TCP connections, wrapping the `qb::io::tcp::listener` functionality.
+ * It is used by asynchronous acceptor components (e.g., `qb::io::async::tcp::acceptor`).
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -29,11 +30,16 @@ namespace qb::io::transport {
 
 /**
  * @class accept
- * @brief Connection acceptance transport class
+ * @ingroup Transport
+ * @brief Connection acceptance transport for TCP connections.
  *
- * This class implements a transport layer for accepting incoming TCP connections.
- * It wraps a TCP listener and provides methods for accepting and managing
- * new socket connections.
+ * This class implements a transport layer specific to accepting incoming TCP connections.
+ * It wraps a `qb::io::tcp::listener` and is primarily used as the IO type (`_IO_`)
+ * for stream classes (like `qb::io::istream`) when building acceptor components
+ * (e.g., `qb::io::async::tcp::acceptor`).
+ *
+ * Its `read()` method attempts to accept a new connection via the listener, and
+ * `getAccepted()` provides access to the newly accepted `qb::io::tcp::socket`.
  */
 class accept {
     io::tcp::listener _io;          /**< TCP listener for accepting connections */

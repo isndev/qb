@@ -63,6 +63,19 @@ template <typename K, typename H = std::hash<K>, typename E = std::equal_to<K>,
           typename A = std::allocator<K>>
 using unordered_set = ska::unordered_set<K, H, E, A>;
 #else
+/**
+ * @brief The primary unordered set implementation
+ *
+ * In release builds, this uses the high-performance ska::unordered_set
+ * implementation. In debug builds, it falls back to std::unordered_set
+ * for better debugging support.
+ *
+ * @tparam K The key type
+ * @tparam H The hash function type (defaults to std::hash<K>)
+ * @tparam E The equality function type (defaults to std::equal_to<K>)
+ * @tparam A The allocator type
+ * @ingroup Container
+ */
 template <typename K, typename H = std::hash<K>, typename E = std::equal_to<K>,
           typename A = std::allocator<K>>
 using unordered_set = std::unordered_set<K, H, E, A>;

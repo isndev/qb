@@ -1,72 +1,77 @@
-# QB-IO: Transports
+@page qb_io_transports_md QB-IO: Understanding Transports
+@brief Explore `qb-io`'s transport layer, which bridges abstract streams with concrete I/O mechanisms like TCP, UDP, SSL, and files.
 
-Transports bridge the gap between the abstract stream interfaces (`istream`/`ostream`/`stream`) and the low-level system I/O primitives (`qb::io::socket`, `qb::io::sys::file`). They handle the specifics of reading from and writing to different types of I/O resources.
+# QB-IO: Understanding Transports
 
-## Core Stream Abstractions
+In the `qb-io` library, **transports** are the crucial components that connect the high-level, buffered stream abstractions (`qb::io::istream`, `ostream`, `stream`) to the low-level, platform-specific I/O primitives (`qb::io::socket`, `qb::io::sys::file`). They handle the actual reading from and writing to different types of I/O resources, making the stream interface work seamlessly across various communication methods.
 
-(`qb/include/qb/io/stream.h`)
+## The Role of Stream Abstractions
 
-Before diving into transports, recall the base stream classes:
+Before diving into specific transports, let's recap the core stream classes they build upon (defined in `qb/io/stream.h`):
 
-*   **`qb::io::istream<IO_>`:** Manages buffered input via `_in_buffer` (`qb::allocator::pipe`). Provides `read()` to fill the buffer from the underlying `_IO_` transport and `flush(size)` to consume data from the buffer.
-*   **`qb::io::ostream<IO_>`:** Manages buffered output via `_out_buffer`. Provides `publish(data, size)` to add data to the buffer and `write()` to send buffer contents to the underlying `_IO_` transport.
-*   **`qb::io::stream<IO_>`:** Combines `istream` and `ostream` for bidirectional I/O, using a single underlying `_IO_` object (typically referred to as `_in` within the class).
+*   **`qb::io::istream<IO_Type>`:** Manages an input buffer (`qb::allocator::pipe`) and provides a `read()` method to populate this buffer from an underlying `IO_Type` object. Also offers `flush(size)` to consume data from the buffer.
+*   **`qb::io::ostream<IO_Type>`:** Manages an output buffer (`qb::allocator::pipe`). It provides `publish(data, size)` (or `operator<<`) to add data to the buffer and a `write()` method to send the buffer's contents using the underlying `IO_Type`.
+*   **`qb::io::stream<IO_Type>`:** Combines `istream` and `ostream` capabilities for bidirectional communication, using a single `IO_Type` object for both input and output.
 
-## Available Transports
+Each transport specializes one of these stream templates with a concrete `IO_Type`.
 
-### 1. TCP Transport (`qb::io::transport::tcp`)
+## Available `qb-io` Transports
 
-*   **Header:** `qb/include/qb/io/transport/tcp.h`
-*   **Underlying IO:** `qb::io::tcp::socket`
+### 1. TCP Transport: `qb::io::transport::tcp`
+
+*   **Header:** `qb/io/transport/tcp.h`
+*   **Underlying I/O Primitive:** `qb::io::tcp::socket` (which itself wraps a system socket descriptor for TCP/IP v4/v6 or Unix Domain Sockets).
 *   **Base Class:** `qb::io::stream<qb::io::tcp::socket>`
-*   **Purpose:** Standard, reliable stream-based communication over TCP/IP (v4/v6) and Unix Domain Sockets.
-*   **How to Use:** This is the foundation for asynchronous TCP clients and server sessions. You typically don't use `transport::tcp` directly but rather inherit from `qb::io::use<...>::tcp::client` or let `qb::io::use<...>::tcp::server` manage sessions based on it.
-    *   Its `read()` calls `tcp::socket::read()`.
-    *   Its `write()` calls `tcp::socket::write()`.
+*   **Purpose:** Provides reliable, ordered, stream-based communication. This is the workhorse for most client-server network applications.
+*   **Key Operations:** Its `read()` method calls `qb::io::tcp::socket::read()`, and its `write()` method calls `qb::io::tcp::socket::write()`.
+*   **Typical Usage:** Forms the foundation for asynchronous TCP clients and server-side client session handlers, often used via `qb::io::use<...>::tcp::client` or managed by `qb::io::use<...>::tcp::server`.
 
-**(Ref:** `test-io.cpp` (TCP tests), `example3_tcp_networking.cpp`, `chat_tcp` example**)
+**(Reference:** See `test-io.cpp` for TCP socket tests, `example3_tcp_networking.cpp`, and the `chat_tcp` example for practical application.**)
 
-### 2. UDP Transport (`qb::io::transport::udp`)
+### 2. UDP Transport: `qb::io::transport::udp`
 
-*   **Header:** `qb/include/qb/io/transport/udp.h`
-*   **Underlying IO:** `qb::io::udp::socket`
+*   **Header:** `qb/io/transport/udp.h`
+*   **Underlying I/O Primitive:** `qb::io::udp::socket` (wrapping a system socket descriptor for UDP/IP v4/v6 or datagram-style Unix Domain Sockets).
 *   **Base Class:** `qb::io::stream<qb::io::udp::socket>`
-*   **Purpose:** Connectionless, datagram-based communication over UDP/IP (v4/v6) and Unix Domain Sockets.
-*   **Key Differences & Usage:**
-    *   **Endpoint Handling:** UDP requires managing source/destination endpoints for each datagram.
-        *   `getSource() const -> const udp::identity&`: Returns the endpoint (`qb::io::endpoint`) of the sender of the *last received* datagram.
-        *   `setDestination(const udp::identity& to)`: Sets the default destination endpoint for subsequent writes using the `out()` buffer proxy.
-        *   `publish_to(const udp::identity& to, const char* data, size_t size)`: Enqueues data specifically targeted at the given endpoint `to`.
-    *   **Datagram Operations:**
-        *   `read()`: Reads a *single* datagram into the input buffer and sets the source (`_remote_source`) for potential replies.
-        *   `write()`: Sends the *next complete message* from the output buffer to its associated destination endpoint.
-    *   **Output Buffering:** Manages messages in the output buffer using an internal `pushed_message` struct to track destination and size for each queued datagram.
-    *   **How to Use:** Typically used as a base for `qb::io::use<...>::udp::client` or `::server`.
+*   **Purpose:** Enables connectionless, datagram-based (message-oriented) communication.
+*   **Key Features & Usage:**
+    *   **Endpoint Management:** Essential for UDP, as each datagram can have a different source or destination.
+        *   `getSource() const -> const udp::identity&`: Returns the `qb::io::endpoint` of the sender of the *last successfully received* datagram.
+        *   `setDestination(const udp::identity& to)`: Sets the default remote endpoint for data sent via the `out()` proxy stream.
+        *   `publish_to(const udp::identity& to, const char* data, size_t size)`: Enqueues data specifically targeted at the given endpoint `to` as a distinct datagram.
+    *   **Datagram-Oriented I/O:**
+        *   `read()`: Attempts to read a *single, complete* datagram into the input buffer and updates `getSource()`.
+        *   `write()`: Attempts to send the *next complete datagram* from the output buffer to its designated recipient.
+    *   **Output Buffering:** Manages an output buffer where each datagram is queued with its destination `udp::identity`.
+*   **Typical Usage:** Used as the base for `qb::io::use<...>::udp::client` and `qb::io::use<...>::udp::server` components.
 
-**(Ref:** `test-io.cpp` (UDP tests), `example4_udp_networking.cpp`**)
+**(Reference:** Consult `test-io.cpp` for UDP socket tests and `example4_udp_networking.cpp`.**)
 
-### 3. File Transport (`qb::io::transport::file`)
+### 3. File Transport: `qb::io::transport::file`
 
-*   **Header:** `qb/include/qb/io/transport/file.h`
-*   **Underlying IO:** `qb::io::sys::file`
+*   **Header:** `qb/io/transport/file.h`
+*   **Underlying I/O Primitive:** `qb::io::sys::file` (a cross-platform wrapper for native file descriptors/handles).
 *   **Base Class:** `qb::io::stream<qb::io::sys::file>`
-*   **Purpose:** Stream-based access to local files.
-*   **How to Use:** Can be used directly for buffered file access or as a base for file processing components (e.g., in conjunction with `async::file_watcher`).
-    *   Its `read()` calls `sys::file::read()`.
-    *   Its `write()` (as implemented in `file`) is a no-op; writing is typically done via `publish()` followed by application-level logic to flush the buffer or implicitly via the stream destructor.
+*   **Purpose:** Provides stream-based access to local files for buffered reading and writing.
+*   **Key Operations:** Its `read()` method calls `qb::io::sys::file::read()`. The `write()` method inherited from `stream` (which calls `_in.write()`) is typically used to write data buffered via `publish()` or `operator<<` to the file.
+*   **Typical Usage:** Can be used directly for synchronous buffered file I/O. In asynchronous contexts, it might be paired with `qb::io::async::file_watcher` within a file processing actor.
 
-**(Ref:** `test-file-operations.cpp`, `test-stream-operations.cpp`, `file_monitor` example**)
+**(Reference:** See `test-file-operations.cpp`, `test-stream-operations.cpp`, and the `file_monitor` example.**)
 
-### 4. Secure TCP (SSL/TLS) Transport (`qb::io::transport::stcp`)
+### 4. Secure TCP (SSL/TLS) Transport: `qb::io::transport::stcp`
 
-*   **Header:** `qb/include/qb/io/transport/stcp.h`
-*   **Underlying IO:** `qb::io::tcp::ssl::socket`
+*   **Header:** `qb/io/transport/stcp.h`
+*   **Underlying I/O Primitive:** `qb::io::tcp::ssl::socket` (which layers SSL/TLS encryption via OpenSSL on top of a `qb::io::tcp::socket`).
 *   **Base Class:** `qb::io::stream<qb::io::tcp::ssl::socket>`
-*   **Requires:** `QB_IO_WITH_SSL=ON`, OpenSSL library.
-*   **Purpose:** Provides encrypted stream-based communication over TCP using SSL/TLS.
-*   **How to Use:** Used similarly to `transport::tcp`, serving as the foundation for `qb::io::use<...>::tcp::ssl::client` and server sessions.
-*   **Key Differences & Usage:**
-    *   Underlying `ssl::socket` handles the SSL handshake and encryption/decryption.
-    *   The `read()` method in `transport::stcp` is overridden to specifically handle potential buffering within the OpenSSL `SSL` object. After reading from the socket, it calls `SSL_pending()` and performs an additional read if necessary to ensure all decrypted data is retrieved from OpenSSL's internal buffers.
+*   **Prerequisites:** Requires `QB_IO_WITH_SSL=ON` during CMake configuration and the OpenSSL library linked to your application.
+*   **Purpose:** Facilitates reliable, ordered, stream-based communication over TCP/IP, with the added security of SSL/TLS encryption.
+*   **Key Operations & Behavior:**
+    *   The underlying `ssl::socket` manages the SSL handshake process and transparently encrypts outgoing data and decrypts incoming data.
+    *   The `read()` method in `transport::stcp` is specifically overridden. After reading from the underlying socket, it calls `SSL_pending()` to check if OpenSSL has buffered any additional decrypted bytes. If so, it performs further reads to retrieve this pending data, ensuring all application-level data is promptly available.
+*   **Typical Usage:** This is the transport used by `qb::io::use<...>::tcp::ssl::client` and server-side SSL session handlers.
 
-**(Ref:** `test-async-io.cpp` (SSL test), `test-session-text.cpp` (Secure test), `[SSL Transport Details](./ssl_transport.md)`**) 
+**(Reference:** Explore `test-async-io.cpp` (SSL test), `test-session-text.cpp` (Secure test), and the detailed `[QB-IO: Secure TCP (SSL/TLS) Transport](./ssl_transport.md)` page.**)
+
+By providing these specialized transports, `qb-io` offers a flexible and consistent way to handle diverse I/O requirements while abstracting away many platform-specific and protocol-specific details.
+
+**(Next:** `[QB-IO: Protocols](./protocols.md)` to learn how data streams from these transports are interpreted as messages.**) 

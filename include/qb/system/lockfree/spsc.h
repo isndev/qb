@@ -20,7 +20,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup Lockfree
+ * @ingroup LockFree
  */
 
 #ifndef QB_LOCKFREE_SPSC_H

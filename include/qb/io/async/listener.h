@@ -19,7 +19,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- * @ingroup IO
+ * @ingroup Async
  */
 
 #ifndef QB_IO_ASYNC_LISTENER_H_
@@ -37,10 +37,11 @@ namespace qb::io::async {
 
 /**
  * @class listener
- * @brief Central event loop manager for asynchronous IO operations
+ * @ingroup Async
+ * @brief Central event loop manager for asynchronous IO operations.
  *
  * The listener class is the core of the asynchronous event system. It manages
- * an event loop that handles all asynchronous events (IO, timer, signal, etc.)
+ * an event loop (based on libev) that handles all asynchronous events (IO, timer, signal, etc.)
  * and dispatches them to registered handlers.
  *
  * Each thread has its own listener instance accessible via the thread_local
@@ -49,20 +50,24 @@ namespace qb::io::async {
 class listener {
 public:
     /**
-     * @brief Thread-local instance of the listener
+     * @brief Thread-local instance of the listener.
      *
      * Each thread has its own listener accessible through this static member.
      * This provides a way to access the current thread's event loop without
      * passing a reference explicitly.
+     * @note This is typically initialized automatically when `qb::Main` starts its `VirtualCore` threads,
+     *       or by calling `qb::io::async::init()` for standalone `qb-io` usage.
      */
     thread_local static listener current;
 
     /**
      * @class RegisteredKernelEvent
-     * @brief Template wrapper for event handlers
+     * @ingroup AsyncEvent
+     * @brief Template wrapper for concrete event handlers and their associated libev watchers.
      *
-     * This class wraps an event and its associated actor (handler) and provides
-     * a way to invoke the actor's handler method when the event is triggered.
+     * This internal class wraps a specific libev event watcher (like `ev::io` or `ev::timer`)
+     * and the user-provided actor/handler object. It implements the `IRegisteredKernelEvent`
+     * interface.
      *
      * @tparam _Event The event type
      * @tparam _Actor The actor (handler) type
@@ -118,16 +123,18 @@ public:
      * @brief Constructor
      *
      * Creates a new listener with a dynamic event loop using automatic detection
-     * of the best available backend.
+     * of the best available backend (e.g., epoll, kqueue, select) via libev's EVFLAG_AUTO.
      */
     listener()
         : _loop(EVFLAG_AUTO) {}
 
     /**
-     * @brief Clear all registered events
+     * @brief Clear all registered events from this listener.
      *
-     * Removes all registered events and runs the event loop once to process
-     * any pending events.
+     * Removes and deletes all registered event handlers (IRegisteredKernelEvent instances).
+     * It also runs the event loop once with `EVRUN_ONCE` to process any pending libev events
+     * before fully clearing, which might be necessary for proper cleanup of some watchers.
+     * @note This is automatically called by the listener's destructor.
      */
     void
     clear() {
@@ -142,21 +149,23 @@ public:
     /**
      * @brief Destructor
      *
-     * Cleans up by clearing all registered events.
+     * Cleans up by calling `clear()` to remove all registered events and their watchers.
      */
     ~listener() noexcept {
         clear();
     }
 
     /**
-     * @brief Event callback handler
+     * @brief Generic event callback handler invoked by libev for any active watcher.
      *
-     * This method is called by libev when an event is triggered. It updates
-     * the event's revents field and invokes the associated handler.
+     * This method is the entry point for libev to notify of an event. It updates
+     * the custom event wrapper's `_revents` field and then invokes the stored
+     * `IRegisteredKernelEvent::invoke()` method, which in turn calls the user-defined
+     * `on(SpecificEvent&)` handler in the registered actor/object.
      *
-     * @tparam EV_EVENT The event type
-     * @param event The event that was triggered
-     * @param revents The triggered event flags
+     * @tparam EV_EVENT The specific libev watcher type (e.g., `ev::io`, `ev::timer`).
+     * @param event The libev watcher that was triggered.
+     * @param revents The bitmask of triggered event flags (e.g., `EV_READ`, `EV_WRITE`).
      */
     template <typename EV_EVENT>
     void
@@ -168,17 +177,20 @@ public:
     }
 
     /**
-     * @brief Register an event handler
+     * @brief Register an event handler (actor/object) for a specific asynchronous event type.
      *
-     * Creates and registers a new event handler for the specified event type
-     * and actor.
+     * Creates a `RegisteredKernelEvent` wrapper for the given actor and event type,
+     * initializes the underlying libev watcher with the provided arguments, and registers
+     * it with this listener's event loop.
      *
-     * @tparam _Event The event type
-     * @tparam _Actor The actor (handler) type
-     * @tparam _Args Types of additional arguments for event initialization
-     * @param actor Reference to the actor that will handle the event
-     * @param args Additional arguments for event initialization
-     * @return Reference to the created event
+     * @tparam _Event The qb-io event type (e.g., `qb::io::async::event::io`, `qb::io::async::event::timer`).
+     *                This type wraps a specific libev watcher.
+     * @tparam _Actor The type of the class that will handle the event (must have an `on(_Event&)` method).
+     * @tparam _Args Types of additional arguments for initializing the libev watcher (e.g., fd and event flags for `ev::io`).
+     * @param actor Reference to the actor/object instance that will handle the event.
+     * @param args Additional arguments forwarded to the libev watcher's `set()` or equivalent initialization method.
+     * @return Reference to the created `_Event` object (which is also the libev watcher).
+     *         This reference can be used to later `start()` or `stop()` the watcher.
      */
     template <typename _Event, typename _Actor, typename... _Args>
     _Event &
@@ -196,11 +208,15 @@ public:
     }
 
     /**
-     * @brief Unregister an event handler
+     * @brief Unregister an event handler and its associated libev watcher.
      *
-     * Removes and deletes the specified event handler.
+     * Removes the specified `IRegisteredKernelEvent` from the listener's tracking
+     * and deletes the event handler object, which also stops and cleans up the
+     * underlying libev watcher via its destructor.
      *
-     * @param kevent Pointer to the event handler to unregister
+     * @param kevent Pointer to the `IRegisteredKernelEvent` to unregister. This pointer
+     *               is typically obtained when the event was initially registered or stored
+     *               within the libev watcher wrapper itself (e.g., `_Event::_interface`).
      */
     void
     unregisterEvent(IRegisteredKernelEvent *kevent) {
@@ -209,8 +225,10 @@ public:
     }
 
     /**
-     * @brief Get the event loop
-     * @return Reference to the libev event loop
+     * @brief Get a reference to the underlying libev event loop.
+     * @return `ev::loop_ref` (a reference wrapper to `ev_loop*`) for this listener.
+     * @details Useful for advanced direct interaction with libev if needed, though most
+     *          operations are handled through the listener's API.
      */
     [[nodiscard]] inline ev::loop_ref
     loop() const {
@@ -218,11 +236,15 @@ public:
     }
 
     /**
-     * @brief Run the event loop
+     * @brief Run the event loop to process pending events.
      *
-     * Executes the event loop with the specified flag.
+     * Executes the event loop with the specified libev run flag.
+     * This call blocks or returns based on the flag and event activity.
+     * It also resets the `_nb_invoked_events` counter before running.
      *
-     * @param flag The libev run flag (e.g., EVRUN_NOWAIT, EVRUN_ONCE)
+     * @param flag The libev run flag (e.g., `EVRUN_NOWAIT` to check once and return,
+     *             `EVRUN_ONCE` to wait for and process one event block, `0` for default blocking run).
+     *             Default is `0`, which means `ev_run` will block until `ev_break` is called or no active watchers remain.
      */
     inline void
     run(int flag = 0) {
@@ -230,14 +252,21 @@ public:
         _loop.run(flag);
     }
 
+    /**
+     * @brief Request the event loop to break out of its current `run()` cycle.
+     * @details This signals the libev loop to stop processing further events in the current
+     *          `run()` invocation. If `run()` was called with default blocking behavior,
+     *          it will return after the current event (if any) is processed.
+     */
     inline void
     break_one() {
         _loop.break_loop();
     }
 
     /**
-     * @brief Get the number of invoked events
-     * @return The number of events that were invoked in the last run
+     * @brief Get the number of events invoked during the last call to `run()`.
+     * @return The count of events that were processed and dispatched to handlers.
+     * @note This counter is reset at the beginning of each `run()` call.
      */
     [[nodiscard]] inline std::size_t
     nb_invoked_event() const {
@@ -245,8 +274,8 @@ public:
     }
 
     /**
-     * @brief Get the number of registered events
-     * @return The number of currently registered events
+     * @brief Get the number of currently registered event handlers.
+     * @return The total number of active event watchers managed by this listener.
      */
     [[nodiscard]] inline std::size_t
     size() const {
@@ -255,9 +284,11 @@ public:
 };
 
 /**
- * @brief Initialize the asynchronous event system
- *
- * Clears the current thread's listener, preparing it for use.
+ * @brief Initialize the asynchronous event system for the current thread.
+ * @details Ensures that `listener::current` is available and ready for use.
+ *          Typically called once per thread that will use `qb-io` asynchronous features standalone.
+ *          Not usually needed when using `qb-core` as `qb::Main` handles this for its `VirtualCore` threads.
+ * @ingroup Async
  */
 inline void
 init() {
@@ -265,12 +296,14 @@ init() {
 }
 
 /**
- * @brief Run the event loop
+ * @brief Run the event loop for the current thread.
  *
- * Executes the current thread's event loop with the specified flag.
+ * Executes the current thread's `listener::current.run(flag)`.
+ * This is the primary way to process asynchronous events in a standalone `qb-io` application.
  *
- * @param flag The libev run flag (e.g., EVRUN_NOWAIT, EVRUN_ONCE)
- * @return The number of events that were invoked
+ * @param flag The libev run flag (e.g., `EVRUN_NOWAIT`, `EVRUN_ONCE`). See `listener::run()`.
+ * @return The number of events that were invoked during this run.
+ * @ingroup Async
  */
 inline std::size_t
 run(int flag = 0) {
@@ -279,12 +312,11 @@ run(int flag = 0) {
 }
 
 /**
- * @brief Run the event loop until a condition is met
+ * @brief Run the event loop once for the current thread, waiting for at least one event.
  *
- * Repeatedly runs the event loop until the specified status becomes false.
- *
- * @param status Reference to a boolean condition to check
- * @return The number of events that were invoked
+ * Equivalent to `listener::current.run(EVRUN_ONCE)`.
+ * @return The number of events invoked.
+ * @ingroup Async
  */
 inline std::size_t
 run_once() {
@@ -293,12 +325,12 @@ run_once() {
 }
 
 /**
- * @brief Run the event loop until a condition is met
+ * @brief Run the event loop for the current thread until a condition is met.
  *
- * Repeatedly runs the event loop until the specified status becomes false.
- *
- * @param status Reference to a boolean condition to check
- * @return The number of events that were invoked
+ * Repeatedly calls `listener::current.run(EVRUN_NOWAIT)` as long as the `status` is true.
+ * @param status Reference to a boolean condition. The loop continues as long as `status` is true.
+ * @return The total number of events invoked across all `run(EVRUN_NOWAIT)` calls.
+ * @ingroup Async
  */
 inline std::size_t
 run_until(bool const &status) {
@@ -310,6 +342,11 @@ run_until(bool const &status) {
     return nb_invoked_events;
 }
 
+/**
+ * @brief Request the parent (current thread's) event loop to break.
+ * @details Calls `listener::current.break_one()`.
+ * @ingroup Async
+ */
 inline void
 break_parent() {
     listener::current.break_one();
