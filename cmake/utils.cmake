@@ -458,7 +458,6 @@ function(qb_register_module_gtest)
     list(APPEND Module_DEPENDENCIES
     #            "${QB_PREFIX}-core"
                 "qbm-${Module_NAME}"
-                "gtest"
                 "gtest_main")
     set(Module_NAME "qbm-${Module_NAME}-gtest-${Module_TESTNAME}")
     message(STATUS "Load ${Module_NAME} Test")
