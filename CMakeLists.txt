@@ -337,6 +337,7 @@ if(${QB_PREFIX_UPPER}_INSTALL)
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         FILES_MATCHING PATTERN "*.h"
                        PATTERN "*.hpp"
+                       PATTERN "*.tpp"
     )
 
     # Generate and install CMake package configuration files

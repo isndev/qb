@@ -60,7 +60,7 @@ qb_configure_module(
 # Add private include directories specific to this module
 target_include_directories(${PROJECT_NAME}
         PRIVATE
-        "$<BUILD_INTERFACE:${QB_DIRECTORY}/source/core/include>"
+        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include>"
 )
 
 # -----------------------------------------------------------------------------

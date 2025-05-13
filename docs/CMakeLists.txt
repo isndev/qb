@@ -16,7 +16,7 @@
 #
 
 # Doxygen Build
-option(BUILD_DOC "Build Documentation" ON)
+option(QB_BUILD_DOC "Build Documentation" OFF)
 
 find_package(Doxygen)
 if(DOXYGEN_FOUND)
@@ -45,7 +45,7 @@ if(DOXYGEN_FOUND)
 
     configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
 
-    if (BUILD_DOC)
+    if (QB_BUILD_DOC)
         message(STATUS "INFO: Doxygen build target '${QB_PREFIX}-docs' added to solution")
         add_custom_target(${QB_PREFIX}-docs ALL
                 COMMAND ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}

@@ -662,7 +662,6 @@ private:
     on(event::io const &event) {
         constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
         std::size_t                 ret         = 0u;
-        bool                        ok          = false;
 
         if (_on_message)
             return;
@@ -694,7 +693,7 @@ private:
                     }
                 }
             }
-            ok = true;
+            return;
         }
     error:
 #ifdef _WIN32
