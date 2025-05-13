@@ -218,6 +218,13 @@ class uri {
      */
     bool from(std::string &&rhs) noexcept;
 
+    /**
+     * @brief Parse query parameters without using regex
+     * @param begin Pointer to the beginning of the query string
+     * @param end Pointer to the end of the query string
+     */
+    void parse_query_parameters(const char* begin, const char* end);
+
 public:
     /**
      * @brief Default constructor
@@ -327,32 +334,18 @@ public:
     }
 
     /**
-     * @brief Decodes a URI-encoded string
-     * @param input The string to decode
-     * @return The decoded string
-     */
-    static std::string decode(std::string const &input) noexcept;
-
-    /**
-     * @brief Encodes a string in URI format
-     * @param input The string to encode
-     * @return The encoded string
-     */
-    static std::string encode(std::string const &input) noexcept;
-
-    /**
      * @brief Decodes a URI-encoded string view
      * @param input The string view to decode
      * @return The decoded string
      */
-    static std::string decode(std::string_view const &input) noexcept;
+    static std::string decode(std::string_view input) noexcept;
 
     /**
      * @brief Encodes a string view in URI format
      * @param input The string view to encode
      * @return The encoded string
      */
-    static std::string encode(std::string_view const &input) noexcept;
+    static std::string encode(std::string_view input) noexcept;
 
     /**
      * @brief Decodes a URI-encoded memory block
@@ -527,6 +520,27 @@ public:
     fragment() const {
         return _fragment;
     }
+
+    /**
+     * @brief Validates if a string is a valid URI scheme
+     * @param scheme The scheme to validate
+     * @return true if valid, false otherwise
+     */
+    static bool is_valid_scheme(std::string_view scheme) noexcept;
+
+    /**
+     * @brief Validates if a string is a valid URI host
+     * @param host The host to validate
+     * @return true if valid, false otherwise
+     */
+    static bool is_valid_host(std::string_view host) noexcept;
+
+    /**
+     * @brief Normalizes a path by resolving '.', '..' segments and standardizing slashes
+     * @param path Path to normalize (will be modified)
+     * @return true if successful, false otherwise
+     */
+    static bool normalize_path(std::string &path) noexcept;
 };
 } // namespace qb::io
 
