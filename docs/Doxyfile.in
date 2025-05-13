@@ -207,8 +207,7 @@ EXCLUDE_SYMBOLS        =
 EXAMPLE_PATH           = "@QB_DIRECTORY@/readme/"
 EXAMPLE_PATTERNS       = *
 EXAMPLE_RECURSIVE      = YES
-IMAGE_PATH             = "@DOXYGEN_INPUT_DIR@/../ressources/" \
-                         "@DOXYGEN_INPUT_DIR@/template/static/"
+IMAGE_PATH             = "@DOXYGEN_INPUT_DIR@/template/static/"
 INPUT_FILTER           =
 FILTER_PATTERNS        =
 FILTER_SOURCE_FILES    = NO

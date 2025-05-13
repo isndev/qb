@@ -103,6 +103,7 @@ if (OPENSSL_FOUND)
         find_library(ARGON2_LIBRARY NAMES argon2 libargon2)
         if (ARGON2_LIBRARY)
             list(APPEND CURRENT_DEPENDENCIES ${ARGON2_LIBRARY})
+            list(APPEND CURRENT_INCLUDES ${ARGON2_INCLUDE_DIR})
             list(APPEND CURRENT_DEFINITIONS QB_IO_WITH_ARGON2=1)
             message(STATUS "[${PROJECT_NAME}] Building with Argon2 support for advanced crypto")
         else ()
@@ -110,15 +111,6 @@ if (OPENSSL_FOUND)
         endif ()
     else ()
         message(STATUS "[${PROJECT_NAME}] Argon2 support disabled - advanced crypto functions will use fallback methods")
-    endif ()
-
-    # Add nlohmann_json for metadata functions
-    find_package(nlohmann_json QUIET)
-    if (nlohmann_json_FOUND)
-        list(APPEND CURRENT_DEPENDENCIES nlohmann_json::nlohmann_json)
-        message(STATUS "[${PROJECT_NAME}] Building with nlohmann_json support")
-    else ()
-        message(WARNING "[${PROJECT_NAME}] nlohmann_json library not found - metadata functions may not work")
     endif ()
 
     message(STATUS "[${PROJECT_NAME}] Building with OpenSSL support")
@@ -152,7 +144,7 @@ qb_configure_module(
 # Add private include directories specific to this module
 target_include_directories(${PROJECT_NAME}
         PRIVATE
-        "$<BUILD_INTERFACE:${QB_DIRECTORY}/source/io/include>"
+        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include>"
 )
 
 # Apply public compile definitions
