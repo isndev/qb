@@ -124,6 +124,15 @@ public:
     id() const noexcept {
         return _uuid;
     }
+
+    /**
+     * @brief Get the client as a shared pointer
+     * @return Shared pointer to the client
+     */
+    inline auto
+    shared() const {
+        return server().session(id());
+    }
 };
 
 /**
