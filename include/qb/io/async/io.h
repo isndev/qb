@@ -234,6 +234,12 @@ callback(_Func &&func, double timeout = 0.) {
     new Timeout<_Func>(std::forward<_Func>(func), timeout);
 }
 
+template <typename _Func, typename Rep, typename Period>
+void callback(_Func&& func, std::chrono::duration<Rep, Period> timeout_duration) {
+    double seconds = std::chrono::duration_cast<std::chrono::duration<double>>(timeout_duration).count();
+    callback(std::forward<_Func>(func), seconds);
+}
+
 /**
  * @class file_watcher
  * @ingroup FileSystem
