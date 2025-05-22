@@ -133,6 +133,11 @@ public:
     shared() const {
         return server().session(id());
     }
+
+    inline auto
+    ip() const {
+        return transport().peer_endpoint().ip();
+    }
 };
 
 /**

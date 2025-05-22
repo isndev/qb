@@ -493,6 +493,15 @@ public:
     }
 
     /**
+     * @brief Returns the parsed query parameters of this URI (non-const version)
+     * @return Mutable reference to the query parameters map
+     */
+    [[nodiscard]] inline auto &
+    queries() {
+        return _queries;
+    }
+
+    /**
      * @brief Returns the value of a specific query parameter
      *
      * @tparam T Parameter name type

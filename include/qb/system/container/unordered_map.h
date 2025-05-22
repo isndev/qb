@@ -363,6 +363,19 @@ public:
         return find(std::forward<T>(key)) != this->cend();
     }
 
+    /**
+     * @brief Erase a key-value pair by key, with the key converted to lowercase
+     *
+     * @tparam T Key type
+     * @param key The key (will be converted to lowercase)
+     * @return The number of elements erased.
+     */
+    template <typename T>
+    auto
+    erase(T &&key) {
+        return static_cast<base_t &>(*this).erase(_Trait::convert(std::forward<T>(key)));
+    }
+
     // Import methods from the base map
     using base_t::begin;
     using base_t::cbegin;
