@@ -377,7 +377,6 @@ bool uri::parse() noexcept {
 
     // Determine if this is an absolute URI or a relative reference
     // by looking for a scheme (which must be followed by a colon)
-    bool has_scheme = false;
     const char *p2 = p;
     
     // Scheme must start with a letter
@@ -391,7 +390,6 @@ bool uri::parse() noexcept {
         
         // If we found a colon after valid scheme chars, we have a scheme
         if (potential_scheme_end < p_end && *potential_scheme_end == ':') {
-            has_scheme = true;
             scheme_begin = p;
             scheme_end = potential_scheme_end;
             p = potential_scheme_end + 1; // Move past colon
@@ -438,11 +436,9 @@ bool uri::parse() noexcept {
             // Now find the port if it exists (preceded by :)
             // Start from the end of the authority and scan backwards
             const char *colon = nullptr;
-            bool inside_ipv6 = false;
             
             // Handle IPv6 addresses [...]
             if (host_begin < authority_end && *host_begin == '[') {
-                inside_ipv6 = true;
                 const char *ipv6_end = nullptr;
                 
                 // Find matching ']'
@@ -791,9 +787,7 @@ bool uri::is_valid_host(std::string_view host) noexcept {
         return false;
     
     // Check if IPv6 format
-    bool is_ipv6 = false;
     if (host.size() >= 2 && host[0] == '[' && host.back() == ']') {
-        is_ipv6 = true;
         // Would add IPv6 validation logic here
     }
     
