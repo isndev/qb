@@ -41,6 +41,9 @@ namespace qb::io::tcp {
  */
 class QB_API listener : private io::socket {
 public:
+    /** @brief Indicates that this socket implementation is not secure */
+    constexpr static bool is_secure() noexcept { return false; }
+
     // Methods inherited from the base socket (made public via using-declarations)
     using qb::io::socket::close;
     using qb::io::socket::get_optval;

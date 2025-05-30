@@ -133,10 +133,22 @@ public:
     shared() const {
         return server().session(id());
     }
-
+    /**
+     * @brief Get the client's IP address
+     * @return IP address
+     */
     inline auto
     ip() const {
         return transport().peer_endpoint().ip();
+    }
+
+    /**
+     * @brief Get the client's port
+     * @return Port
+     */
+    inline auto
+    port() const {
+        return transport().peer_endpoint().port();
     }
 };
 
@@ -159,7 +171,8 @@ class client<_Derived, _Transport, void>
     , _Transport {
     using base_t = io<_Derived>;
     friend base_t;
-
+protected:
+    const uuid _uuid;   /**< Unique identifier for this client */
 public:
     using base_io_t = io<_Derived>; /**< Base I/O type */
     using transport_io_type =

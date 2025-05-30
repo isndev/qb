@@ -46,6 +46,8 @@ class saccept {
     io::tcp::ssl::socket   _accepted_io; /**< SSL socket for the most recently accepted secure connection. */
 
 public:
+    /** @brief Indicates that this transport implementation is secure */
+    constexpr bool is_secure() const noexcept { return true; }
     /** @brief Type of the underlying transport I/O */
     using transport_io_type = io::tcp::ssl::listener;
 
