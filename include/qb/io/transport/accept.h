@@ -46,6 +46,8 @@ class accept {
     io::tcp::socket   _accepted_io; /**< Socket for the accepted connection */
 
 public:
+    /** @brief Indicates that this transport implementation is not secure */
+    constexpr bool is_secure() const noexcept { return false; }
     /** @brief Type of the underlying transport I/O */
     using transport_io_type = io::tcp::listener;
 

@@ -45,6 +45,8 @@ class udp : public stream<io::udp::socket> {
     using base_t = stream<io::udp::socket>;
 
 public:
+    /** @brief Indicates that this transport implementation is not secure */
+    constexpr bool is_secure() const noexcept { return false; }
     /**
      * @brief Indicates that this transport implementation resets its input buffer state
      *        when a read operation is pending (characteristic of datagram processing).

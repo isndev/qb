@@ -74,6 +74,8 @@ public:
     using qb::io::socket::set_optval;
     using qb::io::socket::test_nonblocking;
 
+    /** @brief Indicates that this socket implementation is not secure */
+    constexpr static bool is_secure() noexcept { return false; }
     /**
      * @brief Default constructor. Creates an uninitialized TCP socket.
      *        Call `init()` before use.

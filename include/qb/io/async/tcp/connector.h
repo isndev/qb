@@ -52,6 +52,33 @@ class connector {
     Socket_      _socket;  /**< Socket for the connection */
     uri          _remote;  /**< URI of the remote endpoint */
 
+private:
+    /**
+     * @brief Establishes the connection using the initialized _socket and _remote.
+     *
+     * This method contains the common logic for connecting, handling immediate success,
+     * in-progress connections, or immediate failures.
+     */
+    void _establish_connection() {
+        LOG_DEBUG("Started async connect to " << _remote.source());
+        auto ret = _socket.n_connect(_remote);
+        if (!ret) {
+            LOG_DEBUG("Connected directly to " << _remote.source());
+            _func(std::move(_socket));
+        } else if (socket_no_error(qb::io::socket::get_last_errno())) {
+            listener::current
+                .registerEvent<event::io>(*this, _socket.native_handle(), EV_WRITE)
+                .start();
+            return;
+        } else {
+            _socket.disconnect();
+            LOG_DEBUG("Failed to connect to "
+                      << _remote.source() << " err=" << qb::io::socket::get_last_errno());
+            _func(Socket_{});
+        }
+        delete this;
+    }
+
 public:
     /**
      * @brief Constructor
@@ -69,23 +96,32 @@ public:
         : _func(std::forward<Func_>(func))
         , _timeout(timeout > 0. ? ev_time() + timeout : 0.)
         , _remote{remote} {
-        LOG_DEBUG("Started async connect to " << remote.source());
-        auto ret = _socket.n_connect(remote);
-        if (!ret) {
-            LOG_DEBUG("Connected directly to " << remote.source());
-            _func(std::move(_socket));
-        } else if (socket_no_error(qb::io::socket::get_last_errno())) {
-            listener::current
-                .registerEvent<event::io>(*this, _socket.native_handle(), EV_WRITE)
-                .start();
-            return;
-        } else {
-            _socket.disconnect();
-            LOG_DEBUG("Failed to connect to "
-                      << remote.source() << " err=" << qb::io::socket::get_last_errno());
-            _func(Socket_{});
-        }
-        delete this;
+        LOG_DEBUG("Connector: Initializing for " << remote.source());
+        // _socket is default-initialized here
+        _establish_connection();
+    }
+
+    /**
+     * @brief Constructor with an existing socket
+     *
+     * Initiates an asynchronous connection to the specified remote endpoint using an existing socket.
+     * The provided socket is moved into the connector.
+     * If the connection succeeds immediately, the callback is called right away.
+     * If the connection is in progress, event handling is set up.
+     * If the connection fails immediately, the callback is called with an empty socket.
+     *
+     * @param existing_socket An rvalue reference to an existing socket to be used for the connection
+     * @param remote URI of the remote endpoint to connect to
+     * @param func Callback function to call when connection completes
+     * @param timeout Connection timeout in seconds (0 = no timeout)
+     */
+    connector(Socket_&& existing_socket, uri const &remote, Func_ &&func, double timeout = 0.)
+        : _func(std::forward<Func_>(func))
+        , _timeout(timeout > 0. ? ev_time() + timeout : 0.)
+        , _socket(std::move(existing_socket)) // Move the existing socket
+        , _remote{remote} {
+        LOG_DEBUG("Connector: Initializing with existing socket for " << remote.source());
+        _establish_connection();
     }
 
     /**
@@ -139,6 +175,28 @@ template <typename Socket_, typename Func_>
 void
 connect(uri const &remote, Func_ &&func, double timeout = 0.) {
     new connector<Socket_, Func_>(remote, std::forward<Func_>(func), timeout);
+}
+
+/**
+ * @brief Initiates an asynchronous TCP connection using an existing socket
+ *
+ * This function creates a new connector object to establish an asynchronous
+ * TCP connection to the specified remote endpoint, using an existing socket instance.
+ * The provided socket is moved. When the connection completes or fails,
+ * the provided callback function is called with the socket.
+ * The connector object manages its own lifetime.
+ *
+ * @tparam Socket_ The socket class type to use for the connection
+ * @tparam Func_ The callback function type that will be called on connection completion
+ * @param existing_socket An rvalue reference to an existing socket to be used for the connection
+ * @param remote URI of the remote endpoint to connect to
+ * @param func Callback function to call when connection completes
+ * @param timeout Connection timeout in seconds (0 = no timeout)
+ */
+template <typename Socket_, typename Func_>
+void
+connect(Socket_&& existing_socket, uri const &remote, Func_ &&func, double timeout = 0.) {
+    new connector<Socket_, Func_>(std::move(existing_socket), remote, std::forward<Func_>(func), timeout);
 }
 
 } // namespace qb::io::async::tcp

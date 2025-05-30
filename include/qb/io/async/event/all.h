@@ -39,5 +39,6 @@
 #include "pending_write.h" // Event for unsent write data
 #include "signal.h"        // System signal event
 #include "timer.h"         // Timer/timeout event
+#include "handshake.h"     // Handshake event
 
 #endif // QB_IO_ASYNC_EVENT_ALL_H

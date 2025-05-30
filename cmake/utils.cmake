@@ -403,7 +403,8 @@ function(cxx_test_with_flags name cxx_flags libs)
                 COMMAND "powershell" "-Command" "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/RunTest.ps1" "$<TARGET_FILE:${name}>")
     else ()
         add_test(NAME ${name}
-                COMMAND "$<TARGET_FILE:${name}>")
+                COMMAND "$<TARGET_FILE:${name}>"
+                WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${PROJECT_NAME}/tests")
     endif ()
     set_target_properties(${name} PROPERTIES
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${PROJECT_NAME}/tests"
@@ -469,7 +470,7 @@ function(qb_register_module_gtest)
             ${Module_SOURCES}
     )
     set_target_properties(${name} PROPERTIES
-            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/qbm/${PROJECT_NAME}/tests"
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/${PROJECT_NAME}/tests"
     )
 endfunction()
 

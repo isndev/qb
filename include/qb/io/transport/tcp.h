@@ -41,7 +41,8 @@ namespace qb::io::transport {
  */
 class tcp : public stream<io::tcp::socket> {
 public:
-    // Inherits all functionality from the stream class
+    /** @brief Indicates that this transport implementation is not secure */
+    constexpr bool is_secure() const noexcept { return false; }
 };
 
 } // namespace qb::io::transport

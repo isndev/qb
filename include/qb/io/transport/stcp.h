@@ -43,6 +43,8 @@ namespace qb::io::transport {
  */
 class stcp : public stream<io::tcp::ssl::socket> {
 public:
+    /** @brief Indicates that this transport implementation is secure */
+    constexpr bool is_secure() const noexcept { return true; }
     /**
      * @brief Read data from the secure TCP socket
      * @return Number of bytes read on success, error code on failure

@@ -680,8 +680,10 @@ private:
                 goto error;
             _on_message = true;
             while ((ret = this->_protocol->getMessageSize()) > 0) {
-                this->_protocol->onMessage(ret);
-                Derived.flush(ret);
+                auto protocol = this->_protocol;
+                protocol->onMessage(ret);
+                if (protocol->should_flush())
+                    Derived.flush(ret);
             }
             _on_message = false;
             Derived.eof();
@@ -1141,8 +1143,10 @@ private:
 
             _on_message = true;
             while ((ret = this->_protocol->getMessageSize()) > 0) {
-                this->_protocol->onMessage(ret);
-                Derived.flush(ret);
+                auto protocol = this->_protocol;
+                protocol->onMessage(ret);
+                if (protocol->should_flush())
+                    Derived.flush(ret);
             }
             _on_message = false;
             Derived.eof();

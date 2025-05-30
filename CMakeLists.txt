@@ -319,8 +319,12 @@ if (${QB_PREFIX_UPPER}_COVERAGE)
             ".*sample.*"
             ".*examples.*"
             ".*test.*"
+            ".*sys__.*"
             )
     SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(NAME ${PROJECT_NAME}-coverage-xml
+            EXECUTABLE ctest
+            DEPENDENCIES qb-core)
+    SETUP_TARGET_FOR_COVERAGE_GCOVR_HTML(NAME ${PROJECT_NAME}-coverage-html
             EXECUTABLE ctest
             DEPENDENCIES qb-core)
 endif()
