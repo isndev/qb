@@ -162,7 +162,7 @@ bool listener::enable_post_handshake_auth() {
 
     // Static callback wrapper
     SSL_CTX_set_alpn_select_cb(_ctx.get(),
-        [](SSL* ssl,
+        [](SSL*,
            const unsigned char** out,
            unsigned char* outlen,
            const unsigned char* in,
