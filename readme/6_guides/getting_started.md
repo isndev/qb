@@ -53,7 +53,7 @@ cmake --build . --config Release
 # On Linux/macOS, you can often speed this up with: make -j$(nproc) or make -j<number_of_cores>
 ```
 
-This process compiles the `qb-io` and `qb-core` libraries. For more detailed build options and installation instructions, please refer to the `[Reference: Building the QB Framework](./../7_reference/building.md)`.
+This process compiles the `qb-io` and `qb-core` libraries. For more detailed build options and installation instructions, please refer to the [Reference: Building the QB Framework](./../7_reference/building.md).
 
 ## 4. Your First QB Application: "PingPongActor"
 
@@ -261,8 +261,8 @@ You should see output from both actors, demonstrating the ping-pong message exch
 Congratulations on running your first QB application!
 
 *   **Included Examples:** The QB framework comes with many more examples in its `example/` directory (e.g., `example/core/`, `example/io/`, `example/core_io/`). Build them as part of the main QB build and explore their code to see various features in action.
-*   **Core Concepts:** Dive deeper into the `[Core Concepts](./../2_core_concepts/README.md)` to solidify your understanding of actors, events, and asynchronous I/O.
-*   **Module Documentation:** Explore the detailed documentation for `[QB-IO Module](./../3_qb_io/README.md)` and `[QB-Core Module](./../4_qb_core/README.md)`.
+*   **Core Concepts:** Dive deeper into the [Core Concepts](./../2_core_concepts/README.md) to solidify your understanding of actors, events, and asynchronous I/O.
+*   **Module Documentation:** Explore the detailed documentation for [QB-IO Module](./../3_qb_io/README.md) and [QB-Core Module](./../4_qb_core/README.md).
 *   **Other Guides:** Check out other guides for patterns, performance tuning, and error handling.
 
 Happy coding with the QB Actor Framework! 

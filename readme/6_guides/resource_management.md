@@ -149,4 +149,4 @@ While RAII is preferred for automatic cleanup, sometimes an actor needs to perfo
 
 By consistently applying RAII and understanding the actor lifecycle, you can effectively manage resources and prevent leaks in your QB applications.
 
-**(Next:** Review the `[QB Framework: Error Handling & Resilience Strategies](./error_handling.md)` for strategies on building fault-tolerant actor systems.**) 
+**(Next:** Review the [QB Framework: Error Handling & Resilience Strategies](./error_handling.md) for strategies on building fault-tolerant actor systems.**) 

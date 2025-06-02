@@ -26,4 +26,4 @@ This section explores how these two modules work in concert, enabling you to bui
 
 Understanding this integration is key to unlocking the full potential of the QB Actor Framework, enabling you to build applications that are not only concurrently sound but also exceptionally performant and responsive to external events and I/O demands.
 
-**(Next:** Dive into `[Integrating Core & IO: Async Operations in Actors](./async_in_actors.md)` or `[Integrating Core & IO: Network Actors](./network_actors.md)` for more specific details.**) 
+**(Next:** Dive into [Integrating Core & IO: Async Operations in Actors](./async_in_actors.md) or [Integrating Core & IO: Network Actors](./network_actors.md) for more specific details.**) 

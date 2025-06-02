@@ -15,7 +15,7 @@ At the very heart of QB lies the **Actor Model**. This isn't just a feature; it'
 
 **Why Actors?** They lead to systems that are easier to reason about, more resilient (errors are often contained within an actor), and inherently scalable by distributing actors across available cores.
 
-**(Explore Further:** `[Core Concepts: The Actor Model in QB](./../2_core_concepts/actor_model.md)`, `[QB-Core: Actor (`qb::Actor`)](./../4_qb_core/actor.md)`, `[QB-Core: Event Messaging](./../4_qb_core/messaging.md)`**)**
+**(Explore Further:** [Core Concepts: The Actor Model in QB](./../2_core_concepts/actor_model.md), [QB-Core: Actor (`qb::Actor`)](./../4_qb_core/actor.md), [QB-Core: Event Messaging](./../4_qb_core/messaging.md)**)**
 
 ## 2. Asynchronous I/O: The Key to Responsiveness (`qb-io`)
 
@@ -27,7 +27,7 @@ High-performance systems cannot afford to wait. Blocking I/O operations (where a
 
 **Why Async I/O?** It ensures your CPU cores are always busy doing useful work—processing actor logic or handling events—rather than idling, leading to superior throughput and lower latency under load.
 
-**(Explore Further:** `[Core Concepts: Asynchronous I/O Model](./../2_core_concepts/async_io.md)`, `[QB-IO: Async System (`qb::io::async`)](./../3_qb_io/async_system.md)`**)**
+**(Explore Further:** [Core Concepts: Asynchronous I/O Model](./../2_core_concepts/async_io.md), [QB-IO: Async System (`qb::io::async`)](./../3_qb_io/async_system.md)**)**
 
 ## 3. Performance & Efficiency: Built for Speed
 
@@ -40,7 +40,7 @@ QB is engineered for applications where performance is paramount.
 
 **Why This Focus?** For many applications, especially in areas like finance, gaming, or real-time data processing, minimizing latency and maximizing throughput are critical requirements. QB provides the tools to achieve this.
 
-**(Explore Further:** `[Guides: Performance Tuning Guide](./../6_guides/performance_tuning.md)`**)**
+**(Explore Further:** [Guides: Performance Tuning Guide](./../6_guides/performance_tuning.md)**)**
 
 ## 4. Modularity & Extensibility: Flexible by Design
 

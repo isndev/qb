@@ -183,4 +183,4 @@ Actors that perform network or file I/O using `qb::io::use<>` helpers must be pr
 
 By combining these strategies—internal actor robustness, awareness of framework behavior for unhandled exceptions, application-level supervision, and proper handling of I/O events—you can build QB actor systems that are significantly more resilient to failures and easier to maintain.
 
-**(Next:** `[QB Framework: Effective Resource Management](./resource_management.md)` to learn about managing actor and system resources effectively.**) 
+**(Next:** [QB Framework: Effective Resource Management](./resource_management.md) to learn about managing actor and system resources effectively.**) 

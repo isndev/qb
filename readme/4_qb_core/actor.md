@@ -174,5 +174,5 @@ Beyond lifecycle and event handling, `qb::Actor` provides several utility method
 
 By mastering these aspects of `qb::Actor`, you can effectively build modular, concurrent, and robust components for your applications.
 
-**(Next:** `[QB-Core: Event Messaging](./messaging.md)` to delve deeper into how actors communicate.**)
-**(See also:** `[Core Concepts: The Actor Model in QB](./../2_core_concepts/actor_model.md)`, `[QB-Core: Actor Lifecycle (TBD)]()`, `[QB-Core: Actor Patterns & Utilities](./patterns.md)`**) 
+**(Next:** [QB-Core: Event Messaging](./messaging.md) to delve deeper into how actors communicate.**)
+**(See also:** [Core Concepts: The Actor Model in QB](./../2_core_concepts/actor_model.md), [QB-Core: Actor Lifecycle (TBD)](), [QB-Core: Actor Patterns & Utilities](./patterns.md)**) 

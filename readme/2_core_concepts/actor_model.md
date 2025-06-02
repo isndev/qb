@@ -138,7 +138,7 @@ push<SystemUpdateEvent>(core1_broadcast_target, /* update data */);
 
 The journey of an actor involves several stages, from creation to destruction. The `onInit()` and `~Actor()` methods are critical hooks into this lifecycle.
 
-**(For a detailed step-by-step breakdown, see:** `[QB-Core: Actor Lifecycle](./lifecycle.md)`**)**
+**(For a detailed step-by-step breakdown, see:** [QB-Core: Actor Lifecycle](./lifecycle.md)**)**
 
 ## Managing Actor State
 
@@ -149,4 +149,4 @@ The journey of an actor involves several stages, from creation to destruction. T
 
 By adhering to these principles, you can build complex, concurrent applications where state management is significantly simplified and common concurrency bugs are inherently avoided.
 
-**(Next:** `[Core Concepts: QB Event System](./event_system.md)`**)** 
+**(Next:** [Core Concepts: QB Event System](./event_system.md)**)** 

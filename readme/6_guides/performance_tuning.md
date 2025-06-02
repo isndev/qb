@@ -23,7 +23,7 @@ Fine-tuning how `qb::Main` manages its `VirtualCore` worker threads can signific
     *   **`> 0` (e.g., `1000000` for 1ms):** Allows the `VirtualCore` to sleep for up to the specified duration (in nanoseconds) if its event queues are empty. This drastically reduces CPU consumption during idle periods at the cost of potentially introducing a slight delay (up to the specified latency) in picking up the next event.
     *   **Tuning:** For most server applications or systems with intermittent workloads, a small positive latency (e.g., 100µs to 5ms) often provides an excellent balance between responsiveness and CPU efficiency. Measure your application's specific latency requirements and CPU usage under load to find the sweet spot.
 
-**(Reference:** `[QB-Core: Engine - qb::Main & VirtualCore](./../4_qb_core/engine.md)`, `test-main.cpp` for examples.)**
+**(Reference:** [QB-Core: Engine - qb::Main & VirtualCore](./../4_qb_core/engine.md), `test-main.cpp` for examples.)**
 
 ## 2. Optimizing Event Messaging
 
@@ -43,7 +43,7 @@ Efficient message passing is key to actor system performance.
     *   **Pass Large Data by Smart Pointer:** For substantial data (e.g., image buffers, large text blocks, collections), include a `std::shared_ptr<DataType>` or `std::unique_ptr<DataType>` in your event. This ensures only the pointer is copied/moved, not the entire data block.
     *   **Use `qb::string<N>` for Strings:** Prefer `qb::string<N>` over `std::string` for string data within events to avoid potential ABI issues and heap allocations for small-to-medium strings. For very large strings, `std::shared_ptr<std::string>` is an option if `qb::string<N>` is insufficient.
 
-**(Reference:** `[QB-Core: Event Messaging Between Actors](./../4_qb_core/messaging.md)`, `test-actor-event.cpp`.)**
+**(Reference:** [QB-Core: Event Messaging Between Actors](./../4_qb_core/messaging.md), `test-actor-event.cpp`.)**
 
 ## 3. Actor Design and Placement Strategies
 
@@ -85,4 +85,4 @@ Theoretical optimizations are useful, but **always profile your application** un
 
 By systematically identifying bottlenecks through profiling and applying these QB-specific tuning techniques judiciously, you can build highly performant and scalable actor-based systems.
 
-**(Next:** Learn about `[QB Framework: Error Handling & Resilience Strategies](./error_handling.md)` or `[QB Framework: Effective Resource Management](./resource_management.md)`**) 
+**(Next:** Learn about [QB Framework: Error Handling & Resilience Strategies](./error_handling.md) or [QB Framework: Effective Resource Management](./resource_management.md)**) 

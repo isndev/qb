@@ -147,4 +147,4 @@ The client is simpler, typically running actors on fewer cores.
 
 By studying the `chat_tcp` example, developers can gain a solid understanding of how to combine `qb-core` and `qb-io` to build complex, scalable, and robust networked applications.
 
-**(Next Example Analysis:** `[distributed_computing Example Analysis](./distributed_computing_analysis.md)`**) 
+**(Next Example Analysis:** [distributed_computing Example Analysis](./distributed_computing_analysis.md)**) 

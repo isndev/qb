@@ -96,7 +96,7 @@ This utility function provides a straightforward way to schedule a callable (lam
 *   **Usage:** `qb::io::async::callback(my_function, delay_seconds);` or `qb::io::async::callback([]{ /* lambda body */ });`
 *   **Use Cases:** Delaying operations, breaking work into smaller non-blocking chunks, scheduling retries, and simple periodic tasks (by re-scheduling from within the callback).
 
-**(See practical examples in:** `[Core Concepts: Asynchronous I/O Model in QB](./../2_core_concepts/async_io.md)` for actor-centric usage, and `example1_async_io.cpp` for general usage.**)**
+**(See practical examples in:** [Core Concepts: Asynchronous I/O Model in QB](./../2_core_concepts/async_io.md) for actor-centric usage, and `example1_async_io.cpp` for general usage.**)**
 
 ## Timeout Management: `qb::io::async::with_timeout<Derived>`
 
@@ -113,7 +113,7 @@ This CRTP base class allows you to easily add timeout functionality to your own 
 
 This mechanism is ideal for implementing inactivity timeouts in network sessions, operation timeouts, or any scenario where an action needs to be taken if something doesn't happen within a specific timeframe.
 
-**(A detailed example is available in:** `[Core Concepts: Asynchronous I/O Model in QB](./../2_core_concepts/async_io.md)` and `test-async-io.cpp::TimerHandler`**)**
+**(A detailed example is available in:** [Core Concepts: Asynchronous I/O Model in QB](./../2_core_concepts/async_io.md) and `test-async-io.cpp::TimerHandler`**)**
 
 ## Standard Asynchronous Event Types (`qb::io::async::event::*`)
 
@@ -132,4 +132,4 @@ This mechanism is ideal for implementing inactivity timeouts in network sessions
 
 These events form the backbone of communication between the `listener` and the I/O handling components, enabling a fully event-driven architecture.
 
-**(Next:** `[QB-IO: Transports](./transports.md)` to see how these async mechanisms are applied to TCP, UDP, etc.**) 
+**(Next:** [QB-IO: Transports](./transports.md) to see how these async mechanisms are applied to TCP, UDP, etc.**) 

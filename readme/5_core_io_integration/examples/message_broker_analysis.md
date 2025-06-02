@@ -124,4 +124,4 @@ Similar to the `chat_tcp` client:
 
 This `message_broker` example is significantly more advanced than the `chat_tcp` example in its message handling and provides excellent insights into building high-performance, scalable messaging systems with QB.
 
-**(Next Example Analysis:** We have covered the main `core_io` examples. Consider revisiting `[Developer Guides](./../6_guides/README.md)` for broader patterns or the `[Reference Documentation](./../7_reference/README.md)` section.**) 
+**(Next Example Analysis:** We have covered the main `core_io` examples. Consider revisiting [Developer Guides](./../6_guides/README.md) for broader patterns or the [Reference Documentation](./../7_reference/README.md) section.**) 

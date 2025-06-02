@@ -59,4 +59,4 @@
 
 These features provide a comprehensive toolkit for building complex, concurrent, and high-performance applications using the Actor Model in C++.
 
-**(Next:** Explore `[QB-Core: Mastering qb::Actor](./actor.md)` for a deep dive into defining actors.**) 
+**(Next:** Explore [QB-Core: Mastering qb::Actor](./actor.md) for a deep dive into defining actors.**) 

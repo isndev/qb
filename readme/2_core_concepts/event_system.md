@@ -107,7 +107,7 @@ Conceptual Event Flow:
                                                           (invokes Receiver's on(Event&) handler)
 ```
 
-**(For a comprehensive guide on sending events, see:** `[QB-Core: Event Messaging](../4_qb_core/messaging.md)`**)**
+**(For a comprehensive guide on sending events, see:** [QB-Core: Event Messaging](../4_qb_core/messaging.md)**)**
 
 ## Event Handling: Receiving and Processing Events
 
@@ -155,5 +155,5 @@ public:
 *   **Dispatch Mechanism:** When an event arrives at an actor's `VirtualCore`, the framework uses the event's type ID (obtained from `event.getID()`) and its destination ID (`event.getDestination()`) to route it. An internal router (`qb::router::memh`) then invokes the specific `on()` handler method in the target actor that matches the event type.
 *   **Sequential Guarantee:** Remember, an actor processes all its events sequentially. One `on()` handler will complete before the next one for that same actor begins.
 
-**(Next:** `[Core Concepts: Asynchronous I/O Model](./async_io.md)`**)**
-**(See also:** `[QB-Core: Mastering qb::Actor](../4_qb_core/actor.md)`, `[QB-Core: Event Messaging](../4_qb_core/messaging.md)`**)** 
+**(Next:** [Core Concepts: Asynchronous I/O Model](./async_io.md)**)**
+**(See also:** [QB-Core: Mastering qb::Actor](../4_qb_core/actor.md), [QB-Core: Event Messaging](../4_qb_core/messaging.md)**)** 

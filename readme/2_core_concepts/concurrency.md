@@ -72,5 +72,5 @@ While QB handles much of the complexity, you can fine-tune how `VirtualCore` thr
 
 Thoughtful configuration of actor placement, core affinity, and latency allows you to tailor QB's parallelism to your application's specific workload and hardware.
 
-**(Reference Guide:** `[Guides: Performance Tuning Guide](./../6_guides/performance_tuning.md)`**)
-**(Next:** `[QB-IO Module Overview](./../3_qb_io/README.md)` or `[QB-Core Module Overview](./../4_qb_core/README.md)`**)** 
+**(Reference Guide:** [Guides: Performance Tuning Guide](./../6_guides/performance_tuning.md)**)
+**(Next:** [QB-IO Module Overview](./../3_qb_io/README.md) or [QB-Core Module Overview](./../4_qb_core/README.md)**)** 

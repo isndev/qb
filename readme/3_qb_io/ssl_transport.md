@@ -117,4 +117,4 @@ These helpers ensure that the correct secure transport (`transport::stcp`) and s
 
 By following these patterns, you can seamlessly integrate SSL/TLS encryption into your QB applications, enhancing their security.
 
-**(Next:** `[QB-IO: Utilities](./utilities.md)`**) 
+**(Next:** [QB-IO: Utilities](./utilities.md)**) 

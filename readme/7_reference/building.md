@@ -134,4 +134,4 @@ Successfully building the framework will produce several targets:
 
 This guide should provide a solid understanding of how to build and configure the QB Actor Framework to suit your development and deployment needs.
 
-**(Next:** Learn about `[Reference: Testing the QB Framework](./testing.md)` or revisit the `[Getting Started Guide](./../6_guides/getting_started.md)`.)** 
+**(Next:** Learn about [Reference: Testing the QB Framework](./testing.md) or revisit the [Getting Started Guide](./../6_guides/getting_started.md).)** 

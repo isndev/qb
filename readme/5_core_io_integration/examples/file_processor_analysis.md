@@ -128,4 +128,4 @@ The `file_processor` example uses three main actor types to achieve its goal:
 
 This example provides a clear blueprint for how to integrate blocking tasks into a QB actor system without sacrificing the benefits of asynchronous processing.
 
-**(Next Example Analysis:** `[message_broker Example Analysis](./message_broker_analysis.md)`**) 
+**(Next Example Analysis:** [message_broker Example Analysis](./message_broker_analysis.md)**) 

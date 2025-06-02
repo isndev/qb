@@ -66,7 +66,7 @@ When actors must interact with legacy blocking libraries or external systems tha
     *   The dispatcher forwards the request to an available worker from the pool.
     *   The worker actor performs the blocking call (its `VirtualCore` will block for that actor, but other cores/actors remain responsive).
     *   Upon completion, the worker `push`es a `BlockingResponseEvent` back to the original requester.
-*   **`qb::io::async::callback` (for short, infrequent calls):** As detailed in `[Integrating Core & IO: Asynchronous Operations within Actors](./../5_core_io_integration/async_in_actors.md)`, you can wrap a blocking call in a lambda scheduled by `async::callback`. While the callback itself will block its turn on the `VirtualCore`, it prevents the main event handler from blocking.
+*   **`qb::io::async::callback` (for short, infrequent calls):** As detailed in [Integrating Core & IO: Asynchronous Operations within Actors](./../5_core_io_integration/async_in_actors.md), you can wrap a blocking call in a lambda scheduled by `async::callback`. While the callback itself will block its turn on the `VirtualCore`, it prevents the main event handler from blocking.
 
 **(Reference:** `example/core_io/file_processor/` uses `async::callback` within its `FileWorker` actors to handle blocking file I/O.)**
 
@@ -79,4 +79,4 @@ While `qb-core` provides a robust general-purpose scheduler within each `Virtual
 
 These advanced patterns and techniques require a solid understanding of both the Actor Model and QB's specific implementation. Always start with simpler patterns and only introduce more complexity when performance measurements or system requirements clearly justify it. The provided examples are excellent resources for seeing many of these concepts in action.
 
-**(Next:** Consider exploring `[Guides: Performance Tuning Guide](./performance_tuning.md)` or `[Guides: Error Handling & Resilience Guide](./error_handling.md)` for more specialized advice.**) 
+**(Next:** Consider exploring [Guides: Performance Tuning Guide](./performance_tuning.md) or [Guides: Error Handling & Resilience Guide](./error_handling.md) for more specialized advice.**) 

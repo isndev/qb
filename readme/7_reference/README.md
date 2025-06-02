@@ -36,4 +36,4 @@ These documents are intended to provide specific, factual information and quick 
 
 This reference section is designed to be a practical resource for developers actively working with or learning the QB Actor Framework.
 
-**(Return to:** `[Main Page](../../docs/mainpage.h)` or explore the `[Developer Guides](../6_guides/README.md)` for more practical application patterns.**) 
+**(Return to:** [Main Page](../../docs/mainpage.h) or explore the [Developer Guides](../6_guides/README.md) for more practical application patterns.**) 

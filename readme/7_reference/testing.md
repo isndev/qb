@@ -104,4 +104,4 @@ Contributions of new tests are highly encouraged!
 
 By following these guidelines, you can contribute effective tests that help maintain the quality and reliability of the QB Actor Framework.
 
-**(Next:** Consult the `[QB Actor Framework: Frequently Asked Questions (FAQ)](./faq.md)` or the `[QB Actor Framework: Glossary of Terms](./glossary.md)` for more framework information.**) 
+**(Next:** Consult the [QB Actor Framework: Frequently Asked Questions (FAQ)](./faq.md) or the [QB Actor Framework: Glossary of Terms](./glossary.md) for more framework information.**) 

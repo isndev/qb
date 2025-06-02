@@ -193,4 +193,4 @@ Provides the non-blocking I/O foundation, networking, and various system utiliti
 
 This overview provides a map to the QB Framework's extensive API. Use it to identify relevant components for your tasks and then consult specific headers or detailed documentation pages for more in-depth information.
 
-**(Next:** Consult the `[QB Actor Framework: Frequently Asked Questions (FAQ)](./faq.md)` or `[QB Actor Framework: Glossary of Terms](./glossary.md)` for further reference.**) 
+**(Next:** Consult the [QB Actor Framework: Frequently Asked Questions (FAQ)](./faq.md) or [QB Actor Framework: Glossary of Terms](./glossary.md) for further reference.**) 
