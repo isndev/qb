@@ -36,4 +36,4 @@ This section provides a detailed exploration of `qb-io`'s features, architecture
 
 By understanding these components, you can leverage `qb-io` to build highly concurrent and performant C++ applications, either as part of the full QB Actor Framework or as a powerful standalone I/O solution.
 
-**(Next:** After exploring `qb-io`, you might want to see how it integrates with the actor model in the `[QB-Core Module Overview](../4_qb_core/README.md)` or review the `[Core & IO Integration Overview](../5_core_io_integration/README.md)`.)** 
+**(Next:** After exploring `qb-io`, you might want to see how it integrates with the actor model in the [QB-Core Module Overview](../4_qb_core/README.md) or review the [Core & IO Integration Overview](../5_core_io_integration/README.md).)** 

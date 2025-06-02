@@ -316,4 +316,4 @@ When the built-in protocols don't fit your application's specific message struct
 
 By understanding and utilizing this protocol framework, you can build robust and flexible communication layers for your `qb-io` based applications.
 
-**(Next:** `[QB-IO: Secure TCP (SSL/TLS) Transport](./ssl_transport.md)` or `[QB-IO: Utilities](./utilities.md)`**) 
+**(Next:** [QB-IO: Secure TCP (SSL/TLS) Transport](./ssl_transport.md) or [QB-IO: Utilities](./utilities.md)**) 

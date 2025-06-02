@@ -107,7 +107,7 @@ struct DataAnalysisTask : qb::Event {
 *   **Trivial Destructibility (Strictly Required for `qb::Actor::send()`):**
     *   Events sent via `send()` **must** be trivially destructible. This typically means they contain only POD types or other trivially destructible types like `qb::string<N>`. Members like `std::string`, `std::vector`, or smart pointers (`std::shared_ptr`, `std::unique_ptr`) (which manage a non-trivial resource or have non-trivial destructors) are **not allowed** for events sent via `send()`.
 
-**(See also:** `[Core Concepts: QB Event System](./../2_core_concepts/event_system.md)`**)**
+**(See also:** [Core Concepts: QB Event System](./../2_core_concepts/event_system.md)**)**
 
 ## Sending Events: Actor Communication Methods
 
@@ -276,5 +276,5 @@ public:
 
 This event-driven, message-passing architecture is central to how QB achieves concurrency and simplifies the development of complex, stateful systems.
 
-**(Next:** `[QB-Core: Engine (`qb::Main`, `VirtualCore`)](./engine.md)` to understand how actors and their events are managed and scheduled.**)
-**(See also:** `[Core Concepts: QB Event System](./../2_core_concepts/event_system.md)`, `[QB-Core: Mastering qb::Actor](./actor.md)`**) 
+**(Next:** [QB-Core: Engine (`qb::Main`, `VirtualCore`)](./engine.md) to understand how actors and their events are managed and scheduled.**)
+**(See also:** [Core Concepts: QB Event System](./../2_core_concepts/event_system.md), [QB-Core: Mastering qb::Actor](./actor.md)**) 

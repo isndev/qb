@@ -247,8 +247,8 @@ if(OPENSSL_FOUND)
     message(STATUS "OpenSSL found: ${OPENSSL_VERSION}")
     # SSL resources needed for tests
     set(${QB_PREFIX_UPPER}_SSL_RESOURCES
-        ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/key.pem
-        ${CMAKE_CURRENT_SOURCE_DIR}/ressources/ssl/cert.pem
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources/ssl/key.pem
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources/ssl/cert.pem
     )
 else()
     message(STATUS "OpenSSL not found, some modules requiring libssl will be skipped")

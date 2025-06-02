@@ -164,5 +164,5 @@ Inter-Core Event Flow (Actor A on VC0 sends to Actor C on VC1):
 
 This architecture is designed to ensure efficient, low-contention message passing, forming the backbone of QB's scalable actor communication.
 
-**(Next:** Explore `[QB-Core: Actor Patterns & Utilities](./patterns.md)` or review `[Core Concepts: Concurrency and Parallelism in QB](./../2_core_concepts/concurrency.md)` for a higher-level view.**)
+**(Next:** Explore [QB-Core: Actor Patterns & Utilities](./patterns.md) or review [Core Concepts: Concurrency and Parallelism in QB](./../2_core_concepts/concurrency.md) for a higher-level view.**)
 **(Reference Examples:** `test-actor-event.cpp` (Multi core, High Latency tests), `test-actor-service-event.cpp` for inter-core messaging demonstrations.**) 

@@ -3,11 +3,11 @@
 
 # QB Actor Framework: Design Patterns Cookbook
 
-This cookbook provides practical recipes and conceptual C++ examples for implementing common design patterns in your QB actor-based applications. These patterns help structure your system, manage state, and handle interactions effectively. For a foundational understanding of basic actor patterns like Service Actors or Periodic Callbacks, please refer to the `[QB-Core: Common Actor Patterns & Utilities](./../4_qb_core/patterns.md)` page.
+This cookbook provides practical recipes and conceptual C++ examples for implementing common design patterns in your QB actor-based applications. These patterns help structure your system, manage state, and handle interactions effectively. For information about Service Actors and Periodic Callbacks, please refer to the [QB-Core: Common Actor Patterns & Utilities](./../4_qb_core/patterns.md) page.
 
 ## 1. Finite State Machine (FSM)
 
-Actors naturally model entities with distinct states and transitions triggered by events. The `[QB-Core: Common Actor Patterns & Utilities](./../4_qb_core/patterns.md#1-finite-state-machine-fsm-with-actors)` page provides a detailed explanation and example of implementing FSMs.
+Actors naturally model entities with distinct states and transitions triggered by events. The [QB-Core: Common Actor Patterns & Utilities](./../4_qb_core/patterns.md#1-finite-state-machine-fsm-with-actors) page provides a detailed explanation and example of implementing FSMs.
 
 **Key Idea:** An actor's member variables hold its current state. Event handlers (`on(Event&)` methods) implement state transition logic based on the current state and the received event.
 
@@ -274,4 +274,4 @@ Safely manage access to resources that are not inherently thread-safe (e.g., a d
 
 These patterns offer robust solutions for structuring complex actor interactions. By combining them and adapting them to your specific needs, you can build sophisticated, scalable, and maintainable concurrent applications with the QB Actor Framework.
 
-**(Next:** Explore `[QB Framework: Advanced Techniques & System Design](./advanced_usage.md)` for more in-depth techniques, or `[QB Framework: Performance Tuning Guide](./performance_tuning.md)` for optimization strategies.**) 
+**(Next:** Explore [QB Framework: Advanced Techniques & System Design](./advanced_usage.md) for more in-depth techniques, or [QB Framework: Performance Tuning Guide](./performance_tuning.md) for optimization strategies.**) 

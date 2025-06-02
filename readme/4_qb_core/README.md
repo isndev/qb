@@ -33,4 +33,4 @@ This section provides a detailed exploration of `qb-core`'s architecture, its fu
 
 By mastering `qb-core`, you can build sophisticated, concurrent applications that are both performant and easier to reason about compared to traditional multi-threaded approaches.
 
-**(Next:** If you haven't already, ensure you understand the `[QB-IO Module Overview](../3_qb_io/README.md)` as `qb-core` builds upon it. Then, proceed to `[Core & IO Integration Overview](../5_core_io_integration/README.md)` to see how these two modules work together in practice.**) 
+**(Next:** If you haven't already, ensure you understand the [QB-IO Module Overview](../3_qb_io/README.md) as `qb-core` builds upon it. Then, proceed to [Core & IO Integration Overview](../5_core_io_integration/README.md) to see how these two modules work together in practice.)** 

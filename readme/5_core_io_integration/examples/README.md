@@ -33,4 +33,4 @@ Each analysis aims to:
 
 We recommend reviewing these analyses after you have a grasp of the foundational concepts of QB.
 
-**(Return to:** `[Core & IO Integration Overview](../README.md)`**) 
+**(Return to:** [Core & IO Integration Overview](../README.md)**) 

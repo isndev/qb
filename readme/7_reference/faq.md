@@ -13,7 +13,7 @@ A: The QB Actor Model provides inherent thread-safety for an actor's *internal s
    *   **External shared resources** (global variables, data structures shared between actors or threads outside QB's management).
    *   **Third-party libraries not designed for this actor model.**
    Then, *you* are responsible for ensuring thread-safe access to those external resources. Consider using a dedicated "manager actor" to serialize access to such shared resources or use standard C++ synchronization primitives (`std::mutex`, `std::atomic`) for those specific external interactions.
-   **(See:** `[Core Concept: The Actor Model in QB](./../2_core_concepts/actor_model.md)`, `[QB Framework: Effective Resource Management](./../6_guides/resource_management.md)`**)**
+   **(See:** [Core Concept: The Actor Model in QB](./../2_core_concepts/actor_model.md), [QB Framework: Effective Resource Management](./../6_guides/resource_management.md)**)**
 
 **Q: What's the difference between `push<Event>()` and `send<Event>()` for sending events? Which should I use?**
 
@@ -21,7 +21,7 @@ A: **Almost always use `push<Event>()`.**
    *   **`push<Event>(dest, ...)`:** This is the default and recommended method. It guarantees **ordered delivery** of events from a specific sender to a specific receiver (FIFO per sender-receiver pair). It also correctly handles events with non-trivially destructible members (like `std::string`, `std::vector`, `std::shared_ptr`).
    *   **`send<Event>(dest, ...)`:** This method provides **unordered delivery**. It *may* offer slightly lower latency for same-core communication in highly specific scenarios but offers no ordering guarantees. Crucially, events sent via `send()` **must be trivially destructible** (e.g., contain only POD types or `qb::string<N>`).
    **Use `send()` with extreme caution** and only if all its conditions are met and profiling shows a significant, necessary benefit. Incorrect use can lead to very difficult-to-debug ordering issues.
-   **(See:** `[QB-Core: Event Messaging Between Actors](./../4_qb_core/messaging.md)`**)**
+   **(See:** [QB-Core: Event Messaging Between Actors](./../4_qb_core/messaging.md)**)**
 
 **Q: Why is `qb::string<N>` recommended over `std::string` for event members?**
 
@@ -29,7 +29,7 @@ A: `qb::string<N>` is recommended for direct string members in events primarily 
    *   `std::string`'s internal layout (especially with Small String Optimization - SSO) can vary between compilers, standard library versions, or build configurations. If QB's event system copies/moves event objects containing raw `std::string` members across such ABI boundaries (e.g., between different modules, or in advanced inter-process scenarios), it could lead to data corruption or crashes.
    *   `qb::string<N>` has a predictable, self-contained layout (it's based on `std::array<char, N+1>`), avoiding these ABI issues for event data. It also avoids heap allocations for strings up to size `N`.
    *   If you need to pass dynamically sized or very large string data, it's best to use `std::shared_ptr<std::string>` or `std::unique_ptr<std::string>` within your event. In this case, `std::string` is fine for the heap-allocated data because QB interacts with the smart pointer object itself.
-   **(See:** `[QB-Core: Event Messaging Between Actors](./../4_qb_core/messaging.md)` for detailed data handling in events.**)**
+   **(See:** [QB-Core: Event Messaging Between Actors](./../4_qb_core/messaging.md) for detailed data handling in events.**)**
 
 **Q: My actor seems unresponsive or my system is slow. What are common causes?**
 
@@ -41,7 +41,7 @@ A:
 4.  **Deadlocks (External or Logical):** While the actor model prevents data races on actor state, logical deadlocks can still occur if actors are waiting for responses from each other in a cyclic dependency without timeouts.
 5.  **Resource Exhaustion:** Check for system-level issues like running out of memory, file descriptors, or network sockets.
 6.  **Inefficient Event/Data Handling:** Passing very large event objects by value frequently, or inefficient algorithms within event handlers, can degrade performance.
-**(See:** `[QB Framework: Performance Tuning Guide](./../6_guides/performance_tuning.md)`, `[QB-Core: Engine - qb::Main & VirtualCore](./../4_qb_core/engine.md)`**)**
+**(See:** [QB Framework: Performance Tuning Guide](./../6_guides/performance_tuning.md), [QB-Core: Engine - qb::Main & VirtualCore](./../4_qb_core/engine.md)**)**
 
 **Q: How do actors discover each other if they don't share memory?**
 
@@ -53,7 +53,7 @@ A: Actors discover each other's `qb::ActorId` (their "address") through several 
     *   Actors on any core can get the ID: `qb::ActorId svc_id = getServiceId<MyServiceTag>(target_core_id);`
 4.  **`require<ActorType>()` Mechanism:** An actor can call `require<OtherActorType>();` to request the framework to notify it of any live instances of `OtherActorType`. It will receive `qb::RequireEvent` messages containing the `ActorId`s of found instances.
 5.  **Custom Registry/Discovery Actor:** You can implement a dedicated actor that acts as a naming service or registry where other actors can register themselves (with a logical name or type) and query for others.
-**(See:** `[QB-Core: Common Actor Patterns & Utilities](./../4_qb_core/patterns.md)`**)**
+**(See:** [QB-Core: Common Actor Patterns & Utilities](./../4_qb_core/patterns.md)**)**
 
 **Q: How should I handle large data payloads in events?**
 
@@ -78,7 +78,7 @@ void on(const LargeDataEvent& event) {
     if (event.data_buffer) { /* process *event.data_buffer */ }
 }
 ```
-**(See:** `[QB-Core: Event Messaging Between Actors](./../4_qb_core/messaging.md)`**)**
+**(See:** [QB-Core: Event Messaging Between Actors](./../4_qb_core/messaging.md)**)**
 
 **Q: Can I use blocking third-party libraries with QB actors?**
 
@@ -86,12 +86,12 @@ A: **Not directly within an actor's `on(Event&)` handlers or `onCallback()` meth
    **Solutions:**
    1.  **Wrap in `qb::io::async::callback`:** For short, infrequent blocking calls. The callback itself will execute the blocking call, and while that specific callback is running, it will occupy its turn on the `VirtualCore`. However, the original event handler that scheduled it returns immediately, allowing other events to be processed sooner.
    2.  **Dedicated Worker Actors:** Create a pool of specialized worker actors (potentially on `VirtualCore`s configured with higher latency) to handle interactions with blocking libraries. Your primary actors send request events to these workers, which perform the blocking operation and then send response events back.
-   **(See:** `[Integrating Core & IO: Asynchronous Operations within Actors](./../5_core_io_integration/async_in_actors.md)`, `example/core_io/file_processor/`**)**
+   **(See:** [Integrating Core & IO: Asynchronous Operations within Actors](./../5_core_io_integration/async_in_actors.md), `example/core_io/file_processor/`**)**
 
 **Q: Does QB provide built-in actor supervision (like Erlang/Akka)?**
 
 A: No, QB-Core does not provide a built-in, ready-to-use supervision hierarchy like Erlang/OTP or Akka. Developers are responsible for implementing supervision strategies using standard actor patterns. This typically involves a supervisor actor monitoring its children (e.g., via heartbeats or explicit failure notifications) and deciding on recovery actions (restart, delegate, escalate).
-   **(See:** `[Guides: Error Handling & Resilience Strategies](./../6_guides/error_handling.md)`**)**
+   **(See:** [Guides: Error Handling & Resilience Strategies](./../6_guides/error_handling.md)**)**
 
 **Q: How is QB different from other C++ actor frameworks?**
 
@@ -105,4 +105,4 @@ A: (This is a general comparison; specific features vary widely across framework
 **Q: Where can I find the most detailed API documentation?**
 
 A: The **source code header files** (`.h`, `.hpp`, `.tpp`, `.inl`) are the definitive reference for all class members, method signatures, template parameters, and internal implementation details. The Doxygen-generated documentation (which you are reading) aims to make this information accessible and understandable, but the headers are the ground truth.
-   The `[QB Framework: Detailed API Overview](./api_overview.md)` page also serves as a good starting map. 
+   The [QB Framework: Detailed API Overview](./api_overview.md) page also serves as a good starting map. 

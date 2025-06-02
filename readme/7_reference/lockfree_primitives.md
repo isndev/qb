@@ -61,4 +61,4 @@ The QB Actor Framework utilizes several lock-free data structures internally to 
 
 While these lock-free primitives are fundamental to QB's performance, developers should primarily interact with the higher-level actor messaging system (`qb::Actor::push`, `reply`, etc.), which abstracts these details and provides a safer, more idiomatic programming model for concurrent applications.
 
-**(Next:** This concludes the main reference sections. You might want to revisit the `[Case Studies: QB Core & IO Integration Examples](./../5_core_io_integration/examples/README.md)` or other `[Developer Guides](./../6_guides/README.md)`.)** 
+**(Next:** This concludes the main reference sections. You might want to revisit the [Case Studies: QB Core & IO Integration Examples](./../5_core_io_integration/examples/README.md) or other [Developer Guides](./../6_guides/README.md).)** 

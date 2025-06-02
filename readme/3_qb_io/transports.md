@@ -70,8 +70,8 @@ Each transport specializes one of these stream templates with a concrete `IO_Typ
     *   The `read()` method in `transport::stcp` is specifically overridden. After reading from the underlying socket, it calls `SSL_pending()` to check if OpenSSL has buffered any additional decrypted bytes. If so, it performs further reads to retrieve this pending data, ensuring all application-level data is promptly available.
 *   **Typical Usage:** This is the transport used by `qb::io::use<...>::tcp::ssl::client` and server-side SSL session handlers.
 
-**(Reference:** Explore `test-async-io.cpp` (SSL test), `test-session-text.cpp` (Secure test), and the detailed `[QB-IO: Secure TCP (SSL/TLS) Transport](./ssl_transport.md)` page.**)
+**(Reference:** Explore `test-async-io.cpp` (SSL test), `test-session-text.cpp` (Secure test), and the detailed [QB-IO: Secure TCP (SSL/TLS) Transport](./ssl_transport.md) page.**)
 
 By providing these specialized transports, `qb-io` offers a flexible and consistent way to handle diverse I/O requirements while abstracting away many platform-specific and protocol-specific details.
 
-**(Next:** `[QB-IO: Protocols](./protocols.md)` to learn how data streams from these transports are interpreted as messages.**) 
+**(Next:** [QB-IO: Protocols](./protocols.md) to learn how data streams from these transports are interpreted as messages.**) 

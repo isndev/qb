@@ -308,5 +308,5 @@ For greater scalability, especially to distribute session handling across multip
 
 By leveraging `qb::io::use<>` and understanding these patterns, your QB actors can become powerful, self-contained network participants, capable of handling complex asynchronous communication with clarity and efficiency.
 
-**(Next:** Review specific example analyses like `[chat_tcp Example Analysis](./examples/chat_tcp_analysis.md)` to see these patterns in larger contexts.**)
-**(See also:** `[QB-IO: Transports](./../3_qb_io/transports.md)`, `[QB-IO: Protocols](./../3_qb_io/protocols.md)`**) 
+**(Next:** Review specific example analyses like [chat_tcp Example Analysis](./examples/chat_tcp_analysis.md) to see these patterns in larger contexts.**)
+**(See also:** [QB-IO: Transports](./../3_qb_io/transports.md), [QB-IO: Protocols](./../3_qb_io/protocols.md)**) 

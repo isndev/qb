@@ -101,4 +101,4 @@ This glossary provides definitions for key terms, classes, and concepts frequent
 
 *   **`qb::string<N>`:** A fixed-capacity string class optimized for performance by avoiding heap allocations for strings up to `N` characters. Recommended over `std::string` for direct members in events due to ABI stability.
 
-**(Next:** You might want to review the `[QB Actor Framework: Frequently Asked Questions (FAQ)](./faq.md)` or revisit the `[QB Framework: Detailed API Overview](./api_overview.md)`.)**
+**(Next:** You might want to review the [QB Actor Framework: Frequently Asked Questions (FAQ)](./faq.md) or revisit the [QB Framework: Detailed API Overview](./api_overview.md).)**

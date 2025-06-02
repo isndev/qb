@@ -326,4 +326,4 @@ public:
 
 These patterns and utilities provide flexible and powerful ways to structure your actor-based applications in QB, promoting separation of concerns, managing dependencies, and enabling common concurrent behaviors.
 
-**(Next:** Review `[Developer Guides](./../6_guides/README.md)` for more high-level application patterns and best practices.**) 
+**(Next:** Review [Developer Guides](./../6_guides/README.md) for more high-level application patterns and best practices.**) 

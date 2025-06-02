@@ -83,4 +83,4 @@ The `qb-io` library is a versatile and powerful C++17 toolkit designed for build
 
 This rich feature set makes `qb-io` a solid foundation for building a wide range of demanding C++ applications.
 
-**(Next:** `[QB-IO: Async System (`qb::io::async`)](./async_system.md)` or explore other specific feature pages.**) 
+**(Next:** [QB-IO: Async System (`qb::io::async`)](./async_system.md) or explore other specific feature pages.**) 

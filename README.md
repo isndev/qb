@@ -1,6 +1,6 @@
 # QB Actor Framework: High-Performance C++17 for Concurrent & Distributed Systems
 
-<p align="center"><img src="./ressources/logo.svg" width="180px" alt="QB Actor Framework Logo" /></p>
+<p align="center"><img src="./resources/logo.svg" width="180px" alt="QB Actor Framework Logo" /></p>
 
 **Unlock the power of modern C++ for complex concurrent applications. QB is an actor-based framework meticulously engineered for developers seeking exceptional performance, scalability, and a more intuitive way to manage concurrency.**
 
@@ -16,7 +16,7 @@ QB isn't just another concurrency library; it's a comprehensive solution built o
 4.  **Modular & Adaptable Architecture:** QB's layered design means flexibility. Use the full actor system (`qb-core` + `qb-io`) or leverage the powerful `qb-io` library as a standalone toolkit for your asynchronous I/O needs. With extensible protocols, QB adapts to your project, not the other way around. *Integrate QB your way.*
 5.  **Modern C++ for Productive Development:** Embrace C++17 with type-safe messaging, clear APIs, and a rich set of utilities (`qb::string`, `qb::allocator::pipe`, crypto, compression) that reduce boilerplate and accelerate development. *Write cleaner, safer, more maintainable C++.* 
 
-**(Explore the guiding principles:** `[QB Framework Philosophy: Building Modern C++ Systems](./readme/1_introduction/philosophy.md)`**)**
+**(Explore the guiding principles:** [QB Framework Philosophy: Building Modern C++ Systems](./readme/1_introduction/philosophy.md)**)**
 
 ## Key Features at a Glance
 
@@ -40,7 +40,7 @@ QB provides a comprehensive suite of tools for demanding applications:
     *   **Data Handling:** URI parsing, cryptography (OpenSSL-backed), compression (Zlib-backed).
     *   **Core Utilities:** High-precision time (`qb::TimePoint`, `qb::Duration`), optimized containers (`qb::allocator::pipe`, `qb::string<N>`, `qb::unordered_map`), system information (CPU, endianness).
 
-**(See the full list:** `[QB-IO: Feature Showcase](./readme/3_qb_io/features.md)` and `[QB-Core: Key Features & Capabilities](./readme/4_qb_core/features.md)`**)**
+**(See the full list:** [QB-IO: Feature Showcase](./readme/3_qb_io/features.md) and [QB-Core: Key Features & Capabilities](./readme/4_qb_core/features.md)**)**
 
 ## A Quick Peek: Actor Interaction in QB
 
@@ -140,7 +140,7 @@ The full documentation is organized into the following main sections within the 
 *   `6_guides/` (Getting Started, Patterns, Performance, Error Handling, etc.)
 *   `7_reference/` (API Overview, Building, Testing, FAQ, Glossary)
 
-**(The main Doxygen entry point is typically generated from:** `[docs/mainpage.h](./docs/mainpage.h)`**)**
+**(The main Doxygen entry point is typically generated from:** [docs/mainpage.h](./docs/mainpage.h)**)**
 
 ## Contributing
 

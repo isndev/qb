@@ -113,4 +113,4 @@ The simulation is orchestrated by several types of actors, each with distinct re
 
 This `distributed_computing` example serves as a rich template for understanding how to structure larger, more intricate applications using the QB Actor Framework, particularly those involving distributed workflows and resource management.
 
-**(Next Example Analysis:** `[file_monitor Example Analysis](./file_monitor_analysis.md)`**) 
+**(Next Example Analysis:** [file_monitor Example Analysis](./file_monitor_analysis.md)**) 

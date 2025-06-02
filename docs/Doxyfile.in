@@ -262,7 +262,7 @@ HTML_EXTRA_FILES       = "@DOXYGEN_INPUT_DIR@/template/doxy/doxygen-awesome-dark
                          "@DOXYGEN_INPUT_DIR@/template/static/favicon-32x32.png" \
                          "@DOXYGEN_INPUT_DIR@/template/static/favicon.ico" \
                          "@DOXYGEN_INPUT_DIR@/template/static/GitHub-Mark-64px.png" \
-                         "@DOXYGEN_INPUT_DIR@/../ressources/BasicActorModel.png"
+                         "@DOXYGEN_INPUT_DIR@/../resources/BasicActorModel.png"
 
 HTML_COLORSTYLE        = LIGHT
 HTML_COLORSTYLE_HUE    = 220

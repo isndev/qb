@@ -77,4 +77,4 @@ The `file_monitor` example is structured around three main actor types:
 
 This example provides a solid blueprint for building applications that need to react to file system changes in a robust and asynchronous manner using the QB Actor Framework.
 
-**(Next Example Analysis:** `[file_processor Example Analysis](./file_processor_analysis.md)`**) 
+**(Next Example Analysis:** [file_processor Example Analysis](./file_processor_analysis.md)**) 

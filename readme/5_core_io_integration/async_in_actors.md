@@ -185,4 +185,4 @@ To handle file operations asynchronously from an actor:
 
 By using these asynchronous patterns, actors can effectively manage time-based logic and interact with potentially blocking resources like the file system without compromising the overall responsiveness and concurrency of the QB application.
 
-**(Next:** `[Integrating Core & IO: Network Actors](./network_actors.md)` to see how actors handle network I/O.**) 
+**(Next:** [Integrating Core & IO: Network Actors](./network_actors.md) to see how actors handle network I/O.**) 

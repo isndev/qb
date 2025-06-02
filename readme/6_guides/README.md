@@ -33,4 +33,4 @@ This section provides a collection of practical guides designed to help you effe
 
 These guides are intended to complement the conceptual documentation and the detailed API references, providing practical pathways to mastering the QB Actor Framework.
 
-**(Next:** After exploring these guides, you might want to delve into the `[Reference Documentation](../7_reference/README.md)` for specific API details or FAQs.**) 
+**(Next:** After exploring these guides, you might want to delve into the [Reference Documentation](../7_reference/README.md) for specific API details or FAQs.**) 

@@ -32,7 +32,7 @@ At the core of QB's asynchronous I/O is the **event loop**, managed by the `qb::
     *   **File System Changes:** For watching directories or files for modifications (`qb::io::async::event::file`).
 *   **Dispatching:** When an event source becomes active, the `listener` determines the registered handler (often an I/O component within an actor or a dedicated callback mechanism) and invokes its corresponding method (e.g., `on(qb::io::async::event::timer&)`).
 
-**(See also:** `[QB-IO: Asynchronous System (`qb::io::async`)](./../3_qb_io/async_system.md)`**)**
+**(See also:** [QB-IO: Asynchronous System (`qb::io::async`)](./../3_qb_io/async_system.md)**)**
 
 ## Driving the Event Loop: Who Runs `run()`?
 
@@ -155,5 +155,5 @@ These events are delivered to the actor's corresponding `on(EventType&)` handler
 
 By leveraging this asynchronous I/O model, QB actors can efficiently manage numerous concurrent operations, making the framework well-suited for building high-performance, responsive applications.
 
-**(Next:** `[Core Concepts: Concurrency and Parallelism in QB](./concurrency.md)`**)
-**(See also:** `[Core & IO Integration Overview](./../5_core_io_integration/README.md)`**)** 
+**(Next:** [Core Concepts: Concurrency and Parallelism in QB](./concurrency.md)**)
+**(See also:** [Core & IO Integration Overview](./../5_core_io_integration/README.md)**)** 

@@ -99,7 +99,7 @@ Beyond its core asynchronous I/O and networking capabilities, `qb-io` offers a r
     *   `SpinLock`: A lightweight spinlock for very short critical sections.
     *   `spsc::ringbuffer`: Single-Producer, Single-Consumer lock-free queue.
     *   `mpsc::ringbuffer`: Multiple-Producer, Single-Consumer lock-free queue (used for inter-core actor communication).
-*   **(See:** `[Reference: Lock-Free Primitives](./../7_reference/lockfree_primitives.md)` for more details.**)
+*   **(See:** [Reference: Lock-Free Primitives](./../7_reference/lockfree_primitives.md) for more details.**)
 
 ## 8. UUID Generation (`qb::uuid`)
 
@@ -109,4 +109,4 @@ Beyond its core asynchronous I/O and networking capabilities, `qb-io` offers a r
 
 These utilities collectively make `qb-io` a comprehensive library for building robust, high-performance C++ applications, extending well beyond basic asynchronous I/O.
 
-**(Next:** Explore specific module documentation, like `[QB-Core Module Overview](./../4_qb_core/README.md)` or dive into the `[Developer Guides](./../6_guides/README.md)` for practical application patterns.**) 
+**(Next:** Explore specific module documentation, like [QB-Core Module Overview](./../4_qb_core/README.md) or dive into the [Developer Guides](./../6_guides/README.md) for practical application patterns.**) 
