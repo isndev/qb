@@ -25,6 +25,7 @@
 
 #ifndef QB_UNORDERED_MAP_H
 #define QB_UNORDERED_MAP_H
+#include <string>
 #include <map>
 #include <ska_hash/unordered_map.hpp>
 #include <unordered_map>

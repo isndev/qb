@@ -1213,8 +1213,10 @@ protected:
 
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
-        } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
-            Derived.on(event::dispose{});
+        } else {
+            if constexpr (has_method_on<_Derived, void, event::dispose>::value)
+                Derived.on(event::dispose{});
+            this->_async_event.stop(); // Stop the watcher to prevent further events
         }
     }
 };
