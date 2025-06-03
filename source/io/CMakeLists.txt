@@ -100,12 +100,13 @@ if (OPENSSL_FOUND)
 
     # Add Argon2 library for advanced cryptographic functionality
     if (QB_WITH_ARGON2)
-        find_library(ARGON2_LIBRARY NAMES argon2 libargon2)
-        if (ARGON2_LIBRARY)
-            list(APPEND CURRENT_DEPENDENCIES ${ARGON2_LIBRARY})
-            list(APPEND CURRENT_INCLUDES ${ARGON2_INCLUDE_DIR})
+        find_package(Argon2)
+
+        if (ARGON2_FOUND)
+            list(APPEND CURRENT_DEPENDENCIES ${ARGON2_LIBRARIES})
+            list(APPEND CURRENT_INCLUDES ${ARGON2_INCLUDE_DIRS})
             list(APPEND CURRENT_DEFINITIONS QB_IO_WITH_ARGON2=1)
-            message(STATUS "[${PROJECT_NAME}] Building with Argon2 support for advanced crypto")
+            message(STATUS "[${PROJECT_NAME}] Building with Argon2 support for advanced crypto (version: ${ARGON2_VERSION_STRING})")
         else ()
             message(WARNING "[${PROJECT_NAME}] Argon2 library not found - advanced crypto functions will use fallback methods")
         endif ()

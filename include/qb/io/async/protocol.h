@@ -41,6 +41,8 @@ namespace qb::io::async {
  * and processing.
  */
 class IProtocol {
+    bool _status = true; /**< Protocol status flag. `true` if the protocol is in a valid operational state, `false` otherwise (e.g., after a parsing error). */
+    bool _should_flush = true; /**< Flag indicating whether the protocol should flush the input buffer after processing a message. */
 public:
     /**
      * @brief Virtual destructor.
@@ -84,6 +86,45 @@ public:
      * disconnections, or when switching protocols.
      */
     virtual void reset() noexcept = 0;
+
+public:
+    /**
+     * @brief Checks if the protocol is in a valid operational state.
+     * @return `true` if the protocol is considered okay and can continue processing,
+     *         `false` if it has encountered an unrecoverable error or has been marked as not okay.
+     */
+    [[nodiscard]] bool
+    ok() const noexcept {
+        return _status;
+    }
+
+    /**
+     * @brief Marks the protocol as being in an invalid or non-operational state.
+     * @details This method can be called by the protocol implementation (or externally)
+     *          to indicate that it has encountered an unrecoverable parsing error or that
+     *          the connection should be closed after processing any pending data.
+     *          The I/O component might check this status via `ok()`.
+     */
+    void
+    not_ok() noexcept {
+        _status = false;
+    }
+
+    /**
+     * @brief Sets the flag indicating whether the protocol should flush the input buffer after processing a message.
+     * @param should_flush `true` if the protocol should flush the input buffer after processing a message, `false` otherwise.
+     */
+    void set_should_flush(bool should_flush) noexcept {
+        _should_flush = should_flush;
+    }
+
+    /**
+     * @brief Gets the flag indicating whether the protocol should flush the input buffer after processing a message.
+     * @return `true` if the protocol should flush the input buffer after processing a message, `false` otherwise.
+     */
+    bool should_flush() const noexcept {
+        return _should_flush;
+    }
 };
 
 /**
@@ -120,8 +161,7 @@ class AProtocol : public IProtocol {
      */
     friend typename _IO_::base_io_t;
 
-    bool _status = true; /**< Protocol status flag. `true` if the protocol is in a valid operational state, `false` otherwise (e.g., after a parsing error). */
-    bool _should_flush = true; /**< Flag indicating whether the protocol should flush the input buffer after processing a message. */
+
 protected:
     _IO_ &_io; /**< Reference to the I/O component instance that this protocol is associated with. */
 
@@ -166,44 +206,7 @@ protected:
      */
     virtual void reset() noexcept = 0;
 
-public:
-    /**
-     * @brief Checks if the protocol is in a valid operational state.
-     * @return `true` if the protocol is considered okay and can continue processing,
-     *         `false` if it has encountered an unrecoverable error or has been marked as not okay.
-     */
-    [[nodiscard]] bool
-    ok() const noexcept {
-        return _status;
-    }
 
-    /**
-     * @brief Marks the protocol as being in an invalid or non-operational state.
-     * @details This method can be called by the protocol implementation (or externally)
-     *          to indicate that it has encountered an unrecoverable parsing error or that
-     *          the connection should be closed after processing any pending data.
-     *          The I/O component might check this status via `ok()`.
-     */
-    void
-    not_ok() noexcept {
-        _status = false;
-    }
-
-    /**
-     * @brief Sets the flag indicating whether the protocol should flush the input buffer after processing a message.
-     * @param should_flush `true` if the protocol should flush the input buffer after processing a message, `false` otherwise.
-     */
-    void set_should_flush(bool should_flush) noexcept {
-        _should_flush = should_flush;
-    }
-
-    /**
-     * @brief Gets the flag indicating whether the protocol should flush the input buffer after processing a message.
-     * @return `true` if the protocol should flush the input buffer after processing a message, `false` otherwise.
-     */
-    bool should_flush() const noexcept {
-        return _should_flush;
-    }
 };
 
 } // namespace qb::io::async

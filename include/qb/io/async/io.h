@@ -255,8 +255,8 @@ void callback(_Func&& func, std::chrono::duration<Rep, Period> timeout_duration)
 template <typename _Derived>
 class file_watcher : public base<file_watcher<_Derived>, event::file> {
     using base_t = base<file_watcher<_Derived>, event::file>;
-    AProtocol<_Derived> *_protocol = nullptr; /**< Protocol instance for processing file contents. Can be null. */
-    std::vector<AProtocol<_Derived> *> _protocol_list; /**< List of owned protocol instances for cleanup. */
+    IProtocol *_protocol = nullptr; /**< Protocol instance for processing file contents. Can be null. */
+    std::vector<IProtocol *> _protocol_list; /**< List of owned protocol instances for cleanup. */
 
 public:
     using base_io_t = file_watcher<_Derived>; /**< Base I/O type alias for CRTP. */
@@ -276,7 +276,7 @@ public:
      *                 which would then add it to `_protocol_list`.
      *                 If ownership by `file_watcher` is desired from construction, prefer using `switch_protocol` after default construction.
      */
-    file_watcher(AProtocol<_Derived> *protocol) noexcept
+    file_watcher(IProtocol *protocol) noexcept
         : _protocol(protocol) {}
 
     /**
@@ -516,8 +516,8 @@ private:
 template <typename _Derived>
 class input : public base<input<_Derived>, event::io> {
     using base_t                   = base<input<_Derived>, event::io>;
-    AProtocol<_Derived> *_protocol = nullptr; /**< Current protocol for processing input. Can be changed via `switch_protocol`. */
-    std::vector<AProtocol<_Derived> *> _protocol_list; /**< List of owned protocol instances for cleanup. */
+    IProtocol *_protocol = nullptr; /**< Current protocol for processing input. Can be changed via `switch_protocol`. */
+    std::vector<IProtocol *> _protocol_list; /**< List of owned protocol instances for cleanup. */
     bool _on_message  = false; /**< Internal flag to prevent re-entrant calls to `on(event::io&)` during message processing. */
     bool _is_disposed = false; /**< Internal flag to ensure `dispose()` is called only once. */
     int _reason = 0; /**< Stores the reason for disconnection if initiated by `disconnect()`. */
@@ -541,7 +541,7 @@ public:
      *       or ensure `clear_protocols` is not called if it would delete an externally managed protocol.
      *       Currently, this constructor implies ownership.
      */
-    input(AProtocol<_Derived> *protocol) noexcept
+    input(IProtocol *protocol) noexcept
         : _protocol(protocol) {
         _protocol_list.push_back(protocol); // Assumes ownership
     }
@@ -598,9 +598,9 @@ public:
 
     /**
      * @brief Gets a pointer to the current active protocol instance.
-     * @return Pointer to the `AProtocol<_Derived>` currently in use for message parsing, or `nullptr` if no protocol is set.
+     * @return Pointer to the `IProtocol` currently in use for message parsing, or `nullptr` if no protocol is set.
      */
-    AProtocol<_Derived> *
+    IProtocol *
     protocol() {
         return _protocol;
     }
@@ -937,8 +937,8 @@ protected:
 template <typename _Derived>
 class io : public base<io<_Derived>, event::io> {
     using base_t                   = base<io<_Derived>, event::io>;
-    AProtocol<_Derived> *_protocol = nullptr; /**< Current protocol for I/O processing. */
-    std::vector<AProtocol<_Derived> *> _protocol_list; /**< List of owned protocol instances. */
+    IProtocol *_protocol = nullptr; /**< Current protocol for I/O processing. */
+    std::vector<IProtocol *> _protocol_list; /**< List of owned protocol instances. */
     bool _on_message  = false; /**< Internal flag for re-entrance protection in `on(event::io&)`. */
     bool _is_disposed = false; /**< Internal flag for `dispose()` idempotency. */
     int _reason = 0; /**< Disconnection reason code. */
@@ -958,7 +958,7 @@ public:
      * @param protocol Pointer to an existing protocol instance. This `io` component will use it and
      *                 take ownership by adding it to its internal list of protocols.
      */
-    io(AProtocol<_Derived> *protocol) noexcept
+    io(IProtocol *protocol) noexcept
         : _protocol(protocol) {
         _protocol_list.push_back(protocol);
     }
@@ -1010,9 +1010,9 @@ public:
 
     /**
      * @brief Gets a pointer to the current active protocol instance.
-     * @return Pointer to the `AProtocol<_Derived>` for message parsing/formatting.
+     * @return Pointer to the `IProtocol` for message parsing/formatting.
      */
-    AProtocol<_Derived> *
+    IProtocol *
     protocol() {
         return _protocol;
     }
@@ -1214,9 +1214,9 @@ protected:
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
         } else {
+            this->_async_event.stop(); // Stop the watcher to prevent further events
             if constexpr (has_method_on<_Derived, void, event::dispose>::value)
                 Derived.on(event::dispose{});
-            this->_async_event.stop(); // Stop the watcher to prevent further events
         }
     }
 };

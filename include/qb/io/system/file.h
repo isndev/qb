@@ -153,7 +153,7 @@ public:
      *          to separate threads/callbacks rather than setting file descriptors to non-blocking.
      */
     void
-    set_non_blocking(bool /*nonblocking*/) const noexcept {} // Parameter marked as unused
+    set_nonblocking(bool /*nonblocking*/) const noexcept {} // Parameter marked as unused
 };
 
 /**
