@@ -804,7 +804,7 @@ TEST_F(AsyncIOTest, AsyncFileOperations) {
     ASSERT_TRUE(file.open(test_file, O_RDONLY) >= 0);
 
     // Set to non-blocking mode
-    file.set_non_blocking(true);
+    file.set_nonblocking(true);
 
     // Read content
     char buffer[1024] = {0};

@@ -28,3 +28,6 @@ cxx_gtest(${PROJECT_NAME}-gtest-unit-event-router "${PROJECT_NAME}" test-event-r
 
 # Create unit test for the timestamp component
 cxx_gtest(${PROJECT_NAME}-gtest-unit-timestamp "${PROJECT_NAME}" test-timestamp.cpp)
+
+# Create unit test for the string component
+cxx_gtest(${PROJECT_NAME}-gtest-unit-string "${PROJECT_NAME}" test-string.cpp)
