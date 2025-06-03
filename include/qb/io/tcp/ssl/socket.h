@@ -22,6 +22,7 @@
  * @ingroup SSL
  */
 
+#include < filesystem>
 #include <openssl/ssl.h>
 #include "../socket.h"
 
@@ -75,8 +76,8 @@ SSL_CTX *create_client_context(const SSL_METHOD *method);
  * @return Pointer to the newly created `SSL_CTX` on success, `nullptr` on failure (e.g., if files cannot be loaded).
  * @note The caller is responsible for freeing the returned `SSL_CTX` using `SSL_CTX_free()`.
  */
-SSL_CTX *create_server_context(const SSL_METHOD *method, std::string const &cert_path,
-                               std::string const &key_path);
+SSL_CTX *create_server_context(const SSL_METHOD *method, std::filesystem::path cert_path,
+                               std::filesystem::path key_path);
 
 /**
  * @brief Load CA certificates from a file for peer verification.

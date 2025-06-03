@@ -155,15 +155,15 @@ create_client_context(const SSL_METHOD *method) {
 }
 
 SSL_CTX *
-create_server_context(const SSL_METHOD *method, std::string const &cert_path,
-                      std::string const &key_path) {
+create_server_context(const SSL_METHOD *method, std::filesystem::path cert_path,
+                      std::filesystem::path key_path) {
     SSL_CTX *ctx = nullptr;
     if (!method)
         goto error;
     ctx = SSL_CTX_new(method);
     if (!ctx ||
-        SSL_CTX_use_certificate_file(ctx, cert_path.c_str(), SSL_FILETYPE_PEM) <= 0 ||
-        SSL_CTX_use_PrivateKey_file(ctx, key_path.c_str(), SSL_FILETYPE_PEM) <= 0 ||
+        SSL_CTX_use_certificate_file(ctx, cert_path.string().c_str(), SSL_FILETYPE_PEM) <= 0 ||
+        SSL_CTX_use_PrivateKey_file(ctx, key_path.string().c_str(), SSL_FILETYPE_PEM) <= 0 ||
         SSL_CTX_check_private_key(ctx) <= 0)
         goto error;
 
