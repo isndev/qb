@@ -27,6 +27,7 @@
 
 #include <qb/system/container/unordered_map.h>
 #include <qb/uuid.h>
+#include <qb/io/async/event/extracted.h>
 
 namespace qb::io::async {
 
@@ -69,8 +70,7 @@ class io_handler {
      */
     void
     disconnected(uuid ident) {
-        const auto it = _sessions.find(ident);
-        _sessions.erase(it);
+        _sessions.erase(ident);
     }
 
 public:
@@ -172,6 +172,8 @@ public:
     extractSession(uuid const &ident) {
         auto it = _sessions.find(ident);
         if (it != _sessions.cend()) {
+            if constexpr (has_method_on<_Session, void, qb::io::async::event::extracted>::value)
+                (*it->second).on(qb::io::async::event::extracted{});
             auto t_io = std::move(it->second->transport());
             _sessions.erase(it);
             return {std::move(t_io), true};

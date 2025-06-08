@@ -30,6 +30,7 @@
 #define QB_IO_ASYNC_EVENT_ALL_H
 
 #include "disconnected.h"  // Event for connection loss
+#include "extracted.h"     // Event for connection extraction
 #include "dispose.h"       // Resource disposal event
 #include "eof.h"           // End-of-file event
 #include "eos.h"           // End-of-stream event
