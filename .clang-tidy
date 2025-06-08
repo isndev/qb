@@ -1,0 +1,38 @@
+Checks: >
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  readability-*,
+  modernize-*,
+  misc-*,
+  portability-*,
+  cppcoreguidelines-*,
+  google-*,
+  -google-readability-braces-around-statements,
+  -google-runtime-references,
+  -cppcoreguidelines-avoid-magic-numbers
+
+WarningsAsErrors: >
+  clang-analyzer-*,
+  bugprone-*,
+  performance-*,
+  modernize-*,
+  cppcoreguidelines-*
+
+HeaderFilterRegex: '.*'
+AnalyzeTemporaryDtors: true
+CheckOptions:
+  - key:             modernize-use-nullptr.NullMacros
+    value:           'NULL'
+  - key:             modernize-use-override.AllowOverrideAndFinal
+    value:           '1'
+  - key:             readability-identifier-naming.VariableCase
+    value:           camelBack
+  - key:             readability-identifier-naming.ClassCase
+    value:           PascalCase
+  - key:             readability-identifier-naming.FunctionCase
+    value:           camelBack
+  - key:             readability-identifier-naming.PrivateMemberSuffix
+    value:           _
+  - key:             cppcoreguidelines-narrowing-conversions.WarnOnIntegerNarrowingConversion
+    value:           'true'

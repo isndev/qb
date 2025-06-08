@@ -13,7 +13,7 @@ NAME=$1
 
 
 # Clone template repository
-git clone https://github.com/isndev/qb-sample-module.git
+git clone https://github.com/isndev/qbm-sample.git
 
 # Create bare repository
 git --bare init ${NAME}
