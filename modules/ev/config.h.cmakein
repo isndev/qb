@@ -1,0 +1,61 @@
+#ifndef EV_CONFIG_H_
+#define EV_CONFIG_H_
+
+/* Backend support flags */
+#cmakedefine01 EV_USE_SELECT
+#cmakedefine01 EV_USE_EPOLL
+#cmakedefine01 EV_USE_KQUEUE
+#cmakedefine01 EV_USE_PORT
+#cmakedefine01 EV_USE_POLL
+#cmakedefine01 EV_USE_LINUXAIO
+#cmakedefine01 EV_USE_IOURING
+#cmakedefine01 EV_USE_WSAPOLL
+
+/* Feature presence flags */
+#cmakedefine01 HAVE_CLOCK_GETTIME
+#cmakedefine01 HAVE_CLOCK_SYSCALL
+#cmakedefine01 HAVE_DLFCN_H
+#cmakedefine01 HAVE_EPOLL_CTL
+#cmakedefine01 HAVE_EVENTFD
+#cmakedefine01 HAVE_FLOOR
+#cmakedefine01 HAVE_INOTIFY_INIT
+#cmakedefine01 HAVE_INTTYPES_H
+#cmakedefine01 HAVE_KQUEUE
+#cmakedefine01 HAVE_LIBRT
+#cmakedefine01 HAVE_LINUX_AIO_ABI_H
+#cmakedefine01 HAVE_LINUX_FS_H
+#cmakedefine01 HAVE_MEMORY_H
+#cmakedefine01 HAVE_NANOSLEEP
+#cmakedefine01 HAVE_POLL
+#cmakedefine01 HAVE_POLL_H
+#cmakedefine01 HAVE_PORT_CREATE
+#cmakedefine01 HAVE_PORT_H
+#cmakedefine01 HAVE_SELECT
+#cmakedefine01 HAVE_SIGNALFD
+#cmakedefine01 HAVE_STDINT_H
+#cmakedefine01 HAVE_STDLIB_H
+#cmakedefine01 HAVE_STRINGS_H
+#cmakedefine01 HAVE_STRING_H
+#cmakedefine01 HAVE_SYS_EPOLL_H
+#cmakedefine01 HAVE_SYS_EVENTFD_H
+#cmakedefine01 HAVE_SYS_EVENT_H
+#cmakedefine01 HAVE_SYS_INOTIFY_H
+#cmakedefine01 HAVE_SYS_SELECT_H
+#cmakedefine01 HAVE_SYS_SIGNALFD_H
+#cmakedefine01 HAVE_SYS_STAT_H
+#cmakedefine01 HAVE_SYS_TIMERFD_H
+#cmakedefine01 HAVE_SYS_TYPES_H
+#cmakedefine01 HAVE_UNISTD_H
+#cmakedefine01 HAVE_KERNEL_RWF_T
+/* Used to avoid wrong includes during codegen */
+#cmakedefine01 EV_GENWRAP
+
+#define EV_MULTIPLICITY 1
+#define EV_USE_TIMERFD 0
+#define EV_FEATURES 0x7f
+
+/* Project and version macros */
+#define EV_PACKAGE "@CMAKE_CURRENT_PROJECT_NAME@"
+#define EV_VERSION "@LIBEV_VERSION@"
+
+#endif /* EV_CONFIG_H_ */

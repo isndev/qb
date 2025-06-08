@@ -1,313 +1,351 @@
-<p align="center"><img src="./ressources/logo.svg" width="180px" /></p>
+# QB Actor Framework: High-Performance C++17 for Concurrent & Distributed Systems
 
-# C++ Actor Framework
+<p align="center"><img src="./resources/logo.svg" width="180px" alt="QB Actor Framework Logo" /></p>
 
-[![Cpp Standard](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17)
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/674022e452e84497bc0a00e7a585758f)](https://www.codacy.com/app/isndev/qb?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=isndev/qb&amp;utm_campaign=Badge_Grade)
-[![Travis (.org) branch](https://img.shields.io/travis/isndev/qb/master.svg?label=master)](https://travis-ci.org/isndev/qb)
-[![codecov](https://codecov.io/gh/isndev/qb/branch/master/graph/badge.svg)](https://codecov.io/gh/isndev/qb)
-[![Read the Docs](https://img.shields.io/readthedocs/pip.svg)](https://isndev.github.io/qb/)
+**Unlock the power of modern C++ for complex concurrent applications. QB is an actor-based framework meticulously engineered for developers seeking exceptional performance, scalability, and a more intuitive way to manage concurrency.**
 
-**qb** provides technology solutions and services dedicated to high performance real-time complex processing, enabling low and predictable latency, perfect scalability and high throughput. It's a complete development framework for multicore processing that has been specifically designed for low latency and low footprint on multicore processors.
+QB simplifies the art of building responsive, real-time systems, network services, and distributed computations by harmonizing the robust **Actor Model** with a high-efficiency **Asynchronous I/O Engine**. Focus on your application's logic; let QB handle the intricacies of parallelism and non-blocking I/O.
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17) [![CMake](https://img.shields.io/badge/CMake-3.14+-blue.svg)](https://cmake.org/) [![Cross Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](https://github.com/isndev/qb) [![Architecture](https://img.shields.io/badge/Arch-x86__64%20%7C%20ARM64-lightgrey.svg)](https://github.com/isndev/qb) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-The **qb** framework is a thin-layer multicore-optimized runtime that enable users to build their own business-driven, jitter-free, low-latency, and elastic Reactive software based on the Actor model.
+## Quick Start with QB
 
-## Why you need it
-  - *It's* Easy to use, **modular** and **painless**, forget everything about multi-threading concurrency issues
-  - *It's* Very fast and low-latency
-  - *It's* CPU cache friendly
-  - *It's* Cross-platform (Linux|Windows|macOS*)
-  - *It's* Opensource
-  
-<sub>*Limited thread **affinity** because of **osx** scheduler</sub>
-## Requirements
-  - C++17 compiler, (g++ >= 7, clang >= 4, msvc >= 19.11, Xcode >= 10.2)
-  - (Recommended) cmake
-  - (Recommended) Disable the HyperThreading to optimize your Physical Cores Cache
+### Using the Project Generator
 
-## Build Status
-|              | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/NewTux.svg/1000px-NewTux.svg.png" width="25"/> | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Windows_logo_-_2012_derivative.svg/50px-Windows_logo_-_2012_derivative.svg.png" width="25"/> | <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Apple_Computer_Logo_rainbow.svg/65px-Apple_Computer_Logo_rainbow.svg.png" width="25"/> | Coverage |
-|:------------:|:-----:|:-------:|:--------:|:--------:|
-|    master    | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | [![Build status](https://ci.appveyor.com/api/projects/status/aern7ygl63wa3c9b/branch/master?svg=true)](https://ci.appveyor.com/project/isndev/qb/branch/master) | [![Build Status](https://travis-ci.org/isndev/qb.svg?branch=master)](https://travis-ci.org/isndev/qb) | ![Codecov branch](https://img.shields.io/codecov/c/github/isndev/qb/master.svg) |
+The fastest way to get started with QB is to use our boilerplate project generator:
 
-## Current development
-#### qb Version 2
-- *It's* globally faster
-- *It's* introducing new event **QOS** (quality of service) strategies
-- *It's* adding a new way to manage **inputs/outputs** and **external** communications
-- *It's* working on **arm** architectures
-- *It's* adding more **samples** and tutorials
-- *It's* releasing official benchmarks
-- *and more...*
-
-#### qb Visual Monitoring Tools
-- **Monitor**, **analyze** and **debug** your software with **qb Visual Monitoring Tools**
-
-#### qb UAML* Tool
-- **Design** and **generate** your software architecture with **qb UAML Tool**
-
-<sub>*Unified Actor Modeling Language</sub>
-
-# The Actor Model
-
-In order to fuly take advantage of cpu cores power, we needed a way to run our code concurrently. Decades of untraceable bugs and developers depressions have shown that **threads were not the perfect solution**.
-
-In **qb** programming semantics, the **Actor model** is an universal primitive of concurrent computation.
-
-Actors are:
-- Mono-threaded
-- Non-blocking
-- Completely asynchronous
-- Event-driven
-
-Actors roles:
-- The Actor A sends event messages to Actor B, which is then treated by an **Event handler**.
-- The Event communication between Actors is done with an **unidirectional communication** channel called a **Pipe**.
-- The Event handler can:
-    - **Execute** a local function
-    - **Create** Actors
-    - **Send** events to other Actors
-
-<p align="center"><img src="./ressources/BasicActorModel.svg" width="500px" /></p>
-
-#### qb + Actor Model
-By design, developing with **qb** is about having multiple **actors** handling one/multiple **events** that are attached to **cores** and communicate through **pipes**.
-
-Once designed, the Actor model is scalable and parallel by default as the program is divided into **mono-threaded** and sequential event handlers.
-
-**qb** runtime handles all the rest and bridge the gap between parallel programming and hardware multicore complexity.
-
-# Getting Started !
-#### Start from existing **qb** sample project
-To **generate** a new ***boilerplate*** **qb** project, you can use the [qb-new-project.sh](https://github.com/isndev/qb/blob/master/script/qb-new-project.sh) script using cURL:
-
-```sh
-curl -o- https://raw.githubusercontent.com/isndev/qb/master/script/qb-new-project.sh | bash /dev/stdin [Project Name]
-```
-
-or Wget:
-
-```sh
-wget -qO- https://raw.githubusercontent.com/isndev/qb/master/script/qb-new-project.sh | bash /dev/stdin [Project Name]
-```
-
-<sub>The script creates a new boilerplate project copied from [qb-sample-project](https://github.com/isndev/qb-sample-project) repository to a new **git** bare repository into `[Project Name]` directory.</sub>
-
-Let's compile the project !
-
-```sh
-$> cd [Project Name]
-$> cmake -DCMAKE_BUILD_TYPE=Release -B[Build Directory Path] -H[CMakeList.txt Path]
-$> cd [Build Directory Path] && make
-```
-
-<sub>**Note:** you can add otions to cmake command, `-DQB_BUILD_TEST=ON` to build tests and `-DQB_BUILD_BENCHMARK=ON` to build benchmarks.</sub>
- 
-#### Start from scratch
-<sub>Example ping-pong project</sub>
-
-- Clone **qb** framework and cd:
+**Using cURL:**
 ```bash
-$> mkdir pingpong && cd pingpong && git clone git@github.com:isndev/qb.git
+curl -o- https://raw.githubusercontent.com/isndev/qb/master/script/qb-new-project.sh | bash /dev/stdin MyProject
 ```
-- Then create CMakeLists.txt file and paste the content below
-<details close>
-<summary>View code</summary>
 
-```cmake
-# CMakeLists.txt file
-cmake_minimum_required(VERSION 3.10)
-project(pingpong)
-
-# qb minimum requirements
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(QB_PATH "${CMAKE_CURRENT_SOURCE_DIR}/qb")
-
-# Add qb framework
-add_subdirectory(${QB_PATH})
-
-# Define your project source
-set(SOURCE main.cpp)
-
-add_executable(pingpong ${SOURCE})
-# Link target with qb-core library
-target_link_libraries(pingpong qb-core)
+**Using Wget:**
+```bash
+wget -qO- https://raw.githubusercontent.com/isndev/qb/master/script/qb-new-project.sh | bash /dev/stdin MyProject
 ```
-</details>
 
+**Build and run:**
+```bash
+cd MyProject
+cmake -DCMAKE_BUILD_TYPE=Release -B build
+cd build && make
+./my_project
+```
 
-- Define your first event with its custom data <br>
-  MyEvent.h :
-<details close>
-<summary>View code</summary>
+### Your First Actor in 30 Seconds
 
 ```cpp
-// MyEvent.h
-#include <vector>
-#include <qb/event.h>
-#ifndef MYEVENT_H_
-# define MYEVENT_H_
-// Event example
-struct MyEvent
- : public qb::Event // /!\ should inherit from qb event
-{
-    int data; // trivial data
-    std::vector<int> container; // dynamic data
-    // /!\ an event must never store an address of it own data
-    // /!\ ex : int *ptr = &data;
-    // /!\ avoid using std::string, instead use :
-    // /!\ - fixed cstring
-    // /!\ - pointer of std::string
-    // /!\ - or compile with old ABI '-D_GLIBCXX_USE_CXX11_ABI=0'
-};
-#endif
-```
-</details>
-
-- Let's define the PingActor <br>
-  PingActor will send MyEvent to PongActor, receive the response and kill himself <br>
-  PingActor.h :
-<details close>
-<summary>View code</summary>
-
-```cpp
-// PingActor.h file
-#include <qb/actor.h>
-#include "MyEvent.h"
-#ifndef PINGACTOR_H_
-# define PINGACTOR_H_
-
-class PingActor
-        : public qb::Actor // /!\ should inherit from qb actor
-{
-    const qb::ActorId _id_pong; // Pong ActorId
-public:
-    PingActor() = delete; // PingActor requires PongActor Actorid
-    // /!\ never call any qb::Actor functions in constructor
-    // /!\ use onInit function
-    explicit PingActor(const qb::ActorId id_pong)
-      : _id_pong(id_pong) {}
-
-    // /!\ the engine will call this function before adding PingPongActor
-    bool onInit() override final {
-        registerEvent<MyEvent>(*this);         // will listen MyEvent
-        auto &event = push<MyEvent>(_id_pong); // push MyEvent to PongActor and keep a reference to the event
-        event.data = 1337;                     // set trivial data
-        event.container.push_back(7331);       // set dynamic data
-
-        // debug print
-        qb::io::cout() << "PingActor id(" << id() << ") has sent MyEvent" << std::endl;
-        return true;                           // init ok
-    }
-    // will call this function when PingActor receives MyEvent
-    void on(MyEvent &event) {
-        // debug print
-        qb::io::cout() << "PingActor id(" << id() << ") received MyEvent" << std::endl;
-        kill(); // then notify engine to kill PingActor
-    }
-};
-
-#endif
-```
-</details>
-
-- Let's define the PongActor <br>
-  PongActor will just listen on MyEvent, reply the event and kill himself <br>
-  PongActor.h :
-<details close>
-<summary>View code</summary>
-
-```cpp
-// PongActor.h file
-#include <qb/actor.h>
-#include "MyEvent.h"
-#ifndef PONGACTOR_H_
-# define PONGACTOR_H_
-
-class PongActor
-        : public qb::Actor // /!\ should inherit from qb actor
-{
-public:
-    // /!\ never call any qb::Actor functions in constructor
-    // /!\ use onInit function
-    PongActor() = default;
-
-    // /!\ the engine will call this function before adding PongActor
-    bool onInit() override final {
-        registerEvent<MyEvent>(*this);         // will just listen MyEvent
-
-        return true;                           // init ok
-    }
-    // will call this function when PongActor receives MyEvent
-    void on(MyEvent &event) {
-        // debug print
-        qb::io::cout() << "PongActor id(" << id() << ") received MyEvent" << std::endl;
-        reply(event); // reply the event to SourceActor
-        // debug print
-        qb::io::cout() << "PongActor id(" << id() << ") has replied MyEvent" << std::endl;
-        kill(); // then notify engine to kill PongActor
-    }
-};
-
-#endif
-```
-</details>
-
-- Then finally create the main.cpp
-<details close>
-<summary>View code</summary>
-
-```cpp
-// main.cpp file
 #include <qb/main.h>
-#include "PingActor.h"
-#include "PongActor.h"
+#include <qb/actor.h>
 
-int main (int argc, char *argv[]) {
-    // (optional) initialize the qb logger
-    qb::io::log::init(argv[0]); // filename
+// Define an event
+struct GreetingEvent : qb::Event {
+    std::string message;
+    GreetingEvent(std::string msg) : message(std::move(msg)) {}
+};
 
-    // configure the Engine
-    // Note : I will use only the core 0 and 1
-    qb::Main main({0, 1});
+// Define an actor
+class GreeterActor : public qb::Actor {
+public:
+    bool onInit() override {
+        registerEvent<GreetingEvent>(*this);
+        return true;
+    }
 
-    // Build Pong Actor to core 0 and retrieve its unique identifier
-    auto id_pong = main.addActor<PongActor>(0); // default constructed
-    // Build Ping Actor to core 1 with Pong ActorId as parameter
-    main.addActor<PingActor>(1, id_pong); // constructed with parameters
+    void on(const GreetingEvent& event) {
+        qb::io::cout() << "Received: " << event.message << std::endl;
+        kill(); // Job done
+    }
+};
 
-    main.start();  // start the engine asynchronously
-    main.join();   // wait for the running engine
-    // if all my actors had been destroyed then it will release the wait
+int main() {
+    qb::Main engine;
+    auto actor_id = engine.addActor<GreeterActor>(0);
+    
+    // Send a message to our actor
+    engine.push<GreetingEvent>(actor_id, "Hello QB!");
+    
+    engine.start();
     return 0;
 }
 ```
-</details>
 
-Let's compile the project !
-```sh
-$> cmake -DCMAKE_BUILD_TYPE=Release -B[Build Directory Path] -H[CMakeList.txt Path]
-$> cd [Build Directory Path] && make
+That's it! No mutexes, no thread management, no race conditions. Just pure actor communication.
+
+## Why QB Changes Everything
+
+### Multithreading Without the Pain
+Traditional multithreading is complex, error-prone, and hard to debug. QB's actor model eliminates these problems:
+
+```cpp
+// Traditional approach: Complex threading with mutexes
+std::mutex mtx;
+std::queue<Task> shared_queue;
+std::condition_variable cv;
+
+// QB approach: Clean actor communication
+push<TaskEvent>(worker_actor, task_data);
 ```
-Run it
-```sh
-$> ./pingpong
+
+**Benefits:**
+- **No Shared State**: Each actor owns its data, eliminating race conditions
+- **No Mutexes**: Actors communicate via messages, not shared memory
+- **No Deadlocks**: Sequential message processing per actor
+- **Automatic Scaling**: Distribute actors across CPU cores effortlessly
+
+### Cross-Platform by Design
+QB runs everywhere your C++17 compiler can reach:
+
+**Platforms:**
+- **Linux** (Ubuntu 18.04+, RHEL 7+, Alpine Linux)
+- **macOS** (10.14+, Intel & Apple Silicon)
+- **Windows** (Windows 10+, MSVC 2017+, MinGW)
+
+**Architectures:**
+- **x86_64** (Intel/AMD 64-bit)
+- **ARM64** (ARMv8, Apple M1/M2, Raspberry Pi 4+)
+
+**Same code, same performance, everywhere.**
+
+### Performance That Scales
+QB is built for speed from the ground up:
+
+```cpp
+// Distribute work across all CPU cores automatically
+qb::Main engine(std::thread::hardware_concurrency());
+
+// Add worker actors to different cores
+for (int i = 0; i < num_cores; ++i) {
+    engine.addActor<WorkerActor>(i);
+}
+
+// Lock-free message passing between cores
+// Linear scaling with CPU count
 ```
-it should print
+
+### Simplicity Meets Power
+
+**Simple APIs for complex problems:**
+
+```cpp
+// HTTP Server in 10 lines
+class HttpActor : public qb::Actor, public qb::http::Server<> {
+    bool onInit() override {
+        router().get("/api/status", [](auto ctx) {
+            ctx->response().body() = R"({"status": "ok"})";
+            ctx->complete();
+        });
+        
+        router().compile();
+        return listen({"tcp://0.0.0.0:8080"});
+    }
+};
 ```
-PingActor id(XXXXXX) has sent MyEvent
-PongActor id(XXXXXX) received MyEvent
-PongActor id(XXXXXX) has replied MyEvent
-PingActor id(XXXXXX) received MyEvent
+
+## QB Modules Ecosystem
+
+Extend QB's capabilities with our official modules:
+
+### Network & Communication
+- **[qbm-http](https://github.com/isndev/qbm-http)** - HTTP/1.1 & HTTP/2 client/server with routing, middleware, authentication
+- **[qbm-ws](https://github.com/isndev/qbm-ws)** - WebSocket protocol implementation (RFC 6455 compliant)
+
+### Database Integration  
+- **[qbm-pgsql](https://github.com/isndev/qbm-pgsql)** - Asynchronous PostgreSQL client with prepared statements and transactions
+- **[qbm-redis](https://github.com/isndev/qbm-redis)** - Comprehensive Redis client supporting all data types and clustering
+
+### Adding Modules
+
+```bash
+# Add any module as a submodule
+git submodule add https://github.com/isndev/qbm-http qbm/http
 ```
-Done !
 
-You want to do more, refer to the full [Documentation](https://isndev.github.io/qb/)
+```cmake
+# CMakeLists.txt - Automatic module discovery
+qb_load_modules("${CMAKE_CURRENT_SOURCE_DIR}/qbm")
+target_link_libraries(my_app PRIVATE qbm::http)
+```
 
-License
-----
+```cpp
+// Use immediately
+#include <http/http.h>
+```
 
-![GitHub](https://img.shields.io/github/license/isndev/qb.svg)
+## Core Features
 
-**[isndev.com](https://isndev.com)** Free Software, Hell Yeah!
+**Actor System (`qb-core`):**
+- Lightweight actors with automatic lifecycle management
+- Type-safe event system with guaranteed message ordering
+- Efficient inter-core communication using lock-free queues
+- Built-in patterns: Service actors, periodic tasks, supervisors
+
+**Asynchronous I/O (`qb-io`):**
+- Non-blocking TCP, UDP, and SSL/TLS networking
+- Extensible protocol framework with built-in parsers
+- File system watching and OS signal handling
+- Cross-platform event loop powered by libev
+
+**Performance & Scalability:**
+- Multi-core distribution with CPU affinity control
+- Zero-copy message passing where possible
+- Cache-friendly data structures and minimal allocations
+
+**Developer Experience:**
+- Modern C++17 with clean, expressive APIs
+- Extensive utility library (time, crypto, compression, containers)
+- Comprehensive documentation and examples
+
+## Build Information
+
+### Build Requirements
+- **C++17** compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
+- **CMake 3.14+**
+- **Git** (for submodules)
+
+### Optional Dependencies
+- **OpenSSL 1.1+** - SSL/TLS support, cryptographic functions
+- **Argon2** - Password hashing and key derivation functions
+- **Zlib** - Compression features available
+
+### Building from Source
+
+```bash
+# Clone with submodules
+git clone --recursive https://github.com/isndev/qb.git
+cd qb
+
+# Configure build
+mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release \
+      -DQB_IO_WITH_SSL=ON \
+      -DQB_IO_WITH_ZLIB=ON \
+      ..
+
+# Build (parallel)
+make -j$(nproc)  # Linux/macOS
+# or
+cmake --build . --parallel  # Cross-platform
+```
+
+### CMake Configuration Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `QB_IO_WITH_SSL` | Enable SSL/TLS support | `ON` (if found) |
+| `QB_IO_WITH_ZLIB` | Enable compression support | `ON` (if found) |
+| `QB_LOGGER` | Enable high-performance logging | `ON` |
+| `QB_BUILD_TEST` | Build unit tests | `OFF` |
+| `QB_BUILD_BENCHMARK` | Build benchmark tests | `OFF` |
+
+### Platform-Specific Notes
+
+**Windows (Visual Studio):**
+```bash
+cmake -G "Visual Studio 16 2019" -A x64 ..
+cmake --build . --config Release
+```
+
+**Windows (MinGW):**
+```bash
+cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release ..
+mingw32-make -j4
+```
+
+**macOS (Xcode):**
+```bash
+cmake -G Xcode ..
+cmake --build . --config Release
+```
+
+## Learn with Examples
+
+### Practical Examples Repository
+
+```bash
+# Add examples to any QB project
+git submodule add https://github.com/isndev/qb-examples examples
+add_subdirectory(examples)
+```
+
+**Example categories:**
+- **Basic Patterns** - Actor communication, lifecycle, timers
+- **Network Applications** - TCP servers, HTTP APIs, WebSocket chat
+- **Database Integration** - PostgreSQL and Redis patterns
+- **Performance Examples** - High-throughput systems, load balancing
+- **Real-World Projects** - Trading systems, distributed computing
+
+### Documentation Structure
+
+The documentation is organized in these main sections:
+
+- `readme/1_introduction/` - Philosophy and design principles
+- `readme/2_core_concepts/` - Actors, events, async I/O, concurrency
+- `readme/3_qb_io/` - Asynchronous I/O library details
+- `readme/4_qb_core/` - Actor engine and messaging
+- `readme/5_core_io_integration/` - How core and I/O work together
+- `readme/6_guides/` - Practical patterns and performance tuning
+- `readme/7_reference/` - API reference and FAQ
+
+## Advanced Documentation
+
+For comprehensive technical documentation, implementation details, and in-depth framework guides:
+
+**📖 [Complete QB Framework Documentation](./readme/README.md)**
+
+This detailed documentation covers:
+- **[Introduction](./readme/1_introduction/)** - Framework philosophy, design principles, and architectural overview
+- **[Core Concepts](./readme/2_core_concepts/)** - Actor model, event system, concurrency patterns, and async I/O fundamentals
+- **[QB-IO Module](./readme/3_qb_io/)** - Asynchronous I/O library, networking, protocols, streams, and utilities
+- **[QB-Core Module](./readme/4_qb_core/)** - Actor engine, messaging system, lifecycle management, and patterns
+- **[Core-IO Integration](./readme/5_core_io_integration/)** - How the actor system integrates with async I/O operations
+- **[Practical Guides](./readme/6_guides/)** - Best practices, performance tuning, error handling, and real-world patterns
+- **[Technical Reference](./readme/7_reference/)** - Complete API reference, build system, testing, and FAQ
+
+The advanced documentation provides:
+- **Architecture Deep Dive** - Internal framework mechanics and design decisions
+- **Performance Optimization** - Multi-core scaling, memory management, and profiling techniques
+- **Actor Patterns** - State machines, supervision, dependency injection, and service discovery
+- **Network Programming** - TCP/UDP servers, SSL/TLS, protocol design, and client implementations
+- **System Integration** - File I/O, signals, timers, and cross-platform considerations
+- **Production Deployment** - Configuration, monitoring, debugging, and troubleshooting
+
+## Real-World Applications
+
+QB is production-ready and powers:
+- **Financial Trading Systems** - Low-latency order processing
+- **IoT Gateways** - Device management and data aggregation  
+- **Game Servers** - Player session management and real-time communication
+- **Microservices** - Scalable HTTP APIs and message processing
+- **Data Pipelines** - Stream processing and ETL systems
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](./CONTRIBUTING.md) for details on:
+- Code style and standards
+- Testing requirements
+- Pull request process
+- Issue reporting
+
+## License
+
+QB Actor Framework is licensed under the Apache License, Version 2.0. See the [LICENSE](./LICENSE) file for details.
+
+## Acknowledgments
+
+QB Actor Framework builds upon the excellent work of several open-source projects. We extend our gratitude to:
+
+- **[OpenSSL](https://www.openssl.org/)** - For SSL/TLS encryption and cryptographic functions
+- **[Argon2](https://github.com/P-H-C/phc-winner-argon2)** - For the secure password hashing algorithm
+- **[Zlib](https://zlib.net/)** - For efficient data compression capabilities
+- **[libev](http://libev.schmorp.de/)** - For the robust event loop foundation
+- **[stduuid](https://github.com/mariusbancila/stduuid)** - For the comprehensive UUID v4 implementation
+- **[nlohmann/json](https://github.com/nlohmann/json)** - For the outstanding modern C++ JSON library
+- **[nanolog](https://github.com/Iyengar111/NanoLog)** - For the high-performance logging system
+- **[ska_hash](https://github.com/skarupke/flat_hash_map)** - For the fast hash table implementations
+
+These libraries enable QB to deliver exceptional performance and functionality while maintaining clean, modern C++ APIs.
+
+---
+
+*Built for developers who demand both simplicity and performance in concurrent C++ applications.*
+

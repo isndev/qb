@@ -1,6 +1,6 @@
 #
 # qb - C++ Actor Framework
-# Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.
+# Copyright (c) 2011-2025 qb - isndev (cpp.actor). All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,24 +12,62 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
-#         limitations under the License.
+# limitations under the License.
 #
 
-project(${QB_PREFIX}-core LANGUAGES CXX VERSION ${QB_VERSION} DESCRIPTION "A simple actor library")
+# -----------------------------------------------------------------------------
+# qb Core Library - CMake Configuration
+#
+# This file configures the build system for the qb Core component, which 
+# provides the central actor system implementation and message passing framework.
+# -----------------------------------------------------------------------------
 
-cxx_library(${PROJECT_NAME} ${cxx_default_lib} core.cpp)
-set_target_properties(${PROJECT_NAME} PROPERTIES VERSION ${QB_VERSION} SOVERSION ${QB_VERSION_MAJOR})
-target_include_directories(${PROJECT_NAME} INTERFACE
-        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules>"
-        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")
+# Define project with same version as parent project
+project(${QB_PREFIX}-core
+        LANGUAGES CXX
+        VERSION ${QB_VERSION}
+        DESCRIPTION "Actor system implementation for the qb framework"
+)
 
-if (${QB_PREFIX_UPPER}_WITH_LOG)
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries with logger")
-    target_compile_definitions(${QB_PREFIX}-core PUBLIC QB_LOGGER=1)
-else()
-    message(STATUS "INFO: Will build ${QB_PREFIX} libraries without logger")
-endif()
+# -----------------------------------------------------------------------------
+# Library source files
+# -----------------------------------------------------------------------------
+set(CORE_SOURCES
+        core.cpp
+)
 
+# -----------------------------------------------------------------------------
+# Library target configuration
+# -----------------------------------------------------------------------------
+# Define the Core library using the custom cxx_library macro from parent project
+# Core depends on the IO library for networking and communication
+cxx_library(
+        NAME ${PROJECT_NAME}
+        FLAGS ${cxx_default_lib}
+        SOURCES ${CORE_SOURCES}
+        DEPENDENCIES ${QB_PREFIX}-io
+)
+
+# Set the export name to core (instead of qb-core)
+set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME core)
+
+# Configure the module using our shared configuration function
+qb_configure_module(
+        NAME ${PROJECT_NAME}
+        COMPONENT CORE
+)
+
+# Add private include directories specific to this module
+target_include_directories(${PROJECT_NAME}
+        PRIVATE
+        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include>"
+)
+
+# -----------------------------------------------------------------------------
+# Tests configuration
+# -----------------------------------------------------------------------------
+# Add tests if enabled in the parent project
 if (${QB_PREFIX_UPPER}_BUILD_TEST)
+    message(STATUS "[${PROJECT_NAME}] Building tests")
     add_subdirectory(tests)
-endif()
+endif ()
