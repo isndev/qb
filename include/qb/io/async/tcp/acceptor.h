@@ -25,6 +25,10 @@
 #ifndef QB_IO_ASYNC_TCP_ACCEPTOR_H
 #define QB_IO_ASYNC_TCP_ACCEPTOR_H
 
+#include <filesystem>
+#ifdef QB_IO_WITH_SSL
+#include "../../tcp/ssl/listener.h"
+#endif
 #include "../../protocol/accept.h"
 #include "../io.h"
 
@@ -105,6 +109,32 @@ public:
     on(typename Protocol::message &&new_socket) {
         static_cast<_Derived &>(*this).on(
             std::forward<typename Protocol::message>(new_socket));
+    }
+
+    /**
+     * @brief Listen for incoming connections on a given URI.
+     * @param uri The URI to listen on.
+     * @param cert_file The path to the certificate file.
+     * @param key_file The path to the key file.
+     * @param alpn_protocols The ALPN protocols to support.
+     * @return True if the server is listening, false otherwise.
+     */
+    bool listen(qb::io::uri uri,
+                std::filesystem::path cert_file = {},
+                std::filesystem::path key_file = {},
+                std::vector<std::string> alpn_protocols = {}) {
+#ifdef QB_IO_WITH_SSL
+        using tpt = std::decay_t<decltype(this->transport())>;
+        if constexpr (tpt::is_secure()) {
+            this->transport().init(qb::io::ssl::create_server_context(TLS_server_method(), cert_file, key_file));
+            if (!this->transport().ssl_handle()) {
+                LOG_CRIT("Failed to initialize SSL/TLS server context.");
+                return false;
+            }
+            this->transport().set_supported_alpn_protocols(std::move(alpn_protocols));
+        }
+#endif
+        return !this->transport().listen(std::move(uri));
     }
 };
 
