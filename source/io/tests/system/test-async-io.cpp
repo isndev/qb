@@ -1368,23 +1368,34 @@ TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
 
     // Create multiple threads performing async operations
     for (int t = 0; t < 4; ++t) {
-        threads.emplace_back([&completed_operations]() {
+        threads.emplace_back([&completed_operations, t]() {
             async::init();
+            
+            std::atomic<int> thread_completed{0};
 
             for (int i = 0; i < NUM_OPERATIONS; ++i) {
                 new async::Timeout<std::function<void()>>(
-                    [&completed_operations]() { completed_operations++; }, 0.01);
+                    [&completed_operations, &thread_completed]() { 
+                        completed_operations++; 
+                        thread_completed++;
+                    }, 0.01);
 
-                // Run event loop occasionally
-                if (i % 1000 == 0) {
+                // Run event loop occasionally to prevent buildup
+                if (i % 100 == 0) {
                     async::run(EVRUN_NOWAIT);
                 }
             }
 
-            // Run event loop until all operations complete
-            for (int i = 0; i < 50 && completed_operations < NUM_OPERATIONS; ++i) {
+            // Run event loop until ALL operations in this thread complete
+            for (int i = 0; i < 200 && thread_completed < NUM_OPERATIONS; ++i) {
                 async::run(EVRUN_ONCE);
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            
+            // Extra time to ensure all timers fire
+            for (int i = 0; i < 10; ++i) {
+                async::run(EVRUN_NOWAIT);
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
         });
     }
