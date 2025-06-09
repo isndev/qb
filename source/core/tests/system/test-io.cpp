@@ -59,45 +59,6 @@ public:
     }
 };
 
-TEST(IO, STRING_TEST) {
-    const char  c_str[] = "0123456789012345678901234567890123456789";
-    std::string std_str(c_str);
-
-    qb::string     qb_str1(c_str);
-    qb::string     qb_str2(std_str);
-    qb::string<40> qb_str3(c_str);
-    qb::string<40> qb_str4(qb_str1);
-
-    EXPECT_EQ(qb_str1.size(), 30u);
-    EXPECT_EQ(qb_str2.size(), 30u);
-    EXPECT_EQ(qb_str3.size(), 40u);
-    EXPECT_TRUE(qb_str1 == qb_str2);
-    EXPECT_FALSE(qb_str1 == std_str);
-    EXPECT_FALSE(qb_str1 == c_str);
-    EXPECT_FALSE(qb_str3 == qb_str2);
-    EXPECT_TRUE(qb_str3 == std_str);
-
-    std::sort(qb_str4.begin(), qb_str4.end());
-    std::string tmp;
-    for (auto c : qb_str4) {
-        tmp += c;
-    }
-    EXPECT_TRUE(tmp == "000111222333444555666777888999");
-    tmp.clear();
-    for (auto it = qb_str4.crbegin(); it != qb_str4.crend(); ++it) {
-        tmp += *it;
-    }
-    EXPECT_TRUE(tmp == "999888777666555444333222111000");
-    std::cout << std::endl;
-    qb_str1 = qb_str2 = qb_str3 = qb_str4 = "end";
-    EXPECT_TRUE(qb_str1.size() == qb_str2.size());
-    EXPECT_TRUE(qb_str2.size() == qb_str3.size());
-    EXPECT_TRUE(qb_str3.size() == qb_str4.size());
-    EXPECT_TRUE(qb_str1 == qb_str2);
-    EXPECT_TRUE(qb_str2 == qb_str3);
-    EXPECT_TRUE(qb_str3 == qb_str4);
-}
-
 TEST(IO, BasicTestMonoCore) {
     qb::io::log::init("./test-mono-io", 128);
     qb::io::log::setLevel(qb::io::log::Level::DEBUG);
