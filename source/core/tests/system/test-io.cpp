@@ -63,9 +63,9 @@ TEST(IO, STRING_TEST) {
     const char  c_str[] = "0123456789012345678901234567890123456789";
     std::string std_str(c_str);
 
-    qb::string     qb_str1(c_str);
+    qb::string     qb_str1{c_str};  // Use uniform initialization to avoid ambiguity
     qb::string     qb_str2(std_str);
-    qb::string<40> qb_str3(c_str);
+    qb::string<40> qb_str3{c_str};  // Use uniform initialization to avoid ambiguity
     qb::string<40> qb_str4(qb_str1);
 
     EXPECT_EQ(qb_str1.size(), 30u);
