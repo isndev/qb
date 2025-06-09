@@ -309,6 +309,7 @@ function(qb_register_module)
     cmake_parse_arguments(Module "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     if (Module_NAME)
+        set(Alias_NAME "qbm::${Module_NAME}")
         set(Module_NAME "qbm-${Module_NAME}")
         message(STATUS "Load ${Module_NAME} Module")
         if (NOT Module_FLAGS)
@@ -325,6 +326,7 @@ function(qb_register_module)
             cxx_library_with_type(INTERFACE
                     NAME ${Module_NAME})
         endif ()
+        add_library(${Alias_NAME} ALIAS ${Module_NAME})
         target_include_directories(${Module_NAME} INTERFACE
                 "$<BUILD_INTERFACE:${QB_DIRECTORY}/include;${QB_DIRECTORY}/modules;${CMAKE_SOURCE_DIR}/modules;${CMAKE_CURRENT_SOURCE_DIR}/..>"
                 "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/${CMAKE_INSTALL_INCLUDEDIR}>")

@@ -147,7 +147,7 @@ Extend QB's capabilities with our official modules:
 
 ### Network & Communication
 - **[qbm-http](https://github.com/isndev/qbm-http)** - HTTP/1.1 & HTTP/2 client/server with routing, middleware, authentication
-- **[qbm-ws](https://github.com/isndev/qbm-ws)** - WebSocket protocol implementation (RFC 6455 compliant)
+- **[qbm-websocket](https://github.com/isndev/qbm-websocket)** - WebSocket protocol implementation (RFC 6455 compliant)
 
 ### Database Integration  
 - **[qbm-pgsql](https://github.com/isndev/qbm-pgsql)** - Asynchronous PostgreSQL client with prepared statements and transactions
