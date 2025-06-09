@@ -15,12 +15,12 @@ The fastest way to get started with QB is to use our boilerplate project generat
 
 **Using cURL:**
 ```bash
-curl -o- https://raw.githubusercontent.com/isndev/qb/master/script/qb-new-project.sh | bash /dev/stdin MyProject
+curl -o- https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-project.sh | bash /dev/stdin MyProject
 ```
 
 **Using Wget:**
 ```bash
-wget -qO- https://raw.githubusercontent.com/isndev/qb/master/script/qb-new-project.sh | bash /dev/stdin MyProject
+wget -qO- https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-project.sh | bash /dev/stdin MyProject
 ```
 
 **Build and run:**
@@ -39,32 +39,31 @@ cd build && make
 
 // Define an event
 struct GreetingEvent : qb::Event {
-    std::string message;
+    qb::string message;
     GreetingEvent(std::string msg) : message(std::move(msg)) {}
 };
 
 // Define an actor
 class GreeterActor : public qb::Actor {
 public:
-    bool onInit() override {
-        registerEvent<GreetingEvent>(*this);
+    bool onInit() final {
+        registerEvent<GreetingEvent>(*this); // register event
+        push<GreetingEvent>(id(), "Hello !"); // send to self 
         return true;
     }
 
     void on(const GreetingEvent& event) {
         qb::io::cout() << "Received: " << event.message << std::endl;
-        kill(); // Job done
+        kill(); // Job done, kill me
     }
 };
 
 int main() {
     qb::Main engine;
-    auto actor_id = engine.addActor<GreeterActor>(0);
-    
-    // Send a message to our actor
-    engine.push<GreetingEvent>(actor_id, "Hello QB!");
+    auto actor_id = engine.addActor<GreeterActor>(0); // add actor to core 0
     
     engine.start();
+    engine.join();
     return 0;
 }
 ```
@@ -111,8 +110,9 @@ QB is built for speed from the ground up:
 
 ```cpp
 // Distribute work across all CPU cores automatically
-qb::Main engine(std::thread::hardware_concurrency());
+qb::Main engine;
 
+auto num_cores = std::thread::hardware_concurrency();
 // Add worker actors to different cores
 for (int i = 0; i < num_cores; ++i) {
     engine.addActor<WorkerActor>(i);
@@ -129,14 +129,18 @@ for (int i = 0; i < num_cores; ++i) {
 ```cpp
 // HTTP Server in 10 lines
 class HttpActor : public qb::Actor, public qb::http::Server<> {
-    bool onInit() override {
+    bool onInit() final {
         router().get("/api/status", [](auto ctx) {
             ctx->response().body() = R"({"status": "ok"})";
             ctx->complete();
         });
         
         router().compile();
-        return listen({"tcp://0.0.0.0:8080"});
+        if (!listen({"tcp://0.0.0.0:8080"}))
+            return false;
+
+        start(); // start async io
+        return true;
     }
 };
 ```
