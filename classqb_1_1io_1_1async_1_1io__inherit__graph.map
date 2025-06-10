@@ -1,0 +1,16 @@
+<map id="qb::io::async::io&lt; _Derived &gt;" name="qb::io::async::io&lt; _Derived &gt;">
+<area shape="rect" id="Node000001" title="CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing." alt="" coords="243,133,365,174"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1async_1_1tcp_1_1client.html" title=" " alt="" coords="413,5,580,61"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="341,121,412,71,432,59,435,64,414,75,344,125"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1io_1_1async_1_1tcp_1_1client_3_01___derived_00_01___transport_00_01void_01_4.html" title=" " alt="" coords="431,85,562,141"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="380,144,430,133,432,138,381,149"/>
+<area shape="poly" id="edge5_Node000001_Node000004" title=" " alt="" coords="379,126,430,116,431,121,380,131"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1io_1_1async_1_1tcp_1_1client.html" title="Server&#45;associated asynchronous TCP client." alt="" coords="420,165,573,221"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="381,166,421,175,420,180,379,172"/>
+<area shape="rect" id="Node000006" href="$classqb_1_1io_1_1async_1_1udp_1_1client.html" title="Asynchronous UDP client implementation." alt="" coords="428,245,565,286"/>
+<area shape="poly" id="edge6_Node000001_Node000006" title=" " alt="" coords="343,181,376,207,414,231,437,242,435,247,412,235,373,211,339,186"/>
+<area shape="rect" id="Node000007" href="$classqb_1_1io_1_1async_1_1udp_1_1server.html" title="Asynchronous UDP server implementation." alt="" coords="426,310,567,351"/>
+<area shape="poly" id="edge7_Node000001_Node000007" title=" " alt="" coords="326,186,363,241,387,270,415,295,434,307,432,312,411,299,383,274,358,245,321,189"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1async_1_1base.html" title=" " alt="" coords="5,133,195,174"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="210,150,243,150,243,156,210,156"/>
+</map>

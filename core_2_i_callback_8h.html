@@ -1,0 +1,256 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/core/ICallback.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/core/ICallback.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('core_2_i_callback_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">ICallback.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___core.html">Core Actor System</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Callback interface for the QB Actor Framework.  
+<a href="#details">More...</a></p>
+<div class="textblock"><div class="dynheader">
+This graph shows which files directly or indirectly include this file:</div>
+<div class="dyncontent">
+<div class="center"><img src="core_2_i_callback_8h__dep__incl.png" border="0" usemap="#ainclude_2qb_2core_2_i_callback_8hdep" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2core_2_i_callback_8hdep" id="ainclude_2qb_2core_2_i_callback_8hdep">
+<area shape="rect" title="Callback interface for the QB Actor Framework." alt="" coords="449,5,629,31"/>
+<area shape="rect" href="core_2_actor_8h.html" title="Actor base class and core actor model implementation." alt="" coords="350,226,504,252"/>
+<area shape="poly" title=" " alt="" coords="566,40,592,69,616,104,624,123,628,143,626,162,617,180,594,203,566,219,536,230,505,237,504,232,534,225,564,214,591,199,613,177,621,160,623,143,619,125,612,107,588,72,562,43"/>
+<area shape="rect" href="_virtual_core_8h.html" title="Defines the VirtualCore class, representing a worker thread in the QB Actor Framework." alt="" coords="152,300,342,326"/>
+<area shape="poly" title=" " alt="" coords="434,29,330,46,272,61,215,81,159,107,108,139,63,179,27,228,22,239,26,250,46,265,79,278,161,297,160,302,77,283,44,270,22,254,17,239,22,225,59,176,104,135,157,102,213,76,271,56,328,41,433,23"/>
+<area shape="rect" href="core_2_event_8h.html" title="Event system for the QB Actor Framework." alt="" coords="302,79,461,105"/>
+<area shape="poly" title=" " alt="" coords="500,40,410,81,407,76,497,35"/>
+<area shape="rect" href="_i_callback_8h.html" title="Convenience header for the QB ICallback interface." alt="" coords="678,79,824,105"/>
+<area shape="poly" title=" " alt="" coords="590,34,716,76,714,81,588,39"/>
+<area shape="rect" href="_actor_8h.html" title="Convenience header for the core QB Actor components." alt="" coords="365,300,489,326"/>
+<area shape="poly" title=" " alt="" coords="430,267,430,300,424,300,424,267"/>
+<area shape="poly" title=" " alt="" coords="383,261,279,302,277,297,381,256"/>
+<area shape="rect" href="cube_8h.html" title="Main include file for the QB Actor Framework." alt="" coords="194,374,300,399"/>
+<area shape="poly" title=" " alt="" coords="383,334,279,376,277,371,381,329"/>
+<area shape="poly" title=" " alt="" coords="399,117,415,152,424,192,429,226,423,226,419,193,410,154,394,119"/>
+<area shape="poly" title=" " alt="" coords="298,113,266,129,241,154,232,172,228,192,227,233,235,270,244,299,239,300,230,272,222,233,222,191,227,170,237,151,263,125,296,108"/>
+<area shape="rect" href="core_2main_8h.html" title="Main control for the QB Actor Framework." alt="" coords="36,226,188,252"/>
+<area shape="poly" title=" " alt="" coords="304,112,249,129,196,155,173,172,153,192,123,228,119,224,149,188,170,168,194,150,247,124,302,106"/>
+<area shape="rect" href="core_2_pipe_8h.html" title="Actor communication channel for the QB Actor Framework." alt="" coords="250,153,401,178"/>
+<area shape="poly" title=" " alt="" coords="365,118,337,154,333,151,361,115"/>
+<area shape="rect" href="_event_8h.html" title="Convenience header for the QB Event system." alt="" coords="475,153,603,178"/>
+<area shape="poly" title=" " alt="" coords="423,109,513,150,511,154,421,114"/>
+<area shape="poly" title=" " alt="" coords="150,257,225,297,223,302,148,262"/>
+<area shape="rect" href="main_8h.html" title="Convenience header for the QB Main engine controller." alt="" coords="5,300,129,326"/>
+<area shape="poly" title=" " alt="" coords="99,266,77,301,72,298,95,263"/>
+<area shape="poly" title=" " alt="" coords="113,329,217,371,215,376,111,334"/>
+<area shape="poly" title=" " alt="" coords="357,185,411,224,408,228,354,190"/>
+<area shape="poly" title=" " alt="" coords="314,193,256,301,251,298,310,191"/>
+</map>
+</div>
+</div>
+<p><a href="core_2_i_callback_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3AICallback" id="r_qb_3A_3AICallback"><td class="memItemLeft" align="right" valign="top">interface &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_i_callback.html">qb::ICallback</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Interface for actor callbacks.  <a href="classqb_1_1_i_callback.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-typedef-members" class="groupheader"><a id="typedef-members" name="typedef-members"></a>
+Typedefs</h2></td></tr>
+<tr class="memitem:ga2f2b9392672aff9452ac77a47b39d875" id="r_ga2f2b9392672aff9452ac77a47b39d875"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___callback.html#ga2f2b9392672aff9452ac77a47b39d875">qb::icallback</a> = <a class="el" href="classqb_1_1_i_callback.html">ICallback</a></td></tr>
+<tr class="memdesc:ga2f2b9392672aff9452ac77a47b39d875"><td class="mdescLeft">&#160;</td><td class="mdescRight">Alias for the <a class="el" href="classqb_1_1_i_callback.html" title="Interface for actor callbacks.">ICallback</a> interface.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Callback interface for the QB Actor Framework. </p>
+<p>This file defines the ICallback interface which provides a mechanism for actors to receive periodic callbacks during each VirtualCore loop iteration. This allows actors to perform background tasks, periodic operations, or polling without relying on event-driven behavior.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div></div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_aca413fbbe053f647c2f74881aaff796.html">core</a></li><li class="navelem"><a href="core_2_i_callback_8h.html">ICallback.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

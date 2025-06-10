@@ -1,7 +1,8 @@
 var classqb_1_1_core_set =
 [
-    [ "CoreSet", "classqb_1_1_core_set.html#a93eb3c4a7c53bde4fd8d34ce342eebd0", null ],
-    [ "CoreSet", "classqb_1_1_core_set.html#a167ea37b4e7e8af833638f31115d22be", null ],
-    [ "CoreSet", "classqb_1_1_core_set.html#a68bf79a7aa1426c03be19b2675962bac", null ],
-    [ "Main", "classqb_1_1_core_set.html#a992c638551243aa0ee7b50d84f4fdf54", null ]
+    [ "CoreSet", "classqb_1_1_core_set.html#ad814a69cd901762eb75cba1baa5d422c", null ],
+    [ "resolve", "classqb_1_1_core_set.html#ac6789fe13f6c00bccd9d40af721c4c81", null ],
+    [ "raw", "classqb_1_1_core_set.html#a035592a9df838609af86f948dacb396e", null ],
+    [ "getSize", "classqb_1_1_core_set.html#a443a4870e78f3ef8b555493020153838", null ],
+    [ "getNbCore", "classqb_1_1_core_set.html#a8acda4727d9d5f836f0cb35d156bfea4", null ]
 ];

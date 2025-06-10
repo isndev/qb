@@ -1,0 +1,5 @@
+<map id="qb::KillEvent" name="qb::KillEvent">
+<area shape="rect" id="Node000001" title="Event used to terminate an actor." alt="" coords="5,79,101,105"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1_event.html" title="Base class for all events in the actor system." alt="" coords="14,5,92,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="56,46,56,79,50,79,50,46"/>
+</map>

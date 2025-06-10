@@ -1,0 +1,7 @@
+<map id="qb::is_inserter&lt; T, typename std::enable_if&lt;!std::is_void&lt; typename T::container_type &gt;::value &gt;::type &gt;" name="qb::is_inserter&lt; T, typename std::enable_if&lt;!std::is_void&lt; typename T::container_type &gt;::value &gt;::type &gt;">
+<area shape="rect" id="Node000001" title="Specialization for types that have a container_type." alt="" coords="31,79,215,165"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,5,113,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="77,43,99,77,94,80,73,46"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="136,5,238,31"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="173,46,152,80,147,77,169,43"/>
+</map>

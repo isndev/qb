@@ -1,0 +1,9 @@
+<map id="Core Actor System" name="Core Actor System">
+<area shape="rect" id="Node000003" href="$group___actor.html" title="Defines actors, their identification, and lifecycle management." alt="" coords="384,5,514,31"/>
+<area shape="rect" id="Node000006" href="$group___callback.html" title="Support for periodic callbacks within actors." alt="" coords="388,55,510,80"/>
+<area shape="rect" id="Node000001" title="Fundamental components implementing the Actor Model." alt="" coords="197,104,329,130"/>
+<area shape="rect" id="Node000005" href="$group___engine.html" title="Manages actor execution, virtual cores, and system lifecycle." alt="" coords="378,104,520,130"/>
+<area shape="rect" id="Node000004" href="$group___event_core.html" title="Base event types and core system events for actors." alt="" coords="381,153,517,179"/>
+<area shape="rect" id="Node000007" href="$group___pipe_core.html" title="Primitives for direct actor&#45;to&#45;actor communication channels." alt="" coords="377,203,521,244"/>
+<area shape="rect" id="Node000002" href="$group___q_b.html" title="The QB Actor Framework is a C++17 library for building high&#45;performance, concurrent,..." alt="" coords="5,104,149,130"/>
+</map>

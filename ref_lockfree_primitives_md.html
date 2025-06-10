@@ -1,0 +1,269 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: QB Framework: Lock-Free Primitives Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: QB Framework: Lock-Free Primitives Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('ref_lockfree_primitives_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">QB Framework: Lock-Free Primitives Reference </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>An overview of the lock-free data structures used internally by the QB Actor Framework for high-performance concurrency.</p>
+<h1>QB Framework: Lock-Free Primitives Reference</h1>
+<p>The QB Actor Framework utilizes several lock-free data structures internally to achieve high performance, particularly for inter-core communication and other critical concurrent operations. While direct interaction with these primitives by application developers is typically unnecessary (as the actor model provides higher-level, safer abstractions), understanding their existence and purpose can offer insights into QB's performance characteristics.</p>
+<p><b>Note:</b> For most application development needs, rely on <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span> event passing (<span class="tt">push</span>, <span class="tt">send</span>, etc.) for inter-thread and inter-actor communication. The primitives below are primarily for framework internals.</p>
+<h2>1. <span class="tt"><a class="el" href="classqb_1_1lockfree_1_1_spin_lock.html" title="A spinlock implementation for lightweight thread synchronization.">qb::lockfree::SpinLock</a></span></h2>
+<ul>
+<li><b>Header:</b> <span class="tt"><a class="el" href="spinlock_8h.html" title="Spinlock synchronization primitives.">qb/system/lockfree/spinlock.h</a></span></li>
+<li><b>Purpose:</b> A basic, lightweight mutual exclusion (mutex) mechanism that employs busy-waiting (or "spinning") rather than yielding the CPU or putting the calling thread to sleep when contending for the lock.</li>
+<li><b>Mechanism:</b> Implemented using <span class="tt">std::atomic&lt;bool&gt;</span> and atomic exchange operations (e.g., <span class="tt">_lock.exchange(true, std::memory_order_acquire)</span>).</li>
+<li><b>Key Public Methods:</b><ul>
+<li><span class="tt">lock()</span>: Acquires the lock, spinning indefinitely if necessary.</li>
+<li><span class="tt">trylock() -&gt; bool</span>: Attempts to acquire the lock once and returns immediately (true if successful).</li>
+<li><span class="tt">trylock(int64_t spin_count) -&gt; bool</span>: Tries to acquire, spinning up to <span class="tt">spin_count</span> times.</li>
+<li><span class="tt">trylock_for(const <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">qb::Duration</a>&amp; timespan) -&gt; bool</span>: Tries to acquire within a specified duration.</li>
+<li><span class="tt">trylock_until(const <a class="el" href="classqb_1_1_utc_time_point.html" title="Represents a UTC time point with nanosecond precision.">qb::UtcTimePoint</a>&amp; timestamp) -&gt; bool</span>: Tries to acquire until a specific time point.</li>
+<li><span class="tt">unlock()</span>: Releases the lock.</li>
+<li><span class="tt">locked() -&gt; bool</span>: Checks if the lock is currently held.</li>
+</ul>
+</li>
+<li><b>Use Case within QB:</b> Primarily used for extremely short critical sections where contention is expected to be very low and the overhead of a <span class="tt">std::mutex</span> (which involves system calls) is undesirable. For example, it's used internally in some modes of the MPSC queue.</li>
+<li><b>General Caution:</b> Spinlocks can be very CPU-intensive if the lock is held for more than a few instructions or if contention is high, as waiting threads will consume 100% CPU on their core. Their use requires careful consideration.</li>
+</ul>
+<h2>2. SPSC Ring Buffer (<span class="tt"><a class="el" href="classqb_1_1lockfree_1_1spsc_1_1ringbuffer.html" title="Fixed-size implementation of the SPSC ringbuffer.">qb::lockfree::spsc::ringbuffer</a>&lt;T, MaxSize&gt;</span> or <span class="tt">ringbuffer&lt;T, 0&gt;</span>)</h2>
+<ul>
+<li><b>Header:</b> <span class="tt"><a class="el" href="spsc_8h.html" title="Single-Producer Single-Consumer lockfree data structures.">qb/system/lockfree/spsc.h</a></span></li>
+<li><b>Purpose:</b> A Single-Producer, Single-Consumer lock-free circular queue (FIFO).</li>
+<li><b>Mechanism:</b> Employs atomic read and write indices (<span class="tt">std::atomic&lt;size_t&gt;</span>) with appropriate C++ memory ordering (<span class="tt">std::memory_order_relaxed</span>, <span class="tt">acquire</span>, <span class="tt">release</span>) to coordinate safe access between exactly one producer thread and exactly one consumer thread without traditional locks.</li>
+<li><b>Implementations:</b><ul>
+<li><span class="tt">ringbuffer&lt;T, MaxSize&gt;</span>: Buffer size (<span class="tt">MaxSize</span>) is fixed at compile time.</li>
+<li><span class="tt">ringbuffer&lt;T, 0&gt;</span> (then constructed with <span class="tt">size_t max_size</span>): Buffer size is determined at runtime.</li>
+</ul>
+</li>
+<li><b>Key Public Methods (Conceptual - see header for exact signatures):</b><ul>
+<li><span class="tt">enqueue(const T&amp; item) -&gt; bool</span> / <span class="tt">enqueue(const T* items, size_t count) -&gt; size_t</span>: Producer adds one or more items. Returns success status or count of items added. Fails if the buffer is full.</li>
+<li><span class="tt">dequeue(T* item) -&gt; bool</span> / <span class="tt">dequeue(T* items, size_t count) -&gt; size_t</span>: Consumer removes one or more items. Returns success status or count of items removed. Fails if the buffer is empty.</li>
+<li><span class="tt">dequeue(Functor func, T* buffer, size_t count) -&gt; size_t</span>: Dequeues items into a temporary buffer and then passes them to <span class="tt">func</span>.</li>
+<li><span class="tt">consume_all(Functor func) -&gt; size_t</span>: Allows the consumer to process all currently available items directly from the internal ring buffer segments, potentially avoiding intermediate copies. <span class="tt">func</span> is called with <span class="tt">(T* segment_start, size_t segment_length)</span>.</li>
+<li><span class="tt">empty() -&gt; bool</span>: Checks if the buffer is empty.</li>
+</ul>
+</li>
+<li><b>Use Case within QB:</b> Forms the building block for the MPSC queue. Not typically used directly by application code relying on actors.</li>
+</ul>
+<h2>3. MPSC Ring Buffer (<span class="tt"><a class="el" href="classqb_1_1lockfree_1_1mpsc_1_1ringbuffer.html" title="Multi-Producer Single-Consumer ring buffer with fixed number of producers.">qb::lockfree::mpsc::ringbuffer</a>&lt;T, MaxSize, NumProducers&gt;</span> or <span class="tt">ringbuffer&lt;T, MaxSize, 0&gt;</span>)</h2>
+<ul>
+<li><b>Header:</b> <span class="tt"><a class="el" href="mpsc_8h.html" title="Multiple-Producer Single-Consumer lockfree queue.">qb/system/lockfree/mpsc.h</a></span></li>
+<li><b>Purpose:</b> A Multiple-Producer, Single-Consumer lock-free queue. Allows many threads to concurrently produce items, while a single designated thread consumes them.</li>
+<li><b>Mechanism:</b> It is typically implemented as an array of SPSC ring buffers. Each producer thread (or a group of threads hashing to the same SPSC queue) enqueues into its dedicated SPSC buffer. The single consumer thread iterates through all these internal SPSC buffers to dequeue items in a fair manner (e.g., round-robin).<ul>
+<li>Enqueueing to a specific SPSC queue (if producer index is known) can be fully lock-free.</li>
+<li>The generic <span class="tt">enqueue(const T&amp; item)</span> that distributes among internal SPSC queues might use a <span class="tt">SpinLock</span> for brief synchronization if contention for selecting an SPSC queue occurs.</li>
+</ul>
+</li>
+<li><b>Implementations:</b><ul>
+<li><span class="tt">ringbuffer&lt;T, MaxSize, NumProducers&gt;</span>: Number of internal SPSC queues (and thus, conceptually, dedicated producer slots) is fixed at compile time.</li>
+<li><span class="tt">ringbuffer&lt;T, MaxSize, 0&gt;</span> (then constructed with <span class="tt">size_t num_producers</span>): Number of internal SPSC queues is determined at runtime.</li>
+</ul>
+</li>
+<li><b>Key Public Methods (Conceptual):</b><ul>
+<li><span class="tt">enqueue&lt;Index&gt;(const T&amp; item)</span> / <span class="tt">enqueue&lt;Index&gt;(const T* items, size_t count)</span>: Producer enqueues to a specific internal SPSC queue identified by compile-time <span class="tt">Index</span> (often fully lock-free).</li>
+<li><span class="tt">enqueue(size_t index, const T&amp; item)</span> / <span class="tt">enqueue(size_t index, const T* items, size_t count)</span>: Producer enqueues to an SPSC queue by runtime <span class="tt">index</span> (often fully lock-free).</li>
+<li><span class="tt">enqueue(const T&amp; item)</span> / <span class="tt">enqueue(const T* items, size_t count)</span>: General enqueue method that may distribute the item to one of the internal SPSC queues (potentially using a brief spinlock for selecting the queue).</li>
+<li><span class="tt">dequeue(T* items, size_t count) -&gt; size_t</span>: Consumer attempts to dequeue items by checking all internal producer queues.</li>
+<li><span class="tt">dequeue(Functor func, T* buffer, size_t count) -&gt; size_t</span>: Dequeues and processes with a functor.</li>
+<li><span class="tt">consume_all(Functor func) -&gt; size_t</span>: Consumer processes all available items from all producer queues.</li>
+<li><span class="tt">ringOf(size_t index) -&gt; spsc::ringbuffer&amp;</span>: Provides direct access to a specific internal SPSC ring buffer (use with caution).</li>
+</ul>
+</li>
+<li><b>Primary Use Case in QB:</b> This is the <b>core data structure for inter-<span class="tt">VirtualCore</span> communication</b>. Each <span class="tt">VirtualCore</span> has an MPSC ring buffer (<span class="tt">Mailbox</span> in <span class="tt">SharedCoreCommunication</span>) that acts as its incoming event queue. Other <span class="tt">VirtualCore</span>s are the producers, and the <span class="tt">VirtualCore</span> owning the mailbox is the single consumer.</li>
+</ul>
+<p>While these lock-free primitives are fundamental to QB's performance, developers should primarily interact with the higher-level actor messaging system (<span class="tt"><a class="el" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529" title="Send a new event in an ordered fashion to a destination actor, returning a reference to it.">qb::Actor::push</a></span>, <span class="tt">reply</span>, etc.), which abstracts these details and provides a safer, more idiomatic programming model for concurrent applications.</p>
+<p><b>(Next:</b> This concludes the main reference sections. You might want to revisit the Case Studies: QB Core &amp; IO Integration Examples or other Developer Guides.)** </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

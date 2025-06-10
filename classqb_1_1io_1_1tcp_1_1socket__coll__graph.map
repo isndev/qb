@@ -1,0 +1,5 @@
+<map id="qb::io::tcp::socket" name="qb::io::tcp::socket">
+<area shape="rect" id="Node000001" title="Class implementing TCP socket functionality for reliable, stream&#45;oriented communication." alt="" coords="5,79,132,105"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="18,5,119,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="71,46,71,79,66,79,66,46"/>
+</map>

@@ -1,0 +1,591 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/system/endian.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/system/endian.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('endian_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">endian.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___system.html">System-Level Utilities</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Endianness detection and byte swapping utilities.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &lt;cstdint&gt;</code><br />
+<code>#include &lt;cstring&gt;</code><br />
+<code>#include &lt;type_traits&gt;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for endian.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="endian_8h__incl.png" border="0" usemap="#ainclude_2qb_2system_2endian_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2system_2endian_8h" id="ainclude_2qb_2system_2endian_8h">
+<area shape="rect" title="Endianness detection and byte swapping utilities." alt="" coords="29,5,210,31"/>
+<area shape="rect" title=" " alt="" coords="5,79,66,105"/>
+<area shape="poly" title=" " alt="" coords="107,34,63,71,60,67,104,30"/>
+<area shape="rect" title=" " alt="" coords="89,79,150,105"/>
+<area shape="poly" title=" " alt="" coords="122,31,122,63,117,63,117,31"/>
+<area shape="rect" title=" " alt="" coords="174,79,257,105"/>
+<area shape="poly" title=" " alt="" coords="137,29,189,68,186,72,134,34"/>
+</map>
+</div>
+</div>
+<p><a href="endian_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-enum-members" class="groupheader"><a id="enum-members" name="enum-members"></a>
+Enumerations</h2></td></tr>
+<tr class="memitem:aac5234fde0411f0b0b7da90a3b142cb0" id="r_aac5234fde0411f0b0b7da90a3b142cb0"><td class="memItemLeft" align="right" valign="top">enum class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aac5234fde0411f0b0b7da90a3b142cb0">qb::endian::order</a> { <a class="el" href="#aac5234fde0411f0b0b7da90a3b142cb0aaae6635e044ac56046b2893a529b5114">little</a>
+, <a class="el" href="#aac5234fde0411f0b0b7da90a3b142cb0ad861877da56b8b4ceb35c8cbfdf65bb4">big</a>
+, <a class="el" href="#aac5234fde0411f0b0b7da90a3b142cb0aad921d60486366258809553a3db49a4a">unknown</a>
+ }</td></tr>
+<tr class="memdesc:aac5234fde0411f0b0b7da90a3b142cb0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Enumeration of byte order types.  <a href="#aac5234fde0411f0b0b7da90a3b142cb0">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-func-members" class="groupheader"><a id="func-members" name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:a583b8036e097452b97e6aa0e8bc90b69" id="r_a583b8036e097452b97e6aa0e8bc90b69"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="#aac5234fde0411f0b0b7da90a3b142cb0">order</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a583b8036e097452b97e6aa0e8bc90b69">qb::endian::native_order</a> ()</td></tr>
+<tr class="memdesc:a583b8036e097452b97e6aa0e8bc90b69"><td class="mdescLeft">&#160;</td><td class="mdescRight">Determines the system's native byte order at runtime.  <br /></td></tr>
+<tr class="memitem:a2cfd169c5f04e6382e4d427e511b650f" id="r_a2cfd169c5f04e6382e4d427e511b650f"><td class="memItemLeft" align="right" valign="top">constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2cfd169c5f04e6382e4d427e511b650f">qb::endian::is_little_endian</a> ()</td></tr>
+<tr class="memdesc:a2cfd169c5f04e6382e4d427e511b650f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if the system is little-endian at compile time when possible.  <br /></td></tr>
+<tr class="memitem:a2b6f435b669b0cd43664eb0e81f0bfaa" id="r_a2b6f435b669b0cd43664eb0e81f0bfaa"><td class="memItemLeft" align="right" valign="top">constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2b6f435b669b0cd43664eb0e81f0bfaa">qb::endian::is_big_endian</a> ()</td></tr>
+<tr class="memdesc:a2b6f435b669b0cd43664eb0e81f0bfaa"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if the system is big-endian.  <br /></td></tr>
+<tr class="memitem:aca9ed93fce72fac5e10a4b9991eb50f5" id="r_aca9ed93fce72fac5e10a4b9991eb50f5"><td class="memTemplParams" colspan="2">template&lt;typename T&gt; </td></tr>
+<tr class="memitem:aca9ed93fce72fac5e10a4b9991eb50f5 template"><td class="memItemLeft" align="right" valign="top">T&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aca9ed93fce72fac5e10a4b9991eb50f5">qb::endian::byteswap</a> (T value)</td></tr>
+<tr class="memdesc:aca9ed93fce72fac5e10a4b9991eb50f5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Swaps the byte order of a value.  <br /></td></tr>
+<tr class="memitem:af40666fa630925d6615b291d42e71004" id="r_af40666fa630925d6615b291d42e71004"><td class="memTemplParams" colspan="2">template&lt;typename T&gt; </td></tr>
+<tr class="memitem:af40666fa630925d6615b291d42e71004 template"><td class="memItemLeft" align="right" valign="top">T&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af40666fa630925d6615b291d42e71004">qb::endian::to_big_endian</a> (T value)</td></tr>
+<tr class="memdesc:af40666fa630925d6615b291d42e71004"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts a value from native endianness to big-endian.  <br /></td></tr>
+<tr class="memitem:ac813ff7e65b55845154fefab6f9224a3" id="r_ac813ff7e65b55845154fefab6f9224a3"><td class="memTemplParams" colspan="2">template&lt;typename T&gt; </td></tr>
+<tr class="memitem:ac813ff7e65b55845154fefab6f9224a3 template"><td class="memItemLeft" align="right" valign="top">T&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac813ff7e65b55845154fefab6f9224a3">qb::endian::from_big_endian</a> (T value)</td></tr>
+<tr class="memdesc:ac813ff7e65b55845154fefab6f9224a3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts a value from big-endian to native endianness.  <br /></td></tr>
+<tr class="memitem:a2eead0bd43922aa24192dc108fd9aca8" id="r_a2eead0bd43922aa24192dc108fd9aca8"><td class="memTemplParams" colspan="2">template&lt;typename T&gt; </td></tr>
+<tr class="memitem:a2eead0bd43922aa24192dc108fd9aca8 template"><td class="memItemLeft" align="right" valign="top">T&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2eead0bd43922aa24192dc108fd9aca8">qb::endian::to_little_endian</a> (T value)</td></tr>
+<tr class="memdesc:a2eead0bd43922aa24192dc108fd9aca8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts a value from native endianness to little-endian.  <br /></td></tr>
+<tr class="memitem:a41b83b1249674fb77e5bee95a3261a3c" id="r_a41b83b1249674fb77e5bee95a3261a3c"><td class="memTemplParams" colspan="2">template&lt;typename T&gt; </td></tr>
+<tr class="memitem:a41b83b1249674fb77e5bee95a3261a3c template"><td class="memItemLeft" align="right" valign="top">T&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a41b83b1249674fb77e5bee95a3261a3c">qb::endian::from_little_endian</a> (T value)</td></tr>
+<tr class="memdesc:a41b83b1249674fb77e5bee95a3261a3c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts a value from little-endian to native endianness.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Endianness detection and byte swapping utilities. </p>
+<p>This file provides utilities for detecting the system's native endianness and converting values between different byte orders (little endian and big endian). It includes functions for runtime and compile-time endianness detection, as well as safe byte-swapping operations that work with arithmetic and enum types.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div><a name="doc-enum-members" id="doc-enum-members"></a><h2 id="header-doc-enum-members" class="groupheader">Enumeration Type Documentation</h2>
+<a id="aac5234fde0411f0b0b7da90a3b142cb0" name="aac5234fde0411f0b0b7da90a3b142cb0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aac5234fde0411f0b0b7da90a3b142cb0">&#9670;&#160;</a></span>order</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">enum class <a class="el" href="#aac5234fde0411f0b0b7da90a3b142cb0">qb::endian::order</a></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel strong">strong</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Enumeration of byte order types. </p>
+<table class="fieldtable">
+<tr><th colspan="2">Enumerator</th></tr><tr><td class="fieldname"><a id="aac5234fde0411f0b0b7da90a3b142cb0aaae6635e044ac56046b2893a529b5114" name="aac5234fde0411f0b0b7da90a3b142cb0aaae6635e044ac56046b2893a529b5114"></a>little&#160;</td><td class="fielddoc"><p>Little-endian (least significant byte first) </p>
+</td></tr>
+<tr><td class="fieldname"><a id="aac5234fde0411f0b0b7da90a3b142cb0ad861877da56b8b4ceb35c8cbfdf65bb4" name="aac5234fde0411f0b0b7da90a3b142cb0ad861877da56b8b4ceb35c8cbfdf65bb4"></a>big&#160;</td><td class="fielddoc"><p>Big-endian (most significant byte first) </p>
+</td></tr>
+<tr><td class="fieldname"><a id="aac5234fde0411f0b0b7da90a3b142cb0aad921d60486366258809553a3db49a4a" name="aac5234fde0411f0b0b7da90a3b142cb0aad921d60486366258809553a3db49a4a"></a>unknown&#160;</td><td class="fielddoc"><p>Unknown endianness. </p>
+</td></tr>
+</table>
+
+</div>
+</div>
+<a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Function Documentation</h2>
+<a id="a583b8036e097452b97e6aa0e8bc90b69" name="a583b8036e097452b97e6aa0e8bc90b69"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a583b8036e097452b97e6aa0e8bc90b69">&#9670;&#160;</a></span>native_order()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">order qb::endian::native_order </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel constexpr">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Determines the system's native byte order at runtime. </p>
+<p>Uses compiler macros for detection when available, with a fallback to runtime detection using a union.</p>
+<dl class="section return"><dt>Returns</dt><dd>The native byte order of the system </dd></dl>
+
+</div>
+</div>
+<a id="a2cfd169c5f04e6382e4d427e511b650f" name="a2cfd169c5f04e6382e4d427e511b650f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2cfd169c5f04e6382e4d427e511b650f">&#9670;&#160;</a></span>is_little_endian()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::endian::is_little_endian </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel constexpr">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if the system is little-endian at compile time when possible. </p>
+<p>Uses compiler macros for detection when available, with a fallback to runtime detection.</p>
+<dl class="section return"><dt>Returns</dt><dd>true if system is little-endian, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="a2b6f435b669b0cd43664eb0e81f0bfaa" name="a2b6f435b669b0cd43664eb0e81f0bfaa"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2b6f435b669b0cd43664eb0e81f0bfaa">&#9670;&#160;</a></span>is_big_endian()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::endian::is_big_endian </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel constexpr">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if the system is big-endian. </p>
+<dl class="section return"><dt>Returns</dt><dd>true if system is big-endian, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="aca9ed93fce72fac5e10a4b9991eb50f5" name="aca9ed93fce72fac5e10a4b9991eb50f5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aca9ed93fce72fac5e10a4b9991eb50f5">&#9670;&#160;</a></span>byteswap()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">T qb::endian::byteswap </td>
+          <td>(</td>
+          <td class="paramtype">T</td>          <td class="paramname"><span class="paramname"><em>value</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Swaps the byte order of a value. </p>
+<p>Reverses the bytes of any trivially copyable type. This function is safe to use with any arithmetic or enum type.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">T</td><td>The type of value to byte-swap (must be arithmetic or enum and trivially copyable) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">value</td><td>The value to byte-swap </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>The byte-swapped value </dd></dl>
+
+</div>
+</div>
+<a id="af40666fa630925d6615b291d42e71004" name="af40666fa630925d6615b291d42e71004"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af40666fa630925d6615b291d42e71004">&#9670;&#160;</a></span>to_big_endian()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">T qb::endian::to_big_endian </td>
+          <td>(</td>
+          <td class="paramtype">T</td>          <td class="paramname"><span class="paramname"><em>value</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Converts a value from native endianness to big-endian. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">T</td><td>The type of value to convert </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">value</td><td>The value to convert </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>The value in big-endian byte order </dd></dl>
+
+</div>
+</div>
+<a id="ac813ff7e65b55845154fefab6f9224a3" name="ac813ff7e65b55845154fefab6f9224a3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac813ff7e65b55845154fefab6f9224a3">&#9670;&#160;</a></span>from_big_endian()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">T qb::endian::from_big_endian </td>
+          <td>(</td>
+          <td class="paramtype">T</td>          <td class="paramname"><span class="paramname"><em>value</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Converts a value from big-endian to native endianness. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">T</td><td>The type of value to convert </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">value</td><td>The big-endian value to convert </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>The value in native byte order </dd></dl>
+
+</div>
+</div>
+<a id="a2eead0bd43922aa24192dc108fd9aca8" name="a2eead0bd43922aa24192dc108fd9aca8"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2eead0bd43922aa24192dc108fd9aca8">&#9670;&#160;</a></span>to_little_endian()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">T qb::endian::to_little_endian </td>
+          <td>(</td>
+          <td class="paramtype">T</td>          <td class="paramname"><span class="paramname"><em>value</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Converts a value from native endianness to little-endian. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">T</td><td>The type of value to convert </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">value</td><td>The value to convert </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>The value in little-endian byte order </dd></dl>
+
+</div>
+</div>
+<a id="a41b83b1249674fb77e5bee95a3261a3c" name="a41b83b1249674fb77e5bee95a3261a3c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a41b83b1249674fb77e5bee95a3261a3c">&#9670;&#160;</a></span>from_little_endian()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">T qb::endian::from_little_endian </td>
+          <td>(</td>
+          <td class="paramtype">T</td>          <td class="paramname"><span class="paramname"><em>value</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Converts a value from little-endian to native endianness. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">T</td><td>The type of value to convert </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">value</td><td>The little-endian value to convert </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>The value in native byte order </dd></dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_c8578dc3b5a075444df510993a4b023d.html">system</a></li><li class="navelem"><a href="endian_8h.html">endian.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

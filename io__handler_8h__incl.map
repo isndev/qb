@@ -1,0 +1,19 @@
+<map id="include/qb/io/async/io_handler.h" name="include/qb/io/async/io_handler.h">
+<area shape="rect" id="Node000001" title="Session management for the asynchronous IO framework." alt="" coords="365,5,499,46"/>
+<area shape="rect" id="Node000002" href="$unordered__map_8h.html" title="Optimized unordered map implementations." alt="" coords="152,94,291,135"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="385,49,284,90,282,85,383,44"/>
+<area shape="rect" id="Node000007" href="$uuid_8h.html" title="Universally Unique Identifier (UUID) support." alt="" coords="395,102,469,127"/>
+<area shape="poly" id="edge6_Node000001_Node000007" title=" " alt="" coords="435,47,435,86,429,86,429,47"/>
+<area shape="rect" id="Node000009" href="$extracted_8h.html" title="Extracted event for asynchronous I/O operations." alt="" coords="493,102,686,127"/>
+<area shape="poly" id="edge8_Node000001_Node000009" title=" " alt="" coords="469,44,555,91,553,96,466,49"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="5,190,59,216"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="177,138,72,185,71,185,69,181,70,180,175,133"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="82,190,128,216"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="197,137,135,183,132,179,193,133"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="152,183,290,223"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="224,135,224,167,219,167,219,135"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="314,190,424,216"/>
+<area shape="poly" id="edge5_Node000002_Node000006" title=" " alt="" coords="256,133,337,180,334,184,254,137"/>
+<area shape="rect" id="Node000008" title=" " alt="" coords="449,190,578,216"/>
+<area shape="poly" id="edge7_Node000007_Node000008" title=" " alt="" coords="445,126,494,177,490,181,441,129"/>
+</map>

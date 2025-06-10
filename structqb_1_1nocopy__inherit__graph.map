@@ -1,0 +1,29 @@
+<map id="qb::nocopy" name="qb::nocopy">
+<area shape="rect" id="Node000001" title="Base class to make derived classes non&#45;copyable." alt="" coords="5,191,91,217"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1lockfree_1_1mpsc_1_1ringbuffer.html" title=" " alt="" coords="153,5,328,61"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="59,176,90,123,112,95,137,71,155,59,158,64,140,75,116,99,95,126,64,178"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1lockfree_1_1mpsc_1_1ringbuffer_3_01_t_00_01max__size_00_010_01_4.html" title="Multi&#45;Producer Single&#45;Consumer ring buffer with runtime&#45;determined number of producers." alt="" coords="173,85,308,141"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="102,181,138,163,191,139,193,144,140,168,105,186"/>
+<area shape="poly" id="edge9_Node000001_Node000003" title=" " alt="" coords="69,179,137,139,172,124,174,129,140,144,72,183"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1_actor.html" title="Base class for all actors in the qb framework." alt="" coords="203,166,278,191"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="106,194,202,181,203,186,107,199"/>
+<area shape="rect" id="Node000007" href="$classqb_1_1_core_initializer.html" title="Handles pre&#45;start configuration for a single VirtualCore." alt="" coords="179,215,302,241"/>
+<area shape="poly" id="edge6_Node000001_Node000007" title=" " alt="" coords="106,208,178,217,178,223,106,214"/>
+<area shape="rect" id="Node000008" href="$classqb_1_1_shared_core_communication.html" title="Manages inter&#45;core communication infrastructure (mailboxes)." alt="" coords="139,264,342,290"/>
+<area shape="poly" id="edge7_Node000001_Node000008" title=" " alt="" coords="84,223,140,251,173,261,171,266,138,256,81,227"/>
+<area shape="rect" id="Node000009" href="$classqb_1_1lockfree_1_1mpsc_1_1ringbuffer.html" title="Multi&#45;Producer Single&#45;Consumer ring buffer with fixed number of producers." alt="" coords="169,315,312,370"/>
+<area shape="poly" id="edge8_Node000001_Node000009" title=" " alt="" coords="69,228,100,265,140,300,170,317,167,321,137,305,96,268,65,231"/>
+<area shape="rect" id="Node000010" href="$classqb_1_1lockfree_1_1spsc_1_1internal_1_1ringbuffer.html" title="Base implementation of the Single&#45;Producer Single&#45;Consumer ringbuffer." alt="" coords="158,394,323,435"/>
+<area shape="poly" id="edge10_Node000001_Node000010" title=" " alt="" coords="59,231,69,265,86,306,110,346,140,380,159,393,156,397,137,385,105,349,81,308,64,267,53,233"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1_service.html" title="Internal base class for services." alt="" coords="436,166,523,191"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="293,176,435,176,435,181,293,181"/>
+<area shape="rect" id="Node000006" href="$classqb_1_1_service_actor.html" title="SingletonActor base class, ensuring one instance per VirtualCore per Tag." alt="" coords="617,166,781,191"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="539,176,617,176,617,181,539,181"/>
+<area shape="rect" id="Node000011" href="$classqb_1_1lockfree_1_1spsc_1_1ringbuffer.html" title=" " alt="" coords="412,315,547,370"/>
+<area shape="poly" id="edge11_Node000010_Node000011" title=" " alt="" coords="324,387,411,360,413,365,326,392"/>
+<area shape="rect" id="Node000012" href="$classqb_1_1lockfree_1_1spsc_1_1ringbuffer_3_01_t_00_010_01_4.html" title="Dynamic&#45;size implementation of the SPSC ringbuffer." alt="" coords="416,394,544,435"/>
+<area shape="poly" id="edge12_Node000010_Node000012" title=" " alt="" coords="338,421,415,420,415,425,338,426"/>
+<area shape="poly" id="edge14_Node000010_Node000012" title=" " alt="" coords="338,403,415,404,415,409,338,408"/>
+<area shape="rect" id="Node000013" href="$classqb_1_1lockfree_1_1spsc_1_1ringbuffer.html" title="Fixed&#45;size implementation of the SPSC ringbuffer." alt="" coords="390,460,569,500"/>
+<area shape="poly" id="edge13_Node000010_Node000013" title=" " alt="" coords="332,437,403,456,402,461,331,442"/>
+</map>

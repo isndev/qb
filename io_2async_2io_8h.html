@@ -1,0 +1,352 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/async/io.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/async/io.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('io_2async_2io_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">io.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Core asynchronous I/O class templates for event-driven operations.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &lt;<a class="el" href="type__traits_8h_source.html">qb/utility/type_traits.h</a>&gt;</code><br />
+<code>#include &quot;<a class="el" href="all_8h_source.html">event/all.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="async_2listener_8h_source.html">listener.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="protocol_8h_source.html">protocol.h</a>&quot;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for io.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="io_2async_2io_8h__incl.png" border="0" usemap="#ainclude_2qb_2io_2async_2io_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2async_2io_8h" id="ainclude_2qb_2io_2async_2io_8h">
+<area shape="rect" title="Core asynchronous I/O class templates for event&#45;driven operations." alt="" coords="632,5,791,31"/>
+<area shape="rect" href="type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="130,160,277,186"/>
+<area shape="poly" title=" " alt="" coords="672,34,259,158,257,153,671,29"/>
+<area shape="rect" href="all_8h.html" title="Aggregation of all event types for the asynchronous I/O system." alt="" coords="850,79,931,105"/>
+<area shape="poly" title=" " alt="" coords="743,29,847,70,845,75,741,34"/>
+<area shape="rect" href="async_2listener_8h.html" title="Core event loop manager for the asynchronous IO framework." alt="" coords="1623,79,1696,105"/>
+<area shape="poly" title=" " alt="" coords="791,23,1608,84,1607,89,791,28"/>
+<area shape="rect" href="protocol_8h.html" title="Protocol interfaces for message processing in the asynchronous IO framework." alt="" coords="620,79,699,105"/>
+<area shape="poly" title=" " alt="" coords="705,33,680,68,675,65,701,30"/>
+<area shape="rect" title=" " alt="" coords="5,249,93,274"/>
+<area shape="poly" title=" " alt="" coords="183,189,85,243,83,238,181,184"/>
+<area shape="rect" title=" " alt="" coords="117,249,200,274"/>
+<area shape="poly" title=" " alt="" coords="200,188,174,236,169,234,195,185"/>
+<area shape="rect" title=" " alt="" coords="224,249,276,274"/>
+<area shape="poly" title=" " alt="" coords="212,185,239,234,234,236,208,188"/>
+<area shape="rect" title=" " alt="" coords="301,249,368,274"/>
+<area shape="poly" title=" " alt="" coords="223,184,305,238,302,242,220,189"/>
+<area shape="rect" href="disconnected_8h.html" title="Disconnection event for asynchronous I/O operations." alt="" coords="714,160,824,186"/>
+<area shape="poly" title=" " alt="" coords="873,107,801,154,799,149,870,103"/>
+<area shape="rect" href="extracted_8h.html" title="Extracted event for asynchronous I/O operations." alt="" coords="847,160,934,186"/>
+<area shape="poly" title=" " alt="" coords="893,105,893,144,888,144,888,105"/>
+<area shape="rect" href="dispose_8h.html" title="Resource disposal event for asynchronous I/O components." alt="" coords="957,160,1034,186"/>
+<area shape="poly" title=" " alt="" coords="908,103,969,149,966,153,905,107"/>
+<area shape="rect" href="eof_8h.html" title="End&#45;of&#45;file event for asynchronous input streams." alt="" coords="1125,160,1176,186"/>
+<area shape="poly" title=" " alt="" coords="932,99,1017,119,1114,150,1116,151,1114,156,1112,155,1015,124,931,104"/>
+<area shape="rect" href="eos_8h.html" title="End&#45;of&#45;stream event for asynchronous output streams." alt="" coords="1200,160,1253,186"/>
+<area shape="poly" title=" " alt="" coords="932,95,1049,114,1119,130,1188,150,1191,151,1189,156,1187,155,1118,135,1048,119,931,101"/>
+<area shape="rect" href="async_2event_2file_8h.html" title="File system monitoring event for asynchronous I/O." alt="" coords="640,160,690,186"/>
+<area shape="poly" title=" " alt="" coords="850,107,781,127,703,155,702,156,700,151,701,150,779,122,849,101"/>
+<area shape="rect" href="io_2async_2event_2io_8h.html" title="Low&#45;level I/O notification event for asynchronous operations." alt="" coords="1058,160,1101,186"/>
+<area shape="poly" title=" " alt="" coords="928,103,981,122,1047,151,1045,156,979,127,926,108"/>
+<area shape="rect" href="pending__read_8h.html" title="Event for notifying about pending (unprocessed) read data in asynchronous I/O." alt="" coords="1277,160,1386,186"/>
+<area shape="poly" title=" " alt="" coords="932,95,1080,116,1266,150,1278,153,1277,158,1264,155,1079,121,931,101"/>
+<area shape="rect" href="pending__write_8h.html" title="Event for notifying about pending (unsent) write data in asynchronous I/O." alt="" coords="301,160,413,186"/>
+<area shape="poly" title=" " alt="" coords="850,99,665,118,546,134,426,155,412,158,411,153,424,150,545,129,665,113,849,94"/>
+<area shape="rect" href="signal_8h.html" title="System signal event handler for asynchronous I/O." alt="" coords="1410,160,1477,186"/>
+<area shape="poly" title=" " alt="" coords="931,91,1017,96,1134,105,1266,122,1399,150,1405,152,1403,157,1398,155,1266,128,1134,110,1017,101,931,97"/>
+<area shape="rect" href="timer_8h.html" title="Timer event for asynchronous I/O and timed operations." alt="" coords="556,160,616,186"/>
+<area shape="poly" title=" " alt="" coords="850,103,749,123,630,155,626,157,624,151,628,150,748,118,849,97"/>
+<area shape="rect" href="async_2event_2handshake_8h.html" title="Handshake event for asynchronous input streams." alt="" coords="437,160,533,186"/>
+<area shape="poly" title=" " alt="" coords="850,101,713,121,544,155,535,158,533,153,543,150,713,116,849,96"/>
+<area shape="rect" href="async_2event_2base_8h.html" title="Base class for asynchronous events in the QB IO library." alt="" coords="1050,249,1110,274"/>
+<area shape="poly" title=" " alt="" coords="687,184,703,191,794,216,885,234,1034,254,1034,259,884,240,792,221,701,196,685,189"/>
+<area shape="rect" title=" " alt="" coords="1040,330,1120,356"/>
+<area shape="poly" title=" " alt="" coords="1082,275,1082,314,1077,314,1077,275"/>
+<area shape="poly" title=" " alt="" coords="1082,186,1082,233,1077,233,1077,186"/>
+<area shape="poly" title=" " alt="" coords="1418,189,1399,196,1325,216,1250,233,1126,256,1125,251,1249,228,1324,211,1398,191,1416,184"/>
+<area shape="poly" title=" " alt="" coords="611,184,630,191,742,218,855,236,1034,255,1034,260,854,242,741,223,628,196,609,189"/>
+<area shape="poly" title=" " alt="" coords="1623,97,985,114,584,132,416,143,289,155,266,159,265,154,289,150,415,137,584,126,985,109,1622,91"/>
+<area shape="poly" title=" " alt="" coords="1632,108,1588,128,1541,155,1517,176,1506,186,1490,196,1442,214,1392,229,1291,249,1198,260,1125,263,1125,258,1197,254,1290,244,1390,224,1440,209,1488,191,1503,182,1513,172,1538,150,1586,124,1630,103"/>
+<area shape="rect" title=" " alt="" coords="1552,160,1626,186"/>
+<area shape="poly" title=" " alt="" coords="1651,107,1612,150,1608,146,1647,103"/>
+<area shape="rect" href="unordered__set_8h.html" title="Optimized unordered set implementations." alt="" coords="1997,153,2136,193"/>
+<area shape="poly" title=" " alt="" coords="1697,97,1982,149,1981,155,1696,102"/>
+<area shape="rect" href="branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="1651,160,1810,186"/>
+<area shape="poly" title=" " alt="" coords="1672,103,1711,146,1707,150,1668,107"/>
+<area shape="rect" title=" " alt="" coords="1834,160,1891,186"/>
+<area shape="poly" title=" " alt="" coords="1697,103,1823,150,1825,151,1823,156,1821,155,1695,108"/>
+<area shape="rect" title=" " alt="" coords="1915,160,1972,186"/>
+<area shape="poly" title=" " alt="" coords="1697,97,1792,118,1904,150,1907,151,1905,156,1903,155,1791,123,1696,102"/>
+<area shape="rect" title=" " alt="" coords="1933,249,1973,274"/>
+<area shape="poly" title=" " alt="" coords="2042,196,1982,241,1979,237,2039,192"/>
+<area shape="rect" title=" " alt="" coords="1997,241,2136,282"/>
+<area shape="poly" title=" " alt="" coords="2069,194,2069,226,2064,226,2064,194"/>
+<area shape="rect" title=" " alt="" coords="2160,249,2263,274"/>
+<area shape="poly" title=" " alt="" coords="2101,192,2180,238,2177,243,2098,196"/>
+<area shape="poly" title=" " alt="" coords="620,101,474,123,289,155,271,159,270,154,289,150,474,118,620,96"/>
+</map>
+</div>
+</div><div class="textblock"><div class="dynheader">
+This graph shows which files directly or indirectly include this file:</div>
+<div class="dyncontent">
+<div class="center"><img src="io_2async_2io_8h__dep__incl.png" border="0" usemap="#ainclude_2qb_2io_2async_2io_8hdep" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2async_2io_8hdep" id="ainclude_2qb_2io_2async_2io_8hdep">
+<area shape="rect" title="Core asynchronous I/O class templates for event&#45;driven operations." alt="" coords="176,5,334,31"/>
+<area shape="rect" href="async_8h.html" title="Main include file for the QB asynchronous I/O library." alt="" coords="236,256,380,282"/>
+<area shape="poly" title=" " alt="" coords="174,38,126,55,82,81,46,110,18,141,11,157,8,173,12,189,22,207,35,218,55,227,110,243,174,254,236,260,235,266,173,259,109,248,53,232,32,222,18,210,7,191,3,173,6,155,14,138,42,107,78,77,124,51,172,33"/>
+<area shape="rect" href="async_2file_8h.html" title="Asynchronous file operations for the QB IO library." alt="" coords="32,168,165,208"/>
+<area shape="poly" title=" " alt="" coords="162,37,127,54,100,81,91,101,88,124,95,167,90,168,83,124,85,100,95,77,124,50,159,33"/>
+<area shape="rect" href="acceptor_8h.html" title="Asynchronous TCP connection acceptor implementation." alt="" coords="109,79,243,120"/>
+<area shape="poly" title=" " alt="" coords="234,44,197,81,194,77,230,40"/>
+<area shape="rect" href="tcp_2client_8h.html" title="Asynchronous TCP client implementation for the QB IO library." alt="" coords="267,79,400,120"/>
+<area shape="poly" title=" " alt="" coords="279,40,316,77,312,81,275,44"/>
+<area shape="rect" href="udp_2client_8h.html" title="Asynchronous UDP client implementation." alt="" coords="424,79,557,120"/>
+<area shape="poly" title=" " alt="" coords="306,34,433,76,431,81,305,39"/>
+<area shape="rect" href="udp_2server_8h.html" title="Asynchronous UDP server implementation." alt="" coords="488,168,621,208"/>
+<area shape="poly" title=" " alt="" coords="350,22,415,28,480,39,536,55,557,65,571,77,582,99,582,124,576,148,568,168,563,166,571,146,577,123,576,101,567,81,554,70,534,60,479,44,414,34,349,27"/>
+<area shape="poly" title=" " alt="" coords="166,212,277,253,275,258,164,217"/>
+<area shape="rect" href="tcp_2server_8h.html" title="Asynchronous TCP server implementation for the QB IO library." alt="" coords="189,168,323,208"/>
+<area shape="poly" title=" " alt="" coords="206,129,240,165,236,169,202,133"/>
+<area shape="poly" title=" " alt="" coords="279,220,302,254,298,257,275,223"/>
+<area shape="poly" title=" " alt="" coords="340,135,341,171,337,209,328,235,317,257,313,255,323,233,332,208,336,170,335,135"/>
+<area shape="poly" title=" " alt="" coords="460,132,323,258,319,254,456,128"/>
+<area shape="poly" title=" " alt="" coords="479,216,347,258,345,253,478,211"/>
+</map>
+</div>
+</div>
+<p><a href="io_2async_2io_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3Abase_3C_20_5FDerived_2C_20_5FEV_5FEVENT_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3Abase_3C_20_5FDerived_2C_20_5FEV_5FEVENT_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1base.html">qb::io::async::base&lt; _Derived, _EV_EVENT &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Base class for all qb-io asynchronous components that interact with the event listener.  <a href="classqb_1_1io_1_1async_1_1base.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3Awith_5Ftimeout_3C_20_5FDerived_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3Awith_5Ftimeout_3C_20_5FDerived_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html">qb::io::async::with_timeout&lt; _Derived &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">CRTP base class that adds timeout functionality to derived asynchronous components.  <a href="classqb_1_1io_1_1async_1_1with__timeout.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3ATimeout_3C_20_5FFunc_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3ATimeout_3C_20_5FFunc_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1_timeout.html">qb::io::async::Timeout&lt; _Func &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Utility class to execute a function after a specified timeout using the event loop.  <a href="classqb_1_1io_1_1async_1_1_timeout.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3Afile_5Fwatcher_3C_20_5FDerived_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3Afile_5Fwatcher_3C_20_5FDerived_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1file__watcher.html">qb::io::async::file_watcher&lt; _Derived &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">CRTP base class for watching a single file for attribute changes and processing its contents.  <a href="classqb_1_1io_1_1async_1_1file__watcher.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3Adirectory_5Fwatcher_3C_20_5FDerived_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3Adirectory_5Fwatcher_3C_20_5FDerived_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1directory__watcher.html">qb::io::async::directory_watcher&lt; _Derived &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">CRTP base class for watching a directory for attribute changes.  <a href="classqb_1_1io_1_1async_1_1directory__watcher.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3Ainput_3C_20_5FDerived_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3Ainput_3C_20_5FDerived_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1input.html">qb::io::async::input&lt; _Derived &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">CRTP base class for managing asynchronous input operations with protocol processing.  <a href="classqb_1_1io_1_1async_1_1input.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3Aoutput_3C_20_5FDerived_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3Aoutput_3C_20_5FDerived_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1output.html">qb::io::async::output&lt; _Derived &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">CRTP base class for managing asynchronous output operations.  <a href="classqb_1_1io_1_1async_1_1output.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3Aio_3C_20_5FDerived_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3Aio_3C_20_5FDerived_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io&lt; _Derived &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing.  <a href="classqb_1_1io_1_1async_1_1io.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-define-members" class="groupheader"><a id="define-members" name="define-members"></a>
+Macros</h2></td></tr>
+<tr class="memitem:aec484392b87534853d53db5f53d99684" id="r_aec484392b87534853d53db5f53d99684"><td class="memItemLeft" align="right" valign="top"><a id="aec484392b87534853d53db5f53d99684" name="aec484392b87534853d53db5f53d99684"></a>
+#define&#160;</td><td class="memItemRight" valign="bottom"><b>Derived</b>&#160;&#160;&#160;static_cast&lt;_Derived &amp;&gt;(*this)</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-func-members" class="groupheader"><a id="func-members" name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:a21dd18c5fbc5fd65dfc7f7c83c511105" id="r_a21dd18c5fbc5fd65dfc7f7c83c511105"><td class="memItemLeft" align="right" valign="top"><a id="a21dd18c5fbc5fd65dfc7f7c83c511105" name="a21dd18c5fbc5fd65dfc7f7c83c511105"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>CREATE_MEMBER_CHECK</b> (Protocol)</td></tr>
+<tr class="memitem:ga79acd187eb2aeb629523ebb206ee004d" id="r_ga79acd187eb2aeb629523ebb206ee004d"><td class="memTemplParams" colspan="2">template&lt;typename _Func&gt; </td></tr>
+<tr class="memitem:ga79acd187eb2aeb629523ebb206ee004d template"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">qb::io::async::callback</a> (_Func &amp;&amp;func, double timeout=0.)</td></tr>
+<tr class="memdesc:ga79acd187eb2aeb629523ebb206ee004d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Utility function to schedule a callable for execution after a timeout.  <br /></td></tr>
+<tr class="memitem:a269b00441b35542414bb15b78c63c181" id="r_a269b00441b35542414bb15b78c63c181"><td class="memTemplParams" colspan="2"><a id="a269b00441b35542414bb15b78c63c181" name="a269b00441b35542414bb15b78c63c181"></a>
+template&lt;typename _Func, typename Rep, typename Period&gt; </td></tr>
+<tr class="memitem:a269b00441b35542414bb15b78c63c181 template"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><b>qb::io::async::callback</b> (_Func &amp;&amp;func, std::chrono::duration&lt; Rep, Period &gt; timeout_duration)</td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Core asynchronous I/O class templates for event-driven operations. </p>
+<p>This file defines the fundamental class templates for asynchronous I/O operations in the QB IO library. It includes base classes for handling events, timeouts, file watching, and bidirectional I/O with protocol-based message processing.</p>
+<p>The classes in this file use the Curiously Recurring Template Pattern (CRTP) to provide static polymorphism, avoiding the overhead of virtual function calls while still allowing customization in derived classes.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div></div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="dir_8eba9db56c7516495e7fe9ef247fc2c3.html">async</a></li><li class="navelem"><a href="io_2async_2io_8h.html">io.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

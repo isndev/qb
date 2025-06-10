@@ -1,0 +1,352 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: QB Actor Framework: Design Patterns Cookbook</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: QB Actor Framework: Design Patterns Cookbook</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('guides_patterns_cookbook_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">QB Actor Framework: Design Patterns Cookbook </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>Practical recipes and C++ examples for implementing common and effective actor-based design patterns with the QB Framework.</p>
+<h1>QB Actor Framework: Design Patterns Cookbook</h1>
+<p>This cookbook provides practical recipes and conceptual C++ examples for implementing common design patterns in your QB actor-based applications. These patterns help structure your system, manage state, and handle interactions effectively. For information about Service Actors and Periodic Callbacks, please refer to the QB-Core: Common Actor Patterns &amp; Utilities page.</p>
+<h2>1. Finite State Machine (FSM)</h2>
+<p>Actors naturally model entities with distinct states and transitions triggered by events. The <a href="./../4_qb_core/patterns.md#1-finite-state-machine-fsm-with-actors">QB-Core: Common Actor Patterns &amp; Utilities</a> page provides a detailed explanation and example of implementing FSMs.</p>
+<p><b>Key Idea:</b> An actor's member variables hold its current state. Event handlers (<span class="tt">on(Event&amp;)</span> methods) implement state transition logic based on the current state and the received event.</p>
+<h2>2. Publish/Subscribe (Pub/Sub)</h2>
+<p>This pattern decouples message senders (publishers) from receivers (subscribers) using a central Broker actor that manages topics and message distribution.</p>
+<ul>
+<li><b>Purpose:</b> Allows multiple actors to subscribe to specific topics of interest and receive relevant messages without publishers needing to know about individual subscribers.</li>
+<li><b>Components:</b><ul>
+<li><b>Broker Actor:</b> Manages topic subscriptions and routes published messages.</li>
+<li><b>Publisher Actor(s):</b> Send messages for a specific topic to the Broker.</li>
+<li><b>Subscriber Actor(s):</b> Subscribe to topics with the Broker and receive messages for those topics.</li>
+</ul>
+</li>
+<li><p class="startli"><b>Conceptual Flow:</b> ```text +----------&mdash;+ +--------------&mdash;+ +----------&mdash;+ | Publisher A |-----&gt;| PublishReq(T1) |-----&gt;| BrokerActor | +----------&mdash;+ +--------------&mdash;+ +----------&mdash;+ ^ | | 2. Broker sends | 1. Publisher sends message for Topic T1 | NotificationMsg(T1) | Manages subscriptions for T1, T2... | to relevant subscribers | +--&mdash;|----&mdash;+ +--&mdash;|----&mdash;+ | SubscriberX | | SubscriberY | | (Subscribed | | (Subscribed | | to T1) | | to T1) | +----------&mdash;+ +----------&mdash;+</p>
+<p class="startli">+----------&mdash;+ | SubscriberZ | | (Subscribed | | to T2) | &lt;&ndash; No message, not subscribed to T1 +----------&mdash;+ ```</p>
+</li>
+<li><p class="startli"><b>Conceptual Implementation:</b></p>
+<p class="startli"><b>Events:</b> ```cpp #include &lt;<a class="el" href="_actor_8h.html" title="Convenience header for the core QB Actor components.">qb/actor.h</a>&gt; #include &lt;<a class="el" href="_event_8h.html" title="Convenience header for the QB Event system.">qb/event.h</a>&gt; #include &lt;<a class="el" href="string_8h.html" title="Fixed-size string implementation optimized for performance.">qb/string.h</a>&gt; #include &lt;string&gt; // For std::string in map keys if needed, or use <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a> #include &lt;vector&gt; #include &lt;set&gt; #include &lt;map&gt; #include &lt;memory&gt; // For std::shared_ptr</p>
+<p class="startli">// Using <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a> for topic for efficiency and ABI safety in events struct SubscribeReq : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;64&gt;</a> topic; }; struct UnsubscribeReq : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;64&gt;</a> topic; }; struct PublishReq : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;64&gt;</a> topic; std::shared_ptr&lt;qb::string&lt;256&gt;&gt; content; // Use shared_ptr for potentially large content PublishReq(const char* t, std::shared_ptr&lt;qb::string&lt;256&gt;&gt; c) : topic(t), content(c) {} }; struct NotificationMsg : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;64&gt;</a> topic; std::shared_ptr&lt;qb::string&lt;256&gt;&gt; content; // Share content efficiently NotificationMsg(qb::string&lt;64&gt; t, std::shared_ptr&lt;qb::string&lt;256&gt;&gt; c) : topic(std::move(t)), content(c) {} }; ```</p>
+<p class="startli"><b>Broker Actor:</b> ```cpp class BrokerActor : public <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a> { private: // Using std::string as map key here for simplicity in example; // consider <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a> or custom hash for <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a> if performance critical. std::map&lt;std::string, std::set&lt;qb::ActorId&gt;&gt; _subscriptions;</p>
+<p class="startli">public: bool onInit() override { registerEvent&lt;SubscribeReq&gt;(*this); registerEvent&lt;UnsubscribeReq&gt;(*this); registerEvent&lt;PublishReq&gt;(*this); // ... KillEvent ... return true; }</p>
+<p class="startli">void on(const SubscribeReq&amp; event) { std::string topic_str = event.topic.c_str(); // Convert for map key if needed _subscriptions[topic_str].insert(event.getSource()); <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Broker: Actor " &lt;&lt; event.getSource() &lt;&lt; " subscribed to " &lt;&lt; topic_str &lt;&lt; ".\n"; }</p>
+<p class="startli">void on(const UnsubscribeReq&amp; event) { std::string topic_str = event.topic.c_str(); if (_subscriptions.count(topic_str)) { _subscriptions[topic_str].erase(event.getSource()); <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Broker: Actor " &lt;&lt; event.getSource() &lt;&lt; " unsubscribed from " &lt;&lt; topic_str &lt;&lt; ".\n"; } }</p>
+<p class="startli">void on(const PublishReq&amp; event) { std::string topic_str = event.topic.c_str(); <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Broker: Publishing to topic '" &lt;&lt; topic_str &lt;&lt; "': " &lt;&lt; event.content-&gt;c_str() &lt;&lt; ".\n"; if (_subscriptions.count(topic_str)) { for (<a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> subscriber_id : _subscriptions[topic_str]) { // Create NotificationMsg once, pass shared_ptr to content push&lt;NotificationMsg&gt;(subscriber_id, event.topic, event.content); } } } // ... KillEvent handler ... }; ```</p>
+<p class="startli"><b>Subscriber Actor:</b> <span class="tt">cpp
+    class SubscriberActor : public <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a> {
+    private:
+        <a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> _broker_id;
+    public:
+        SubscriberActor(qb::ActorId broker) : _broker_id(broker) {}
+        bool onInit() override {
+            registerEvent&lt;NotificationMsg&gt;(*this);
+            // ... KillEvent ...
+            // Subscribe to a topic
+            push&lt;SubscribeReq&gt;(_broker_id, "news/local");
+            return true;
+        }
+        void on(const NotificationMsg&amp; event) {
+            <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Subscriber [" &lt;&lt; id() &lt;&lt; "] on topic '" &lt;&lt; event.topic.c_str() 
+                           &lt;&lt; "' received: " &lt;&lt; event.content-&gt;c_str() &lt;&lt; ".\n";
+        }
+        // ... KillEvent handler could send UnsubscribeReq ...
+    };
+    </span></p>
+</li>
+<li><b>(Fuller Examples:</b> <span class="tt">example/core/example7_pub_sub.cpp</span>, <span class="tt">example/core_io/message_broker/</span> [which uses <span class="tt">MessageContainer</span> for optimized shared payload delivery].**)</li>
+</ul>
+<h2>3. Request/Response with Timeout</h2>
+<p>Actors often need to request information or an action from another actor and await a response, potentially with a timeout if the response doesn't arrive promptly.</p>
+<ul>
+<li><b>Purpose:</b> Manage asynchronous request-response interactions reliably.</li>
+<li><b>Conceptual Flow:</b> <span class="tt">text
+    +-----------------+      +-----------------+      +-----------------+
+    | Requester Actor |-(1)-&gt;| MyRequestEvent  |-(2)-&gt;| Responder Actor |
+    | (ReqID: 123)    |      | (ReqID: 123,    |      | (Processes Req) |
+    +-----------------+      |  Data)          |      +-----------------+
+          |   ^ (4b. Response arrives)                    | (3. Sends Response)
+          |   |                                           |
+          | (4a. Timeout event arrives first)             |
+          |   | MyResponseEvent (ReqID: 123, Result)      |
+          |   +-------------------------------------------+
+          |
+          | (1b. Schedules self-sent RequestTimeoutEvent(ReqID:123)
+          |      via <a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a>)
+          |
+          +-----&gt; Handles MyResponseEvent OR RequestTimeoutEvent for ReqID 123
+    </span></li>
+<li><b>Mechanism:</b><ol type="1">
+<li><b>Define Events:</b><ul>
+<li><span class="tt">MyRequestEvent { <a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> original_requester; uint32_t request_id; /* request data */ }</span></li>
+<li><span class="tt">MyResponseEvent { uint32_t request_id; /* response data or error */ }</span></li>
+<li><span class="tt">RequestTimeoutEvent { uint32_t request_id; }</span> (internal to requester)</li>
+</ul>
+</li>
+<li><b>Requester Actor:</b><ul>
+<li>Generates a unique <span class="tt">request_id</span> (e.g., an atomic counter or member counter).</li>
+<li>Stores context: <span class="tt">std::map&lt;uint32_t, RequestContext&gt; _pending_requests;</span> (Store timestamp, retry count etc. in <span class="tt">RequestContext</span>).</li>
+<li>Sends request: <span class="tt">push&lt;MyRequestEvent&gt;(target_id, id(), current_request_id, request_payload);</span></li>
+<li>Schedules timeout: Uses <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> to send a <span class="tt">RequestTimeoutEvent</span> to itself after the desired timeout duration. <span class="tt">cpp
+            // Inside RequesterActor, after sending MyRequestEvent
+            uint32_t captured_req_id = current_request_id;
+            double timeout_duration_s = 5.0;
+            <a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a>([this, captured_req_id]() {
+                if (this-&gt;is_alive()) { // Crucial check
+                    this-&gt;push&lt;RequestTimeoutEvent&gt;(this-&gt;id(), captured_req_id);
+                }
+            }, timeout_duration_s);
+            </span></li>
+<li>Handles <span class="tt">MyResponseEvent</span>: Looks up <span class="tt">response.request_id</span> in <span class="tt">_pending_requests</span>. If found, processes response and removes the entry. <em>Consider how to cancel/ignore the pending timeout callback if possible, though direct cancellation isn't simple; the timeout handler must re-check.</em>.</li>
+<li>Handles <span class="tt">RequestTimeoutEvent</span>: Checks if <span class="tt">event.request_id</span> is still in <span class="tt">_pending_requests</span>. If yes, the original request timed out. Handles the timeout (e.g., retry, log error, notify user) and removes the pending entry.</li>
+</ul>
+</li>
+<li><b>Responder Actor:</b><ul>
+<li>Handles <span class="tt">MyRequestEvent</span>: Performs the requested action.</li>
+<li>Sends response: <span class="tt">push&lt;MyResponseEvent&gt;(request_event.original_requester, request_event.request_id, response_payload);</span></li>
+<li>(More efficient) Or, if <span class="tt">MyRequestEvent</span> was received by non-const reference and can hold the response: <span class="tt">request_event.result_field = result_data; reply(request_event);</span></li>
+</ul>
+</li>
+</ol>
+</li>
+<li><b>(Reference Examples:</b> This pattern is foundational to many interactions. <span class="tt">example/core_io/file_processor/</span> demonstrates request/response where the worker responds directly to the client. The timeout aspect would be an addition to such patterns.)**</li>
+</ul>
+<h2>4. Shared Resource Manager</h2>
+<p>Safely manage access to resources that are not inherently thread-safe (e.g., a database connection, a file being written sequentially) by encapsulating the resource within a dedicated Manager Actor.</p>
+<ul>
+<li><b>Purpose:</b> Serialize access to a shared resource, preventing data races and ensuring consistent state, without explicit locking by client actors.</li>
+<li><b>Conceptual Flow:</b> <span class="tt">text
+    +---------------+            +-----------------+            +--------------------+
+    | ClientActor A |----(1)----&gt;| ResourceRequestA|----(2)----&gt;|                    |
+    +---------------+            +-----------------+            |  ResourceManager   |
+                                                                  |  (Owns &amp; Serializes|
+    +---------------+            +-----------------+            |  Access to DBConn, |
+    | ClientActor B |----(1)----&gt;| ResourceRequestB|----(2)----&gt;|  File, etc.)       |
+    +---------------+            +-----------------+            |                    |
+                                                                  +---------|----------+
+                                                                            | (3) Processes sequentially
+                                                                            | (4) Sends Response
+                                                                  +---------v----------+
+                                                                  | ResourceResponse   |
+                                                                  | (to A or B via     |
+                                                                  |  event.getSource())|
+                                                                  +--------------------+
+    </span></li>
+<li><b>Components:</b><ol type="1">
+<li><b>Manager Actor:</b><ul>
+<li><b>Owns the Resource:</b> Holds the resource as a private member (e.g., <span class="tt">std::unique_ptr&lt;DatabaseConnection&gt; _db_conn;</span>, <span class="tt">std::fstream _file_stream;</span>).</li>
+<li><b>Initializes/Releases Resource:</b> Acquires the resource in its constructor or <span class="tt">onInit()</span>. Releases it in its <span class="tt">on(KillEvent&amp;)</span> handler or destructor (RAII is best).</li>
+<li><b>Defines Request/Response Events:</b> E.g., <span class="tt">DBQueryRequest</span>, <span class="tt">DBQueryResult</span>, <span class="tt">WriteLogRequest</span>, <span class="tt">WriteLogResponse</span>.</li>
+<li><b>Handles Requests Sequentially:</b> Processes incoming request events one by one. Within each handler, it interacts with the managed resource.</li>
+<li><b>Sends Responses:</b> After processing, sends a response event back to the original requester.</li>
+</ul>
+</li>
+<li><b>Client Actors:</b><ul>
+<li>Do <b>not</b> access the shared resource directly.</li>
+<li>Interact with the resource <em>only</em> by sending request events to the Manager Actor.</li>
+<li>Handle response events from the Manager Actor.</li>
+</ul>
+</li>
+</ol>
+</li>
+<li><p class="startli"><b>Conceptual Example (Simplified Logger Manager):</b> ```cpp #include &lt;fstream&gt; // For std::ofstream // Events struct LogLineEvent : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;256&gt;</a> line_to_log; }; // No response needed for this simple logger</p>
+<p class="startli">class FileLoggerManager : public <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a> { private: std::ofstream _log_file; <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;128&gt;</a> _file_path; public: FileLoggerManager(const char* file_path) : _file_path(file_path) {}</p>
+<p class="startli">bool onInit() override { _log_file.open(_file_path.c_str(), std::ios::app); if (!_log_file.is_open()) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Logger: Failed to open " &lt;&lt; _file_path.c_str() &lt;&lt; "!\n"; return false; // Fail actor initialization } registerEvent&lt;LogLineEvent&gt;(*this); registerEvent&lt;qb::KillEvent&gt;(*this); <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Logger [" &lt;&lt; id() &lt;&lt; "] started for file: " &lt;&lt; _file_path.c_str() &lt;&lt; ".\n"; return true; }</p>
+<p class="startli">void on(const LogLineEvent&amp; event) { if (_log_file.is_open()) { _log_file &lt;&lt; event.line_to_log.c_str() &lt;&lt; std::endl; // endl flushes by default } }</p>
+<p class="startli">void on(const <a class="el" href="structqb_1_1_kill_event.html" title="Event used to terminate an actor.">qb::KillEvent</a>&amp; /*event*/) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Logger [" &lt;&lt; id() &lt;&lt; "] shutting down. Closing file.\n"; if (_log_file.is_open()) { _log_file.close(); } kill(); } // Destructor will also be called, but explicit close in KillEvent is good for clarity ~FileLoggerManager() override { if (_log_file.is_open()) { _log_file.close(); } } }; ``<span class="tt"></span></p>
+</li>
+<li><span class="tt">  **(Reference Example:** </span>example6_shared_queue.cpp<span class="tt"> features a </span>Supervisor<span class="tt"> actor managing access to a </span>SharedQueue`. While the queue in that example <em>is</em> thread-safe, the pattern illustrates actors interacting with a central component to access a shared facility. A pure actor version would make the queue itself a private member of the Supervisor and not thread-safe.)**</li>
+</ul>
+<p>These patterns offer robust solutions for structuring complex actor interactions. By combining them and adapting them to your specific needs, you can build sophisticated, scalable, and maintainable concurrent applications with the QB Actor Framework.</p>
+<p><b>(Next:</b> Explore QB Framework: Advanced Techniques &amp; System Design for more in-depth techniques, or QB Framework: Performance Tuning Guide for optimization strategies.**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

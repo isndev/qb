@@ -1,0 +1,47 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="Node000000" href="$classqb_1_1io_1_1async_1_1_i_protocol.html" title="Base interface for all message processing protocols." alt="" coords="5,354,162,380"/>
+<area shape="rect" id="Node000001" href="$classqb_1_1io_1_1async_1_1_a_protocol.html" title=" " alt="" coords="210,191,371,231"/>
+<area shape="poly" id="edge71_Node000000_Node000001" title=" " alt="" coords="113,342,260,230,263,234,116,347"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1io_1_1async_1_1_a_protocol.html" title="Abstract base class for I/O&#45;component&#45;aware protocols (CRTP)." alt="" coords="210,379,371,419"/>
+<area shape="poly" id="edge75_Node000000_Node000005" title=" " alt="" coords="177,379,210,384,209,389,177,384"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1protocol_1_1base_1_1byte__terminated.html" title=" " alt="" coords="436,59,584,115"/>
+<area shape="poly" id="edge72_Node000001_Node000002" title=" " alt="" coords="331,179,418,125,441,113,443,118,420,129,334,184"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1protocol_1_1json.html" title="Protocol for parsing null&#45;terminated JSON messages." alt="" coords="666,5,788,46"/>
+<area shape="poly" id="edge73_Node000002_Node000003" title=" " alt="" coords="598,59,665,40,666,45,600,64"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1protocol_1_1json__packed.html" title="Protocol for parsing null&#45;terminated, MessagePack encoded JSON messages." alt="" coords="666,71,788,111"/>
+<area shape="poly" id="edge74_Node000002_Node000004" title=" " alt="" coords="600,86,666,87,666,93,600,91"/>
+<area shape="rect" id="Node000006" href="$classqb_1_1io_1_1protocol_1_1accept.html" title=" " alt="" coords="419,139,601,195"/>
+<area shape="poly" id="edge76_Node000005_Node000006" title=" " alt="" coords="305,363,349,285,380,243,417,205,434,193,437,197,421,209,384,246,353,288,309,366"/>
+<area shape="rect" id="Node000007" href="$classqb_1_1protocol_1_1base_1_1byte__terminated.html" title=" " alt="" coords="443,219,577,275"/>
+<area shape="poly" id="edge77_Node000005_Node000007" title=" " alt="" coords="320,366,364,325,418,285,441,272,444,276,420,289,368,329,323,370"/>
+<area shape="rect" id="Node000009" href="$classqb_1_1protocol_1_1base_1_1size__as__header.html" title=" " alt="" coords="434,299,587,355"/>
+<area shape="poly" id="edge79_Node000005_Node000009" title=" " alt="" coords="368,371,432,350,434,355,369,376"/>
+<area shape="rect" id="Node000012" href="$classqb_1_1io_1_1protocol_1_1accept.html" title="Protocol for handling the acceptance of new network connections." alt="" coords="433,379,587,419"/>
+<area shape="poly" id="edge82_Node000005_Node000012" title=" " alt="" coords="386,396,432,396,432,402,386,402"/>
+<area shape="rect" id="Node000013" href="$classqb_1_1io_1_1protocol_1_1handshake.html" title="Protocol for handling the handshake of a new connection." alt="" coords="421,444,599,485"/>
+<area shape="poly" id="edge83_Node000005_Node000013" title=" " alt="" coords="376,422,440,441,438,446,375,427"/>
+<area shape="rect" id="Node000014" href="$classqb_1_1protocol_1_1base_1_1byte__terminated.html" title="Protocol for messages delimited by a specific single byte character." alt="" coords="443,508,577,564"/>
+<area shape="poly" id="edge84_Node000005_Node000014" title=" " alt="" coords="329,428,371,461,420,494,444,507,441,511,418,499,368,465,325,432"/>
+<area shape="rect" id="Node000019" href="$classqb_1_1protocol_1_1base_1_1bytes__terminated.html" title="Protocol for messages delimited by a specific sequence of bytes (a string literal)." alt="" coords="442,588,579,644"/>
+<area shape="poly" id="edge89_Node000005_Node000019" title=" " alt="" coords="311,432,356,503,386,541,421,574,443,589,440,593,417,578,382,544,351,506,307,434"/>
+<area shape="rect" id="Node000020" href="$classqb_1_1protocol_1_1base_1_1size__as__header.html" title="Protocol for messages where the payload is preceded by a fixed&#45;size header indicating its length." alt="" coords="434,751,587,807"/>
+<area shape="poly" id="edge90_Node000005_Node000020" title=" " alt="" coords="309,432,356,534,421,655,455,706,488,749,484,752,451,709,417,658,351,536,304,435"/>
+<area shape="rect" id="Node000008" href="$classqb_1_1protocol_1_1text_1_1basic__text.html" title="Protocol for text messages delimited by a specific character, yielding a specified string type." alt="" coords="656,163,798,219"/>
+<area shape="poly" id="edge78_Node000007_Node000008" title=" " alt="" coords="592,223,655,207,656,212,593,228"/>
+<area shape="rect" id="Node000010" href="$classqb_1_1protocol_1_1text_1_1basic__binary.html" title=" " alt="" coords="659,243,795,299"/>
+<area shape="poly" id="edge80_Node000009_Node000010" title=" " alt="" coords="601,301,658,286,659,291,602,306"/>
+<area shape="rect" id="Node000011" href="$classqb_1_1protocol_1_1text_1_1basic__binary.html" title="Protocol for binary messages where the payload is preceded by a fixed&#45;size header indicating its leng..." alt="" coords="659,323,795,379"/>
+<area shape="poly" id="edge81_Node000009_Node000011" title=" " alt="" coords="602,334,659,341,658,346,602,340"/>
+<area shape="rect" id="Node000015" href="$classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="660,403,794,459"/>
+<area shape="poly" id="edge85_Node000014_Node000015" title=" " alt="" coords="589,499,600,494,648,469,670,457,673,462,651,473,603,499,591,504"/>
+<area shape="rect" id="Node000016" href="$classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="660,483,794,539"/>
+<area shape="poly" id="edge86_Node000014_Node000016" title=" " alt="" coords="592,524,660,516,660,521,593,529"/>
+<area shape="rect" id="Node000017" href="$classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="649,562,805,633"/>
+<area shape="poly" id="edge87_Node000014_Node000017" title=" " alt="" coords="593,557,650,573,648,578,591,562"/>
+<area shape="rect" id="Node000018" href="$classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="649,657,805,728"/>
+<area shape="poly" id="edge88_Node000014_Node000018" title=" " alt="" coords="592,566,603,574,619,592,628,608,637,625,651,642,665,654,662,658,647,646,632,628,624,611,615,595,600,578,589,571"/>
+<area shape="rect" id="Node000021" href="$classqb_1_1protocol_1_1text_1_1basic__binary.html" title=" " alt="" coords="659,751,795,807"/>
+<area shape="poly" id="edge91_Node000020_Node000021" title=" " alt="" coords="602,776,659,776,659,782,602,782"/>
+<area shape="rect" id="Node000022" href="$classqb_1_1protocol_1_1text_1_1basic__binary.html" title=" " alt="" coords="659,831,795,887"/>
+<area shape="poly" id="edge92_Node000020_Node000022" title=" " alt="" coords="602,810,660,831,658,836,600,815"/>
+</map>

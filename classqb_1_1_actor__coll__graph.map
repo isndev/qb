@@ -1,0 +1,5 @@
+<map id="qb::Actor" name="qb::Actor">
+<area shape="rect" id="Node000001" title="Base class for all actors in the qb framework." alt="" coords="11,79,85,105"/>
+<area shape="rect" id="Node000002" href="$structqb_1_1nocopy.html" title="Base class to make derived classes non&#45;copyable." alt="" coords="5,5,91,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="51,46,51,79,45,79,45,46"/>
+</map>

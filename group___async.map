@@ -1,0 +1,5 @@
+<map id="Asynchronous System" name="Asynchronous System">
+<area shape="rect" id="Node000001" title="Core mechanisms for event&#45;driven asynchronous programming." alt="" coords="138,5,291,31"/>
+<area shape="rect" id="Node000003" href="$group___async_event.html" title="Specific event types for asynchronous I/O operations." alt="" coords="339,5,510,31"/>
+<area shape="rect" id="Node000002" href="$group___i_o.html" title="Asynchronous I/O operations, networking, and related utilities." alt="" coords="5,5,90,31"/>
+</map>

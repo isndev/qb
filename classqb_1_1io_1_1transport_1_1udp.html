@@ -1,0 +1,580 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::io::transport::udp Class Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::io::transport::udp Class Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('classqb_1_1io_1_1transport_1_1udp.html','','classqb_1_1io_1_1transport_1_1udp-members'); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">qb::io::transport::udp Class Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___transport.html">Transport Layer</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>UDP transport providing connectionless, datagram-based communication.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="udp_8h_source.html">udp.h</a>&gt;</code></p>
+<div class="dynheader">
+Inheritance diagram for qb::io::transport::udp:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1transport_1_1udp__inherit__graph.png" border="0" usemap="#aqb_1_1io_1_1transport_1_1udp_inherit__map" loading="lazy" alt="Inheritance graph"/></div>
+<map name="aqb_1_1io_1_1transport_1_1udp_inherit__map" id="aqb_1_1io_1_1transport_1_1udp_inherit__map">
+<area shape="rect" title="UDP transport providing connectionless, datagram&#45;based communication." alt="" coords="84,168,226,193"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1udp_1_1client.html" title="Asynchronous UDP client implementation." alt="" coords="5,241,142,282"/>
+<area shape="poly" title=" " alt="" coords="133,206,95,243,92,239,130,202"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1udp_1_1server.html" title="Asynchronous UDP server implementation." alt="" coords="166,241,307,282"/>
+<area shape="poly" title=" " alt="" coords="180,202,218,239,214,243,176,206"/>
+<area shape="rect" href="classqb_1_1io_1_1stream.html" title=" " alt="" coords="93,79,216,120"/>
+<area shape="poly" title=" " alt="" coords="158,135,158,167,152,167,152,135"/>
+<area shape="rect" href="classqb_1_1io_1_1istream.html" title="Input stream template class." alt="" coords="77,5,233,31"/>
+<area shape="poly" title=" " alt="" coords="158,46,158,79,152,79,152,46"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<div class="dynheader">
+Collaboration diagram for qb::io::transport::udp:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1transport_1_1udp__coll__graph.png" border="0" usemap="#aqb_1_1io_1_1transport_1_1udp_coll__map" loading="lazy" alt="Collaboration graph"/></div>
+<map name="aqb_1_1io_1_1transport_1_1udp_coll__map" id="aqb_1_1io_1_1transport_1_1udp_coll__map">
+<area shape="rect" title="UDP transport providing connectionless, datagram&#45;based communication." alt="" coords="13,447,154,473"/>
+<area shape="rect" href="classqb_1_1io_1_1stream.html" title=" " alt="" coords="22,357,145,398"/>
+<area shape="poly" title=" " alt="" coords="86,413,86,447,81,447,81,413"/>
+<area shape="rect" href="classqb_1_1io_1_1istream.html" title="Input stream template class." alt="" coords="5,282,162,308"/>
+<area shape="poly" title=" " alt="" coords="86,323,86,357,81,357,81,323"/>
+<area shape="rect" title=" " alt="" coords="21,170,146,211"/>
+<area shape="poly" title=" " alt="" coords="86,227,86,282,81,282,81,227"/>
+<area shape="rect" href="classqb_1_1allocator_1_1base__pipe.html" title=" " alt="" coords="19,80,148,121"/>
+<area shape="poly" title=" " alt="" coords="77,136,79,170,73,170,72,137"/>
+<area shape="poly" title=" " alt="" coords="95,137,94,170,88,170,90,136"/>
+<area shape="rect" title=" " alt="" coords="11,5,156,31"/>
+<area shape="poly" title=" " alt="" coords="86,47,86,80,81,80,81,47"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:identity" id="r_identity"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html">identity</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Identifies a UDP endpoint, extending <span class="tt">qb::io::endpoint</span> with hashing support.  <a href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html#details">More...</a><br /></td></tr>
+<tr class="memitem:ProxyOut" id="r_ProxyOut"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1transport_1_1udp_1_1_proxy_out.html">ProxyOut</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Proxy class providing a stream-like interface for sending UDP datagrams.  <a href="classqb_1_1io_1_1transport_1_1udp_1_1_proxy_out.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:ad5014952a67bd89c86ded5a24f326883" id="r_ad5014952a67bd89c86ded5a24f326883"><td class="memItemLeft" align="right" valign="top"><a id="ad5014952a67bd89c86ded5a24f326883" name="ad5014952a67bd89c86ded5a24f326883"></a>
+constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>is_secure</b> () const noexcept</td></tr>
+<tr class="memdesc:ad5014952a67bd89c86ded5a24f326883"><td class="mdescLeft">&#160;</td><td class="mdescRight">Indicates that this transport implementation is not secure. <br /></td></tr>
+<tr class="memitem:ada244a1286b6f622395a444d6f077fe0" id="r_ada244a1286b6f622395a444d6f077fe0"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html">udp::identity</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ada244a1286b6f622395a444d6f077fe0">getSource</a> () const noexcept</td></tr>
+<tr class="memdesc:ada244a1286b6f622395a444d6f077fe0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the source <span class="tt"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html" title="Identifies a UDP endpoint, extending qb::io::endpoint with hashing support.">udp::identity</a></span> (endpoint) of the last successfully received datagram.  <br /></td></tr>
+<tr class="memitem:ad72ee975767042204f73cab2b0346f28" id="r_ad72ee975767042204f73cab2b0346f28"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ad72ee975767042204f73cab2b0346f28">setDestination</a> (<a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html">udp::identity</a> const &amp;to) noexcept</td></tr>
+<tr class="memdesc:ad72ee975767042204f73cab2b0346f28"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the destination <span class="tt"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html" title="Identifies a UDP endpoint, extending qb::io::endpoint with hashing support.">udp::identity</a></span> for subsequent outgoing datagrams sent via <span class="tt"><a class="el" href="#ab0e9c486de76ebf5056400130fca9696" title="Get the output proxy (ProxyOut) for stream-like sending to the current destination.">out()</a></span> or <span class="tt">operator&lt;&lt;</span>.  <br /></td></tr>
+<tr class="memitem:ab0e9c486de76ebf5056400130fca9696" id="r_ab0e9c486de76ebf5056400130fca9696"><td class="memItemLeft" align="right" valign="top">auto &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab0e9c486de76ebf5056400130fca9696">out</a> ()</td></tr>
+<tr class="memdesc:ab0e9c486de76ebf5056400130fca9696"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the output proxy (<span class="tt"><a class="el" href="classqb_1_1io_1_1transport_1_1udp_1_1_proxy_out.html" title="Proxy class providing a stream-like interface for sending UDP datagrams.">ProxyOut</a></span>) for stream-like sending to the current destination.  <br /></td></tr>
+<tr class="memitem:a0bb363e0e564bfeb229ff978b7f4a35e" id="r_a0bb363e0e564bfeb229ff978b7f4a35e"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a0bb363e0e564bfeb229ff978b7f4a35e">read</a> () noexcept</td></tr>
+<tr class="memdesc:a0bb363e0e564bfeb229ff978b7f4a35e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read a single datagram from the UDP socket.  <br /></td></tr>
+<tr class="memitem:afbeb46710db2f43cd7e47f0b8827bc6c" id="r_afbeb46710db2f43cd7e47f0b8827bc6c"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#afbeb46710db2f43cd7e47f0b8827bc6c">write</a> () noexcept</td></tr>
+<tr class="memdesc:afbeb46710db2f43cd7e47f0b8827bc6c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Write the next complete datagram from the output buffer to its destination.  <br /></td></tr>
+<tr class="memitem:a163e3a7f325b58eb7faf93c3524b5b5f" id="r_a163e3a7f325b58eb7faf93c3524b5b5f"><td class="memItemLeft" align="right" valign="top">char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a163e3a7f325b58eb7faf93c3524b5b5f">publish</a> (char const *data, std::size_t size) noexcept</td></tr>
+<tr class="memdesc:a163e3a7f325b58eb7faf93c3524b5b5f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Publish (enqueue) data to be sent to the current default destination (<span class="tt">_remote_dest</span>).  <br /></td></tr>
+<tr class="memitem:a5a7b132603e1389e2b3b0ef40286a8fb" id="r_a5a7b132603e1389e2b3b0ef40286a8fb"><td class="memItemLeft" align="right" valign="top">char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a5a7b132603e1389e2b3b0ef40286a8fb">publish_to</a> (<a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html">udp::identity</a> const &amp;to, char const *data, std::size_t size) noexcept</td></tr>
+<tr class="memdesc:a5a7b132603e1389e2b3b0ef40286a8fb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Publish (enqueue) data to be sent to a specific <span class="tt"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html" title="Identifies a UDP endpoint, extending qb::io::endpoint with hashing support.">udp::identity</a></span> destination.  <br /></td></tr>
+<tr class="inherit_header pub_methods_classqb_1_1io_1_1stream"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_methods_classqb_1_1io_1_1stream')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Member Functions inherited from <a class="el" href="classqb_1_1io_1_1stream.html">qb::io::stream&lt; io::udp::socket &gt;</a></td></tr>
+<tr class="memitem:a1dbb0fe86d8b66d02886106a3dcdf5ad inherit pub_methods_classqb_1_1io_1_1stream" id="r_a1dbb0fe86d8b66d02886106a3dcdf5ad"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1stream.html#a0902758f0f40c34f62d7e5d822f67dc4">output_buffer_type</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1stream.html#a1dbb0fe86d8b66d02886106a3dcdf5ad">out</a> () noexcept</td></tr>
+<tr class="memdesc:a1dbb0fe86d8b66d02886106a3dcdf5ad inherit pub_methods_classqb_1_1io_1_1stream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the output buffer.  <br /></td></tr>
+<tr class="memitem:a03ae6661216f2b9f3d93f6dcc8750817 inherit pub_methods_classqb_1_1io_1_1stream" id="r_a03ae6661216f2b9f3d93f6dcc8750817"><td class="memItemLeft" align="right" valign="top">std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1stream.html#a03ae6661216f2b9f3d93f6dcc8750817">pendingWrite</a> () const noexcept</td></tr>
+<tr class="memdesc:a03ae6661216f2b9f3d93f6dcc8750817 inherit pub_methods_classqb_1_1io_1_1stream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the number of bytes pending for writing.  <br /></td></tr>
+<tr class="memitem:a4ff45fad23a62ba2206dd7d530ee0cf1 inherit pub_methods_classqb_1_1io_1_1stream" id="r_a4ff45fad23a62ba2206dd7d530ee0cf1"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1stream.html#a4ff45fad23a62ba2206dd7d530ee0cf1">write</a> (std::enable_if_t&lt; has_method_write&lt; <a class="el" href="classqb_1_1io_1_1udp_1_1socket.html">io::udp::socket</a>, int, const char *, std::size_t &gt;::value, Available &gt; *=nullptr) noexcept</td></tr>
+<tr class="memdesc:a4ff45fad23a62ba2206dd7d530ee0cf1 inherit pub_methods_classqb_1_1io_1_1stream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Write data from the output buffer to the transport.  <br /></td></tr>
+<tr class="memitem:abb742a4e7bd95026de9ea7fa60b641be inherit pub_methods_classqb_1_1io_1_1stream" id="r_abb742a4e7bd95026de9ea7fa60b641be"><td class="memItemLeft" align="right" valign="top">char *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1stream.html#abb742a4e7bd95026de9ea7fa60b641be">publish</a> (char const *data, std::size_t size) noexcept</td></tr>
+<tr class="memdesc:abb742a4e7bd95026de9ea7fa60b641be inherit pub_methods_classqb_1_1io_1_1stream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Add data to the output buffer for later writing.  <br /></td></tr>
+<tr class="memitem:a003915a2241ad6460d83857553679167 inherit pub_methods_classqb_1_1io_1_1stream" id="r_a003915a2241ad6460d83857553679167"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1stream.html#a003915a2241ad6460d83857553679167">close</a> () noexcept</td></tr>
+<tr class="memdesc:a003915a2241ad6460d83857553679167 inherit pub_methods_classqb_1_1io_1_1stream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Close the stream.  <br /></td></tr>
+<tr class="inherit_header pub_methods_classqb_1_1io_1_1istream"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_methods_classqb_1_1io_1_1istream')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Member Functions inherited from <a class="el" href="classqb_1_1io_1_1istream.html">qb::io::istream&lt; _IO_ &gt;</a></td></tr>
+<tr class="memitem:afc1d1d5b699679e086cf7dfced9f9889 inherit pub_methods_classqb_1_1io_1_1istream" id="r_afc1d1d5b699679e086cf7dfced9f9889"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1istream.html#afc1d1d5b699679e086cf7dfced9f9889">~istream</a> () noexcept</td></tr>
+<tr class="memdesc:afc1d1d5b699679e086cf7dfced9f9889 inherit pub_methods_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Destructor.  <br /></td></tr>
+<tr class="memitem:aedc79560d7c7ea8d4555cc2429d1882e inherit pub_methods_classqb_1_1io_1_1istream" id="r_aedc79560d7c7ea8d4555cc2429d1882e"><td class="memItemLeft" align="right" valign="top">_IO_ &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1istream.html#aedc79560d7c7ea8d4555cc2429d1882e">transport</a> () noexcept</td></tr>
+<tr class="memdesc:aedc79560d7c7ea8d4555cc2429d1882e inherit pub_methods_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the underlying transport object.  <br /></td></tr>
+<tr class="memitem:a3944844254374808e4c48b5438a6962c inherit pub_methods_classqb_1_1io_1_1istream" id="r_a3944844254374808e4c48b5438a6962c"><td class="memItemLeft" align="right" valign="top">const _IO_ &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1istream.html#a3944844254374808e4c48b5438a6962c">transport</a> () const noexcept</td></tr>
+<tr class="memdesc:a3944844254374808e4c48b5438a6962c inherit pub_methods_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the underlying transport object (const version)  <br /></td></tr>
+<tr class="memitem:a4ceb45c0ae8fb586d162ef5d953341fb inherit pub_methods_classqb_1_1io_1_1istream" id="r_a4ceb45c0ae8fb586d162ef5d953341fb"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1istream.html#ad31438a48aafcfb37f6efb318bc98bc0">input_buffer_type</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1istream.html#a4ceb45c0ae8fb586d162ef5d953341fb">in</a> () noexcept</td></tr>
+<tr class="memdesc:a4ceb45c0ae8fb586d162ef5d953341fb inherit pub_methods_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the input buffer.  <br /></td></tr>
+<tr class="memitem:a2d1893e79b6bd541204395bfbe18f7ed inherit pub_methods_classqb_1_1io_1_1istream" id="r_a2d1893e79b6bd541204395bfbe18f7ed"><td class="memItemLeft" align="right" valign="top">std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1istream.html#a2d1893e79b6bd541204395bfbe18f7ed">pendingRead</a> () const noexcept</td></tr>
+<tr class="memdesc:a2d1893e79b6bd541204395bfbe18f7ed inherit pub_methods_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the number of bytes available for reading.  <br /></td></tr>
+<tr class="memitem:a4c80ed6ca1634ddcc30381040d5c98d1 inherit pub_methods_classqb_1_1io_1_1istream" id="r_a4c80ed6ca1634ddcc30381040d5c98d1"><td class="memTemplParams" colspan="2">template&lt;typename Available = void&gt; </td></tr>
+<tr class="memitem:a4c80ed6ca1634ddcc30381040d5c98d1 inherit pub_methods_classqb_1_1io_1_1istream template"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1istream.html#a4c80ed6ca1634ddcc30381040d5c98d1">read</a> (std::enable_if_t&lt; has_method_read&lt; _IO_, int, char *, std::size_t &gt;::value, Available &gt; *=nullptr) noexcept</td></tr>
+<tr class="memdesc:a4c80ed6ca1634ddcc30381040d5c98d1 inherit pub_methods_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read data from the transport into the input buffer.  <br /></td></tr>
+<tr class="memitem:a1c09c86eefdd5adf0c82795a7237dc69 inherit pub_methods_classqb_1_1io_1_1istream" id="r_a1c09c86eefdd5adf0c82795a7237dc69"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1istream.html#a1c09c86eefdd5adf0c82795a7237dc69">flush</a> (std::size_t size) noexcept</td></tr>
+<tr class="memdesc:a1c09c86eefdd5adf0c82795a7237dc69 inherit pub_methods_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Remove data from the front of the input buffer.  <br /></td></tr>
+<tr class="memitem:adaeadb034e6bc50d55073df2eaf3a178 inherit pub_methods_classqb_1_1io_1_1istream" id="r_adaeadb034e6bc50d55073df2eaf3a178"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1istream.html#adaeadb034e6bc50d55073df2eaf3a178">eof</a> () noexcept</td></tr>
+<tr class="memdesc:adaeadb034e6bc50d55073df2eaf3a178 inherit pub_methods_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Handle end-of-file condition.  <br /></td></tr>
+<tr class="memitem:a5946785d652b99451280eb880c4098c9 inherit pub_methods_classqb_1_1io_1_1istream" id="r_a5946785d652b99451280eb880c4098c9"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1istream.html#a5946785d652b99451280eb880c4098c9">close</a> () noexcept</td></tr>
+<tr class="memdesc:a5946785d652b99451280eb880c4098c9 inherit pub_methods_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Close the stream.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-attribs" class="groupheader"><a id="pub-attribs" name="pub-attribs"></a>
+Public Attributes</h2></td></tr>
+<tr class="memitem:a072d22e36490afa485aff5670947de1e" id="r_a072d22e36490afa485aff5670947de1e"><td class="memItemLeft" align="right" valign="top"><a id="a072d22e36490afa485aff5670947de1e" name="a072d22e36490afa485aff5670947de1e"></a>
+friend&#160;</td><td class="memItemRight" valign="bottom"><b>ProxyOut</b></td></tr>
+<tr class="memdesc:a072d22e36490afa485aff5670947de1e"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1io_1_1transport_1_1udp_1_1_proxy_out.html" title="Proxy class providing a stream-like interface for sending UDP datagrams.">ProxyOut</a> needs access to private members. <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-static-attribs" class="groupheader"><a id="pub-static-attribs" name="pub-static-attribs"></a>
+Static Public Attributes</h2></td></tr>
+<tr class="memitem:adb3d5752c07ce07b87f37d29c69f34af" id="r_adb3d5752c07ce07b87f37d29c69f34af"><td class="memItemLeft" align="right" valign="top"><a id="adb3d5752c07ce07b87f37d29c69f34af" name="adb3d5752c07ce07b87f37d29c69f34af"></a>
+static constexpr const bool&#160;</td><td class="memItemRight" valign="bottom"><b>has_reset_on_pending_read</b> = true</td></tr>
+<tr class="memdesc:adb3d5752c07ce07b87f37d29c69f34af"><td class="mdescLeft">&#160;</td><td class="mdescRight">Indicates that this transport implementation resets its input buffer state when a read operation is pending (characteristic of datagram processing). <br /></td></tr>
+<tr class="inherit_header pub_static_attribs_classqb_1_1io_1_1stream"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_static_attribs_classqb_1_1io_1_1stream')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Static Public Attributes inherited from <a class="el" href="classqb_1_1io_1_1stream.html">qb::io::stream&lt; io::udp::socket &gt;</a></td></tr>
+<tr class="memitem:af217e76799dcad4732eb36e9cc81292e inherit pub_static_attribs_classqb_1_1io_1_1stream" id="r_af217e76799dcad4732eb36e9cc81292e"><td class="memItemLeft" align="right" valign="top">static constexpr const bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1stream.html#af217e76799dcad4732eb36e9cc81292e">has_reset_on_pending_read</a></td></tr>
+<tr class="memdesc:af217e76799dcad4732eb36e9cc81292e inherit pub_static_attribs_classqb_1_1io_1_1stream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Flag indicating whether the implementation resets pending reads.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-inherited" class="groupheader"><a id="inherited" name="inherited"></a>
+Additional Inherited Members</h2></td></tr>
+<tr class="inherit_header pub_types_classqb_1_1io_1_1stream"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_types_classqb_1_1io_1_1stream')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Types inherited from <a class="el" href="classqb_1_1io_1_1stream.html">qb::io::stream&lt; io::udp::socket &gt;</a></td></tr>
+<tr class="memitem:a4bfa5d0a60df90fb557331c0ccf90c48 inherit pub_types_classqb_1_1io_1_1stream" id="r_a4bfa5d0a60df90fb557331c0ccf90c48"><td class="memItemLeft" align="right" valign="top">
+using&#160;</td><td class="memItemRight" valign="bottom"><b>transport_io_type</b></td></tr>
+<tr class="memdesc:a4bfa5d0a60df90fb557331c0ccf90c48 inherit pub_types_classqb_1_1io_1_1stream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Type of the underlying transport IO. <br /></td></tr>
+<tr class="memitem:a0902758f0f40c34f62d7e5d822f67dc4 inherit pub_types_classqb_1_1io_1_1stream" id="r_a0902758f0f40c34f62d7e5d822f67dc4"><td class="memItemLeft" align="right" valign="top">
+using&#160;</td><td class="memItemRight" valign="bottom"><b>output_buffer_type</b></td></tr>
+<tr class="memdesc:a0902758f0f40c34f62d7e5d822f67dc4 inherit pub_types_classqb_1_1io_1_1stream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Type of the output buffer. <br /></td></tr>
+<tr class="inherit_header pub_types_classqb_1_1io_1_1istream"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_types_classqb_1_1io_1_1istream')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Types inherited from <a class="el" href="classqb_1_1io_1_1istream.html">qb::io::istream&lt; _IO_ &gt;</a></td></tr>
+<tr class="memitem:a8f5ddedfc6d50525d4ff6946b5ea147d inherit pub_types_classqb_1_1io_1_1istream" id="r_a8f5ddedfc6d50525d4ff6946b5ea147d"><td class="memItemLeft" align="right" valign="top">
+using&#160;</td><td class="memItemRight" valign="bottom"><b>transport_io_type</b> = _IO_</td></tr>
+<tr class="memdesc:a8f5ddedfc6d50525d4ff6946b5ea147d inherit pub_types_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Type of the underlying transport IO. <br /></td></tr>
+<tr class="memitem:ad31438a48aafcfb37f6efb318bc98bc0 inherit pub_types_classqb_1_1io_1_1istream" id="r_ad31438a48aafcfb37f6efb318bc98bc0"><td class="memItemLeft" align="right" valign="top">
+using&#160;</td><td class="memItemRight" valign="bottom"><b>input_buffer_type</b> = <a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt;char&gt;</td></tr>
+<tr class="memdesc:ad31438a48aafcfb37f6efb318bc98bc0 inherit pub_types_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Type of the input buffer. <br /></td></tr>
+<tr class="inherit_header pro_attribs_classqb_1_1io_1_1stream"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pro_attribs_classqb_1_1io_1_1stream')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Protected Attributes inherited from <a class="el" href="classqb_1_1io_1_1stream.html">qb::io::stream&lt; io::udp::socket &gt;</a></td></tr>
+<tr class="memitem:ad81b2fd2c3a81ad86ecf8da4ded8bf90 inherit pro_attribs_classqb_1_1io_1_1stream" id="r_ad81b2fd2c3a81ad86ecf8da4ded8bf90"><td class="memItemLeft" align="right" valign="top">
+<a class="el" href="classqb_1_1io_1_1stream.html#a0902758f0f40c34f62d7e5d822f67dc4">output_buffer_type</a>&#160;</td><td class="memItemRight" valign="bottom"><b>_out_buffer</b></td></tr>
+<tr class="memdesc:ad81b2fd2c3a81ad86ecf8da4ded8bf90 inherit pro_attribs_classqb_1_1io_1_1stream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Buffer for outgoing data. <br /></td></tr>
+<tr class="inherit_header pro_attribs_classqb_1_1io_1_1istream"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pro_attribs_classqb_1_1io_1_1istream')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Protected Attributes inherited from <a class="el" href="classqb_1_1io_1_1istream.html">qb::io::istream&lt; _IO_ &gt;</a></td></tr>
+<tr class="memitem:a920911d1d89521ed0bf769d89d02540f inherit pro_attribs_classqb_1_1io_1_1istream" id="r_a920911d1d89521ed0bf769d89d02540f"><td class="memItemLeft" align="right" valign="top">
+_IO_&#160;</td><td class="memItemRight" valign="bottom"><b>_in</b></td></tr>
+<tr class="memdesc:a920911d1d89521ed0bf769d89d02540f inherit pro_attribs_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">The underlying IO object. <br /></td></tr>
+<tr class="memitem:a1939247a18d34653f920c12fe7dfeeaf inherit pro_attribs_classqb_1_1io_1_1istream" id="r_a1939247a18d34653f920c12fe7dfeeaf"><td class="memItemLeft" align="right" valign="top">
+<a class="el" href="classqb_1_1io_1_1istream.html#ad31438a48aafcfb37f6efb318bc98bc0">input_buffer_type</a>&#160;</td><td class="memItemRight" valign="bottom"><b>_in_buffer</b></td></tr>
+<tr class="memdesc:a1939247a18d34653f920c12fe7dfeeaf inherit pro_attribs_classqb_1_1io_1_1istream"><td class="mdescLeft">&#160;</td><td class="mdescRight">Buffer for incoming data. <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>UDP transport providing connectionless, datagram-based communication. </p>
+<p>This class implements a transport layer for UDP sockets by extending the generic <span class="tt"><a class="el" href="classqb_1_1io_1_1stream.html" title="Combined input/output stream template class.">qb::io::stream</a></span> class, specializing it with <span class="tt"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html" title="Class implementing UDP socket functionality for datagram-based communication.">qb::io::udp::socket</a></span>. It provides support for identity tracking of remote endpoints, message buffering specific to datagrams, and methods for sending and receiving UDP packets. </p>
+</div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="ada244a1286b6f622395a444d6f077fe0" name="ada244a1286b6f622395a444d6f077fe0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ada244a1286b6f622395a444d6f077fe0">&#9670;&#160;</a></span>getSource()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">const <a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html">udp::identity</a> &amp; qb::io::transport::udp::getSource </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the source <span class="tt"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html" title="Identifies a UDP endpoint, extending qb::io::endpoint with hashing support.">udp::identity</a></span> (endpoint) of the last successfully received datagram. </p>
+<dl class="section return"><dt>Returns</dt><dd>Constant reference to the source <span class="tt"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html" title="Identifies a UDP endpoint, extending qb::io::endpoint with hashing support.">udp::identity</a></span>. </dd></dl>
+<dl class="section note"><dt>Note</dt><dd>This is updated by the <span class="tt"><a class="el" href="#a0bb363e0e564bfeb229ff978b7f4a35e" title="Read a single datagram from the UDP socket.">read()</a></span> method upon successful reception of a datagram. </dd></dl>
+
+</div>
+</div>
+<a id="ad72ee975767042204f73cab2b0346f28" name="ad72ee975767042204f73cab2b0346f28"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad72ee975767042204f73cab2b0346f28">&#9670;&#160;</a></span>setDestination()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::io::transport::udp::setDestination </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html">udp::identity</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em>to</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Set the destination <span class="tt"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html" title="Identifies a UDP endpoint, extending qb::io::endpoint with hashing support.">udp::identity</a></span> for subsequent outgoing datagrams sent via <span class="tt"><a class="el" href="#ab0e9c486de76ebf5056400130fca9696" title="Get the output proxy (ProxyOut) for stream-like sending to the current destination.">out()</a></span> or <span class="tt">operator&lt;&lt;</span>. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">to</td><td>The <span class="tt"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html" title="Identifies a UDP endpoint, extending qb::io::endpoint with hashing support.">udp::identity</a></span> of the remote endpoint to send to.</td></tr>
+  </table>
+  </dd>
+</dl>
+<p>If the destination changes from the previously set one, or if the output buffer is empty, a new datagram header (<span class="tt">pushed_message</span>) will be created in the output buffer upon the next write operation via <span class="tt"><a class="el" href="#ab0e9c486de76ebf5056400130fca9696" title="Get the output proxy (ProxyOut) for stream-like sending to the current destination.">out()</a></span>. </p>
+
+</div>
+</div>
+<a id="ab0e9c486de76ebf5056400130fca9696" name="ab0e9c486de76ebf5056400130fca9696"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab0e9c486de76ebf5056400130fca9696">&#9670;&#160;</a></span>out()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">auto &amp; qb::io::transport::udp::out </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the output proxy (<span class="tt"><a class="el" href="classqb_1_1io_1_1transport_1_1udp_1_1_proxy_out.html" title="Proxy class providing a stream-like interface for sending UDP datagrams.">ProxyOut</a></span>) for stream-like sending to the current destination. </p>
+<dl class="section return"><dt>Returns</dt><dd>Reference to the <span class="tt"><a class="el" href="classqb_1_1io_1_1transport_1_1udp_1_1_proxy_out.html" title="Proxy class providing a stream-like interface for sending UDP datagrams.">ProxyOut</a></span> instance.</dd></dl>
+<p>If no datagram is currently being constructed for the current <span class="tt">_remote_dest</span>, this method initializes a new <span class="tt">pushed_message</span> header in the output buffer. Subsequent writes via the returned proxy will append to this datagram. </p>
+
+</div>
+</div>
+<a id="a0bb363e0e564bfeb229ff978b7f4a35e" name="a0bb363e0e564bfeb229ff978b7f4a35e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0bb363e0e564bfeb229ff978b7f4a35e">&#9670;&#160;</a></span>read()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::transport::udp::read </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Read a single datagram from the UDP socket. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of bytes read on success (size of the datagram). Returns a negative value on error (e.g., from <span class="tt">socket::recvfrom</span>). Returns 0 if the read operation would block (in non-blocking mode and no data available).</dd></dl>
+<p>Reads a datagram into the internal input buffer (<span class="tt">_in_buffer</span>). Upon successful read, <span class="tt">_remote_source</span> is updated with the sender's endpoint, and <span class="tt">setDestination(_remote_source)</span> is called to set this as the default reply-to target. The maximum datagram size read is <span class="tt"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html#afd1ef06ba342ded036a733f4a52255cc" title="Maximum possible size of a UDP datagram.">io::udp::socket::MaxDatagramSize</a></span>. </p>
+
+</div>
+</div>
+<a id="afbeb46710db2f43cd7e47f0b8827bc6c" name="afbeb46710db2f43cd7e47f0b8827bc6c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#afbeb46710db2f43cd7e47f0b8827bc6c">&#9670;&#160;</a></span>write()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::transport::udp::write </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Write the next complete datagram from the output buffer to its destination. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of bytes successfully written from the datagram. Returns a negative value on error (e.g., from <span class="tt">socket::sendto</span>). Returns 0 if the output buffer is empty.</dd></dl>
+<p>Attempts to send the first datagram queued in the <span class="tt">_out_buffer</span>. A datagram might be sent in multiple chunks if it exceeds <span class="tt"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html#afd1ef06ba342ded036a733f4a52255cc" title="Maximum possible size of a UDP datagram.">io::udp::socket::MaxDatagramSize</a></span>, though typically UDP sends entire datagrams or fails. If a datagram is completely sent, it's removed from the <span class="tt">_out_buffer</span>. Manages partial sends by updating <span class="tt">pushed_message::offset</span>. </p>
+
+</div>
+</div>
+<a id="a163e3a7f325b58eb7faf93c3524b5b5f" name="a163e3a7f325b58eb7faf93c3524b5b5f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a163e3a7f325b58eb7faf93c3524b5b5f">&#9670;&#160;</a></span>publish()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">char * qb::io::transport::udp::publish </td>
+          <td>(</td>
+          <td class="paramtype">char const *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Publish (enqueue) data to be sent to the current default destination (<span class="tt">_remote_dest</span>). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">data</td><td>Pointer to the data to publish. </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the data in bytes. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the copied data within the output buffer.</dd></dl>
+<p>This is a convenience method that calls <span class="tt">publish_to(_remote_dest, data, size)</span>. The data is added as a new datagram or appended to the current one being built for <span class="tt">_remote_dest</span>. </p>
+
+</div>
+</div>
+<a id="a5a7b132603e1389e2b3b0ef40286a8fb" name="a5a7b132603e1389e2b3b0ef40286a8fb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5a7b132603e1389e2b3b0ef40286a8fb">&#9670;&#160;</a></span>publish_to()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">char * qb::io::transport::udp::publish_to </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html">udp::identity</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em>to</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">char const *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Publish (enqueue) data to be sent to a specific <span class="tt"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html" title="Identifies a UDP endpoint, extending qb::io::endpoint with hashing support.">udp::identity</a></span> destination. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">to</td><td>The destination <span class="tt"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html" title="Identifies a UDP endpoint, extending qb::io::endpoint with hashing support.">udp::identity</a></span> (endpoint). </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the data to publish. </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the data in bytes. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the copied data within the output buffer.</dd></dl>
+<p>Adds the data as a new datagram in the <span class="tt">_out_buffer</span>, targeting the specified <span class="tt">to</span> endpoint. A <span class="tt">pushed_message</span> header is prepended to manage this datagram. </p>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><b>io</b></li><li class="navelem"><b>transport</b></li><li class="navelem"><a href="classqb_1_1io_1_1transport_1_1udp.html">udp</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

@@ -1,0 +1,487 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: Actor Components</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: Actor Components</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('group___actor.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">Actor Components <div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___core.html">Core Actor System</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Defines actors, their identification, and lifecycle management.  
+<a href="#details">More...</a></p>
+<div class="dynheader">
+Collaboration diagram for Actor Components:</div>
+<div class="dyncontent">
+<div class="center"><img src="group___actor.png" border="0" usemap="#agroup______actor" loading="lazy" alt=""/></div>
+<map name="agroup______actor" id="agroup______actor">
+<area shape="rect" title="Defines actors, their identification, and lifecycle management." alt="" coords="186,5,316,31"/>
+<area shape="rect" href="group___core.html" title="Fundamental components implementing the Actor Model." alt="" coords="5,5,138,31"/>
+</map>
+</div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-files" class="groupheader"><a id="files" name="files"></a>
+Files</h2></td></tr>
+<tr class="memitem:actor_2Eh" id="r_actor_2Eh"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="_actor_8h.html">actor.h</a></td></tr>
+<tr class="memdesc:_actor_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Convenience header for the core QB Actor components. <br /></td></tr>
+<tr class="memitem:actorid_2Eh" id="r_actorid_2Eh"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="_actor_id_8h.html">actorid.h</a></td></tr>
+<tr class="memdesc:_actor_id_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Convenience header for QB ActorId and related identifiers. <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3AActor" id="r_qb_3A_3AActor"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor.html">qb::Actor</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Base class for all actors in the qb framework.  <a href="classqb_1_1_actor.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AService" id="r_qb_3A_3AService"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_service.html">qb::Service</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Internal base class for services.  <a href="classqb_1_1_service.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AServiceActor_3C_20Tag_20_3E" id="r_qb_3A_3AServiceActor_3C_20Tag_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_service_actor.html">qb::ServiceActor&lt; Tag &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">SingletonActor base class, ensuring one instance per <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> per Tag.  <a href="classqb_1_1_service_actor.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AIActorFactory" id="r_qb_3A_3AIActorFactory"><td class="memItemLeft" align="right" valign="top">interface &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_i_actor_factory.html">qb::IActorFactory</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Interface for actor factory classes.  <a href="classqb_1_1_i_actor_factory.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AActorProxy" id="r_qb_3A_3AActorProxy"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor_proxy.html">qb::ActorProxy</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Internal helper class for actor type and name management.  <a href="classqb_1_1_actor_proxy.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aactor_5Ffactory_5Fparam_3C_20T_20_3E" id="r_qb_3A_3Aactor_5Ffactory_5Fparam_3C_20T_20_3E"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1actor__factory__param.html">qb::actor_factory_param&lt; T &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Utility struct for processing actor factory constructor arguments.  <a href="structqb_1_1actor__factory__param.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3ATActorFactory_3C_20_5FActor_2C_20_5FArgs_20_3E" id="r_qb_3A_3ATActorFactory_3C_20_5FActor_2C_20_5FArgs_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_t_actor_factory.html">qb::TActorFactory&lt; _Actor, _Args &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Templated actor factory implementation.  <a href="classqb_1_1_t_actor_factory.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AActorId" id="r_qb_3A_3AActorId"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_actor_id.html">qb::ActorId</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Unique identifier for actors.  <a href="classqb_1_1_actor_id.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3ABroadcastId" id="r_qb_3A_3ABroadcastId"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_broadcast_id.html">qb::BroadcastId</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Specialized <a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">ActorId</a> for broadcasting messages to all actors on a core.  <a href="classqb_1_1_broadcast_id.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-typedef-members" class="groupheader"><a id="typedef-members" name="typedef-members"></a>
+Typedefs</h2></td></tr>
+<tr class="memitem:gac38e7a5f336d9e903240705500b6d9b6" id="r_gac38e7a5f336d9e903240705500b6d9b6"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gac38e7a5f336d9e903240705500b6d9b6">qb::actor</a> = <a class="el" href="classqb_1_1_actor.html">Actor</a></td></tr>
+<tr class="memdesc:gac38e7a5f336d9e903240705500b6d9b6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Alias for the <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">Actor</a> class.  <br /></td></tr>
+<tr class="memitem:gaed30edb9320e28e7ff8a5360b693e5d6" id="r_gaed30edb9320e28e7ff8a5360b693e5d6"><td class="memTemplParams" colspan="2">template&lt;typename Tag&gt; </td></tr>
+<tr class="memitem:gaed30edb9320e28e7ff8a5360b693e5d6 template"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gaed30edb9320e28e7ff8a5360b693e5d6">qb::service_actor</a> = <a class="el" href="classqb_1_1_service_actor.html">ServiceActor</a>&lt;Tag&gt;</td></tr>
+<tr class="memdesc:gaed30edb9320e28e7ff8a5360b693e5d6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Alias for the <a class="el" href="classqb_1_1_service_actor.html" title="SingletonActor base class, ensuring one instance per VirtualCore per Tag.">ServiceActor</a> template class.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-func-members" class="groupheader"><a id="func-members" name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:ga92e7614314a969940b9a2b95613aabdd" id="r_ga92e7614314a969940b9a2b95613aabdd"><td class="memTemplParams" colspan="2">template&lt;typename T&gt; </td></tr>
+<tr class="memitem:ga92e7614314a969940b9a2b95613aabdd template"><td class="memItemLeft" align="right" valign="top">auto&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga92e7614314a969940b9a2b95613aabdd">qb::actor_factory_forward</a> (T &amp;&amp;val)</td></tr>
+<tr class="memdesc:ga92e7614314a969940b9a2b95613aabdd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Utility function for forwarding and transforming arguments to actor factory.  <br /></td></tr>
+<tr class="memitem:gae1d1d0200c731c329d48e02177661660" id="r_gae1d1d0200c731c329d48e02177661660"><td class="memItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gae1d1d0200c731c329d48e02177661660">qb::operator&lt;&lt;</a> (std::ostream &amp;os, <a class="el" href="classqb_1_1_actor.html">qb::Actor</a> const &amp;<a class="el" href="#gac38e7a5f336d9e903240705500b6d9b6">actor</a>)</td></tr>
+<tr class="memdesc:gae1d1d0200c731c329d48e02177661660"><td class="mdescLeft">&#160;</td><td class="mdescRight">Stream output operator for <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">Actor</a> objects.  <br /></td></tr>
+<tr class="memitem:ga0c5819d2f74f42ae84cc9e11cb84788f" id="r_ga0c5819d2f74f42ae84cc9e11cb84788f"><td class="memItemLeft" align="right" valign="top"><a id="ga0c5819d2f74f42ae84cc9e11cb84788f" name="ga0c5819d2f74f42ae84cc9e11cb84788f"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>qb::CoreIdBitSet::CoreIdBitSet</b> ()=default</td></tr>
+<tr class="memdesc:ga0c5819d2f74f42ae84cc9e11cb84788f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default constructor - creates an empty set. <br /></td></tr>
+<tr class="memitem:gae25da361d5f73641fe4788908ef499b4" id="r_gae25da361d5f73641fe4788908ef499b4"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gae25da361d5f73641fe4788908ef499b4">qb::CoreIdBitSet::CoreIdBitSet</a> (const <a class="el" href="group___container.html#gac11145579ece76182257112fd457faba">qb::unordered_set</a>&lt; <a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> &gt; &amp;coreIds)</td></tr>
+<tr class="memdesc:gae25da361d5f73641fe4788908ef499b4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor from a set of core IDs.  <br /></td></tr>
+<tr class="memitem:gab58b46678b9a140b8125d4704bfad0ca" id="r_gab58b46678b9a140b8125d4704bfad0ca"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gab58b46678b9a140b8125d4704bfad0ca">qb::CoreIdBitSet::CoreIdBitSet</a> (std::initializer_list&lt; <a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> &gt; ids)</td></tr>
+<tr class="memdesc:gab58b46678b9a140b8125d4704bfad0ca"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor from an initializer list.  <br /></td></tr>
+<tr class="memitem:ga59aa92ee05bf4aef7f4c6d0e6a525e1e" id="r_ga59aa92ee05bf4aef7f4c6d0e6a525e1e"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga59aa92ee05bf4aef7f4c6d0e6a525e1e">qb::BroadcastId::BroadcastId</a> (uint32_t const <a class="el" href="group___core.html#ga1b5fd42650786668943857893d92d766">core_id</a>) noexcept</td></tr>
+<tr class="memdesc:ga59aa92ee05bf4aef7f4c6d0e6a525e1e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor for <a class="el" href="classqb_1_1_broadcast_id.html" title="Specialized ActorId for broadcasting messages to all actors on a core.">BroadcastId</a>.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<p>Defines actors, their identification, and lifecycle management. </p>
+<p>Includes `qb::Actor`, `qb::ActorId`, `qb::ServiceActor`, and related concepts for creating and managing concurrent entities. </p>
+<a name="doc-typedef-members" id="doc-typedef-members"></a><h2 id="header-doc-typedef-members" class="groupheader">Typedef Documentation</h2>
+<a id="gac38e7a5f336d9e903240705500b6d9b6" name="gac38e7a5f336d9e903240705500b6d9b6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gac38e7a5f336d9e903240705500b6d9b6">&#9670;&#160;</a></span>actor</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">using <a class="el" href="#gac38e7a5f336d9e903240705500b6d9b6">qb::actor</a> = <a class="el" href="classqb_1_1_actor.html">Actor</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Alias for the <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">Actor</a> class. </p>
+<p>Provided for naming consistency with other lowercase aliases in the framework </p>
+
+</div>
+</div>
+<a id="gaed30edb9320e28e7ff8a5360b693e5d6" name="gaed30edb9320e28e7ff8a5360b693e5d6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gaed30edb9320e28e7ff8a5360b693e5d6">&#9670;&#160;</a></span>service_actor</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Tag&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">using <a class="el" href="#gaed30edb9320e28e7ff8a5360b693e5d6">qb::service_actor</a> = <a class="el" href="classqb_1_1_service_actor.html">ServiceActor</a>&lt;Tag&gt;</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Alias for the <a class="el" href="classqb_1_1_service_actor.html" title="SingletonActor base class, ensuring one instance per VirtualCore per Tag.">ServiceActor</a> template class. </p>
+<p>Provided for naming consistency with other lowercase aliases in the framework </p><dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Tag</td><td>A unique struct Tag to identify the service type </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Function Documentation</h2>
+<a id="ga92e7614314a969940b9a2b95613aabdd" name="ga92e7614314a969940b9a2b95613aabdd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga92e7614314a969940b9a2b95613aabdd">&#9670;&#160;</a></span>actor_factory_forward()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">auto qb::actor_factory_forward </td>
+          <td>(</td>
+          <td class="paramtype">T &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em>val</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Utility function for forwarding and transforming arguments to actor factory. </p>
+<p>This function properly forwards arguments to the actor factory, handling special cases:</p><ul>
+<li>String literals are converted to std::string</li>
+<li>Reference wrappers are preserved as-is</li>
+<li>Other types are forwarded with their original value categories</li>
+</ul>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">T</td><td>The type of the argument to forward </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">val</td><td>The value to forward </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>The transformed and properly forwarded value </dd></dl>
+
+</div>
+</div>
+<a id="gae1d1d0200c731c329d48e02177661660" name="gae1d1d0200c731c329d48e02177661660"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gae1d1d0200c731c329d48e02177661660">&#9670;&#160;</a></span>operator&lt;&lt;()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::ostream &amp; qb::operator&lt;&lt; </td>
+          <td>(</td>
+          <td class="paramtype">std::ostream &amp;</td>          <td class="paramname"><span class="paramname"><em>os</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="classqb_1_1_actor.html">qb::Actor</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em>actor</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Stream output operator for <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">Actor</a> objects. </p>
+<p>Formats and outputs actor information to a stream</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">os</td><td>Output stream to write to </td></tr>
+    <tr><td class="paramname">actor</td><td>The <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">Actor</a> object to format and output </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Reference to the output stream </dd></dl>
+
+</div>
+</div>
+<a id="gae25da361d5f73641fe4788908ef499b4" name="gae25da361d5f73641fe4788908ef499b4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gae25da361d5f73641fe4788908ef499b4">&#9670;&#160;</a></span>CoreIdBitSet() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::CoreIdBitSet::CoreIdBitSet </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="group___container.html#gac11145579ece76182257112fd457faba">qb::unordered_set</a>&lt; <a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>coreIds</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel explicit">explicit</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructor from a set of core IDs. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">coreIds</td><td>Set of core IDs to include </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="gab58b46678b9a140b8125d4704bfad0ca" name="gab58b46678b9a140b8125d4704bfad0ca"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gab58b46678b9a140b8125d4704bfad0ca">&#9670;&#160;</a></span>CoreIdBitSet() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::CoreIdBitSet::CoreIdBitSet </td>
+          <td>(</td>
+          <td class="paramtype">std::initializer_list&lt; <a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> &gt;</td>          <td class="paramname"><span class="paramname"><em>ids</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructor from an initializer list. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ids</td><td>List of core IDs to include </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="ga59aa92ee05bf4aef7f4c6d0e6a525e1e" name="ga59aa92ee05bf4aef7f4c6d0e6a525e1e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga59aa92ee05bf4aef7f4c6d0e6a525e1e">&#9670;&#160;</a></span>BroadcastId()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::BroadcastId::BroadcastId </td>
+          <td>(</td>
+          <td class="paramtype">uint32_t const</td>          <td class="paramname"><span class="paramname"><em>core_id</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel explicit">explicit</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructor for <a class="el" href="classqb_1_1_broadcast_id.html" title="Specialized ActorId for broadcasting messages to all actors on a core.">BroadcastId</a>. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname"><a class="el" href="group___core.html#ga1b5fd42650786668943857893d92d766" title="Alias for CoreId.">core_id</a></td><td>The core ID to broadcast to. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

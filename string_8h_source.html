@@ -1,0 +1,1060 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/string.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/string.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('string_8h_source.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">string.h</div></div>
+</div><!--header-->
+<div class="contents">
+<a href="string_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00025" name="l00025"></a><span class="lineno">   25</span> </div>
+<div class="line"><a id="l00026" name="l00026"></a><span class="lineno">   26</span><span class="preprocessor">#include &lt;algorithm&gt;</span></div>
+<div class="line"><a id="l00027" name="l00027"></a><span class="lineno">   27</span><span class="preprocessor">#include &lt;array&gt;</span></div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span><span class="preprocessor">#include &lt;cstring&gt;</span></div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span><span class="preprocessor">#include &lt;iostream&gt;</span></div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span><span class="preprocessor">#include &lt;limits&gt;</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span><span class="preprocessor">#include &lt;<a class="code" href="build__macros_8h.html">qb/utility/build_macros.h</a>&gt;</span></div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span><span class="preprocessor">#include &lt;string&gt;</span></div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span><span class="preprocessor">#include &lt;stdexcept&gt;</span></div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span> </div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span><span class="preprocessor">#ifndef QB_STRING_H_</span></div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span><span class="preprocessor">#define QB_STRING_H_</span></div>
+<div class="line"><a id="l00037" name="l00037"></a><span class="lineno">   37</span> </div>
+<div class="line"><a id="l00038" name="l00038"></a><span class="lineno">   38</span><span class="keyword">namespace </span>qb {</div>
+<div class="line"><a id="l00039" name="l00039"></a><span class="lineno">   39</span> </div>
+<div class="line"><a id="l00040" name="l00040"></a><span class="lineno">   40</span><span class="keyword">namespace </span>internal {</div>
+<div class="line"><a id="l00052" name="l00052"></a><span class="lineno">   52</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size, <span class="keywordtype">bool</span> fill8 = (_Size &lt;= std::numeric_limits&lt;u<span class="keywordtype">int</span>8_t&gt;::max()),</div>
+<div class="line"><a id="l00053" name="l00053"></a><span class="lineno">   53</span>          <span class="keywordtype">bool</span> fill16 = (_Size &lt;= std::numeric_limits&lt;u<span class="keywordtype">int</span>16_t&gt;::max())&gt;</div>
+<div class="foldopen" id="foldopen00054" data-start="{" data-end="};">
+<div class="line"><a id="l00054" name="l00054"></a><span class="lineno"><a class="line" href="structqb_1_1internal_1_1best__size.html">   54</a></span>struct best_size {</div>
+<div class="line"><a id="l00055" name="l00055"></a><span class="lineno">   55</span>    using type = std::<span class="keywordtype">size_t</span>;</div>
+<div class="line"><a id="l00056" name="l00056"></a><span class="lineno">   56</span>};</div>
+</div>
+<div class="line"><a id="l00057" name="l00057"></a><span class="lineno">   57</span></div>
+<div class="line"><a id="l00061" name="l00061"></a><span class="lineno">   61</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size&gt;</div>
+<div class="foldopen" id="foldopen00062" data-start="{" data-end="};">
+<div class="line"><a id="l00062" name="l00062"></a><span class="lineno"><a class="line" href="structqb_1_1internal_1_1best__size_3_01___size_00_01true_00_01true_01_4.html">   62</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1internal_1_1best__size.html">best_size&lt;_Size, true, true&gt;</a> {</div>
+<div class="line"><a id="l00063" name="l00063"></a><span class="lineno">   63</span>    <span class="keyword">using </span>type = uint8_t;</div>
+<div class="line"><a id="l00064" name="l00064"></a><span class="lineno">   64</span>};</div>
+</div>
+<div class="line"><a id="l00065" name="l00065"></a><span class="lineno">   65</span></div>
+<div class="line"><a id="l00069" name="l00069"></a><span class="lineno">   69</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size&gt;</div>
+<div class="foldopen" id="foldopen00070" data-start="{" data-end="};">
+<div class="line"><a id="l00070" name="l00070"></a><span class="lineno"><a class="line" href="structqb_1_1internal_1_1best__size_3_01___size_00_01false_00_01true_01_4.html">   70</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1internal_1_1best__size.html">best_size&lt;_Size, false, true&gt;</a> {</div>
+<div class="line"><a id="l00071" name="l00071"></a><span class="lineno">   71</span>    <span class="keyword">using </span>type = uint16_t;</div>
+<div class="line"><a id="l00072" name="l00072"></a><span class="lineno">   72</span>};</div>
+</div>
+<div class="line"><a id="l00073" name="l00073"></a><span class="lineno">   73</span>} <span class="comment">// namespace internal</span></div>
+<div class="line"><a id="l00074" name="l00074"></a><span class="lineno">   74</span></div>
+<div class="line"><a id="l00085" name="l00085"></a><span class="lineno">   85</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size = 30&gt;</div>
+<div class="foldopen" id="foldopen00086" data-start="{" data-end="};">
+<div class="line"><a id="l00086" name="l00086"></a><span class="lineno"><a class="line" href="classqb_1_1string.html">   86</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1string.html#a484b3f23d217afed951f0942d7a34d2a">string</a> : <span class="keyword">public</span> std::array&lt;char, _Size + 1&gt; {</div>
+<div class="line"><a id="l00087" name="l00087"></a><span class="lineno">   87</span>    <span class="keyword">static_assert</span>(_Size &gt; 0, <span class="stringliteral">&quot;String size must be greater than 0&quot;</span>);</div>
+<div class="line"><a id="l00088" name="l00088"></a><span class="lineno">   88</span>    </div>
+<div class="line"><a id="l00089" name="l00089"></a><span class="lineno">   89</span>    <span class="keyword">using </span>base_t    = std::array&lt;char, _Size + 1&gt;;</div>
+<div class="line"><a id="l00090" name="l00090"></a><span class="lineno">   90</span>    <span class="keyword">using </span>size_type = <span class="keyword">typename</span> internal::best_size&lt;_Size + 1&gt;::type;</div>
+<div class="line"><a id="l00091" name="l00091"></a><span class="lineno">   91</span>    </div>
+<div class="line"><a id="l00092" name="l00092"></a><span class="lineno">   92</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00093" name="l00093"></a><span class="lineno">   93</span>    <span class="comment">// Type aliases for compatibility with std::string</span></div>
+<div class="line"><a id="l00094" name="l00094"></a><span class="lineno">   94</span>    <span class="keyword">using </span>value_type             = char;</div>
+<div class="line"><a id="l00095" name="l00095"></a><span class="lineno">   95</span>    <span class="keyword">using </span>reference              = <span class="keywordtype">char</span>&amp;;</div>
+<div class="line"><a id="l00096" name="l00096"></a><span class="lineno">   96</span>    <span class="keyword">using </span>const_reference        = <span class="keyword">const</span> <span class="keywordtype">char</span>&amp;;</div>
+<div class="line"><a id="l00097" name="l00097"></a><span class="lineno">   97</span>    <span class="keyword">using </span>pointer                = <span class="keywordtype">char</span>*;</div>
+<div class="line"><a id="l00098" name="l00098"></a><span class="lineno">   98</span>    <span class="keyword">using </span>const_pointer          = <span class="keyword">const</span> <span class="keywordtype">char</span>*;</div>
+<div class="line"><a id="l00099" name="l00099"></a><span class="lineno">   99</span>    <span class="keyword">using </span>iterator               = <span class="keyword">typename</span> base_t::iterator;</div>
+<div class="line"><a id="l00100" name="l00100"></a><span class="lineno">  100</span>    <span class="keyword">using </span>const_iterator         = <span class="keyword">typename</span> base_t::const_iterator;</div>
+<div class="line"><a id="l00101" name="l00101"></a><span class="lineno">  101</span>    <span class="keyword">using </span>reverse_iterator       = <span class="keyword">typename</span> base_t::reverse_iterator;</div>
+<div class="line"><a id="l00102" name="l00102"></a><span class="lineno">  102</span>    <span class="keyword">using </span>const_reverse_iterator = <span class="keyword">typename</span> base_t::const_reverse_iterator;</div>
+<div class="line"><a id="l00103" name="l00103"></a><span class="lineno">  103</span>    <span class="keyword">using </span>difference_type        = <span class="keyword">typename</span> base_t::difference_type;</div>
+<div class="line"><a id="l00104" name="l00104"></a><span class="lineno">  104</span>    </div>
+<div class="line"><a id="l00105" name="l00105"></a><span class="lineno">  105</span>    <span class="keyword">static</span> <span class="keyword">constexpr</span> std::size_t npos = std::numeric_limits&lt;std::size_t&gt;::max();</div>
+<div class="line"><a id="l00106" name="l00106"></a><span class="lineno">  106</span> </div>
+<div class="line"><a id="l00107" name="l00107"></a><span class="lineno">  107</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00108" name="l00108"></a><span class="lineno">  108</span>    size_type _size = 0;</div>
+<div class="line"><a id="l00109" name="l00109"></a><span class="lineno">  109</span> </div>
+<div class="line"><a id="l00110" name="l00110"></a><span class="lineno">  110</span><span class="keyword">public</span>:</div>
+<div class="foldopen" id="foldopen00116" data-start="{" data-end="}">
+<div class="line"><a id="l00116" name="l00116"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a484b3f23d217afed951f0942d7a34d2a">  116</a></span>    <span class="keyword">constexpr</span> <a class="code hl_function" href="classqb_1_1string.html#a484b3f23d217afed951f0942d7a34d2a">string</a>() noexcept</div>
+<div class="line"><a id="l00117" name="l00117"></a><span class="lineno">  117</span>        : base_t{<span class="charliteral">&#39;\0&#39;</span>} {}</div>
+</div>
+<div class="line"><a id="l00118" name="l00118"></a><span class="lineno">  118</span></div>
+<div class="line"><a id="l00125" name="l00125"></a><span class="lineno">  125</span>    <span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> N&gt;</div>
+<div class="foldopen" id="foldopen00126" data-start="{" data-end="}">
+<div class="line"><a id="l00126" name="l00126"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ad21e7a3668adb6ec70f95f5db7e8e685">  126</a></span>    <span class="keyword">constexpr</span> <a class="code hl_function" href="classqb_1_1string.html#ad21e7a3668adb6ec70f95f5db7e8e685">string</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> (&amp;str)[N]) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00127" name="l00127"></a><span class="lineno">  127</span>        <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(str, N - 1);</div>
+<div class="line"><a id="l00128" name="l00128"></a><span class="lineno">  128</span>    }</div>
+</div>
+<div class="line"><a id="l00129" name="l00129"></a><span class="lineno">  129</span></div>
+<div class="line"><a id="l00136" name="l00136"></a><span class="lineno">  136</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="foldopen" id="foldopen00137" data-start="{" data-end="}">
+<div class="line"><a id="l00137" name="l00137"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a2640da6a7ce07b17b2ea4f39c6927d7d">  137</a></span>    <a class="code hl_function" href="classqb_1_1string.html#a2640da6a7ce07b17b2ea4f39c6927d7d">string</a>(T <span class="keyword">const</span> &amp;rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00138" name="l00138"></a><span class="lineno">  138</span>        <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(rhs);</div>
+<div class="line"><a id="l00139" name="l00139"></a><span class="lineno">  139</span>    }</div>
+</div>
+<div class="line"><a id="l00140" name="l00140"></a><span class="lineno">  140</span></div>
+<div class="foldopen" id="foldopen00147" data-start="{" data-end="}">
+<div class="line"><a id="l00147" name="l00147"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#af253221e1ad88d1456b9ed4774b95040">  147</a></span>    <a class="code hl_function" href="classqb_1_1string.html#af253221e1ad88d1456b9ed4774b95040">string</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* str, std::size_t <a class="code hl_function" href="classqb_1_1string.html#ae7c38507747dcf089860b62550fef8ce">size</a>) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00148" name="l00148"></a><span class="lineno">  148</span>        <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(str, <a class="code hl_function" href="classqb_1_1string.html#ae7c38507747dcf089860b62550fef8ce">size</a>);</div>
+<div class="line"><a id="l00149" name="l00149"></a><span class="lineno">  149</span>    }</div>
+</div>
+<div class="line"><a id="l00150" name="l00150"></a><span class="lineno">  150</span></div>
+<div class="foldopen" id="foldopen00156" data-start="{" data-end="}">
+<div class="line"><a id="l00156" name="l00156"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a30ef8999c78cfd8f9ac9bc42c4b883a3">  156</a></span>    <a class="code hl_function" href="classqb_1_1string.html#a30ef8999c78cfd8f9ac9bc42c4b883a3">string</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* str) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00157" name="l00157"></a><span class="lineno">  157</span>        <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(str);</div>
+<div class="line"><a id="l00158" name="l00158"></a><span class="lineno">  158</span>    }</div>
+</div>
+<div class="line"><a id="l00159" name="l00159"></a><span class="lineno">  159</span></div>
+<div class="foldopen" id="foldopen00166" data-start="{" data-end="}">
+<div class="line"><a id="l00166" name="l00166"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a9286ec1f1958dd7ae907b13052c8beb6">  166</a></span>    <a class="code hl_function" href="classqb_1_1string.html#a9286ec1f1958dd7ae907b13052c8beb6">string</a>(std::size_t count, <span class="keywordtype">char</span> ch) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00167" name="l00167"></a><span class="lineno">  167</span>        _size = <span class="keyword">static_cast&lt;</span>size_type<span class="keyword">&gt;</span>(std::min(count, <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(_Size)));</div>
+<div class="line"><a id="l00168" name="l00168"></a><span class="lineno">  168</span>        std::fill_n(base_t::data(), _size, ch);</div>
+<div class="line"><a id="l00169" name="l00169"></a><span class="lineno">  169</span>        base_t::data()[_size] = <span class="charliteral">&#39;\0&#39;</span>;</div>
+<div class="line"><a id="l00170" name="l00170"></a><span class="lineno">  170</span>    }</div>
+</div>
+<div class="line"><a id="l00171" name="l00171"></a><span class="lineno">  171</span></div>
+<div class="line"><a id="l00175" name="l00175"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a0dfc9b475cd8b516daec5b938b9b12e9">  175</a></span>    <a class="code hl_function" href="classqb_1_1string.html#a0dfc9b475cd8b516daec5b938b9b12e9">string</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; other) <span class="keyword">noexcept</span> = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00176" name="l00176"></a><span class="lineno">  176</span></div>
+<div class="line"><a id="l00180" name="l00180"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a789b17dc53390e1e486fd9dad041ba19">  180</a></span>    <a class="code hl_function" href="classqb_1_1string.html#a789b17dc53390e1e486fd9dad041ba19">string</a>(<span class="keywordtype">string</span>&amp;&amp; other) <span class="keyword">noexcept</span> = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00181" name="l00181"></a><span class="lineno">  181</span></div>
+<div class="line"><a id="l00185" name="l00185"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ad4f9ed287ab782812ad93a2e9a5b624e">  185</a></span>    <span class="keywordtype">string</span>&amp; <a class="code hl_function" href="classqb_1_1string.html#ad4f9ed287ab782812ad93a2e9a5b624e">operator=</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; other) <span class="keyword">noexcept</span> = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00186" name="l00186"></a><span class="lineno">  186</span></div>
+<div class="line"><a id="l00190" name="l00190"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a5beb9649ec1bc3edddaef2c708fdb205">  190</a></span>    <span class="keywordtype">string</span>&amp; <a class="code hl_function" href="classqb_1_1string.html#a5beb9649ec1bc3edddaef2c708fdb205">operator=</a>(<span class="keywordtype">string</span>&amp;&amp; other) <span class="keyword">noexcept</span> = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00191" name="l00191"></a><span class="lineno">  191</span></div>
+<div class="line"><a id="l00199" name="l00199"></a><span class="lineno">  199</span>    <span class="keywordtype">string</span> &amp;</div>
+<div class="foldopen" id="foldopen00200" data-start="{" data-end="}">
+<div class="line"><a id="l00200" name="l00200"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">  200</a></span>    <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(<span class="keywordtype">char</span> <span class="keyword">const</span> *rhs, std::size_t <a class="code hl_function" href="classqb_1_1string.html#ae7c38507747dcf089860b62550fef8ce">size</a>) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00201" name="l00201"></a><span class="lineno">  201</span>        _size = <span class="keyword">static_cast&lt;</span>size_type<span class="keyword">&gt;</span>(std::min(<a class="code hl_function" href="classqb_1_1string.html#ae7c38507747dcf089860b62550fef8ce">size</a>, <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(_Size)));</div>
+<div class="line"><a id="l00202" name="l00202"></a><span class="lineno">  202</span> </div>
+<div class="line"><a id="l00203" name="l00203"></a><span class="lineno">  203</span>        std::memcpy(base_t::data(), rhs, _size);</div>
+<div class="line"><a id="l00204" name="l00204"></a><span class="lineno">  204</span>        base_t::data()[_size] = <span class="charliteral">&#39;\0&#39;</span>;</div>
+<div class="line"><a id="l00205" name="l00205"></a><span class="lineno">  205</span> </div>
+<div class="line"><a id="l00206" name="l00206"></a><span class="lineno">  206</span>        <span class="keywordflow">return</span> *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00207" name="l00207"></a><span class="lineno">  207</span>    }</div>
+</div>
+<div class="line"><a id="l00208" name="l00208"></a><span class="lineno">  208</span></div>
+<div class="line"><a id="l00216" name="l00216"></a><span class="lineno">  216</span>    <span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> N&gt;</div>
+<div class="line"><a id="l00217" name="l00217"></a><span class="lineno">  217</span>    <span class="keyword">constexpr</span> <span class="keywordtype">string</span> &amp;</div>
+<div class="foldopen" id="foldopen00218" data-start="{" data-end="}">
+<div class="line"><a id="l00218" name="l00218"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a9b0b3b008341eccc699b4fe72889bf2c">  218</a></span>    <a class="code hl_function" href="classqb_1_1string.html#a9b0b3b008341eccc699b4fe72889bf2c">assign</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> (&amp;str)[N]) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00219" name="l00219"></a><span class="lineno">  219</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(str, N - 1);</div>
+<div class="line"><a id="l00220" name="l00220"></a><span class="lineno">  220</span>    }</div>
+</div>
+<div class="line"><a id="l00221" name="l00221"></a><span class="lineno">  221</span></div>
+<div class="line"><a id="l00229" name="l00229"></a><span class="lineno">  229</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00230" name="l00230"></a><span class="lineno">  230</span>    <span class="keywordtype">string</span> &amp;</div>
+<div class="foldopen" id="foldopen00231" data-start="{" data-end="}">
+<div class="line"><a id="l00231" name="l00231"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a44ff9469c007f8bc9b83f336434a3bd9">  231</a></span>    <a class="code hl_function" href="classqb_1_1string.html#a44ff9469c007f8bc9b83f336434a3bd9">assign</a>(T <span class="keyword">const</span> &amp;rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00232" name="l00232"></a><span class="lineno">  232</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(rhs.data(), rhs.size());</div>
+<div class="line"><a id="l00233" name="l00233"></a><span class="lineno">  233</span>    }</div>
+</div>
+<div class="line"><a id="l00234" name="l00234"></a><span class="lineno">  234</span></div>
+<div class="line"><a id="l00241" name="l00241"></a><span class="lineno">  241</span>    <span class="keywordtype">string</span> &amp;</div>
+<div class="foldopen" id="foldopen00242" data-start="{" data-end="}">
+<div class="line"><a id="l00242" name="l00242"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#aa0803f93f2fb35cdaab462333b080975">  242</a></span>    <a class="code hl_function" href="classqb_1_1string.html#aa0803f93f2fb35cdaab462333b080975">assign</a>(<span class="keywordtype">char</span> <span class="keyword">const</span> *rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00243" name="l00243"></a><span class="lineno">  243</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(rhs, std::strlen(rhs));</div>
+<div class="line"><a id="l00244" name="l00244"></a><span class="lineno">  244</span>    }</div>
+</div>
+<div class="line"><a id="l00245" name="l00245"></a><span class="lineno">  245</span></div>
+<div class="line"><a id="l00253" name="l00253"></a><span class="lineno">  253</span>    <span class="keywordtype">string</span> &amp;</div>
+<div class="foldopen" id="foldopen00254" data-start="{" data-end="}">
+<div class="line"><a id="l00254" name="l00254"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a6fbca310eb77e9caf5c7e533d90d556f">  254</a></span>    <a class="code hl_function" href="classqb_1_1string.html#a6fbca310eb77e9caf5c7e533d90d556f">assign</a>(std::size_t count, <span class="keywordtype">char</span> ch) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00255" name="l00255"></a><span class="lineno">  255</span>        _size = <span class="keyword">static_cast&lt;</span>size_type<span class="keyword">&gt;</span>(std::min(count, <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(_Size)));</div>
+<div class="line"><a id="l00256" name="l00256"></a><span class="lineno">  256</span>        std::fill_n(base_t::data(), _size, ch);</div>
+<div class="line"><a id="l00257" name="l00257"></a><span class="lineno">  257</span>        base_t::data()[_size] = <span class="charliteral">&#39;\0&#39;</span>;</div>
+<div class="line"><a id="l00258" name="l00258"></a><span class="lineno">  258</span>        <span class="keywordflow">return</span> *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00259" name="l00259"></a><span class="lineno">  259</span>    }</div>
+</div>
+<div class="line"><a id="l00260" name="l00260"></a><span class="lineno">  260</span></div>
+<div class="line"><a id="l00268" name="l00268"></a><span class="lineno">  268</span>    <span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> N&gt;</div>
+<div class="line"><a id="l00269" name="l00269"></a><span class="lineno">  269</span>    <span class="keyword">constexpr</span> <span class="keywordtype">string</span> &amp;</div>
+<div class="foldopen" id="foldopen00270" data-start="{" data-end="}">
+<div class="line"><a id="l00270" name="l00270"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a7531498f088aad64078e8fad8b40c422">  270</a></span>    <a class="code hl_function" href="classqb_1_1string.html#a7531498f088aad64078e8fad8b40c422">operator=</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> (&amp;str)[N]) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00271" name="l00271"></a><span class="lineno">  271</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(str, N - 1);</div>
+<div class="line"><a id="l00272" name="l00272"></a><span class="lineno">  272</span>    }</div>
+</div>
+<div class="line"><a id="l00273" name="l00273"></a><span class="lineno">  273</span></div>
+<div class="line"><a id="l00281" name="l00281"></a><span class="lineno">  281</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00282" name="l00282"></a><span class="lineno">  282</span>    <span class="keywordtype">string</span> &amp;</div>
+<div class="foldopen" id="foldopen00283" data-start="{" data-end="}">
+<div class="line"><a id="l00283" name="l00283"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a9cb1a90d957845526902ed9450a57534">  283</a></span>    <a class="code hl_function" href="classqb_1_1string.html#a9cb1a90d957845526902ed9450a57534">operator=</a>(T <span class="keyword">const</span> &amp;rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00284" name="l00284"></a><span class="lineno">  284</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(rhs);</div>
+<div class="line"><a id="l00285" name="l00285"></a><span class="lineno">  285</span>    }</div>
+</div>
+<div class="line"><a id="l00286" name="l00286"></a><span class="lineno">  286</span></div>
+<div class="line"><a id="l00293" name="l00293"></a><span class="lineno">  293</span>    <span class="keywordtype">string</span> &amp;</div>
+<div class="foldopen" id="foldopen00294" data-start="{" data-end="}">
+<div class="line"><a id="l00294" name="l00294"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a2b2a702137a15ba2e3cf275e092ec02f">  294</a></span>    <a class="code hl_function" href="classqb_1_1string.html#a2b2a702137a15ba2e3cf275e092ec02f">operator=</a>(<span class="keywordtype">char</span> <span class="keyword">const</span> *rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00295" name="l00295"></a><span class="lineno">  295</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(rhs);</div>
+<div class="line"><a id="l00296" name="l00296"></a><span class="lineno">  296</span>    }</div>
+</div>
+<div class="line"><a id="l00297" name="l00297"></a><span class="lineno">  297</span></div>
+<div class="line"><a id="l00304" name="l00304"></a><span class="lineno">  304</span>    <span class="keywordtype">string</span> &amp;</div>
+<div class="foldopen" id="foldopen00305" data-start="{" data-end="}">
+<div class="line"><a id="l00305" name="l00305"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#af328e901f4c05b32d8a09c0453b54151">  305</a></span>    <a class="code hl_function" href="classqb_1_1string.html#af328e901f4c05b32d8a09c0453b54151">operator=</a>(<span class="keywordtype">char</span> ch) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00306" name="l00306"></a><span class="lineno">  306</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(1, ch);</div>
+<div class="line"><a id="l00307" name="l00307"></a><span class="lineno">  307</span>    }</div>
+</div>
+<div class="line"><a id="l00308" name="l00308"></a><span class="lineno">  308</span></div>
+<div class="foldopen" id="foldopen00314" data-start="{" data-end="}">
+<div class="line"><a id="l00314" name="l00314"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a244081996173476736ddb7cf452aa6f3">  314</a></span>    <span class="keyword">operator</span> std::string() const noexcept {</div>
+<div class="line"><a id="l00315" name="l00315"></a><span class="lineno">  315</span>        <span class="keywordflow">return</span> {base_t::data(), _size};</div>
+<div class="line"><a id="l00316" name="l00316"></a><span class="lineno">  316</span>    }</div>
+</div>
+<div class="line"><a id="l00317" name="l00317"></a><span class="lineno">  317</span></div>
+<div class="foldopen" id="foldopen00323" data-start="{" data-end="}">
+<div class="line"><a id="l00323" name="l00323"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ac57adfa24f0db8799971a44f26ea9d14">  323</a></span>    <span class="keyword">operator</span> std::string_view() const noexcept {</div>
+<div class="line"><a id="l00324" name="l00324"></a><span class="lineno">  324</span>        <span class="keywordflow">return</span> {base_t::data(), _size};</div>
+<div class="line"><a id="l00325" name="l00325"></a><span class="lineno">  325</span>    }</div>
+</div>
+<div class="line"><a id="l00326" name="l00326"></a><span class="lineno">  326</span> </div>
+<div class="line"><a id="l00327" name="l00327"></a><span class="lineno">  327</span>    <span class="comment">// Element access</span></div>
+<div class="foldopen" id="foldopen00335" data-start="{" data-end="}">
+<div class="line"><a id="l00335" name="l00335"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a0d1177c1ff86606f7c98930f59cb55e9">  335</a></span>    reference <a class="code hl_function" href="classqb_1_1string.html#a0d1177c1ff86606f7c98930f59cb55e9">at</a>(std::size_t pos) {</div>
+<div class="line"><a id="l00336" name="l00336"></a><span class="lineno">  336</span>        <span class="keywordflow">if</span> (pos &gt;= _size) {</div>
+<div class="line"><a id="l00337" name="l00337"></a><span class="lineno">  337</span>            <span class="keywordflow">throw</span> std::out_of_range(<span class="stringliteral">&quot;qb::string::at: index out of range&quot;</span>);</div>
+<div class="line"><a id="l00338" name="l00338"></a><span class="lineno">  338</span>        }</div>
+<div class="line"><a id="l00339" name="l00339"></a><span class="lineno">  339</span>        <span class="keywordflow">return</span> base_t::data()[pos];</div>
+<div class="line"><a id="l00340" name="l00340"></a><span class="lineno">  340</span>    }</div>
+</div>
+<div class="line"><a id="l00341" name="l00341"></a><span class="lineno">  341</span></div>
+<div class="foldopen" id="foldopen00349" data-start="{" data-end="}">
+<div class="line"><a id="l00349" name="l00349"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a414e89e023afd92b7b8afd22d3869e91">  349</a></span>    const_reference <a class="code hl_function" href="classqb_1_1string.html#a414e89e023afd92b7b8afd22d3869e91">at</a>(std::size_t pos)<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00350" name="l00350"></a><span class="lineno">  350</span>        <span class="keywordflow">if</span> (pos &gt;= _size) {</div>
+<div class="line"><a id="l00351" name="l00351"></a><span class="lineno">  351</span>            <span class="keywordflow">throw</span> std::out_of_range(<span class="stringliteral">&quot;qb::string::at: index out of range&quot;</span>);</div>
+<div class="line"><a id="l00352" name="l00352"></a><span class="lineno">  352</span>        }</div>
+<div class="line"><a id="l00353" name="l00353"></a><span class="lineno">  353</span>        <span class="keywordflow">return</span> base_t::data()[pos];</div>
+<div class="line"><a id="l00354" name="l00354"></a><span class="lineno">  354</span>    }</div>
+</div>
+<div class="line"><a id="l00355" name="l00355"></a><span class="lineno">  355</span></div>
+<div class="foldopen" id="foldopen00362" data-start="{" data-end="}">
+<div class="line"><a id="l00362" name="l00362"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#afe0964a056587abc4e6992db805e6d08">  362</a></span>    reference <a class="code hl_function" href="classqb_1_1string.html#afe0964a056587abc4e6992db805e6d08">operator[]</a>(std::size_t pos) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00363" name="l00363"></a><span class="lineno">  363</span>        <span class="keywordflow">return</span> base_t::data()[pos];</div>
+<div class="line"><a id="l00364" name="l00364"></a><span class="lineno">  364</span>    }</div>
+</div>
+<div class="line"><a id="l00365" name="l00365"></a><span class="lineno">  365</span></div>
+<div class="foldopen" id="foldopen00372" data-start="{" data-end="}">
+<div class="line"><a id="l00372" name="l00372"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a420447269d7606707117ef3effb56685">  372</a></span>    const_reference <a class="code hl_function" href="classqb_1_1string.html#a420447269d7606707117ef3effb56685">operator[]</a>(std::size_t pos) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00373" name="l00373"></a><span class="lineno">  373</span>        <span class="keywordflow">return</span> base_t::data()[pos];</div>
+<div class="line"><a id="l00374" name="l00374"></a><span class="lineno">  374</span>    }</div>
+</div>
+<div class="line"><a id="l00375" name="l00375"></a><span class="lineno">  375</span></div>
+<div class="foldopen" id="foldopen00381" data-start="{" data-end="}">
+<div class="line"><a id="l00381" name="l00381"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a40982c53179692d545789b1e5b938096">  381</a></span>    reference <a class="code hl_function" href="classqb_1_1string.html#a40982c53179692d545789b1e5b938096">front</a>() noexcept {</div>
+<div class="line"><a id="l00382" name="l00382"></a><span class="lineno">  382</span>        <span class="keywordflow">return</span> base_t::data()[0];</div>
+<div class="line"><a id="l00383" name="l00383"></a><span class="lineno">  383</span>    }</div>
+</div>
+<div class="line"><a id="l00384" name="l00384"></a><span class="lineno">  384</span></div>
+<div class="foldopen" id="foldopen00390" data-start="{" data-end="}">
+<div class="line"><a id="l00390" name="l00390"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a60f5d1ee4d8a1cd5f37b8887f434af51">  390</a></span>    const_reference <a class="code hl_function" href="classqb_1_1string.html#a60f5d1ee4d8a1cd5f37b8887f434af51">front</a>() const noexcept {</div>
+<div class="line"><a id="l00391" name="l00391"></a><span class="lineno">  391</span>        <span class="keywordflow">return</span> base_t::data()[0];</div>
+<div class="line"><a id="l00392" name="l00392"></a><span class="lineno">  392</span>    }</div>
+</div>
+<div class="line"><a id="l00393" name="l00393"></a><span class="lineno">  393</span></div>
+<div class="foldopen" id="foldopen00399" data-start="{" data-end="}">
+<div class="line"><a id="l00399" name="l00399"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a0a1d505698b7347698a34a9f79c0e12d">  399</a></span>    reference <a class="code hl_function" href="classqb_1_1string.html#a0a1d505698b7347698a34a9f79c0e12d">back</a>() noexcept {</div>
+<div class="line"><a id="l00400" name="l00400"></a><span class="lineno">  400</span>        <span class="keywordflow">return</span> base_t::data()[_size - 1];</div>
+<div class="line"><a id="l00401" name="l00401"></a><span class="lineno">  401</span>    }</div>
+</div>
+<div class="line"><a id="l00402" name="l00402"></a><span class="lineno">  402</span></div>
+<div class="foldopen" id="foldopen00408" data-start="{" data-end="}">
+<div class="line"><a id="l00408" name="l00408"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a7812db426aba38fcc417cfe65d9e1a29">  408</a></span>    const_reference <a class="code hl_function" href="classqb_1_1string.html#a7812db426aba38fcc417cfe65d9e1a29">back</a>() const noexcept {</div>
+<div class="line"><a id="l00409" name="l00409"></a><span class="lineno">  409</span>        <span class="keywordflow">return</span> base_t::data()[_size - 1];</div>
+<div class="line"><a id="l00410" name="l00410"></a><span class="lineno">  410</span>    }</div>
+</div>
+<div class="line"><a id="l00411" name="l00411"></a><span class="lineno">  411</span></div>
+<div class="foldopen" id="foldopen00417" data-start="{" data-end="}">
+<div class="line"><a id="l00417" name="l00417"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#aadf6cf508308f834b2c6ae31f0c7570e">  417</a></span>    pointer <a class="code hl_function" href="classqb_1_1string.html#aadf6cf508308f834b2c6ae31f0c7570e">data</a>() noexcept {</div>
+<div class="line"><a id="l00418" name="l00418"></a><span class="lineno">  418</span>        <span class="keywordflow">return</span> base_t::data();</div>
+<div class="line"><a id="l00419" name="l00419"></a><span class="lineno">  419</span>    }</div>
+</div>
+<div class="line"><a id="l00420" name="l00420"></a><span class="lineno">  420</span></div>
+<div class="foldopen" id="foldopen00426" data-start="{" data-end="}">
+<div class="line"><a id="l00426" name="l00426"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a7383ec74c527cdc8556558e1dbde565f">  426</a></span>    const_pointer <a class="code hl_function" href="classqb_1_1string.html#a7383ec74c527cdc8556558e1dbde565f">data</a>() const noexcept {</div>
+<div class="line"><a id="l00427" name="l00427"></a><span class="lineno">  427</span>        <span class="keywordflow">return</span> base_t::data();</div>
+<div class="line"><a id="l00428" name="l00428"></a><span class="lineno">  428</span>    }</div>
+</div>
+<div class="line"><a id="l00429" name="l00429"></a><span class="lineno">  429</span></div>
+<div class="foldopen" id="foldopen00435" data-start="{" data-end="}">
+<div class="line"><a id="l00435" name="l00435"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#acf7ddd96ca52f80dd15e4a95b3b54c11">  435</a></span>    [[nodiscard]] const_pointer <a class="code hl_function" href="classqb_1_1string.html#acf7ddd96ca52f80dd15e4a95b3b54c11">c_str</a>() const noexcept {</div>
+<div class="line"><a id="l00436" name="l00436"></a><span class="lineno">  436</span>        <span class="keywordflow">return</span> base_t::data();</div>
+<div class="line"><a id="l00437" name="l00437"></a><span class="lineno">  437</span>    }</div>
+</div>
+<div class="line"><a id="l00438" name="l00438"></a><span class="lineno">  438</span> </div>
+<div class="line"><a id="l00439" name="l00439"></a><span class="lineno">  439</span>    <span class="comment">// Iterators</span></div>
+<div class="foldopen" id="foldopen00445" data-start="{" data-end="}">
+<div class="line"><a id="l00445" name="l00445"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a91583eb0484c83a931b3c8a58f6ac5fc">  445</a></span>    iterator <a class="code hl_function" href="classqb_1_1string.html#a91583eb0484c83a931b3c8a58f6ac5fc">end</a>() noexcept {</div>
+<div class="line"><a id="l00446" name="l00446"></a><span class="lineno">  446</span>        <span class="keywordflow">return</span> base_t::begin() + _size;</div>
+<div class="line"><a id="l00447" name="l00447"></a><span class="lineno">  447</span>    }</div>
+</div>
+<div class="line"><a id="l00448" name="l00448"></a><span class="lineno">  448</span></div>
+<div class="foldopen" id="foldopen00454" data-start="{" data-end="}">
+<div class="line"><a id="l00454" name="l00454"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a7a34ab1d87489ce5617deb1ee5104290">  454</a></span>    const_iterator <a class="code hl_function" href="classqb_1_1string.html#a7a34ab1d87489ce5617deb1ee5104290">end</a>() const noexcept {</div>
+<div class="line"><a id="l00455" name="l00455"></a><span class="lineno">  455</span>        <span class="keywordflow">return</span> base_t::begin() + _size;</div>
+<div class="line"><a id="l00456" name="l00456"></a><span class="lineno">  456</span>    }</div>
+</div>
+<div class="line"><a id="l00457" name="l00457"></a><span class="lineno">  457</span></div>
+<div class="foldopen" id="foldopen00463" data-start="{" data-end="}">
+<div class="line"><a id="l00463" name="l00463"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ac52ec9924355fb8d20a82dc70003abeb">  463</a></span>    const_iterator <a class="code hl_function" href="classqb_1_1string.html#ac52ec9924355fb8d20a82dc70003abeb">cend</a>() const noexcept {</div>
+<div class="line"><a id="l00464" name="l00464"></a><span class="lineno">  464</span>        <span class="keywordflow">return</span> base_t::cbegin() + _size;</div>
+<div class="line"><a id="l00465" name="l00465"></a><span class="lineno">  465</span>    }</div>
+</div>
+<div class="line"><a id="l00466" name="l00466"></a><span class="lineno">  466</span></div>
+<div class="foldopen" id="foldopen00472" data-start="{" data-end="}">
+<div class="line"><a id="l00472" name="l00472"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a164f7f2be7e32b964d718f278b774c69">  472</a></span>    reverse_iterator <a class="code hl_function" href="classqb_1_1string.html#a164f7f2be7e32b964d718f278b774c69">rbegin</a>() noexcept {</div>
+<div class="line"><a id="l00473" name="l00473"></a><span class="lineno">  473</span>        <span class="keywordflow">return</span> std::reverse_iterator(<a class="code hl_function" href="classqb_1_1string.html#a91583eb0484c83a931b3c8a58f6ac5fc">end</a>());</div>
+<div class="line"><a id="l00474" name="l00474"></a><span class="lineno">  474</span>    }</div>
+</div>
+<div class="line"><a id="l00475" name="l00475"></a><span class="lineno">  475</span></div>
+<div class="foldopen" id="foldopen00481" data-start="{" data-end="}">
+<div class="line"><a id="l00481" name="l00481"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#aad195d5b3d73f46c1d0ba55f6bddfed3">  481</a></span>    const_reverse_iterator <a class="code hl_function" href="classqb_1_1string.html#aad195d5b3d73f46c1d0ba55f6bddfed3">rbegin</a>() const noexcept {</div>
+<div class="line"><a id="l00482" name="l00482"></a><span class="lineno">  482</span>        <span class="keywordflow">return</span> std::reverse_iterator(<a class="code hl_function" href="classqb_1_1string.html#a91583eb0484c83a931b3c8a58f6ac5fc">end</a>());</div>
+<div class="line"><a id="l00483" name="l00483"></a><span class="lineno">  483</span>    }</div>
+</div>
+<div class="line"><a id="l00484" name="l00484"></a><span class="lineno">  484</span></div>
+<div class="foldopen" id="foldopen00490" data-start="{" data-end="}">
+<div class="line"><a id="l00490" name="l00490"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a05258eef382276fd0cea4adc9cf4f2c7">  490</a></span>    const_reverse_iterator <a class="code hl_function" href="classqb_1_1string.html#a05258eef382276fd0cea4adc9cf4f2c7">crbegin</a>() const noexcept {</div>
+<div class="line"><a id="l00491" name="l00491"></a><span class="lineno">  491</span>        <span class="keywordflow">return</span> std::reverse_iterator(<a class="code hl_function" href="classqb_1_1string.html#ac52ec9924355fb8d20a82dc70003abeb">cend</a>());</div>
+<div class="line"><a id="l00492" name="l00492"></a><span class="lineno">  492</span>    }</div>
+</div>
+<div class="line"><a id="l00493" name="l00493"></a><span class="lineno">  493</span> </div>
+<div class="line"><a id="l00494" name="l00494"></a><span class="lineno">  494</span>    <span class="comment">// Capacity</span></div>
+<div class="foldopen" id="foldopen00500" data-start="{" data-end="}">
+<div class="line"><a id="l00500" name="l00500"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ac679837b523fde28519989515de95035">  500</a></span>    [[nodiscard]] <span class="keyword">constexpr</span> <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#ac679837b523fde28519989515de95035">empty</a>() const noexcept {</div>
+<div class="line"><a id="l00501" name="l00501"></a><span class="lineno">  501</span>        <span class="keywordflow">return</span> _size == 0;</div>
+<div class="line"><a id="l00502" name="l00502"></a><span class="lineno">  502</span>    }</div>
+</div>
+<div class="line"><a id="l00503" name="l00503"></a><span class="lineno">  503</span></div>
+<div class="foldopen" id="foldopen00509" data-start="{" data-end="}">
+<div class="line"><a id="l00509" name="l00509"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ae7c38507747dcf089860b62550fef8ce">  509</a></span>    [[nodiscard]] <span class="keyword">constexpr</span> std::size_t <a class="code hl_function" href="classqb_1_1string.html#ae7c38507747dcf089860b62550fef8ce">size</a>() const noexcept {</div>
+<div class="line"><a id="l00510" name="l00510"></a><span class="lineno">  510</span>        <span class="keywordflow">return</span> _size;</div>
+<div class="line"><a id="l00511" name="l00511"></a><span class="lineno">  511</span>    }</div>
+</div>
+<div class="line"><a id="l00512" name="l00512"></a><span class="lineno">  512</span></div>
+<div class="foldopen" id="foldopen00518" data-start="{" data-end="}">
+<div class="line"><a id="l00518" name="l00518"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a8c9493d214b023e9a68522ca9c6c2359">  518</a></span>    [[nodiscard]] <span class="keyword">constexpr</span> std::size_t <a class="code hl_function" href="classqb_1_1string.html#a8c9493d214b023e9a68522ca9c6c2359">length</a>() const noexcept {</div>
+<div class="line"><a id="l00519" name="l00519"></a><span class="lineno">  519</span>        <span class="keywordflow">return</span> _size;</div>
+<div class="line"><a id="l00520" name="l00520"></a><span class="lineno">  520</span>    }</div>
+</div>
+<div class="line"><a id="l00521" name="l00521"></a><span class="lineno">  521</span></div>
+<div class="foldopen" id="foldopen00527" data-start="{" data-end="}">
+<div class="line"><a id="l00527" name="l00527"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ade75d0a774dc4ba6da26f4006f97c819">  527</a></span>    [[nodiscard]] <span class="keyword">constexpr</span> std::size_t <a class="code hl_function" href="classqb_1_1string.html#ade75d0a774dc4ba6da26f4006f97c819">max_size</a>() const noexcept {</div>
+<div class="line"><a id="l00528" name="l00528"></a><span class="lineno">  528</span>        <span class="keywordflow">return</span> _Size;</div>
+<div class="line"><a id="l00529" name="l00529"></a><span class="lineno">  529</span>    }</div>
+</div>
+<div class="line"><a id="l00530" name="l00530"></a><span class="lineno">  530</span></div>
+<div class="foldopen" id="foldopen00536" data-start="{" data-end="}">
+<div class="line"><a id="l00536" name="l00536"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a3408d6cccb9ab95c0623fd96eb287aee">  536</a></span>    [[nodiscard]] <span class="keyword">constexpr</span> std::size_t <a class="code hl_function" href="classqb_1_1string.html#a3408d6cccb9ab95c0623fd96eb287aee">capacity</a>() const noexcept {</div>
+<div class="line"><a id="l00537" name="l00537"></a><span class="lineno">  537</span>        <span class="keywordflow">return</span> _Size;</div>
+<div class="line"><a id="l00538" name="l00538"></a><span class="lineno">  538</span>    }</div>
+</div>
+<div class="line"><a id="l00539" name="l00539"></a><span class="lineno">  539</span> </div>
+<div class="line"><a id="l00540" name="l00540"></a><span class="lineno">  540</span>    <span class="comment">// Operations</span></div>
+<div class="foldopen" id="foldopen00546" data-start="{" data-end="}">
+<div class="line"><a id="l00546" name="l00546"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ad8227a73b3003898c2d9f59aee5a62fe">  546</a></span>    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1string.html#ad8227a73b3003898c2d9f59aee5a62fe">clear</a>() noexcept {</div>
+<div class="line"><a id="l00547" name="l00547"></a><span class="lineno">  547</span>        *base_t::begin() = <span class="charliteral">&#39;\0&#39;</span>;</div>
+<div class="line"><a id="l00548" name="l00548"></a><span class="lineno">  548</span>        _size = 0;</div>
+<div class="line"><a id="l00549" name="l00549"></a><span class="lineno">  549</span>    }</div>
+</div>
+<div class="line"><a id="l00550" name="l00550"></a><span class="lineno">  550</span></div>
+<div class="foldopen" id="foldopen00557" data-start="{" data-end="}">
+<div class="line"><a id="l00557" name="l00557"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a71538b149105cf1f042441b431f4abca">  557</a></span>    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1string.html#a71538b149105cf1f042441b431f4abca">resize</a>(std::size_t count, <span class="keywordtype">char</span> ch = <span class="charliteral">&#39;\0&#39;</span>) noexcept {</div>
+<div class="line"><a id="l00558" name="l00558"></a><span class="lineno">  558</span>        count = std::min(count, <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(_Size));</div>
+<div class="line"><a id="l00559" name="l00559"></a><span class="lineno">  559</span>        </div>
+<div class="line"><a id="l00560" name="l00560"></a><span class="lineno">  560</span>        <span class="keywordflow">if</span> (count &gt; _size) {</div>
+<div class="line"><a id="l00561" name="l00561"></a><span class="lineno">  561</span>            std::fill(base_t::data() + _size, base_t::data() + count, ch);</div>
+<div class="line"><a id="l00562" name="l00562"></a><span class="lineno">  562</span>        }</div>
+<div class="line"><a id="l00563" name="l00563"></a><span class="lineno">  563</span>        </div>
+<div class="line"><a id="l00564" name="l00564"></a><span class="lineno">  564</span>        _size = <span class="keyword">static_cast&lt;</span>size_type<span class="keyword">&gt;</span>(count);</div>
+<div class="line"><a id="l00565" name="l00565"></a><span class="lineno">  565</span>        base_t::data()[_size] = <span class="charliteral">&#39;\0&#39;</span>;</div>
+<div class="line"><a id="l00566" name="l00566"></a><span class="lineno">  566</span>    }</div>
+</div>
+<div class="line"><a id="l00567" name="l00567"></a><span class="lineno">  567</span></div>
+<div class="foldopen" id="foldopen00573" data-start="{" data-end="}">
+<div class="line"><a id="l00573" name="l00573"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ae1b1c6bf4376fbf5dba9cae5d0f79d71">  573</a></span>    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1string.html#ae1b1c6bf4376fbf5dba9cae5d0f79d71">swap</a>(<span class="keywordtype">string</span>&amp; other) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00574" name="l00574"></a><span class="lineno">  574</span>        base_t temp_data = *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00575" name="l00575"></a><span class="lineno">  575</span>        size_type temp_size = _size;</div>
+<div class="line"><a id="l00576" name="l00576"></a><span class="lineno">  576</span>        </div>
+<div class="line"><a id="l00577" name="l00577"></a><span class="lineno">  577</span>        *<span class="keyword">this</span> = other;</div>
+<div class="line"><a id="l00578" name="l00578"></a><span class="lineno">  578</span>        _size = other._size;</div>
+<div class="line"><a id="l00579" name="l00579"></a><span class="lineno">  579</span>        </div>
+<div class="line"><a id="l00580" name="l00580"></a><span class="lineno">  580</span>        other = temp_data;</div>
+<div class="line"><a id="l00581" name="l00581"></a><span class="lineno">  581</span>        other._size = temp_size;</div>
+<div class="line"><a id="l00582" name="l00582"></a><span class="lineno">  582</span>    }</div>
+</div>
+<div class="line"><a id="l00583" name="l00583"></a><span class="lineno">  583</span> </div>
+<div class="line"><a id="l00584" name="l00584"></a><span class="lineno">  584</span>    <span class="comment">// String operations</span></div>
+<div class="foldopen" id="foldopen00592" data-start="{" data-end="}">
+<div class="line"><a id="l00592" name="l00592"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ae8cb89802141a2035ff68e03e42d6893">  592</a></span>    <span class="keywordtype">string</span> <a class="code hl_function" href="classqb_1_1string.html#ae8cb89802141a2035ff68e03e42d6893">substr</a>(std::size_t pos = 0, std::size_t len = npos)<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00593" name="l00593"></a><span class="lineno">  593</span>        <span class="keywordflow">if</span> (pos &gt; _size) {</div>
+<div class="line"><a id="l00594" name="l00594"></a><span class="lineno">  594</span>            <span class="keywordflow">throw</span> std::out_of_range(<span class="stringliteral">&quot;qb::string::substr: position out of range&quot;</span>);</div>
+<div class="line"><a id="l00595" name="l00595"></a><span class="lineno">  595</span>        }</div>
+<div class="line"><a id="l00596" name="l00596"></a><span class="lineno">  596</span>        </div>
+<div class="line"><a id="l00597" name="l00597"></a><span class="lineno">  597</span>        std::size_t actual_len = std::min(len, _size - pos);</div>
+<div class="line"><a id="l00598" name="l00598"></a><span class="lineno">  598</span>        <span class="keywordtype">string</span> result;</div>
+<div class="line"><a id="l00599" name="l00599"></a><span class="lineno">  599</span>        result.<a class="code hl_function" href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">assign</a>(base_t::data() + pos, actual_len);</div>
+<div class="line"><a id="l00600" name="l00600"></a><span class="lineno">  600</span>        <span class="keywordflow">return</span> result;</div>
+<div class="line"><a id="l00601" name="l00601"></a><span class="lineno">  601</span>    }</div>
+</div>
+<div class="line"><a id="l00602" name="l00602"></a><span class="lineno">  602</span></div>
+<div class="foldopen" id="foldopen00609" data-start="{" data-end="}">
+<div class="line"><a id="l00609" name="l00609"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#adac05118d6d9f5db7f2be9ab564d848f">  609</a></span>    <span class="keywordtype">int</span> <a class="code hl_function" href="classqb_1_1string.html#adac05118d6d9f5db7f2be9ab564d848f">compare</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; str) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00610" name="l00610"></a><span class="lineno">  610</span>        <span class="keywordflow">return</span> std::strcmp(base_t::data(), str.c_str());</div>
+<div class="line"><a id="l00611" name="l00611"></a><span class="lineno">  611</span>    }</div>
+</div>
+<div class="line"><a id="l00612" name="l00612"></a><span class="lineno">  612</span></div>
+<div class="foldopen" id="foldopen00619" data-start="{" data-end="}">
+<div class="line"><a id="l00619" name="l00619"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#aaad4b4c3919891a26eedc0203fb8030c">  619</a></span>    <span class="keywordtype">int</span> <a class="code hl_function" href="classqb_1_1string.html#aaad4b4c3919891a26eedc0203fb8030c">compare</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* str) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00620" name="l00620"></a><span class="lineno">  620</span>        <span class="keywordflow">return</span> std::strcmp(base_t::data(), str);</div>
+<div class="line"><a id="l00621" name="l00621"></a><span class="lineno">  621</span>    }</div>
+</div>
+<div class="line"><a id="l00622" name="l00622"></a><span class="lineno">  622</span></div>
+<div class="foldopen" id="foldopen00631" data-start="{" data-end="}">
+<div class="line"><a id="l00631" name="l00631"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ac4a240d444bb31fb48cc8fe46bedbe94">  631</a></span>    <span class="keywordtype">int</span> <a class="code hl_function" href="classqb_1_1string.html#ac4a240d444bb31fb48cc8fe46bedbe94">compare</a>(std::size_t pos, std::size_t len, <span class="keyword">const</span> <span class="keywordtype">string</span>&amp; str)<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00632" name="l00632"></a><span class="lineno">  632</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#ae8cb89802141a2035ff68e03e42d6893">substr</a>(pos, len).compare(str);</div>
+<div class="line"><a id="l00633" name="l00633"></a><span class="lineno">  633</span>    }</div>
+</div>
+<div class="line"><a id="l00634" name="l00634"></a><span class="lineno">  634</span> </div>
+<div class="line"><a id="l00635" name="l00635"></a><span class="lineno">  635</span>    <span class="comment">// Search operations</span></div>
+<div class="foldopen" id="foldopen00643" data-start="{" data-end="}">
+<div class="line"><a id="l00643" name="l00643"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a480fb218f7db15909e3a1fb7a242a955">  643</a></span>    std::size_t <a class="code hl_function" href="classqb_1_1string.html#a480fb218f7db15909e3a1fb7a242a955">find</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; str, std::size_t pos = 0) const noexcept {</div>
+<div class="line"><a id="l00644" name="l00644"></a><span class="lineno">  644</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#a480fb218f7db15909e3a1fb7a242a955">find</a>(str.<a class="code hl_function" href="classqb_1_1string.html#acf7ddd96ca52f80dd15e4a95b3b54c11">c_str</a>(), pos);</div>
+<div class="line"><a id="l00645" name="l00645"></a><span class="lineno">  645</span>    }</div>
+</div>
+<div class="line"><a id="l00646" name="l00646"></a><span class="lineno">  646</span></div>
+<div class="foldopen" id="foldopen00654" data-start="{" data-end="}">
+<div class="line"><a id="l00654" name="l00654"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#aa3dfb1f022acac99bed8b045f2356069">  654</a></span>    std::size_t <a class="code hl_function" href="classqb_1_1string.html#aa3dfb1f022acac99bed8b045f2356069">find</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* str, std::size_t pos = 0) const noexcept {</div>
+<div class="line"><a id="l00655" name="l00655"></a><span class="lineno">  655</span>        <span class="keywordflow">if</span> (pos &gt;= _size) <span class="keywordflow">return</span> npos;</div>
+<div class="line"><a id="l00656" name="l00656"></a><span class="lineno">  656</span>        </div>
+<div class="line"><a id="l00657" name="l00657"></a><span class="lineno">  657</span>        <span class="keyword">const</span> <span class="keywordtype">char</span>* result = std::strstr(base_t::data() + pos, str);</div>
+<div class="line"><a id="l00658" name="l00658"></a><span class="lineno">  658</span>        <span class="keywordflow">return</span> result ? <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(result - base_t::data()) : npos;</div>
+<div class="line"><a id="l00659" name="l00659"></a><span class="lineno">  659</span>    }</div>
+</div>
+<div class="line"><a id="l00660" name="l00660"></a><span class="lineno">  660</span></div>
+<div class="foldopen" id="foldopen00668" data-start="{" data-end="}">
+<div class="line"><a id="l00668" name="l00668"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ab5453c246d74cfce52c84a5dabcbb908">  668</a></span>    std::size_t <a class="code hl_function" href="classqb_1_1string.html#ab5453c246d74cfce52c84a5dabcbb908">find</a>(<span class="keywordtype">char</span> ch, std::size_t pos = 0) const noexcept {</div>
+<div class="line"><a id="l00669" name="l00669"></a><span class="lineno">  669</span>        <span class="keywordflow">if</span> (pos &gt;= _size) <span class="keywordflow">return</span> npos;</div>
+<div class="line"><a id="l00670" name="l00670"></a><span class="lineno">  670</span>        </div>
+<div class="line"><a id="l00671" name="l00671"></a><span class="lineno">  671</span>        <span class="keyword">const</span> <span class="keywordtype">char</span>* result = std::strchr(base_t::data() + pos, ch);</div>
+<div class="line"><a id="l00672" name="l00672"></a><span class="lineno">  672</span>        <span class="keywordflow">return</span> (result &amp;&amp; result &lt; base_t::data() + _size) ? </div>
+<div class="line"><a id="l00673" name="l00673"></a><span class="lineno">  673</span>               <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(result - base_t::data()) : npos;</div>
+<div class="line"><a id="l00674" name="l00674"></a><span class="lineno">  674</span>    }</div>
+</div>
+<div class="line"><a id="l00675" name="l00675"></a><span class="lineno">  675</span></div>
+<div class="foldopen" id="foldopen00683" data-start="{" data-end="}">
+<div class="line"><a id="l00683" name="l00683"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a9ab681959de4af0c0c7f671b29b5eaba">  683</a></span>    std::size_t <a class="code hl_function" href="classqb_1_1string.html#a9ab681959de4af0c0c7f671b29b5eaba">rfind</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* str, std::size_t pos = npos) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00684" name="l00684"></a><span class="lineno">  684</span>        std::size_t str_len = std::strlen(str);</div>
+<div class="line"><a id="l00685" name="l00685"></a><span class="lineno">  685</span>        <span class="keywordflow">if</span> (str_len &gt; _size) <span class="keywordflow">return</span> npos;</div>
+<div class="line"><a id="l00686" name="l00686"></a><span class="lineno">  686</span>        </div>
+<div class="line"><a id="l00687" name="l00687"></a><span class="lineno">  687</span>        std::size_t start = std::min(pos, _size - str_len);</div>
+<div class="line"><a id="l00688" name="l00688"></a><span class="lineno">  688</span>        </div>
+<div class="line"><a id="l00689" name="l00689"></a><span class="lineno">  689</span>        <span class="keywordflow">for</span> (std::size_t i = start + 1; i &gt; 0; --i) {</div>
+<div class="line"><a id="l00690" name="l00690"></a><span class="lineno">  690</span>            <span class="keywordflow">if</span> (std::strncmp(base_t::data() + i - 1, str, str_len) == 0) {</div>
+<div class="line"><a id="l00691" name="l00691"></a><span class="lineno">  691</span>                <span class="keywordflow">return</span> i - 1;</div>
+<div class="line"><a id="l00692" name="l00692"></a><span class="lineno">  692</span>            }</div>
+<div class="line"><a id="l00693" name="l00693"></a><span class="lineno">  693</span>        }</div>
+<div class="line"><a id="l00694" name="l00694"></a><span class="lineno">  694</span>        <span class="keywordflow">return</span> npos;</div>
+<div class="line"><a id="l00695" name="l00695"></a><span class="lineno">  695</span>    }</div>
+</div>
+<div class="line"><a id="l00696" name="l00696"></a><span class="lineno">  696</span></div>
+<div class="foldopen" id="foldopen00704" data-start="{" data-end="}">
+<div class="line"><a id="l00704" name="l00704"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a4ff3a7486d796c6412c85972000c4682">  704</a></span>    std::size_t <a class="code hl_function" href="classqb_1_1string.html#a4ff3a7486d796c6412c85972000c4682">rfind</a>(<span class="keywordtype">char</span> ch, std::size_t pos = npos) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00705" name="l00705"></a><span class="lineno">  705</span>        <span class="keywordflow">if</span> (_size == 0) <span class="keywordflow">return</span> npos;</div>
+<div class="line"><a id="l00706" name="l00706"></a><span class="lineno">  706</span>        </div>
+<div class="line"><a id="l00707" name="l00707"></a><span class="lineno">  707</span>        std::size_t start = std::min(pos, <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(_size - 1));</div>
+<div class="line"><a id="l00708" name="l00708"></a><span class="lineno">  708</span>        </div>
+<div class="line"><a id="l00709" name="l00709"></a><span class="lineno">  709</span>        <span class="keywordflow">for</span> (std::size_t i = start + 1; i &gt; 0; --i) {</div>
+<div class="line"><a id="l00710" name="l00710"></a><span class="lineno">  710</span>            <span class="keywordflow">if</span> (base_t::data()[i - 1] == ch) {</div>
+<div class="line"><a id="l00711" name="l00711"></a><span class="lineno">  711</span>                <span class="keywordflow">return</span> i - 1;</div>
+<div class="line"><a id="l00712" name="l00712"></a><span class="lineno">  712</span>            }</div>
+<div class="line"><a id="l00713" name="l00713"></a><span class="lineno">  713</span>        }</div>
+<div class="line"><a id="l00714" name="l00714"></a><span class="lineno">  714</span>        <span class="keywordflow">return</span> npos;</div>
+<div class="line"><a id="l00715" name="l00715"></a><span class="lineno">  715</span>    }</div>
+</div>
+<div class="line"><a id="l00716" name="l00716"></a><span class="lineno">  716</span> </div>
+<div class="line"><a id="l00717" name="l00717"></a><span class="lineno">  717</span>    <span class="comment">// Modifiers</span></div>
+<div class="foldopen" id="foldopen00724" data-start="{" data-end="}">
+<div class="line"><a id="l00724" name="l00724"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">  724</a></span>    <span class="keywordtype">string</span>&amp; <a class="code hl_function" href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">append</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; str) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00725" name="l00725"></a><span class="lineno">  725</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">append</a>(str.c_str(), str.size());</div>
+<div class="line"><a id="l00726" name="l00726"></a><span class="lineno">  726</span>    }</div>
+</div>
+<div class="line"><a id="l00727" name="l00727"></a><span class="lineno">  727</span></div>
+<div class="foldopen" id="foldopen00734" data-start="{" data-end="}">
+<div class="line"><a id="l00734" name="l00734"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ae471c22916a5e37bcc60aedfa616dd54">  734</a></span>    <span class="keywordtype">string</span>&amp; <a class="code hl_function" href="classqb_1_1string.html#ae471c22916a5e37bcc60aedfa616dd54">append</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* str) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00735" name="l00735"></a><span class="lineno">  735</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">append</a>(str, std::strlen(str));</div>
+<div class="line"><a id="l00736" name="l00736"></a><span class="lineno">  736</span>    }</div>
+</div>
+<div class="line"><a id="l00737" name="l00737"></a><span class="lineno">  737</span></div>
+<div class="foldopen" id="foldopen00745" data-start="{" data-end="}">
+<div class="line"><a id="l00745" name="l00745"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a344a962cd39831ff21a3c8b01580c64d">  745</a></span>    <span class="keywordtype">string</span>&amp; <a class="code hl_function" href="classqb_1_1string.html#a344a962cd39831ff21a3c8b01580c64d">append</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* str, std::size_t len) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00746" name="l00746"></a><span class="lineno">  746</span>        std::size_t new_size = std::min(_size + len, <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(_Size));</div>
+<div class="line"><a id="l00747" name="l00747"></a><span class="lineno">  747</span>        std::size_t actual_len = new_size - _size;</div>
+<div class="line"><a id="l00748" name="l00748"></a><span class="lineno">  748</span>        </div>
+<div class="line"><a id="l00749" name="l00749"></a><span class="lineno">  749</span>        std::memcpy(base_t::data() + _size, str, actual_len);</div>
+<div class="line"><a id="l00750" name="l00750"></a><span class="lineno">  750</span>        _size = <span class="keyword">static_cast&lt;</span>size_type<span class="keyword">&gt;</span>(new_size);</div>
+<div class="line"><a id="l00751" name="l00751"></a><span class="lineno">  751</span>        base_t::data()[_size] = <span class="charliteral">&#39;\0&#39;</span>;</div>
+<div class="line"><a id="l00752" name="l00752"></a><span class="lineno">  752</span>        </div>
+<div class="line"><a id="l00753" name="l00753"></a><span class="lineno">  753</span>        <span class="keywordflow">return</span> *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00754" name="l00754"></a><span class="lineno">  754</span>    }</div>
+</div>
+<div class="line"><a id="l00755" name="l00755"></a><span class="lineno">  755</span></div>
+<div class="foldopen" id="foldopen00762" data-start="{" data-end="}">
+<div class="line"><a id="l00762" name="l00762"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a904f7d3d397ab2aa880075d3cd079d03">  762</a></span>    <span class="keywordtype">string</span>&amp; <a class="code hl_function" href="classqb_1_1string.html#a904f7d3d397ab2aa880075d3cd079d03">append</a>(<span class="keywordtype">char</span> ch) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00763" name="l00763"></a><span class="lineno">  763</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">append</a>(1, ch);</div>
+<div class="line"><a id="l00764" name="l00764"></a><span class="lineno">  764</span>    }</div>
+</div>
+<div class="line"><a id="l00765" name="l00765"></a><span class="lineno">  765</span></div>
+<div class="foldopen" id="foldopen00773" data-start="{" data-end="}">
+<div class="line"><a id="l00773" name="l00773"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a3dcb1474a5077b31e182a84090afe3d8">  773</a></span>    <span class="keywordtype">string</span>&amp; <a class="code hl_function" href="classqb_1_1string.html#a3dcb1474a5077b31e182a84090afe3d8">append</a>(std::size_t count, <span class="keywordtype">char</span> ch) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00774" name="l00774"></a><span class="lineno">  774</span>        std::size_t new_size = std::min(_size + count, <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(_Size));</div>
+<div class="line"><a id="l00775" name="l00775"></a><span class="lineno">  775</span>        std::size_t actual_count = new_size - _size;</div>
+<div class="line"><a id="l00776" name="l00776"></a><span class="lineno">  776</span>        </div>
+<div class="line"><a id="l00777" name="l00777"></a><span class="lineno">  777</span>        std::fill_n(base_t::data() + _size, actual_count, ch);</div>
+<div class="line"><a id="l00778" name="l00778"></a><span class="lineno">  778</span>        _size = <span class="keyword">static_cast&lt;</span>size_type<span class="keyword">&gt;</span>(new_size);</div>
+<div class="line"><a id="l00779" name="l00779"></a><span class="lineno">  779</span>        base_t::data()[_size] = <span class="charliteral">&#39;\0&#39;</span>;</div>
+<div class="line"><a id="l00780" name="l00780"></a><span class="lineno">  780</span>        </div>
+<div class="line"><a id="l00781" name="l00781"></a><span class="lineno">  781</span>        <span class="keywordflow">return</span> *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00782" name="l00782"></a><span class="lineno">  782</span>    }</div>
+</div>
+<div class="line"><a id="l00783" name="l00783"></a><span class="lineno">  783</span></div>
+<div class="foldopen" id="foldopen00789" data-start="{" data-end="}">
+<div class="line"><a id="l00789" name="l00789"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a4b60964c28383ade551093b7b548e3c4">  789</a></span>    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1string.html#a4b60964c28383ade551093b7b548e3c4">push_back</a>(<span class="keywordtype">char</span> ch) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00790" name="l00790"></a><span class="lineno">  790</span>        <span class="keywordflow">if</span> (_size &lt; _Size) {</div>
+<div class="line"><a id="l00791" name="l00791"></a><span class="lineno">  791</span>            base_t::data()[_size] = ch;</div>
+<div class="line"><a id="l00792" name="l00792"></a><span class="lineno">  792</span>            ++_size;</div>
+<div class="line"><a id="l00793" name="l00793"></a><span class="lineno">  793</span>            base_t::data()[_size] = <span class="charliteral">&#39;\0&#39;</span>;</div>
+<div class="line"><a id="l00794" name="l00794"></a><span class="lineno">  794</span>        }</div>
+<div class="line"><a id="l00795" name="l00795"></a><span class="lineno">  795</span>    }</div>
+</div>
+<div class="line"><a id="l00796" name="l00796"></a><span class="lineno">  796</span></div>
+<div class="foldopen" id="foldopen00800" data-start="{" data-end="}">
+<div class="line"><a id="l00800" name="l00800"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a008a34c84cc018d18e0ddcb4b8acc2a7">  800</a></span>    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1string.html#a008a34c84cc018d18e0ddcb4b8acc2a7">pop_back</a>() noexcept {</div>
+<div class="line"><a id="l00801" name="l00801"></a><span class="lineno">  801</span>        <span class="keywordflow">if</span> (_size &gt; 0) {</div>
+<div class="line"><a id="l00802" name="l00802"></a><span class="lineno">  802</span>            --_size;</div>
+<div class="line"><a id="l00803" name="l00803"></a><span class="lineno">  803</span>            base_t::data()[_size] = <span class="charliteral">&#39;\0&#39;</span>;</div>
+<div class="line"><a id="l00804" name="l00804"></a><span class="lineno">  804</span>        }</div>
+<div class="line"><a id="l00805" name="l00805"></a><span class="lineno">  805</span>    }</div>
+</div>
+<div class="line"><a id="l00806" name="l00806"></a><span class="lineno">  806</span></div>
+<div class="foldopen" id="foldopen00813" data-start="{" data-end="}">
+<div class="line"><a id="l00813" name="l00813"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a8c6b9593daf63512d4644c41350776f2">  813</a></span>    <span class="keywordtype">string</span>&amp; <a class="code hl_function" href="classqb_1_1string.html#a8c6b9593daf63512d4644c41350776f2">operator+=</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; str) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00814" name="l00814"></a><span class="lineno">  814</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">append</a>(str);</div>
+<div class="line"><a id="l00815" name="l00815"></a><span class="lineno">  815</span>    }</div>
+</div>
+<div class="line"><a id="l00816" name="l00816"></a><span class="lineno">  816</span></div>
+<div class="foldopen" id="foldopen00823" data-start="{" data-end="}">
+<div class="line"><a id="l00823" name="l00823"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a44034056bbb65494d23e5a7678d5da22">  823</a></span>    <span class="keywordtype">string</span>&amp; <a class="code hl_function" href="classqb_1_1string.html#a44034056bbb65494d23e5a7678d5da22">operator+=</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* str) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00824" name="l00824"></a><span class="lineno">  824</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">append</a>(str);</div>
+<div class="line"><a id="l00825" name="l00825"></a><span class="lineno">  825</span>    }</div>
+</div>
+<div class="line"><a id="l00826" name="l00826"></a><span class="lineno">  826</span></div>
+<div class="foldopen" id="foldopen00833" data-start="{" data-end="}">
+<div class="line"><a id="l00833" name="l00833"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a811af4134e4d039321ed5e857fcde4b5">  833</a></span>    <span class="keywordtype">string</span>&amp; <a class="code hl_function" href="classqb_1_1string.html#a811af4134e4d039321ed5e857fcde4b5">operator+=</a>(<span class="keywordtype">char</span> ch) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00834" name="l00834"></a><span class="lineno">  834</span>        <a class="code hl_function" href="classqb_1_1string.html#a4b60964c28383ade551093b7b548e3c4">push_back</a>(ch);</div>
+<div class="line"><a id="l00835" name="l00835"></a><span class="lineno">  835</span>        <span class="keywordflow">return</span> *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00836" name="l00836"></a><span class="lineno">  836</span>    }</div>
+</div>
+<div class="line"><a id="l00837" name="l00837"></a><span class="lineno">  837</span> </div>
+<div class="line"><a id="l00838" name="l00838"></a><span class="lineno">  838</span>    <span class="comment">// C++20 features</span></div>
+<div class="foldopen" id="foldopen00845" data-start="{" data-end="}">
+<div class="line"><a id="l00845" name="l00845"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#acd94735e8db432ec3eead4c1a56960c6">  845</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#acd94735e8db432ec3eead4c1a56960c6">starts_with</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* prefix) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00846" name="l00846"></a><span class="lineno">  846</span>        std::size_t prefix_len = std::strlen(prefix);</div>
+<div class="line"><a id="l00847" name="l00847"></a><span class="lineno">  847</span>        <span class="keywordflow">return</span> _size &gt;= prefix_len &amp;&amp; std::strncmp(base_t::data(), prefix, prefix_len) == 0;</div>
+<div class="line"><a id="l00848" name="l00848"></a><span class="lineno">  848</span>    }</div>
+</div>
+<div class="line"><a id="l00849" name="l00849"></a><span class="lineno">  849</span></div>
+<div class="foldopen" id="foldopen00856" data-start="{" data-end="}">
+<div class="line"><a id="l00856" name="l00856"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#aa8c3cdc1b4c914465bdeb4a5eca753ae">  856</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#aa8c3cdc1b4c914465bdeb4a5eca753ae">starts_with</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; prefix) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00857" name="l00857"></a><span class="lineno">  857</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#acd94735e8db432ec3eead4c1a56960c6">starts_with</a>(prefix.c_str());</div>
+<div class="line"><a id="l00858" name="l00858"></a><span class="lineno">  858</span>    }</div>
+</div>
+<div class="line"><a id="l00859" name="l00859"></a><span class="lineno">  859</span></div>
+<div class="foldopen" id="foldopen00866" data-start="{" data-end="}">
+<div class="line"><a id="l00866" name="l00866"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a4d60d27d387cd9ecfc8544ba0a5fa748">  866</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a4d60d27d387cd9ecfc8544ba0a5fa748">starts_with</a>(<span class="keywordtype">char</span> ch) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00867" name="l00867"></a><span class="lineno">  867</span>        <span class="keywordflow">return</span> _size &gt; 0 &amp;&amp; base_t::data()[0] == ch;</div>
+<div class="line"><a id="l00868" name="l00868"></a><span class="lineno">  868</span>    }</div>
+</div>
+<div class="line"><a id="l00869" name="l00869"></a><span class="lineno">  869</span></div>
+<div class="foldopen" id="foldopen00876" data-start="{" data-end="}">
+<div class="line"><a id="l00876" name="l00876"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#aa45a111308216fdc54ecc4845924f876">  876</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#aa45a111308216fdc54ecc4845924f876">ends_with</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* suffix) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00877" name="l00877"></a><span class="lineno">  877</span>        std::size_t suffix_len = std::strlen(suffix);</div>
+<div class="line"><a id="l00878" name="l00878"></a><span class="lineno">  878</span>        <span class="keywordflow">return</span> _size &gt;= suffix_len &amp;&amp; </div>
+<div class="line"><a id="l00879" name="l00879"></a><span class="lineno">  879</span>               std::strncmp(base_t::data() + _size - suffix_len, suffix, suffix_len) == 0;</div>
+<div class="line"><a id="l00880" name="l00880"></a><span class="lineno">  880</span>    }</div>
+</div>
+<div class="line"><a id="l00881" name="l00881"></a><span class="lineno">  881</span></div>
+<div class="foldopen" id="foldopen00888" data-start="{" data-end="}">
+<div class="line"><a id="l00888" name="l00888"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a1bc87fccb79294469f91aee4d67d04fb">  888</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a1bc87fccb79294469f91aee4d67d04fb">ends_with</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; suffix) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00889" name="l00889"></a><span class="lineno">  889</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#aa45a111308216fdc54ecc4845924f876">ends_with</a>(suffix.c_str());</div>
+<div class="line"><a id="l00890" name="l00890"></a><span class="lineno">  890</span>    }</div>
+</div>
+<div class="line"><a id="l00891" name="l00891"></a><span class="lineno">  891</span></div>
+<div class="foldopen" id="foldopen00898" data-start="{" data-end="}">
+<div class="line"><a id="l00898" name="l00898"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a82759010d8037b240e01c4db2593951b">  898</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a82759010d8037b240e01c4db2593951b">ends_with</a>(<span class="keywordtype">char</span> ch) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00899" name="l00899"></a><span class="lineno">  899</span>        <span class="keywordflow">return</span> _size &gt; 0 &amp;&amp; base_t::data()[_size - 1] == ch;</div>
+<div class="line"><a id="l00900" name="l00900"></a><span class="lineno">  900</span>    }</div>
+</div>
+<div class="line"><a id="l00901" name="l00901"></a><span class="lineno">  901</span></div>
+<div class="foldopen" id="foldopen00908" data-start="{" data-end="}">
+<div class="line"><a id="l00908" name="l00908"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a21ab47dfe7e7170c2ba32985b1e740a9">  908</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a21ab47dfe7e7170c2ba32985b1e740a9">contains</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* str) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00909" name="l00909"></a><span class="lineno">  909</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#a480fb218f7db15909e3a1fb7a242a955">find</a>(str) != npos;</div>
+<div class="line"><a id="l00910" name="l00910"></a><span class="lineno">  910</span>    }</div>
+</div>
+<div class="line"><a id="l00911" name="l00911"></a><span class="lineno">  911</span></div>
+<div class="foldopen" id="foldopen00918" data-start="{" data-end="}">
+<div class="line"><a id="l00918" name="l00918"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a914f95d6280c1d20307dc097620756d1">  918</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a914f95d6280c1d20307dc097620756d1">contains</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; str) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00919" name="l00919"></a><span class="lineno">  919</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#a480fb218f7db15909e3a1fb7a242a955">find</a>(str) != npos;</div>
+<div class="line"><a id="l00920" name="l00920"></a><span class="lineno">  920</span>    }</div>
+</div>
+<div class="line"><a id="l00921" name="l00921"></a><span class="lineno">  921</span></div>
+<div class="foldopen" id="foldopen00928" data-start="{" data-end="}">
+<div class="line"><a id="l00928" name="l00928"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a5f85e5e2f1d6d6d6c5dfaae4a70d87df">  928</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a5f85e5e2f1d6d6d6c5dfaae4a70d87df">contains</a>(<span class="keywordtype">char</span> ch) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00929" name="l00929"></a><span class="lineno">  929</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#a480fb218f7db15909e3a1fb7a242a955">find</a>(ch) != npos;</div>
+<div class="line"><a id="l00930" name="l00930"></a><span class="lineno">  930</span>    }</div>
+</div>
+<div class="line"><a id="l00931" name="l00931"></a><span class="lineno">  931</span> </div>
+<div class="line"><a id="l00932" name="l00932"></a><span class="lineno">  932</span>    <span class="comment">// Comparison operators</span></div>
+<div class="line"><a id="l00940" name="l00940"></a><span class="lineno">  940</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="foldopen" id="foldopen00941" data-start="{" data-end="}">
+<div class="line"><a id="l00941" name="l00941"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#aae134e29cdffb4aa3f499db1fc665ca4">  941</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#aae134e29cdffb4aa3f499db1fc665ca4">operator==</a>(T <span class="keyword">const</span> &amp;rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00942" name="l00942"></a><span class="lineno">  942</span>        <span class="keywordflow">return</span> rhs == base_t::data();</div>
+<div class="line"><a id="l00943" name="l00943"></a><span class="lineno">  943</span>    }</div>
+</div>
+<div class="line"><a id="l00944" name="l00944"></a><span class="lineno">  944</span></div>
+<div class="foldopen" id="foldopen00951" data-start="{" data-end="}">
+<div class="line"><a id="l00951" name="l00951"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#ae28a3369d0a3a5dc535e40e0611866c6">  951</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#ae28a3369d0a3a5dc535e40e0611866c6">operator==</a>(<span class="keywordtype">char</span> <span class="keyword">const</span> *rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00952" name="l00952"></a><span class="lineno">  952</span>        <span class="keywordflow">return</span> std::strcmp(base_t::data(), rhs) == 0;</div>
+<div class="line"><a id="l00953" name="l00953"></a><span class="lineno">  953</span>    }</div>
+</div>
+<div class="line"><a id="l00954" name="l00954"></a><span class="lineno">  954</span></div>
+<div class="foldopen" id="foldopen00961" data-start="{" data-end="}">
+<div class="line"><a id="l00961" name="l00961"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a8b4b12d07bbe92020176a4dcb60243fb">  961</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a8b4b12d07bbe92020176a4dcb60243fb">operator==</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00962" name="l00962"></a><span class="lineno">  962</span>        <span class="keywordflow">return</span> _size == rhs._size &amp;&amp; std::strcmp(base_t::data(), rhs.c_str()) == 0;</div>
+<div class="line"><a id="l00963" name="l00963"></a><span class="lineno">  963</span>    }</div>
+</div>
+<div class="line"><a id="l00964" name="l00964"></a><span class="lineno">  964</span></div>
+<div class="foldopen" id="foldopen00971" data-start="{" data-end="}">
+<div class="line"><a id="l00971" name="l00971"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a652fab8fa501d559e37303a0724591ef">  971</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a652fab8fa501d559e37303a0724591ef">operator!=</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00972" name="l00972"></a><span class="lineno">  972</span>        <span class="keywordflow">return</span> !(*<span class="keyword">this</span> == rhs);</div>
+<div class="line"><a id="l00973" name="l00973"></a><span class="lineno">  973</span>    }</div>
+</div>
+<div class="line"><a id="l00974" name="l00974"></a><span class="lineno">  974</span></div>
+<div class="foldopen" id="foldopen00981" data-start="{" data-end="}">
+<div class="line"><a id="l00981" name="l00981"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a0c82b51c12671480fba54665a944a051">  981</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a0c82b51c12671480fba54665a944a051">operator!=</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00982" name="l00982"></a><span class="lineno">  982</span>        <span class="keywordflow">return</span> !(*<span class="keyword">this</span> == rhs);</div>
+<div class="line"><a id="l00983" name="l00983"></a><span class="lineno">  983</span>    }</div>
+</div>
+<div class="line"><a id="l00984" name="l00984"></a><span class="lineno">  984</span></div>
+<div class="foldopen" id="foldopen00991" data-start="{" data-end="}">
+<div class="line"><a id="l00991" name="l00991"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a650d571d4d89e0db53e8c7e988fece4a">  991</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a650d571d4d89e0db53e8c7e988fece4a">operator&lt;</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00992" name="l00992"></a><span class="lineno">  992</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adac05118d6d9f5db7f2be9ab564d848f">compare</a>(rhs) &lt; 0;</div>
+<div class="line"><a id="l00993" name="l00993"></a><span class="lineno">  993</span>    }</div>
+</div>
+<div class="line"><a id="l00994" name="l00994"></a><span class="lineno">  994</span></div>
+<div class="foldopen" id="foldopen01001" data-start="{" data-end="}">
+<div class="line"><a id="l01001" name="l01001"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#abee1acd1a88b8ca5faad636aeace92c1"> 1001</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#abee1acd1a88b8ca5faad636aeace92c1">operator&lt;</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01002" name="l01002"></a><span class="lineno"> 1002</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adac05118d6d9f5db7f2be9ab564d848f">compare</a>(rhs) &lt; 0;</div>
+<div class="line"><a id="l01003" name="l01003"></a><span class="lineno"> 1003</span>    }</div>
+</div>
+<div class="line"><a id="l01004" name="l01004"></a><span class="lineno"> 1004</span></div>
+<div class="foldopen" id="foldopen01011" data-start="{" data-end="}">
+<div class="line"><a id="l01011" name="l01011"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a514728ea25dc8a463c97601e6766663c"> 1011</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a514728ea25dc8a463c97601e6766663c">operator&gt;</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01012" name="l01012"></a><span class="lineno"> 1012</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adac05118d6d9f5db7f2be9ab564d848f">compare</a>(rhs) &gt; 0;</div>
+<div class="line"><a id="l01013" name="l01013"></a><span class="lineno"> 1013</span>    }</div>
+</div>
+<div class="line"><a id="l01014" name="l01014"></a><span class="lineno"> 1014</span></div>
+<div class="foldopen" id="foldopen01021" data-start="{" data-end="}">
+<div class="line"><a id="l01021" name="l01021"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a34fcccc9f2c18c9819afa56050f2fefe"> 1021</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a34fcccc9f2c18c9819afa56050f2fefe">operator&gt;</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01022" name="l01022"></a><span class="lineno"> 1022</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adac05118d6d9f5db7f2be9ab564d848f">compare</a>(rhs) &gt; 0;</div>
+<div class="line"><a id="l01023" name="l01023"></a><span class="lineno"> 1023</span>    }</div>
+</div>
+<div class="line"><a id="l01024" name="l01024"></a><span class="lineno"> 1024</span></div>
+<div class="foldopen" id="foldopen01031" data-start="{" data-end="}">
+<div class="line"><a id="l01031" name="l01031"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a746839997897867cf177aa492b132799"> 1031</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a746839997897867cf177aa492b132799">operator&lt;=</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01032" name="l01032"></a><span class="lineno"> 1032</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adac05118d6d9f5db7f2be9ab564d848f">compare</a>(rhs) &lt;= 0;</div>
+<div class="line"><a id="l01033" name="l01033"></a><span class="lineno"> 1033</span>    }</div>
+</div>
+<div class="line"><a id="l01034" name="l01034"></a><span class="lineno"> 1034</span></div>
+<div class="foldopen" id="foldopen01041" data-start="{" data-end="}">
+<div class="line"><a id="l01041" name="l01041"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#a51b6958d148a92011d24b949a3a30cb5"> 1041</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#a51b6958d148a92011d24b949a3a30cb5">operator&lt;=</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01042" name="l01042"></a><span class="lineno"> 1042</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adac05118d6d9f5db7f2be9ab564d848f">compare</a>(rhs) &lt;= 0;</div>
+<div class="line"><a id="l01043" name="l01043"></a><span class="lineno"> 1043</span>    }</div>
+</div>
+<div class="line"><a id="l01044" name="l01044"></a><span class="lineno"> 1044</span></div>
+<div class="foldopen" id="foldopen01051" data-start="{" data-end="}">
+<div class="line"><a id="l01051" name="l01051"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#aca1d504ce5dfbb7a77a3d3a9c47c55ab"> 1051</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#aca1d504ce5dfbb7a77a3d3a9c47c55ab">operator&gt;=</a>(<span class="keyword">const</span> <span class="keywordtype">string</span>&amp; rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01052" name="l01052"></a><span class="lineno"> 1052</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adac05118d6d9f5db7f2be9ab564d848f">compare</a>(rhs) &gt;= 0;</div>
+<div class="line"><a id="l01053" name="l01053"></a><span class="lineno"> 1053</span>    }</div>
+</div>
+<div class="line"><a id="l01054" name="l01054"></a><span class="lineno"> 1054</span></div>
+<div class="foldopen" id="foldopen01061" data-start="{" data-end="}">
+<div class="line"><a id="l01061" name="l01061"></a><span class="lineno"><a class="line" href="classqb_1_1string.html#acaf5540b9d5eb96bd6e8a7f0d2b6e0c2"> 1061</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1string.html#acaf5540b9d5eb96bd6e8a7f0d2b6e0c2">operator&gt;=</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* rhs) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01062" name="l01062"></a><span class="lineno"> 1062</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1string.html#adac05118d6d9f5db7f2be9ab564d848f">compare</a>(rhs) &gt;= 0;</div>
+<div class="line"><a id="l01063" name="l01063"></a><span class="lineno"> 1063</span>    }</div>
+</div>
+<div class="line"><a id="l01064" name="l01064"></a><span class="lineno"> 1064</span>};</div>
+</div>
+<div class="line"><a id="l01065" name="l01065"></a><span class="lineno"> 1065</span> </div>
+<div class="line"><a id="l01066" name="l01066"></a><span class="lineno"> 1066</span><span class="comment">// Non-member functions</span></div>
+<div class="line"><a id="l01067" name="l01067"></a><span class="lineno"> 1067</span></div>
+<div class="line"><a id="l01077" name="l01077"></a><span class="lineno"> 1077</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size1, std::<span class="keywordtype">size_t</span> _Size2&gt;</div>
+<div class="foldopen" id="foldopen01078" data-start="{" data-end="}">
+<div class="line"><a id="l01078" name="l01078"></a><span class="lineno"><a class="line" href="string_8h.html#a3b3233fa3048b310baf1fcef65154cf7"> 1078</a></span><span class="keywordtype">string</span>&lt;std::max(_Size1, _Size2)&gt; <a class="code hl_function" href="string_8h.html#a3b3233fa3048b310baf1fcef65154cf7">operator+</a>(<span class="keyword">const</span> <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size1&gt;</a>&amp; lhs, <span class="keyword">const</span> <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size2&gt;</a>&amp; rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01079" name="l01079"></a><span class="lineno"> 1079</span>    <span class="keywordtype">string</span>&lt;std::max(_Size1, _Size2)&gt; result(lhs);</div>
+<div class="line"><a id="l01080" name="l01080"></a><span class="lineno"> 1080</span>    result.<a class="code hl_function" href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">append</a>(rhs);</div>
+<div class="line"><a id="l01081" name="l01081"></a><span class="lineno"> 1081</span>    <span class="keywordflow">return</span> result;</div>
+<div class="line"><a id="l01082" name="l01082"></a><span class="lineno"> 1082</span>}</div>
+</div>
+<div class="line"><a id="l01083" name="l01083"></a><span class="lineno"> 1083</span></div>
+<div class="line"><a id="l01092" name="l01092"></a><span class="lineno"> 1092</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size&gt;</div>
+<div class="foldopen" id="foldopen01093" data-start="{" data-end="}">
+<div class="line"><a id="l01093" name="l01093"></a><span class="lineno"><a class="line" href="string_8h.html#af3494782926ab7679f62b869fdbd9b86"> 1093</a></span><a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a> <a class="code hl_function" href="string_8h.html#a3b3233fa3048b310baf1fcef65154cf7">operator+</a>(<span class="keyword">const</span> <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a>&amp; lhs, <span class="keyword">const</span> <span class="keywordtype">char</span>* rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01094" name="l01094"></a><span class="lineno"> 1094</span>    <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a> result(lhs);</div>
+<div class="line"><a id="l01095" name="l01095"></a><span class="lineno"> 1095</span>    result.<a class="code hl_function" href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">append</a>(rhs);</div>
+<div class="line"><a id="l01096" name="l01096"></a><span class="lineno"> 1096</span>    <span class="keywordflow">return</span> result;</div>
+<div class="line"><a id="l01097" name="l01097"></a><span class="lineno"> 1097</span>}</div>
+</div>
+<div class="line"><a id="l01098" name="l01098"></a><span class="lineno"> 1098</span></div>
+<div class="line"><a id="l01107" name="l01107"></a><span class="lineno"> 1107</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size&gt;</div>
+<div class="foldopen" id="foldopen01108" data-start="{" data-end="}">
+<div class="line"><a id="l01108" name="l01108"></a><span class="lineno"><a class="line" href="string_8h.html#a20a88253252531273d12b9bb68000364"> 1108</a></span><a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a> <a class="code hl_function" href="string_8h.html#a3b3233fa3048b310baf1fcef65154cf7">operator+</a>(<span class="keyword">const</span> <span class="keywordtype">char</span>* lhs, <span class="keyword">const</span> <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a>&amp; rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01109" name="l01109"></a><span class="lineno"> 1109</span>    <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a> result(lhs);</div>
+<div class="line"><a id="l01110" name="l01110"></a><span class="lineno"> 1110</span>    result.<a class="code hl_function" href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">append</a>(rhs);</div>
+<div class="line"><a id="l01111" name="l01111"></a><span class="lineno"> 1111</span>    <span class="keywordflow">return</span> result;</div>
+<div class="line"><a id="l01112" name="l01112"></a><span class="lineno"> 1112</span>}</div>
+</div>
+<div class="line"><a id="l01113" name="l01113"></a><span class="lineno"> 1113</span></div>
+<div class="line"><a id="l01122" name="l01122"></a><span class="lineno"> 1122</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size&gt;</div>
+<div class="foldopen" id="foldopen01123" data-start="{" data-end="}">
+<div class="line"><a id="l01123" name="l01123"></a><span class="lineno"><a class="line" href="string_8h.html#a805b5f44bfe0349d205fe0cf10621603"> 1123</a></span><a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a> <a class="code hl_function" href="string_8h.html#a3b3233fa3048b310baf1fcef65154cf7">operator+</a>(<span class="keyword">const</span> <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a>&amp; lhs, <span class="keywordtype">char</span> rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01124" name="l01124"></a><span class="lineno"> 1124</span>    <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a> result(lhs);</div>
+<div class="line"><a id="l01125" name="l01125"></a><span class="lineno"> 1125</span>    result.<a class="code hl_function" href="classqb_1_1string.html#a4b60964c28383ade551093b7b548e3c4">push_back</a>(rhs);</div>
+<div class="line"><a id="l01126" name="l01126"></a><span class="lineno"> 1126</span>    <span class="keywordflow">return</span> result;</div>
+<div class="line"><a id="l01127" name="l01127"></a><span class="lineno"> 1127</span>}</div>
+</div>
+<div class="line"><a id="l01128" name="l01128"></a><span class="lineno"> 1128</span></div>
+<div class="line"><a id="l01137" name="l01137"></a><span class="lineno"> 1137</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size&gt;</div>
+<div class="foldopen" id="foldopen01138" data-start="{" data-end="}">
+<div class="line"><a id="l01138" name="l01138"></a><span class="lineno"><a class="line" href="string_8h.html#aacbf70fd0694036b819364c2592365f8"> 1138</a></span><a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a> <a class="code hl_function" href="string_8h.html#a3b3233fa3048b310baf1fcef65154cf7">operator+</a>(<span class="keywordtype">char</span> lhs, <span class="keyword">const</span> <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a>&amp; rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01139" name="l01139"></a><span class="lineno"> 1139</span>    <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a> result(1, lhs);</div>
+<div class="line"><a id="l01140" name="l01140"></a><span class="lineno"> 1140</span>    result.<a class="code hl_function" href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">append</a>(rhs);</div>
+<div class="line"><a id="l01141" name="l01141"></a><span class="lineno"> 1141</span>    <span class="keywordflow">return</span> result;</div>
+<div class="line"><a id="l01142" name="l01142"></a><span class="lineno"> 1142</span>}</div>
+</div>
+<div class="line"><a id="l01143" name="l01143"></a><span class="lineno"> 1143</span></div>
+<div class="line"><a id="l01151" name="l01151"></a><span class="lineno"> 1151</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size&gt;</div>
+<div class="foldopen" id="foldopen01152" data-start="{" data-end="}">
+<div class="line"><a id="l01152" name="l01152"></a><span class="lineno"><a class="line" href="string_8h.html#af8937407b03d0e60d75ef363a4962e2f"> 1152</a></span><span class="keywordtype">void</span> <a class="code hl_function" href="string_8h.html#af8937407b03d0e60d75ef363a4962e2f">swap</a>(<a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a>&amp; lhs, <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a>&amp; rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01153" name="l01153"></a><span class="lineno"> 1153</span>    lhs.swap(rhs);</div>
+<div class="line"><a id="l01154" name="l01154"></a><span class="lineno"> 1154</span>}</div>
+</div>
+<div class="line"><a id="l01155" name="l01155"></a><span class="lineno"> 1155</span></div>
+<div class="line"><a id="l01164" name="l01164"></a><span class="lineno"> 1164</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size&gt;</div>
+<div class="foldopen" id="foldopen01165" data-start="{" data-end="}">
+<div class="line"><a id="l01165" name="l01165"></a><span class="lineno"><a class="line" href="string_8h.html#ab4adc9d89adf6fd83056d55b3c848aa2"> 1165</a></span>std::ostream &amp;</div>
+<div class="line"><a id="l01166" name="l01166"></a><span class="lineno"> 1166</span><a class="code hl_function" href="group___actor.html#gae1d1d0200c731c329d48e02177661660">operator&lt;&lt;</a>(std::ostream &amp;os, <a class="code hl_class" href="classqb_1_1string.html">qb::string&lt;_Size&gt;</a> <span class="keyword">const</span> &amp;str) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01167" name="l01167"></a><span class="lineno"> 1167</span>    os &lt;&lt; str.c_str();</div>
+<div class="line"><a id="l01168" name="l01168"></a><span class="lineno"> 1168</span>    <span class="keywordflow">return</span> os;</div>
+<div class="line"><a id="l01169" name="l01169"></a><span class="lineno"> 1169</span>}</div>
+</div>
+<div class="line"><a id="l01170" name="l01170"></a><span class="lineno"> 1170</span></div>
+<div class="line"><a id="l01179" name="l01179"></a><span class="lineno"> 1179</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size&gt;</div>
+<div class="line"><a id="l01180" name="l01180"></a><span class="lineno"> 1180</span>std::istream &amp;</div>
+<div class="foldopen" id="foldopen01181" data-start="{" data-end="}">
+<div class="line"><a id="l01181" name="l01181"></a><span class="lineno"><a class="line" href="string_8h.html#a0c714a1987416120e280bb82bc58499b"> 1181</a></span><a class="code hl_function" href="string_8h.html#a0c714a1987416120e280bb82bc58499b">operator&gt;&gt;</a>(std::istream &amp;is, <a class="code hl_class" href="classqb_1_1string.html">qb::string&lt;_Size&gt;</a> &amp;str) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01182" name="l01182"></a><span class="lineno"> 1182</span>    std::string temp;</div>
+<div class="line"><a id="l01183" name="l01183"></a><span class="lineno"> 1183</span>    is &gt;&gt; temp;</div>
+<div class="line"><a id="l01184" name="l01184"></a><span class="lineno"> 1184</span>    str = temp;</div>
+<div class="line"><a id="l01185" name="l01185"></a><span class="lineno"> 1185</span>    <span class="keywordflow">return</span> is;</div>
+<div class="line"><a id="l01186" name="l01186"></a><span class="lineno"> 1186</span>}</div>
+</div>
+<div class="line"><a id="l01187" name="l01187"></a><span class="lineno"> 1187</span> </div>
+<div class="line"><a id="l01188" name="l01188"></a><span class="lineno"> 1188</span><span class="comment">// Equality operators for reverse comparisons</span></div>
+<div class="line"><a id="l01189" name="l01189"></a><span class="lineno"> 1189</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size&gt;</div>
+<div class="line"><a id="l01190" name="l01190"></a><span class="lineno"> 1190</span><span class="keywordtype">bool</span> operator==(<span class="keyword">const</span> <span class="keywordtype">char</span>* lhs, <span class="keyword">const</span> <a class="code hl_typedef" href="group___j_s_o_n.html#ga48637f6b3ae62ec4f5a634ce178099e1">string&lt;_Size&gt;</a>&amp; rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01191" name="l01191"></a><span class="lineno"> 1191</span>    <span class="keywordflow">return</span> rhs == lhs;</div>
+<div class="line"><a id="l01192" name="l01192"></a><span class="lineno"> 1192</span>}</div>
+<div class="line"><a id="l01193" name="l01193"></a><span class="lineno"> 1193</span> </div>
+<div class="line"><a id="l01194" name="l01194"></a><span class="lineno"> 1194</span><span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> _Size&gt;</div>
+<div class="line"><a id="l01195" name="l01195"></a><span class="lineno"> 1195</span><span class="keywordtype">bool</span> operator!=(<span class="keyword">const</span> <span class="keywordtype">char</span>* lhs, <span class="keyword">const</span> <a class="code hl_class" href="classqb_1_1string.html">string&lt;_Size&gt;</a>&amp; rhs) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01196" name="l01196"></a><span class="lineno"> 1196</span>    <span class="keywordflow">return</span> rhs != lhs;</div>
+<div class="line"><a id="l01197" name="l01197"></a><span class="lineno"> 1197</span>}</div>
+<div class="line"><a id="l01198" name="l01198"></a><span class="lineno"> 1198</span> </div>
+<div class="line"><a id="l01199" name="l01199"></a><span class="lineno"> 1199</span>} <span class="comment">// namespace qb</span></div>
+<div class="line"><a id="l01200" name="l01200"></a><span class="lineno"> 1200</span> </div>
+<div class="line"><a id="l01201" name="l01201"></a><span class="lineno"> 1201</span><span class="preprocessor">#endif </span><span class="comment">// QB_STRING_H_</span></div>
+<div class="ttc" id="abuild__macros_8h_html"><div class="ttname"><a href="build__macros_8h.html">build_macros.h</a></div><div class="ttdoc">Platform, compiler, and C++ feature detection macros for the QB Framework.</div></div>
+<div class="ttc" id="aclassqb_1_1string_html"><div class="ttname"><a href="classqb_1_1string.html">qb::string</a></div><div class="ttdoc">Fixed-size string with optimized storage.</div><div class="ttdef"><b>Definition</b> string.h:86</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a008a34c84cc018d18e0ddcb4b8acc2a7"><div class="ttname"><a href="classqb_1_1string.html#a008a34c84cc018d18e0ddcb4b8acc2a7">qb::string::pop_back</a></div><div class="ttdeci">void pop_back() noexcept</div><div class="ttdoc">Remove last character.</div><div class="ttdef"><b>Definition</b> string.h:800</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a05258eef382276fd0cea4adc9cf4f2c7"><div class="ttname"><a href="classqb_1_1string.html#a05258eef382276fd0cea4adc9cf4f2c7">qb::string::crbegin</a></div><div class="ttdeci">const_reverse_iterator crbegin() const noexcept</div><div class="ttdoc">Get const reverse iterator to the beginning of the string.</div><div class="ttdef"><b>Definition</b> string.h:490</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a0a1d505698b7347698a34a9f79c0e12d"><div class="ttname"><a href="classqb_1_1string.html#a0a1d505698b7347698a34a9f79c0e12d">qb::string::back</a></div><div class="ttdeci">reference back() noexcept</div><div class="ttdoc">Access last character.</div><div class="ttdef"><b>Definition</b> string.h:399</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a0c82b51c12671480fba54665a944a051"><div class="ttname"><a href="classqb_1_1string.html#a0c82b51c12671480fba54665a944a051">qb::string::operator!=</a></div><div class="ttdeci">bool operator!=(const char *rhs) const noexcept</div><div class="ttdoc">Inequality comparison with C-style string.</div><div class="ttdef"><b>Definition</b> string.h:981</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a0d1177c1ff86606f7c98930f59cb55e9"><div class="ttname"><a href="classqb_1_1string.html#a0d1177c1ff86606f7c98930f59cb55e9">qb::string::at</a></div><div class="ttdeci">reference at(std::size_t pos)</div><div class="ttdoc">Access character at index with bounds checking.</div><div class="ttdef"><b>Definition</b> string.h:335</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a0dfc9b475cd8b516daec5b938b9b12e9"><div class="ttname"><a href="classqb_1_1string.html#a0dfc9b475cd8b516daec5b938b9b12e9">qb::string::string</a></div><div class="ttdeci">string(const string &amp;other) noexcept=default</div><div class="ttdoc">Copy constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a164f7f2be7e32b964d718f278b774c69"><div class="ttname"><a href="classqb_1_1string.html#a164f7f2be7e32b964d718f278b774c69">qb::string::rbegin</a></div><div class="ttdeci">reverse_iterator rbegin() noexcept</div><div class="ttdoc">Get reverse iterator to the beginning of the string.</div><div class="ttdef"><b>Definition</b> string.h:472</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a1bc87fccb79294469f91aee4d67d04fb"><div class="ttname"><a href="classqb_1_1string.html#a1bc87fccb79294469f91aee4d67d04fb">qb::string::ends_with</a></div><div class="ttdeci">bool ends_with(const string &amp;suffix) const noexcept</div><div class="ttdoc">Check if string ends with given suffix.</div><div class="ttdef"><b>Definition</b> string.h:888</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a21ab47dfe7e7170c2ba32985b1e740a9"><div class="ttname"><a href="classqb_1_1string.html#a21ab47dfe7e7170c2ba32985b1e740a9">qb::string::contains</a></div><div class="ttdeci">bool contains(const char *str) const noexcept</div><div class="ttdoc">Check if string contains given substring.</div><div class="ttdef"><b>Definition</b> string.h:908</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a2640da6a7ce07b17b2ea4f39c6927d7d"><div class="ttname"><a href="classqb_1_1string.html#a2640da6a7ce07b17b2ea4f39c6927d7d">qb::string::string</a></div><div class="ttdeci">string(T const &amp;rhs) noexcept</div><div class="ttdoc">Constructor from string-like object.</div><div class="ttdef"><b>Definition</b> string.h:137</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a2b2a702137a15ba2e3cf275e092ec02f"><div class="ttname"><a href="classqb_1_1string.html#a2b2a702137a15ba2e3cf275e092ec02f">qb::string::operator=</a></div><div class="ttdeci">string &amp; operator=(char const *rhs) noexcept</div><div class="ttdoc">Assignment operator for C-style strings.</div><div class="ttdef"><b>Definition</b> string.h:294</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a30ef8999c78cfd8f9ac9bc42c4b883a3"><div class="ttname"><a href="classqb_1_1string.html#a30ef8999c78cfd8f9ac9bc42c4b883a3">qb::string::string</a></div><div class="ttdeci">string(const char *str) noexcept</div><div class="ttdoc">Constructor from C-style string.</div><div class="ttdef"><b>Definition</b> string.h:156</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a3408d6cccb9ab95c0623fd96eb287aee"><div class="ttname"><a href="classqb_1_1string.html#a3408d6cccb9ab95c0623fd96eb287aee">qb::string::capacity</a></div><div class="ttdeci">constexpr std::size_t capacity() const noexcept</div><div class="ttdoc">Get the capacity.</div><div class="ttdef"><b>Definition</b> string.h:536</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a344a962cd39831ff21a3c8b01580c64d"><div class="ttname"><a href="classqb_1_1string.html#a344a962cd39831ff21a3c8b01580c64d">qb::string::append</a></div><div class="ttdeci">string &amp; append(const char *str, std::size_t len) noexcept</div><div class="ttdoc">Append C-style string with length.</div><div class="ttdef"><b>Definition</b> string.h:745</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a34fcccc9f2c18c9819afa56050f2fefe"><div class="ttname"><a href="classqb_1_1string.html#a34fcccc9f2c18c9819afa56050f2fefe">qb::string::operator&gt;</a></div><div class="ttdeci">bool operator&gt;(const char *rhs) const noexcept</div><div class="ttdoc">Greater than comparison with C-style string.</div><div class="ttdef"><b>Definition</b> string.h:1021</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a3dcb1474a5077b31e182a84090afe3d8"><div class="ttname"><a href="classqb_1_1string.html#a3dcb1474a5077b31e182a84090afe3d8">qb::string::append</a></div><div class="ttdeci">string &amp; append(std::size_t count, char ch) noexcept</div><div class="ttdoc">Append multiple characters.</div><div class="ttdef"><b>Definition</b> string.h:773</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a40982c53179692d545789b1e5b938096"><div class="ttname"><a href="classqb_1_1string.html#a40982c53179692d545789b1e5b938096">qb::string::front</a></div><div class="ttdeci">reference front() noexcept</div><div class="ttdoc">Access first character.</div><div class="ttdef"><b>Definition</b> string.h:381</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a414e89e023afd92b7b8afd22d3869e91"><div class="ttname"><a href="classqb_1_1string.html#a414e89e023afd92b7b8afd22d3869e91">qb::string::at</a></div><div class="ttdeci">const_reference at(std::size_t pos) const</div><div class="ttdoc">Access character at index with bounds checking (const version)</div><div class="ttdef"><b>Definition</b> string.h:349</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a420447269d7606707117ef3effb56685"><div class="ttname"><a href="classqb_1_1string.html#a420447269d7606707117ef3effb56685">qb::string::operator[]</a></div><div class="ttdeci">const_reference operator[](std::size_t pos) const noexcept</div><div class="ttdoc">Access character at index (no bounds checking, const version)</div><div class="ttdef"><b>Definition</b> string.h:372</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a44034056bbb65494d23e5a7678d5da22"><div class="ttname"><a href="classqb_1_1string.html#a44034056bbb65494d23e5a7678d5da22">qb::string::operator+=</a></div><div class="ttdeci">string &amp; operator+=(const char *str) noexcept</div><div class="ttdoc">Append operator for C-style string.</div><div class="ttdef"><b>Definition</b> string.h:823</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a44ff9469c007f8bc9b83f336434a3bd9"><div class="ttname"><a href="classqb_1_1string.html#a44ff9469c007f8bc9b83f336434a3bd9">qb::string::assign</a></div><div class="ttdeci">string &amp; assign(T const &amp;rhs) noexcept</div><div class="ttdoc">Assign from string-like object.</div><div class="ttdef"><b>Definition</b> string.h:231</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a480fb218f7db15909e3a1fb7a242a955"><div class="ttname"><a href="classqb_1_1string.html#a480fb218f7db15909e3a1fb7a242a955">qb::string::find</a></div><div class="ttdeci">std::size_t find(const string &amp;str, std::size_t pos=0) const noexcept</div><div class="ttdoc">Find substring.</div><div class="ttdef"><b>Definition</b> string.h:643</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a484b3f23d217afed951f0942d7a34d2a"><div class="ttname"><a href="classqb_1_1string.html#a484b3f23d217afed951f0942d7a34d2a">qb::string::string</a></div><div class="ttdeci">constexpr string() noexcept</div><div class="ttdoc">Default constructor.</div><div class="ttdef"><b>Definition</b> string.h:116</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a4b60964c28383ade551093b7b548e3c4"><div class="ttname"><a href="classqb_1_1string.html#a4b60964c28383ade551093b7b548e3c4">qb::string::push_back</a></div><div class="ttdeci">void push_back(char ch) noexcept</div><div class="ttdoc">Add character to end.</div><div class="ttdef"><b>Definition</b> string.h:789</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a4d60d27d387cd9ecfc8544ba0a5fa748"><div class="ttname"><a href="classqb_1_1string.html#a4d60d27d387cd9ecfc8544ba0a5fa748">qb::string::starts_with</a></div><div class="ttdeci">bool starts_with(char ch) const noexcept</div><div class="ttdoc">Check if string starts with given character.</div><div class="ttdef"><b>Definition</b> string.h:866</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a4ff3a7486d796c6412c85972000c4682"><div class="ttname"><a href="classqb_1_1string.html#a4ff3a7486d796c6412c85972000c4682">qb::string::rfind</a></div><div class="ttdeci">std::size_t rfind(char ch, std::size_t pos=npos) const noexcept</div><div class="ttdoc">Find last occurrence of character.</div><div class="ttdef"><b>Definition</b> string.h:704</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a514728ea25dc8a463c97601e6766663c"><div class="ttname"><a href="classqb_1_1string.html#a514728ea25dc8a463c97601e6766663c">qb::string::operator&gt;</a></div><div class="ttdeci">bool operator&gt;(const string &amp;rhs) const noexcept</div><div class="ttdoc">Greater than comparison.</div><div class="ttdef"><b>Definition</b> string.h:1011</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a51b6958d148a92011d24b949a3a30cb5"><div class="ttname"><a href="classqb_1_1string.html#a51b6958d148a92011d24b949a3a30cb5">qb::string::operator&lt;=</a></div><div class="ttdeci">bool operator&lt;=(const char *rhs) const noexcept</div><div class="ttdoc">Less than or equal comparison with C-style string.</div><div class="ttdef"><b>Definition</b> string.h:1041</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a5beb9649ec1bc3edddaef2c708fdb205"><div class="ttname"><a href="classqb_1_1string.html#a5beb9649ec1bc3edddaef2c708fdb205">qb::string::operator=</a></div><div class="ttdeci">string &amp; operator=(string &amp;&amp;other) noexcept=default</div><div class="ttdoc">Move assignment operator.</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a5f85e5e2f1d6d6d6c5dfaae4a70d87df"><div class="ttname"><a href="classqb_1_1string.html#a5f85e5e2f1d6d6d6c5dfaae4a70d87df">qb::string::contains</a></div><div class="ttdeci">bool contains(char ch) const noexcept</div><div class="ttdoc">Check if string contains given character.</div><div class="ttdef"><b>Definition</b> string.h:928</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a60f5d1ee4d8a1cd5f37b8887f434af51"><div class="ttname"><a href="classqb_1_1string.html#a60f5d1ee4d8a1cd5f37b8887f434af51">qb::string::front</a></div><div class="ttdeci">const_reference front() const noexcept</div><div class="ttdoc">Access first character (const version)</div><div class="ttdef"><b>Definition</b> string.h:390</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a650d571d4d89e0db53e8c7e988fece4a"><div class="ttname"><a href="classqb_1_1string.html#a650d571d4d89e0db53e8c7e988fece4a">qb::string::operator&lt;</a></div><div class="ttdeci">bool operator&lt;(const string &amp;rhs) const noexcept</div><div class="ttdoc">Less than comparison.</div><div class="ttdef"><b>Definition</b> string.h:991</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a652fab8fa501d559e37303a0724591ef"><div class="ttname"><a href="classqb_1_1string.html#a652fab8fa501d559e37303a0724591ef">qb::string::operator!=</a></div><div class="ttdeci">bool operator!=(const string &amp;rhs) const noexcept</div><div class="ttdoc">Inequality comparison.</div><div class="ttdef"><b>Definition</b> string.h:971</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a6fbca310eb77e9caf5c7e533d90d556f"><div class="ttname"><a href="classqb_1_1string.html#a6fbca310eb77e9caf5c7e533d90d556f">qb::string::assign</a></div><div class="ttdeci">string &amp; assign(std::size_t count, char ch) noexcept</div><div class="ttdoc">Assign with fill.</div><div class="ttdef"><b>Definition</b> string.h:254</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a71538b149105cf1f042441b431f4abca"><div class="ttname"><a href="classqb_1_1string.html#a71538b149105cf1f042441b431f4abca">qb::string::resize</a></div><div class="ttdeci">void resize(std::size_t count, char ch=&#39;\0&#39;) noexcept</div><div class="ttdoc">Resize the string.</div><div class="ttdef"><b>Definition</b> string.h:557</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a7383ec74c527cdc8556558e1dbde565f"><div class="ttname"><a href="classqb_1_1string.html#a7383ec74c527cdc8556558e1dbde565f">qb::string::data</a></div><div class="ttdeci">const_pointer data() const noexcept</div><div class="ttdoc">Get pointer to underlying data (const version)</div><div class="ttdef"><b>Definition</b> string.h:426</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a746839997897867cf177aa492b132799"><div class="ttname"><a href="classqb_1_1string.html#a746839997897867cf177aa492b132799">qb::string::operator&lt;=</a></div><div class="ttdeci">bool operator&lt;=(const string &amp;rhs) const noexcept</div><div class="ttdoc">Less than or equal comparison.</div><div class="ttdef"><b>Definition</b> string.h:1031</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a7531498f088aad64078e8fad8b40c422"><div class="ttname"><a href="classqb_1_1string.html#a7531498f088aad64078e8fad8b40c422">qb::string::operator=</a></div><div class="ttdeci">constexpr string &amp; operator=(const char(&amp;str)[N]) noexcept</div><div class="ttdoc">Assignment operator for C-style string literals.</div><div class="ttdef"><b>Definition</b> string.h:270</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a7812db426aba38fcc417cfe65d9e1a29"><div class="ttname"><a href="classqb_1_1string.html#a7812db426aba38fcc417cfe65d9e1a29">qb::string::back</a></div><div class="ttdeci">const_reference back() const noexcept</div><div class="ttdoc">Access last character (const version)</div><div class="ttdef"><b>Definition</b> string.h:408</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a789b17dc53390e1e486fd9dad041ba19"><div class="ttname"><a href="classqb_1_1string.html#a789b17dc53390e1e486fd9dad041ba19">qb::string::string</a></div><div class="ttdeci">string(string &amp;&amp;other) noexcept=default</div><div class="ttdoc">Move constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a7a34ab1d87489ce5617deb1ee5104290"><div class="ttname"><a href="classqb_1_1string.html#a7a34ab1d87489ce5617deb1ee5104290">qb::string::end</a></div><div class="ttdeci">const_iterator end() const noexcept</div><div class="ttdoc">Get const iterator to the end of the string.</div><div class="ttdef"><b>Definition</b> string.h:454</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a811af4134e4d039321ed5e857fcde4b5"><div class="ttname"><a href="classqb_1_1string.html#a811af4134e4d039321ed5e857fcde4b5">qb::string::operator+=</a></div><div class="ttdeci">string &amp; operator+=(char ch) noexcept</div><div class="ttdoc">Append operator for character.</div><div class="ttdef"><b>Definition</b> string.h:833</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a82759010d8037b240e01c4db2593951b"><div class="ttname"><a href="classqb_1_1string.html#a82759010d8037b240e01c4db2593951b">qb::string::ends_with</a></div><div class="ttdeci">bool ends_with(char ch) const noexcept</div><div class="ttdoc">Check if string ends with given character.</div><div class="ttdef"><b>Definition</b> string.h:898</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a89603122340a14ca75d8681207253494"><div class="ttname"><a href="classqb_1_1string.html#a89603122340a14ca75d8681207253494">qb::string::append</a></div><div class="ttdeci">string &amp; append(const string &amp;str) noexcept</div><div class="ttdoc">Append string.</div><div class="ttdef"><b>Definition</b> string.h:724</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a8b4b12d07bbe92020176a4dcb60243fb"><div class="ttname"><a href="classqb_1_1string.html#a8b4b12d07bbe92020176a4dcb60243fb">qb::string::operator==</a></div><div class="ttdeci">bool operator==(const string &amp;rhs) const noexcept</div><div class="ttdoc">Equality comparison with another qb::string.</div><div class="ttdef"><b>Definition</b> string.h:961</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a8c6b9593daf63512d4644c41350776f2"><div class="ttname"><a href="classqb_1_1string.html#a8c6b9593daf63512d4644c41350776f2">qb::string::operator+=</a></div><div class="ttdeci">string &amp; operator+=(const string &amp;str) noexcept</div><div class="ttdoc">Append operator.</div><div class="ttdef"><b>Definition</b> string.h:813</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a8c9493d214b023e9a68522ca9c6c2359"><div class="ttname"><a href="classqb_1_1string.html#a8c9493d214b023e9a68522ca9c6c2359">qb::string::length</a></div><div class="ttdeci">constexpr std::size_t length() const noexcept</div><div class="ttdoc">Get the string length (alias for size())</div><div class="ttdef"><b>Definition</b> string.h:518</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a904f7d3d397ab2aa880075d3cd079d03"><div class="ttname"><a href="classqb_1_1string.html#a904f7d3d397ab2aa880075d3cd079d03">qb::string::append</a></div><div class="ttdeci">string &amp; append(char ch) noexcept</div><div class="ttdoc">Append character.</div><div class="ttdef"><b>Definition</b> string.h:762</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a914f95d6280c1d20307dc097620756d1"><div class="ttname"><a href="classqb_1_1string.html#a914f95d6280c1d20307dc097620756d1">qb::string::contains</a></div><div class="ttdeci">bool contains(const string &amp;str) const noexcept</div><div class="ttdoc">Check if string contains given substring.</div><div class="ttdef"><b>Definition</b> string.h:918</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a91583eb0484c83a931b3c8a58f6ac5fc"><div class="ttname"><a href="classqb_1_1string.html#a91583eb0484c83a931b3c8a58f6ac5fc">qb::string::end</a></div><div class="ttdeci">iterator end() noexcept</div><div class="ttdoc">Get iterator to the end of the string.</div><div class="ttdef"><b>Definition</b> string.h:445</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a9286ec1f1958dd7ae907b13052c8beb6"><div class="ttname"><a href="classqb_1_1string.html#a9286ec1f1958dd7ae907b13052c8beb6">qb::string::string</a></div><div class="ttdeci">string(std::size_t count, char ch) noexcept</div><div class="ttdoc">Fill constructor.</div><div class="ttdef"><b>Definition</b> string.h:166</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a9ab681959de4af0c0c7f671b29b5eaba"><div class="ttname"><a href="classqb_1_1string.html#a9ab681959de4af0c0c7f671b29b5eaba">qb::string::rfind</a></div><div class="ttdeci">std::size_t rfind(const char *str, std::size_t pos=npos) const noexcept</div><div class="ttdoc">Find last occurrence of substring.</div><div class="ttdef"><b>Definition</b> string.h:683</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a9b0b3b008341eccc699b4fe72889bf2c"><div class="ttname"><a href="classqb_1_1string.html#a9b0b3b008341eccc699b4fe72889bf2c">qb::string::assign</a></div><div class="ttdeci">constexpr string &amp; assign(const char(&amp;str)[N]) noexcept</div><div class="ttdoc">Assign from C-style string literal.</div><div class="ttdef"><b>Definition</b> string.h:218</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_a9cb1a90d957845526902ed9450a57534"><div class="ttname"><a href="classqb_1_1string.html#a9cb1a90d957845526902ed9450a57534">qb::string::operator=</a></div><div class="ttdeci">string &amp; operator=(T const &amp;rhs) noexcept</div><div class="ttdoc">Assignment operator for string-like objects.</div><div class="ttdef"><b>Definition</b> string.h:283</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_aa0803f93f2fb35cdaab462333b080975"><div class="ttname"><a href="classqb_1_1string.html#aa0803f93f2fb35cdaab462333b080975">qb::string::assign</a></div><div class="ttdeci">string &amp; assign(char const *rhs) noexcept</div><div class="ttdoc">Assign from C-style string.</div><div class="ttdef"><b>Definition</b> string.h:242</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_aa3dfb1f022acac99bed8b045f2356069"><div class="ttname"><a href="classqb_1_1string.html#aa3dfb1f022acac99bed8b045f2356069">qb::string::find</a></div><div class="ttdeci">std::size_t find(const char *str, std::size_t pos=0) const noexcept</div><div class="ttdoc">Find C-style string.</div><div class="ttdef"><b>Definition</b> string.h:654</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_aa45a111308216fdc54ecc4845924f876"><div class="ttname"><a href="classqb_1_1string.html#aa45a111308216fdc54ecc4845924f876">qb::string::ends_with</a></div><div class="ttdeci">bool ends_with(const char *suffix) const noexcept</div><div class="ttdoc">Check if string ends with given suffix.</div><div class="ttdef"><b>Definition</b> string.h:876</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_aa8c3cdc1b4c914465bdeb4a5eca753ae"><div class="ttname"><a href="classqb_1_1string.html#aa8c3cdc1b4c914465bdeb4a5eca753ae">qb::string::starts_with</a></div><div class="ttdeci">bool starts_with(const string &amp;prefix) const noexcept</div><div class="ttdoc">Check if string starts with given prefix.</div><div class="ttdef"><b>Definition</b> string.h:856</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_aaad4b4c3919891a26eedc0203fb8030c"><div class="ttname"><a href="classqb_1_1string.html#aaad4b4c3919891a26eedc0203fb8030c">qb::string::compare</a></div><div class="ttdeci">int compare(const char *str) const noexcept</div><div class="ttdoc">Compare with C-style string.</div><div class="ttdef"><b>Definition</b> string.h:619</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_aad195d5b3d73f46c1d0ba55f6bddfed3"><div class="ttname"><a href="classqb_1_1string.html#aad195d5b3d73f46c1d0ba55f6bddfed3">qb::string::rbegin</a></div><div class="ttdeci">const_reverse_iterator rbegin() const noexcept</div><div class="ttdoc">Get const reverse iterator to the beginning of the string.</div><div class="ttdef"><b>Definition</b> string.h:481</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_aadf6cf508308f834b2c6ae31f0c7570e"><div class="ttname"><a href="classqb_1_1string.html#aadf6cf508308f834b2c6ae31f0c7570e">qb::string::data</a></div><div class="ttdeci">pointer data() noexcept</div><div class="ttdoc">Get pointer to underlying data.</div><div class="ttdef"><b>Definition</b> string.h:417</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_aae134e29cdffb4aa3f499db1fc665ca4"><div class="ttname"><a href="classqb_1_1string.html#aae134e29cdffb4aa3f499db1fc665ca4">qb::string::operator==</a></div><div class="ttdeci">bool operator==(T const &amp;rhs) const noexcept</div><div class="ttdoc">Equality comparison with string-like object.</div><div class="ttdef"><b>Definition</b> string.h:941</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ab5453c246d74cfce52c84a5dabcbb908"><div class="ttname"><a href="classqb_1_1string.html#ab5453c246d74cfce52c84a5dabcbb908">qb::string::find</a></div><div class="ttdeci">std::size_t find(char ch, std::size_t pos=0) const noexcept</div><div class="ttdoc">Find character.</div><div class="ttdef"><b>Definition</b> string.h:668</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_abee1acd1a88b8ca5faad636aeace92c1"><div class="ttname"><a href="classqb_1_1string.html#abee1acd1a88b8ca5faad636aeace92c1">qb::string::operator&lt;</a></div><div class="ttdeci">bool operator&lt;(const char *rhs) const noexcept</div><div class="ttdoc">Less than comparison with C-style string.</div><div class="ttdef"><b>Definition</b> string.h:1001</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ac4a240d444bb31fb48cc8fe46bedbe94"><div class="ttname"><a href="classqb_1_1string.html#ac4a240d444bb31fb48cc8fe46bedbe94">qb::string::compare</a></div><div class="ttdeci">int compare(std::size_t pos, std::size_t len, const string &amp;str) const</div><div class="ttdoc">Compare substring with another string.</div><div class="ttdef"><b>Definition</b> string.h:631</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ac52ec9924355fb8d20a82dc70003abeb"><div class="ttname"><a href="classqb_1_1string.html#ac52ec9924355fb8d20a82dc70003abeb">qb::string::cend</a></div><div class="ttdeci">const_iterator cend() const noexcept</div><div class="ttdoc">Get const iterator to the end of the string.</div><div class="ttdef"><b>Definition</b> string.h:463</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ac679837b523fde28519989515de95035"><div class="ttname"><a href="classqb_1_1string.html#ac679837b523fde28519989515de95035">qb::string::empty</a></div><div class="ttdeci">constexpr bool empty() const noexcept</div><div class="ttdoc">Check if the string is empty.</div><div class="ttdef"><b>Definition</b> string.h:500</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_aca1d504ce5dfbb7a77a3d3a9c47c55ab"><div class="ttname"><a href="classqb_1_1string.html#aca1d504ce5dfbb7a77a3d3a9c47c55ab">qb::string::operator&gt;=</a></div><div class="ttdeci">bool operator&gt;=(const string &amp;rhs) const noexcept</div><div class="ttdoc">Greater than or equal comparison.</div><div class="ttdef"><b>Definition</b> string.h:1051</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_acaf5540b9d5eb96bd6e8a7f0d2b6e0c2"><div class="ttname"><a href="classqb_1_1string.html#acaf5540b9d5eb96bd6e8a7f0d2b6e0c2">qb::string::operator&gt;=</a></div><div class="ttdeci">bool operator&gt;=(const char *rhs) const noexcept</div><div class="ttdoc">Greater than or equal comparison with C-style string.</div><div class="ttdef"><b>Definition</b> string.h:1061</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_acd94735e8db432ec3eead4c1a56960c6"><div class="ttname"><a href="classqb_1_1string.html#acd94735e8db432ec3eead4c1a56960c6">qb::string::starts_with</a></div><div class="ttdeci">bool starts_with(const char *prefix) const noexcept</div><div class="ttdoc">Check if string starts with given prefix.</div><div class="ttdef"><b>Definition</b> string.h:845</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_acf7ddd96ca52f80dd15e4a95b3b54c11"><div class="ttname"><a href="classqb_1_1string.html#acf7ddd96ca52f80dd15e4a95b3b54c11">qb::string::c_str</a></div><div class="ttdeci">const_pointer c_str() const noexcept</div><div class="ttdoc">Get C-style string representation.</div><div class="ttdef"><b>Definition</b> string.h:435</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ad21e7a3668adb6ec70f95f5db7e8e685"><div class="ttname"><a href="classqb_1_1string.html#ad21e7a3668adb6ec70f95f5db7e8e685">qb::string::string</a></div><div class="ttdeci">constexpr string(const char(&amp;str)[N]) noexcept</div><div class="ttdoc">Constructor from C-style string literal.</div><div class="ttdef"><b>Definition</b> string.h:126</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ad4f9ed287ab782812ad93a2e9a5b624e"><div class="ttname"><a href="classqb_1_1string.html#ad4f9ed287ab782812ad93a2e9a5b624e">qb::string::operator=</a></div><div class="ttdeci">string &amp; operator=(const string &amp;other) noexcept=default</div><div class="ttdoc">Copy assignment operator.</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ad8227a73b3003898c2d9f59aee5a62fe"><div class="ttname"><a href="classqb_1_1string.html#ad8227a73b3003898c2d9f59aee5a62fe">qb::string::clear</a></div><div class="ttdeci">void clear() noexcept</div><div class="ttdoc">Clear the string.</div><div class="ttdef"><b>Definition</b> string.h:546</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_adac05118d6d9f5db7f2be9ab564d848f"><div class="ttname"><a href="classqb_1_1string.html#adac05118d6d9f5db7f2be9ab564d848f">qb::string::compare</a></div><div class="ttdeci">int compare(const string &amp;str) const noexcept</div><div class="ttdoc">Compare with another string.</div><div class="ttdef"><b>Definition</b> string.h:609</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_adcadbb8b4dad77b3156d9f6f051f0dbe"><div class="ttname"><a href="classqb_1_1string.html#adcadbb8b4dad77b3156d9f6f051f0dbe">qb::string::assign</a></div><div class="ttdeci">string &amp; assign(char const *rhs, std::size_t size) noexcept</div><div class="ttdoc">Assign from C-style string and size.</div><div class="ttdef"><b>Definition</b> string.h:200</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ade75d0a774dc4ba6da26f4006f97c819"><div class="ttname"><a href="classqb_1_1string.html#ade75d0a774dc4ba6da26f4006f97c819">qb::string::max_size</a></div><div class="ttdeci">constexpr std::size_t max_size() const noexcept</div><div class="ttdoc">Get the maximum possible size.</div><div class="ttdef"><b>Definition</b> string.h:527</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ae1b1c6bf4376fbf5dba9cae5d0f79d71"><div class="ttname"><a href="classqb_1_1string.html#ae1b1c6bf4376fbf5dba9cae5d0f79d71">qb::string::swap</a></div><div class="ttdeci">void swap(string &amp;other) noexcept</div><div class="ttdoc">Swap contents with another string.</div><div class="ttdef"><b>Definition</b> string.h:573</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ae28a3369d0a3a5dc535e40e0611866c6"><div class="ttname"><a href="classqb_1_1string.html#ae28a3369d0a3a5dc535e40e0611866c6">qb::string::operator==</a></div><div class="ttdeci">bool operator==(char const *rhs) const noexcept</div><div class="ttdoc">Equality comparison with C-style string.</div><div class="ttdef"><b>Definition</b> string.h:951</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ae471c22916a5e37bcc60aedfa616dd54"><div class="ttname"><a href="classqb_1_1string.html#ae471c22916a5e37bcc60aedfa616dd54">qb::string::append</a></div><div class="ttdeci">string &amp; append(const char *str) noexcept</div><div class="ttdoc">Append C-style string.</div><div class="ttdef"><b>Definition</b> string.h:734</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ae7c38507747dcf089860b62550fef8ce"><div class="ttname"><a href="classqb_1_1string.html#ae7c38507747dcf089860b62550fef8ce">qb::string::size</a></div><div class="ttdeci">constexpr std::size_t size() const noexcept</div><div class="ttdoc">Get the string length.</div><div class="ttdef"><b>Definition</b> string.h:509</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_ae8cb89802141a2035ff68e03e42d6893"><div class="ttname"><a href="classqb_1_1string.html#ae8cb89802141a2035ff68e03e42d6893">qb::string::substr</a></div><div class="ttdeci">string substr(std::size_t pos=0, std::size_t len=npos) const</div><div class="ttdoc">Extract substring.</div><div class="ttdef"><b>Definition</b> string.h:592</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_af253221e1ad88d1456b9ed4774b95040"><div class="ttname"><a href="classqb_1_1string.html#af253221e1ad88d1456b9ed4774b95040">qb::string::string</a></div><div class="ttdeci">string(const char *str, std::size_t size) noexcept</div><div class="ttdoc">Constructor from C-style string and size.</div><div class="ttdef"><b>Definition</b> string.h:147</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_af328e901f4c05b32d8a09c0453b54151"><div class="ttname"><a href="classqb_1_1string.html#af328e901f4c05b32d8a09c0453b54151">qb::string::operator=</a></div><div class="ttdeci">string &amp; operator=(char ch) noexcept</div><div class="ttdoc">Assignment operator for single character.</div><div class="ttdef"><b>Definition</b> string.h:305</div></div>
+<div class="ttc" id="aclassqb_1_1string_html_afe0964a056587abc4e6992db805e6d08"><div class="ttname"><a href="classqb_1_1string.html#afe0964a056587abc4e6992db805e6d08">qb::string::operator[]</a></div><div class="ttdeci">reference operator[](std::size_t pos) noexcept</div><div class="ttdoc">Access character at index (no bounds checking)</div><div class="ttdef"><b>Definition</b> string.h:362</div></div>
+<div class="ttc" id="agroup___actor_html_gae1d1d0200c731c329d48e02177661660"><div class="ttname"><a href="group___actor.html#gae1d1d0200c731c329d48e02177661660">qb::operator&lt;&lt;</a></div><div class="ttdeci">std::ostream &amp; operator&lt;&lt;(std::ostream &amp;os, qb::Actor const &amp;actor)</div><div class="ttdoc">Stream output operator for Actor objects.</div></div>
+<div class="ttc" id="agroup___j_s_o_n_html_ga48637f6b3ae62ec4f5a634ce178099e1"><div class="ttname"><a href="group___j_s_o_n.html#ga48637f6b3ae62ec4f5a634ce178099e1">nlohmann::string</a></div><div class="ttdeci">json::string_t string</div><div class="ttdoc">JSON string type from nlohmann::json.</div><div class="ttdef"><b>Definition</b> json.h:67</div></div>
+<div class="ttc" id="astring_8h_html_a0c714a1987416120e280bb82bc58499b"><div class="ttname"><a href="string_8h.html#a0c714a1987416120e280bb82bc58499b">qb::operator&gt;&gt;</a></div><div class="ttdeci">std::istream &amp; operator&gt;&gt;(std::istream &amp;is, qb::string&lt; _Size &gt; &amp;str) noexcept</div><div class="ttdoc">Input stream operator for qb::string.</div><div class="ttdef"><b>Definition</b> string.h:1181</div></div>
+<div class="ttc" id="astring_8h_html_a3b3233fa3048b310baf1fcef65154cf7"><div class="ttname"><a href="string_8h.html#a3b3233fa3048b310baf1fcef65154cf7">qb::operator+</a></div><div class="ttdeci">string&lt; std::max(_Size1, _Size2)&gt; operator+(const string&lt; _Size1 &gt; &amp;lhs, const string&lt; _Size2 &gt; &amp;rhs) noexcept</div><div class="ttdoc">Concatenation operator.</div><div class="ttdef"><b>Definition</b> string.h:1078</div></div>
+<div class="ttc" id="astring_8h_html_af8937407b03d0e60d75ef363a4962e2f"><div class="ttname"><a href="string_8h.html#af8937407b03d0e60d75ef363a4962e2f">qb::swap</a></div><div class="ttdeci">void swap(string&lt; _Size &gt; &amp;lhs, string&lt; _Size &gt; &amp;rhs) noexcept</div><div class="ttdoc">Swap function for strings.</div><div class="ttdef"><b>Definition</b> string.h:1152</div></div>
+<div class="ttc" id="astructqb_1_1internal_1_1best__size_html"><div class="ttname"><a href="structqb_1_1internal_1_1best__size.html">qb::internal::best_size</a></div><div class="ttdoc">Determines the optimal integer type for size storage based on max capacity.</div><div class="ttdef"><b>Definition</b> string.h:54</div></div>
+</div><!-- fragment --></div><!-- contents -->
+</div><!-- doc-content -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="string_8h.html">string.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

@@ -1,0 +1,310 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: QB Framework: Performance Tuning Guide</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: QB Framework: Performance Tuning Guide</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('guides_performance_tuning_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">QB Framework: Performance Tuning Guide </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>Optimize your QB actor applications for maximum speed, scalability, and efficiency with these targeted tuning strategies.</p>
+<h1>QB Framework: Performance Tuning Guide</h1>
+<p>The QB Actor Framework is engineered for high performance out-of-the-box. However, to extract the maximum potential for your specific application and hardware, consider these targeted tuning strategies. Always remember to <b>profile your application first</b> to identify actual bottlenecks before applying optimizations prematurely.</p>
+<h2>1. <span class="tt">VirtualCore</span> and Threading Configuration</h2>
+<p>Fine-tuning how <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">qb::Main</a></span> manages its <span class="tt">VirtualCore</span> worker threads can significantly impact performance.</p>
+<ul>
+<li><b>Optimal Core Count:</b><ul>
+<li><b>Default:</b> <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">qb::Main</a></span> typically defaults to <span class="tt">std::thread::hardware_concurrency()</span> <span class="tt">VirtualCore</span>s.</li>
+<li><b>Tuning:</b> If your application is I/O-bound with few active actors, or if profiling shows excessive context switching, consider reducing the number of cores during <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">qb::Main</a></span> instantiation. Conversely, ensure enough cores are available for CPU-bound actors to run in parallel.</li>
+</ul>
+</li>
+<li><b>CPU Affinity (<span class="tt">CoreInitializer::setAffinity(qb::CoreIdSet)</span>):<ul>
+<li>**Purpose:</li>
+</ul>
+</b> Pin a <span class="tt">VirtualCore</span> thread to one or more specific physical CPU cores.<ul>
+<li><b>Benefit:</b> Prevents OS thread migration, significantly improving L1/L2 cache hit rates and reducing context-switching overhead. This is especially beneficial for CPU-intensive actors or tightly communicating groups of actors that frequently access shared cache lines (though direct data sharing is discouraged by actors).</li>
+<li><b>How:</b> Before calling <span class="tt">main.start()</span>, use <span class="tt">main.core(virtual_core_id).setAffinity(affinity_set);</span>.</li>
+<li><b>Caution:</b> Requires careful planning. Incorrect affinity settings can lead to core overloading or underutilization. Profile to determine optimal pinning for critical actors/cores.</li>
+</ul>
+</li>
+<li><b>Event Loop Latency (<span class="tt">CoreInitializer::setLatency(nanoseconds)</span>):<ul>
+<li>**Purpose:</li>
+</ul>
+</b> Controls the idle behavior of a <span class="tt">VirtualCore</span>'s event loop.<ul>
+<li><b><span class="tt">0</span> (Default for new cores):</b> Lowest possible event processing latency. The <span class="tt">VirtualCore</span> will busy-spin (consume 100% CPU on its assigned core) even when idle, constantly checking for new events. Ideal for ultra-latency-sensitive applications (e.g., high-frequency trading, real-time control systems).</li>
+<li><b><span class="tt">&gt; 0</span> (e.g., <span class="tt">1000000</span> for 1ms):</b> Allows the <span class="tt">VirtualCore</span> to sleep for up to the specified duration (in nanoseconds) if its event queues are empty. This drastically reduces CPU consumption during idle periods at the cost of potentially introducing a slight delay (up to the specified latency) in picking up the next event.</li>
+<li><b>Tuning:</b> For most server applications or systems with intermittent workloads, a small positive latency (e.g., 100µs to 5ms) often provides an excellent balance between responsiveness and CPU efficiency. Measure your application's specific latency requirements and CPU usage under load to find the sweet spot.</li>
+</ul>
+</li>
+</ul>
+<p><b>(Reference:</b> QB-Core: Engine - qb::Main &amp; VirtualCore, <span class="tt">test-main.cpp</span> for examples.)**</p>
+<h2>2. Optimizing Event Messaging</h2>
+<p>Efficient message passing is key to actor system performance.</p>
+<ul>
+<li><b><span class="tt">push</span> (Ordered) vs. <span class="tt">send</span> (Unordered):<ul>
+<li>**<span class="tt">push&lt;Event&gt;(...)</span>:</li>
+</ul>
+</b> The <b>default and strongly recommended</b> method. Ensures ordered delivery between a specific sender/receiver pair and correctly handles non-trivially destructible event payloads.<ul>
+<li><b><span class="tt">send&lt;Event&gt;(...)</span>:</b> Use <b>only in rare, performance-critical scenarios</b> where: (a) event order absolutely does not matter, (b) communication is guaranteed to be same-core, AND (c) the event type is <b>trivially destructible</b> (e.g., contains only PODs or <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span>). Incorrect use can lead to very hard-to-debug ordering issues and is generally not worth the marginal potential gain.</li>
+</ul>
+</li>
+<li><b><span class="tt">EventBuilder</span> (<span class="tt">actor.to(dest).push&lt;...&gt;(...)</span>):<ul>
+<li>If sending <em>multiple</em> events to the <em>same destination actor</em> consecutively from within a single event handler, using the <span class="tt">EventBuilder</span> can provide a minor performance improvement by avoiding repeated lookups for the communication pipe.</li>
+</ul>
+</b></li>
+<li><b> **Direct Pipe Access &amp; <span class="tt">allocated_push</span> (<span class="tt">actor.getPipe(dest).allocated_push&lt;Event&gt;(size_hint, ...)</span>):<ul>
+<li>**Crucial for Large Events:</li>
+</ul>
+</b> When an event contains a large payload (e.g., a sizeable buffer passed via <span class="tt">std::shared_ptr</span> or <span class="tt">std::unique_ptr</span>), use <span class="tt">allocated_push</span>. Provide a <span class="tt">size_hint</span> (approximately <span class="tt">sizeof(Event) + actual_payload_size</span>) to pre-allocate a contiguous block in the underlying communication pipe. This can significantly reduce or eliminate expensive reallocations and memory copies within the pipe during event construction and enqueuing.</li>
+<li><b><span class="tt">reply(Event&amp;)</span> and <span class="tt">forward(ActorId, Event&amp;)</span>:<ul>
+<li>**Always prefer these</li>
+</ul>
+</b> for request-response or delegation patterns. They reuse the existing event object, completely avoiding the overhead of new event allocation, construction, and data copying.</li>
+<li><b>Event Payload Design:</b><ul>
+<li>Keep event structures lean. They are primarily data carriers.</li>
+<li><b>Pass Large Data by Smart Pointer:</b> For substantial data (e.g., image buffers, large text blocks, collections), include a <span class="tt">std::shared_ptr&lt;DataType&gt;</span> or <span class="tt">std::unique_ptr&lt;DataType&gt;</span> in your event. This ensures only the pointer is copied/moved, not the entire data block.</li>
+<li><b>Use <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span> for Strings:</b> Prefer <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span> over <span class="tt">std::string</span> for string data within events to avoid potential ABI issues and heap allocations for small-to-medium strings. For very large strings, <span class="tt">std::shared_ptr&lt;std::string&gt;</span> is an option if <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span> is insufficient.</li>
+</ul>
+</li>
+</ul>
+<p><b>(Reference:</b> QB-Core: Event Messaging Between Actors, <span class="tt">test-actor-event.cpp</span>.)**</p>
+<h2>3. Actor Design and Placement Strategies</h2>
+<p>How you design and distribute your actors impacts system performance.</p>
+<ul>
+<li><b>Actor Granularity:</b> Avoid overly fine-grained actors if the communication overhead for simple tasks outweighs the benefits of decomposition. Conversely, overly coarse-grained actors can become bottlenecks or limit parallelism.</li>
+<li><b>State Locality &amp; Communication Patterns:</b><ul>
+<li><b>Co-locate Frequent Communicators:</b> Place actors that exchange many messages frequently on the <em>same <span class="tt">VirtualCore</span></em> if possible. This minimizes inter-core communication overhead (which, while efficient in QB, is still more expensive than same-core).</li>
+<li>Use <span class="tt">main.addActor&lt;MyActor&gt;(core_id, ...)</span> or the <span class="tt">core(core_id).builder()</span> to explicitly assign actors to cores.</li>
+</ul>
+</li>
+<li><b>Identifying and Isolating Bottlenecks:</b><ul>
+<li>If an actor consistently handles a high volume of messages or performs CPU-intensive computations, consider placing it on a dedicated <span class="tt">VirtualCore</span> with appropriate affinity and low (or zero) latency settings.</li>
+<li>Distribute work by sharding data or requests across multiple instances of worker actors if a single actor type becomes a bottleneck.</li>
+</ul>
+</li>
+<li><b>Non-Blocking Behavior is Paramount:</b> <b>Strictly avoid any blocking operations</b> (long computations, synchronous/blocking I/O calls, extended waits on mutexes or condition variables) directly within an actor's <span class="tt">on(Event&amp;)</span> handlers or <span class="tt">onCallback()</span> method. A blocked actor stalls its entire <span class="tt">VirtualCore</span>! Offload such tasks using:<ul>
+<li><span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> for simpler, non-CPU-intensive blocking calls.</li>
+<li>Dedicated worker actors (potentially on different cores) for more complex or frequent blocking operations. These workers perform the blocking task and send a result event back.</li>
+</ul>
+</li>
+<li><b>Referenced Actors (<span class="tt">addRefActor</span>):<ul>
+<li>Can reduce event-passing overhead for tightly-coupled parent-child actors that reside on the **same core</li>
+</ul>
+</b> and interact very frequently with simple calls.<ul>
+<li><b>Use with Caution:</b> Direct method calls bypass the child's mailbox, breaking standard actor isolation and potentially creating state consistency issues if not managed meticulously. Prefer events unless a significant, <em>measured</em> performance gain is demonstrated for a critical interaction.</li>
+</ul>
+</li>
+</ul>
+<h2>4. I/O Performance Considerations (for <span class="tt">qb-io</span> usage)</h2>
+<ul>
+<li><b>Protocol Efficiency:</b> Binary protocols (e.g., <span class="tt">text::binary16/32</span> which use <span class="tt">base::size_as_header</span>) are generally more performant than text-based protocols due to less parsing overhead.</li>
+<li><b>Zero-Copy Read Views:</b> When parsing, if your protocol supports it (like <span class="tt">text::string_view</span> or <span class="tt">text::command_view</span>), using <span class="tt">std::string_view</span> for message payloads can avoid copying data from the input buffer into new strings, provided the view is used before the buffer is modified.</li>
+<li><b>Buffer Management (<span class="tt"><a class="el" href="classqb_1_1allocator_1_1pipe.html" title="Extensible buffer optimized for performance.">qb::allocator::pipe</a></span>):</b> <span class="tt">qb-io</span> streams use <span class="tt"><a class="el" href="classqb_1_1allocator_1_1pipe.html" title="Extensible buffer optimized for performance.">qb::allocator::pipe</a></span> internally. While generally efficient, understanding its <span class="tt">reorder()</span> behavior can be useful if you are doing very low-level custom buffer manipulation (rarely needed).</li>
+<li><b>SSL/TLS Overhead:</b> Encryption/decryption inherently adds CPU overhead. Ensure you are using modern, efficient cipher suites. For applications with many short-lived connections, SSL session resumption/caching can significantly reduce handshake latency.</li>
+<li><b>Compression Trade-offs:</b> When using <span class="tt">qb::compression</span>, balance the desired compression level against CPU cost. Higher compression levels save more bandwidth/storage but consume more CPU cycles.</li>
+</ul>
+<h2>5. Profiling: Your Most Important Tool</h2>
+<p>Theoretical optimizations are useful, but <b>always profile your application</b> under realistic load conditions to identify actual bottlenecks.</p>
+<ul>
+<li><b>System Profilers:</b> Use platform-specific tools (<span class="tt">perf</span> on Linux, Instruments on macOS, VTune, Visual Studio Profiler) to find CPU hotspots, cache misses, and contention points.</li>
+<li><b>Application-Level Metrics:</b> Instrument your critical actors with <span class="tt">std::atomic</span> counters or use <span class="tt"><a class="el" href="classqb_1_1_log_timer.html" title="Utility for logging execution time of code blocks.">qb::LogTimer</a></span> / <span class="tt"><a class="el" href="classqb_1_1_scoped_timer.html" title="Utility for measuring code block execution time.">qb::ScopedTimer</a></span> to measure:<ul>
+<li>Event processing times.</li>
+<li>Mailbox queue lengths (if accessible or instrumented).</li>
+<li>Message throughput per actor/core.</li>
+<li>Latency for specific request-response cycles.</li>
+</ul>
+</li>
+<li><b>Logging:</b> Use a high-performance logger (like <span class="tt">nanolog</span> if <span class="tt">QB_LOGGER</span> is enabled) <em>selectively</em> for tracing event flow or timing critical sections. Excessive logging in hot paths can itself become a bottleneck.</li>
+</ul>
+<p>By systematically identifying bottlenecks through profiling and applying these QB-specific tuning techniques judiciously, you can build highly performant and scalable actor-based systems.</p>
+<p><b>(Next:</b> Learn about QB Framework: Error Handling &amp; Resilience Strategies or QB Framework: Effective Resource Management**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

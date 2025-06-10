@@ -1,0 +1,33 @@
+<map id="include/qb/io/async/listener.h" name="include/qb/io/async/listener.h">
+<area shape="rect" id="Node000001" title="Core event loop manager for the asynchronous IO framework." alt="" coords="457,5,590,46"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,102,80,127"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="457,36,290,57,191,74,93,97,86,98,85,93,91,91,190,69,289,51,456,30"/>
+<area shape="rect" id="Node000003" href="$unordered__set_8h.html" title="Optimized unordered set implementations." alt="" coords="104,94,243,135"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="457,46,258,95,257,90,456,41"/>
+<area shape="rect" id="Node000007" href="$branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="267,102,426,127"/>
+<area shape="poly" id="edge6_Node000001_Node000007" title=" " alt="" coords="485,49,386,97,384,92,482,44"/>
+<area shape="rect" id="Node000008" href="$type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="451,102,597,127"/>
+<area shape="poly" id="edge7_Node000001_Node000008" title=" " alt="" coords="526,47,526,86,521,86,521,47"/>
+<area shape="rect" id="Node000013" title=" " alt="" coords="620,102,678,127"/>
+<area shape="poly" id="edge12_Node000001_Node000013" title=" " alt="" coords="554,44,621,90,618,95,551,49"/>
+<area shape="rect" id="Node000014" title=" " alt="" coords="702,102,759,127"/>
+<area shape="poly" id="edge13_Node000001_Node000014" title=" " alt="" coords="576,44,692,92,693,92,691,97,689,96,574,49"/>
+<area shape="rect" id="Node000015" href="$async_2event_2base_8h.html" title="Base class for asynchronous events in the QB IO library." alt="" coords="784,102,880,127"/>
+<area shape="poly" id="edge14_Node000001_Node000015" title=" " alt="" coords="592,42,773,91,781,94,779,99,771,97,590,47"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="16,190,56,216"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="143,137,69,184,66,179,141,133"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="80,183,218,223"/>
+<area shape="poly" id="edge4_Node000003_Node000005" title=" " alt="" coords="170,136,161,168,156,167,165,134"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="243,190,346,216"/>
+<area shape="poly" id="edge5_Node000003_Node000006" title=" " alt="" coords="202,133,267,179,264,183,199,137"/>
+<area shape="rect" id="Node000009" title=" " alt="" coords="371,190,458,216"/>
+<area shape="poly" id="edge8_Node000008_Node000009" title=" " alt="" coords="510,130,444,182,440,178,507,126"/>
+<area shape="rect" id="Node000010" title=" " alt="" coords="483,190,565,216"/>
+<area shape="poly" id="edge9_Node000008_Node000010" title=" " alt="" coords="526,128,526,174,521,174,521,128"/>
+<area shape="rect" id="Node000011" title=" " alt="" coords="590,190,642,216"/>
+<area shape="poly" id="edge10_Node000008_Node000011" title=" " alt="" coords="538,126,594,177,590,181,535,130"/>
+<area shape="rect" id="Node000012" title=" " alt="" coords="666,190,734,216"/>
+<area shape="poly" id="edge11_Node000008_Node000012" title=" " alt="" coords="550,125,663,181,660,185,548,130"/>
+<area shape="rect" id="Node000016" title=" " alt="" coords="792,190,872,216"/>
+<area shape="poly" id="edge15_Node000015_Node000016" title=" " alt="" coords="834,128,834,174,829,174,829,128"/>
+</map>

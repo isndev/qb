@@ -1,0 +1,1115 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::Duration Class Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::Duration Class Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('classqb_1_1_duration.html','','classqb_1_1_duration-members'); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">qb::Duration Class Reference</div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Represents a duration with nanosecond precision.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="timestamp_8h_source.html">timestamp.h</a>&gt;</code></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-types" class="groupheader"><a id="pub-types" name="pub-types"></a>
+Public Types</h2></td></tr>
+<tr class="memitem:a87c62c5ea1a51462acc98b75067da039" id="r_a87c62c5ea1a51462acc98b75067da039"><td class="memItemLeft" align="right" valign="top"><a id="a87c62c5ea1a51462acc98b75067da039" name="a87c62c5ea1a51462acc98b75067da039"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>rep</b> = int64_t</td></tr>
+<tr class="memdesc:a87c62c5ea1a51462acc98b75067da039"><td class="mdescLeft">&#160;</td><td class="mdescRight">Type used for nanosecond representation. <br /></td></tr>
+<tr class="memitem:ace1ffac7580d5270d88b4cb120be332d" id="r_ace1ffac7580d5270d88b4cb120be332d"><td class="memItemLeft" align="right" valign="top"><a id="ace1ffac7580d5270d88b4cb120be332d" name="ace1ffac7580d5270d88b4cb120be332d"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>chrono_duration</b> = std::chrono::duration&lt;<a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a>, std::nano&gt;</td></tr>
+<tr class="memdesc:ace1ffac7580d5270d88b4cb120be332d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Underlying chrono duration type (nanoseconds) <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:aa210baa23fe396562f1e603481c0b006" id="r_aa210baa23fe396562f1e603481c0b006"><td class="memItemLeft" align="right" valign="top"><a id="aa210baa23fe396562f1e603481c0b006" name="aa210baa23fe396562f1e603481c0b006"></a>
+constexpr&#160;</td><td class="memItemRight" valign="bottom"><b>Duration</b> () noexcept=default</td></tr>
+<tr class="memdesc:aa210baa23fe396562f1e603481c0b006"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default constructor, initializes to zero. <br /></td></tr>
+<tr class="memitem:af1c7701b742ff2dc419748620469dae2" id="r_af1c7701b742ff2dc419748620469dae2"><td class="memItemLeft" align="right" valign="top">constexpr&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af1c7701b742ff2dc419748620469dae2">Duration</a> (<a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> <a class="el" href="#ac6376f314942a8bfb980d86ba7e1596c">nanoseconds</a>) noexcept</td></tr>
+<tr class="memdesc:af1c7701b742ff2dc419748620469dae2"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs a duration with specified nanoseconds.  <br /></td></tr>
+<tr class="memitem:ace26aef96c293097b0feda69e2b47751" id="r_ace26aef96c293097b0feda69e2b47751"><td class="memTemplParams" colspan="2">template&lt;typename Rep, typename Period&gt; </td></tr>
+<tr class="memitem:ace26aef96c293097b0feda69e2b47751 template"><td class="memItemLeft" align="right" valign="top">constexpr&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ace26aef96c293097b0feda69e2b47751">Duration</a> (const std::chrono::duration&lt; Rep, Period &gt; &amp;duration) noexcept</td></tr>
+<tr class="memdesc:ace26aef96c293097b0feda69e2b47751"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs a duration from std::chrono::duration.  <br /></td></tr>
+<tr class="memitem:a83a032a4988d2a4acc9ff0af1c533ec1" id="r_a83a032a4988d2a4acc9ff0af1c533ec1"><td class="memItemLeft" align="right" valign="top"><a id="a83a032a4988d2a4acc9ff0af1c533ec1" name="a83a032a4988d2a4acc9ff0af1c533ec1"></a>
+constexpr&#160;</td><td class="memItemRight" valign="bottom"><b>Duration</b> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;) noexcept=default</td></tr>
+<tr class="memitem:a389401187f40cb9bc4ae6fb244f1e00d" id="r_a389401187f40cb9bc4ae6fb244f1e00d"><td class="memItemLeft" align="right" valign="top"><a id="a389401187f40cb9bc4ae6fb244f1e00d" name="a389401187f40cb9bc4ae6fb244f1e00d"></a>
+constexpr&#160;</td><td class="memItemRight" valign="bottom"><b>Duration</b> (<a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;&amp;) noexcept=default</td></tr>
+<tr class="memitem:a60545ec5142378dc63d0aa0b604dec3b" id="r_a60545ec5142378dc63d0aa0b604dec3b"><td class="memItemLeft" align="right" valign="top"><a id="a60545ec5142378dc63d0aa0b604dec3b" name="a60545ec5142378dc63d0aa0b604dec3b"></a>
+constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator=</b> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;) noexcept=default</td></tr>
+<tr class="memitem:a5532d8386461eb31db13f80468b77ac8" id="r_a5532d8386461eb31db13f80468b77ac8"><td class="memItemLeft" align="right" valign="top"><a id="a5532d8386461eb31db13f80468b77ac8" name="a5532d8386461eb31db13f80468b77ac8"></a>
+constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator=</b> (<a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;&amp;) noexcept=default</td></tr>
+<tr class="memitem:afa0621dc3cfee77961f7aa641a04b194" id="r_afa0621dc3cfee77961f7aa641a04b194"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="#ace1ffac7580d5270d88b4cb120be332d">chrono_duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#afa0621dc3cfee77961f7aa641a04b194">to_chrono</a> () const noexcept</td></tr>
+<tr class="memdesc:afa0621dc3cfee77961f7aa641a04b194"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts to std::chrono::duration.  <br /></td></tr>
+<tr class="memitem:a39930deb308921f9c9e83edb45bf058b" id="r_a39930deb308921f9c9e83edb45bf058b"><td class="memTemplParams" colspan="2">template&lt;typename TargetDuration&gt; </td></tr>
+<tr class="memitem:a39930deb308921f9c9e83edb45bf058b template"><td class="memItemLeft" align="right" valign="top">constexpr TargetDuration&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a39930deb308921f9c9e83edb45bf058b">to</a> () const noexcept</td></tr>
+<tr class="memdesc:a39930deb308921f9c9e83edb45bf058b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts to any std::chrono::duration.  <br /></td></tr>
+<tr class="memitem:a181cdef4d18006b3713027c916f6b8dd" id="r_a181cdef4d18006b3713027c916f6b8dd"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a181cdef4d18006b3713027c916f6b8dd">days</a> () const noexcept</td></tr>
+<tr class="memdesc:a181cdef4d18006b3713027c916f6b8dd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in days.  <br /></td></tr>
+<tr class="memitem:a5424d9eb797aec56e175f9b2dcd68ac5" id="r_a5424d9eb797aec56e175f9b2dcd68ac5"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a5424d9eb797aec56e175f9b2dcd68ac5">days_float</a> () const noexcept</td></tr>
+<tr class="memdesc:a5424d9eb797aec56e175f9b2dcd68ac5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in days with fractional precision.  <br /></td></tr>
+<tr class="memitem:af62506f639e2b390fe50c554be112b8c" id="r_af62506f639e2b390fe50c554be112b8c"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af62506f639e2b390fe50c554be112b8c">hours</a> () const noexcept</td></tr>
+<tr class="memdesc:af62506f639e2b390fe50c554be112b8c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in hours.  <br /></td></tr>
+<tr class="memitem:a28c530226bfb8fa237e86b3fd44d9d27" id="r_a28c530226bfb8fa237e86b3fd44d9d27"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a28c530226bfb8fa237e86b3fd44d9d27">hours_float</a> () const noexcept</td></tr>
+<tr class="memdesc:a28c530226bfb8fa237e86b3fd44d9d27"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in hours with fractional precision.  <br /></td></tr>
+<tr class="memitem:a05e9f02acf93832d00216638a12eefb2" id="r_a05e9f02acf93832d00216638a12eefb2"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a05e9f02acf93832d00216638a12eefb2">minutes</a> () const noexcept</td></tr>
+<tr class="memdesc:a05e9f02acf93832d00216638a12eefb2"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in minutes.  <br /></td></tr>
+<tr class="memitem:a04d6fb888c5e86d65554b0704a1bdc3a" id="r_a04d6fb888c5e86d65554b0704a1bdc3a"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a04d6fb888c5e86d65554b0704a1bdc3a">minutes_float</a> () const noexcept</td></tr>
+<tr class="memdesc:a04d6fb888c5e86d65554b0704a1bdc3a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in minutes with fractional precision.  <br /></td></tr>
+<tr class="memitem:a10cd9837811c3d8098fee5249deea294" id="r_a10cd9837811c3d8098fee5249deea294"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a10cd9837811c3d8098fee5249deea294">seconds</a> () const noexcept</td></tr>
+<tr class="memdesc:a10cd9837811c3d8098fee5249deea294"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in seconds.  <br /></td></tr>
+<tr class="memitem:a642e25ad129322b416a6b16c4cb2bd35" id="r_a642e25ad129322b416a6b16c4cb2bd35"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a642e25ad129322b416a6b16c4cb2bd35">seconds_float</a> () const noexcept</td></tr>
+<tr class="memdesc:a642e25ad129322b416a6b16c4cb2bd35"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in seconds with fractional precision.  <br /></td></tr>
+<tr class="memitem:a994caae173e1dd52fd3b54e209644dd0" id="r_a994caae173e1dd52fd3b54e209644dd0"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a994caae173e1dd52fd3b54e209644dd0">milliseconds</a> () const noexcept</td></tr>
+<tr class="memdesc:a994caae173e1dd52fd3b54e209644dd0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in milliseconds.  <br /></td></tr>
+<tr class="memitem:aa477e65fdaf8e201f60d6acf60f68af5" id="r_aa477e65fdaf8e201f60d6acf60f68af5"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aa477e65fdaf8e201f60d6acf60f68af5">milliseconds_float</a> () const noexcept</td></tr>
+<tr class="memdesc:aa477e65fdaf8e201f60d6acf60f68af5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in milliseconds with fractional precision.  <br /></td></tr>
+<tr class="memitem:acfecae04897093a6622ecec4dcb98f1b" id="r_acfecae04897093a6622ecec4dcb98f1b"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#acfecae04897093a6622ecec4dcb98f1b">microseconds</a> () const noexcept</td></tr>
+<tr class="memdesc:acfecae04897093a6622ecec4dcb98f1b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in microseconds.  <br /></td></tr>
+<tr class="memitem:aedc74ce8ecd66482ae0e0020756f1d2d" id="r_aedc74ce8ecd66482ae0e0020756f1d2d"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aedc74ce8ecd66482ae0e0020756f1d2d">microseconds_float</a> () const noexcept</td></tr>
+<tr class="memdesc:aedc74ce8ecd66482ae0e0020756f1d2d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in microseconds with fractional precision.  <br /></td></tr>
+<tr class="memitem:ac6376f314942a8bfb980d86ba7e1596c" id="r_ac6376f314942a8bfb980d86ba7e1596c"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac6376f314942a8bfb980d86ba7e1596c">nanoseconds</a> () const noexcept</td></tr>
+<tr class="memdesc:ac6376f314942a8bfb980d86ba7e1596c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in nanoseconds.  <br /></td></tr>
+<tr class="memitem:a155daa4589ff45840feb9b06252fec9a" id="r_a155daa4589ff45840feb9b06252fec9a"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a155daa4589ff45840feb9b06252fec9a">nanoseconds_float</a> () const noexcept</td></tr>
+<tr class="memdesc:a155daa4589ff45840feb9b06252fec9a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration in nanoseconds with double precision.  <br /></td></tr>
+<tr class="memitem:ac681723dea29e903f7b60a41a9b66061" id="r_ac681723dea29e903f7b60a41a9b66061"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac681723dea29e903f7b60a41a9b66061">count</a> () const noexcept</td></tr>
+<tr class="memdesc:ac681723dea29e903f7b60a41a9b66061"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the total duration in nanoseconds.  <br /></td></tr>
+<tr class="memitem:ad53ac243447cd0a7b52cc7ab277f7a0e" id="r_ad53ac243447cd0a7b52cc7ab277f7a0e"><td class="memItemLeft" align="right" valign="top"><a id="ad53ac243447cd0a7b52cc7ab277f7a0e" name="ad53ac243447cd0a7b52cc7ab277f7a0e"></a>
+constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><b>operator+</b> () const noexcept</td></tr>
+<tr class="memitem:a614580a038ac3a9555e27ddbf8934d27" id="r_a614580a038ac3a9555e27ddbf8934d27"><td class="memItemLeft" align="right" valign="top"><a id="a614580a038ac3a9555e27ddbf8934d27" name="a614580a038ac3a9555e27ddbf8934d27"></a>
+constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><b>operator-</b> () const noexcept</td></tr>
+<tr class="memitem:a5423ca7639d8e323c207322543676e04" id="r_a5423ca7639d8e323c207322543676e04"><td class="memItemLeft" align="right" valign="top"><a id="a5423ca7639d8e323c207322543676e04" name="a5423ca7639d8e323c207322543676e04"></a>
+constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator+=</b> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;other) noexcept</td></tr>
+<tr class="memitem:a377faa80964af3aea755eda6585339f0" id="r_a377faa80964af3aea755eda6585339f0"><td class="memItemLeft" align="right" valign="top"><a id="a377faa80964af3aea755eda6585339f0" name="a377faa80964af3aea755eda6585339f0"></a>
+constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator-=</b> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;other) noexcept</td></tr>
+<tr class="memitem:a2cd1f205eca5aa522f4c8b20c4d651ee" id="r_a2cd1f205eca5aa522f4c8b20c4d651ee"><td class="memItemLeft" align="right" valign="top"><a id="a2cd1f205eca5aa522f4c8b20c4d651ee" name="a2cd1f205eca5aa522f4c8b20c4d651ee"></a>
+constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator*=</b> (<a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> multiplier) noexcept</td></tr>
+<tr class="memitem:aa2d1f5ad86b58072f65d60ed6296c55c" id="r_aa2d1f5ad86b58072f65d60ed6296c55c"><td class="memItemLeft" align="right" valign="top"><a id="aa2d1f5ad86b58072f65d60ed6296c55c" name="aa2d1f5ad86b58072f65d60ed6296c55c"></a>
+constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator/=</b> (<a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> divisor) noexcept</td></tr>
+<tr class="memitem:a790b542b68138434135a7f77e1feb495" id="r_a790b542b68138434135a7f77e1feb495"><td class="memItemLeft" align="right" valign="top"><a id="a790b542b68138434135a7f77e1feb495" name="a790b542b68138434135a7f77e1feb495"></a>
+constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator%=</b> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;other) noexcept</td></tr>
+<tr class="memitem:a0ba8b6344150860f31a3d624f35dde2f" id="r_a0ba8b6344150860f31a3d624f35dde2f"><td class="memItemLeft" align="right" valign="top"><a id="a0ba8b6344150860f31a3d624f35dde2f" name="a0ba8b6344150860f31a3d624f35dde2f"></a>
+constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>operator==</b> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) const noexcept</td></tr>
+<tr class="memitem:a71cf3aa4f68c82c10cc81d3cde1b0d06" id="r_a71cf3aa4f68c82c10cc81d3cde1b0d06"><td class="memItemLeft" align="right" valign="top"><a id="a71cf3aa4f68c82c10cc81d3cde1b0d06" name="a71cf3aa4f68c82c10cc81d3cde1b0d06"></a>
+constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>operator!=</b> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) const noexcept</td></tr>
+<tr class="memitem:abb891867f60a253c60063d682c2fab49" id="r_abb891867f60a253c60063d682c2fab49"><td class="memItemLeft" align="right" valign="top"><a id="abb891867f60a253c60063d682c2fab49" name="abb891867f60a253c60063d682c2fab49"></a>
+constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>operator&lt;</b> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) const noexcept</td></tr>
+<tr class="memitem:ad409e937369dbcdc5a72cf4c093a40dd" id="r_ad409e937369dbcdc5a72cf4c093a40dd"><td class="memItemLeft" align="right" valign="top"><a id="ad409e937369dbcdc5a72cf4c093a40dd" name="ad409e937369dbcdc5a72cf4c093a40dd"></a>
+constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>operator&lt;=</b> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) const noexcept</td></tr>
+<tr class="memitem:a971ac2820d944ed9caa710c321693153" id="r_a971ac2820d944ed9caa710c321693153"><td class="memItemLeft" align="right" valign="top"><a id="a971ac2820d944ed9caa710c321693153" name="a971ac2820d944ed9caa710c321693153"></a>
+constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>operator&gt;</b> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) const noexcept</td></tr>
+<tr class="memitem:ade214d688cb608606699e6f8aacb8c80" id="r_ade214d688cb608606699e6f8aacb8c80"><td class="memItemLeft" align="right" valign="top"><a id="ade214d688cb608606699e6f8aacb8c80" name="ade214d688cb608606699e6f8aacb8c80"></a>
+constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>operator&gt;=</b> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) const noexcept</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-static-methods" class="groupheader"><a id="pub-static-methods" name="pub-static-methods"></a>
+Static Public Member Functions</h2></td></tr>
+<tr class="memitem:ab6d742b4ac5aa92d007b436160866611" id="r_ab6d742b4ac5aa92d007b436160866611"><td class="memItemLeft" align="right" valign="top"><a id="ab6d742b4ac5aa92d007b436160866611" name="ab6d742b4ac5aa92d007b436160866611"></a>
+static constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><b>zero</b> () noexcept</td></tr>
+<tr class="memdesc:ab6d742b4ac5aa92d007b436160866611"><td class="mdescLeft">&#160;</td><td class="mdescRight">Represents zero duration. <br /></td></tr>
+<tr class="memitem:a7a41e27983e3a707c0efe451c0105126" id="r_a7a41e27983e3a707c0efe451c0105126"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7a41e27983e3a707c0efe451c0105126">from_days</a> (<a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> <a class="el" href="#a181cdef4d18006b3713027c916f6b8dd">days</a>) noexcept</td></tr>
+<tr class="memdesc:a7a41e27983e3a707c0efe451c0105126"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from days.  <br /></td></tr>
+<tr class="memitem:a6e7337b6b2ac2c608ea47aeff6df865a" id="r_a6e7337b6b2ac2c608ea47aeff6df865a"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a6e7337b6b2ac2c608ea47aeff6df865a">from_hours</a> (<a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> <a class="el" href="#af62506f639e2b390fe50c554be112b8c">hours</a>) noexcept</td></tr>
+<tr class="memdesc:a6e7337b6b2ac2c608ea47aeff6df865a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from hours.  <br /></td></tr>
+<tr class="memitem:ae707d3a6c2b5586c28c9c3caa6d5622a" id="r_ae707d3a6c2b5586c28c9c3caa6d5622a"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae707d3a6c2b5586c28c9c3caa6d5622a">from_minutes</a> (<a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> <a class="el" href="#a05e9f02acf93832d00216638a12eefb2">minutes</a>) noexcept</td></tr>
+<tr class="memdesc:ae707d3a6c2b5586c28c9c3caa6d5622a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from minutes.  <br /></td></tr>
+<tr class="memitem:abbb08775d867c6f73d06d911cebe0503" id="r_abbb08775d867c6f73d06d911cebe0503"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#abbb08775d867c6f73d06d911cebe0503">from_seconds</a> (<a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> <a class="el" href="#a10cd9837811c3d8098fee5249deea294">seconds</a>) noexcept</td></tr>
+<tr class="memdesc:abbb08775d867c6f73d06d911cebe0503"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from seconds.  <br /></td></tr>
+<tr class="memitem:ab6ebe0606258e3221cb624f26b4f1249" id="r_ab6ebe0606258e3221cb624f26b4f1249"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab6ebe0606258e3221cb624f26b4f1249">from_milliseconds</a> (<a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> ms) noexcept</td></tr>
+<tr class="memdesc:ab6ebe0606258e3221cb624f26b4f1249"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from milliseconds.  <br /></td></tr>
+<tr class="memitem:a4ed1b495aee0bbbd99805b493e1dff95" id="r_a4ed1b495aee0bbbd99805b493e1dff95"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4ed1b495aee0bbbd99805b493e1dff95">from_microseconds</a> (<a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> us) noexcept</td></tr>
+<tr class="memdesc:a4ed1b495aee0bbbd99805b493e1dff95"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from microseconds.  <br /></td></tr>
+<tr class="memitem:a26be8a6c35547636ec94fd92f6355239" id="r_a26be8a6c35547636ec94fd92f6355239"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a26be8a6c35547636ec94fd92f6355239">from_nanoseconds</a> (<a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> ns) noexcept</td></tr>
+<tr class="memdesc:a26be8a6c35547636ec94fd92f6355239"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from nanoseconds.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Represents a duration with nanosecond precision. </p>
+<p><a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> provides a platform-independent way to represent time durations with high precision. It supports arithmetic operations and various time unit conversions, fully interoperable with std::chrono::duration. </p>
+</div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="af1c7701b742ff2dc419748620469dae2" name="af1c7701b742ff2dc419748620469dae2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af1c7701b742ff2dc419748620469dae2">&#9670;&#160;</a></span>Duration() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::Duration::Duration </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a></td>          <td class="paramname"><span class="paramname"><em>nanoseconds</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel explicit">explicit</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructs a duration with specified nanoseconds. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">nanoseconds</td><td><a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> in nanoseconds </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="ace26aef96c293097b0feda69e2b47751" name="ace26aef96c293097b0feda69e2b47751"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ace26aef96c293097b0feda69e2b47751">&#9670;&#160;</a></span>Duration() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Rep, typename Period&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::Duration::Duration </td>
+          <td>(</td>
+          <td class="paramtype">const std::chrono::duration&lt; Rep, Period &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>duration</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel explicit">explicit</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructs a duration from std::chrono::duration. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Rep</td><td>The count representation type </td></tr>
+    <tr><td class="paramname">Period</td><td>The period type </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">duration</td><td>A std::chrono duration </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="afa0621dc3cfee77961f7aa641a04b194" name="afa0621dc3cfee77961f7aa641a04b194"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#afa0621dc3cfee77961f7aa641a04b194">&#9670;&#160;</a></span>to_chrono()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="#ace1ffac7580d5270d88b4cb120be332d">chrono_duration</a> qb::Duration::to_chrono </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Converts to std::chrono::duration. </p>
+<dl class="section return"><dt>Returns</dt><dd>Equivalent std::chrono::duration in nanoseconds </dd></dl>
+
+</div>
+</div>
+<a id="a39930deb308921f9c9e83edb45bf058b" name="a39930deb308921f9c9e83edb45bf058b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a39930deb308921f9c9e83edb45bf058b">&#9670;&#160;</a></span>to()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename TargetDuration&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">TargetDuration qb::Duration::to </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Converts to any std::chrono::duration. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname"><a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a></td><td>The target duration type </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd><a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> converted to the specified std::chrono::duration </dd></dl>
+
+</div>
+</div>
+<a id="a7a41e27983e3a707c0efe451c0105126" name="a7a41e27983e3a707c0efe451c0105126"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7a41e27983e3a707c0efe451c0105126">&#9670;&#160;</a></span>from_days()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> qb::Duration::from_days </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a></td>          <td class="paramname"><span class="paramname"><em>days</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel static">static</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from days. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">days</td><td>Number of days </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>A <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> representing the specified number of days </dd></dl>
+
+</div>
+</div>
+<a id="a6e7337b6b2ac2c608ea47aeff6df865a" name="a6e7337b6b2ac2c608ea47aeff6df865a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6e7337b6b2ac2c608ea47aeff6df865a">&#9670;&#160;</a></span>from_hours()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> qb::Duration::from_hours </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a></td>          <td class="paramname"><span class="paramname"><em>hours</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel static">static</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from hours. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">hours</td><td>Number of hours </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>A <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> representing the specified number of hours </dd></dl>
+
+</div>
+</div>
+<a id="ae707d3a6c2b5586c28c9c3caa6d5622a" name="ae707d3a6c2b5586c28c9c3caa6d5622a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae707d3a6c2b5586c28c9c3caa6d5622a">&#9670;&#160;</a></span>from_minutes()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> qb::Duration::from_minutes </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a></td>          <td class="paramname"><span class="paramname"><em>minutes</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel static">static</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from minutes. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">minutes</td><td>Number of minutes </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>A <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> representing the specified number of minutes </dd></dl>
+
+</div>
+</div>
+<a id="abbb08775d867c6f73d06d911cebe0503" name="abbb08775d867c6f73d06d911cebe0503"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abbb08775d867c6f73d06d911cebe0503">&#9670;&#160;</a></span>from_seconds()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> qb::Duration::from_seconds </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a></td>          <td class="paramname"><span class="paramname"><em>seconds</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel static">static</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from seconds. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">seconds</td><td>Number of seconds </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>A <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> representing the specified number of seconds </dd></dl>
+
+</div>
+</div>
+<a id="ab6ebe0606258e3221cb624f26b4f1249" name="ab6ebe0606258e3221cb624f26b4f1249"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab6ebe0606258e3221cb624f26b4f1249">&#9670;&#160;</a></span>from_milliseconds()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> qb::Duration::from_milliseconds </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a></td>          <td class="paramname"><span class="paramname"><em>ms</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel static">static</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from milliseconds. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ms</td><td>Number of milliseconds </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>A <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> representing the specified number of milliseconds </dd></dl>
+
+</div>
+</div>
+<a id="a4ed1b495aee0bbbd99805b493e1dff95" name="a4ed1b495aee0bbbd99805b493e1dff95"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4ed1b495aee0bbbd99805b493e1dff95">&#9670;&#160;</a></span>from_microseconds()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> qb::Duration::from_microseconds </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a></td>          <td class="paramname"><span class="paramname"><em>us</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel static">static</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from microseconds. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">us</td><td>Number of microseconds </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>A <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> representing the specified number of microseconds </dd></dl>
+
+</div>
+</div>
+<a id="a26be8a6c35547636ec94fd92f6355239" name="a26be8a6c35547636ec94fd92f6355239"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a26be8a6c35547636ec94fd92f6355239">&#9670;&#160;</a></span>from_nanoseconds()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a> qb::Duration::from_nanoseconds </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a></td>          <td class="paramname"><span class="paramname"><em>ns</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel static">static</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Factory method to create a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from nanoseconds. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ns</td><td>Number of nanoseconds </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>A <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> representing the specified number of nanoseconds </dd></dl>
+
+</div>
+</div>
+<a id="a181cdef4d18006b3713027c916f6b8dd" name="a181cdef4d18006b3713027c916f6b8dd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a181cdef4d18006b3713027c916f6b8dd">&#9670;&#160;</a></span>days()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> qb::Duration::days </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in days. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of whole days </dd></dl>
+
+</div>
+</div>
+<a id="a5424d9eb797aec56e175f9b2dcd68ac5" name="a5424d9eb797aec56e175f9b2dcd68ac5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5424d9eb797aec56e175f9b2dcd68ac5">&#9670;&#160;</a></span>days_float()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">double qb::Duration::days_float </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in days with fractional precision. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of days with decimal point </dd></dl>
+
+</div>
+</div>
+<a id="af62506f639e2b390fe50c554be112b8c" name="af62506f639e2b390fe50c554be112b8c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af62506f639e2b390fe50c554be112b8c">&#9670;&#160;</a></span>hours()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> qb::Duration::hours </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in hours. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of whole hours </dd></dl>
+
+</div>
+</div>
+<a id="a28c530226bfb8fa237e86b3fd44d9d27" name="a28c530226bfb8fa237e86b3fd44d9d27"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a28c530226bfb8fa237e86b3fd44d9d27">&#9670;&#160;</a></span>hours_float()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">double qb::Duration::hours_float </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in hours with fractional precision. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of hours with decimal point </dd></dl>
+
+</div>
+</div>
+<a id="a05e9f02acf93832d00216638a12eefb2" name="a05e9f02acf93832d00216638a12eefb2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a05e9f02acf93832d00216638a12eefb2">&#9670;&#160;</a></span>minutes()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> qb::Duration::minutes </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in minutes. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of whole minutes </dd></dl>
+
+</div>
+</div>
+<a id="a04d6fb888c5e86d65554b0704a1bdc3a" name="a04d6fb888c5e86d65554b0704a1bdc3a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a04d6fb888c5e86d65554b0704a1bdc3a">&#9670;&#160;</a></span>minutes_float()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">double qb::Duration::minutes_float </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in minutes with fractional precision. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of minutes with decimal point </dd></dl>
+
+</div>
+</div>
+<a id="a10cd9837811c3d8098fee5249deea294" name="a10cd9837811c3d8098fee5249deea294"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a10cd9837811c3d8098fee5249deea294">&#9670;&#160;</a></span>seconds()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> qb::Duration::seconds </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in seconds. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of whole seconds </dd></dl>
+
+</div>
+</div>
+<a id="a642e25ad129322b416a6b16c4cb2bd35" name="a642e25ad129322b416a6b16c4cb2bd35"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a642e25ad129322b416a6b16c4cb2bd35">&#9670;&#160;</a></span>seconds_float()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">double qb::Duration::seconds_float </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in seconds with fractional precision. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of seconds with decimal point </dd></dl>
+
+</div>
+</div>
+<a id="a994caae173e1dd52fd3b54e209644dd0" name="a994caae173e1dd52fd3b54e209644dd0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a994caae173e1dd52fd3b54e209644dd0">&#9670;&#160;</a></span>milliseconds()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> qb::Duration::milliseconds </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in milliseconds. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of whole milliseconds </dd></dl>
+
+</div>
+</div>
+<a id="aa477e65fdaf8e201f60d6acf60f68af5" name="aa477e65fdaf8e201f60d6acf60f68af5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa477e65fdaf8e201f60d6acf60f68af5">&#9670;&#160;</a></span>milliseconds_float()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">double qb::Duration::milliseconds_float </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in milliseconds with fractional precision. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of milliseconds with decimal point </dd></dl>
+
+</div>
+</div>
+<a id="acfecae04897093a6622ecec4dcb98f1b" name="acfecae04897093a6622ecec4dcb98f1b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acfecae04897093a6622ecec4dcb98f1b">&#9670;&#160;</a></span>microseconds()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> qb::Duration::microseconds </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in microseconds. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of whole microseconds </dd></dl>
+
+</div>
+</div>
+<a id="aedc74ce8ecd66482ae0e0020756f1d2d" name="aedc74ce8ecd66482ae0e0020756f1d2d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aedc74ce8ecd66482ae0e0020756f1d2d">&#9670;&#160;</a></span>microseconds_float()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">double qb::Duration::microseconds_float </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in microseconds with fractional precision. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of microseconds with decimal point </dd></dl>
+
+</div>
+</div>
+<a id="ac6376f314942a8bfb980d86ba7e1596c" name="ac6376f314942a8bfb980d86ba7e1596c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac6376f314942a8bfb980d86ba7e1596c">&#9670;&#160;</a></span>nanoseconds()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> qb::Duration::nanoseconds </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in nanoseconds. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of nanoseconds </dd></dl>
+
+</div>
+</div>
+<a id="a155daa4589ff45840feb9b06252fec9a" name="a155daa4589ff45840feb9b06252fec9a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a155daa4589ff45840feb9b06252fec9a">&#9670;&#160;</a></span>nanoseconds_float()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">double qb::Duration::nanoseconds_float </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the duration in nanoseconds with double precision. </p>
+<dl class="section return"><dt>Returns</dt><dd>Number of nanoseconds as double </dd></dl>
+
+</div>
+</div>
+<a id="ac681723dea29e903f7b60a41a9b66061" name="ac681723dea29e903f7b60a41a9b66061"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac681723dea29e903f7b60a41a9b66061">&#9670;&#160;</a></span>count()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="#a87c62c5ea1a51462acc98b75067da039">rep</a> qb::Duration::count </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the total duration in nanoseconds. </p>
+<dl class="section return"><dt>Returns</dt><dd><a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> in nanoseconds </dd></dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><a href="classqb_1_1_duration.html">Duration</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

@@ -1,0 +1,9 @@
+<map id="qb::io::transport::tcp" name="qb::io::transport::tcp">
+<area shape="rect" id="Node000001" title="TCP transport providing reliable, stream&#45;based network communication." alt="" coords="20,183,158,208"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1io_1_1async_1_1tcp_1_1client.html" title=" " alt="" coords="5,256,173,312"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="92,224,92,256,86,256,86,224"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1stream.html" title=" " alt="" coords="27,94,151,135"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="92,150,92,182,86,182,86,150"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1istream.html" title=" " alt="" coords="26,5,152,46"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="92,62,92,94,86,94,86,62"/>
+</map>

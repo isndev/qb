@@ -1,0 +1,12 @@
+<map id="qb::lockfree::spsc::internal::ringbuffer&lt; T &gt;" name="qb::lockfree::spsc::internal::ringbuffer&lt; T &gt;">
+<area shape="rect" id="Node000001" title="Base implementation of the Single&#45;Producer Single&#45;Consumer ringbuffer." alt="" coords="139,85,304,126"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1lockfree_1_1spsc_1_1ringbuffer.html" title=" " alt="" coords="374,5,509,61"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="299,77,373,53,375,58,301,82"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1lockfree_1_1spsc_1_1ringbuffer_3_01_t_00_010_01_4.html" title="Dynamic&#45;size implementation of the SPSC ringbuffer." alt="" coords="378,85,506,126"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="319,111,377,111,377,116,319,117"/>
+<area shape="poly" id="edge5_Node000001_Node000004" title=" " alt="" coords="319,94,377,94,377,100,319,99"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1lockfree_1_1spsc_1_1ringbuffer.html" title="Fixed&#45;size implementation of the SPSC ringbuffer." alt="" coords="352,150,531,191"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="307,128,371,147,370,152,306,133"/>
+<area shape="rect" id="Node000002" href="$structqb_1_1nocopy.html" title="Base class to make derived classes non&#45;copyable." alt="" coords="5,92,91,118"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="106,102,138,102,138,108,106,108"/>
+</map>

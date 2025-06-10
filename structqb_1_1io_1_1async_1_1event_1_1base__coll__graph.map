@@ -1,0 +1,7 @@
+<map id="qb::io::async::event::base&lt; _EV_EVENT &gt;" name="qb::io::async::event::base&lt; _EV_EVENT &gt;">
+<area shape="rect" id="Node000001" title="Base template class for all qb&#45;io specific asynchronous event types." alt="" coords="54,117,212,158"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,13,104,38"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="74,50,121,115,117,118,70,53"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1async_1_1_i_registered_kernel_event.html" title="Interface for kernel event registration and invocation." alt="" coords="128,5,299,46"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="192,60,149,118,145,115,188,57"/>
+</map>

@@ -1,0 +1,17 @@
+<map id="include/qb/system/timestamp.h" name="include/qb/system/timestamp.h">
+<area shape="rect" id="Node000001" title="High&#45;precision timing utilities." alt="" coords="36,5,239,31"/>
+<area shape="rect" id="Node000002" href="$_virtual_core_8h.html" title="Defines the VirtualCore class, representing a worker thread in the QB Actor Framework." alt="" coords="5,330,195,356"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="121,45,104,80,91,153,90,225,95,288,101,329,95,330,89,288,85,225,86,152,99,78,116,43"/>
+<area shape="rect" id="Node000003" href="$spinlock_8h.html" title="Spinlock synchronization primitives." alt="" coords="113,79,290,120"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="159,41,188,77,183,80,155,45"/>
+<area shape="rect" id="Node000004" href="$mpsc_8h.html" title="Multiple&#45;Producer Single&#45;Consumer lockfree queue." alt="" coords="113,168,290,208"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="204,135,204,167,199,167,199,135"/>
+<area shape="poly" id="edge8_Node000004_Node000002" title=" " alt="" coords="178,222,153,258,109,331,104,328,148,255,174,219"/>
+<area shape="rect" id="Node000005" href="$core_2main_8h.html" title="Main control for the QB Actor Framework." alt="" coords="162,256,315,282"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="219,221,235,255,231,257,215,224"/>
+<area shape="poly" id="edge5_Node000005_Node000002" title=" " alt="" coords="203,292,125,332,122,327,200,287"/>
+<area shape="rect" id="Node000006" href="$main_8h.html" title="Convenience header for the QB Main engine controller." alt="" coords="218,330,342,356"/>
+<area shape="poly" id="edge6_Node000005_Node000006" title=" " alt="" coords="255,294,275,328,271,331,251,297"/>
+<area shape="rect" id="Node000007" href="$cube_8h.html" title="Main include file for the QB Actor Framework." alt="" coords="227,404,333,429"/>
+<area shape="poly" id="edge7_Node000006_Node000007" title=" " alt="" coords="283,371,283,403,277,403,277,371"/>
+</map>

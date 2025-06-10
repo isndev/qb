@@ -1,0 +1,21 @@
+<map id="qb::io::async::file&lt; _Derived &gt;" name="qb::io::async::file&lt; _Derived &gt;">
+<area shape="rect" id="Node000001" title="Asynchronous file operations handler." alt="" coords="1207,48,1328,88"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1async_1_1file__watcher.html" title="CRTP base class for watching a single file for attribute changes and processing its contents." alt="" coords="1007,14,1158,55"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="1173,48,1207,54,1206,60,1173,53"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1async_1_1base.html" title=" " alt="" coords="791,5,958,61"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="974,31,1007,31,1007,37,974,36"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1io_1_1transport_1_1file.html" title="File transport providing stream&#45;based access to local files." alt="" coords="1014,83,1151,109"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="1166,80,1206,74,1207,80,1167,86"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1io_1_1stream.html" title=" " alt="" coords="813,85,936,126"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="951,99,1013,96,1014,102,952,104"/>
+<area shape="rect" id="Node000006" href="$classqb_1_1io_1_1istream.html" title=" " alt="" coords="615,118,741,159"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="756,123,812,113,813,118,757,128"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="378,84,502,124"/>
+<area shape="poly" id="edge10_Node000005_Node000007" title=" " alt="" coords="517,87,526,87,603,83,681,85,812,95,812,100,680,90,603,88,526,92,518,93"/>
+<area shape="poly" id="edge6_Node000006_Node000007" title=" " alt="" coords="518,112,615,127,614,132,517,118"/>
+<area shape="rect" id="Node000008" href="$classqb_1_1allocator_1_1base__pipe.html" title=" " alt="" coords="200,84,328,124"/>
+<area shape="poly" id="edge7_Node000007_Node000008" title=" " alt="" coords="344,110,377,110,377,115,344,115"/>
+<area shape="poly" id="edge9_Node000007_Node000008" title=" " alt="" coords="344,92,377,93,377,98,344,98"/>
+<area shape="rect" id="Node000009" title=" " alt="" coords="5,91,151,117"/>
+<area shape="poly" id="edge8_Node000008_Node000009" title=" " alt="" coords="166,101,199,101,199,106,166,106"/>
+</map>

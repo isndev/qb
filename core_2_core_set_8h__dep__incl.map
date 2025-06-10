@@ -1,0 +1,13 @@
+<map id="include/qb/core/CoreSet.h" name="include/qb/core/CoreSet.h">
+<area shape="rect" id="Node000001" title="Core set management for the QB Actor Framework." alt="" coords="187,5,360,31"/>
+<area shape="rect" id="Node000002" href="$core_2main_8h.html" title="Main control for the QB Actor Framework." alt="" coords="113,79,266,105"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="249,43,205,81,202,77,246,39"/>
+<area shape="rect" id="Node000006" href="$_core_set_8h.html" title="Convenience header for the QB CoreSet component." alt="" coords="290,79,428,105"/>
+<area shape="poly" id="edge5_Node000001_Node000006" title=" " alt="" coords="301,39,346,77,343,81,298,43"/>
+<area shape="rect" id="Node000003" href="$_virtual_core_8h.html" title="Defines the VirtualCore class, representing a worker thread in the QB Actor Framework." alt="" coords="5,153,195,178"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="164,116,117,154,113,150,161,112"/>
+<area shape="rect" id="Node000004" href="$main_8h.html" title="Convenience header for the QB Main engine controller." alt="" coords="218,153,342,178"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="218,112,266,150,263,154,215,117"/>
+<area shape="rect" id="Node000005" href="$cube_8h.html" title="Main include file for the QB Actor Framework." alt="" coords="227,226,333,252"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="283,194,283,226,277,226,277,194"/>
+</map>

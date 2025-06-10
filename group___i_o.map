@@ -1,0 +1,12 @@
+<map id="IO System" name="IO System">
+<area shape="rect" id="Node000003" href="$group___async.html" title="Core mechanisms for event&#45;driven asynchronous programming." alt="" coords="332,5,485,31"/>
+<area shape="rect" id="Node000009" href="$group___compression.html" title="Data compression and decompression (requires Zlib)." alt="" coords="335,55,481,80"/>
+<area shape="rect" id="Node000008" href="$group___crypto.html" title="Hashing, encryption, and JWT functionalities (requires OpenSSL)." alt="" coords="333,104,483,130"/>
+<area shape="rect" id="Node000007" href="$group___file_system.html" title="Components for interacting with the local file system." alt="" coords="329,153,487,179"/>
+<area shape="rect" id="Node000001" title="Asynchronous I/O operations, networking, and related utilities." alt="" coords="197,179,281,204"/>
+<area shape="rect" id="Node000010" href="$group___j_s_o_n.html" title="JSON parsing, manipulation, and serialization utilities." alt="" coords="356,203,461,228"/>
+<area shape="rect" id="Node000004" href="$group___networking.html" title="Socket wrappers, endpoint representation, and URI parsing." alt="" coords="340,252,476,278"/>
+<area shape="rect" id="Node000006" href="$group___protocol.html" title="Message framing and parsing implementations." alt="" coords="346,301,470,327"/>
+<area shape="rect" id="Node000005" href="$group___transport.html" title="Abstractions over network sockets and file operations for stream&#45;based I/O." alt="" coords="352,351,464,376"/>
+<area shape="rect" id="Node000002" href="$group___q_b.html" title="The QB Actor Framework is a C++17 library for building high&#45;performance, concurrent,..." alt="" coords="5,179,149,204"/>
+</map>

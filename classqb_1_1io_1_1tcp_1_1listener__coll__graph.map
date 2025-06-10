@@ -1,0 +1,5 @@
+<map id="qb::io::tcp::listener" name="qb::io::tcp::listener">
+<area shape="rect" id="Node000001" title="Class implementing a TCP listener for accepting incoming connections." alt="" coords="5,79,135,105"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="31,5,109,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="73,46,73,79,67,79,67,46"/>
+</map>

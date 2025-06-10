@@ -1,0 +1,280 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: QB Actor Framework: Frequently Asked Questions (FAQ)</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: QB Actor Framework: Frequently Asked Questions (FAQ)</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('ref_faq_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">QB Actor Framework: Frequently Asked Questions (FAQ) </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>Quick answers to common questions about using and understanding the QB Actor Framework.</p>
+<h1>QB Actor Framework: Frequently Asked Questions (FAQ)</h1>
+<p>This FAQ provides answers to common questions about the QB Actor Framework, its design, and usage.</p>
+<p><b>Q: Is QB thread-safe? How do I manage state in actors?</b></p>
+<p>A: The QB Actor Model provides inherent thread-safety for an actor's <em>internal state</em> (its member variables). Because each actor processes events sequentially on its assigned <span class="tt">VirtualCore</span>, you don't need traditional locks (mutexes) to protect an actor's own data from concurrent access <em>by its own event handlers or callbacks</em>. State encapsulation is key: keep actor state private and modify it only in response to events.</p>
+<p>However, if your actor interacts with:</p><ul>
+<li><b>External shared resources</b> (global variables, data structures shared between actors or threads outside QB's management).</li>
+<li><b>Third-party libraries not designed for this actor model.</b> Then, <em>you</em> are responsible for ensuring thread-safe access to those external resources. Consider using a dedicated "manager actor" to serialize access to such shared resources or use standard C++ synchronization primitives (<span class="tt">std::mutex</span>, <span class="tt">std::atomic</span>) for those specific external interactions. <b>(See:</b> Core Concept: The Actor Model in QB, QB Framework: Effective Resource Management**)**</li>
+</ul>
+<p><b>Q: What's the difference between <span class="tt">push&lt;Event&gt;()</span> and <span class="tt">send&lt;Event&gt;()</span> for sending events? Which should I use?</b></p>
+<p>A: <b>Almost always use <span class="tt">push&lt;Event&gt;()</span>.</b></p><ul>
+<li><b><span class="tt">push&lt;Event&gt;(dest, ...)</span>:</b> This is the default and recommended method. It guarantees <b>ordered delivery</b> of events from a specific sender to a specific receiver (FIFO per sender-receiver pair). It also correctly handles events with non-trivially destructible members (like <span class="tt">std::string</span>, <span class="tt">std::vector</span>, <span class="tt">std::shared_ptr</span>).</li>
+<li><b><span class="tt">send&lt;Event&gt;(dest, ...)</span>:</b> This method provides <b>unordered delivery</b>. It <em>may</em> offer slightly lower latency for same-core communication in highly specific scenarios but offers no ordering guarantees. Crucially, events sent via <span class="tt">send()</span> <b>must be trivially destructible</b> (e.g., contain only POD types or <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span>). <b>Use <span class="tt">send()</span> with extreme caution</b> and only if all its conditions are met and profiling shows a significant, necessary benefit. Incorrect use can lead to very difficult-to-debug ordering issues. <b>(See:</b> QB-Core: Event Messaging Between Actors**)**</li>
+</ul>
+<p><b>Q: Why is <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span> recommended over <span class="tt">std::string</span> for event members?</b></p>
+<p>A: <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span> is recommended for direct string members in events primarily for <b>ABI (Application Binary Interface) stability and performance for small strings.</b></p><ul>
+<li><span class="tt">std::string</span>'s internal layout (especially with Small String Optimization - SSO) can vary between compilers, standard library versions, or build configurations. If QB's event system copies/moves event objects containing raw <span class="tt">std::string</span> members across such ABI boundaries (e.g., between different modules, or in advanced inter-process scenarios), it could lead to data corruption or crashes.</li>
+<li><span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span> has a predictable, self-contained layout (it's based on <span class="tt">std::array&lt;char, N+1&gt;</span>), avoiding these ABI issues for event data. It also avoids heap allocations for strings up to size <span class="tt">N</span>.</li>
+<li>If you need to pass dynamically sized or very large string data, it's best to use <span class="tt">std::shared_ptr&lt;std::string&gt;</span> or <span class="tt">std::unique_ptr&lt;std::string&gt;</span> within your event. In this case, <span class="tt">std::string</span> is fine for the heap-allocated data because QB interacts with the smart pointer object itself. <b>(See:</b> QB-Core: Event Messaging Between Actors for detailed data handling in events.**)**</li>
+</ul>
+<p><b>Q: My actor seems unresponsive or my system is slow. What are common causes?</b></p>
+<p>A:</p><ol type="1">
+<li><b>Blocking Operations in Actors:</b> The most common culprit. Ensure <b>no actor performs long-running computations or blocking I/O calls</b> (e.g., traditional file reads, synchronous network calls, <span class="tt">std::this_thread::sleep_for</span>) directly within its <span class="tt">on(Event&amp;)</span> handlers or <span class="tt">onCallback()</span> method. A blocked actor stalls its entire <span class="tt">VirtualCore</span>.<ul>
+<li><b>Solution:</b> Offload blocking work using <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span>, or delegate to dedicated worker actors (potentially on different cores with higher latency settings). Use <span class="tt">qb-io</span> for all network/file I/O from actors.</li>
+</ul>
+</li>
+<li><b><span class="tt">VirtualCore</span> Latency Settings:</b> If <span class="tt">CoreInitializer::setLatency()</span> is set to a high value, event processing will be delayed when the core is idle. For latency-sensitive actors, ensure their core has <span class="tt">0</span> or very low latency.</li>
+<li><b>CPU Saturation:</b> Check if any <span class="tt">VirtualCore</span> is consistently at 100% CPU. This could indicate an actor in a tight loop, or a core with <span class="tt">0</span> latency that is under-utilized (paradoxically, a 0-latency core with little work still spins). Profile to identify the busy actor(s).</li>
+<li><b>Deadlocks (External or Logical):</b> While the actor model prevents data races on actor state, logical deadlocks can still occur if actors are waiting for responses from each other in a cyclic dependency without timeouts.</li>
+<li><b>Resource Exhaustion:</b> Check for system-level issues like running out of memory, file descriptors, or network sockets.</li>
+<li><b>Inefficient Event/Data Handling:</b> Passing very large event objects by value frequently, or inefficient algorithms within event handlers, can degrade performance. <b>(See:</b> QB Framework: Performance Tuning Guide, QB-Core: Engine - qb::Main &amp; VirtualCore**)**</li>
+</ol>
+<p><b>Q: How do actors discover each other if they don't share memory?</b></p>
+<p>A: Actors discover each other's <span class="tt"><a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a></span> (their "address") through several mechanisms:</p><ol type="1">
+<li><b>At Creation Time:</b> When an actor is created (e.g., <span class="tt">main.addActor&lt;MyChild&gt;(...)</span>), its <span class="tt">ActorId</span> can be passed to other actors (e.g., its parent or a manager) that need to communicate with it.</li>
+<li><b>In Event Payloads:</b> An actor can include its <span class="tt">id()</span> in an event it sends, allowing the recipient to know who the sender was and reply.</li>
+<li><b><span class="tt">ServiceActor&lt;Tag&gt;</span> Pattern:</b> For well-known, core-local services.<ul>
+<li>Actors on the same core can get a direct pointer: <span class="tt">MyService* svc = getService&lt;MyService&gt;();</span></li>
+<li>Actors on any core can get the ID: <span class="tt"><a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> svc_id = getServiceId&lt;MyServiceTag&gt;(target_core_id);</span></li>
+</ul>
+</li>
+<li><b><span class="tt">require&lt;ActorType&gt;()</span> Mechanism:</b> An actor can call <span class="tt">require&lt;OtherActorType&gt;();</span> to request the framework to notify it of any live instances of <span class="tt">OtherActorType</span>. It will receive <span class="tt"><a class="el" href="structqb_1_1_require_event.html" title="Event used to query actor status.">qb::RequireEvent</a></span> messages containing the <span class="tt">ActorId</span>s of found instances.</li>
+<li><b>Custom Registry/Discovery Actor:</b> You can implement a dedicated actor that acts as a naming service or registry where other actors can register themselves (with a logical name or type) and query for others. <b>(See:</b> QB-Core: Common Actor Patterns &amp; Utilities**)**</li>
+</ol>
+<p><b>Q: How should I handle large data payloads in events?</b></p>
+<p>A: <b>Avoid copying large data directly within event structs.</b> Instead, pass the data using smart pointers when sending events via <span class="tt">push()</span>:</p><ul>
+<li><b><span class="tt">std::shared_ptr&lt;MyLargeData&gt;</span>:</b> If the data might be referenced by multiple actors or its lifetime is shared.</li>
+<li><b><span class="tt">std::unique_ptr&lt;MyLargeData&gt;</span>:</b> If you want to transfer exclusive ownership of the data to the recipient. The sender's <span class="tt">unique_ptr</span> will become null. This ensures only the small smart pointer object is copied/moved during event transfer, not the potentially massive underlying data block. When sending very large events, also consider using <span class="tt">pipe.allocated_push&lt;MyEvent&gt;(size_hint, ...)</span> to pre-allocate buffer space in the communication pipe, potentially reducing reallocations. <div class="fragment"><div class="line"><span class="keyword">struct </span>LargeDataEvent : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> {</div>
+<div class="line">    std::shared_ptr&lt;std::vector&lt;char&gt;&gt; data_buffer;</div>
+<div class="line">    <span class="comment">// ... constructor ...</span></div>
+<div class="line">};</div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// Sender:</span></div>
+<div class="line"><span class="keyword">auto</span> my_payload = std::make_shared&lt;std::vector&lt;char&gt;&gt;(1024 * 1024); <span class="comment">// 1MB</span></div>
+<div class="line"><span class="comment">// ... fill payload ...</span></div>
+<div class="line">push&lt;LargeDataEvent&gt;(recipient_id, my_payload);</div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// Receiver:</span></div>
+<div class="line"><span class="keywordtype">void</span> on(<span class="keyword">const</span> LargeDataEvent&amp; event) {</div>
+<div class="line">    <span class="keywordflow">if</span> (event.data_buffer) { <span class="comment">/* process *event.data_buffer */</span> }</div>
+<div class="line">}</div>
+<div class="ttc" id="aclassqb_1_1_event_html"><div class="ttname"><a href="classqb_1_1_event.html">qb::Event</a></div><div class="ttdoc">Base class for all events in the actor system.</div><div class="ttdef"><b>Definition</b> Event.h:85</div></div>
+</div><!-- fragment --> <b>(See:</b> QB-Core: Event Messaging Between Actors**)**</li>
+</ul>
+<p><b>Q: Can I use blocking third-party libraries with QB actors?</b></p>
+<p>A: <b>Not directly within an actor's <span class="tt">on(Event&amp;)</span> handlers or <span class="tt">onCallback()</span> methods.</b> Any call that blocks the thread will stall the actor's <span class="tt">VirtualCore</span>, impacting all other actors on that core. <b>Solutions:</b></p><ol type="1">
+<li><b>Wrap in <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span>:</b> For short, infrequent blocking calls. The callback itself will execute the blocking call, and while that specific callback is running, it will occupy its turn on the <span class="tt">VirtualCore</span>. However, the original event handler that scheduled it returns immediately, allowing other events to be processed sooner.</li>
+<li><b>Dedicated Worker Actors:</b> Create a pool of specialized worker actors (potentially on <span class="tt">VirtualCore</span>s configured with higher latency) to handle interactions with blocking libraries. Your primary actors send request events to these workers, which perform the blocking operation and then send response events back. <b>(See:</b> Integrating Core &amp; IO: Asynchronous Operations within Actors, <span class="tt">example/core_io/file_processor/</span>**)**</li>
+</ol>
+<p><b>Q: Does QB provide built-in actor supervision (like Erlang/Akka)?</b></p>
+<p>A: No, QB-Core does not provide a built-in, ready-to-use supervision hierarchy like Erlang/OTP or Akka. Developers are responsible for implementing supervision strategies using standard actor patterns. This typically involves a supervisor actor monitoring its children (e.g., via heartbeats or explicit failure notifications) and deciding on recovery actions (restart, delegate, escalate). <b>(See:</b> Guides: Error Handling &amp; Resilience Strategies**)**</p>
+<p><b>Q: How is QB different from other C++ actor frameworks?</b></p>
+<p>A: (This is a general comparison; specific features vary widely across frameworks.)</p><ul>
+<li><b>Deep <span class="tt">qb-io</span> Integration:</b> QB is built with its own high-performance asynchronous I/O library (<span class="tt">qb-io</span>) as a core, inseparable foundation, influencing its design for network and I/O-intensive tasks.</li>
+<li><b>Performance Focus:</b> Emphasis on low-level control where needed (e.g., core affinity, latency settings, <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a></span>, MPSC queues for inter-core) combined with high-level actor abstractions.</li>
+<li><b>C++17 Idioms:</b> Leverages modern C++ features for type safety and efficiency.</li>
+<li><b>Flexibility:</b> While providing the Actor Model, it doesn't enforce overly rigid lifecycle or supervision patterns by default, giving developers control.</li>
+<li><b>Lean Dependencies:</b> Relies on a few carefully selected, often bundled, high-quality C/C++ libraries (<span class="tt">libev</span>, <span class="tt">ska_hash</span>, <span class="tt">stduuid</span>, <span class="tt">nlohmann/json</span>) with optional dependencies for SSL and Zlib.</li>
+</ul>
+<p><b>Q: Where can I find the most detailed API documentation?</b></p>
+<p>A: The <b>source code header files</b> (<span class="tt">.h</span>, <span class="tt">.hpp</span>, <span class="tt">.tpp</span>, <span class="tt">.inl</span>) are the definitive reference for all class members, method signatures, template parameters, and internal implementation details. The Doxygen-generated documentation (which you are reading) aims to make this information accessible and understandable, but the headers are the ground truth. The QB Framework: Detailed API Overview page also serves as a good starting map. </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

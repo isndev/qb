@@ -1,0 +1,468 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/core/Main.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/core/Main.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('core_2main_8h_source.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">Main.h</div></div>
+</div><!--header-->
+<div class="contents">
+<a href="core_2main_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span> </div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span><span class="preprocessor">#ifndef QB_MAIN_H</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span><span class="preprocessor">#define QB_MAIN_H</span></div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span><span class="preprocessor">#include &lt;condition_variable&gt;</span></div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span><span class="preprocessor">#include &lt;<a class="code" href="unordered__map_8h.html">qb/system/container/unordered_map.h</a>&gt;</span></div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span><span class="preprocessor">#include &lt;thread&gt;</span></div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span><span class="preprocessor">#include &lt;vector&gt;</span></div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span><span class="comment">// include from qb</span></div>
+<div class="line"><a id="l00037" name="l00037"></a><span class="lineno">   37</span><span class="preprocessor">#include &lt;<a class="code" href="mpsc_8h.html">qb/system/lockfree/mpsc.h</a>&gt;</span></div>
+<div class="line"><a id="l00038" name="l00038"></a><span class="lineno">   38</span><span class="preprocessor">#include &quot;<a class="code" href="core_2_core_set_8h.html">CoreSet.h</a>&quot;</span></div>
+<div class="line"><a id="l00039" name="l00039"></a><span class="lineno">   39</span><span class="preprocessor">#include &quot;<a class="code" href="core_2_event_8h.html">Event.h</a>&quot;</span></div>
+<div class="line"><a id="l00040" name="l00040"></a><span class="lineno">   40</span> </div>
+<div class="line"><a id="l00041" name="l00041"></a><span class="lineno">   41</span><span class="keyword">namespace </span>qb {</div>
+<div class="line"><a id="l00042" name="l00042"></a><span class="lineno">   42</span> </div>
+<div class="line"><a id="l00043" name="l00043"></a><span class="lineno">   43</span><span class="keyword">class </span><a class="code hl_class" href="classqb_1_1_main.html">Main</a>;</div>
+<div class="line"><a id="l00044" name="l00044"></a><span class="lineno">   44</span><span class="keyword">class </span><a class="code hl_class" href="classqb_1_1_virtual_core.html">VirtualCore</a>;</div>
+<div class="line"><a id="l00045" name="l00045"></a><span class="lineno">   45</span><span class="keyword">class </span><a class="code hl_interface" href="classqb_1_1_i_actor_factory.html">IActorFactory</a>;</div>
+<div class="line"><a id="l00046" name="l00046"></a><span class="lineno">   46</span></div>
+<div class="line"><a id="l00057" name="l00057"></a><span class="lineno"><a class="line" href="group___engine.html#ga183f0958e32cff3fcd2a0fe871fd3c23">   57</a></span><span class="keyword">constexpr</span> <span class="keyword">const</span> <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> <a class="code hl_variable" href="group___engine.html#ga183f0958e32cff3fcd2a0fe871fd3c23">NoAffinity</a> = std::numeric_limits&lt;CoreId&gt;::max();</div>
+<div class="line"><a id="l00058" name="l00058"></a><span class="lineno">   58</span></div>
+<div class="foldopen" id="foldopen00068" data-start="{" data-end="};">
+<div class="line"><a id="l00068" name="l00068"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer.html">   68</a></span><span class="keyword">class </span>CoreInitializer : <a class="code hl_function" href="structqb_1_1nocopy.html#a40d9b4b6a7b502a3a861f8b71e8387bb">nocopy</a> {</div>
+<div class="line"><a id="l00069" name="l00069"></a><span class="lineno">   69</span>    <span class="keyword">friend</span> <span class="keyword">class </span>Main;</div>
+<div class="line"><a id="l00070" name="l00070"></a><span class="lineno">   70</span>    <span class="keyword">friend</span> <span class="keyword">class </span>VirtualCore;</div>
+<div class="line"><a id="l00071" name="l00071"></a><span class="lineno">   71</span> </div>
+<div class="line"><a id="l00072" name="l00072"></a><span class="lineno">   72</span><span class="keyword">public</span>:</div>
+<div class="foldopen" id="foldopen00081" data-start="{" data-end="};">
+<div class="line"><a id="l00081" name="l00081"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer_1_1_actor_builder.html">   81</a></span>    <span class="keyword">class </span>ActorBuilder {</div>
+<div class="line"><a id="l00082" name="l00082"></a><span class="lineno">   82</span>    <span class="keyword">public</span>:</div>
+<div class="line"><a id="l00083" name="l00083"></a><span class="lineno">   83</span>        <span class="keyword">using </span>ActorIdList = std::vector&lt;ActorId&gt;;</div>
+<div class="line"><a id="l00084" name="l00084"></a><span class="lineno">   84</span> </div>
+<div class="line"><a id="l00085" name="l00085"></a><span class="lineno">   85</span>    <span class="keyword">private</span>:</div>
+<div class="line"><a id="l00086" name="l00086"></a><span class="lineno">   86</span>        <span class="keyword">friend</span> <span class="keyword">class </span>CoreInitializer;</div>
+<div class="line"><a id="l00087" name="l00087"></a><span class="lineno">   87</span> </div>
+<div class="line"><a id="l00088" name="l00088"></a><span class="lineno">   88</span>        CoreInitializer &amp;_initializer;</div>
+<div class="line"><a id="l00089" name="l00089"></a><span class="lineno">   89</span>        ActorIdList      _ret_ids;</div>
+<div class="line"><a id="l00090" name="l00090"></a><span class="lineno">   90</span>        <span class="keywordtype">bool</span>             _valid;</div>
+<div class="line"><a id="l00091" name="l00091"></a><span class="lineno">   91</span></div>
+<div class="line"><a id="l00096" name="l00096"></a><span class="lineno">   96</span>        <span class="keyword">explicit</span> ActorBuilder(CoreInitializer &amp;initializer) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00097" name="l00097"></a><span class="lineno">   97</span> </div>
+<div class="line"><a id="l00098" name="l00098"></a><span class="lineno">   98</span>    <span class="keyword">public</span>:</div>
+<div class="line"><a id="l00099" name="l00099"></a><span class="lineno">   99</span>        ActorBuilder()                        = <span class="keyword">delete</span>;</div>
+<div class="line"><a id="l00100" name="l00100"></a><span class="lineno">  100</span>        ActorBuilder(ActorBuilder <span class="keyword">const</span> &amp;rhs) = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00101" name="l00101"></a><span class="lineno">  101</span></div>
+<div class="line"><a id="l00122" name="l00122"></a><span class="lineno">  122</span>        <span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Actor, <span class="keyword">typename</span>... _Args&gt;</div>
+<div class="line"><a id="l00123" name="l00123"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer_1_1_actor_builder.html#a193a7d60ea2a98ade7ef75440608bb30">  123</a></span>        ActorBuilder &amp;<a class="code hl_function" href="classqb_1_1_core_initializer_1_1_actor_builder.html#a193a7d60ea2a98ade7ef75440608bb30">addActor</a>(_Args &amp;&amp;...args) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00124" name="l00124"></a><span class="lineno">  124</span></div>
+<div class="line"><a id="l00132" name="l00132"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer_1_1_actor_builder.html#aca76ac042fb44b7777eb86990d6ae52a">  132</a></span>        [[nodiscard]] <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_core_initializer_1_1_actor_builder.html#aca76ac042fb44b7777eb86990d6ae52a">valid</a>() const noexcept;</div>
+<div class="line"><a id="l00139" name="l00139"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer_1_1_actor_builder.html#ade4ed6611857e16fc6ef76e3f8826be5">  139</a></span>        explicit           operator <span class="keywordtype">bool</span>() const noexcept;</div>
+<div class="line"><a id="l00140" name="l00140"></a><span class="lineno">  140</span></div>
+<div class="line"><a id="l00147" name="l00147"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer_1_1_actor_builder.html#ac646d08d56c57bd3dee31c2a3326b42f">  147</a></span>        [[nodiscard]] ActorIdList <a class="code hl_function" href="classqb_1_1_core_initializer_1_1_actor_builder.html#ac646d08d56c57bd3dee31c2a3326b42f">idList</a>() const noexcept;</div>
+<div class="line"><a id="l00148" name="l00148"></a><span class="lineno">  148</span>    };</div>
+</div>
+<div class="line"><a id="l00149" name="l00149"></a><span class="lineno">  149</span> </div>
+<div class="line"><a id="l00150" name="l00150"></a><span class="lineno">  150</span>private:</div>
+<div class="line"><a id="l00151" name="l00151"></a><span class="lineno">  151</span>    const <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> _index;</div>
+<div class="line"><a id="l00152" name="l00152"></a><span class="lineno">  152</span>    <a class="code hl_typedef" href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30">ServiceId</a>    _next_id;</div>
+<div class="line"><a id="l00153" name="l00153"></a><span class="lineno">  153</span>    <a class="code hl_typedef" href="group___core.html#gaf938afc2318277511d1b20184c0c1152">CoreIdSet</a>    _affinity;</div>
+<div class="line"><a id="l00154" name="l00154"></a><span class="lineno">  154</span>    uint64_t     _latency;</div>
+<div class="line"><a id="l00155" name="l00155"></a><span class="lineno">  155</span> </div>
+<div class="line"><a id="l00156" name="l00156"></a><span class="lineno">  156</span>    qb::<a class="code hl_typedef" href="group___container.html#gac11145579ece76182257112fd457faba">unordered_set</a>&lt;<a class="code hl_typedef" href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30">ServiceId</a>&gt; _registered_services;</div>
+<div class="line"><a id="l00157" name="l00157"></a><span class="lineno">  157</span>    std::vector&lt;<a class="code hl_interface" href="classqb_1_1_i_actor_factory.html">IActorFactory</a> *&gt; _actor_factories;</div>
+<div class="line"><a id="l00158" name="l00158"></a><span class="lineno">  158</span>    <span class="comment">//        CoreSet _restricted_communication; future use</span></div>
+<div class="line"><a id="l00159" name="l00159"></a><span class="lineno">  159</span> </div>
+<div class="line"><a id="l00160" name="l00160"></a><span class="lineno">  160</span>public:</div>
+<div class="line"><a id="l00161" name="l00161"></a><span class="lineno">  161</span>    CoreInitializer() = delete;</div>
+<div class="line"><a id="l00166" name="l00166"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer.html#a150a0f222c68fb60d7c1ffb5192f3208">  166</a></span>    explicit CoreInitializer(<a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> index);</div>
+<div class="line"><a id="l00168" name="l00168"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer.html#abf615c0a9eddc05dd664f45d3f718dfe">  168</a></span>    ~CoreInitializer() noexcept;</div>
+<div class="line"><a id="l00169" name="l00169"></a><span class="lineno">  169</span></div>
+<div class="line"><a id="l00175" name="l00175"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer.html#a10ae0572717895aef0f01bc6ff1a534f">  175</a></span>    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_core_initializer.html#a10ae0572717895aef0f01bc6ff1a534f">clear</a>() noexcept;</div>
+<div class="line"><a id="l00176" name="l00176"></a><span class="lineno">  176</span></div>
+<div class="line"><a id="l00194" name="l00194"></a><span class="lineno">  194</span>    template &lt;typename _Actor, typename... _Args&gt;</div>
+<div class="line"><a id="l00195" name="l00195"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer.html#a7cdd7562d7fe8634c255ca530b0988d6">  195</a></span>    <a class="code hl_class" href="classqb_1_1_actor_id.html">ActorId</a> <a class="code hl_function" href="classqb_1_1_core_initializer.html#a7cdd7562d7fe8634c255ca530b0988d6">addActor</a>(_Args &amp;&amp;...args) noexcept;</div>
+<div class="line"><a id="l00196" name="l00196"></a><span class="lineno">  196</span></div>
+<div class="line"><a id="l00209" name="l00209"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer.html#ac6900142b45b52cc04577ee8704142f4">  209</a></span>    [[nodiscard]] <a class="code hl_class" href="classqb_1_1_core_initializer_1_1_actor_builder.html">ActorBuilder</a> <a class="code hl_function" href="classqb_1_1_core_initializer.html#ac6900142b45b52cc04577ee8704142f4">builder</a>() noexcept;</div>
+<div class="line"><a id="l00210" name="l00210"></a><span class="lineno">  210</span></div>
+<div class="line"><a id="l00219" name="l00219"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer.html#a109fa0bf9d734e6bc13fbd5a946eaac8">  219</a></span>    CoreInitializer &amp;<a class="code hl_function" href="classqb_1_1_core_initializer.html#a109fa0bf9d734e6bc13fbd5a946eaac8">setAffinity</a>(<a class="code hl_typedef" href="group___core.html#gaf938afc2318277511d1b20184c0c1152">CoreIdSet</a> const &amp;cores = {}) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00220" name="l00220"></a><span class="lineno">  220</span></div>
+<div class="line"><a id="l00233" name="l00233"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer.html#a5d837e5164efcfe52500b0ab46719368">  233</a></span>    CoreInitializer &amp;<a class="code hl_function" href="classqb_1_1_core_initializer.html#a5d837e5164efcfe52500b0ab46719368">setLatency</a>(uint64_t latency = 0) noexcept;</div>
+<div class="line"><a id="l00234" name="l00234"></a><span class="lineno">  234</span></div>
+<div class="line"><a id="l00239" name="l00239"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer.html#a19a86130bb090c088e8d0db960533764">  239</a></span>    [[nodiscard]] <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>           <a class="code hl_function" href="classqb_1_1_core_initializer.html#a19a86130bb090c088e8d0db960533764">getIndex</a>() const noexcept;</div>
+<div class="line"><a id="l00244" name="l00244"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer.html#ac45b98b23b034d092a8da97f2161c920">  244</a></span>    [[nodiscard]] <a class="code hl_typedef" href="group___core.html#gaf938afc2318277511d1b20184c0c1152">CoreIdSet</a> const &amp;<a class="code hl_function" href="classqb_1_1_core_initializer.html#ac45b98b23b034d092a8da97f2161c920">getAffinity</a>() const noexcept;</div>
+<div class="line"><a id="l00249" name="l00249"></a><span class="lineno"><a class="line" href="classqb_1_1_core_initializer.html#a2288e54ddaaeb74825572b07003a4693">  249</a></span>    [[nodiscard]] uint64_t         <a class="code hl_function" href="classqb_1_1_core_initializer.html#a2288e54ddaaeb74825572b07003a4693">getLatency</a>() const noexcept;</div>
+<div class="line"><a id="l00250" name="l00250"></a><span class="lineno">  250</span>};</div>
+</div>
+<div class="line"><a id="l00251" name="l00251"></a><span class="lineno">  251</span></div>
+<div class="line"><a id="l00261" name="l00261"></a><span class="lineno"><a class="line" href="group___engine.html#gad5e1e66a56d008d2ef14b0eb95e13dac">  261</a></span>using <a class="code hl_typedef" href="group___engine.html#gad5e1e66a56d008d2ef14b0eb95e13dac">CoreInitializerMap</a> = qb::<a class="code hl_typedef" href="group___container.html#ga9d156b7ae1a1ef61bbb6bf272fdd4c6b">unordered_map</a>&lt;<a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>, <a class="code hl_class" href="classqb_1_1_core_initializer.html">CoreInitializer</a>&gt;;</div>
+<div class="line"><a id="l00262" name="l00262"></a><span class="lineno">  262</span></div>
+<div class="foldopen" id="foldopen00272" data-start="{" data-end="};">
+<div class="line"><a id="l00272" name="l00272"></a><span class="lineno"><a class="line" href="classqb_1_1_shared_core_communication.html">  272</a></span>class SharedCoreCommunication : <a class="code hl_function" href="structqb_1_1nocopy.html#a40d9b4b6a7b502a3a861f8b71e8387bb">nocopy</a> {</div>
+<div class="line"><a id="l00273" name="l00273"></a><span class="lineno">  273</span>    <span class="keyword">friend</span> <span class="keyword">class </span>VirtualCore;</div>
+<div class="line"><a id="l00274" name="l00274"></a><span class="lineno">  274</span>    <span class="keyword">friend</span> <span class="keyword">class </span>Main;</div>
+<div class="line"><a id="l00275" name="l00275"></a><span class="lineno">  275</span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> <span class="keyword">const</span> uint64_t MaxRingEvents =</div>
+<div class="line"><a id="l00276" name="l00276"></a><span class="lineno">  276</span>        (((std::numeric_limits&lt;uint16_t&gt;::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);</div>
+<div class="line"><a id="l00278" name="l00278"></a><span class="lineno">  278</span>    <span class="keyword">class </span>Mailbox : <span class="keyword">public</span> <a class="code hl_class" href="classqb_1_1lockfree_1_1mpsc_1_1ringbuffer.html">lockfree::mpsc::ringbuffer</a>&lt;EventBucket, MaxRingEvents, 0&gt; {</div>
+<div class="line"><a id="l00279" name="l00279"></a><span class="lineno">  279</span>        <span class="keyword">const</span> uint64_t          _latency;</div>
+<div class="line"><a id="l00280" name="l00280"></a><span class="lineno">  280</span>        std::mutex              _mtx;</div>
+<div class="line"><a id="l00281" name="l00281"></a><span class="lineno">  281</span>        std::condition_variable _cv;</div>
+<div class="line"><a id="l00282" name="l00282"></a><span class="lineno">  282</span> </div>
+<div class="line"><a id="l00283" name="l00283"></a><span class="lineno">  283</span>    <span class="keyword">public</span>:</div>
+<div class="line"><a id="l00284" name="l00284"></a><span class="lineno">  284</span>        <span class="keyword">explicit</span> Mailbox(std::size_t <span class="keyword">const</span> nb_producer, uint64_t <span class="keyword">const</span> latency)</div>
+<div class="line"><a id="l00285" name="l00285"></a><span class="lineno">  285</span>            : <a class="code hl_class" href="classqb_1_1lockfree_1_1mpsc_1_1ringbuffer.html">lockfree::mpsc::ringbuffer&lt;EventBucket, MaxRingEvents, 0&gt;</a>(nb_producer)</div>
+<div class="line"><a id="l00286" name="l00286"></a><span class="lineno">  286</span>            , _latency(latency) {}</div>
+<div class="line"><a id="l00287" name="l00287"></a><span class="lineno">  287</span></div>
+<div class="line"><a id="l00298" name="l00298"></a><span class="lineno">  298</span>        <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00299" data-start="{" data-end="}">
+<div class="line"><a id="l00299" name="l00299"></a><span class="lineno"><a class="line" href="group___engine.html#gaece8e3085126250f9b0d73617a1f87a0">  299</a></span>        <a class="code hl_function" href="group___engine.html#gaece8e3085126250f9b0d73617a1f87a0">wait</a>() noexcept {</div>
+<div class="line"><a id="l00300" name="l00300"></a><span class="lineno">  300</span>            <span class="keywordflow">if</span> (_latency) {</div>
+<div class="line"><a id="l00301" name="l00301"></a><span class="lineno">  301</span>                std::unique_lock lk(_mtx);</div>
+<div class="line"><a id="l00302" name="l00302"></a><span class="lineno">  302</span>                _cv.wait_for(lk, std::chrono::nanoseconds(_latency));</div>
+<div class="line"><a id="l00303" name="l00303"></a><span class="lineno">  303</span>            }</div>
+<div class="line"><a id="l00304" name="l00304"></a><span class="lineno">  304</span>        }</div>
+</div>
+<div class="line"><a id="l00305" name="l00305"></a><span class="lineno">  305</span></div>
+<div class="line"><a id="l00315" name="l00315"></a><span class="lineno">  315</span>        <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00316" data-start="{" data-end="}">
+<div class="line"><a id="l00316" name="l00316"></a><span class="lineno"><a class="line" href="group___engine.html#ga10affcbb3fe5c92bda8fb2582df7d74e">  316</a></span>        <a class="code hl_function" href="group___engine.html#ga10affcbb3fe5c92bda8fb2582df7d74e">notify</a>() noexcept {</div>
+<div class="line"><a id="l00317" name="l00317"></a><span class="lineno">  317</span>            <span class="keywordflow">if</span> (_latency)</div>
+<div class="line"><a id="l00318" name="l00318"></a><span class="lineno">  318</span>                _cv.notify_all();</div>
+<div class="line"><a id="l00319" name="l00319"></a><span class="lineno">  319</span>        }</div>
+</div>
+<div class="line"><a id="l00320" name="l00320"></a><span class="lineno">  320</span></div>
+<div class="line"><a id="l00326" name="l00326"></a><span class="lineno">  326</span>        [[nodiscard]] uint64_t</div>
+<div class="foldopen" id="foldopen00327" data-start="{" data-end="}">
+<div class="line"><a id="l00327" name="l00327"></a><span class="lineno"><a class="line" href="group___engine.html#gabcaf71734ae3d012186752843f246b89">  327</a></span>        <a class="code hl_function" href="group___engine.html#gabcaf71734ae3d012186752843f246b89">getLatency</a>() const noexcept {</div>
+<div class="line"><a id="l00328" name="l00328"></a><span class="lineno">  328</span>            <span class="keywordflow">return</span> _latency;</div>
+<div class="line"><a id="l00329" name="l00329"></a><span class="lineno">  329</span>        }</div>
+</div>
+<div class="line"><a id="l00330" name="l00330"></a><span class="lineno">  330</span>    };</div>
+<div class="line"><a id="l00331" name="l00331"></a><span class="lineno">  331</span> </div>
+<div class="line"><a id="l00332" name="l00332"></a><span class="lineno">  332</span>    <span class="keyword">const</span> <a class="code hl_class" href="classqb_1_1_core_set.html">CoreSet</a>                  _core_set;</div>
+<div class="line"><a id="l00333" name="l00333"></a><span class="lineno">  333</span>    std::vector&lt;std::atomic&lt;bool&gt;&gt; _event_safe_deadlock;</div>
+<div class="line"><a id="l00334" name="l00334"></a><span class="lineno">  334</span>    std::vector&lt;Mailbox *&gt;         _mail_boxes;</div>
+<div class="line"><a id="l00335" name="l00335"></a><span class="lineno">  335</span> </div>
+<div class="line"><a id="l00336" name="l00336"></a><span class="lineno">  336</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00337" name="l00337"></a><span class="lineno">  337</span>    <a class="code hl_class" href="classqb_1_1_shared_core_communication.html">SharedCoreCommunication</a>() = <span class="keyword">delete</span>;</div>
+<div class="line"><a id="l00338" name="l00338"></a><span class="lineno">  338</span>    <span class="keyword">explicit</span> <a class="code hl_class" href="classqb_1_1_shared_core_communication.html">SharedCoreCommunication</a>(</div>
+<div class="line"><a id="l00339" name="l00339"></a><span class="lineno">  339</span>        <a class="code hl_typedef" href="group___engine.html#gad5e1e66a56d008d2ef14b0eb95e13dac">CoreInitializerMap</a> <span class="keyword">const</span> &amp;core_initializers) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00340" name="l00340"></a><span class="lineno">  340</span> </div>
+<div class="line"><a id="l00341" name="l00341"></a><span class="lineno">  341</span>    <a class="code hl_class" href="classqb_1_1_shared_core_communication.html">~SharedCoreCommunication</a>() noexcept;</div>
+<div class="line"><a id="l00342" name="l00342"></a><span class="lineno">  342</span></div>
+<div class="line"><a id="l00353" name="l00353"></a><span class="lineno"><a class="line" href="group___engine.html#ga1d4ced147cfe0059e4772da210676d1c">  353</a></span>    [[nodiscard]] <span class="keywordtype">bool</span> <a class="code hl_function" href="group___engine.html#ga1d4ced147cfe0059e4772da210676d1c">send</a>(<a class="code hl_class" href="classqb_1_1_event.html">Event</a> const &amp;<a class="code hl_typedef" href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">event</a>) const noexcept;</div>
+<div class="line"><a id="l00354" name="l00354"></a><span class="lineno">  354</span></div>
+<div class="line"><a id="l00363" name="l00363"></a><span class="lineno"><a class="line" href="group___engine.html#ga75e4357a8753d49a1490380a149087e7">  363</a></span>    [[nodiscard]] Mailbox &amp;<a class="code hl_function" href="group___engine.html#ga75e4357a8753d49a1490380a149087e7">getMailBox</a>(<a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> <span class="keywordtype">id</span>) const noexcept;</div>
+<div class="line"><a id="l00364" name="l00364"></a><span class="lineno">  364</span></div>
+<div class="line"><a id="l00371" name="l00371"></a><span class="lineno"><a class="line" href="group___engine.html#gaccad7c68360b17dca9dc1fb710fbb4cc">  371</a></span>    [[nodiscard]] <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> <a class="code hl_function" href="group___engine.html#gaccad7c68360b17dca9dc1fb710fbb4cc">getNbCore</a>() const noexcept;</div>
+<div class="line"><a id="l00372" name="l00372"></a><span class="lineno">  372</span>};</div>
+</div>
+<div class="line"><a id="l00373" name="l00373"></a><span class="lineno">  373</span></div>
+<div class="foldopen" id="foldopen00384" data-start="{" data-end="};">
+<div class="line"><a id="l00384" name="l00384"></a><span class="lineno"><a class="line" href="structqb_1_1_core_spawner_parameter.html">  384</a></span>struct <a class="code hl_struct" href="structqb_1_1_core_spawner_parameter.html">CoreSpawnerParameter</a> {</div>
+<div class="line"><a id="l00386" name="l00386"></a><span class="lineno"><a class="line" href="structqb_1_1_core_spawner_parameter.html#a3c7f90b7dd9fb5e91b9a9365b0815a36">  386</a></span>    <span class="keyword">const</span> <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>             <a class="code hl_variable" href="structqb_1_1_core_spawner_parameter.html#a3c7f90b7dd9fb5e91b9a9365b0815a36">id</a>;</div>
+<div class="line"><a id="l00387" name="l00387"></a><span class="lineno">  387</span>    </div>
+<div class="line"><a id="l00389" name="l00389"></a><span class="lineno"><a class="line" href="structqb_1_1_core_spawner_parameter.html#a91f374f743250c0a47245be0eea9759f">  389</a></span>    <a class="code hl_class" href="classqb_1_1_core_initializer.html">CoreInitializer</a>         &amp;<a class="code hl_variable" href="structqb_1_1_core_spawner_parameter.html#a91f374f743250c0a47245be0eea9759f">initializer</a>;</div>
+<div class="line"><a id="l00390" name="l00390"></a><span class="lineno">  390</span>    </div>
+<div class="line"><a id="l00392" name="l00392"></a><span class="lineno"><a class="line" href="structqb_1_1_core_spawner_parameter.html#a44d8ce5e3aaff4d4013416534e1209ff">  392</a></span>    <a class="code hl_class" href="classqb_1_1_shared_core_communication.html">SharedCoreCommunication</a> &amp;<a class="code hl_variable" href="structqb_1_1_core_spawner_parameter.html#a44d8ce5e3aaff4d4013416534e1209ff">shared_com</a>;</div>
+<div class="line"><a id="l00393" name="l00393"></a><span class="lineno">  393</span>    </div>
+<div class="line"><a id="l00395" name="l00395"></a><span class="lineno"><a class="line" href="structqb_1_1_core_spawner_parameter.html#a59837c22a7a124ba3587acd1a7b6a567">  395</a></span>    std::atomic&lt;uint64_t&gt;   &amp;<a class="code hl_variable" href="structqb_1_1_core_spawner_parameter.html#a59837c22a7a124ba3587acd1a7b6a567">sync_start</a>;</div>
+<div class="line"><a id="l00396" name="l00396"></a><span class="lineno">  396</span>};</div>
+</div>
+<div class="line"><a id="l00397" name="l00397"></a><span class="lineno">  397</span></div>
+<div class="foldopen" id="foldopen00408" data-start="{" data-end="};">
+<div class="line"><a id="l00408" name="l00408"></a><span class="lineno"><a class="line" href="classqb_1_1_main.html">  408</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1_main.html#acd99664d23a242977ddf5beeaf6289b3">Main</a> {</div>
+<div class="line"><a id="l00409" name="l00409"></a><span class="lineno">  409</span>    <span class="keyword">friend</span> <span class="keyword">class </span>VirtualCore;</div>
+<div class="line"><a id="l00410" name="l00410"></a><span class="lineno">  410</span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> <span class="keyword">const</span> uint64_t MaxRingEvents =</div>
+<div class="line"><a id="l00411" name="l00411"></a><span class="lineno">  411</span>        (((std::numeric_limits&lt;uint16_t&gt;::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);</div>
+<div class="line"><a id="l00413" name="l00413"></a><span class="lineno">  413</span>    <span class="keyword">using </span>Mailbox = <a class="code hl_class" href="classqb_1_1lockfree_1_1mpsc_1_1ringbuffer.html">lockfree::mpsc::ringbuffer&lt;EventBucket, MaxRingEvents, 0&gt;</a>;</div>
+<div class="line"><a id="l00414" name="l00414"></a><span class="lineno">  414</span> </div>
+<div class="line"><a id="l00415" name="l00415"></a><span class="lineno">  415</span>    <span class="keyword">static</span> std::vector&lt;Main *&gt; _instances;</div>
+<div class="line"><a id="l00416" name="l00416"></a><span class="lineno">  416</span>    <span class="keyword">static</span> std::mutex          _instances_lock;</div>
+<div class="line"><a id="l00417" name="l00417"></a><span class="lineno">  417</span> </div>
+<div class="line"><a id="l00418" name="l00418"></a><span class="lineno">  418</span>    std::atomic&lt;uint64_t&gt; _sync_start;</div>
+<div class="line"><a id="l00419" name="l00419"></a><span class="lineno">  419</span>    <span class="keyword">static</span> <span class="keywordtype">void</span>           onSignal(<span class="keywordtype">int</span> signal) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00420" name="l00420"></a><span class="lineno">  420</span>    <span class="keyword">static</span> <span class="keywordtype">void</span>           start_thread(<a class="code hl_struct" href="structqb_1_1_core_spawner_parameter.html">CoreSpawnerParameter</a> <span class="keyword">const</span> &amp;params) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00421" name="l00421"></a><span class="lineno">  421</span>    <span class="keyword">static</span> <span class="keywordtype">bool</span>           __wait__all__cores__ready(std::size_t            nb_core,</div>
+<div class="line"><a id="l00422" name="l00422"></a><span class="lineno">  422</span>                                                    std::atomic&lt;uint64_t&gt; &amp;sync_start) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00423" name="l00423"></a><span class="lineno">  423</span> </div>
+<div class="line"><a id="l00424" name="l00424"></a><span class="lineno">  424</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00425" name="l00425"></a><span class="lineno">  425</span>    std::vector&lt;std::thread&gt; _cores;</div>
+<div class="line"><a id="l00426" name="l00426"></a><span class="lineno">  426</span>    <span class="comment">// Core Factory</span></div>
+<div class="line"><a id="l00427" name="l00427"></a><span class="lineno">  427</span>    <a class="code hl_typedef" href="group___engine.html#gad5e1e66a56d008d2ef14b0eb95e13dac">CoreInitializerMap</a>                       _core_initializers;</div>
+<div class="line"><a id="l00428" name="l00428"></a><span class="lineno">  428</span>    std::unique_ptr&lt;SharedCoreCommunication&gt; _shared_com;</div>
+<div class="line"><a id="l00429" name="l00429"></a><span class="lineno">  429</span>    <span class="keywordtype">bool</span>                                     _is_running;</div>
+<div class="line"><a id="l00430" name="l00430"></a><span class="lineno">  430</span> </div>
+<div class="line"><a id="l00431" name="l00431"></a><span class="lineno">  431</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00432" name="l00432"></a><span class="lineno">  432</span>    <span class="keyword">using </span>ActorIdList = CoreInitializer::ActorBuilder::ActorIdList;</div>
+<div class="line"><a id="l00433" name="l00433"></a><span class="lineno">  433</span></div>
+<div class="line"><a id="l00435" name="l00435"></a><span class="lineno"><a class="line" href="classqb_1_1_main.html#acd99664d23a242977ddf5beeaf6289b3">  435</a></span>    <a class="code hl_function" href="classqb_1_1_main.html#acd99664d23a242977ddf5beeaf6289b3">Main</a>() noexcept;</div>
+<div class="line"><a id="l00437" name="l00437"></a><span class="lineno"><a class="line" href="classqb_1_1_main.html#a01df23baf910c0b7043c333b0f4c702d">  437</a></span>    ~<a class="code hl_function" href="classqb_1_1_main.html#acd99664d23a242977ddf5beeaf6289b3">Main</a>() noexcept;</div>
+<div class="line"><a id="l00438" name="l00438"></a><span class="lineno">  438</span></div>
+<div class="line"><a id="l00448" name="l00448"></a><span class="lineno"><a class="line" href="group___engine.html#ga0990bde9edb018a122be3dfe30069181">  448</a></span>    <span class="keywordtype">void</span> <a class="code hl_function" href="group___engine.html#ga0990bde9edb018a122be3dfe30069181">start</a>(<span class="keywordtype">bool</span> async = true) noexcept;</div>
+<div class="line"><a id="l00449" name="l00449"></a><span class="lineno">  449</span></div>
+<div class="line"><a id="l00456" name="l00456"></a><span class="lineno"><a class="line" href="group___engine.html#gad337df7d61e82fe2d32c0cc328c44835">  456</a></span>    [[nodiscard]] <span class="keywordtype">bool</span> <a class="code hl_function" href="group___engine.html#gad337df7d61e82fe2d32c0cc328c44835">hasError</a>() const noexcept;</div>
+<div class="line"><a id="l00457" name="l00457"></a><span class="lineno">  457</span></div>
+<div class="line"><a id="l00465" name="l00465"></a><span class="lineno"><a class="line" href="group___engine.html#ga17196adf7b7ab867d25074f78f048658">  465</a></span>    static <span class="keywordtype">void</span> <a class="code hl_function" href="group___engine.html#ga17196adf7b7ab867d25074f78f048658">stop</a>() noexcept;</div>
+<div class="line"><a id="l00466" name="l00466"></a><span class="lineno">  466</span></div>
+<div class="line"><a id="l00473" name="l00473"></a><span class="lineno"><a class="line" href="group___engine.html#ga0f82608ca2a0ba910873d0caabbf6e65">  473</a></span>    <span class="keywordtype">void</span> <a class="code hl_function" href="group___engine.html#ga0f82608ca2a0ba910873d0caabbf6e65">join</a>();</div>
+<div class="line"><a id="l00474" name="l00474"></a><span class="lineno">  474</span> </div>
+<div class="line"><a id="l00475" name="l00475"></a><span class="lineno">  475</span>public:</div>
+<div class="line"><a id="l00493" name="l00493"></a><span class="lineno">  493</span>    template &lt;typename _Actor, typename... _Args&gt;</div>
+<div class="line"><a id="l00494" name="l00494"></a><span class="lineno"><a class="line" href="group___engine.html#ga84dff5faea16cfa7108cd9ff209fbc24">  494</a></span>    <a class="code hl_class" href="classqb_1_1_actor_id.html">ActorId</a> <a class="code hl_function" href="group___engine.html#ga84dff5faea16cfa7108cd9ff209fbc24">addActor</a>(<a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> index, _Args &amp;&amp;...args);</div>
+<div class="line"><a id="l00495" name="l00495"></a><span class="lineno">  495</span></div>
+<div class="line"><a id="l00512" name="l00512"></a><span class="lineno"><a class="line" href="group___engine.html#ga96fc97c8925370ac024fccbedbdfb733">  512</a></span>    [[nodiscard]] <a class="code hl_class" href="classqb_1_1_core_initializer.html">CoreInitializer</a> &amp;<a class="code hl_function" href="group___engine.html#ga96fc97c8925370ac024fccbedbdfb733">core</a>(<a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> index);</div>
+<div class="line"><a id="l00513" name="l00513"></a><span class="lineno">  513</span></div>
+<div class="line"><a id="l00522" name="l00522"></a><span class="lineno"><a class="line" href="group___engine.html#gacfa830a94e6e829b35d39d7728d2873e">  522</a></span>    <span class="keywordtype">void</span> <a class="code hl_function" href="group___engine.html#gacfa830a94e6e829b35d39d7728d2873e">setLatency</a>(uint64_t latency = 0);</div>
+<div class="line"><a id="l00523" name="l00523"></a><span class="lineno">  523</span></div>
+<div class="line"><a id="l00531" name="l00531"></a><span class="lineno"><a class="line" href="group___engine.html#gaaa96436e2e8891109387ffcbca55ff17">  531</a></span>    [[nodiscard]] qb::<a class="code hl_typedef" href="group___core.html#gaf938afc2318277511d1b20184c0c1152">CoreIdSet</a> <a class="code hl_function" href="group___engine.html#gaaa96436e2e8891109387ffcbca55ff17">usedCoreSet</a>() const;</div>
+<div class="line"><a id="l00532" name="l00532"></a><span class="lineno">  532</span></div>
+<div class="line"><a id="l00542" name="l00542"></a><span class="lineno"><a class="line" href="group___engine.html#gaaedd9ea643c7b1f9bdc007ef600647de">  542</a></span>    static <span class="keywordtype">void</span> <a class="code hl_function" href="group___engine.html#gaaedd9ea643c7b1f9bdc007ef600647de">registerSignal</a>(<span class="keywordtype">int</span> signum) noexcept;</div>
+<div class="line"><a id="l00550" name="l00550"></a><span class="lineno"><a class="line" href="group___engine.html#ga2416f2d96af077756b1b39b7db299c61">  550</a></span>    static <span class="keywordtype">void</span> <a class="code hl_function" href="group___engine.html#ga2416f2d96af077756b1b39b7db299c61">unregisterSignal</a>(<span class="keywordtype">int</span> signum) noexcept;</div>
+<div class="line"><a id="l00557" name="l00557"></a><span class="lineno"><a class="line" href="group___engine.html#ga98d195fa74acda246e83ada9f746b93b">  557</a></span>    static <span class="keywordtype">void</span> <a class="code hl_function" href="group___engine.html#ga98d195fa74acda246e83ada9f746b93b">ignoreSignal</a>(<span class="keywordtype">int</span> signum) noexcept;</div>
+<div class="line"><a id="l00558" name="l00558"></a><span class="lineno">  558</span>};</div>
+</div>
+<div class="line"><a id="l00559" name="l00559"></a><span class="lineno">  559</span></div>
+<div class="line"><a id="l00570" name="l00570"></a><span class="lineno"><a class="line" href="group___engine.html#ga5bf44c35a039fc85fc694b7883c6197f">  570</a></span>using <a class="code hl_typedef" href="group___engine.html#ga5bf44c35a039fc85fc694b7883c6197f">engine</a> = <a class="code hl_class" href="classqb_1_1_main.html">Main</a>;</div>
+<div class="line"><a id="l00571" name="l00571"></a><span class="lineno">  571</span> </div>
+<div class="line"><a id="l00572" name="l00572"></a><span class="lineno">  572</span>} <span class="comment">// namespace qb</span></div>
+<div class="line"><a id="l00573" name="l00573"></a><span class="lineno">  573</span><span class="preprocessor">#endif </span><span class="comment">// QB_MAIN_H</span></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html"><div class="ttname"><a href="classqb_1_1_actor_id.html">qb::ActorId</a></div><div class="ttdoc">Unique identifier for actors.</div><div class="ttdef"><b>Definition</b> ActorId.h:374</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_1_1_actor_builder_html"><div class="ttname"><a href="classqb_1_1_core_initializer_1_1_actor_builder.html">qb::CoreInitializer::ActorBuilder</a></div><div class="ttdoc">Helper to fluently build multiple Actors for a CoreInitializer.</div><div class="ttdef"><b>Definition</b> Main.h:81</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_1_1_actor_builder_html_a193a7d60ea2a98ade7ef75440608bb30"><div class="ttname"><a href="classqb_1_1_core_initializer_1_1_actor_builder.html#a193a7d60ea2a98ade7ef75440608bb30">qb::CoreInitializer::ActorBuilder::addActor</a></div><div class="ttdeci">ActorBuilder &amp; addActor(_Args &amp;&amp;...args) noexcept</div><div class="ttdoc">Create and add a new _Actor to the VirtualCore associated with this builder.</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_1_1_actor_builder_html_ac646d08d56c57bd3dee31c2a3326b42f"><div class="ttname"><a href="classqb_1_1_core_initializer_1_1_actor_builder.html#ac646d08d56c57bd3dee31c2a3326b42f">qb::CoreInitializer::ActorBuilder::idList</a></div><div class="ttdeci">ActorIdList idList() const noexcept</div><div class="ttdoc">Get the list of ActorIds created by this ActorBuilder instance.</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_1_1_actor_builder_html_aca76ac042fb44b7777eb86990d6ae52a"><div class="ttname"><a href="classqb_1_1_core_initializer_1_1_actor_builder.html#aca76ac042fb44b7777eb86990d6ae52a">qb::CoreInitializer::ActorBuilder::valid</a></div><div class="ttdeci">bool valid() const noexcept</div><div class="ttdoc">Checks if all actor additions via this builder were successful up to this point.</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_html"><div class="ttname"><a href="classqb_1_1_core_initializer.html">qb::CoreInitializer</a></div><div class="ttdoc">Handles pre-start configuration for a single VirtualCore.</div><div class="ttdef"><b>Definition</b> Main.h:68</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_html_a109fa0bf9d734e6bc13fbd5a946eaac8"><div class="ttname"><a href="classqb_1_1_core_initializer.html#a109fa0bf9d734e6bc13fbd5a946eaac8">qb::CoreInitializer::setAffinity</a></div><div class="ttdeci">CoreInitializer &amp; setAffinity(CoreIdSet const &amp;cores={}) noexcept</div><div class="ttdoc">Set the CPU affinity for the VirtualCore associated with this initializer.</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_html_a10ae0572717895aef0f01bc6ff1a534f"><div class="ttname"><a href="classqb_1_1_core_initializer.html#a10ae0572717895aef0f01bc6ff1a534f">qb::CoreInitializer::clear</a></div><div class="ttdeci">void clear() noexcept</div><div class="ttdoc">Clears all registered actor factories for this initializer.</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_html_a19a86130bb090c088e8d0db960533764"><div class="ttname"><a href="classqb_1_1_core_initializer.html#a19a86130bb090c088e8d0db960533764">qb::CoreInitializer::getIndex</a></div><div class="ttdeci">CoreId getIndex() const noexcept</div><div class="ttdoc">Gets the CoreId associated with this initializer.</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_html_a2288e54ddaaeb74825572b07003a4693"><div class="ttname"><a href="classqb_1_1_core_initializer.html#a2288e54ddaaeb74825572b07003a4693">qb::CoreInitializer::getLatency</a></div><div class="ttdeci">uint64_t getLatency() const noexcept</div><div class="ttdoc">Gets the currently configured maximum event loop latency (in ns) for this core.</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_html_a5d837e5164efcfe52500b0ab46719368"><div class="ttname"><a href="classqb_1_1_core_initializer.html#a5d837e5164efcfe52500b0ab46719368">qb::CoreInitializer::setLatency</a></div><div class="ttdeci">CoreInitializer &amp; setLatency(uint64_t latency=0) noexcept</div><div class="ttdoc">Set the maximum event loop latency for the VirtualCore.</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_html_a7cdd7562d7fe8634c255ca530b0988d6"><div class="ttname"><a href="classqb_1_1_core_initializer.html#a7cdd7562d7fe8634c255ca530b0988d6">qb::CoreInitializer::addActor</a></div><div class="ttdeci">ActorId addActor(_Args &amp;&amp;...args) noexcept</div><div class="ttdoc">Create and add a new _Actor to this VirtualCore.</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_html_ac45b98b23b034d092a8da97f2161c920"><div class="ttname"><a href="classqb_1_1_core_initializer.html#ac45b98b23b034d092a8da97f2161c920">qb::CoreInitializer::getAffinity</a></div><div class="ttdeci">CoreIdSet const &amp; getAffinity() const noexcept</div><div class="ttdoc">Gets the currently configured CPU affinity set for this core.</div></div>
+<div class="ttc" id="aclassqb_1_1_core_initializer_html_ac6900142b45b52cc04577ee8704142f4"><div class="ttname"><a href="classqb_1_1_core_initializer.html#ac6900142b45b52cc04577ee8704142f4">qb::CoreInitializer::builder</a></div><div class="ttdeci">ActorBuilder builder() noexcept</div><div class="ttdoc">Get an ActorBuilder for this CoreInitializer.</div></div>
+<div class="ttc" id="aclassqb_1_1_core_set_html"><div class="ttname"><a href="classqb_1_1_core_set.html">qb::CoreSet</a></div><div class="ttdoc">Manages a set of core identifiers.</div><div class="ttdef"><b>Definition</b> CoreSet.h:47</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html"><div class="ttname"><a href="classqb_1_1_event.html">qb::Event</a></div><div class="ttdoc">Base class for all events in the actor system.</div><div class="ttdef"><b>Definition</b> Event.h:85</div></div>
+<div class="ttc" id="aclassqb_1_1_i_actor_factory_html"><div class="ttname"><a href="classqb_1_1_i_actor_factory.html">qb::IActorFactory</a></div><div class="ttdoc">Interface for actor factory classes.</div><div class="ttdef"><b>Definition</b> Actor.h:878</div></div>
+<div class="ttc" id="aclassqb_1_1_main_html"><div class="ttname"><a href="classqb_1_1_main.html">qb::Main</a></div><div class="ttdoc">The main controller for the QB Actor Framework engine.</div><div class="ttdef"><b>Definition</b> Main.h:408</div></div>
+<div class="ttc" id="aclassqb_1_1_main_html_acd99664d23a242977ddf5beeaf6289b3"><div class="ttname"><a href="classqb_1_1_main.html#acd99664d23a242977ddf5beeaf6289b3">qb::Main::Main</a></div><div class="ttdeci">Main() noexcept</div><div class="ttdoc">Default constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1_shared_core_communication_html"><div class="ttname"><a href="classqb_1_1_shared_core_communication.html">qb::SharedCoreCommunication</a></div><div class="ttdoc">Manages inter-core communication infrastructure (mailboxes).</div><div class="ttdef"><b>Definition</b> Main.h:272</div></div>
+<div class="ttc" id="aclassqb_1_1_virtual_core_html"><div class="ttname"><a href="classqb_1_1_virtual_core.html">qb::VirtualCore</a></div><div class="ttdoc">Manages a virtual processing core (worker thread) in the actor system.</div><div class="ttdef"><b>Definition</b> VirtualCore.h:75</div></div>
+<div class="ttc" id="aclassqb_1_1lockfree_1_1mpsc_1_1ringbuffer_html"><div class="ttname"><a href="classqb_1_1lockfree_1_1mpsc_1_1ringbuffer.html">qb::lockfree::mpsc::ringbuffer</a></div><div class="ttdoc">Multi-Producer Single-Consumer ring buffer with fixed number of producers.</div><div class="ttdef"><b>Definition</b> mpsc.h:58</div></div>
+<div class="ttc" id="acore_2_core_set_8h_html"><div class="ttname"><a href="core_2_core_set_8h.html">CoreSet.h</a></div><div class="ttdoc">Core set management for the QB Actor Framework.</div></div>
+<div class="ttc" id="acore_2_event_8h_html"><div class="ttname"><a href="core_2_event_8h.html">Event.h</a></div><div class="ttdoc">Event system for the QB Actor Framework.</div></div>
+<div class="ttc" id="agroup___container_html_ga9d156b7ae1a1ef61bbb6bf272fdd4c6b"><div class="ttname"><a href="group___container.html#ga9d156b7ae1a1ef61bbb6bf272fdd4c6b">qb::unordered_map</a></div><div class="ttdeci">std::unordered_map&lt; K, V, H, E, A &gt; unordered_map</div><div class="ttdoc">The primary unordered map implementation.</div><div class="ttdef"><b>Definition</b> unordered_map.h:90</div></div>
+<div class="ttc" id="agroup___container_html_gac11145579ece76182257112fd457faba"><div class="ttname"><a href="group___container.html#gac11145579ece76182257112fd457faba">qb::unordered_set</a></div><div class="ttdeci">std::unordered_set&lt; K, H, E, A &gt; unordered_set</div><div class="ttdoc">The primary unordered set implementation.</div><div class="ttdef"><b>Definition</b> unordered_set.h:81</div></div>
+<div class="ttc" id="agroup___core_html_ga12fea0af12c10133b833eb488e52a9d1"><div class="ttname"><a href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">qb::CoreId</a></div><div class="ttdeci">uint16_t CoreId</div><div class="ttdoc">Type definition for core identifiers.</div><div class="ttdef"><b>Definition</b> ActorId.h:51</div></div>
+<div class="ttc" id="agroup___core_html_ga30a997493a8f1e59d99cf0fc82efbf30"><div class="ttname"><a href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30">qb::ServiceId</a></div><div class="ttdeci">uint16_t ServiceId</div><div class="ttdoc">Type definition for service identifiers.</div><div class="ttdef"><b>Definition</b> ActorId.h:59</div></div>
+<div class="ttc" id="agroup___core_html_gaf938afc2318277511d1b20184c0c1152"><div class="ttname"><a href="group___core.html#gaf938afc2318277511d1b20184c0c1152">qb::CoreIdSet</a></div><div class="ttdeci">CoreIdBitSet CoreIdSet</div><div class="ttdoc">Efficient set implementation for storing CoreId values.</div><div class="ttdef"><b>Definition</b> ActorId.h:363</div></div>
+<div class="ttc" id="agroup___engine_html_ga0990bde9edb018a122be3dfe30069181"><div class="ttname"><a href="group___engine.html#ga0990bde9edb018a122be3dfe30069181">qb::Main::start</a></div><div class="ttdeci">void start(bool async=true) noexcept</div><div class="ttdoc">Start the engine and its VirtualCore worker threads.</div></div>
+<div class="ttc" id="agroup___engine_html_ga0f82608ca2a0ba910873d0caabbf6e65"><div class="ttname"><a href="group___engine.html#ga0f82608ca2a0ba910873d0caabbf6e65">qb::Main::join</a></div><div class="ttdeci">void join()</div><div class="ttdoc">Wait for the engine and all its VirtualCore threads to terminate.</div></div>
+<div class="ttc" id="agroup___engine_html_ga10affcbb3fe5c92bda8fb2582df7d74e"><div class="ttname"><a href="group___engine.html#ga10affcbb3fe5c92bda8fb2582df7d74e">qb::SharedCoreCommunication::Mailbox::notify</a></div><div class="ttdeci">void notify() noexcept</div><div class="ttdoc">Notifies a waiting thread (VirtualCore) that an event might be available in this mailbox.</div><div class="ttdef"><b>Definition</b> Main.h:316</div></div>
+<div class="ttc" id="agroup___engine_html_ga17196adf7b7ab867d25074f78f048658"><div class="ttname"><a href="group___engine.html#ga17196adf7b7ab867d25074f78f048658">qb::Main::stop</a></div><div class="ttdeci">static void stop() noexcept</div><div class="ttdoc">Stop the engine and all its VirtualCores gracefully.</div></div>
+<div class="ttc" id="agroup___engine_html_ga183f0958e32cff3fcd2a0fe871fd3c23"><div class="ttname"><a href="group___engine.html#ga183f0958e32cff3fcd2a0fe871fd3c23">qb::NoAffinity</a></div><div class="ttdeci">constexpr const CoreId NoAffinity</div><div class="ttdoc">Special constant indicating that no CPU affinity is desired.</div><div class="ttdef"><b>Definition</b> Main.h:57</div></div>
+<div class="ttc" id="agroup___engine_html_ga1d4ced147cfe0059e4772da210676d1c"><div class="ttname"><a href="group___engine.html#ga1d4ced147cfe0059e4772da210676d1c">qb::SharedCoreCommunication::send</a></div><div class="ttdeci">bool send(Event const &amp;event) const noexcept</div><div class="ttdoc">Send an event to the mailbox of its destination VirtualCore.</div></div>
+<div class="ttc" id="agroup___engine_html_ga2416f2d96af077756b1b39b7db299c61"><div class="ttname"><a href="group___engine.html#ga2416f2d96af077756b1b39b7db299c61">qb::Main::unregisterSignal</a></div><div class="ttdeci">static void unregisterSignal(int signum) noexcept</div><div class="ttdoc">Unregister a previously registered system signal from engine handling.</div></div>
+<div class="ttc" id="agroup___engine_html_ga5bf44c35a039fc85fc694b7883c6197f"><div class="ttname"><a href="group___engine.html#ga5bf44c35a039fc85fc694b7883c6197f">qb::engine</a></div><div class="ttdeci">Main engine</div><div class="ttdoc">Alias for the Main class.</div><div class="ttdef"><b>Definition</b> Main.h:570</div></div>
+<div class="ttc" id="agroup___engine_html_ga75e4357a8753d49a1490380a149087e7"><div class="ttname"><a href="group___engine.html#ga75e4357a8753d49a1490380a149087e7">qb::SharedCoreCommunication::getMailBox</a></div><div class="ttdeci">Mailbox &amp; getMailBox(CoreId id) const noexcept</div><div class="ttdoc">Get the mailbox for a specific VirtualCore.</div></div>
+<div class="ttc" id="agroup___engine_html_ga84dff5faea16cfa7108cd9ff209fbc24"><div class="ttname"><a href="group___engine.html#ga84dff5faea16cfa7108cd9ff209fbc24">qb::Main::addActor</a></div><div class="ttdeci">ActorId addActor(CoreId index, _Args &amp;&amp;...args)</div><div class="ttdoc">Add a new actor to a specified VirtualCore before the engine starts.</div></div>
+<div class="ttc" id="agroup___engine_html_ga96fc97c8925370ac024fccbedbdfb733"><div class="ttname"><a href="group___engine.html#ga96fc97c8925370ac024fccbedbdfb733">qb::Main::core</a></div><div class="ttdeci">CoreInitializer &amp; core(CoreId index)</div><div class="ttdoc">Get the CoreInitializer for a specific VirtualCore index.</div></div>
+<div class="ttc" id="agroup___engine_html_ga98d195fa74acda246e83ada9f746b93b"><div class="ttname"><a href="group___engine.html#ga98d195fa74acda246e83ada9f746b93b">qb::Main::ignoreSignal</a></div><div class="ttdeci">static void ignoreSignal(int signum) noexcept</div><div class="ttdoc">Ignore a system signal, preventing the engine or default OS handler from processing it.</div></div>
+<div class="ttc" id="agroup___engine_html_gaaa96436e2e8891109387ffcbca55ff17"><div class="ttname"><a href="group___engine.html#gaaa96436e2e8891109387ffcbca55ff17">qb::Main::usedCoreSet</a></div><div class="ttdeci">qb::CoreIdSet usedCoreSet() const</div><div class="ttdoc">Get the set of CoreIds that are currently configured to be used by the engine.</div></div>
+<div class="ttc" id="agroup___engine_html_gaaedd9ea643c7b1f9bdc007ef600647de"><div class="ttname"><a href="group___engine.html#gaaedd9ea643c7b1f9bdc007ef600647de">qb::Main::registerSignal</a></div><div class="ttdeci">static void registerSignal(int signum) noexcept</div><div class="ttdoc">Register a system signal to be handled by the engine (results in graceful shutdown).</div></div>
+<div class="ttc" id="agroup___engine_html_gabcaf71734ae3d012186752843f246b89"><div class="ttname"><a href="group___engine.html#gabcaf71734ae3d012186752843f246b89">qb::SharedCoreCommunication::Mailbox::getLatency</a></div><div class="ttdeci">uint64_t getLatency() const noexcept</div><div class="ttdoc">Get the latency setting for this mailbox.</div><div class="ttdef"><b>Definition</b> Main.h:327</div></div>
+<div class="ttc" id="agroup___engine_html_gaccad7c68360b17dca9dc1fb710fbb4cc"><div class="ttname"><a href="group___engine.html#gaccad7c68360b17dca9dc1fb710fbb4cc">qb::SharedCoreCommunication::getNbCore</a></div><div class="ttdeci">CoreId getNbCore() const noexcept</div><div class="ttdoc">Get the number of VirtualCores configured in the system.</div></div>
+<div class="ttc" id="agroup___engine_html_gacfa830a94e6e829b35d39d7728d2873e"><div class="ttname"><a href="group___engine.html#gacfa830a94e6e829b35d39d7728d2873e">qb::Main::setLatency</a></div><div class="ttdeci">void setLatency(uint64_t latency=0)</div><div class="ttdoc">Set the default event loop latency for all VirtualCores.</div></div>
+<div class="ttc" id="agroup___engine_html_gad337df7d61e82fe2d32c0cc328c44835"><div class="ttname"><a href="group___engine.html#gad337df7d61e82fe2d32c0cc328c44835">qb::Main::hasError</a></div><div class="ttdeci">bool hasError() const noexcept</div><div class="ttdoc">Check if any VirtualCore encountered an error and terminated prematurely.</div></div>
+<div class="ttc" id="agroup___engine_html_gad5e1e66a56d008d2ef14b0eb95e13dac"><div class="ttname"><a href="group___engine.html#gad5e1e66a56d008d2ef14b0eb95e13dac">qb::CoreInitializerMap</a></div><div class="ttdeci">qb::unordered_map&lt; CoreId, CoreInitializer &gt; CoreInitializerMap</div><div class="ttdoc">Map of CoreId to CoreInitializer objects.</div><div class="ttdef"><b>Definition</b> Main.h:261</div></div>
+<div class="ttc" id="agroup___engine_html_gaece8e3085126250f9b0d73617a1f87a0"><div class="ttname"><a href="group___engine.html#gaece8e3085126250f9b0d73617a1f87a0">qb::SharedCoreCommunication::Mailbox::wait</a></div><div class="ttdeci">void wait() noexcept</div><div class="ttdoc">Waits for a notification on this mailbox, up to its configured latency.</div><div class="ttdef"><b>Definition</b> Main.h:299</div></div>
+<div class="ttc" id="agroup___event_core_html_ga3296038c4343f22626c6595a222c0d95"><div class="ttname"><a href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">qb::event</a></div><div class="ttdeci">Event event</div><div class="ttdoc">Alias for the base Event class.</div><div class="ttdef"><b>Definition</b> Event.h:385</div></div>
+<div class="ttc" id="ampsc_8h_html"><div class="ttname"><a href="mpsc_8h.html">mpsc.h</a></div><div class="ttdoc">Multiple-Producer Single-Consumer lockfree queue.</div></div>
+<div class="ttc" id="astructqb_1_1_core_spawner_parameter_html"><div class="ttname"><a href="structqb_1_1_core_spawner_parameter.html">qb::CoreSpawnerParameter</a></div><div class="ttdoc">Internal structure for passing parameters to core spawning functions.</div><div class="ttdef"><b>Definition</b> Main.h:384</div></div>
+<div class="ttc" id="astructqb_1_1_core_spawner_parameter_html_a3c7f90b7dd9fb5e91b9a9365b0815a36"><div class="ttname"><a href="structqb_1_1_core_spawner_parameter.html#a3c7f90b7dd9fb5e91b9a9365b0815a36">qb::CoreSpawnerParameter::id</a></div><div class="ttdeci">const CoreId id</div><div class="ttdoc">The CoreId of the VirtualCore being spawned.</div><div class="ttdef"><b>Definition</b> Main.h:386</div></div>
+<div class="ttc" id="astructqb_1_1_core_spawner_parameter_html_a44d8ce5e3aaff4d4013416534e1209ff"><div class="ttname"><a href="structqb_1_1_core_spawner_parameter.html#a44d8ce5e3aaff4d4013416534e1209ff">qb::CoreSpawnerParameter::shared_com</a></div><div class="ttdeci">SharedCoreCommunication &amp; shared_com</div><div class="ttdoc">Reference to the shared communication infrastructure.</div><div class="ttdef"><b>Definition</b> Main.h:392</div></div>
+<div class="ttc" id="astructqb_1_1_core_spawner_parameter_html_a59837c22a7a124ba3587acd1a7b6a567"><div class="ttname"><a href="structqb_1_1_core_spawner_parameter.html#a59837c22a7a124ba3587acd1a7b6a567">qb::CoreSpawnerParameter::sync_start</a></div><div class="ttdeci">std::atomic&lt; uint64_t &gt; &amp; sync_start</div><div class="ttdoc">Atomic counter for synchronizing core startup.</div><div class="ttdef"><b>Definition</b> Main.h:395</div></div>
+<div class="ttc" id="astructqb_1_1_core_spawner_parameter_html_a91f374f743250c0a47245be0eea9759f"><div class="ttname"><a href="structqb_1_1_core_spawner_parameter.html#a91f374f743250c0a47245be0eea9759f">qb::CoreSpawnerParameter::initializer</a></div><div class="ttdeci">CoreInitializer &amp; initializer</div><div class="ttdoc">Reference to the CoreInitializer for this core.</div><div class="ttdef"><b>Definition</b> Main.h:389</div></div>
+<div class="ttc" id="astructqb_1_1nocopy_html_a40d9b4b6a7b502a3a861f8b71e8387bb"><div class="ttname"><a href="structqb_1_1nocopy.html#a40d9b4b6a7b502a3a861f8b71e8387bb">qb::nocopy::nocopy</a></div><div class="ttdeci">nocopy()=default</div><div class="ttdoc">Default constructor.</div></div>
+<div class="ttc" id="aunordered__map_8h_html"><div class="ttname"><a href="unordered__map_8h.html">unordered_map.h</a></div><div class="ttdoc">Optimized unordered map implementations.</div></div>
+</div><!-- fragment --></div><!-- contents -->
+</div><!-- doc-content -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_aca413fbbe053f647c2f74881aaff796.html">core</a></li><li class="navelem"><a href="core_2main_8h.html">Main.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

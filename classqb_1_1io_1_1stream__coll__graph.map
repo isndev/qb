@@ -1,0 +1,13 @@
+<map id="qb::io::stream&lt; _IO_ &gt;" name="qb::io::stream&lt; _IO_ &gt;">
+<area shape="rect" id="Node000001" title="Combined input/output stream template class." alt="" coords="5,357,159,383"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1istream.html" title="Input stream template class." alt="" coords="162,282,319,308"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="202,317,110,359,108,354,199,312"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="25,170,150,211"/>
+<area shape="poly" id="edge6_Node000001_Node000003" title=" " alt="" coords="85,227,80,282,80,308,83,356,78,357,74,308,74,282,80,226"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="131,218,224,279,221,284,128,222"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1allocator_1_1base__pipe.html" title=" " alt="" coords="23,80,152,121"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="81,136,82,170,77,170,76,137"/>
+<area shape="poly" id="edge5_Node000003_Node000004" title=" " alt="" coords="99,137,98,170,92,170,93,136"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="15,5,160,31"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="90,47,90,80,85,80,85,47"/>
+</map>

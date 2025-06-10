@@ -1,0 +1,7 @@
+<map id="qb::is_terator&lt; Iter, typename std::enable_if&lt; is_inserter&lt; Iter &gt;::value &gt;::type &gt;" name="qb::is_terator&lt; Iter, typename std::enable_if&lt; is_inserter&lt; Iter &gt;::value &gt;::type &gt;">
+<area shape="rect" id="Node000001" title="Specialization for inserter iterators." alt="" coords="48,79,198,150"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,5,113,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="78,42,101,77,97,80,73,45"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="136,5,238,31"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="173,45,149,80,145,77,168,42"/>
+</map>

@@ -1,0 +1,7 @@
+<map id="qb::has_insert&lt; T, typename std::enable_if&lt; std::is_same&lt; decltype(std::declval&lt; T &gt;().insert(std::declval&lt; typename T::const_iterator &gt;(), std::declval&lt; typename T::value_type &gt;())), typename T::iterator &gt;::value &gt;::type &gt;" name="qb::has_insert&lt; T, typename std::enable_if&lt; std::is_same&lt; decltype(std::declval&lt; T &gt;().insert(std::declval&lt; typename T::const_iterator &gt;(), std::declval&lt; typename T::value_type &gt;())), typename T::iterator &gt;::value &gt;::type &gt;">
+<area shape="rect" id="Node000001" title="Specialization for types with a valid insert method." alt="" coords="5,79,259,210"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="14,5,122,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="83,43,101,77,96,80,79,46"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="145,5,247,31"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="185,46,168,80,163,77,181,43"/>
+</map>

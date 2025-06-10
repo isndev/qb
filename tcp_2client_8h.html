@@ -1,0 +1,309 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/async/tcp/client.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/async/tcp/client.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('tcp_2client_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">client.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___networking.html">Networking Utilities</a> &raquo; <a class="el" href="group___t_c_p.html">TCP Communication</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Asynchronous TCP client implementation for the QB IO library.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &quot;<a class="el" href="uuid_8h_source.html">../../../uuid.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="io_2async_2io_8h_source.html">../io.h</a>&quot;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for client.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="tcp_2client_8h__incl.png" border="0" usemap="#ainclude_2qb_2io_2async_2tcp_2client_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2async_2tcp_2client_8h" id="ainclude_2qb_2io_2async_2tcp_2client_8h">
+<area shape="rect" title="Asynchronous TCP client implementation for the QB IO library." alt="" coords="1013,5,1146,46"/>
+<area shape="rect" href="uuid_8h.html" title="Universally Unique Identifier (UUID) support." alt="" coords="986,94,1078,120"/>
+<area shape="poly" title=" " alt="" coords="1070,48,1049,82,1045,79,1066,45"/>
+<area shape="rect" href="io_2async_2io_8h.html" title="Core asynchronous I/O class templates for event&#45;driven operations." alt="" coords="1430,94,1484,120"/>
+<area shape="poly" title=" " alt="" coords="1147,38,1415,94,1414,99,1146,44"/>
+<area shape="rect" title=" " alt="" coords="587,168,716,193"/>
+<area shape="poly" title=" " alt="" coords="986,119,732,167,731,162,985,114"/>
+<area shape="rect" href="type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="1865,249,2012,274"/>
+<area shape="poly" title=" " alt="" coords="1485,108,1607,126,1684,143,1761,165,1842,201,1908,238,1906,243,1840,206,1759,170,1683,148,1606,131,1485,114"/>
+<area shape="rect" href="all_8h.html" title="Aggregation of all event types for the asynchronous I/O system." alt="" coords="740,168,822,193"/>
+<area shape="poly" title=" " alt="" coords="1430,114,838,176,837,171,1429,108"/>
+<area shape="rect" href="async_2listener_8h.html" title="Core event loop manager for the asynchronous IO framework." alt="" coords="1420,168,1494,193"/>
+<area shape="poly" title=" " alt="" coords="1460,120,1460,152,1454,152,1454,120"/>
+<area shape="rect" href="protocol_8h.html" title="Protocol interfaces for message processing in the asynchronous IO framework." alt="" coords="1670,168,1748,193"/>
+<area shape="poly" title=" " alt="" coords="1485,113,1655,161,1654,166,1484,118"/>
+<area shape="rect" title=" " alt="" coords="1786,338,1873,363"/>
+<area shape="poly" title=" " alt="" coords="1925,277,1858,329,1855,325,1922,273"/>
+<area shape="rect" title=" " alt="" coords="1897,338,1980,363"/>
+<area shape="poly" title=" " alt="" coords="1941,275,1941,322,1936,322,1936,275"/>
+<area shape="rect" title=" " alt="" coords="2004,338,2057,363"/>
+<area shape="poly" title=" " alt="" coords="1953,273,2008,325,2005,329,1949,277"/>
+<area shape="rect" title=" " alt="" coords="2081,338,2148,363"/>
+<area shape="poly" title=" " alt="" coords="1965,273,2077,328,2075,333,1962,278"/>
+<area shape="rect" href="disconnected_8h.html" title="Disconnection event for asynchronous I/O operations." alt="" coords="552,249,661,274"/>
+<area shape="poly" title=" " alt="" coords="755,196,648,245,646,240,753,191"/>
+<area shape="rect" href="extracted_8h.html" title="Extracted event for asynchronous I/O operations." alt="" coords="685,249,771,274"/>
+<area shape="poly" title=" " alt="" coords="775,195,747,237,742,234,771,192"/>
+<area shape="rect" href="dispose_8h.html" title="Resource disposal event for asynchronous I/O components." alt="" coords="794,249,872,274"/>
+<area shape="poly" title=" " alt="" coords="791,192,819,234,815,237,787,195"/>
+<area shape="rect" href="eof_8h.html" title="End&#45;of&#45;file event for asynchronous input streams." alt="" coords="896,249,946,274"/>
+<area shape="poly" title=" " alt="" coords="804,191,888,239,885,243,801,196"/>
+<area shape="rect" href="eos_8h.html" title="End&#45;of&#45;stream event for asynchronous output streams." alt="" coords="970,249,1024,274"/>
+<area shape="poly" title=" " alt="" coords="823,191,888,212,959,239,961,239,959,244,958,244,886,217,821,196"/>
+<area shape="rect" href="async_2event_2file_8h.html" title="File system monitoring event for asynchronous I/O." alt="" coords="1132,249,1182,274"/>
+<area shape="poly" title=" " alt="" coords="823,182,958,199,1040,216,1122,239,1124,240,1122,245,1120,244,1039,221,957,205,822,188"/>
+<area shape="rect" href="io_2async_2event_2io_8h.html" title="Low&#45;level I/O notification event for asynchronous operations." alt="" coords="5,249,48,274"/>
+<area shape="poly" title=" " alt="" coords="740,194,728,196,626,207,539,209,390,203,319,202,243,206,159,219,61,244,59,245,57,239,59,239,158,214,243,201,319,197,390,198,539,204,626,201,727,191,739,189"/>
+<area shape="rect" href="pending__read_8h.html" title="Event for notifying about pending (unprocessed) read data in asynchronous I/O." alt="" coords="72,249,181,274"/>
+<area shape="poly" title=" " alt="" coords="740,194,728,196,578,213,460,217,343,223,274,231,194,244,179,247,178,242,193,239,273,226,342,218,460,212,578,207,727,191,739,189"/>
+<area shape="rect" href="pending__write_8h.html" title="Event for notifying about pending (unsent) write data in asynchronous I/O." alt="" coords="205,249,317,274"/>
+<area shape="poly" title=" " alt="" coords="740,194,728,196,616,211,528,218,441,226,330,244,316,247,315,242,329,239,440,221,528,213,616,206,727,191,739,189"/>
+<area shape="rect" href="signal_8h.html" title="System signal event handler for asynchronous I/O." alt="" coords="341,249,408,274"/>
+<area shape="poly" title=" " alt="" coords="740,194,728,196,641,209,573,215,506,224,421,244,415,246,414,240,419,239,505,219,572,210,641,204,727,191,739,188"/>
+<area shape="rect" href="timer_8h.html" title="Timer event for asynchronous I/O and timed operations." alt="" coords="1048,249,1109,274"/>
+<area shape="poly" title=" " alt="" coords="823,186,921,207,1037,239,1041,240,1039,245,1035,244,920,212,822,192"/>
+<area shape="rect" href="async_2event_2handshake_8h.html" title="Handshake event for asynchronous input streams." alt="" coords="432,249,528,274"/>
+<area shape="poly" title=" " alt="" coords="741,194,541,244,532,246,530,241,539,239,739,189"/>
+<area shape="rect" href="async_2event_2base_8h.html" title="Base class for asynchronous events in the QB IO library." alt="" coords="1048,338,1109,363"/>
+<area shape="poly" title=" " alt="" coords="1148,277,1101,328,1097,324,1144,273"/>
+<area shape="rect" title=" " alt="" coords="1038,419,1119,444"/>
+<area shape="poly" title=" " alt="" coords="1081,364,1081,403,1076,403,1076,364"/>
+<area shape="poly" title=" " alt="" coords="45,273,61,279,148,298,266,313,404,325,551,333,834,343,1033,346,1033,351,834,348,551,338,404,330,266,318,148,303,59,285,43,277"/>
+<area shape="poly" title=" " alt="" coords="400,272,421,279,507,299,595,314,770,334,923,343,1032,346,1032,352,922,349,769,339,595,319,506,304,419,285,399,278"/>
+<area shape="poly" title=" " alt="" coords="1081,275,1081,322,1076,322,1076,275"/>
+<area shape="poly" title=" " alt="" coords="1495,184,1651,206,1854,239,1873,242,1871,248,1853,244,1651,211,1494,189"/>
+<area shape="poly" title=" " alt="" coords="1421,190,1338,209,1292,224,1246,244,1220,263,1195,284,1116,332,1113,327,1192,280,1217,258,1244,239,1290,219,1337,204,1419,185"/>
+<area shape="rect" title=" " alt="" coords="1420,249,1494,274"/>
+<area shape="poly" title=" " alt="" coords="1460,194,1460,233,1454,233,1454,194"/>
+<area shape="rect" href="unordered__set_8h.html" title="Optimized unordered set implementations." alt="" coords="1518,241,1658,282"/>
+<area shape="poly" title=" " alt="" coords="1478,191,1544,231,1542,236,1476,196"/>
+<area shape="rect" href="branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="1682,249,1841,274"/>
+<area shape="poly" title=" " alt="" coords="1495,189,1700,242,1699,247,1494,194"/>
+<area shape="rect" title=" " alt="" coords="1258,249,1315,274"/>
+<area shape="poly" title=" " alt="" coords="1432,196,1328,244,1327,244,1324,239,1325,239,1429,191"/>
+<area shape="rect" title=" " alt="" coords="1339,249,1396,274"/>
+<area shape="poly" title=" " alt="" coords="1445,196,1395,240,1391,236,1442,192"/>
+<area shape="rect" title=" " alt="" coords="1559,338,1598,363"/>
+<area shape="poly" title=" " alt="" coords="1588,283,1584,322,1579,322,1583,282"/>
+<area shape="rect" title=" " alt="" coords="1623,330,1761,371"/>
+<area shape="poly" title=" " alt="" coords="1613,280,1659,318,1655,322,1610,285"/>
+<area shape="rect" title=" " alt="" coords="1431,338,1534,363"/>
+<area shape="poly" title=" " alt="" coords="1566,285,1510,330,1507,326,1562,280"/>
+<area shape="poly" title=" " alt="" coords="1745,191,1890,241,1888,246,1744,196"/>
+</map>
+</div>
+</div><div class="textblock"><div class="dynheader">
+This graph shows which files directly or indirectly include this file:</div>
+<div class="dyncontent">
+<div class="center"><img src="tcp_2client_8h__dep__incl.png" border="0" usemap="#ainclude_2qb_2io_2async_2tcp_2client_8hdep" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2async_2tcp_2client_8hdep" id="ainclude_2qb_2io_2async_2tcp_2client_8hdep">
+<area shape="rect" title="Asynchronous TCP client implementation for the QB IO library." alt="" coords="11,5,144,46"/>
+<area shape="rect" href="async_8h.html" title="Main include file for the QB asynchronous I/O library." alt="" coords="5,94,150,120"/>
+<area shape="poly" title=" " alt="" coords="80,62,80,93,75,93,75,62"/>
+</map>
+</div>
+</div>
+<p><a href="tcp_2client_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3Atcp_3A_3Aclient_3C_20_5FDerived_2C_20_5FTransport_2C_20_5FServer_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3Atcp_3A_3Aclient_3C_20_5FDerived_2C_20_5FTransport_2C_20_5FServer_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1tcp_1_1client.html">qb::io::async::tcp::client&lt; _Derived, _Transport, _Server &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Server-associated asynchronous TCP client.  <a href="classqb_1_1io_1_1async_1_1tcp_1_1client.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3Atcp_3A_3Aclient_3C_20_5FDerived_2C_20_5FTransport_2C_20void_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3Atcp_3A_3Aclient_3C_20_5FDerived_2C_20_5FTransport_2C_20void_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1tcp_1_1client_3_01___derived_00_01___transport_00_01void_01_4.html">qb::io::async::tcp::client&lt; _Derived, _Transport, void &gt;</a></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Asynchronous TCP client implementation for the QB IO library. </p>
+<p>This file defines the client template class which provides functionality for asynchronous TCP client connections. It supports both server-associated clients (typically created when a connection is accepted by a server) and standalone clients (for outgoing connections).</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div></div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="dir_8eba9db56c7516495e7fe9ef247fc2c3.html">async</a></li><li class="navelem"><a href="dir_247aa6b6d277c2fe335888718b9ab836.html">tcp</a></li><li class="navelem"><a href="tcp_2client_8h.html">client.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

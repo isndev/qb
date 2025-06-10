@@ -1,0 +1,9 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="Node000000" title=" " alt="" coords="5,31,106,56"/>
+<area shape="rect" id="Node000001" href="$classqb_1_1io_1_1tcp_1_1socket.html" title="Class implementing TCP socket functionality for reliable, stream&#45;oriented communication." alt="" coords="155,5,282,31"/>
+<area shape="poly" id="edge98_Node000000_Node000001" title=" " alt="" coords="121,31,155,25,155,31,122,36"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1udp_1_1socket.html" title="Class implementing UDP socket functionality for datagram&#45;based communication." alt="" coords="154,55,283,80"/>
+<area shape="poly" id="edge100_Node000000_Node000003" title=" " alt="" coords="122,51,154,55,153,61,121,56"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality." alt="" coords="331,5,482,31"/>
+<area shape="poly" id="edge99_Node000001_Node000002" title=" " alt="" coords="297,16,331,16,331,21,297,21"/>
+</map>

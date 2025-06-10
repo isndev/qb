@@ -1,0 +1,1085 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/async/io.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/async/io.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('io_2async_2io_8h_source.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">io.h</div></div>
+</div><!--header-->
+<div class="contents">
+<a href="io_2async_2io_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span> </div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span><span class="preprocessor">#ifndef QB_IO_ASYNC_IO_H</span></div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span><span class="preprocessor">#define QB_IO_ASYNC_IO_H</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span> </div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span><span class="preprocessor">#include &lt;<a class="code" href="type__traits_8h.html">qb/utility/type_traits.h</a>&gt;</span></div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span><span class="preprocessor">#include &quot;<a class="code" href="all_8h.html">event/all.h</a>&quot;</span></div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span><span class="preprocessor">#include &quot;<a class="code" href="async_2listener_8h.html">listener.h</a>&quot;</span></div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span><span class="preprocessor">#include &quot;<a class="code" href="protocol_8h.html">protocol.h</a>&quot;</span></div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span> </div>
+<div class="line"><a id="l00037" name="l00037"></a><span class="lineno">   37</span><a class="code hl_define" href="type__traits_8h.html#ab4fc7d2cccbb97d55e21010335cb36e2">CREATE_MEMBER_CHECK</a>(Protocol);</div>
+<div class="line"><a id="l00038" name="l00038"></a><span class="lineno">   38</span><a class="code hl_define" href="type__traits_8h.html#ab592189d6429a3a390de9754ba71da8a">GENERATE_HAS_METHOD</a>(flush)</div>
+<div class="line"><a id="l00039" name="l00039"></a><span class="lineno">   39</span> </div>
+<div class="line"><a id="l00040" name="l00040"></a><span class="lineno">   40</span><span class="preprocessor">#define Derived static_cast&lt;_Derived &amp;&gt;(*this)</span></div>
+<div class="line"><a id="l00041" name="l00041"></a><span class="lineno">   41</span> </div>
+<div class="line"><a id="l00042" name="l00042"></a><span class="lineno">   42</span><span class="keyword">namespace </span>qb::io::async {</div>
+<div class="line"><a id="l00043" name="l00043"></a><span class="lineno">   43</span></div>
+<div class="line"><a id="l00057" name="l00057"></a><span class="lineno">   57</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Derived, <span class="keyword">typename</span> _EV_EVENT&gt;</div>
+<div class="foldopen" id="foldopen00058" data-start="{" data-end="};">
+<div class="line"><a id="l00058" name="l00058"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1base.html">   58</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base</a> {</div>
+<div class="line"><a id="l00059" name="l00059"></a><span class="lineno">   59</span><span class="keyword">protected</span>:</div>
+<div class="line"><a id="l00060" name="l00060"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">   60</a></span>    _EV_EVENT &amp;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>; </div>
+<div class="line"><a id="l00061" name="l00061"></a><span class="lineno">   61</span></div>
+<div class="foldopen" id="foldopen00067" data-start="{" data-end="}">
+<div class="line"><a id="l00067" name="l00067"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">   67</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base</a>()</div>
+<div class="line"><a id="l00068" name="l00068"></a><span class="lineno">   68</span>        : <a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>(<a class="code hl_class" href="classqb_1_1io_1_1async_1_1listener.html">listener</a>::current.registerEvent&lt;_EV_EVENT&gt;(Derived)) {}</div>
+</div>
+<div class="line"><a id="l00069" name="l00069"></a><span class="lineno">   69</span></div>
+<div class="foldopen" id="foldopen00076" data-start="{" data-end="}">
+<div class="line"><a id="l00076" name="l00076"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1base.html#ac291f7676364a1f45e8b8973785e0589">   76</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#ac291f7676364a1f45e8b8973785e0589">~base</a>() {</div>
+<div class="line"><a id="l00077" name="l00077"></a><span class="lineno">   77</span>        <span class="comment">//std::cout &lt;&lt; &quot;handle=&quot; &lt;&lt; _async_event.fd</span></div>
+<div class="line"><a id="l00078" name="l00078"></a><span class="lineno">   78</span>        <span class="comment">//          &lt;&lt; &quot; disposed async.stop()&quot; &lt;&lt; std::endl;</span></div>
+<div class="line"><a id="l00079" name="l00079"></a><span class="lineno">   79</span>        <a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.stop();</div>
+<div class="line"><a id="l00080" name="l00080"></a><span class="lineno">   80</span>        <a class="code hl_variable" href="classqb_1_1io_1_1async_1_1listener.html#a4b1d56f544dc8f60eac6464038885bf8">listener::current</a>.unregisterEvent(<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>._interface);</div>
+<div class="line"><a id="l00081" name="l00081"></a><span class="lineno">   81</span>    }</div>
+</div>
+<div class="line"><a id="l00082" name="l00082"></a><span class="lineno">   82</span>};</div>
+</div>
+<div class="line"><a id="l00083" name="l00083"></a><span class="lineno">   83</span></div>
+<div class="line"><a id="l00095" name="l00095"></a><span class="lineno">   95</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Derived&gt;</div>
+<div class="foldopen" id="foldopen00096" data-start="{" data-end="};">
+<div class="line"><a id="l00096" name="l00096"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1with__timeout.html">   96</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1io_1_1async_1_1with__timeout.html#a77f00ac9e7ab164c72797bedbef82cdc">with_timeout</a> : <span class="keyword">public</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base</a>&lt;with_timeout&lt;_Derived&gt;, event::timer&gt; {</div>
+<div class="line"><a id="l00097" name="l00097"></a><span class="lineno">   97</span>    ev_tstamp _timeout;       </div>
+<div class="line"><a id="l00098" name="l00098"></a><span class="lineno">   98</span>    ev_tstamp _last_activity; </div>
+<div class="line"><a id="l00099" name="l00099"></a><span class="lineno">   99</span> </div>
+<div class="line"><a id="l00100" name="l00100"></a><span class="lineno">  100</span><span class="keyword">public</span>:</div>
+<div class="foldopen" id="foldopen00106" data-start="{" data-end="}">
+<div class="line"><a id="l00106" name="l00106"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1with__timeout.html#a77f00ac9e7ab164c72797bedbef82cdc">  106</a></span>    <span class="keyword">explicit</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1with__timeout.html#a77f00ac9e7ab164c72797bedbef82cdc">with_timeout</a>(ev_tstamp timeout = 3)</div>
+<div class="line"><a id="l00107" name="l00107"></a><span class="lineno">  107</span>        : _timeout(timeout)</div>
+<div class="line"><a id="l00108" name="l00108"></a><span class="lineno">  108</span>        , _last_activity(0) {</div>
+<div class="line"><a id="l00109" name="l00109"></a><span class="lineno">  109</span>        <span class="keywordflow">if</span> (timeout &gt; 0.)</div>
+<div class="line"><a id="l00110" name="l00110"></a><span class="lineno">  110</span>            this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.start(_timeout);</div>
+<div class="line"><a id="l00111" name="l00111"></a><span class="lineno">  111</span>    }</div>
+</div>
+<div class="line"><a id="l00112" name="l00112"></a><span class="lineno">  112</span></div>
+<div class="line"><a id="l00119" name="l00119"></a><span class="lineno">  119</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00120" data-start="{" data-end="}">
+<div class="line"><a id="l00120" name="l00120"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1with__timeout.html#a0f234055cbc67e30c7fd03f5d4a4171f">  120</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1with__timeout.html#a0f234055cbc67e30c7fd03f5d4a4171f">updateTimeout</a>() noexcept {</div>
+<div class="line"><a id="l00121" name="l00121"></a><span class="lineno">  121</span>        _last_activity = this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.loop.now();</div>
+<div class="line"><a id="l00122" name="l00122"></a><span class="lineno">  122</span>    }</div>
+</div>
+<div class="line"><a id="l00123" name="l00123"></a><span class="lineno">  123</span></div>
+<div class="line"><a id="l00130" name="l00130"></a><span class="lineno">  130</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00131" data-start="{" data-end="}">
+<div class="line"><a id="l00131" name="l00131"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1with__timeout.html#ab704e926ac0ad765d42997dc00482924">  131</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1with__timeout.html#ab704e926ac0ad765d42997dc00482924">setTimeout</a>(ev_tstamp timeout) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00132" name="l00132"></a><span class="lineno">  132</span>        _timeout = timeout;</div>
+<div class="line"><a id="l00133" name="l00133"></a><span class="lineno">  133</span>        <span class="keywordflow">if</span> (_timeout &gt; 0.) { <span class="comment">// Check against 0, not just if(_timeout)</span></div>
+<div class="line"><a id="l00134" name="l00134"></a><span class="lineno">  134</span>            _last_activity = ev_time(); <span class="comment">// Consider using this-&gt;_async_event.loop.now() for consistency</span></div>
+<div class="line"><a id="l00135" name="l00135"></a><span class="lineno">  135</span>            this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.set(_timeout);</div>
+<div class="line"><a id="l00136" name="l00136"></a><span class="lineno">  136</span>            this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.start();</div>
+<div class="line"><a id="l00137" name="l00137"></a><span class="lineno">  137</span>        } <span class="keywordflow">else</span></div>
+<div class="line"><a id="l00138" name="l00138"></a><span class="lineno">  138</span>            this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.stop();</div>
+<div class="line"><a id="l00139" name="l00139"></a><span class="lineno">  139</span>    }</div>
+</div>
+<div class="line"><a id="l00140" name="l00140"></a><span class="lineno">  140</span></div>
+<div class="line"><a id="l00145" name="l00145"></a><span class="lineno">  145</span>    <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00146" data-start="{" data-end="}">
+<div class="line"><a id="l00146" name="l00146"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1with__timeout.html#ab5a0c9a30dc8bdc8d92190883a6704c8">  146</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1with__timeout.html#ab5a0c9a30dc8bdc8d92190883a6704c8">getTimeout</a>() const noexcept {</div>
+<div class="line"><a id="l00147" name="l00147"></a><span class="lineno">  147</span>        <span class="keywordflow">return</span> _timeout;</div>
+<div class="line"><a id="l00148" name="l00148"></a><span class="lineno">  148</span>    }</div>
+</div>
+<div class="line"><a id="l00149" name="l00149"></a><span class="lineno">  149</span> </div>
+<div class="line"><a id="l00150" name="l00150"></a><span class="lineno">  150</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00151" name="l00151"></a><span class="lineno">  151</span>    <span class="keyword">friend</span> <span class="keyword">class </span><a class="code hl_class" href="classqb_1_1io_1_1async_1_1listener_1_1_registered_kernel_event.html">listener::RegisteredKernelEvent</a>&lt;event::timer, <a class="code hl_class" href="classqb_1_1io_1_1async_1_1with__timeout.html">with_timeout</a>&gt;;</div>
+<div class="line"><a id="l00152" name="l00152"></a><span class="lineno">  152</span></div>
+<div class="line"><a id="l00161" name="l00161"></a><span class="lineno">  161</span>    void</div>
+<div class="line"><a id="l00162" name="l00162"></a><span class="lineno">  162</span>    on(event::timer &amp;event) noexcept {</div>
+<div class="line"><a id="l00163" name="l00163"></a><span class="lineno">  163</span>        <span class="keyword">const</span> ev_tstamp after = _last_activity - <span class="keyword">event</span>.loop.now() + _timeout;</div>
+<div class="line"><a id="l00164" name="l00164"></a><span class="lineno">  164</span> </div>
+<div class="line"><a id="l00165" name="l00165"></a><span class="lineno">  165</span>        <span class="keywordflow">if</span> (after &lt; 0.)</div>
+<div class="line"><a id="l00166" name="l00166"></a><span class="lineno">  166</span>            Derived.on(event);</div>
+<div class="line"><a id="l00167" name="l00167"></a><span class="lineno">  167</span>        <span class="keywordflow">else</span> {</div>
+<div class="line"><a id="l00168" name="l00168"></a><span class="lineno">  168</span>            this-&gt;_async_event.set(after);</div>
+<div class="line"><a id="l00169" name="l00169"></a><span class="lineno">  169</span>            this-&gt;_async_event.start();</div>
+<div class="line"><a id="l00170" name="l00170"></a><span class="lineno">  170</span>        }</div>
+<div class="line"><a id="l00171" name="l00171"></a><span class="lineno">  171</span>    }</div>
+<div class="line"><a id="l00172" name="l00172"></a><span class="lineno">  172</span>};</div>
+</div>
+<div class="line"><a id="l00173" name="l00173"></a><span class="lineno">  173</span></div>
+<div class="line"><a id="l00185" name="l00185"></a><span class="lineno">  185</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Func&gt;</div>
+<div class="foldopen" id="foldopen00186" data-start="{" data-end="};">
+<div class="line"><a id="l00186" name="l00186"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_timeout.html">  186</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1io_1_1async_1_1_timeout.html#a78a360d2e2523c1a3d535d4e5ed98f6a">Timeout</a> : <span class="keyword">public</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1with__timeout.html#a77f00ac9e7ab164c72797bedbef82cdc">with_timeout</a>&lt;Timeout&lt;_Func&gt;&gt; {</div>
+<div class="line"><a id="l00187" name="l00187"></a><span class="lineno">  187</span>    _Func _func; </div>
+<div class="line"><a id="l00188" name="l00188"></a><span class="lineno">  188</span> </div>
+<div class="line"><a id="l00189" name="l00189"></a><span class="lineno">  189</span><span class="keyword">public</span>:</div>
+<div class="foldopen" id="foldopen00197" data-start="{" data-end="}">
+<div class="line"><a id="l00197" name="l00197"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_timeout.html#a78a360d2e2523c1a3d535d4e5ed98f6a">  197</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_timeout.html#a78a360d2e2523c1a3d535d4e5ed98f6a">Timeout</a>(_Func &amp;&amp;func, <span class="keywordtype">double</span> timeout = 0.)</div>
+<div class="line"><a id="l00198" name="l00198"></a><span class="lineno">  198</span>        : <a class="code hl_function" href="classqb_1_1io_1_1async_1_1with__timeout.html#a77f00ac9e7ab164c72797bedbef82cdc">with_timeout</a>&lt;<a class="code hl_function" href="classqb_1_1io_1_1async_1_1_timeout.html#a78a360d2e2523c1a3d535d4e5ed98f6a">Timeout</a>&lt;_Func&gt;&gt;(timeout)</div>
+<div class="line"><a id="l00199" name="l00199"></a><span class="lineno">  199</span>        , _func(std::forward&lt;_Func&gt;(func)) {</div>
+<div class="line"><a id="l00200" name="l00200"></a><span class="lineno">  200</span>        <span class="keywordflow">if</span> (!timeout) { <span class="comment">// More direct check for zero or less</span></div>
+<div class="line"><a id="l00201" name="l00201"></a><span class="lineno">  201</span>            _func();</div>
+<div class="line"><a id="l00202" name="l00202"></a><span class="lineno">  202</span>            <span class="keyword">delete</span> <span class="keyword">this</span>;</div>
+<div class="line"><a id="l00203" name="l00203"></a><span class="lineno">  203</span>        }</div>
+<div class="line"><a id="l00204" name="l00204"></a><span class="lineno">  204</span>    }</div>
+</div>
+<div class="line"><a id="l00205" name="l00205"></a><span class="lineno">  205</span></div>
+<div class="line"><a id="l00212" name="l00212"></a><span class="lineno">  212</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00213" data-start="{" data-end="}">
+<div class="line"><a id="l00213" name="l00213"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_timeout.html#a47cf770bd71534d331da9b3b733ca475">  213</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_timeout.html#a47cf770bd71534d331da9b3b733ca475">on</a>(event::timer <span class="keyword">const</span> &amp; <span class="comment">/*event*/</span>)<span class="keyword"> const </span>{ <span class="comment">// Marked event as unused</span></div>
+<div class="line"><a id="l00214" name="l00214"></a><span class="lineno">  214</span>        _func();</div>
+<div class="line"><a id="l00215" name="l00215"></a><span class="lineno">  215</span>        <span class="keyword">delete</span> <span class="keyword">this</span>;</div>
+<div class="line"><a id="l00216" name="l00216"></a><span class="lineno">  216</span>    }</div>
+</div>
+<div class="line"><a id="l00217" name="l00217"></a><span class="lineno">  217</span>};</div>
+</div>
+<div class="line"><a id="l00218" name="l00218"></a><span class="lineno">  218</span></div>
+<div class="line"><a id="l00231" name="l00231"></a><span class="lineno">  231</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Func&gt;</div>
+<div class="line"><a id="l00232" name="l00232"></a><span class="lineno">  232</span><span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00233" data-start="{" data-end="}">
+<div class="line"><a id="l00233" name="l00233"></a><span class="lineno"><a class="line" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">  233</a></span><a class="code hl_function" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">callback</a>(_Func &amp;&amp;func, <span class="keywordtype">double</span> timeout = 0.) {</div>
+<div class="line"><a id="l00234" name="l00234"></a><span class="lineno">  234</span>    <span class="keyword">new</span> <a class="code hl_class" href="classqb_1_1io_1_1async_1_1_timeout.html">Timeout&lt;_Func&gt;</a>(std::forward&lt;_Func&gt;(func), timeout);</div>
+<div class="line"><a id="l00235" name="l00235"></a><span class="lineno">  235</span>}</div>
+</div>
+<div class="line"><a id="l00236" name="l00236"></a><span class="lineno">  236</span> </div>
+<div class="line"><a id="l00237" name="l00237"></a><span class="lineno">  237</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Func, <span class="keyword">typename</span> Rep, <span class="keyword">typename</span> Period&gt;</div>
+<div class="line"><a id="l00238" name="l00238"></a><span class="lineno">  238</span><span class="keywordtype">void</span> <a class="code hl_function" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">callback</a>(_Func&amp;&amp; func, std::chrono::duration&lt;Rep, Period&gt; timeout_duration) {</div>
+<div class="line"><a id="l00239" name="l00239"></a><span class="lineno">  239</span>    <span class="keywordtype">double</span> seconds = std::chrono::duration_cast&lt;std::chrono::duration&lt;double&gt;&gt;(timeout_duration).count();</div>
+<div class="line"><a id="l00240" name="l00240"></a><span class="lineno">  240</span>    <a class="code hl_function" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">callback</a>(std::forward&lt;_Func&gt;(func), seconds);</div>
+<div class="line"><a id="l00241" name="l00241"></a><span class="lineno">  241</span>}</div>
+<div class="line"><a id="l00242" name="l00242"></a><span class="lineno">  242</span></div>
+<div class="line"><a id="l00255" name="l00255"></a><span class="lineno">  255</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Derived&gt;</div>
+<div class="foldopen" id="foldopen00256" data-start="{" data-end="};">
+<div class="line"><a id="l00256" name="l00256"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1file__watcher.html">  256</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1io_1_1async_1_1file__watcher.html#a7e32a8a44a07d57dc2b606d1e823daee">file_watcher</a> : <span class="keyword">public</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base</a>&lt;file_watcher&lt;_Derived&gt;, event::file&gt; {</div>
+<div class="line"><a id="l00257" name="l00257"></a><span class="lineno">  257</span>    <span class="keyword">using </span>base_t = <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base&lt;file_watcher&lt;_Derived&gt;</a>, event::file&gt;;</div>
+<div class="line"><a id="l00258" name="l00258"></a><span class="lineno">  258</span>    <a class="code hl_interface" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> *_protocol = <span class="keyword">nullptr</span>; </div>
+<div class="line"><a id="l00259" name="l00259"></a><span class="lineno">  259</span>    std::vector&lt;IProtocol *&gt; _protocol_list; </div>
+<div class="line"><a id="l00260" name="l00260"></a><span class="lineno">  260</span> </div>
+<div class="line"><a id="l00261" name="l00261"></a><span class="lineno">  261</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00262" name="l00262"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1file__watcher.html#a94f058f7e4fd2c123d8a928d75072522">  262</a></span>    <span class="keyword">using </span><a class="code hl_typedef" href="classqb_1_1io_1_1async_1_1file__watcher.html#a94f058f7e4fd2c123d8a928d75072522">base_io_t</a> = <a class="code hl_function" href="classqb_1_1io_1_1async_1_1file__watcher.html#a7e32a8a44a07d57dc2b606d1e823daee">file_watcher&lt;_Derived&gt;</a>; </div>
+<div class="line"><a id="l00263" name="l00263"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1file__watcher.html#ad67414ea62e0874c6ba4168232b5a815">  263</a></span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> <span class="keyword">const</span> <span class="keywordtype">bool</span> <a class="code hl_variable" href="classqb_1_1io_1_1async_1_1file__watcher.html#ad67414ea62e0874c6ba4168232b5a815">do_read</a> = <span class="keyword">true</span>; </div>
+<div class="line"><a id="l00264" name="l00264"></a><span class="lineno">  264</span></div>
+<div class="line"><a id="l00270" name="l00270"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1file__watcher.html#a7e32a8a44a07d57dc2b606d1e823daee">  270</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1file__watcher.html#a7e32a8a44a07d57dc2b606d1e823daee">file_watcher</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00271" name="l00271"></a><span class="lineno">  271</span></div>
+<div class="foldopen" id="foldopen00279" data-start="{" data-end="}">
+<div class="line"><a id="l00279" name="l00279"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1file__watcher.html#a8d2236a64199983d8da5e068066c804b">  279</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1file__watcher.html#a8d2236a64199983d8da5e068066c804b">file_watcher</a>(<a class="code hl_interface" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> *protocol) noexcept</div>
+<div class="line"><a id="l00280" name="l00280"></a><span class="lineno">  280</span>        : _protocol(protocol) {}</div>
+</div>
+<div class="line"><a id="l00281" name="l00281"></a><span class="lineno">  281</span></div>
+<div class="line"><a id="l00285" name="l00285"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1file__watcher.html#ab040617dbd8c24fe04be4e62b58e7fab">  285</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1file__watcher.html#ab040617dbd8c24fe04be4e62b58e7fab">file_watcher</a>(<a class="code hl_function" href="classqb_1_1io_1_1async_1_1file__watcher.html#a7e32a8a44a07d57dc2b606d1e823daee">file_watcher</a> <span class="keyword">const</span> &amp;) = <span class="keyword">delete</span>;</div>
+<div class="line"><a id="l00286" name="l00286"></a><span class="lineno">  286</span></div>
+<div class="foldopen" id="foldopen00292" data-start="{" data-end="}">
+<div class="line"><a id="l00292" name="l00292"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1file__watcher.html#affcb7583881c2fcd94077c0a23c39205">  292</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1file__watcher.html#affcb7583881c2fcd94077c0a23c39205">~file_watcher</a>() noexcept {</div>
+<div class="line"><a id="l00293" name="l00293"></a><span class="lineno">  293</span>        <span class="keywordflow">for</span> (<span class="keyword">auto</span> protocol_ptr : _protocol_list) <span class="comment">// Renamed to avoid conflict</span></div>
+<div class="line"><a id="l00294" name="l00294"></a><span class="lineno">  294</span>            <span class="keyword">delete</span> protocol_ptr;</div>
+<div class="line"><a id="l00295" name="l00295"></a><span class="lineno">  295</span>    }</div>
+</div>
+<div class="line"><a id="l00296" name="l00296"></a><span class="lineno">  296</span></div>
+<div class="line"><a id="l00308" name="l00308"></a><span class="lineno">  308</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Protocol, <span class="keyword">typename</span>... _Args&gt;</div>
+<div class="line"><a id="l00309" name="l00309"></a><span class="lineno">  309</span>    _Protocol *</div>
+<div class="foldopen" id="foldopen00310" data-start="{" data-end="}">
+<div class="line"><a id="l00310" name="l00310"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1file__watcher.html#ab11f9213c8dc7127eb7e359c18e1617c">  310</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1file__watcher.html#ab11f9213c8dc7127eb7e359c18e1617c">switch_protocol</a>(_Args &amp;&amp;...args) {</div>
+<div class="line"><a id="l00311" name="l00311"></a><span class="lineno">  311</span>        <span class="keyword">auto</span> new_protocol = <span class="keyword">new</span> _Protocol(std::forward&lt;_Args&gt;(args)...);</div>
+<div class="line"><a id="l00312" name="l00312"></a><span class="lineno">  312</span>        <span class="keywordflow">if</span> (new_protocol-&gt;ok()) {</div>
+<div class="line"><a id="l00313" name="l00313"></a><span class="lineno">  313</span>            _protocol = new_protocol;</div>
+<div class="line"><a id="l00314" name="l00314"></a><span class="lineno">  314</span>            _protocol_list.push_back(new_protocol);</div>
+<div class="line"><a id="l00315" name="l00315"></a><span class="lineno">  315</span>            <span class="keywordflow">return</span> new_protocol;</div>
+<div class="line"><a id="l00316" name="l00316"></a><span class="lineno">  316</span>        }</div>
+<div class="line"><a id="l00317" name="l00317"></a><span class="lineno">  317</span>        <span class="keywordflow">return</span> <span class="keyword">nullptr</span>;</div>
+<div class="line"><a id="l00318" name="l00318"></a><span class="lineno">  318</span>    }</div>
+</div>
+<div class="line"><a id="l00319" name="l00319"></a><span class="lineno">  319</span></div>
+<div class="line"><a id="l00328" name="l00328"></a><span class="lineno">  328</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00329" data-start="{" data-end="}">
+<div class="line"><a id="l00329" name="l00329"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1file__watcher.html#a2b4f27f954bead1b2674e2d1f3d14ff7">  329</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1file__watcher.html#a2b4f27f954bead1b2674e2d1f3d14ff7">start</a>(std::string <span class="keyword">const</span> &amp;fpath, ev_tstamp ts = 0.1) noexcept {</div>
+<div class="line"><a id="l00330" name="l00330"></a><span class="lineno">  330</span>        this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.start(fpath.c_str(), ts);</div>
+<div class="line"><a id="l00331" name="l00331"></a><span class="lineno">  331</span>    }</div>
+</div>
+<div class="line"><a id="l00332" name="l00332"></a><span class="lineno">  332</span></div>
+<div class="line"><a id="l00338" name="l00338"></a><span class="lineno">  338</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00339" data-start="{" data-end="}">
+<div class="line"><a id="l00339" name="l00339"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1file__watcher.html#a9810cbe887831e2873e2fd65f751b454">  339</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1file__watcher.html#a9810cbe887831e2873e2fd65f751b454">disconnect</a>() noexcept {</div>
+<div class="line"><a id="l00340" name="l00340"></a><span class="lineno">  340</span>        this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.stop();</div>
+<div class="line"><a id="l00341" name="l00341"></a><span class="lineno">  341</span>    }</div>
+</div>
+<div class="line"><a id="l00342" name="l00342"></a><span class="lineno">  342</span></div>
+<div class="line"><a id="l00355" name="l00355"></a><span class="lineno">  355</span>    <span class="keywordtype">int</span></div>
+<div class="foldopen" id="foldopen00356" data-start="{" data-end="}">
+<div class="line"><a id="l00356" name="l00356"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1file__watcher.html#a21796bb1110da28b09c3c88012f1b17b">  356</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1file__watcher.html#a21796bb1110da28b09c3c88012f1b17b">read_all</a>() {</div>
+<div class="line"><a id="l00357" name="l00357"></a><span class="lineno">  357</span>        <span class="keyword">constexpr</span> <span class="keyword">const</span> <span class="keyword">auto</span> invalid_ret = <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(-1);</div>
+<div class="line"><a id="l00358" name="l00358"></a><span class="lineno">  358</span>        std::size_t          ret         = 0u;</div>
+<div class="line"><a id="l00359" name="l00359"></a><span class="lineno">  359</span>        <span class="keywordflow">do</span> {</div>
+<div class="line"><a id="l00360" name="l00360"></a><span class="lineno">  360</span>            ret = <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(Derived.read());</div>
+<div class="line"><a id="l00361" name="l00361"></a><span class="lineno">  361</span>            <span class="keywordflow">if</span> (<a class="code hl_function" href="group___misc_utils.html#ga2d1eef83ada31226748c9333477a06ff">unlikely</a>(ret == invalid_ret))</div>
+<div class="line"><a id="l00362" name="l00362"></a><span class="lineno">  362</span>                <span class="keywordflow">return</span> -1;</div>
+<div class="line"><a id="l00363" name="l00363"></a><span class="lineno">  363</span>            <span class="keywordflow">while</span> ((ret = this-&gt;_protocol-&gt;<a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#ac6fbfd77652b09d4801fdb968b853e4a">getMessageSize</a>()) &gt; 0) {</div>
+<div class="line"><a id="l00364" name="l00364"></a><span class="lineno">  364</span>                <span class="comment">// has a new message to read</span></div>
+<div class="line"><a id="l00365" name="l00365"></a><span class="lineno">  365</span>                this-&gt;_protocol-&gt;<a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a9cd95933e98fcb5c16e7417b572c938b">onMessage</a>(ret);</div>
+<div class="line"><a id="l00366" name="l00366"></a><span class="lineno">  366</span>                Derived.flush(ret);</div>
+<div class="line"><a id="l00367" name="l00367"></a><span class="lineno">  367</span>            }</div>
+<div class="line"><a id="l00368" name="l00368"></a><span class="lineno">  368</span>            Derived.eof();</div>
+<div class="line"><a id="l00369" name="l00369"></a><span class="lineno">  369</span>            <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::pending_read&gt;::value ||</div>
+<div class="line"><a id="l00370" name="l00370"></a><span class="lineno">  370</span>                          has_method_on&lt;_Derived, void, event::eof&gt;::value) {</div>
+<div class="line"><a id="l00371" name="l00371"></a><span class="lineno">  371</span>                <span class="keyword">const</span> <span class="keyword">auto</span> pendingRead = Derived.pendingRead();</div>
+<div class="line"><a id="l00372" name="l00372"></a><span class="lineno">  372</span>                <span class="keywordflow">if</span> (pendingRead) {</div>
+<div class="line"><a id="l00373" name="l00373"></a><span class="lineno">  373</span>                    <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void,</div>
+<div class="line"><a id="l00374" name="l00374"></a><span class="lineno">  374</span>                                                event::pending_read&gt;::value) {</div>
+<div class="line"><a id="l00375" name="l00375"></a><span class="lineno">  375</span>                        Derived.on(event::pending_read{pendingRead});</div>
+<div class="line"><a id="l00376" name="l00376"></a><span class="lineno">  376</span>                    }</div>
+<div class="line"><a id="l00377" name="l00377"></a><span class="lineno">  377</span>                } <span class="keywordflow">else</span> {</div>
+<div class="line"><a id="l00378" name="l00378"></a><span class="lineno">  378</span>                    <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::eof&gt;::value) {</div>
+<div class="line"><a id="l00379" name="l00379"></a><span class="lineno">  379</span>                        Derived.on(event::eof{});</div>
+<div class="line"><a id="l00380" name="l00380"></a><span class="lineno">  380</span>                    }</div>
+<div class="line"><a id="l00381" name="l00381"></a><span class="lineno">  381</span>                }</div>
+<div class="line"><a id="l00382" name="l00382"></a><span class="lineno">  382</span>            }</div>
+<div class="line"><a id="l00383" name="l00383"></a><span class="lineno">  383</span>        } <span class="keywordflow">while</span> (ret);</div>
+<div class="line"><a id="l00384" name="l00384"></a><span class="lineno">  384</span>        <span class="keywordflow">return</span> 0;</div>
+<div class="line"><a id="l00385" name="l00385"></a><span class="lineno">  385</span>    }</div>
+</div>
+<div class="line"><a id="l00386" name="l00386"></a><span class="lineno">  386</span> </div>
+<div class="line"><a id="l00387" name="l00387"></a><span class="lineno">  387</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00388" name="l00388"></a><span class="lineno">  388</span>    <span class="keyword">friend</span> <span class="keyword">class </span><a class="code hl_class" href="classqb_1_1io_1_1async_1_1listener_1_1_registered_kernel_event.html">listener::RegisteredKernelEvent</a>&lt;event::<a class="code hl_class" href="classqb_1_1io_1_1async_1_1file.html">file</a>, <a class="code hl_class" href="classqb_1_1io_1_1async_1_1file__watcher.html">file_watcher</a>&gt;;</div>
+<div class="line"><a id="l00389" name="l00389"></a><span class="lineno">  389</span></div>
+<div class="line"><a id="l00402" name="l00402"></a><span class="lineno">  402</span>    void</div>
+<div class="line"><a id="l00403" name="l00403"></a><span class="lineno">  403</span>    on(event::file const &amp;event) {</div>
+<div class="line"><a id="l00404" name="l00404"></a><span class="lineno">  404</span>        <span class="keywordtype">int</span> ret = 0u;</div>
+<div class="line"><a id="l00405" name="l00405"></a><span class="lineno">  405</span> </div>
+<div class="line"><a id="l00406" name="l00406"></a><span class="lineno">  406</span>        <span class="comment">// forward event to Derived if desired</span></div>
+<div class="line"><a id="l00407" name="l00407"></a><span class="lineno">  407</span>        <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::file&gt;::value) {</div>
+<div class="line"><a id="l00408" name="l00408"></a><span class="lineno">  408</span>            Derived.on(event);</div>
+<div class="line"><a id="l00409" name="l00409"></a><span class="lineno">  409</span>        }</div>
+<div class="line"><a id="l00410" name="l00410"></a><span class="lineno">  410</span> </div>
+<div class="line"><a id="l00411" name="l00411"></a><span class="lineno">  411</span>        <span class="keyword">auto</span> diff_read = <span class="keyword">event</span>.attr.st_size - <span class="keyword">event</span>.prev.st_size;</div>
+<div class="line"><a id="l00412" name="l00412"></a><span class="lineno">  412</span>        <span class="keywordflow">if</span> (!_protocol-&gt;<a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#acddb63fbb3d34ecb17ef5d615cd40b78">ok</a>() || !<a class="code hl_typedef" href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">event</a>.attr.st_nlink ||</div>
+<div class="line"><a id="l00413" name="l00413"></a><span class="lineno">  413</span>            (diff_read &lt; 0 &amp;&amp; lseek(Derived.transport().native_handle(), 0, SEEK_SET)))</div>
+<div class="line"><a id="l00414" name="l00414"></a><span class="lineno">  414</span>            ret = -1;</div>
+<div class="line"><a id="l00415" name="l00415"></a><span class="lineno">  415</span>        <span class="keywordflow">else</span> <span class="keywordflow">if</span> (diff_read) {</div>
+<div class="line"><a id="l00416" name="l00416"></a><span class="lineno">  416</span>            <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (_Derived::do_read) {</div>
+<div class="line"><a id="l00417" name="l00417"></a><span class="lineno">  417</span>                ret = read_all();</div>
+<div class="line"><a id="l00418" name="l00418"></a><span class="lineno">  418</span>            }</div>
+<div class="line"><a id="l00419" name="l00419"></a><span class="lineno">  419</span>        }</div>
+<div class="line"><a id="l00420" name="l00420"></a><span class="lineno">  420</span> </div>
+<div class="line"><a id="l00421" name="l00421"></a><span class="lineno">  421</span>        <span class="keywordflow">if</span> (ret &lt; 0) {</div>
+<div class="line"><a id="l00422" name="l00422"></a><span class="lineno">  422</span>            this-&gt;_async_event.stop();</div>
+<div class="line"><a id="l00423" name="l00423"></a><span class="lineno">  423</span>            Derived.close();</div>
+<div class="line"><a id="l00424" name="l00424"></a><span class="lineno">  424</span>        }</div>
+<div class="line"><a id="l00425" name="l00425"></a><span class="lineno">  425</span>    }</div>
+<div class="line"><a id="l00426" name="l00426"></a><span class="lineno">  426</span>};</div>
+</div>
+<div class="line"><a id="l00427" name="l00427"></a><span class="lineno">  427</span></div>
+<div class="line"><a id="l00439" name="l00439"></a><span class="lineno">  439</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Derived&gt;</div>
+<div class="foldopen" id="foldopen00440" data-start="{" data-end="};">
+<div class="line"><a id="l00440" name="l00440"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1directory__watcher.html">  440</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1io_1_1async_1_1directory__watcher.html#ab2ae6e11524783e9b186d2a4d0f4e5b5">directory_watcher</a> : <span class="keyword">public</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base</a>&lt;directory_watcher&lt;_Derived&gt;, event::file&gt; {</div>
+<div class="line"><a id="l00441" name="l00441"></a><span class="lineno">  441</span>    <span class="keyword">using </span>base_t = <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base&lt;directory_watcher&lt;_Derived&gt;</a>, event::file&gt;;</div>
+<div class="line"><a id="l00442" name="l00442"></a><span class="lineno">  442</span> </div>
+<div class="line"><a id="l00443" name="l00443"></a><span class="lineno">  443</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00444" name="l00444"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1directory__watcher.html#a14aec485254005a0e0df121df97ccb21">  444</a></span>    <span class="keyword">using </span><a class="code hl_typedef" href="classqb_1_1io_1_1async_1_1directory__watcher.html#a14aec485254005a0e0df121df97ccb21">base_io_t</a> = <a class="code hl_function" href="classqb_1_1io_1_1async_1_1directory__watcher.html#ab2ae6e11524783e9b186d2a4d0f4e5b5">directory_watcher&lt;_Derived&gt;</a>; </div>
+<div class="line"><a id="l00445" name="l00445"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1directory__watcher.html#afc672b297212c48e72a5407f442c9302">  445</a></span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> <span class="keyword">const</span> <span class="keywordtype">bool</span> <a class="code hl_variable" href="classqb_1_1io_1_1async_1_1directory__watcher.html#afc672b297212c48e72a5407f442c9302">do_read</a> = <span class="keyword">false</span>; </div>
+<div class="line"><a id="l00446" name="l00446"></a><span class="lineno">  446</span></div>
+<div class="line"><a id="l00450" name="l00450"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1directory__watcher.html#ab2ae6e11524783e9b186d2a4d0f4e5b5">  450</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1directory__watcher.html#ab2ae6e11524783e9b186d2a4d0f4e5b5">directory_watcher</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00451" name="l00451"></a><span class="lineno">  451</span></div>
+<div class="line"><a id="l00455" name="l00455"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1directory__watcher.html#a0c5d955ce9cd24b69a6611cb56fd9023">  455</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1directory__watcher.html#a0c5d955ce9cd24b69a6611cb56fd9023">~directory_watcher</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00456" name="l00456"></a><span class="lineno">  456</span></div>
+<div class="line"><a id="l00464" name="l00464"></a><span class="lineno">  464</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00465" data-start="{" data-end="}">
+<div class="line"><a id="l00465" name="l00465"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1directory__watcher.html#adc89f0336ed5bfa1581ba69a6eaa4ced">  465</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1directory__watcher.html#adc89f0336ed5bfa1581ba69a6eaa4ced">start</a>(std::string <span class="keyword">const</span> &amp;fpath, ev_tstamp ts = 0.1) noexcept {</div>
+<div class="line"><a id="l00466" name="l00466"></a><span class="lineno">  466</span>        this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.start(fpath.c_str(), ts);</div>
+<div class="line"><a id="l00467" name="l00467"></a><span class="lineno">  467</span>    }</div>
+</div>
+<div class="line"><a id="l00468" name="l00468"></a><span class="lineno">  468</span></div>
+<div class="line"><a id="l00473" name="l00473"></a><span class="lineno">  473</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00474" data-start="{" data-end="}">
+<div class="line"><a id="l00474" name="l00474"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1directory__watcher.html#a54deda123a2659d24f5d50157c435a8d">  474</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1directory__watcher.html#a54deda123a2659d24f5d50157c435a8d">disconnect</a>() noexcept {</div>
+<div class="line"><a id="l00475" name="l00475"></a><span class="lineno">  475</span>        this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.stop();</div>
+<div class="line"><a id="l00476" name="l00476"></a><span class="lineno">  476</span>    }</div>
+</div>
+<div class="line"><a id="l00477" name="l00477"></a><span class="lineno">  477</span> </div>
+<div class="line"><a id="l00478" name="l00478"></a><span class="lineno">  478</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00479" name="l00479"></a><span class="lineno">  479</span>    <span class="keyword">friend</span> <span class="keyword">class </span><a class="code hl_class" href="classqb_1_1io_1_1async_1_1listener_1_1_registered_kernel_event.html">listener::RegisteredKernelEvent</a>&lt;event::<a class="code hl_class" href="classqb_1_1io_1_1async_1_1file.html">file</a>, <a class="code hl_class" href="classqb_1_1io_1_1async_1_1directory__watcher.html">directory_watcher</a>&gt;;</div>
+<div class="line"><a id="l00480" name="l00480"></a><span class="lineno">  480</span></div>
+<div class="line"><a id="l00489" name="l00489"></a><span class="lineno">  489</span>    void</div>
+<div class="line"><a id="l00490" name="l00490"></a><span class="lineno">  490</span>    on(event::file const &amp;event) {</div>
+<div class="line"><a id="l00491" name="l00491"></a><span class="lineno">  491</span>        <span class="comment">//        int ret = 0u;</span></div>
+<div class="line"><a id="l00492" name="l00492"></a><span class="lineno">  492</span> </div>
+<div class="line"><a id="l00493" name="l00493"></a><span class="lineno">  493</span>        <span class="comment">// forward event to Derived if desired</span></div>
+<div class="line"><a id="l00494" name="l00494"></a><span class="lineno">  494</span>        <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::file&gt;::value) {</div>
+<div class="line"><a id="l00495" name="l00495"></a><span class="lineno">  495</span>            Derived.on(event);</div>
+<div class="line"><a id="l00496" name="l00496"></a><span class="lineno">  496</span>        }</div>
+<div class="line"><a id="l00497" name="l00497"></a><span class="lineno">  497</span> </div>
+<div class="line"><a id="l00498" name="l00498"></a><span class="lineno">  498</span>        <span class="comment">//        if (ret &lt; 0) {</span></div>
+<div class="line"><a id="l00499" name="l00499"></a><span class="lineno">  499</span>        <span class="comment">//            this-&gt;_async_event.stop();</span></div>
+<div class="line"><a id="l00500" name="l00500"></a><span class="lineno">  500</span>        <span class="comment">//        }</span></div>
+<div class="line"><a id="l00501" name="l00501"></a><span class="lineno">  501</span>    }</div>
+<div class="line"><a id="l00502" name="l00502"></a><span class="lineno">  502</span>};</div>
+</div>
+<div class="line"><a id="l00503" name="l00503"></a><span class="lineno">  503</span></div>
+<div class="line"><a id="l00516" name="l00516"></a><span class="lineno">  516</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Derived&gt;</div>
+<div class="foldopen" id="foldopen00517" data-start="{" data-end="};">
+<div class="line"><a id="l00517" name="l00517"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html">  517</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a740b9e9d1adc6b86df3154964363c7c1">input</a> : <span class="keyword">public</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base</a>&lt;input&lt;_Derived&gt;, event::io&gt; {</div>
+<div class="line"><a id="l00518" name="l00518"></a><span class="lineno">  518</span>    <span class="keyword">using </span>base_t                   = <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base&lt;input&lt;_Derived&gt;</a>, event::io&gt;;</div>
+<div class="line"><a id="l00519" name="l00519"></a><span class="lineno">  519</span>    <a class="code hl_interface" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> *_protocol = <span class="keyword">nullptr</span>; </div>
+<div class="line"><a id="l00520" name="l00520"></a><span class="lineno">  520</span>    std::vector&lt;IProtocol *&gt; _protocol_list; </div>
+<div class="line"><a id="l00521" name="l00521"></a><span class="lineno">  521</span>    <span class="keywordtype">bool</span> _on_message  = <span class="keyword">false</span>; </div>
+<div class="line"><a id="l00522" name="l00522"></a><span class="lineno">  522</span>    <span class="keywordtype">bool</span> _is_disposed = <span class="keyword">false</span>; </div>
+<div class="line"><a id="l00523" name="l00523"></a><span class="lineno">  523</span>    <span class="keywordtype">int</span> _reason = 0; </div>
+<div class="line"><a id="l00524" name="l00524"></a><span class="lineno">  524</span> </div>
+<div class="line"><a id="l00525" name="l00525"></a><span class="lineno">  525</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00526" name="l00526"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#a8ab3f8b37cd897eaf8a4558f92c4f51a">  526</a></span>    <span class="keyword">using </span><a class="code hl_typedef" href="classqb_1_1io_1_1async_1_1input.html#a8ab3f8b37cd897eaf8a4558f92c4f51a">base_io_t</a> = <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a740b9e9d1adc6b86df3154964363c7c1">input&lt;_Derived&gt;</a>; </div>
+<div class="line"><a id="l00527" name="l00527"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#aad37a3ab9a48534e697e84573e73d2c2">  527</a></span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> <span class="keyword">const</span> <span class="keywordtype">bool</span> <a class="code hl_variable" href="classqb_1_1io_1_1async_1_1input.html#aad37a3ab9a48534e697e84573e73d2c2">has_server</a> = <span class="keyword">false</span>; </div>
+<div class="line"><a id="l00528" name="l00528"></a><span class="lineno">  528</span></div>
+<div class="line"><a id="l00534" name="l00534"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#a740b9e9d1adc6b86df3154964363c7c1">  534</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a740b9e9d1adc6b86df3154964363c7c1">input</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00535" name="l00535"></a><span class="lineno">  535</span></div>
+<div class="foldopen" id="foldopen00544" data-start="{" data-end="}">
+<div class="line"><a id="l00544" name="l00544"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#aeaddbdb2106e5f55a620797f7d9b19d7">  544</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#aeaddbdb2106e5f55a620797f7d9b19d7">input</a>(<a class="code hl_interface" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> *<a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a1ece3d54a5d4f34cd1e566210f4ee76a">protocol</a>) noexcept</div>
+<div class="line"><a id="l00545" name="l00545"></a><span class="lineno">  545</span>        : _protocol(<a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a1ece3d54a5d4f34cd1e566210f4ee76a">protocol</a>) {</div>
+<div class="line"><a id="l00546" name="l00546"></a><span class="lineno">  546</span>        _protocol_list.push_back(<a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a1ece3d54a5d4f34cd1e566210f4ee76a">protocol</a>); <span class="comment">// Assumes ownership</span></div>
+<div class="line"><a id="l00547" name="l00547"></a><span class="lineno">  547</span>    }</div>
+</div>
+<div class="line"><a id="l00548" name="l00548"></a><span class="lineno">  548</span></div>
+<div class="line"><a id="l00552" name="l00552"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#a9d4a03cfeffed6a4cc3509689df6eb19">  552</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a9d4a03cfeffed6a4cc3509689df6eb19">input</a>(<a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a740b9e9d1adc6b86df3154964363c7c1">input</a> <span class="keyword">const</span> &amp;) = <span class="keyword">delete</span>;</div>
+<div class="line"><a id="l00553" name="l00553"></a><span class="lineno">  553</span></div>
+<div class="foldopen" id="foldopen00559" data-start="{" data-end="}">
+<div class="line"><a id="l00559" name="l00559"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#ac45968c669edc2f8a20182e529cc5fb8">  559</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#ac45968c669edc2f8a20182e529cc5fb8">~input</a>() noexcept {</div>
+<div class="line"><a id="l00560" name="l00560"></a><span class="lineno">  560</span>        <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#ad5971b71f03a82d4c74678563a19d0f1">clear_protocols</a>();</div>
+<div class="line"><a id="l00561" name="l00561"></a><span class="lineno">  561</span>    }</div>
+</div>
+<div class="line"><a id="l00562" name="l00562"></a><span class="lineno">  562</span></div>
+<div class="line"><a id="l00573" name="l00573"></a><span class="lineno">  573</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Protocol, <span class="keyword">typename</span>... _Args&gt;</div>
+<div class="line"><a id="l00574" name="l00574"></a><span class="lineno">  574</span>    _Protocol *</div>
+<div class="foldopen" id="foldopen00575" data-start="{" data-end="}">
+<div class="line"><a id="l00575" name="l00575"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#a9f36aabf03349c5c954c643f895ba0fb">  575</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a9f36aabf03349c5c954c643f895ba0fb">switch_protocol</a>(_Args &amp;&amp;...args) {</div>
+<div class="line"><a id="l00576" name="l00576"></a><span class="lineno">  576</span>        <span class="keyword">auto</span> new_protocol = <span class="keyword">new</span> _Protocol(std::forward&lt;_Args&gt;(args)...);</div>
+<div class="line"><a id="l00577" name="l00577"></a><span class="lineno">  577</span>        <span class="keywordflow">if</span> (new_protocol-&gt;ok()) {</div>
+<div class="line"><a id="l00578" name="l00578"></a><span class="lineno">  578</span>            _protocol = new_protocol;</div>
+<div class="line"><a id="l00579" name="l00579"></a><span class="lineno">  579</span>            _protocol_list.push_back(new_protocol);</div>
+<div class="line"><a id="l00580" name="l00580"></a><span class="lineno">  580</span>            <span class="keywordflow">return</span> new_protocol;</div>
+<div class="line"><a id="l00581" name="l00581"></a><span class="lineno">  581</span>        } <span class="keywordflow">else</span></div>
+<div class="line"><a id="l00582" name="l00582"></a><span class="lineno">  582</span>            <span class="keyword">delete</span> new_protocol;</div>
+<div class="line"><a id="l00583" name="l00583"></a><span class="lineno">  583</span>        <span class="keywordflow">return</span> <span class="keyword">nullptr</span>;</div>
+<div class="line"><a id="l00584" name="l00584"></a><span class="lineno">  584</span>    }</div>
+</div>
+<div class="line"><a id="l00585" name="l00585"></a><span class="lineno">  585</span></div>
+<div class="line"><a id="l00591" name="l00591"></a><span class="lineno">  591</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00592" data-start="{" data-end="}">
+<div class="line"><a id="l00592" name="l00592"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#ad5971b71f03a82d4c74678563a19d0f1">  592</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#ad5971b71f03a82d4c74678563a19d0f1">clear_protocols</a>() {</div>
+<div class="line"><a id="l00593" name="l00593"></a><span class="lineno">  593</span>        <span class="keywordflow">for</span> (<span class="keyword">auto</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a1ece3d54a5d4f34cd1e566210f4ee76a">protocol</a> : _protocol_list)</div>
+<div class="line"><a id="l00594" name="l00594"></a><span class="lineno">  594</span>            <span class="keyword">delete</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a1ece3d54a5d4f34cd1e566210f4ee76a">protocol</a>;</div>
+<div class="line"><a id="l00595" name="l00595"></a><span class="lineno">  595</span>        _protocol_list.clear();</div>
+<div class="line"><a id="l00596" name="l00596"></a><span class="lineno">  596</span>        _protocol = <span class="keyword">nullptr</span>;</div>
+<div class="line"><a id="l00597" name="l00597"></a><span class="lineno">  597</span>    };</div>
+</div>
+<div class="line"><a id="l00598" name="l00598"></a><span class="lineno">  598</span></div>
+<div class="line"><a id="l00603" name="l00603"></a><span class="lineno">  603</span>    <a class="code hl_interface" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> *</div>
+<div class="foldopen" id="foldopen00604" data-start="{" data-end="}">
+<div class="line"><a id="l00604" name="l00604"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#a1ece3d54a5d4f34cd1e566210f4ee76a">  604</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a1ece3d54a5d4f34cd1e566210f4ee76a">protocol</a>() {</div>
+<div class="line"><a id="l00605" name="l00605"></a><span class="lineno">  605</span>        <span class="keywordflow">return</span> _protocol;</div>
+<div class="line"><a id="l00606" name="l00606"></a><span class="lineno">  606</span>    }</div>
+</div>
+<div class="line"><a id="l00607" name="l00607"></a><span class="lineno">  607</span></div>
+<div class="line"><a id="l00614" name="l00614"></a><span class="lineno">  614</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00615" data-start="{" data-end="}">
+<div class="line"><a id="l00615" name="l00615"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#a901da6100a5ebae7822c9d33e70daf3b">  615</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a901da6100a5ebae7822c9d33e70daf3b">start</a>() noexcept {</div>
+<div class="line"><a id="l00616" name="l00616"></a><span class="lineno">  616</span>        _reason = 0;</div>
+<div class="line"><a id="l00617" name="l00617"></a><span class="lineno">  617</span>        Derived.transport().set_nonblocking(<span class="keyword">true</span>);</div>
+<div class="line"><a id="l00618" name="l00618"></a><span class="lineno">  618</span>        this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.start(Derived.transport().native_handle(), EV_READ);</div>
+<div class="line"><a id="l00619" name="l00619"></a><span class="lineno">  619</span>    }</div>
+</div>
+<div class="line"><a id="l00620" name="l00620"></a><span class="lineno">  620</span></div>
+<div class="line"><a id="l00627" name="l00627"></a><span class="lineno">  627</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00628" data-start="{" data-end="}">
+<div class="line"><a id="l00628" name="l00628"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#a01562a732abac729850b50564c23c5ed">  628</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#a01562a732abac729850b50564c23c5ed">ready_to_read</a>() noexcept {</div>
+<div class="line"><a id="l00629" name="l00629"></a><span class="lineno">  629</span>        <span class="keywordflow">if</span> (!(this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.events &amp; EV_READ))</div>
+<div class="line"><a id="l00630" name="l00630"></a><span class="lineno">  630</span>            this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.start(Derived.transport().native_handle(), EV_READ);</div>
+<div class="line"><a id="l00631" name="l00631"></a><span class="lineno">  631</span>    }</div>
+</div>
+<div class="line"><a id="l00632" name="l00632"></a><span class="lineno">  632</span></div>
+<div class="line"><a id="l00641" name="l00641"></a><span class="lineno">  641</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00642" data-start="{" data-end="}">
+<div class="line"><a id="l00642" name="l00642"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#ad6194d0e20d50ee3ecdc50108dd3eb51">  642</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#ad6194d0e20d50ee3ecdc50108dd3eb51">disconnect</a>(<span class="keywordtype">int</span> reason = 1) {</div>
+<div class="line"><a id="l00643" name="l00643"></a><span class="lineno">  643</span>        _reason = reason;</div>
+<div class="line"><a id="l00644" name="l00644"></a><span class="lineno">  644</span>        this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.feed_event(EV_UNDEF);</div>
+<div class="line"><a id="l00645" name="l00645"></a><span class="lineno">  645</span>    }</div>
+</div>
+<div class="line"><a id="l00646" name="l00646"></a><span class="lineno">  646</span> </div>
+<div class="line"><a id="l00647" name="l00647"></a><span class="lineno">  647</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00648" name="l00648"></a><span class="lineno">  648</span>    <span class="keyword">friend</span> <span class="keyword">class </span><a class="code hl_class" href="classqb_1_1io_1_1async_1_1listener_1_1_registered_kernel_event.html">listener::RegisteredKernelEvent</a>&lt;event::<a class="code hl_class" href="classqb_1_1io_1_1async_1_1io.html">io</a>, <a class="code hl_class" href="classqb_1_1io_1_1async_1_1input.html">input</a>&gt;;</div>
+<div class="line"><a id="l00649" name="l00649"></a><span class="lineno">  649</span></div>
+<div class="line"><a id="l00667" name="l00667"></a><span class="lineno">  667</span>    void</div>
+<div class="line"><a id="l00668" name="l00668"></a><span class="lineno">  668</span>    on(event::io const &amp;event) {</div>
+<div class="line"><a id="l00669" name="l00669"></a><span class="lineno">  669</span>        <span class="keyword">constexpr</span> <span class="keyword">const</span> <span class="keyword">auto</span> invalid_ret = <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(-1);</div>
+<div class="line"><a id="l00670" name="l00670"></a><span class="lineno">  670</span>        std::size_t                 ret         = 0u;</div>
+<div class="line"><a id="l00671" name="l00671"></a><span class="lineno">  671</span> </div>
+<div class="line"><a id="l00672" name="l00672"></a><span class="lineno">  672</span>        <span class="keywordflow">if</span> (_on_message)</div>
+<div class="line"><a id="l00673" name="l00673"></a><span class="lineno">  673</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l00674" name="l00674"></a><span class="lineno">  674</span>        <span class="keywordflow">if</span> (_reason || !_protocol-&gt;<a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#acddb63fbb3d34ecb17ef5d615cd40b78">ok</a>())</div>
+<div class="line"><a id="l00675" name="l00675"></a><span class="lineno">  675</span>            <span class="keywordflow">goto</span> error;</div>
+<div class="line"><a id="l00676" name="l00676"></a><span class="lineno">  676</span> </div>
+<div class="line"><a id="l00677" name="l00677"></a><span class="lineno">  677</span>        <span class="keywordflow">if</span> (<a class="code hl_function" href="group___misc_utils.html#ga53e71bed81745d90e3a00967f60d6515">likely</a>(event._revents &amp; EV_READ)) {</div>
+<div class="line"><a id="l00678" name="l00678"></a><span class="lineno">  678</span>            ret = <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(Derived.read());</div>
+<div class="line"><a id="l00679" name="l00679"></a><span class="lineno">  679</span>            <span class="keywordflow">if</span> (<a class="code hl_function" href="group___misc_utils.html#ga2d1eef83ada31226748c9333477a06ff">unlikely</a>(ret == invalid_ret))</div>
+<div class="line"><a id="l00680" name="l00680"></a><span class="lineno">  680</span>                <span class="keywordflow">goto</span> error;</div>
+<div class="line"><a id="l00681" name="l00681"></a><span class="lineno">  681</span>            _on_message = <span class="keyword">true</span>;</div>
+<div class="line"><a id="l00682" name="l00682"></a><span class="lineno">  682</span>            <span class="keywordflow">while</span> ((ret = this-&gt;_protocol-&gt;<a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#ac6fbfd77652b09d4801fdb968b853e4a">getMessageSize</a>()) &gt; 0) {</div>
+<div class="line"><a id="l00683" name="l00683"></a><span class="lineno">  683</span>                <span class="keyword">auto</span> protocol = this-&gt;_protocol;</div>
+<div class="line"><a id="l00684" name="l00684"></a><span class="lineno">  684</span>                protocol-&gt;<a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a9cd95933e98fcb5c16e7417b572c938b">onMessage</a>(ret);</div>
+<div class="line"><a id="l00685" name="l00685"></a><span class="lineno">  685</span>                <span class="keywordflow">if</span> (protocol-&gt;should_flush())</div>
+<div class="line"><a id="l00686" name="l00686"></a><span class="lineno">  686</span>                    Derived.flush(ret);</div>
+<div class="line"><a id="l00687" name="l00687"></a><span class="lineno">  687</span>            }</div>
+<div class="line"><a id="l00688" name="l00688"></a><span class="lineno">  688</span>            _on_message = <span class="keyword">false</span>;</div>
+<div class="line"><a id="l00689" name="l00689"></a><span class="lineno">  689</span>            Derived.eof();</div>
+<div class="line"><a id="l00690" name="l00690"></a><span class="lineno">  690</span>            <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::pending_read&gt;::value ||</div>
+<div class="line"><a id="l00691" name="l00691"></a><span class="lineno">  691</span>                          has_method_on&lt;_Derived, void, event::eof&gt;::value) {</div>
+<div class="line"><a id="l00692" name="l00692"></a><span class="lineno">  692</span>                <span class="keyword">const</span> <span class="keyword">auto</span> pendingRead = Derived.pendingRead();</div>
+<div class="line"><a id="l00693" name="l00693"></a><span class="lineno">  693</span>                <span class="keywordflow">if</span> (pendingRead) {</div>
+<div class="line"><a id="l00694" name="l00694"></a><span class="lineno">  694</span>                    <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void,</div>
+<div class="line"><a id="l00695" name="l00695"></a><span class="lineno">  695</span>                                                event::pending_read&gt;::value) {</div>
+<div class="line"><a id="l00696" name="l00696"></a><span class="lineno">  696</span>                        Derived.on(event::pending_read{pendingRead});</div>
+<div class="line"><a id="l00697" name="l00697"></a><span class="lineno">  697</span>                    }</div>
+<div class="line"><a id="l00698" name="l00698"></a><span class="lineno">  698</span>                } <span class="keywordflow">else</span> {</div>
+<div class="line"><a id="l00699" name="l00699"></a><span class="lineno">  699</span>                    <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::eof&gt;::value) {</div>
+<div class="line"><a id="l00700" name="l00700"></a><span class="lineno">  700</span>                        Derived.on(event::eof{});</div>
+<div class="line"><a id="l00701" name="l00701"></a><span class="lineno">  701</span>                    }</div>
+<div class="line"><a id="l00702" name="l00702"></a><span class="lineno">  702</span>                }</div>
+<div class="line"><a id="l00703" name="l00703"></a><span class="lineno">  703</span>            }</div>
+<div class="line"><a id="l00704" name="l00704"></a><span class="lineno">  704</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l00705" name="l00705"></a><span class="lineno">  705</span>        }</div>
+<div class="line"><a id="l00706" name="l00706"></a><span class="lineno">  706</span>    error:</div>
+<div class="line"><a id="l00707" name="l00707"></a><span class="lineno">  707</span><span class="preprocessor">#ifdef _WIN32</span></div>
+<div class="line"><a id="l00708" name="l00708"></a><span class="lineno">  708</span>        <span class="keywordflow">if</span> (socket::get_last_errno() == 10035)</div>
+<div class="line"><a id="l00709" name="l00709"></a><span class="lineno">  709</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l00710" name="l00710"></a><span class="lineno">  710</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00711" name="l00711"></a><span class="lineno">  711</span>        dispose();</div>
+<div class="line"><a id="l00712" name="l00712"></a><span class="lineno">  712</span>    }</div>
+<div class="line"><a id="l00713" name="l00713"></a><span class="lineno">  713</span> </div>
+<div class="line"><a id="l00714" name="l00714"></a><span class="lineno">  714</span><span class="keyword">protected</span>:</div>
+<div class="line"><a id="l00724" name="l00724"></a><span class="lineno">  724</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00725" data-start="{" data-end="}">
+<div class="line"><a id="l00725" name="l00725"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1input.html#aa3056ccceb431c2c3e0f3c605a96f85f">  725</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1input.html#aa3056ccceb431c2c3e0f3c605a96f85f">dispose</a>() {</div>
+<div class="line"><a id="l00726" name="l00726"></a><span class="lineno">  726</span>        <span class="keywordflow">if</span> (_is_disposed)</div>
+<div class="line"><a id="l00727" name="l00727"></a><span class="lineno">  727</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l00728" name="l00728"></a><span class="lineno">  728</span>        _is_disposed = <span class="keyword">true</span>;    </div>
+<div class="line"><a id="l00729" name="l00729"></a><span class="lineno">  729</span> </div>
+<div class="line"><a id="l00730" name="l00730"></a><span class="lineno">  730</span>        <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::disconnected&gt;::value) {</div>
+<div class="line"><a id="l00731" name="l00731"></a><span class="lineno">  731</span>            Derived.on(event::disconnected{_reason});</div>
+<div class="line"><a id="l00732" name="l00732"></a><span class="lineno">  732</span>        }</div>
+<div class="line"><a id="l00733" name="l00733"></a><span class="lineno">  733</span> </div>
+<div class="line"><a id="l00734" name="l00734"></a><span class="lineno">  734</span>        <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (_Derived::has_server) {</div>
+<div class="line"><a id="l00735" name="l00735"></a><span class="lineno">  735</span>            Derived.server().disconnected(Derived.id());</div>
+<div class="line"><a id="l00736" name="l00736"></a><span class="lineno">  736</span>        } <span class="keywordflow">else</span> <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::dispose&gt;::value) {</div>
+<div class="line"><a id="l00737" name="l00737"></a><span class="lineno">  737</span>            Derived.on(event::dispose{});</div>
+<div class="line"><a id="l00738" name="l00738"></a><span class="lineno">  738</span>        }</div>
+<div class="line"><a id="l00739" name="l00739"></a><span class="lineno">  739</span>    }</div>
+</div>
+<div class="line"><a id="l00740" name="l00740"></a><span class="lineno">  740</span>};</div>
+</div>
+<div class="line"><a id="l00741" name="l00741"></a><span class="lineno">  741</span></div>
+<div class="line"><a id="l00754" name="l00754"></a><span class="lineno">  754</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Derived&gt;</div>
+<div class="foldopen" id="foldopen00755" data-start="{" data-end="};">
+<div class="line"><a id="l00755" name="l00755"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html">  755</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#a1b3086ef7b83737feb5dd96bdcf1918d">output</a> : <span class="keyword">public</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base</a>&lt;output&lt;_Derived&gt;, event::io&gt; {</div>
+<div class="line"><a id="l00756" name="l00756"></a><span class="lineno">  756</span>    <span class="keyword">using </span>base_t = <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base&lt;output&lt;_Derived&gt;</a>, event::io&gt;;</div>
+<div class="line"><a id="l00757" name="l00757"></a><span class="lineno">  757</span>    <span class="keywordtype">bool</span> _is_disposed = <span class="keyword">false</span>; </div>
+<div class="line"><a id="l00758" name="l00758"></a><span class="lineno">  758</span>    <span class="keywordtype">int</span> _reason = 0; </div>
+<div class="line"><a id="l00759" name="l00759"></a><span class="lineno">  759</span> </div>
+<div class="line"><a id="l00760" name="l00760"></a><span class="lineno">  760</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00761" name="l00761"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html#ac45e604ca222bd31ca09b0d62a764dc8">  761</a></span>    <span class="keyword">using </span><a class="code hl_typedef" href="classqb_1_1io_1_1async_1_1output.html#ac45e604ca222bd31ca09b0d62a764dc8">base_io_t</a> = <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#a1b3086ef7b83737feb5dd96bdcf1918d">output&lt;_Derived&gt;</a>; </div>
+<div class="line"><a id="l00762" name="l00762"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html#af10593d2523c7ebe0419c25d979e94b7">  762</a></span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> <span class="keyword">const</span> <span class="keywordtype">bool</span> <a class="code hl_variable" href="classqb_1_1io_1_1async_1_1output.html#af10593d2523c7ebe0419c25d979e94b7">has_server</a> = <span class="keyword">false</span>; </div>
+<div class="line"><a id="l00763" name="l00763"></a><span class="lineno">  763</span></div>
+<div class="line"><a id="l00767" name="l00767"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html#a1b3086ef7b83737feb5dd96bdcf1918d">  767</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#a1b3086ef7b83737feb5dd96bdcf1918d">output</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00768" name="l00768"></a><span class="lineno">  768</span></div>
+<div class="line"><a id="l00772" name="l00772"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html#ac0e010dac2e1b715484b6ea162ce63b7">  772</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#ac0e010dac2e1b715484b6ea162ce63b7">output</a>(<a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#a1b3086ef7b83737feb5dd96bdcf1918d">output</a> <span class="keyword">const</span> &amp;) = <span class="keyword">delete</span>;</div>
+<div class="line"><a id="l00773" name="l00773"></a><span class="lineno">  773</span></div>
+<div class="line"><a id="l00778" name="l00778"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html#abf4996532bbb49c766628201bbd139c4">  778</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#abf4996532bbb49c766628201bbd139c4">~output</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00779" name="l00779"></a><span class="lineno">  779</span></div>
+<div class="line"><a id="l00786" name="l00786"></a><span class="lineno">  786</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00787" data-start="{" data-end="}">
+<div class="line"><a id="l00787" name="l00787"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html#a840ba5fc0914890fec8e1696d670fc37">  787</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#a840ba5fc0914890fec8e1696d670fc37">start</a>() noexcept {</div>
+<div class="line"><a id="l00788" name="l00788"></a><span class="lineno">  788</span>        _reason = 0;</div>
+<div class="line"><a id="l00789" name="l00789"></a><span class="lineno">  789</span>        Derived.transport().set_nonblocking(<span class="keyword">true</span>);</div>
+<div class="line"><a id="l00790" name="l00790"></a><span class="lineno">  790</span>        this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.start(Derived.transport().native_handle(), EV_WRITE);</div>
+<div class="line"><a id="l00791" name="l00791"></a><span class="lineno">  791</span>    }</div>
+</div>
+<div class="line"><a id="l00792" name="l00792"></a><span class="lineno">  792</span></div>
+<div class="line"><a id="l00799" name="l00799"></a><span class="lineno">  799</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00800" data-start="{" data-end="}">
+<div class="line"><a id="l00800" name="l00800"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html#a05c2ddfdcbe33bdac433b809ff33a78a">  800</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#a05c2ddfdcbe33bdac433b809ff33a78a">ready_to_write</a>() noexcept {</div>
+<div class="line"><a id="l00801" name="l00801"></a><span class="lineno">  801</span>        <span class="keywordflow">if</span> (!(this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.events &amp; EV_WRITE))</div>
+<div class="line"><a id="l00802" name="l00802"></a><span class="lineno">  802</span>            this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.set(EV_WRITE);</div>
+<div class="line"><a id="l00803" name="l00803"></a><span class="lineno">  803</span>    }</div>
+</div>
+<div class="line"><a id="l00804" name="l00804"></a><span class="lineno">  804</span></div>
+<div class="line"><a id="l00813" name="l00813"></a><span class="lineno">  813</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span>... _Args&gt;</div>
+<div class="line"><a id="l00814" name="l00814"></a><span class="lineno">  814</span>    <span class="keyword">inline</span> <span class="keyword">auto</span> &amp;</div>
+<div class="foldopen" id="foldopen00815" data-start="{" data-end="}">
+<div class="line"><a id="l00815" name="l00815"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html#a65c433d7214b9fea3815636928ab75dc">  815</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#a65c433d7214b9fea3815636928ab75dc">publish</a>(_Args &amp;&amp;...args) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00816" name="l00816"></a><span class="lineno">  816</span>        <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#a05c2ddfdcbe33bdac433b809ff33a78a">ready_to_write</a>();</div>
+<div class="line"><a id="l00817" name="l00817"></a><span class="lineno">  817</span>        <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (<span class="keyword">sizeof</span>...(_Args))</div>
+<div class="line"><a id="l00818" name="l00818"></a><span class="lineno">  818</span>            (Derived.out() &lt;&lt; ... &lt;&lt; std::forward&lt;_Args&gt;(args));</div>
+<div class="line"><a id="l00819" name="l00819"></a><span class="lineno">  819</span>        <span class="keywordflow">return</span> Derived.out();</div>
+<div class="line"><a id="l00820" name="l00820"></a><span class="lineno">  820</span>    }</div>
+</div>
+<div class="line"><a id="l00821" name="l00821"></a><span class="lineno">  821</span></div>
+<div class="line"><a id="l00829" name="l00829"></a><span class="lineno">  829</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="foldopen" id="foldopen00830" data-start="{" data-end="}">
+<div class="line"><a id="l00830" name="l00830"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html#aee08a2dc472ed9f8da99f1dfc828cc5b">  830</a></span>    <span class="keyword">auto</span> &amp;</div>
+<div class="line"><a id="l00831" name="l00831"></a><span class="lineno">  831</span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#aee08a2dc472ed9f8da99f1dfc828cc5b">operator&lt;&lt;</a>(T &amp;&amp;data) {</div>
+<div class="line"><a id="l00832" name="l00832"></a><span class="lineno">  832</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#a65c433d7214b9fea3815636928ab75dc">publish</a>(std::forward&lt;T&gt;(data));</div>
+<div class="line"><a id="l00833" name="l00833"></a><span class="lineno">  833</span>    }</div>
+</div>
+<div class="line"><a id="l00834" name="l00834"></a><span class="lineno">  834</span></div>
+<div class="line"><a id="l00842" name="l00842"></a><span class="lineno">  842</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00843" data-start="{" data-end="}">
+<div class="line"><a id="l00843" name="l00843"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html#a75fade4c7ca367988a601b229d8927ec">  843</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#a75fade4c7ca367988a601b229d8927ec">disconnect</a>(<span class="keywordtype">int</span> reason = 1) {</div>
+<div class="line"><a id="l00844" name="l00844"></a><span class="lineno">  844</span>        _reason = reason;</div>
+<div class="line"><a id="l00845" name="l00845"></a><span class="lineno">  845</span>        this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.feed_event(EV_UNDEF);</div>
+<div class="line"><a id="l00846" name="l00846"></a><span class="lineno">  846</span>    }</div>
+</div>
+<div class="line"><a id="l00847" name="l00847"></a><span class="lineno">  847</span> </div>
+<div class="line"><a id="l00848" name="l00848"></a><span class="lineno">  848</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00849" name="l00849"></a><span class="lineno">  849</span>    <span class="keyword">friend</span> <span class="keyword">class </span><a class="code hl_class" href="classqb_1_1io_1_1async_1_1listener_1_1_registered_kernel_event.html">listener::RegisteredKernelEvent</a>&lt;event::<a class="code hl_class" href="classqb_1_1io_1_1async_1_1io.html">io</a>, <a class="code hl_class" href="classqb_1_1io_1_1async_1_1output.html">output</a>&gt;;</div>
+<div class="line"><a id="l00850" name="l00850"></a><span class="lineno">  850</span></div>
+<div class="line"><a id="l00866" name="l00866"></a><span class="lineno">  866</span>    void</div>
+<div class="line"><a id="l00867" name="l00867"></a><span class="lineno">  867</span>    on(event::io const &amp;event) {</div>
+<div class="line"><a id="l00868" name="l00868"></a><span class="lineno">  868</span>        <span class="keyword">auto</span> ret = 0;</div>
+<div class="line"><a id="l00869" name="l00869"></a><span class="lineno">  869</span> </div>
+<div class="line"><a id="l00870" name="l00870"></a><span class="lineno">  870</span>        <span class="keywordflow">if</span> (_reason)</div>
+<div class="line"><a id="l00871" name="l00871"></a><span class="lineno">  871</span>            <span class="keywordflow">goto</span> error;</div>
+<div class="line"><a id="l00872" name="l00872"></a><span class="lineno">  872</span> </div>
+<div class="line"><a id="l00873" name="l00873"></a><span class="lineno">  873</span>        <span class="keywordflow">if</span> (<a class="code hl_function" href="group___misc_utils.html#ga53e71bed81745d90e3a00967f60d6515">likely</a>(event._revents &amp; EV_WRITE)) {</div>
+<div class="line"><a id="l00874" name="l00874"></a><span class="lineno">  874</span>            ret = Derived.write();</div>
+<div class="line"><a id="l00875" name="l00875"></a><span class="lineno">  875</span>            <span class="keywordflow">if</span> (<a class="code hl_function" href="group___misc_utils.html#ga2d1eef83ada31226748c9333477a06ff">unlikely</a>(ret &lt; 0))</div>
+<div class="line"><a id="l00876" name="l00876"></a><span class="lineno">  876</span>                <span class="keywordflow">goto</span> error;</div>
+<div class="line"><a id="l00877" name="l00877"></a><span class="lineno">  877</span>            <span class="keywordflow">if</span> (!Derived.pendingWrite()) {</div>
+<div class="line"><a id="l00878" name="l00878"></a><span class="lineno">  878</span>                this-&gt;_async_event.set(EV_NONE);</div>
+<div class="line"><a id="l00879" name="l00879"></a><span class="lineno">  879</span>                <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::eos&gt;::value) {</div>
+<div class="line"><a id="l00880" name="l00880"></a><span class="lineno">  880</span>                    Derived.on(event::eos{});</div>
+<div class="line"><a id="l00881" name="l00881"></a><span class="lineno">  881</span>                }</div>
+<div class="line"><a id="l00882" name="l00882"></a><span class="lineno">  882</span>            } <span class="keywordflow">else</span> <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void,</div>
+<div class="line"><a id="l00883" name="l00883"></a><span class="lineno">  883</span>                                               event::pending_write&gt;::value) {</div>
+<div class="line"><a id="l00884" name="l00884"></a><span class="lineno">  884</span>                Derived.on(event::pending_write{Derived.pendingWrite()});</div>
+<div class="line"><a id="l00885" name="l00885"></a><span class="lineno">  885</span>            }</div>
+<div class="line"><a id="l00886" name="l00886"></a><span class="lineno">  886</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l00887" name="l00887"></a><span class="lineno">  887</span>        }</div>
+<div class="line"><a id="l00888" name="l00888"></a><span class="lineno">  888</span>    error:</div>
+<div class="line"><a id="l00889" name="l00889"></a><span class="lineno">  889</span><span class="preprocessor">#ifdef _WIN32</span></div>
+<div class="line"><a id="l00890" name="l00890"></a><span class="lineno">  890</span>        <span class="keywordflow">if</span> (socket::get_last_errno() == 10035)</div>
+<div class="line"><a id="l00891" name="l00891"></a><span class="lineno">  891</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l00892" name="l00892"></a><span class="lineno">  892</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00893" name="l00893"></a><span class="lineno">  893</span>        dispose();</div>
+<div class="line"><a id="l00894" name="l00894"></a><span class="lineno">  894</span>    }</div>
+<div class="line"><a id="l00895" name="l00895"></a><span class="lineno">  895</span> </div>
+<div class="line"><a id="l00896" name="l00896"></a><span class="lineno">  896</span><span class="keyword">protected</span>:</div>
+<div class="line"><a id="l00906" name="l00906"></a><span class="lineno">  906</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00907" data-start="{" data-end="}">
+<div class="line"><a id="l00907" name="l00907"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1output.html#a9a5428db0db800acb5024c8f449daa42">  907</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1output.html#a9a5428db0db800acb5024c8f449daa42">dispose</a>() {</div>
+<div class="line"><a id="l00908" name="l00908"></a><span class="lineno">  908</span>        <span class="keywordflow">if</span> (_is_disposed)</div>
+<div class="line"><a id="l00909" name="l00909"></a><span class="lineno">  909</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l00910" name="l00910"></a><span class="lineno">  910</span>        _is_disposed = <span class="keyword">true</span>;</div>
+<div class="line"><a id="l00911" name="l00911"></a><span class="lineno">  911</span> </div>
+<div class="line"><a id="l00912" name="l00912"></a><span class="lineno">  912</span>        <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::disconnected&gt;::value) {</div>
+<div class="line"><a id="l00913" name="l00913"></a><span class="lineno">  913</span>            Derived.on(event::disconnected{_reason});</div>
+<div class="line"><a id="l00914" name="l00914"></a><span class="lineno">  914</span>        }</div>
+<div class="line"><a id="l00915" name="l00915"></a><span class="lineno">  915</span> </div>
+<div class="line"><a id="l00916" name="l00916"></a><span class="lineno">  916</span>        <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (_Derived::has_server) {</div>
+<div class="line"><a id="l00917" name="l00917"></a><span class="lineno">  917</span>            Derived.server().disconnected(Derived.id());</div>
+<div class="line"><a id="l00918" name="l00918"></a><span class="lineno">  918</span>        } <span class="keywordflow">else</span> <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::dispose&gt;::value) {</div>
+<div class="line"><a id="l00919" name="l00919"></a><span class="lineno">  919</span>            Derived.on(event::dispose{});</div>
+<div class="line"><a id="l00920" name="l00920"></a><span class="lineno">  920</span>        }</div>
+<div class="line"><a id="l00921" name="l00921"></a><span class="lineno">  921</span>    }</div>
+</div>
+<div class="line"><a id="l00922" name="l00922"></a><span class="lineno">  922</span>};</div>
+</div>
+<div class="line"><a id="l00923" name="l00923"></a><span class="lineno">  923</span></div>
+<div class="line"><a id="l00937" name="l00937"></a><span class="lineno">  937</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Derived&gt;</div>
+<div class="foldopen" id="foldopen00938" data-start="{" data-end="};">
+<div class="line"><a id="l00938" name="l00938"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html">  938</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a3069504126981dd994a808d4c00f9476">io</a> : <span class="keyword">public</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base</a>&lt;io&lt;_Derived&gt;, event::io&gt; {</div>
+<div class="line"><a id="l00939" name="l00939"></a><span class="lineno">  939</span>    <span class="keyword">using </span>base_t                   = <a class="code hl_function" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base&lt;io&lt;_Derived&gt;</a>, event::io&gt;;</div>
+<div class="line"><a id="l00940" name="l00940"></a><span class="lineno">  940</span>    <a class="code hl_interface" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> *_protocol = <span class="keyword">nullptr</span>; </div>
+<div class="line"><a id="l00941" name="l00941"></a><span class="lineno">  941</span>    std::vector&lt;IProtocol *&gt; _protocol_list; </div>
+<div class="line"><a id="l00942" name="l00942"></a><span class="lineno">  942</span>    <span class="keywordtype">bool</span> _on_message  = <span class="keyword">false</span>; </div>
+<div class="line"><a id="l00943" name="l00943"></a><span class="lineno">  943</span>    <span class="keywordtype">bool</span> _is_disposed = <span class="keyword">false</span>; </div>
+<div class="line"><a id="l00944" name="l00944"></a><span class="lineno">  944</span>    <span class="keywordtype">int</span> _reason = 0; </div>
+<div class="line"><a id="l00945" name="l00945"></a><span class="lineno">  945</span> </div>
+<div class="line"><a id="l00946" name="l00946"></a><span class="lineno">  946</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00947" name="l00947"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#ae5c74c76a46cb0afb35ef08a816ffb34">  947</a></span>    <span class="keyword">typedef</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a3069504126981dd994a808d4c00f9476">io&lt;_Derived&gt;</a>        <a class="code hl_typedef" href="classqb_1_1io_1_1async_1_1io.html#ae5c74c76a46cb0afb35ef08a816ffb34">base_io_t</a>; </div>
+<div class="line"><a id="l00948" name="l00948"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#a837ab97ec1903cd4ff1455b90d4fee99">  948</a></span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> <span class="keyword">const</span> <span class="keywordtype">bool</span> <a class="code hl_variable" href="classqb_1_1io_1_1async_1_1io.html#a837ab97ec1903cd4ff1455b90d4fee99">has_server</a> = <span class="keyword">false</span>; </div>
+<div class="line"><a id="l00949" name="l00949"></a><span class="lineno">  949</span></div>
+<div class="line"><a id="l00954" name="l00954"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#a3069504126981dd994a808d4c00f9476">  954</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a3069504126981dd994a808d4c00f9476">io</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00955" name="l00955"></a><span class="lineno">  955</span></div>
+<div class="foldopen" id="foldopen00961" data-start="{" data-end="}">
+<div class="line"><a id="l00961" name="l00961"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#a3d5d5b6fe5933ecff3ee9689e85fc2f7">  961</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a3d5d5b6fe5933ecff3ee9689e85fc2f7">io</a>(<a class="code hl_interface" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> *<a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#add0512a685b93ddf87b41b1e8efaa1b0">protocol</a>) noexcept</div>
+<div class="line"><a id="l00962" name="l00962"></a><span class="lineno">  962</span>        : _protocol(<a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#add0512a685b93ddf87b41b1e8efaa1b0">protocol</a>) {</div>
+<div class="line"><a id="l00963" name="l00963"></a><span class="lineno">  963</span>        _protocol_list.push_back(<a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#add0512a685b93ddf87b41b1e8efaa1b0">protocol</a>);</div>
+<div class="line"><a id="l00964" name="l00964"></a><span class="lineno">  964</span>    }</div>
+</div>
+<div class="line"><a id="l00965" name="l00965"></a><span class="lineno">  965</span></div>
+<div class="line"><a id="l00969" name="l00969"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#a4416ba398b3a4d9ec54aab7b910be457">  969</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a4416ba398b3a4d9ec54aab7b910be457">io</a>(<a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a3069504126981dd994a808d4c00f9476">io</a> <span class="keyword">const</span> &amp;) = <span class="keyword">delete</span>;</div>
+<div class="line"><a id="l00970" name="l00970"></a><span class="lineno">  970</span></div>
+<div class="foldopen" id="foldopen00975" data-start="{" data-end="}">
+<div class="line"><a id="l00975" name="l00975"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#ab8fdf076ca6b6786684cdee93ee44236">  975</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#ab8fdf076ca6b6786684cdee93ee44236">~io</a>() noexcept {</div>
+<div class="line"><a id="l00976" name="l00976"></a><span class="lineno">  976</span>        <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a8280a059fa4f0b9989906c2659f1a04b">clear_protocols</a>();</div>
+<div class="line"><a id="l00977" name="l00977"></a><span class="lineno">  977</span>    }</div>
+</div>
+<div class="line"><a id="l00978" name="l00978"></a><span class="lineno">  978</span></div>
+<div class="line"><a id="l00986" name="l00986"></a><span class="lineno">  986</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Protocol, <span class="keyword">typename</span>... _Args&gt;</div>
+<div class="line"><a id="l00987" name="l00987"></a><span class="lineno">  987</span>    _Protocol *</div>
+<div class="foldopen" id="foldopen00988" data-start="{" data-end="}">
+<div class="line"><a id="l00988" name="l00988"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#a0c62c7018f860920b4ce1c1806c63afa">  988</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a0c62c7018f860920b4ce1c1806c63afa">switch_protocol</a>(_Args &amp;&amp;...args) {</div>
+<div class="line"><a id="l00989" name="l00989"></a><span class="lineno">  989</span>        <span class="keyword">auto</span> new_protocol = <span class="keyword">new</span> _Protocol(std::forward&lt;_Args&gt;(args)...);</div>
+<div class="line"><a id="l00990" name="l00990"></a><span class="lineno">  990</span>        <span class="keywordflow">if</span> (new_protocol-&gt;ok()) {</div>
+<div class="line"><a id="l00991" name="l00991"></a><span class="lineno">  991</span>            _protocol = new_protocol;</div>
+<div class="line"><a id="l00992" name="l00992"></a><span class="lineno">  992</span>            _protocol_list.push_back(new_protocol);</div>
+<div class="line"><a id="l00993" name="l00993"></a><span class="lineno">  993</span>            <span class="keywordflow">return</span> new_protocol;</div>
+<div class="line"><a id="l00994" name="l00994"></a><span class="lineno">  994</span>        } <span class="keywordflow">else</span></div>
+<div class="line"><a id="l00995" name="l00995"></a><span class="lineno">  995</span>            <span class="keyword">delete</span> new_protocol;</div>
+<div class="line"><a id="l00996" name="l00996"></a><span class="lineno">  996</span>        <span class="keywordflow">return</span> <span class="keyword">nullptr</span>;</div>
+<div class="line"><a id="l00997" name="l00997"></a><span class="lineno">  997</span>    }</div>
+</div>
+<div class="line"><a id="l00998" name="l00998"></a><span class="lineno">  998</span></div>
+<div class="line"><a id="l01003" name="l01003"></a><span class="lineno"> 1003</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen01004" data-start="{" data-end="}">
+<div class="line"><a id="l01004" name="l01004"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#a8280a059fa4f0b9989906c2659f1a04b"> 1004</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a8280a059fa4f0b9989906c2659f1a04b">clear_protocols</a>() {</div>
+<div class="line"><a id="l01005" name="l01005"></a><span class="lineno"> 1005</span>        <span class="keywordflow">for</span> (<span class="keyword">auto</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#add0512a685b93ddf87b41b1e8efaa1b0">protocol</a> : _protocol_list)</div>
+<div class="line"><a id="l01006" name="l01006"></a><span class="lineno"> 1006</span>            <span class="keyword">delete</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#add0512a685b93ddf87b41b1e8efaa1b0">protocol</a>;</div>
+<div class="line"><a id="l01007" name="l01007"></a><span class="lineno"> 1007</span>        _protocol_list.clear();</div>
+<div class="line"><a id="l01008" name="l01008"></a><span class="lineno"> 1008</span>        _protocol = <span class="keyword">nullptr</span>;</div>
+<div class="line"><a id="l01009" name="l01009"></a><span class="lineno"> 1009</span>    };</div>
+</div>
+<div class="line"><a id="l01010" name="l01010"></a><span class="lineno"> 1010</span></div>
+<div class="line"><a id="l01015" name="l01015"></a><span class="lineno"> 1015</span>    <a class="code hl_interface" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> *</div>
+<div class="foldopen" id="foldopen01016" data-start="{" data-end="}">
+<div class="line"><a id="l01016" name="l01016"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#add0512a685b93ddf87b41b1e8efaa1b0"> 1016</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#add0512a685b93ddf87b41b1e8efaa1b0">protocol</a>() {</div>
+<div class="line"><a id="l01017" name="l01017"></a><span class="lineno"> 1017</span>        <span class="keywordflow">return</span> _protocol;</div>
+<div class="line"><a id="l01018" name="l01018"></a><span class="lineno"> 1018</span>    }</div>
+</div>
+<div class="line"><a id="l01019" name="l01019"></a><span class="lineno"> 1019</span></div>
+<div class="line"><a id="l01025" name="l01025"></a><span class="lineno"> 1025</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen01026" data-start="{" data-end="}">
+<div class="line"><a id="l01026" name="l01026"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#a385165bc96cd8197393a2d872acc22f1"> 1026</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a385165bc96cd8197393a2d872acc22f1">start</a>() noexcept {</div>
+<div class="line"><a id="l01027" name="l01027"></a><span class="lineno"> 1027</span>        _reason = 0;</div>
+<div class="line"><a id="l01028" name="l01028"></a><span class="lineno"> 1028</span>        Derived.transport().set_nonblocking(<span class="keyword">true</span>);</div>
+<div class="line"><a id="l01029" name="l01029"></a><span class="lineno"> 1029</span>        this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.start(Derived.transport().native_handle(), EV_READ);</div>
+<div class="line"><a id="l01030" name="l01030"></a><span class="lineno"> 1030</span>    }</div>
+</div>
+<div class="line"><a id="l01031" name="l01031"></a><span class="lineno"> 1031</span></div>
+<div class="line"><a id="l01036" name="l01036"></a><span class="lineno"> 1036</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen01037" data-start="{" data-end="}">
+<div class="line"><a id="l01037" name="l01037"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#af5805d8f44f1cb325ab87259834f097b"> 1037</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#af5805d8f44f1cb325ab87259834f097b">ready_to_read</a>() noexcept {</div>
+<div class="line"><a id="l01038" name="l01038"></a><span class="lineno"> 1038</span>        <span class="keywordflow">if</span> (!(this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.events &amp; EV_READ)) {</div>
+<div class="line"><a id="l01039" name="l01039"></a><span class="lineno"> 1039</span>            this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.set(this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.events | EV_READ);</div>
+<div class="line"><a id="l01040" name="l01040"></a><span class="lineno"> 1040</span>        }</div>
+<div class="line"><a id="l01041" name="l01041"></a><span class="lineno"> 1041</span>    }</div>
+</div>
+<div class="line"><a id="l01042" name="l01042"></a><span class="lineno"> 1042</span></div>
+<div class="line"><a id="l01047" name="l01047"></a><span class="lineno"> 1047</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen01048" data-start="{" data-end="}">
+<div class="line"><a id="l01048" name="l01048"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#a6d9d525a12b5d47eada531ddb51ec999"> 1048</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a6d9d525a12b5d47eada531ddb51ec999">ready_to_write</a>() noexcept {</div>
+<div class="line"><a id="l01049" name="l01049"></a><span class="lineno"> 1049</span>        <span class="keywordflow">if</span> (!(this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.events &amp; EV_WRITE)) {</div>
+<div class="line"><a id="l01050" name="l01050"></a><span class="lineno"> 1050</span>            this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.set(this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.events | EV_WRITE);</div>
+<div class="line"><a id="l01051" name="l01051"></a><span class="lineno"> 1051</span>        }</div>
+<div class="line"><a id="l01052" name="l01052"></a><span class="lineno"> 1052</span>    }</div>
+</div>
+<div class="line"><a id="l01053" name="l01053"></a><span class="lineno"> 1053</span></div>
+<div class="line"><a id="l01060" name="l01060"></a><span class="lineno"> 1060</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen01061" data-start="{" data-end="}">
+<div class="line"><a id="l01061" name="l01061"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#af032d093daf72775a520f034255b23c2"> 1061</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#af032d093daf72775a520f034255b23c2">close_after_deliver</a>() const noexcept {</div>
+<div class="line"><a id="l01062" name="l01062"></a><span class="lineno"> 1062</span>        _protocol-&gt;not_ok();</div>
+<div class="line"><a id="l01063" name="l01063"></a><span class="lineno"> 1063</span>    }</div>
+</div>
+<div class="line"><a id="l01064" name="l01064"></a><span class="lineno"> 1064</span></div>
+<div class="line"><a id="l01071" name="l01071"></a><span class="lineno"> 1071</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span>... _Args&gt;</div>
+<div class="line"><a id="l01072" name="l01072"></a><span class="lineno"> 1072</span>    <span class="keyword">inline</span> <span class="keyword">auto</span> &amp;</div>
+<div class="foldopen" id="foldopen01073" data-start="{" data-end="}">
+<div class="line"><a id="l01073" name="l01073"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#aaf3d4dfc5ac2890a0c977f437a3bb768"> 1073</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#aaf3d4dfc5ac2890a0c977f437a3bb768">publish</a>(_Args &amp;&amp;...args) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l01074" name="l01074"></a><span class="lineno"> 1074</span>        <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a6d9d525a12b5d47eada531ddb51ec999">ready_to_write</a>();</div>
+<div class="line"><a id="l01075" name="l01075"></a><span class="lineno"> 1075</span>        <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (<span class="keyword">sizeof</span>...(_Args))</div>
+<div class="line"><a id="l01076" name="l01076"></a><span class="lineno"> 1076</span>            (Derived.out() &lt;&lt; ... &lt;&lt; std::forward&lt;_Args&gt;(args));</div>
+<div class="line"><a id="l01077" name="l01077"></a><span class="lineno"> 1077</span>        <span class="keywordflow">return</span> Derived.out();</div>
+<div class="line"><a id="l01078" name="l01078"></a><span class="lineno"> 1078</span>    }</div>
+</div>
+<div class="line"><a id="l01079" name="l01079"></a><span class="lineno"> 1079</span></div>
+<div class="line"><a id="l01086" name="l01086"></a><span class="lineno"> 1086</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="foldopen" id="foldopen01087" data-start="{" data-end="}">
+<div class="line"><a id="l01087" name="l01087"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#a31be10c116c20469f3920430c9d6e5ea"> 1087</a></span>    <span class="keyword">auto</span> &amp;</div>
+<div class="line"><a id="l01088" name="l01088"></a><span class="lineno"> 1088</span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#a31be10c116c20469f3920430c9d6e5ea">operator&lt;&lt;</a>(T &amp;&amp;data) {</div>
+<div class="line"><a id="l01089" name="l01089"></a><span class="lineno"> 1089</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#aaf3d4dfc5ac2890a0c977f437a3bb768">publish</a>(std::forward&lt;T&gt;(data));</div>
+<div class="line"><a id="l01090" name="l01090"></a><span class="lineno"> 1090</span>    }</div>
+</div>
+<div class="line"><a id="l01091" name="l01091"></a><span class="lineno"> 1091</span></div>
+<div class="line"><a id="l01097" name="l01097"></a><span class="lineno"> 1097</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen01098" data-start="{" data-end="}">
+<div class="line"><a id="l01098" name="l01098"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#ad7d312004eca3abe4b16ac2969802c0a"> 1098</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#ad7d312004eca3abe4b16ac2969802c0a">disconnect</a>(<span class="keywordtype">int</span> reason = 1) {</div>
+<div class="line"><a id="l01099" name="l01099"></a><span class="lineno"> 1099</span>        _reason = reason;</div>
+<div class="line"><a id="l01100" name="l01100"></a><span class="lineno"> 1100</span>        this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.feed_event(EV_UNDEF);</div>
+<div class="line"><a id="l01101" name="l01101"></a><span class="lineno"> 1101</span>    }</div>
+</div>
+<div class="line"><a id="l01102" name="l01102"></a><span class="lineno"> 1102</span> </div>
+<div class="line"><a id="l01103" name="l01103"></a><span class="lineno"> 1103</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l01104" name="l01104"></a><span class="lineno"> 1104</span>    <span class="keyword">friend</span> <span class="keyword">class </span><a class="code hl_class" href="classqb_1_1io_1_1async_1_1listener_1_1_registered_kernel_event.html">listener::RegisteredKernelEvent</a>&lt;event::<a class="code hl_class" href="classqb_1_1io_1_1async_1_1io.html">io</a>, <a class="code hl_class" href="classqb_1_1io_1_1async_1_1io.html">io</a>&gt;;</div>
+<div class="line"><a id="l01105" name="l01105"></a><span class="lineno"> 1105</span></div>
+<div class="line"><a id="l01129" name="l01129"></a><span class="lineno"> 1129</span>    void</div>
+<div class="line"><a id="l01130" name="l01130"></a><span class="lineno"> 1130</span>    on(event::io const &amp;event) {</div>
+<div class="line"><a id="l01131" name="l01131"></a><span class="lineno"> 1131</span>        <span class="keyword">constexpr</span> <span class="keyword">const</span> std::size_t invalid_ret = <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(-1);</div>
+<div class="line"><a id="l01132" name="l01132"></a><span class="lineno"> 1132</span>        std::size_t                 ret         = 0u;</div>
+<div class="line"><a id="l01133" name="l01133"></a><span class="lineno"> 1133</span>        <span class="keywordtype">bool</span>                        ok          = <span class="keyword">false</span>;</div>
+<div class="line"><a id="l01134" name="l01134"></a><span class="lineno"> 1134</span> </div>
+<div class="line"><a id="l01135" name="l01135"></a><span class="lineno"> 1135</span>        <span class="keywordflow">if</span> (_on_message)</div>
+<div class="line"><a id="l01136" name="l01136"></a><span class="lineno"> 1136</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l01137" name="l01137"></a><span class="lineno"> 1137</span>        <span class="keywordflow">if</span> (_reason)</div>
+<div class="line"><a id="l01138" name="l01138"></a><span class="lineno"> 1138</span>            <span class="keywordflow">goto</span> error;</div>
+<div class="line"><a id="l01139" name="l01139"></a><span class="lineno"> 1139</span>        <span class="keywordflow">if</span> (event._revents &amp; EV_READ &amp;&amp; _protocol-&gt;<a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#acddb63fbb3d34ecb17ef5d615cd40b78">ok</a>()) {</div>
+<div class="line"><a id="l01140" name="l01140"></a><span class="lineno"> 1140</span>            ret = <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(Derived.read());</div>
+<div class="line"><a id="l01141" name="l01141"></a><span class="lineno"> 1141</span>            <span class="keywordflow">if</span> (<a class="code hl_function" href="group___misc_utils.html#ga2d1eef83ada31226748c9333477a06ff">unlikely</a>(ret == invalid_ret))</div>
+<div class="line"><a id="l01142" name="l01142"></a><span class="lineno"> 1142</span>                <span class="keywordflow">goto</span> error;</div>
+<div class="line"><a id="l01143" name="l01143"></a><span class="lineno"> 1143</span> </div>
+<div class="line"><a id="l01144" name="l01144"></a><span class="lineno"> 1144</span>            _on_message = <span class="keyword">true</span>;</div>
+<div class="line"><a id="l01145" name="l01145"></a><span class="lineno"> 1145</span>            <span class="keywordflow">while</span> ((ret = this-&gt;_protocol-&gt;<a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#ac6fbfd77652b09d4801fdb968b853e4a">getMessageSize</a>()) &gt; 0) {</div>
+<div class="line"><a id="l01146" name="l01146"></a><span class="lineno"> 1146</span>                <span class="keyword">auto</span> protocol = this-&gt;_protocol;</div>
+<div class="line"><a id="l01147" name="l01147"></a><span class="lineno"> 1147</span>                protocol-&gt;<a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a9cd95933e98fcb5c16e7417b572c938b">onMessage</a>(ret);</div>
+<div class="line"><a id="l01148" name="l01148"></a><span class="lineno"> 1148</span>                <span class="keywordflow">if</span> (protocol-&gt;should_flush())</div>
+<div class="line"><a id="l01149" name="l01149"></a><span class="lineno"> 1149</span>                    Derived.flush(ret);</div>
+<div class="line"><a id="l01150" name="l01150"></a><span class="lineno"> 1150</span>            }</div>
+<div class="line"><a id="l01151" name="l01151"></a><span class="lineno"> 1151</span>            _on_message = <span class="keyword">false</span>;</div>
+<div class="line"><a id="l01152" name="l01152"></a><span class="lineno"> 1152</span>            Derived.eof();</div>
+<div class="line"><a id="l01153" name="l01153"></a><span class="lineno"> 1153</span>            <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::pending_read&gt;::value ||</div>
+<div class="line"><a id="l01154" name="l01154"></a><span class="lineno"> 1154</span>                          has_method_on&lt;_Derived, void, event::eof&gt;::value) {</div>
+<div class="line"><a id="l01155" name="l01155"></a><span class="lineno"> 1155</span>                <span class="keyword">const</span> <span class="keyword">auto</span> pendingRead = Derived.pendingRead();</div>
+<div class="line"><a id="l01156" name="l01156"></a><span class="lineno"> 1156</span>                <span class="keywordflow">if</span> (pendingRead) {</div>
+<div class="line"><a id="l01157" name="l01157"></a><span class="lineno"> 1157</span>                    <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void,</div>
+<div class="line"><a id="l01158" name="l01158"></a><span class="lineno"> 1158</span>                                                event::pending_read&gt;::value) {</div>
+<div class="line"><a id="l01159" name="l01159"></a><span class="lineno"> 1159</span>                        Derived.on(event::pending_read{pendingRead});</div>
+<div class="line"><a id="l01160" name="l01160"></a><span class="lineno"> 1160</span>                    }</div>
+<div class="line"><a id="l01161" name="l01161"></a><span class="lineno"> 1161</span>                } <span class="keywordflow">else</span> {</div>
+<div class="line"><a id="l01162" name="l01162"></a><span class="lineno"> 1162</span>                    <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::eof&gt;::value) {</div>
+<div class="line"><a id="l01163" name="l01163"></a><span class="lineno"> 1163</span>                        Derived.on(event::eof{});</div>
+<div class="line"><a id="l01164" name="l01164"></a><span class="lineno"> 1164</span>                    }</div>
+<div class="line"><a id="l01165" name="l01165"></a><span class="lineno"> 1165</span>                }</div>
+<div class="line"><a id="l01166" name="l01166"></a><span class="lineno"> 1166</span>            }</div>
+<div class="line"><a id="l01167" name="l01167"></a><span class="lineno"> 1167</span>            ok = <span class="keyword">true</span>;</div>
+<div class="line"><a id="l01168" name="l01168"></a><span class="lineno"> 1168</span>        }</div>
+<div class="line"><a id="l01169" name="l01169"></a><span class="lineno"> 1169</span>        <span class="keywordflow">if</span> (<a class="code hl_typedef" href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">event</a>._revents &amp; EV_WRITE) {</div>
+<div class="line"><a id="l01170" name="l01170"></a><span class="lineno"> 1170</span>            ret = <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(Derived.write());</div>
+<div class="line"><a id="l01171" name="l01171"></a><span class="lineno"> 1171</span>            <span class="keywordflow">if</span> (<a class="code hl_function" href="group___misc_utils.html#ga2d1eef83ada31226748c9333477a06ff">unlikely</a>(ret == invalid_ret))</div>
+<div class="line"><a id="l01172" name="l01172"></a><span class="lineno"> 1172</span>                <span class="keywordflow">goto</span> error;</div>
+<div class="line"><a id="l01173" name="l01173"></a><span class="lineno"> 1173</span>            <span class="keywordflow">if</span> (!Derived.pendingWrite()) {</div>
+<div class="line"><a id="l01174" name="l01174"></a><span class="lineno"> 1174</span>                <span class="keywordflow">if</span> (!_protocol-&gt;<a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#acddb63fbb3d34ecb17ef5d615cd40b78">ok</a>())</div>
+<div class="line"><a id="l01175" name="l01175"></a><span class="lineno"> 1175</span>                    <span class="keywordflow">goto</span> error;</div>
+<div class="line"><a id="l01176" name="l01176"></a><span class="lineno"> 1176</span>                this-&gt;_async_event.set(EV_READ);</div>
+<div class="line"><a id="l01177" name="l01177"></a><span class="lineno"> 1177</span>                <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::eos&gt;::value) {</div>
+<div class="line"><a id="l01178" name="l01178"></a><span class="lineno"> 1178</span>                    Derived.on(event::eos{});</div>
+<div class="line"><a id="l01179" name="l01179"></a><span class="lineno"> 1179</span>                }</div>
+<div class="line"><a id="l01180" name="l01180"></a><span class="lineno"> 1180</span>            } <span class="keywordflow">else</span> <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void,</div>
+<div class="line"><a id="l01181" name="l01181"></a><span class="lineno"> 1181</span>                                               event::pending_write&gt;::value) {</div>
+<div class="line"><a id="l01182" name="l01182"></a><span class="lineno"> 1182</span>                Derived.on(event::pending_write{Derived.pendingWrite()});</div>
+<div class="line"><a id="l01183" name="l01183"></a><span class="lineno"> 1183</span>            }</div>
+<div class="line"><a id="l01184" name="l01184"></a><span class="lineno"> 1184</span>            ok = <span class="keyword">true</span>;</div>
+<div class="line"><a id="l01185" name="l01185"></a><span class="lineno"> 1185</span>        }</div>
+<div class="line"><a id="l01186" name="l01186"></a><span class="lineno"> 1186</span>        <span class="keywordflow">if</span> (ok)</div>
+<div class="line"><a id="l01187" name="l01187"></a><span class="lineno"> 1187</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l01188" name="l01188"></a><span class="lineno"> 1188</span>    error:</div>
+<div class="line"><a id="l01189" name="l01189"></a><span class="lineno"> 1189</span><span class="preprocessor">#ifdef _WIN32</span></div>
+<div class="line"><a id="l01190" name="l01190"></a><span class="lineno"> 1190</span>        <span class="keywordflow">if</span> (socket::get_last_errno() == 10035)</div>
+<div class="line"><a id="l01191" name="l01191"></a><span class="lineno"> 1191</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l01192" name="l01192"></a><span class="lineno"> 1192</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l01193" name="l01193"></a><span class="lineno"> 1193</span>        dispose();</div>
+<div class="line"><a id="l01194" name="l01194"></a><span class="lineno"> 1194</span>    }</div>
+<div class="line"><a id="l01195" name="l01195"></a><span class="lineno"> 1195</span> </div>
+<div class="line"><a id="l01196" name="l01196"></a><span class="lineno"> 1196</span><span class="keyword">protected</span>:</div>
+<div class="line"><a id="l01204" name="l01204"></a><span class="lineno"> 1204</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen01205" data-start="{" data-end="}">
+<div class="line"><a id="l01205" name="l01205"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1io.html#abe361caed8c74905936ac6c23edf326f"> 1205</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1io.html#abe361caed8c74905936ac6c23edf326f">dispose</a>() {</div>
+<div class="line"><a id="l01206" name="l01206"></a><span class="lineno"> 1206</span>        <span class="keywordflow">if</span> (_is_disposed)</div>
+<div class="line"><a id="l01207" name="l01207"></a><span class="lineno"> 1207</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l01208" name="l01208"></a><span class="lineno"> 1208</span>        _is_disposed = <span class="keyword">true</span>;</div>
+<div class="line"><a id="l01209" name="l01209"></a><span class="lineno"> 1209</span> </div>
+<div class="line"><a id="l01210" name="l01210"></a><span class="lineno"> 1210</span>        <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::disconnected&gt;::value) {</div>
+<div class="line"><a id="l01211" name="l01211"></a><span class="lineno"> 1211</span>            Derived.on(event::disconnected{_reason});</div>
+<div class="line"><a id="l01212" name="l01212"></a><span class="lineno"> 1212</span>        }</div>
+<div class="line"><a id="l01213" name="l01213"></a><span class="lineno"> 1213</span> </div>
+<div class="line"><a id="l01214" name="l01214"></a><span class="lineno"> 1214</span>        <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (_Derived::has_server) {</div>
+<div class="line"><a id="l01215" name="l01215"></a><span class="lineno"> 1215</span>            Derived.server().disconnected(Derived.id());</div>
+<div class="line"><a id="l01216" name="l01216"></a><span class="lineno"> 1216</span>        } <span class="keywordflow">else</span> {</div>
+<div class="line"><a id="l01217" name="l01217"></a><span class="lineno"> 1217</span>            this-&gt;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">_async_event</a>.stop(); <span class="comment">// Stop the watcher to prevent further events</span></div>
+<div class="line"><a id="l01218" name="l01218"></a><span class="lineno"> 1218</span>            <span class="keywordflow">if</span> <span class="keyword">constexpr</span> (has_method_on&lt;_Derived, void, event::dispose&gt;::value)</div>
+<div class="line"><a id="l01219" name="l01219"></a><span class="lineno"> 1219</span>                Derived.on(event::dispose{});</div>
+<div class="line"><a id="l01220" name="l01220"></a><span class="lineno"> 1220</span>        }</div>
+<div class="line"><a id="l01221" name="l01221"></a><span class="lineno"> 1221</span>    }</div>
+</div>
+<div class="line"><a id="l01222" name="l01222"></a><span class="lineno"> 1222</span>};</div>
+</div>
+<div class="line"><a id="l01223" name="l01223"></a><span class="lineno"> 1223</span> </div>
+<div class="line"><a id="l01224" name="l01224"></a><span class="lineno"> 1224</span>} <span class="comment">// namespace qb::io::async</span></div>
+<div class="line"><a id="l01225" name="l01225"></a><span class="lineno"> 1225</span> </div>
+<div class="line"><a id="l01226" name="l01226"></a><span class="lineno"> 1226</span><span class="preprocessor">#undef Derived</span></div>
+<div class="line"><a id="l01227" name="l01227"></a><span class="lineno"> 1227</span><span class="preprocessor">#endif </span><span class="comment">// QB_IO_ASYNC_IO_H</span></div>
+<div class="ttc" id="aall_8h_html"><div class="ttname"><a href="all_8h.html">all.h</a></div><div class="ttdoc">Aggregation of all event types for the asynchronous I/O system.</div></div>
+<div class="ttc" id="aasync_2listener_8h_html"><div class="ttname"><a href="async_2listener_8h.html">listener.h</a></div><div class="ttdoc">Core event loop manager for the asynchronous IO framework.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html">qb::io::async::IProtocol</a></div><div class="ttdoc">Base interface for all message processing protocols.</div><div class="ttdef"><b>Definition</b> protocol.h:43</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html_a9cd95933e98fcb5c16e7417b572c938b"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html#a9cd95933e98fcb5c16e7417b572c938b">qb::io::async::IProtocol::onMessage</a></div><div class="ttdeci">virtual void onMessage(std::size_t size) noexcept=0</div><div class="ttdoc">Processes a complete message that has been identified in the input buffer.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html_ac6fbfd77652b09d4801fdb968b853e4a"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html#ac6fbfd77652b09d4801fdb968b853e4a">qb::io::async::IProtocol::getMessageSize</a></div><div class="ttdeci">virtual std::size_t getMessageSize() noexcept=0</div><div class="ttdoc">Determines the size of the next complete message in the input buffer.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html_acddb63fbb3d34ecb17ef5d615cd40b78"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html#acddb63fbb3d34ecb17ef5d615cd40b78">qb::io::async::IProtocol::ok</a></div><div class="ttdeci">bool ok() const noexcept</div><div class="ttdoc">Checks if the protocol is in a valid operational state.</div><div class="ttdef"><b>Definition</b> protocol.h:97</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_timeout_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_timeout.html">qb::io::async::Timeout</a></div><div class="ttdoc">Utility class to execute a function after a specified timeout using the event loop.</div><div class="ttdef"><b>Definition</b> io.h:186</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_timeout_html_a47cf770bd71534d331da9b3b733ca475"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_timeout.html#a47cf770bd71534d331da9b3b733ca475">qb::io::async::Timeout::on</a></div><div class="ttdeci">void on(event::timer const &amp;) const</div><div class="ttdoc">Timer event handler called when the timeout expires.</div><div class="ttdef"><b>Definition</b> io.h:213</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_timeout_html_a78a360d2e2523c1a3d535d4e5ed98f6a"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_timeout.html#a78a360d2e2523c1a3d535d4e5ed98f6a">qb::io::async::Timeout::Timeout</a></div><div class="ttdeci">Timeout(_Func &amp;&amp;func, double timeout=0.)</div><div class="ttdoc">Constructor that schedules a function to be called after a timeout.</div><div class="ttdef"><b>Definition</b> io.h:197</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1base_html_ac291f7676364a1f45e8b8973785e0589"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1base.html#ac291f7676364a1f45e8b8973785e0589">qb::io::async::base::~base</a></div><div class="ttdeci">~base()</div><div class="ttdoc">Destructor that unregisters the event watcher.</div><div class="ttdef"><b>Definition</b> io.h:76</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1base_html_acd5fc1f29c162060caed257e78bd08ff"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">qb::io::async::base::base</a></div><div class="ttdeci">base()</div><div class="ttdoc">Constructor that registers the event watcher with the current listener.</div><div class="ttdef"><b>Definition</b> io.h:67</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1base_html_aff6ff4170e260fa009034e7f52c1d0b9"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1base.html#aff6ff4170e260fa009034e7f52c1d0b9">qb::io::async::base&lt; file_watcher&lt; _Derived &gt;, event::file &gt;::_async_event</a></div><div class="ttdeci">event::file &amp; _async_event</div><div class="ttdef"><b>Definition</b> io.h:60</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1directory__watcher_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1directory__watcher.html">qb::io::async::directory_watcher</a></div><div class="ttdoc">CRTP base class for watching a directory for attribute changes.</div><div class="ttdef"><b>Definition</b> io.h:440</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1directory__watcher_html_a0c5d955ce9cd24b69a6611cb56fd9023"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1directory__watcher.html#a0c5d955ce9cd24b69a6611cb56fd9023">qb::io::async::directory_watcher::~directory_watcher</a></div><div class="ttdeci">~directory_watcher()=default</div><div class="ttdoc">Destructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1directory__watcher_html_a14aec485254005a0e0df121df97ccb21"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1directory__watcher.html#a14aec485254005a0e0df121df97ccb21">qb::io::async::directory_watcher::base_io_t</a></div><div class="ttdeci">directory_watcher&lt; _Derived &gt; base_io_t</div><div class="ttdoc">Base I/O type alias for CRTP.</div><div class="ttdef"><b>Definition</b> io.h:444</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1directory__watcher_html_a54deda123a2659d24f5d50157c435a8d"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1directory__watcher.html#a54deda123a2659d24f5d50157c435a8d">qb::io::async::directory_watcher::disconnect</a></div><div class="ttdeci">void disconnect() noexcept</div><div class="ttdoc">Stops watching the directory.</div><div class="ttdef"><b>Definition</b> io.h:474</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1directory__watcher_html_ab2ae6e11524783e9b186d2a4d0f4e5b5"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1directory__watcher.html#ab2ae6e11524783e9b186d2a4d0f4e5b5">qb::io::async::directory_watcher::directory_watcher</a></div><div class="ttdeci">directory_watcher()=default</div><div class="ttdoc">Default constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1directory__watcher_html_adc89f0336ed5bfa1581ba69a6eaa4ced"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1directory__watcher.html#adc89f0336ed5bfa1581ba69a6eaa4ced">qb::io::async::directory_watcher::start</a></div><div class="ttdeci">void start(std::string const &amp;fpath, ev_tstamp ts=0.1) noexcept</div><div class="ttdoc">Starts watching a directory for attribute changes.</div><div class="ttdef"><b>Definition</b> io.h:465</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1directory__watcher_html_afc672b297212c48e72a5407f442c9302"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1directory__watcher.html#afc672b297212c48e72a5407f442c9302">qb::io::async::directory_watcher::do_read</a></div><div class="ttdeci">static constexpr const bool do_read</div><div class="ttdoc">Flag indicating this watcher type does not read directory content directly.</div><div class="ttdef"><b>Definition</b> io.h:445</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file__watcher_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file__watcher.html">qb::io::async::file_watcher</a></div><div class="ttdoc">CRTP base class for watching a single file for attribute changes and processing its contents.</div><div class="ttdef"><b>Definition</b> io.h:256</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file__watcher_html_a21796bb1110da28b09c3c88012f1b17b"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file__watcher.html#a21796bb1110da28b09c3c88012f1b17b">qb::io::async::file_watcher::read_all</a></div><div class="ttdeci">int read_all()</div><div class="ttdoc">Reads all available data from the file and processes it using the current protocol.</div><div class="ttdef"><b>Definition</b> io.h:356</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file__watcher_html_a2b4f27f954bead1b2674e2d1f3d14ff7"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file__watcher.html#a2b4f27f954bead1b2674e2d1f3d14ff7">qb::io::async::file_watcher::start</a></div><div class="ttdeci">void start(std::string const &amp;fpath, ev_tstamp ts=0.1) noexcept</div><div class="ttdoc">Starts watching a file for attribute changes.</div><div class="ttdef"><b>Definition</b> io.h:329</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file__watcher_html_a7e32a8a44a07d57dc2b606d1e823daee"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file__watcher.html#a7e32a8a44a07d57dc2b606d1e823daee">qb::io::async::file_watcher::file_watcher</a></div><div class="ttdeci">file_watcher()=default</div><div class="ttdoc">Default constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file__watcher_html_a8d2236a64199983d8da5e068066c804b"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file__watcher.html#a8d2236a64199983d8da5e068066c804b">qb::io::async::file_watcher::file_watcher</a></div><div class="ttdeci">file_watcher(IProtocol *protocol) noexcept</div><div class="ttdoc">Constructor with an externally managed protocol.</div><div class="ttdef"><b>Definition</b> io.h:279</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file__watcher_html_a94f058f7e4fd2c123d8a928d75072522"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file__watcher.html#a94f058f7e4fd2c123d8a928d75072522">qb::io::async::file_watcher::base_io_t</a></div><div class="ttdeci">file_watcher&lt; _Derived &gt; base_io_t</div><div class="ttdoc">Base I/O type alias for CRTP.</div><div class="ttdef"><b>Definition</b> io.h:262</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file__watcher_html_a9810cbe887831e2873e2fd65f751b454"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file__watcher.html#a9810cbe887831e2873e2fd65f751b454">qb::io::async::file_watcher::disconnect</a></div><div class="ttdeci">void disconnect() noexcept</div><div class="ttdoc">Stops watching the file.</div><div class="ttdef"><b>Definition</b> io.h:339</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file__watcher_html_ab040617dbd8c24fe04be4e62b58e7fab"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file__watcher.html#ab040617dbd8c24fe04be4e62b58e7fab">qb::io::async::file_watcher::file_watcher</a></div><div class="ttdeci">file_watcher(file_watcher const &amp;)=delete</div><div class="ttdoc">Deleted copy constructor to prevent unintended copying of watcher state and resources.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file__watcher_html_ab11f9213c8dc7127eb7e359c18e1617c"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file__watcher.html#ab11f9213c8dc7127eb7e359c18e1617c">qb::io::async::file_watcher::switch_protocol</a></div><div class="ttdeci">_Protocol * switch_protocol(_Args &amp;&amp;...args)</div><div class="ttdoc">Switches to a new protocol for processing file contents, taking ownership.</div><div class="ttdef"><b>Definition</b> io.h:310</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file__watcher_html_ad67414ea62e0874c6ba4168232b5a815"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file__watcher.html#ad67414ea62e0874c6ba4168232b5a815">qb::io::async::file_watcher::do_read</a></div><div class="ttdeci">static constexpr const bool do_read</div><div class="ttdoc">Flag indicating this watcher type reads file content.</div><div class="ttdef"><b>Definition</b> io.h:263</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file__watcher_html_affcb7583881c2fcd94077c0a23c39205"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file__watcher.html#affcb7583881c2fcd94077c0a23c39205">qb::io::async::file_watcher::~file_watcher</a></div><div class="ttdeci">~file_watcher() noexcept</div><div class="ttdoc">Destructor.</div><div class="ttdef"><b>Definition</b> io.h:292</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1file_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1file.html">qb::io::async::file</a></div><div class="ttdoc">Asynchronous file operations handler.</div><div class="ttdef"><b>Definition</b> file.h:46</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html">qb::io::async::input</a></div><div class="ttdoc">CRTP base class for managing asynchronous input operations with protocol processing.</div><div class="ttdef"><b>Definition</b> io.h:517</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_a01562a732abac729850b50564c23c5ed"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#a01562a732abac729850b50564c23c5ed">qb::io::async::input::ready_to_read</a></div><div class="ttdeci">void ready_to_read() noexcept</div><div class="ttdoc">Ensures the I/O watcher is listening for read events (EV_READ).</div><div class="ttdef"><b>Definition</b> io.h:628</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_a1ece3d54a5d4f34cd1e566210f4ee76a"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#a1ece3d54a5d4f34cd1e566210f4ee76a">qb::io::async::input&lt; acceptor&lt; _Derived, _Prot &gt; &gt;::protocol</a></div><div class="ttdeci">IProtocol * protocol()</div><div class="ttdef"><b>Definition</b> io.h:604</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_a740b9e9d1adc6b86df3154964363c7c1"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#a740b9e9d1adc6b86df3154964363c7c1">qb::io::async::input::input</a></div><div class="ttdeci">input()=default</div><div class="ttdoc">Default constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_a8ab3f8b37cd897eaf8a4558f92c4f51a"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#a8ab3f8b37cd897eaf8a4558f92c4f51a">qb::io::async::input::base_io_t</a></div><div class="ttdeci">input&lt; _Derived &gt; base_io_t</div><div class="ttdoc">Base I/O type alias for CRTP.</div><div class="ttdef"><b>Definition</b> io.h:526</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_a901da6100a5ebae7822c9d33e70daf3b"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#a901da6100a5ebae7822c9d33e70daf3b">qb::io::async::input::start</a></div><div class="ttdeci">void start() noexcept</div><div class="ttdoc">Starts asynchronous input operations.</div><div class="ttdef"><b>Definition</b> io.h:615</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_a9d4a03cfeffed6a4cc3509689df6eb19"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#a9d4a03cfeffed6a4cc3509689df6eb19">qb::io::async::input::input</a></div><div class="ttdeci">input(input const &amp;)=delete</div><div class="ttdoc">Deleted copy constructor to prevent unintended copying of I/O state and resources.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_a9f36aabf03349c5c954c643f895ba0fb"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#a9f36aabf03349c5c954c643f895ba0fb">qb::io::async::input::switch_protocol</a></div><div class="ttdeci">_Protocol * switch_protocol(_Args &amp;&amp;...args)</div><div class="ttdoc">Switches to a new protocol for processing input, taking ownership of the new protocol.</div><div class="ttdef"><b>Definition</b> io.h:575</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_aa3056ccceb431c2c3e0f3c605a96f85f"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#aa3056ccceb431c2c3e0f3c605a96f85f">qb::io::async::input::dispose</a></div><div class="ttdeci">void dispose()</div><div class="ttdoc">Disposes of resources and finalizes disconnection for the input component.</div><div class="ttdef"><b>Definition</b> io.h:725</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_aad37a3ab9a48534e697e84573e73d2c2"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#aad37a3ab9a48534e697e84573e73d2c2">qb::io::async::input&lt; acceptor&lt; _Derived, _Prot &gt; &gt;::has_server</a></div><div class="ttdeci">static constexpr const bool has_server</div><div class="ttdef"><b>Definition</b> io.h:527</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_ac45968c669edc2f8a20182e529cc5fb8"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#ac45968c669edc2f8a20182e529cc5fb8">qb::io::async::input::~input</a></div><div class="ttdeci">~input() noexcept</div><div class="ttdoc">Destructor.</div><div class="ttdef"><b>Definition</b> io.h:559</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_ad5971b71f03a82d4c74678563a19d0f1"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#ad5971b71f03a82d4c74678563a19d0f1">qb::io::async::input::clear_protocols</a></div><div class="ttdeci">void clear_protocols()</div><div class="ttdoc">Clears all owned protocol instances.</div><div class="ttdef"><b>Definition</b> io.h:592</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_ad6194d0e20d50ee3ecdc50108dd3eb51"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#ad6194d0e20d50ee3ecdc50108dd3eb51">qb::io::async::input::disconnect</a></div><div class="ttdeci">void disconnect(int reason=1)</div><div class="ttdoc">Initiates a graceful disconnection of the input component.</div><div class="ttdef"><b>Definition</b> io.h:642</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1input_html_aeaddbdb2106e5f55a620797f7d9b19d7"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1input.html#aeaddbdb2106e5f55a620797f7d9b19d7">qb::io::async::input::input</a></div><div class="ttdeci">input(IProtocol *protocol) noexcept</div><div class="ttdoc">Constructor with an initial protocol instance.</div><div class="ttdef"><b>Definition</b> io.h:544</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a></div><div class="ttdoc">CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing.</div><div class="ttdef"><b>Definition</b> io.h:938</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_a0c62c7018f860920b4ce1c1806c63afa"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#a0c62c7018f860920b4ce1c1806c63afa">qb::io::async::io::switch_protocol</a></div><div class="ttdeci">_Protocol * switch_protocol(_Args &amp;&amp;...args)</div><div class="ttdoc">Switches to a new protocol for I/O processing, taking ownership.</div><div class="ttdef"><b>Definition</b> io.h:988</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_a3069504126981dd994a808d4c00f9476"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#a3069504126981dd994a808d4c00f9476">qb::io::async::io::io</a></div><div class="ttdeci">io()=default</div><div class="ttdoc">Default constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_a31be10c116c20469f3920430c9d6e5ea"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#a31be10c116c20469f3920430c9d6e5ea">qb::io::async::io::operator&lt;&lt;</a></div><div class="ttdeci">auto &amp; operator&lt;&lt;(T &amp;&amp;data)</div><div class="ttdoc">Stream operator for publishing data.</div><div class="ttdef"><b>Definition</b> io.h:1088</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_a385165bc96cd8197393a2d872acc22f1"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#a385165bc96cd8197393a2d872acc22f1">qb::io::async::io::start</a></div><div class="ttdeci">void start() noexcept</div><div class="ttdoc">Starts bidirectional asynchronous I/O operations.</div><div class="ttdef"><b>Definition</b> io.h:1026</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_a3d5d5b6fe5933ecff3ee9689e85fc2f7"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#a3d5d5b6fe5933ecff3ee9689e85fc2f7">qb::io::async::io::io</a></div><div class="ttdeci">io(IProtocol *protocol) noexcept</div><div class="ttdoc">Constructor with an initial protocol instance.</div><div class="ttdef"><b>Definition</b> io.h:961</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_a4416ba398b3a4d9ec54aab7b910be457"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#a4416ba398b3a4d9ec54aab7b910be457">qb::io::async::io::io</a></div><div class="ttdeci">io(io const &amp;)=delete</div><div class="ttdoc">Deleted copy constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_a6d9d525a12b5d47eada531ddb51ec999"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#a6d9d525a12b5d47eada531ddb51ec999">qb::io::async::io::ready_to_write</a></div><div class="ttdeci">void ready_to_write() noexcept</div><div class="ttdoc">Ensures the I/O watcher is listening for write events (EV_WRITE).</div><div class="ttdef"><b>Definition</b> io.h:1048</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_a8280a059fa4f0b9989906c2659f1a04b"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#a8280a059fa4f0b9989906c2659f1a04b">qb::io::async::io::clear_protocols</a></div><div class="ttdeci">void clear_protocols()</div><div class="ttdoc">Clears all owned protocol instances.</div><div class="ttdef"><b>Definition</b> io.h:1004</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_a837ab97ec1903cd4ff1455b90d4fee99"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#a837ab97ec1903cd4ff1455b90d4fee99">qb::io::async::io::has_server</a></div><div class="ttdeci">static constexpr const bool has_server</div><div class="ttdoc">Indicates this component is not inherently a server.</div><div class="ttdef"><b>Definition</b> io.h:948</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_aaf3d4dfc5ac2890a0c977f437a3bb768"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#aaf3d4dfc5ac2890a0c977f437a3bb768">qb::io::async::io::publish</a></div><div class="ttdeci">auto &amp; publish(_Args &amp;&amp;...args) noexcept</div><div class="ttdoc">Publishes data to the output buffer and ensures write readiness.</div><div class="ttdef"><b>Definition</b> io.h:1073</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_ab8fdf076ca6b6786684cdee93ee44236"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#ab8fdf076ca6b6786684cdee93ee44236">qb::io::async::io::~io</a></div><div class="ttdeci">~io() noexcept</div><div class="ttdoc">Destructor.</div><div class="ttdef"><b>Definition</b> io.h:975</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_abe361caed8c74905936ac6c23edf326f"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#abe361caed8c74905936ac6c23edf326f">qb::io::async::io::dispose</a></div><div class="ttdeci">void dispose()</div><div class="ttdoc">Disposes of resources and finalizes disconnection for the I/O component.</div><div class="ttdef"><b>Definition</b> io.h:1205</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_ad7d312004eca3abe4b16ac2969802c0a"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#ad7d312004eca3abe4b16ac2969802c0a">qb::io::async::io::disconnect</a></div><div class="ttdeci">void disconnect(int reason=1)</div><div class="ttdoc">Initiates a graceful disconnection.</div><div class="ttdef"><b>Definition</b> io.h:1098</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_add0512a685b93ddf87b41b1e8efaa1b0"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#add0512a685b93ddf87b41b1e8efaa1b0">qb::io::async::io::protocol</a></div><div class="ttdeci">IProtocol * protocol()</div><div class="ttdoc">Gets a pointer to the current active protocol instance.</div><div class="ttdef"><b>Definition</b> io.h:1016</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_ae5c74c76a46cb0afb35ef08a816ffb34"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#ae5c74c76a46cb0afb35ef08a816ffb34">qb::io::async::io::base_io_t</a></div><div class="ttdeci">io&lt; _Derived &gt; base_io_t</div><div class="ttdoc">Base I/O type alias for CRTP.</div><div class="ttdef"><b>Definition</b> io.h:947</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_af032d093daf72775a520f034255b23c2"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#af032d093daf72775a520f034255b23c2">qb::io::async::io::close_after_deliver</a></div><div class="ttdeci">void close_after_deliver() const noexcept</div><div class="ttdoc">Requests connection closure after all pending output data is delivered.</div><div class="ttdef"><b>Definition</b> io.h:1061</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html_af5805d8f44f1cb325ab87259834f097b"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html#af5805d8f44f1cb325ab87259834f097b">qb::io::async::io::ready_to_read</a></div><div class="ttdeci">void ready_to_read() noexcept</div><div class="ttdoc">Ensures the I/O watcher is listening for read events (EV_READ).</div><div class="ttdef"><b>Definition</b> io.h:1037</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1listener_1_1_registered_kernel_event_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1listener_1_1_registered_kernel_event.html">qb::io::async::listener::RegisteredKernelEvent</a></div><div class="ttdoc">Template wrapper for concrete event handlers and their associated libev watchers.</div><div class="ttdef"><b>Definition</b> listener.h:76</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1listener_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1listener.html">qb::io::async::listener</a></div><div class="ttdoc">Central event loop manager for asynchronous IO operations.</div><div class="ttdef"><b>Definition</b> listener.h:50</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1listener_html_a4b1d56f544dc8f60eac6464038885bf8"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1listener.html#a4b1d56f544dc8f60eac6464038885bf8">qb::io::async::listener::current</a></div><div class="ttdeci">static thread_local listener current</div><div class="ttdoc">Thread-local instance of the listener.</div><div class="ttdef"><b>Definition</b> listener.h:61</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html">qb::io::async::output</a></div><div class="ttdoc">CRTP base class for managing asynchronous output operations.</div><div class="ttdef"><b>Definition</b> io.h:755</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html_a05c2ddfdcbe33bdac433b809ff33a78a"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html#a05c2ddfdcbe33bdac433b809ff33a78a">qb::io::async::output::ready_to_write</a></div><div class="ttdeci">void ready_to_write() noexcept</div><div class="ttdoc">Ensures the I/O watcher is listening for write events (EV_WRITE).</div><div class="ttdef"><b>Definition</b> io.h:800</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html_a1b3086ef7b83737feb5dd96bdcf1918d"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html#a1b3086ef7b83737feb5dd96bdcf1918d">qb::io::async::output::output</a></div><div class="ttdeci">output()=default</div><div class="ttdoc">Default constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html_a65c433d7214b9fea3815636928ab75dc"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html#a65c433d7214b9fea3815636928ab75dc">qb::io::async::output::publish</a></div><div class="ttdeci">auto &amp; publish(_Args &amp;&amp;...args) noexcept</div><div class="ttdoc">Publishes data to the output buffer and ensures write readiness.</div><div class="ttdef"><b>Definition</b> io.h:815</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html_a75fade4c7ca367988a601b229d8927ec"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html#a75fade4c7ca367988a601b229d8927ec">qb::io::async::output::disconnect</a></div><div class="ttdeci">void disconnect(int reason=1)</div><div class="ttdoc">Initiates a graceful disconnection of the output component.</div><div class="ttdef"><b>Definition</b> io.h:843</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html_a840ba5fc0914890fec8e1696d670fc37"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html#a840ba5fc0914890fec8e1696d670fc37">qb::io::async::output::start</a></div><div class="ttdeci">void start() noexcept</div><div class="ttdoc">Starts asynchronous output operations.</div><div class="ttdef"><b>Definition</b> io.h:787</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html_a9a5428db0db800acb5024c8f449daa42"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html#a9a5428db0db800acb5024c8f449daa42">qb::io::async::output::dispose</a></div><div class="ttdeci">void dispose()</div><div class="ttdoc">Disposes of resources and finalizes disconnection for the output component.</div><div class="ttdef"><b>Definition</b> io.h:907</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html_abf4996532bbb49c766628201bbd139c4"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html#abf4996532bbb49c766628201bbd139c4">qb::io::async::output::~output</a></div><div class="ttdeci">~output()=default</div><div class="ttdoc">Destructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html_ac0e010dac2e1b715484b6ea162ce63b7"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html#ac0e010dac2e1b715484b6ea162ce63b7">qb::io::async::output::output</a></div><div class="ttdeci">output(output const &amp;)=delete</div><div class="ttdoc">Deleted copy constructor to prevent unintended copying of I/O state and resources.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html_ac45e604ca222bd31ca09b0d62a764dc8"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html#ac45e604ca222bd31ca09b0d62a764dc8">qb::io::async::output::base_io_t</a></div><div class="ttdeci">output&lt; _Derived &gt; base_io_t</div><div class="ttdoc">Base I/O type alias for CRTP.</div><div class="ttdef"><b>Definition</b> io.h:761</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html_aee08a2dc472ed9f8da99f1dfc828cc5b"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html#aee08a2dc472ed9f8da99f1dfc828cc5b">qb::io::async::output::operator&lt;&lt;</a></div><div class="ttdeci">auto &amp; operator&lt;&lt;(T &amp;&amp;data)</div><div class="ttdoc">Stream operator for publishing data, equivalent to publish(std::forward&lt;T&gt;(data)).</div><div class="ttdef"><b>Definition</b> io.h:831</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1output_html_af10593d2523c7ebe0419c25d979e94b7"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1output.html#af10593d2523c7ebe0419c25d979e94b7">qb::io::async::output::has_server</a></div><div class="ttdeci">static constexpr const bool has_server</div><div class="ttdoc">Indicates this component is not inherently a server.</div><div class="ttdef"><b>Definition</b> io.h:762</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1with__timeout_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1with__timeout.html">qb::io::async::with_timeout</a></div><div class="ttdoc">CRTP base class that adds timeout functionality to derived asynchronous components.</div><div class="ttdef"><b>Definition</b> io.h:96</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1with__timeout_html_a0f234055cbc67e30c7fd03f5d4a4171f"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1with__timeout.html#a0f234055cbc67e30c7fd03f5d4a4171f">qb::io::async::with_timeout::updateTimeout</a></div><div class="ttdeci">void updateTimeout() noexcept</div><div class="ttdoc">Updates the last activity timestamp to the current event loop time.</div><div class="ttdef"><b>Definition</b> io.h:120</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1with__timeout_html_a77f00ac9e7ab164c72797bedbef82cdc"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1with__timeout.html#a77f00ac9e7ab164c72797bedbef82cdc">qb::io::async::with_timeout::with_timeout</a></div><div class="ttdeci">with_timeout(ev_tstamp timeout=3)</div><div class="ttdoc">Constructor that initializes the timeout.</div><div class="ttdef"><b>Definition</b> io.h:106</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1with__timeout_html_ab5a0c9a30dc8bdc8d92190883a6704c8"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1with__timeout.html#ab5a0c9a30dc8bdc8d92190883a6704c8">qb::io::async::with_timeout::getTimeout</a></div><div class="ttdeci">auto getTimeout() const noexcept</div><div class="ttdoc">Gets the current configured timeout value.</div><div class="ttdef"><b>Definition</b> io.h:146</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1with__timeout_html_ab704e926ac0ad765d42997dc00482924"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1with__timeout.html#ab704e926ac0ad765d42997dc00482924">qb::io::async::with_timeout::setTimeout</a></div><div class="ttdeci">void setTimeout(ev_tstamp timeout) noexcept</div><div class="ttdoc">Sets a new timeout value and restarts the timer.</div><div class="ttdef"><b>Definition</b> io.h:131</div></div>
+<div class="ttc" id="agroup___async_html_ga79acd187eb2aeb629523ebb206ee004d"><div class="ttname"><a href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">qb::io::async::callback</a></div><div class="ttdeci">void callback(_Func &amp;&amp;func, double timeout=0.)</div><div class="ttdoc">Utility function to schedule a callable for execution after a timeout.</div><div class="ttdef"><b>Definition</b> io.h:233</div></div>
+<div class="ttc" id="agroup___event_core_html_ga3296038c4343f22626c6595a222c0d95"><div class="ttname"><a href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">qb::event</a></div><div class="ttdeci">Event event</div><div class="ttdoc">Alias for the base Event class.</div><div class="ttdef"><b>Definition</b> Event.h:385</div></div>
+<div class="ttc" id="agroup___misc_utils_html_ga2d1eef83ada31226748c9333477a06ff"><div class="ttname"><a href="group___misc_utils.html#ga2d1eef83ada31226748c9333477a06ff">qb::unlikely</a></div><div class="ttdeci">bool unlikely(bool expr)</div><div class="ttdoc">Hint for branch prediction when a condition is expected to be false.</div><div class="ttdef"><b>Definition</b> branch_hints.h:76</div></div>
+<div class="ttc" id="agroup___misc_utils_html_ga53e71bed81745d90e3a00967f60d6515"><div class="ttname"><a href="group___misc_utils.html#ga53e71bed81745d90e3a00967f60d6515">qb::likely</a></div><div class="ttdeci">bool likely(bool expr)</div><div class="ttdoc">Hint for branch prediction when a condition is expected to be true.</div><div class="ttdef"><b>Definition</b> branch_hints.h:49</div></div>
+<div class="ttc" id="aprotocol_8h_html"><div class="ttname"><a href="protocol_8h.html">protocol.h</a></div><div class="ttdoc">Protocol interfaces for message processing in the asynchronous IO framework.</div></div>
+<div class="ttc" id="atype__traits_8h_html"><div class="ttname"><a href="type__traits_8h.html">type_traits.h</a></div><div class="ttdoc">Advanced type traits and metaprogramming utilities for the QB Framework.</div></div>
+<div class="ttc" id="atype__traits_8h_html_ab4fc7d2cccbb97d55e21010335cb36e2"><div class="ttname"><a href="type__traits_8h.html#ab4fc7d2cccbb97d55e21010335cb36e2">CREATE_MEMBER_CHECK</a></div><div class="ttdeci">#define CREATE_MEMBER_CHECK(member)</div><div class="ttdoc">Macro to create a type trait to check for any member with a given name.</div><div class="ttdef"><b>Definition</b> type_traits.h:669</div></div>
+<div class="ttc" id="atype__traits_8h_html_ab592189d6429a3a390de9754ba71da8a"><div class="ttname"><a href="type__traits_8h.html#ab592189d6429a3a390de9754ba71da8a">GENERATE_HAS_METHOD</a></div><div class="ttdeci">#define GENERATE_HAS_METHOD(method)</div><div class="ttdoc">Macro to generate a type trait to check for a method with a specific signature.</div><div class="ttdef"><b>Definition</b> type_traits.h:804</div></div>
+</div><!-- fragment --></div><!-- contents -->
+</div><!-- doc-content -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="dir_8eba9db56c7516495e7fe9ef247fc2c3.html">async</a></li><li class="navelem"><a href="io_2async_2io_8h.html">io.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

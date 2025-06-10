@@ -1,0 +1,7 @@
+<map id="include/qb/io/async/event/timer.h" name="include/qb/io/async/event/timer.h">
+<area shape="rect" id="Node000001" title="Timer event for asynchronous I/O and timed operations." alt="" coords="5,5,139,46"/>
+<area shape="rect" id="Node000002" href="$async_2event_2base_8h.html" title="Base class for asynchronous events in the QB IO library." alt="" coords="42,94,102,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="75,46,75,78,69,78,69,46"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="32,168,112,193"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="75,120,75,152,69,152,69,120"/>
+</map>

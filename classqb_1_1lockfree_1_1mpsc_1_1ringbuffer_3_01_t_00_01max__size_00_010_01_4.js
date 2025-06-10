@@ -9,5 +9,7 @@ var classqb_1_1lockfree_1_1mpsc_1_1ringbuffer_3_01_t_00_01max__size_00_010_01_4 
     [ "enqueue", "classqb_1_1lockfree_1_1mpsc_1_1ringbuffer_3_01_t_00_01max__size_00_010_01_4.html#a6ed4a22d07ad265251381c5b1d1ac753", null ],
     [ "enqueue", "classqb_1_1lockfree_1_1mpsc_1_1ringbuffer_3_01_t_00_01max__size_00_010_01_4.html#a8cc977cbef8f8cfd787f79ee0de14c43", null ],
     [ "dequeue", "classqb_1_1lockfree_1_1mpsc_1_1ringbuffer_3_01_t_00_01max__size_00_010_01_4.html#a7dee986979419c1d4820adbd35f52858", null ],
-    [ "dequeue", "classqb_1_1lockfree_1_1mpsc_1_1ringbuffer_3_01_t_00_01max__size_00_010_01_4.html#a214f083b15b2352a41206d5486390ded", null ]
+    [ "dequeue", "classqb_1_1lockfree_1_1mpsc_1_1ringbuffer_3_01_t_00_01max__size_00_010_01_4.html#a214f083b15b2352a41206d5486390ded", null ],
+    [ "consume_all", "classqb_1_1lockfree_1_1mpsc_1_1ringbuffer_3_01_t_00_01max__size_00_010_01_4.html#a72de1db77e7384a8185c9b9d050af069", null ],
+    [ "ringOf", "classqb_1_1lockfree_1_1mpsc_1_1ringbuffer_3_01_t_00_01max__size_00_010_01_4.html#a4f97614afd424bfc452ac18c3e6c4338", null ]
 ];

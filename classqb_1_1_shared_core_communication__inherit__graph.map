@@ -1,0 +1,5 @@
+<map id="qb::SharedCoreCommunication" name="qb::SharedCoreCommunication">
+<area shape="rect" id="Node000001" title="Manages inter&#45;core communication infrastructure (mailboxes)." alt="" coords="5,79,209,105"/>
+<area shape="rect" id="Node000002" href="$structqb_1_1nocopy.html" title="Base class to make derived classes non&#45;copyable." alt="" coords="64,5,150,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="110,46,110,79,104,79,104,46"/>
+</map>

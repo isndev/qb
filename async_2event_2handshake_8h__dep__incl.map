@@ -1,0 +1,29 @@
+<map id="include/qb/io/async/event/handshake.h" name="include/qb/io/async/event/handshake.h">
+<area shape="rect" id="Node000001" title="Handshake event for asynchronous input streams." alt="" coords="114,5,249,46"/>
+<area shape="rect" id="Node000002" href="$all_8h.html" title="Aggregation of all event types for the asynchronous I/O system." alt="" coords="33,94,167,135"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="154,59,120,95,116,92,150,56"/>
+<area shape="rect" id="Node000011" href="$protocol_2handshake_8h.html" title="Protocol for handling the handshake of a new connection." alt="" coords="190,94,335,135"/>
+<area shape="poly" id="edge16_Node000001_Node000011" title=" " alt="" coords="212,56,246,92,242,95,208,59"/>
+<area shape="rect" id="Node000003" href="$async_8h.html" title="Main include file for the QB asynchronous I/O library." alt="" coords="210,434,355,459"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="78,149,46,199,18,261,10,294,9,326,15,356,30,384,41,394,57,402,103,417,211,436,210,441,102,422,55,407,38,398,26,387,10,358,3,326,5,293,13,259,41,196,73,146"/>
+<area shape="rect" id="Node000004" href="$io_2async_2io_8h.html" title="Core asynchronous I/O class templates for event&#45;driven operations." alt="" coords="150,183,308,208"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="146,140,211,180,208,184,143,145"/>
+<area shape="poly" id="edge4_Node000004_Node000003" title=" " alt="" coords="188,217,130,248,73,289,52,312,39,336,37,360,49,384,73,401,113,415,211,434,210,439,112,420,71,406,45,387,32,361,34,334,47,309,69,285,127,244,186,213"/>
+<area shape="rect" id="Node000005" href="$async_2file_8h.html" title="Asynchronous file operations for the QB IO library." alt="" coords="59,345,192,386"/>
+<area shape="poly" id="edge5_Node000004_Node000005" title=" " alt="" coords="194,219,172,236,153,258,142,279,135,303,129,345,123,344,130,301,137,277,148,255,168,232,191,215"/>
+<area shape="rect" id="Node000006" href="$acceptor_8h.html" title="Asynchronous TCP connection acceptor implementation." alt="" coords="163,256,296,297"/>
+<area shape="poly" id="edge7_Node000004_Node000006" title=" " alt="" coords="232,224,232,256,227,256,227,224"/>
+<area shape="rect" id="Node000008" href="$tcp_2client_8h.html" title="Asynchronous TCP client implementation for the QB IO library." alt="" coords="373,345,507,386"/>
+<area shape="poly" id="edge10_Node000004_Node000008" title=" " alt="" coords="259,216,310,254,418,343,415,347,306,258,256,220"/>
+<area shape="rect" id="Node000009" href="$udp_2client_8h.html" title="Asynchronous UDP client implementation." alt="" coords="371,256,504,297"/>
+<area shape="poly" id="edge12_Node000004_Node000009" title=" " alt="" coords="276,212,386,253,384,258,274,217"/>
+<area shape="rect" id="Node000010" href="$udp_2server_8h.html" title="Asynchronous UDP server implementation." alt="" coords="528,256,661,297"/>
+<area shape="poly" id="edge14_Node000004_Node000010" title=" " alt="" coords="306,209,516,254,528,256,527,262,515,259,305,215"/>
+<area shape="poly" id="edge6_Node000005_Node000003" title=" " alt="" coords="179,391,260,431,257,436,177,395"/>
+<area shape="rect" id="Node000007" href="$tcp_2server_8h.html" title="Asynchronous TCP server implementation for the QB IO library." alt="" coords="216,345,349,386"/>
+<area shape="poly" id="edge8_Node000006_Node000007" title=" " alt="" coords="252,309,273,343,268,346,247,312"/>
+<area shape="poly" id="edge9_Node000007_Node000003" title=" " alt="" coords="285,401,285,433,280,433,280,401"/>
+<area shape="poly" id="edge11_Node000008_Node000003" title=" " alt="" coords="388,395,308,436,306,431,386,391"/>
+<area shape="poly" id="edge13_Node000009_Node000003" title=" " alt="" coords="484,304,505,322,521,343,528,365,527,376,521,387,494,406,453,420,355,439,354,434,452,415,492,401,517,384,522,375,523,365,517,345,501,326,480,308"/>
+<area shape="poly" id="edge15_Node000010_Node000003" title=" " alt="" coords="589,313,572,352,559,372,543,388,499,414,450,432,401,442,355,447,355,442,400,437,449,427,497,410,540,384,555,368,567,350,584,311"/>
+</map>

@@ -1,0 +1,1009 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: Engine &amp; Scheduling</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: Engine &amp; Scheduling</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('group___engine.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">Engine &amp; Scheduling <div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___core.html">Core Actor System</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Manages actor execution, virtual cores, and system lifecycle.  
+<a href="#details">More...</a></p>
+<div class="dynheader">
+Collaboration diagram for Engine &amp; Scheduling:</div>
+<div class="dyncontent">
+<div class="center"><img src="group___engine.png" border="0" usemap="#agroup______engine" loading="lazy" alt=""/></div>
+<map name="agroup______engine" id="agroup______engine">
+<area shape="rect" href="group___core.html" title="Fundamental components implementing the Actor Model." alt="" coords="5,5,138,31"/>
+<area shape="rect" title="Manages actor execution, virtual cores, and system lifecycle." alt="" coords="186,5,328,31"/>
+</map>
+</div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-files" class="groupheader"><a id="files" name="files"></a>
+Files</h2></td></tr>
+<tr class="memitem:main_2Eh" id="r_main_2Eh"><td class="memItemLeft" align="right" valign="top">file &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="main_8h.html">main.h</a></td></tr>
+<tr class="memdesc:main_8h"><td class="mdescLeft">&#160;</td><td class="mdescRight">Convenience header for the QB Main engine controller. <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3ACoreInitializer" id="r_qb_3A_3ACoreInitializer"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_core_initializer.html">qb::CoreInitializer</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Handles pre-start configuration for a single <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>.  <a href="classqb_1_1_core_initializer.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3ACoreInitializer_3A_3AActorBuilder" id="r_qb_3A_3ACoreInitializer_3A_3AActorBuilder"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_core_initializer_1_1_actor_builder.html">qb::CoreInitializer::ActorBuilder</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Helper to fluently build multiple Actors for a <a class="el" href="classqb_1_1_core_initializer.html" title="Handles pre-start configuration for a single VirtualCore.">CoreInitializer</a>.  <a href="classqb_1_1_core_initializer_1_1_actor_builder.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3ASharedCoreCommunication" id="r_qb_3A_3ASharedCoreCommunication"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_shared_core_communication.html">qb::SharedCoreCommunication</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Manages inter-core communication infrastructure (mailboxes).  <a href="classqb_1_1_shared_core_communication.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3ACoreSpawnerParameter" id="r_qb_3A_3ACoreSpawnerParameter"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1_core_spawner_parameter.html">qb::CoreSpawnerParameter</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Internal structure for passing parameters to core spawning functions.  <a href="structqb_1_1_core_spawner_parameter.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AMain" id="r_qb_3A_3AMain"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_main.html">qb::Main</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">The main controller for the QB <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">Actor</a> Framework engine.  <a href="classqb_1_1_main.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AVirtualCore" id="r_qb_3A_3AVirtualCore"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_virtual_core.html">qb::VirtualCore</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Manages a virtual processing core (worker thread) in the actor system.  <a href="classqb_1_1_virtual_core.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-typedef-members" class="groupheader"><a id="typedef-members" name="typedef-members"></a>
+Typedefs</h2></td></tr>
+<tr class="memitem:gad5e1e66a56d008d2ef14b0eb95e13dac" id="r_gad5e1e66a56d008d2ef14b0eb95e13dac"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gad5e1e66a56d008d2ef14b0eb95e13dac">qb::CoreInitializerMap</a> = <a class="el" href="group___container.html#ga9d156b7ae1a1ef61bbb6bf272fdd4c6b">qb::unordered_map</a>&lt;<a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>, <a class="el" href="classqb_1_1_core_initializer.html">CoreInitializer</a>&gt;</td></tr>
+<tr class="memdesc:gad5e1e66a56d008d2ef14b0eb95e13dac"><td class="mdescLeft">&#160;</td><td class="mdescRight">Map of <a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1" title="Type definition for core identifiers.">CoreId</a> to <a class="el" href="classqb_1_1_core_initializer.html" title="Handles pre-start configuration for a single VirtualCore.">CoreInitializer</a> objects.  <br /></td></tr>
+<tr class="memitem:ga5bf44c35a039fc85fc694b7883c6197f" id="r_ga5bf44c35a039fc85fc694b7883c6197f"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga5bf44c35a039fc85fc694b7883c6197f">qb::engine</a> = <a class="el" href="classqb_1_1_main.html">Main</a></td></tr>
+<tr class="memdesc:ga5bf44c35a039fc85fc694b7883c6197f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Alias for the <a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">Main</a> class.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-enum-members" class="groupheader"><a id="enum-members" name="enum-members"></a>
+Enumerations</h2></td></tr>
+<tr class="memitem:gad5013a5c4458216ed831216a57947f6c" id="r_gad5013a5c4458216ed831216a57947f6c"><td class="memItemLeft" align="right" valign="top">enum &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gad5013a5c4458216ed831216a57947f6c">qb::VirtualCore::Error</a> : uint64_t { <a class="el" href="#gad5013a5c4458216ed831216a57947f6caa06ddf36c4c1957e096d2e5855ec73d2">qb::VirtualCore::BadInit</a> = (1u &lt;&lt; 9u)
+, <a class="el" href="#gad5013a5c4458216ed831216a57947f6ca489e1799e619d1e0779824ffcb0a05dc">qb::VirtualCore::NoActor</a> = (1u &lt;&lt; 10u)
+, <a class="el" href="#gad5013a5c4458216ed831216a57947f6cacdd0bb8b5d99225241b8bb3493f0488c">qb::VirtualCore::BadActorInit</a> = (1u &lt;&lt; 11u)
+, <a class="el" href="#gad5013a5c4458216ed831216a57947f6ca9a974893ac4c1216e65b6b6a6ae8718a">qb::VirtualCore::ExceptionThrown</a> = (1u &lt;&lt; 12u)
+ }</td></tr>
+<tr class="memdesc:gad5013a5c4458216ed831216a57947f6c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Error codes for virtual core operations and states. These flags can be combined to represent multiple error conditions.  <a href="#gad5013a5c4458216ed831216a57947f6c">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-func-members" class="groupheader"><a id="func-members" name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:gaece8e3085126250f9b0d73617a1f87a0" id="r_gaece8e3085126250f9b0d73617a1f87a0"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gaece8e3085126250f9b0d73617a1f87a0">qb::SharedCoreCommunication::Mailbox::wait</a> () noexcept</td></tr>
+<tr class="memdesc:gaece8e3085126250f9b0d73617a1f87a0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Waits for a notification on this mailbox, up to its configured latency.  <br /></td></tr>
+<tr class="memitem:ga10affcbb3fe5c92bda8fb2582df7d74e" id="r_ga10affcbb3fe5c92bda8fb2582df7d74e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga10affcbb3fe5c92bda8fb2582df7d74e">qb::SharedCoreCommunication::Mailbox::notify</a> () noexcept</td></tr>
+<tr class="memdesc:ga10affcbb3fe5c92bda8fb2582df7d74e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Notifies a waiting thread (<a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>) that an event might be available in this mailbox.  <br /></td></tr>
+<tr class="memitem:gabcaf71734ae3d012186752843f246b89" id="r_gabcaf71734ae3d012186752843f246b89"><td class="memItemLeft" align="right" valign="top">uint64_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gabcaf71734ae3d012186752843f246b89">qb::SharedCoreCommunication::Mailbox::getLatency</a> () const noexcept</td></tr>
+<tr class="memdesc:gabcaf71734ae3d012186752843f246b89"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the latency setting for this mailbox.  <br /></td></tr>
+<tr class="memitem:ga1d4ced147cfe0059e4772da210676d1c" id="r_ga1d4ced147cfe0059e4772da210676d1c"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga1d4ced147cfe0059e4772da210676d1c">qb::SharedCoreCommunication::send</a> (<a class="el" href="classqb_1_1_event.html">Event</a> const &amp;<a class="el" href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">event</a>) const noexcept</td></tr>
+<tr class="memdesc:ga1d4ced147cfe0059e4772da210676d1c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Send an event to the mailbox of its destination <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>.  <br /></td></tr>
+<tr class="memitem:ga75e4357a8753d49a1490380a149087e7" id="r_ga75e4357a8753d49a1490380a149087e7"><td class="memItemLeft" align="right" valign="top">Mailbox &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga75e4357a8753d49a1490380a149087e7">qb::SharedCoreCommunication::getMailBox</a> (<a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> id) const noexcept</td></tr>
+<tr class="memdesc:ga75e4357a8753d49a1490380a149087e7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the mailbox for a specific <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>.  <br /></td></tr>
+<tr class="memitem:gaccad7c68360b17dca9dc1fb710fbb4cc" id="r_gaccad7c68360b17dca9dc1fb710fbb4cc"><td class="memItemLeft" align="right" valign="top"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gaccad7c68360b17dca9dc1fb710fbb4cc">qb::SharedCoreCommunication::getNbCore</a> () const noexcept</td></tr>
+<tr class="memdesc:gaccad7c68360b17dca9dc1fb710fbb4cc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the number of VirtualCores configured in the system.  <br /></td></tr>
+<tr class="memitem:ga0990bde9edb018a122be3dfe30069181" id="r_ga0990bde9edb018a122be3dfe30069181"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga0990bde9edb018a122be3dfe30069181">qb::Main::start</a> (bool async=true) noexcept</td></tr>
+<tr class="memdesc:ga0990bde9edb018a122be3dfe30069181"><td class="mdescLeft">&#160;</td><td class="mdescRight">Start the engine and its <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> worker threads.  <br /></td></tr>
+<tr class="memitem:gad337df7d61e82fe2d32c0cc328c44835" id="r_gad337df7d61e82fe2d32c0cc328c44835"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gad337df7d61e82fe2d32c0cc328c44835">qb::Main::hasError</a> () const noexcept</td></tr>
+<tr class="memdesc:gad337df7d61e82fe2d32c0cc328c44835"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check if any <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> encountered an error and terminated prematurely.  <br /></td></tr>
+<tr class="memitem:ga17196adf7b7ab867d25074f78f048658" id="r_ga17196adf7b7ab867d25074f78f048658"><td class="memItemLeft" align="right" valign="top">static void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga17196adf7b7ab867d25074f78f048658">qb::Main::stop</a> () noexcept</td></tr>
+<tr class="memdesc:ga17196adf7b7ab867d25074f78f048658"><td class="mdescLeft">&#160;</td><td class="mdescRight">Stop the engine and all its VirtualCores gracefully.  <br /></td></tr>
+<tr class="memitem:ga0f82608ca2a0ba910873d0caabbf6e65" id="r_ga0f82608ca2a0ba910873d0caabbf6e65"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga0f82608ca2a0ba910873d0caabbf6e65">qb::Main::join</a> ()</td></tr>
+<tr class="memdesc:ga0f82608ca2a0ba910873d0caabbf6e65"><td class="mdescLeft">&#160;</td><td class="mdescRight">Wait for the engine and all its <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> threads to terminate.  <br /></td></tr>
+<tr class="memitem:ga84dff5faea16cfa7108cd9ff209fbc24" id="r_ga84dff5faea16cfa7108cd9ff209fbc24"><td class="memTemplParams" colspan="2">template&lt;typename _Actor, typename... _Args&gt; </td></tr>
+<tr class="memitem:ga84dff5faea16cfa7108cd9ff209fbc24 template"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_actor_id.html">ActorId</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga84dff5faea16cfa7108cd9ff209fbc24">qb::Main::addActor</a> (<a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> index, _Args &amp;&amp;...args)</td></tr>
+<tr class="memdesc:ga84dff5faea16cfa7108cd9ff209fbc24"><td class="mdescLeft">&#160;</td><td class="mdescRight">Add a new actor to a specified <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> before the engine starts.  <br /></td></tr>
+<tr class="memitem:ga96fc97c8925370ac024fccbedbdfb733" id="r_ga96fc97c8925370ac024fccbedbdfb733"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_core_initializer.html">CoreInitializer</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga96fc97c8925370ac024fccbedbdfb733">qb::Main::core</a> (<a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> index)</td></tr>
+<tr class="memdesc:ga96fc97c8925370ac024fccbedbdfb733"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the <a class="el" href="classqb_1_1_core_initializer.html" title="Handles pre-start configuration for a single VirtualCore.">CoreInitializer</a> for a specific <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> index.  <br /></td></tr>
+<tr class="memitem:gacfa830a94e6e829b35d39d7728d2873e" id="r_gacfa830a94e6e829b35d39d7728d2873e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gacfa830a94e6e829b35d39d7728d2873e">qb::Main::setLatency</a> (uint64_t latency=0)</td></tr>
+<tr class="memdesc:gacfa830a94e6e829b35d39d7728d2873e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the default event loop latency for all VirtualCores.  <br /></td></tr>
+<tr class="memitem:gaaa96436e2e8891109387ffcbca55ff17" id="r_gaaa96436e2e8891109387ffcbca55ff17"><td class="memItemLeft" align="right" valign="top"><a class="el" href="group___core.html#gaf938afc2318277511d1b20184c0c1152">qb::CoreIdSet</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gaaa96436e2e8891109387ffcbca55ff17">qb::Main::usedCoreSet</a> () const</td></tr>
+<tr class="memdesc:gaaa96436e2e8891109387ffcbca55ff17"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the set of <span class="tt"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1" title="Type definition for core identifiers.">CoreId</a></span>s that are currently configured to be used by the engine.  <br /></td></tr>
+<tr class="memitem:gaaedd9ea643c7b1f9bdc007ef600647de" id="r_gaaedd9ea643c7b1f9bdc007ef600647de"><td class="memItemLeft" align="right" valign="top">static void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gaaedd9ea643c7b1f9bdc007ef600647de">qb::Main::registerSignal</a> (int signum) noexcept</td></tr>
+<tr class="memdesc:gaaedd9ea643c7b1f9bdc007ef600647de"><td class="mdescLeft">&#160;</td><td class="mdescRight">Register a system signal to be handled by the engine (results in graceful shutdown).  <br /></td></tr>
+<tr class="memitem:ga2416f2d96af077756b1b39b7db299c61" id="r_ga2416f2d96af077756b1b39b7db299c61"><td class="memItemLeft" align="right" valign="top">static void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga2416f2d96af077756b1b39b7db299c61">qb::Main::unregisterSignal</a> (int signum) noexcept</td></tr>
+<tr class="memdesc:ga2416f2d96af077756b1b39b7db299c61"><td class="mdescLeft">&#160;</td><td class="mdescRight">Unregister a previously registered system signal from engine handling.  <br /></td></tr>
+<tr class="memitem:ga98d195fa74acda246e83ada9f746b93b" id="r_ga98d195fa74acda246e83ada9f746b93b"><td class="memItemLeft" align="right" valign="top">static void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga98d195fa74acda246e83ada9f746b93b">qb::Main::ignoreSignal</a> (int signum) noexcept</td></tr>
+<tr class="memdesc:ga98d195fa74acda246e83ada9f746b93b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ignore a system signal, preventing the engine or default OS handler from processing it.  <br /></td></tr>
+<tr class="memitem:gad70e0c56c80417f4abb07b8218c47f43" id="r_gad70e0c56c80417f4abb07b8218c47f43"><td class="memItemLeft" align="right" valign="top"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gad70e0c56c80417f4abb07b8218c47f43">qb::VirtualCore::getIndex</a> () const noexcept</td></tr>
+<tr class="memdesc:gad70e0c56c80417f4abb07b8218c47f43"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the core's index.  <br /></td></tr>
+<tr class="memitem:gaaa9622a9e856d459072ab0cb190c3ed3" id="r_gaaa9622a9e856d459072ab0cb190c3ed3"><td class="memItemLeft" align="right" valign="top">const <a class="el" href="group___core.html#gaf938afc2318277511d1b20184c0c1152">CoreIdSet</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gaaa9622a9e856d459072ab0cb190c3ed3">qb::VirtualCore::getCoreSet</a> () const noexcept</td></tr>
+<tr class="memdesc:gaaa9622a9e856d459072ab0cb190c3ed3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the set of cores this <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> is configured to communicate with.  <br /></td></tr>
+<tr class="memitem:ga2f812ee9926b722db516c4e898bf40b9" id="r_ga2f812ee9926b722db516c4e898bf40b9"><td class="memItemLeft" align="right" valign="top">uint64_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga2f812ee9926b722db516c4e898bf40b9">qb::VirtualCore::time</a> () const noexcept</td></tr>
+<tr class="memdesc:ga2f812ee9926b722db516c4e898bf40b9"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the current cached time for this <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>'s processing loop.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-var-members" class="groupheader"><a id="var-members" name="var-members"></a>
+Variables</h2></td></tr>
+<tr class="memitem:ga183f0958e32cff3fcd2a0fe871fd3c23" id="r_ga183f0958e32cff3fcd2a0fe871fd3c23"><td class="memItemLeft" align="right" valign="top">constexpr const <a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga183f0958e32cff3fcd2a0fe871fd3c23">qb::NoAffinity</a> = std::numeric_limits&lt;<a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>&gt;::max()</td></tr>
+<tr class="memdesc:ga183f0958e32cff3fcd2a0fe871fd3c23"><td class="mdescLeft">&#160;</td><td class="mdescRight">Special constant indicating that no <a class="el" href="classqb_1_1_c_p_u.html" title="Provides platform-independent access to CPU information.">CPU</a> affinity is desired.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<p>Manages actor execution, virtual cores, and system lifecycle. </p>
+<p>Contains `qb::Main` for engine control, `qb::VirtualCore` for actor execution, and `qb::CoreSet` for CPU affinity. </p>
+<a name="doc-typedef-members" id="doc-typedef-members"></a><h2 id="header-doc-typedef-members" class="groupheader">Typedef Documentation</h2>
+<a id="gad5e1e66a56d008d2ef14b0eb95e13dac" name="gad5e1e66a56d008d2ef14b0eb95e13dac"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gad5e1e66a56d008d2ef14b0eb95e13dac">&#9670;&#160;</a></span>CoreInitializerMap</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">using <a class="el" href="#gad5e1e66a56d008d2ef14b0eb95e13dac">qb::CoreInitializerMap</a> = <a class="el" href="group___container.html#ga9d156b7ae1a1ef61bbb6bf272fdd4c6b">qb::unordered_map</a>&lt;<a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>, <a class="el" href="classqb_1_1_core_initializer.html">CoreInitializer</a>&gt;</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Map of <a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1" title="Type definition for core identifiers.">CoreId</a> to <a class="el" href="classqb_1_1_core_initializer.html" title="Handles pre-start configuration for a single VirtualCore.">CoreInitializer</a> objects. </p>
+<p>This container maps core identifiers to their respective initializer objects, providing a way to store and access configuration for all VirtualCores in the system. </p>
+
+</div>
+</div>
+<a id="ga5bf44c35a039fc85fc694b7883c6197f" name="ga5bf44c35a039fc85fc694b7883c6197f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga5bf44c35a039fc85fc694b7883c6197f">&#9670;&#160;</a></span>engine</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">using <a class="el" href="#ga5bf44c35a039fc85fc694b7883c6197f">qb::engine</a> = <a class="el" href="classqb_1_1_main.html">Main</a></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Alias for the <a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">Main</a> class. </p>
+<p>Provides a concise alternative name for the main engine class. This is provided for naming consistency with other lowercase aliases in the framework. </p>
+
+</div>
+</div>
+<a name="doc-enum-members" id="doc-enum-members"></a><h2 id="header-doc-enum-members" class="groupheader">Enumeration Type Documentation</h2>
+<a id="gad5013a5c4458216ed831216a57947f6c" name="gad5013a5c4458216ed831216a57947f6c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gad5013a5c4458216ed831216a57947f6c">&#9670;&#160;</a></span>Error</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">enum <a class="el" href="#gad5013a5c4458216ed831216a57947f6c">qb::VirtualCore::Error</a> : uint64_t</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p><a class="el" href="#gad5013a5c4458216ed831216a57947f6c" title="Error codes for virtual core operations and states. These flags can be combined to represent multiple...">Error</a> codes for virtual core operations and states. These flags can be combined to represent multiple error conditions. </p>
+<table class="fieldtable">
+<tr><th colspan="2">Enumerator</th></tr><tr><td class="fieldname"><a id="gad5013a5c4458216ed831216a57947f6caa06ddf36c4c1957e096d2e5855ec73d2" name="gad5013a5c4458216ed831216a57947f6caa06ddf36c4c1957e096d2e5855ec73d2"></a>BadInit&#160;</td><td class="fielddoc"><p>General initialization error for the <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>. </p>
+</td></tr>
+<tr><td class="fieldname"><a id="gad5013a5c4458216ed831216a57947f6ca489e1799e619d1e0779824ffcb0a05dc" name="gad5013a5c4458216ed831216a57947f6ca489e1799e619d1e0779824ffcb0a05dc"></a>NoActor&#160;</td><td class="fielddoc"><p>An expected actor was not found or couldn't be processed. </p>
+</td></tr>
+<tr><td class="fieldname"><a id="gad5013a5c4458216ed831216a57947f6cacdd0bb8b5d99225241b8bb3493f0488c" name="gad5013a5c4458216ed831216a57947f6cacdd0bb8b5d99225241b8bb3493f0488c"></a>BadActorInit&#160;</td><td class="fielddoc"><p>An actor's <span class="tt">onInit()</span> method returned false or threw an exception. </p>
+</td></tr>
+<tr><td class="fieldname"><a id="gad5013a5c4458216ed831216a57947f6ca9a974893ac4c1216e65b6b6a6ae8718a" name="gad5013a5c4458216ed831216a57947f6ca9a974893ac4c1216e65b6b6a6ae8718a"></a>ExceptionThrown&#160;</td><td class="fielddoc"><p>An unhandled exception occurred during <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> execution (e.g., in an actor event handler). </p>
+</td></tr>
+</table>
+
+</div>
+</div>
+<a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Function Documentation</h2>
+<a id="gaece8e3085126250f9b0d73617a1f87a0" name="gaece8e3085126250f9b0d73617a1f87a0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gaece8e3085126250f9b0d73617a1f87a0">&#9670;&#160;</a></span>wait()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::SharedCoreCommunication::Mailbox::wait </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Waits for a notification on this mailbox, up to its configured latency. </p>
+<p>If the mailbox is configured with a non-zero latency (<span class="tt">_latency &gt; 0</span>), this method blocks the calling thread (typically a <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>'s event loop) using a <span class="tt">std::condition_variable</span> for a duration up to <span class="tt">_latency</span> nanoseconds, or until <span class="tt"><a class="el" href="#ga10affcbb3fe5c92bda8fb2582df7d74e" title="Notifies a waiting thread (VirtualCore) that an event might be available in this mailbox.">notify()</a></span> is called. If <span class="tt">_latency</span> is 0, this method returns immediately (effectively a no-op for waiting). This is used by VirtualCores to sleep when idle, reducing <a class="el" href="classqb_1_1_c_p_u.html" title="Provides platform-independent access to CPU information.">CPU</a> usage. </p>
+
+</div>
+</div>
+<a id="ga10affcbb3fe5c92bda8fb2582df7d74e" name="ga10affcbb3fe5c92bda8fb2582df7d74e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga10affcbb3fe5c92bda8fb2582df7d74e">&#9670;&#160;</a></span>notify()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::SharedCoreCommunication::Mailbox::notify </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Notifies a waiting thread (<a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>) that an event might be available in this mailbox. </p>
+<p>If the mailbox is configured with a non-zero latency (<span class="tt">_latency &gt; 0</span>), this method signals the <span class="tt">std::condition_variable</span> associated with this mailbox. This wakes up a <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> thread that might be sleeping in the <span class="tt"><a class="el" href="#gaece8e3085126250f9b0d73617a1f87a0" title="Waits for a notification on this mailbox, up to its configured latency.">wait()</a></span> method, prompting it to check the mailbox for new events. If <span class="tt">_latency</span> is 0, this method is a no-op. </p>
+
+</div>
+</div>
+<a id="gabcaf71734ae3d012186752843f246b89" name="gabcaf71734ae3d012186752843f246b89"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gabcaf71734ae3d012186752843f246b89">&#9670;&#160;</a></span>getLatency()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">uint64_t qb::SharedCoreCommunication::Mailbox::getLatency </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the latency setting for this mailbox. </p>
+<dl class="section return"><dt>Returns</dt><dd>The configured latency in nanoseconds. If 0, the mailbox operates in a low-latency (busy-spin) mode for its consumer. </dd></dl>
+
+</div>
+</div>
+<a id="ga1d4ced147cfe0059e4772da210676d1c" name="ga1d4ced147cfe0059e4772da210676d1c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga1d4ced147cfe0059e4772da210676d1c">&#9670;&#160;</a></span>send()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::SharedCoreCommunication::send </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1_event.html">Event</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em>event</em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Send an event to the mailbox of its destination <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">event</td><td>The <span class="tt"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a></span> to send. The event's <span class="tt">dest_core()</span> determines the target mailbox. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd><span class="tt">true</span> if the event was successfully enqueued into the destination core's mailbox. <span class="tt">false</span> if the destination core ID is invalid, the mailbox is full (rare), or another error occurred during enqueueing.</dd></dl>
+<p>This method is used internally by actors and the engine to route events between cores. It relies on the MPSC ringbuffer implementation for the mailboxes. </p>
+
+</div>
+</div>
+<a id="ga75e4357a8753d49a1490380a149087e7" name="ga75e4357a8753d49a1490380a149087e7"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga75e4357a8753d49a1490380a149087e7">&#9670;&#160;</a></span>getMailBox()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">Mailbox &amp; qb::SharedCoreCommunication::getMailBox </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a></td>          <td class="paramname"><span class="paramname"><em>id</em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the mailbox for a specific <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">id</td><td>The <span class="tt"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1" title="Type definition for core identifiers.">CoreId</a></span> of the <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> whose mailbox is requested. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Reference to the <span class="tt">Mailbox</span> object for the specified core. </dd></dl>
+<dl class="section note"><dt>Note</dt><dd>This provides direct access to the inter-core communication channel. Used internally. Throws <span class="tt">std::out_of_range</span> if <span class="tt">id</span> is invalid. </dd></dl>
+
+</div>
+</div>
+<a id="gaccad7c68360b17dca9dc1fb710fbb4cc" name="gaccad7c68360b17dca9dc1fb710fbb4cc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gaccad7c68360b17dca9dc1fb710fbb4cc">&#9670;&#160;</a></span>getNbCore()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> qb::SharedCoreCommunication::getNbCore </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the number of VirtualCores configured in the system. </p>
+<dl class="section return"><dt>Returns</dt><dd>The total number of <span class="tt"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1" title="Type definition for core identifiers.">CoreId</a></span>s managed by this <span class="tt"><a class="el" href="classqb_1_1_shared_core_communication.html" title="Manages inter-core communication infrastructure (mailboxes).">SharedCoreCommunication</a></span> instance, which corresponds to the number of VirtualCores the engine will run. </dd></dl>
+
+</div>
+</div>
+<a id="ga0990bde9edb018a122be3dfe30069181" name="ga0990bde9edb018a122be3dfe30069181"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga0990bde9edb018a122be3dfe30069181">&#9670;&#160;</a></span>start()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::Main::start </td>
+          <td>(</td>
+          <td class="paramtype">bool</td>          <td class="paramname"><span class="paramname"><em>async</em></span><span class="paramdefsep"> = </span><span class="paramdefval">true</span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Start the engine and its <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> worker threads. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">async</td><td>If <span class="tt">true</span> (default), the engine starts asynchronously, and this call returns immediately. The main application thread continues execution. <span class="tt"><a class="el" href="#ga0f82608ca2a0ba910873d0caabbf6e65" title="Wait for the engine and all its VirtualCore threads to terminate.">join()</a></span> should be called later to wait. If <span class="tt">false</span>, the calling thread becomes one of the <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> worker threads (typically core 0). This call will block until the engine is stopped. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section note"><dt>Note</dt><dd>All actors and core configurations (affinity, latency) must be set up <em>before</em> calling <span class="tt"><a class="el" href="#ga0990bde9edb018a122be3dfe30069181" title="Start the engine and its VirtualCore worker threads.">start()</a></span>. </dd></dl>
+
+</div>
+</div>
+<a id="gad337df7d61e82fe2d32c0cc328c44835" name="gad337df7d61e82fe2d32c0cc328c44835"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gad337df7d61e82fe2d32c0cc328c44835">&#9670;&#160;</a></span>hasError()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::Main::hasError </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Check if any <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> encountered an error and terminated prematurely. </p>
+<dl class="section return"><dt>Returns</dt><dd><span class="tt">true</span> if an error occurred in one or more cores, <span class="tt">false</span> otherwise. </dd></dl>
+<dl class="section note"><dt>Note</dt><dd>This should typically be checked after <span class="tt"><a class="el" href="#ga0f82608ca2a0ba910873d0caabbf6e65" title="Wait for the engine and all its VirtualCore threads to terminate.">join()</a></span> returns. </dd></dl>
+
+</div>
+</div>
+<a id="ga17196adf7b7ab867d25074f78f048658" name="ga17196adf7b7ab867d25074f78f048658"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga17196adf7b7ab867d25074f78f048658">&#9670;&#160;</a></span>stop()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::Main::stop </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel static">static</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Stop the engine and all its VirtualCores gracefully. </p>
+<p>This is a static method and can be called from any thread, including signal handlers. It signals all VirtualCores to shut down. Actors will typically receive a <span class="tt"><a class="el" href="structqb_1_1_kill_event.html" title="Event used to terminate an actor.">KillEvent</a></span>. </p><dl class="section note"><dt>Note</dt><dd>Same effect as receiving a SIGINT or SIGTERM signal by default. </dd></dl>
+
+</div>
+</div>
+<a id="ga0f82608ca2a0ba910873d0caabbf6e65" name="ga0f82608ca2a0ba910873d0caabbf6e65"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga0f82608ca2a0ba910873d0caabbf6e65">&#9670;&#160;</a></span>join()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::Main::join </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Wait for the engine and all its <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> threads to terminate. </p>
+<p>This function blocks until the engine has fully shut down. It should be called if <span class="tt">start(true)</span> (asynchronous start) was used. </p>
+
+</div>
+</div>
+<a id="ga84dff5faea16cfa7108cd9ff209fbc24" name="ga84dff5faea16cfa7108cd9ff209fbc24"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga84dff5faea16cfa7108cd9ff209fbc24">&#9670;&#160;</a></span>addActor()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Actor, typename... _Args&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1_actor_id.html">ActorId</a> qb::Main::addActor </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a></td>          <td class="paramname"><span class="paramname"><em>index</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">_Args &amp;&amp;...</td>          <td class="paramname"><span class="paramname"><em>args</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Add a new actor to a specified <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> before the engine starts. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_Actor</td><td>DerivedActor type to create. </td></tr>
+    <tr><td class="paramname">_Args</td><td>Arguments to forward to the constructor of the _Actor. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">index</td><td>The <span class="tt"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1" title="Type definition for core identifiers.">CoreId</a></span> of the <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> to add this actor to. </td></tr>
+    <tr><td class="paramname">args</td><td>Arguments to forward to the _Actor\'s constructor. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd><span class="tt"><a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">ActorId</a></span> of the created _Actor. Returns <span class="tt">ActorId::NotFound</span> on failure.</dd></dl>
+<p>A convenience method that is equivalent to <span class="tt">core(index).addActor&lt;_Actor&gt;(args...)</span>. Example: </p><div class="fragment"><div class="line"><span class="comment">// qb::Main engine;</span></div>
+<div class="line"><span class="comment">// auto id = engine.addActor&lt;MyActor&gt;(0, param1, param2);</span></div>
+</div><!-- fragment --> <dl class="section attention"><dt>Attention</dt><dd>This function is only available before the engine is running. </dd></dl>
+
+</div>
+</div>
+<a id="ga96fc97c8925370ac024fccbedbdfb733" name="ga96fc97c8925370ac024fccbedbdfb733"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga96fc97c8925370ac024fccbedbdfb733">&#9670;&#160;</a></span>core()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1_core_initializer.html">CoreInitializer</a> &amp; qb::Main::core </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a></td>          <td class="paramname"><span class="paramname"><em>index</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel nodiscard">nodiscard</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the <a class="el" href="classqb_1_1_core_initializer.html" title="Handles pre-start configuration for a single VirtualCore.">CoreInitializer</a> for a specific <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> index. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">index</td><td>The <span class="tt"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1" title="Type definition for core identifiers.">CoreId</a></span> of the <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> to configure. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Reference to the <span class="tt"><a class="el" href="classqb_1_1_core_initializer.html" title="Handles pre-start configuration for a single VirtualCore.">CoreInitializer</a></span> for the specified core.</dd></dl>
+<p>Allows setting core-specific properties like affinity and latency before starting the engine. </p><dl class="section attention"><dt>Attention</dt><dd>This function is only available before the engine is running. The returned reference is to an object managed by <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">qb::Main</a></span>. <div class="fragment"><div class="line"><span class="comment">// qb::Main engine;</span></div>
+<div class="line"><span class="comment">// qb::CoreInitializer&amp; core_config = engine.core(0);</span></div>
+<div class="line"><span class="comment">// core_config.setLatency(100000); // 100us</span></div>
+</div><!-- fragment --> </dd></dl>
+
+</div>
+</div>
+<a id="gacfa830a94e6e829b35d39d7728d2873e" name="gacfa830a94e6e829b35d39d7728d2873e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gacfa830a94e6e829b35d39d7728d2873e">&#9670;&#160;</a></span>setLatency()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::Main::setLatency </td>
+          <td>(</td>
+          <td class="paramtype">uint64_t</td>          <td class="paramname"><span class="paramname"><em>latency</em></span><span class="paramdefsep"> = </span><span class="paramdefval">0</span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set the default event loop latency for all VirtualCores. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">latency</td><td>The maximum time in nanoseconds for cores to wait when idle. <span class="tt">0</span> means no wait (low latency mode).</td></tr>
+  </table>
+  </dd>
+</dl>
+<p>This sets the latency for all cores that haven\'t had a specific latency set via <span class="tt"><a class="el" href="classqb_1_1_core_initializer.html#a5d837e5164efcfe52500b0ab46719368" title="Set the maximum event loop latency for the VirtualCore.">CoreInitializer::setLatency()</a></span>.<br  />
+ See <span class="tt"><a class="el" href="classqb_1_1_core_initializer.html#a5d837e5164efcfe52500b0ab46719368" title="Set the maximum event loop latency for the VirtualCore.">CoreInitializer::setLatency()</a></span> for more details on latency values. </p><dl class="section attention"><dt>Attention</dt><dd>This function is only available before the engine is running. </dd></dl>
+
+</div>
+</div>
+<a id="gaaa96436e2e8891109387ffcbca55ff17" name="gaaa96436e2e8891109387ffcbca55ff17"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gaaa96436e2e8891109387ffcbca55ff17">&#9670;&#160;</a></span>usedCoreSet()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="group___core.html#gaf938afc2318277511d1b20184c0c1152">qb::CoreIdSet</a> qb::Main::usedCoreSet </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel nodiscard">nodiscard</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the set of <span class="tt"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1" title="Type definition for core identifiers.">CoreId</a></span>s that are currently configured to be used by the engine. </p>
+<dl class="section return"><dt>Returns</dt><dd>A <span class="tt"><a class="el" href="group___core.html#gaf938afc2318277511d1b20184c0c1152" title="Efficient set implementation for storing CoreId values.">qb::CoreIdSet</a></span> containing the IDs of all cores that will be launched.</dd></dl>
+<p>This reflects the cores for which <span class="tt"><a class="el" href="classqb_1_1_core_initializer.html" title="Handles pre-start configuration for a single VirtualCore.">CoreInitializer</a></span> objects exist, typically based on the arguments passed to the <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">Main</a></span> constructor or default hardware concurrency. </p>
+
+</div>
+</div>
+<a id="gaaedd9ea643c7b1f9bdc007ef600647de" name="gaaedd9ea643c7b1f9bdc007ef600647de"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gaaedd9ea643c7b1f9bdc007ef600647de">&#9670;&#160;</a></span>registerSignal()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::Main::registerSignal </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>signum</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel static">static</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Register a system signal to be handled by the engine (results in graceful shutdown). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">signum</td><td>The signal number (e.g., <span class="tt">SIGUSR1</span>, <span class="tt">SIGHUP</span>). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section note"><dt>Note</dt><dd>By default, <span class="tt">SIGINT</span> and <span class="tt">SIGTERM</span> (on non-Windows platforms) are registered to call <span class="tt"><a class="el" href="#ga17196adf7b7ab867d25074f78f048658" title="Stop the engine and all its VirtualCores gracefully.">Main::stop()</a></span>.<br  />
+Registered signals will trigger a graceful shutdown of all actors.<br  />
+This is a static method and affects all <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">Main</a></span> instances if multiple were to exist (though typically only one exists). </dd></dl>
+
+</div>
+</div>
+<a id="ga2416f2d96af077756b1b39b7db299c61" name="ga2416f2d96af077756b1b39b7db299c61"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga2416f2d96af077756b1b39b7db299c61">&#9670;&#160;</a></span>unregisterSignal()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::Main::unregisterSignal </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>signum</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel static">static</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Unregister a previously registered system signal from engine handling. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">signum</td><td>The signal number to unregister.</td></tr>
+  </table>
+  </dd>
+</dl>
+<p>After unregistering, the default OS behavior for that signal will apply if it occurs.<br  />
+This is a static method. </p>
+
+</div>
+</div>
+<a id="ga98d195fa74acda246e83ada9f746b93b" name="ga98d195fa74acda246e83ada9f746b93b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga98d195fa74acda246e83ada9f746b93b">&#9670;&#160;</a></span>ignoreSignal()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::Main::ignoreSignal </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>signum</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel static">static</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Ignore a system signal, preventing the engine or default OS handler from processing it. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">signum</td><td>The signal number to ignore (e.g., <span class="tt">SIGPIPE</span>).</td></tr>
+  </table>
+  </dd>
+</dl>
+<p>This is a static method. </p>
+
+</div>
+</div>
+<a id="gad70e0c56c80417f4abb07b8218c47f43" name="gad70e0c56c80417f4abb07b8218c47f43"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gad70e0c56c80417f4abb07b8218c47f43">&#9670;&#160;</a></span>getIndex()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> qb::VirtualCore::getIndex </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the core's index. </p>
+<dl class="section return"><dt>Returns</dt><dd><span class="tt"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1" title="Type definition for core identifiers.">CoreId</a></span> (unsigned short) representing the unique index of this <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>.</dd></dl>
+<p>This ID is assigned during engine initialization and is used in <span class="tt"><a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">ActorId</a></span> construction. </p>
+
+</div>
+</div>
+<a id="gaaa9622a9e856d459072ab0cb190c3ed3" name="gaaa9622a9e856d459072ab0cb190c3ed3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gaaa9622a9e856d459072ab0cb190c3ed3">&#9670;&#160;</a></span>getCoreSet()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">const <a class="el" href="group___core.html#gaf938afc2318277511d1b20184c0c1152">CoreIdSet</a> &amp; qb::VirtualCore::getCoreSet </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the set of cores this <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> is configured to communicate with. </p>
+<dl class="section return"><dt>Returns</dt><dd>Const reference to a <span class="tt"><a class="el" href="group___core.html#gaf938afc2318277511d1b20184c0c1152" title="Efficient set implementation for storing CoreId values.">CoreIdSet</a></span>.</dd></dl>
+<p>This set typically includes all other VirtualCores in the system, allowing this core to send events to actors on those cores. </p>
+
+</div>
+</div>
+<a id="ga2f812ee9926b722db516c4e898bf40b9" name="ga2f812ee9926b722db516c4e898bf40b9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga2f812ee9926b722db516c4e898bf40b9">&#9670;&#160;</a></span>time()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">uint64_t qb::VirtualCore::time </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the current cached time for this <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>'s processing loop. </p>
+<dl class="section return"><dt>Returns</dt><dd><span class="tt">uint64_t</span> timestamp in nanoseconds since epoch.</dd></dl>
+<p>This timestamp is updated once at the beginning of each iteration of the <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a>'s main processing loop. All actors running on this core during that single iteration will see the same value when calling <span class="tt"><a class="el" href="classqb_1_1_actor.html#a3c9c01fc3fd1b689b5debb8f11434379" title="Get current time from the VirtualCore&#39;s perspective (nanoseconds since epoch).">Actor::time()</a></span> (which internally calls this). This is optimized for performance within a loop iteration but means it does not update with true nanosecond precision <em>during</em> a single actor's event handling. For a continuously updating high-precision clock, use <span class="tt"><a class="el" href="group___time.html#gaaa757fc6404580f46cc811a0c6f7b65b" title="Backward compatibility alias for HighResTimePoint.">qb::NanoTimestamp()</a></span>. </p>
+
+</div>
+</div>
+<a name="doc-var-members" id="doc-var-members"></a><h2 id="header-doc-var-members" class="groupheader">Variable Documentation</h2>
+<a id="ga183f0958e32cff3fcd2a0fe871fd3c23" name="ga183f0958e32cff3fcd2a0fe871fd3c23"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga183f0958e32cff3fcd2a0fe871fd3c23">&#9670;&#160;</a></span>NoAffinity</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">const <a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> qb::NoAffinity = std::numeric_limits&lt;<a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>&gt;::max()</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel constexpr">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Special constant indicating that no <a class="el" href="classqb_1_1_c_p_u.html" title="Provides platform-independent access to CPU information.">CPU</a> affinity is desired. </p>
+<p>Used with setAffinity functions to indicate that a <a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">VirtualCore</a> should not be restricted to specific <a class="el" href="classqb_1_1_c_p_u.html" title="Provides platform-independent access to CPU information.">CPU</a> cores, letting the operating system handle thread scheduling. </p>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

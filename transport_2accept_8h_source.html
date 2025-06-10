@@ -1,0 +1,268 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/transport/accept.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/transport/accept.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('transport_2accept_8h_source.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">accept.h</div></div>
+</div><!--header-->
+<div class="contents">
+<a href="transport_2accept_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00024" name="l00024"></a><span class="lineno">   24</span> </div>
+<div class="line"><a id="l00025" name="l00025"></a><span class="lineno">   25</span><span class="preprocessor">#ifndef QB_IO_TRANSPORT_ACCEPT_H_</span></div>
+<div class="line"><a id="l00026" name="l00026"></a><span class="lineno">   26</span><span class="preprocessor">#define QB_IO_TRANSPORT_ACCEPT_H_</span></div>
+<div class="line"><a id="l00027" name="l00027"></a><span class="lineno">   27</span><span class="preprocessor">#include &quot;<a class="code" href="tcp_2listener_8h.html">../tcp/listener.h</a>&quot;</span></div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span> </div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span><span class="keyword">namespace </span>qb::io::transport {</div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span></div>
+<div class="foldopen" id="foldopen00044" data-start="{" data-end="};">
+<div class="line"><a id="l00044" name="l00044"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1transport_1_1accept.html">   44</a></span><span class="keyword">class </span><a class="code hl_class" href="classqb_1_1io_1_1transport_1_1accept.html">accept</a> {</div>
+<div class="line"><a id="l00045" name="l00045"></a><span class="lineno">   45</span>    <a class="code hl_class" href="classqb_1_1io_1_1tcp_1_1listener.html">io::tcp::listener</a> _io;          </div>
+<div class="line"><a id="l00046" name="l00046"></a><span class="lineno">   46</span>    <a class="code hl_class" href="classqb_1_1io_1_1tcp_1_1socket.html">io::tcp::socket</a>   _accepted_io; </div>
+<div class="line"><a id="l00047" name="l00047"></a><span class="lineno">   47</span> </div>
+<div class="line"><a id="l00048" name="l00048"></a><span class="lineno">   48</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00050" name="l00050"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1transport_1_1accept.html#a91d69046160d1d63e6494a60581b728c">   50</a></span>    <span class="keyword">constexpr</span> <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1io_1_1transport_1_1accept.html#a91d69046160d1d63e6494a60581b728c">is_secure</a>() const noexcept { <span class="keywordflow">return</span> <span class="keyword">false</span>; }</div>
+<div class="line"><a id="l00052" name="l00052"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1transport_1_1accept.html#ab66338b6d11fde8af135b630f0dc36f9">   52</a></span>    <span class="keyword">using </span><a class="code hl_typedef" href="classqb_1_1io_1_1transport_1_1accept.html#ab66338b6d11fde8af135b630f0dc36f9">transport_io_type</a> = <a class="code hl_class" href="classqb_1_1io_1_1tcp_1_1listener.html">io::tcp::listener</a>;</div>
+<div class="line"><a id="l00053" name="l00053"></a><span class="lineno">   53</span></div>
+<div class="line"><a id="l00055" name="l00055"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1transport_1_1accept.html#aa8a32df87a2db65a584430fb4f098f99">   55</a></span>    <span class="keyword">using </span><a class="code hl_typedef" href="classqb_1_1io_1_1transport_1_1accept.html#aa8a32df87a2db65a584430fb4f098f99">socket_type</a> = <a class="code hl_class" href="classqb_1_1io_1_1tcp_1_1socket.html">io::tcp::socket</a>;</div>
+<div class="line"><a id="l00056" name="l00056"></a><span class="lineno">   56</span></div>
+<div class="line"><a id="l00061" name="l00061"></a><span class="lineno">   61</span>    <a class="code hl_class" href="classqb_1_1io_1_1tcp_1_1listener.html">io::tcp::listener</a> &amp;</div>
+<div class="foldopen" id="foldopen00062" data-start="{" data-end="}">
+<div class="line"><a id="l00062" name="l00062"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1transport_1_1accept.html#a9b1969824ee71075e9cbe28711431b79">   62</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1transport_1_1accept.html#a9b1969824ee71075e9cbe28711431b79">transport</a>() noexcept {</div>
+<div class="line"><a id="l00063" name="l00063"></a><span class="lineno">   63</span>        <span class="keywordflow">return</span> _io;</div>
+<div class="line"><a id="l00064" name="l00064"></a><span class="lineno">   64</span>    }</div>
+</div>
+<div class="line"><a id="l00065" name="l00065"></a><span class="lineno">   65</span></div>
+<div class="line"><a id="l00074" name="l00074"></a><span class="lineno">   74</span>    std::size_t</div>
+<div class="foldopen" id="foldopen00075" data-start="{" data-end="}">
+<div class="line"><a id="l00075" name="l00075"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1transport_1_1accept.html#a660076f0e25fac0be10e6afbd94465ea">   75</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1transport_1_1accept.html#a660076f0e25fac0be10e6afbd94465ea">read</a>() noexcept {</div>
+<div class="line"><a id="l00076" name="l00076"></a><span class="lineno">   76</span>        <span class="keywordflow">if</span> (_io.accept(_accepted_io) == io::SocketStatus::Done)</div>
+<div class="line"><a id="l00077" name="l00077"></a><span class="lineno">   77</span>            <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(_accepted_io.native_handle());</div>
+<div class="line"><a id="l00078" name="l00078"></a><span class="lineno">   78</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(-1);</div>
+<div class="line"><a id="l00079" name="l00079"></a><span class="lineno">   79</span>    }</div>
+</div>
+<div class="line"><a id="l00080" name="l00080"></a><span class="lineno">   80</span></div>
+<div class="line"><a id="l00088" name="l00088"></a><span class="lineno">   88</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00089" data-start="{" data-end="}">
+<div class="line"><a id="l00089" name="l00089"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1transport_1_1accept.html#ad1e2c4feb6c2d225509f0b2e4dbb8f3f">   89</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1transport_1_1accept.html#ad1e2c4feb6c2d225509f0b2e4dbb8f3f">flush</a>(std::size_t) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00090" name="l00090"></a><span class="lineno">   90</span>        _accepted_io.release_handle();</div>
+<div class="line"><a id="l00091" name="l00091"></a><span class="lineno">   91</span>    }</div>
+</div>
+<div class="line"><a id="l00092" name="l00092"></a><span class="lineno">   92</span></div>
+<div class="line"><a id="l00099" name="l00099"></a><span class="lineno">   99</span>    <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00100" name="l00100"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1transport_1_1accept.html#a65f2e28cd8a943f9f777168b703c02ce">  100</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1transport_1_1accept.html#a65f2e28cd8a943f9f777168b703c02ce">eof</a>() const noexcept {}</div>
+<div class="line"><a id="l00101" name="l00101"></a><span class="lineno">  101</span></div>
+<div class="line"><a id="l00108" name="l00108"></a><span class="lineno">  108</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00109" data-start="{" data-end="}">
+<div class="line"><a id="l00109" name="l00109"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1transport_1_1accept.html#a2588db42cc0c07cb6fa25986d2c602ac">  109</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1transport_1_1accept.html#a2588db42cc0c07cb6fa25986d2c602ac">close</a>() noexcept {</div>
+<div class="line"><a id="l00110" name="l00110"></a><span class="lineno">  110</span>        _io.close();</div>
+<div class="line"><a id="l00111" name="l00111"></a><span class="lineno">  111</span>    }</div>
+</div>
+<div class="line"><a id="l00112" name="l00112"></a><span class="lineno">  112</span></div>
+<div class="line"><a id="l00120" name="l00120"></a><span class="lineno">  120</span>    <a class="code hl_class" href="classqb_1_1io_1_1tcp_1_1socket.html">io::tcp::socket</a> &amp;</div>
+<div class="foldopen" id="foldopen00121" data-start="{" data-end="}">
+<div class="line"><a id="l00121" name="l00121"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1transport_1_1accept.html#a8e03a43be4c635340e58bf8965ad63f8">  121</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1transport_1_1accept.html#a8e03a43be4c635340e58bf8965ad63f8">getAccepted</a>() {</div>
+<div class="line"><a id="l00122" name="l00122"></a><span class="lineno">  122</span>        <span class="keywordflow">return</span> _accepted_io;</div>
+<div class="line"><a id="l00123" name="l00123"></a><span class="lineno">  123</span>    }</div>
+</div>
+<div class="line"><a id="l00124" name="l00124"></a><span class="lineno">  124</span>};</div>
+</div>
+<div class="line"><a id="l00125" name="l00125"></a><span class="lineno">  125</span> </div>
+<div class="line"><a id="l00126" name="l00126"></a><span class="lineno">  126</span>} <span class="comment">// namespace qb::io::transport</span></div>
+<div class="line"><a id="l00127" name="l00127"></a><span class="lineno">  127</span> </div>
+<div class="line"><a id="l00128" name="l00128"></a><span class="lineno">  128</span><span class="preprocessor">#endif </span><span class="comment">// QB_IO_TRANSPORT_ACCEPT_H_</span></div>
+<div class="ttc" id="aclassqb_1_1io_1_1tcp_1_1listener_html"><div class="ttname"><a href="classqb_1_1io_1_1tcp_1_1listener.html">qb::io::tcp::listener</a></div><div class="ttdoc">Class implementing a TCP listener for accepting incoming connections.</div><div class="ttdef"><b>Definition</b> listener.h:42</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1tcp_1_1socket_html"><div class="ttname"><a href="classqb_1_1io_1_1tcp_1_1socket.html">qb::io::tcp::socket</a></div><div class="ttdoc">Class implementing TCP socket functionality for reliable, stream-oriented communication.</div><div class="ttdef"><b>Definition</b> socket.h:43</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1transport_1_1accept_html"><div class="ttname"><a href="classqb_1_1io_1_1transport_1_1accept.html">qb::io::transport::accept</a></div><div class="ttdoc">Connection acceptance transport for TCP connections.</div><div class="ttdef"><b>Definition</b> accept.h:44</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1transport_1_1accept_html_a2588db42cc0c07cb6fa25986d2c602ac"><div class="ttname"><a href="classqb_1_1io_1_1transport_1_1accept.html#a2588db42cc0c07cb6fa25986d2c602ac">qb::io::transport::accept::close</a></div><div class="ttdeci">void close() noexcept</div><div class="ttdoc">Close the listener.</div><div class="ttdef"><b>Definition</b> accept.h:109</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1transport_1_1accept_html_a65f2e28cd8a943f9f777168b703c02ce"><div class="ttname"><a href="classqb_1_1io_1_1transport_1_1accept.html#a65f2e28cd8a943f9f777168b703c02ce">qb::io::transport::accept::eof</a></div><div class="ttdeci">void eof() const noexcept</div><div class="ttdoc">End-of-file handling (no-op)</div><div class="ttdef"><b>Definition</b> accept.h:100</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1transport_1_1accept_html_a660076f0e25fac0be10e6afbd94465ea"><div class="ttname"><a href="classqb_1_1io_1_1transport_1_1accept.html#a660076f0e25fac0be10e6afbd94465ea">qb::io::transport::accept::read</a></div><div class="ttdeci">std::size_t read() noexcept</div><div class="ttdoc">Accept a new connection.</div><div class="ttdef"><b>Definition</b> accept.h:75</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1transport_1_1accept_html_a8e03a43be4c635340e58bf8965ad63f8"><div class="ttname"><a href="classqb_1_1io_1_1transport_1_1accept.html#a8e03a43be4c635340e58bf8965ad63f8">qb::io::transport::accept::getAccepted</a></div><div class="ttdeci">io::tcp::socket &amp; getAccepted()</div><div class="ttdoc">Get the accepted socket.</div><div class="ttdef"><b>Definition</b> accept.h:121</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1transport_1_1accept_html_a91d69046160d1d63e6494a60581b728c"><div class="ttname"><a href="classqb_1_1io_1_1transport_1_1accept.html#a91d69046160d1d63e6494a60581b728c">qb::io::transport::accept::is_secure</a></div><div class="ttdeci">constexpr bool is_secure() const noexcept</div><div class="ttdoc">Indicates that this transport implementation is not secure.</div><div class="ttdef"><b>Definition</b> accept.h:50</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1transport_1_1accept_html_a9b1969824ee71075e9cbe28711431b79"><div class="ttname"><a href="classqb_1_1io_1_1transport_1_1accept.html#a9b1969824ee71075e9cbe28711431b79">qb::io::transport::accept::transport</a></div><div class="ttdeci">io::tcp::listener &amp; transport() noexcept</div><div class="ttdoc">Get the underlying TCP listener.</div><div class="ttdef"><b>Definition</b> accept.h:62</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1transport_1_1accept_html_aa8a32df87a2db65a584430fb4f098f99"><div class="ttname"><a href="classqb_1_1io_1_1transport_1_1accept.html#aa8a32df87a2db65a584430fb4f098f99">qb::io::transport::accept::socket_type</a></div><div class="ttdeci">io::tcp::socket socket_type</div><div class="ttdoc">Type of the accepted socket.</div><div class="ttdef"><b>Definition</b> accept.h:55</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1transport_1_1accept_html_ab66338b6d11fde8af135b630f0dc36f9"><div class="ttname"><a href="classqb_1_1io_1_1transport_1_1accept.html#ab66338b6d11fde8af135b630f0dc36f9">qb::io::transport::accept::transport_io_type</a></div><div class="ttdeci">io::tcp::listener transport_io_type</div><div class="ttdoc">Type of the underlying transport I/O.</div><div class="ttdef"><b>Definition</b> accept.h:52</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1transport_1_1accept_html_ad1e2c4feb6c2d225509f0b2e4dbb8f3f"><div class="ttname"><a href="classqb_1_1io_1_1transport_1_1accept.html#ad1e2c4feb6c2d225509f0b2e4dbb8f3f">qb::io::transport::accept::flush</a></div><div class="ttdeci">void flush(std::size_t) noexcept</div><div class="ttdoc">Release the accepted socket handle.</div><div class="ttdef"><b>Definition</b> accept.h:89</div></div>
+<div class="ttc" id="atcp_2listener_8h_html"><div class="ttname"><a href="tcp_2listener_8h.html">listener.h</a></div><div class="ttdoc">Implementation of a TCP listener for the QB IO library.</div></div>
+</div><!-- fragment --></div><!-- contents -->
+</div><!-- doc-content -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="dir_bc43a483e977f0cb845c151c8f80b727.html">transport</a></li><li class="navelem"><a href="transport_2accept_8h.html">accept.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

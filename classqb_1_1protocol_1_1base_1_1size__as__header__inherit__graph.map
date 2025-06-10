@@ -1,0 +1,11 @@
+<map id="qb::protocol::base::size_as_header&lt; _IO_, _Size &gt;" name="qb::protocol::base::size_as_header&lt; _IO_, _Size &gt;">
+<area shape="rect" id="Node000001" title="Protocol for messages where the payload is preceded by a fixed&#45;size header indicating its length." alt="" coords="419,45,572,101"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1protocol_1_1text_1_1basic__binary.html" title=" " alt="" coords="620,5,756,61"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="587,51,619,45,621,50,588,57"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1protocol_1_1text_1_1basic__binary.html" title=" " alt="" coords="620,85,756,141"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="588,90,621,96,619,102,587,95"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1async_1_1_a_protocol.html" title="Abstract base class for I/O&#45;component&#45;aware protocols (CRTP)." alt="" coords="210,53,371,94"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="386,70,418,70,418,76,386,76"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1async_1_1_i_protocol.html" title="Base interface for all message processing protocols." alt="" coords="5,60,162,86"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="177,70,209,70,209,76,177,76"/>
+</map>

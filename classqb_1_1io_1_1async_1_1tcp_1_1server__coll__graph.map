@@ -1,0 +1,13 @@
+<map id="qb::io::async::tcp::server&lt; _Derived, _Session, _Prot &gt;" name="qb::io::async::tcp::server&lt; _Derived, _Session, _Prot &gt;">
+<area shape="rect" id="Node000001" title="Asynchronous TCP server implementation." alt="" coords="605,77,739,133"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1async_1_1tcp_1_1acceptor.html" title=" " alt="" coords="404,30,547,100"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="563,80,606,89,605,94,562,85"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1async_1_1input.html" title=" " alt="" coords="195,5,346,61"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="362,45,404,51,403,57,361,50"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1io_1_1async_1_1base.html" title=" " alt="" coords="5,5,147,61"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="162,30,194,30,194,36,162,36"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="244,86,296,111"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="312,89,403,74,404,79,312,95"/>
+<area shape="rect" id="Node000006" href="$classqb_1_1io_1_1async_1_1io__handler.html" title="Session manager for asynchronous IO." alt="" coords="394,125,557,166"/>
+<area shape="poly" id="edge5_Node000001_Node000006" title=" " alt="" coords="572,123,604,116,605,121,573,128"/>
+</map>

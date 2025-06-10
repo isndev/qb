@@ -1,0 +1,25 @@
+var classqb_1_1_duration =
+[
+    [ "rep", "classqb_1_1_duration.html#a87c62c5ea1a51462acc98b75067da039", null ],
+    [ "chrono_duration", "classqb_1_1_duration.html#ace1ffac7580d5270d88b4cb120be332d", null ],
+    [ "Duration", "classqb_1_1_duration.html#aa210baa23fe396562f1e603481c0b006", null ],
+    [ "Duration", "classqb_1_1_duration.html#af1c7701b742ff2dc419748620469dae2", null ],
+    [ "Duration", "classqb_1_1_duration.html#ace26aef96c293097b0feda69e2b47751", null ],
+    [ "to_chrono", "classqb_1_1_duration.html#afa0621dc3cfee77961f7aa641a04b194", null ],
+    [ "to", "classqb_1_1_duration.html#a39930deb308921f9c9e83edb45bf058b", null ],
+    [ "days", "classqb_1_1_duration.html#a181cdef4d18006b3713027c916f6b8dd", null ],
+    [ "days_float", "classqb_1_1_duration.html#a5424d9eb797aec56e175f9b2dcd68ac5", null ],
+    [ "hours", "classqb_1_1_duration.html#af62506f639e2b390fe50c554be112b8c", null ],
+    [ "hours_float", "classqb_1_1_duration.html#a28c530226bfb8fa237e86b3fd44d9d27", null ],
+    [ "minutes", "classqb_1_1_duration.html#a05e9f02acf93832d00216638a12eefb2", null ],
+    [ "minutes_float", "classqb_1_1_duration.html#a04d6fb888c5e86d65554b0704a1bdc3a", null ],
+    [ "seconds", "classqb_1_1_duration.html#a10cd9837811c3d8098fee5249deea294", null ],
+    [ "seconds_float", "classqb_1_1_duration.html#a642e25ad129322b416a6b16c4cb2bd35", null ],
+    [ "milliseconds", "classqb_1_1_duration.html#a994caae173e1dd52fd3b54e209644dd0", null ],
+    [ "milliseconds_float", "classqb_1_1_duration.html#aa477e65fdaf8e201f60d6acf60f68af5", null ],
+    [ "microseconds", "classqb_1_1_duration.html#acfecae04897093a6622ecec4dcb98f1b", null ],
+    [ "microseconds_float", "classqb_1_1_duration.html#aedc74ce8ecd66482ae0e0020756f1d2d", null ],
+    [ "nanoseconds", "classqb_1_1_duration.html#ac6376f314942a8bfb980d86ba7e1596c", null ],
+    [ "nanoseconds_float", "classqb_1_1_duration.html#a155daa4589ff45840feb9b06252fec9a", null ],
+    [ "count", "classqb_1_1_duration.html#ac681723dea29e903f7b60a41a9b66061", null ]
+];

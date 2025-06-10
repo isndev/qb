@@ -1,0 +1,9 @@
+<map id="include/qb/core/Main.h" name="include/qb/core/Main.h">
+<area shape="rect" id="Node000001" title="Main control for the QB Actor Framework." alt="" coords="113,5,266,31"/>
+<area shape="rect" id="Node000002" href="$_virtual_core_8h.html" title="Defines the VirtualCore class, representing a worker thread in the QB Actor Framework." alt="" coords="5,79,195,105"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="164,43,117,81,113,77,161,39"/>
+<area shape="rect" id="Node000003" href="$main_8h.html" title="Convenience header for the QB Main engine controller." alt="" coords="218,79,342,105"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="218,39,266,77,263,81,215,43"/>
+<area shape="rect" id="Node000004" href="$cube_8h.html" title="Main include file for the QB Actor Framework." alt="" coords="227,153,333,178"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="283,120,283,152,277,152,277,120"/>
+</map>

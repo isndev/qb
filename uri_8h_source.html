@@ -1,0 +1,574 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/uri.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/uri.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('uri_8h_source.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">uri.h</div></div>
+</div><!--header-->
+<div class="contents">
+<a href="uri_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span> </div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span><span class="preprocessor">#include &lt;charconv&gt;</span></div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span><span class="preprocessor">#include &lt;<a class="code" href="io_2config_8h.html">qb/io/config.h</a>&gt;</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span><span class="preprocessor">#include &lt;<a class="code" href="unordered__map_8h.html">qb/system/container/unordered_map.h</a>&gt;</span></div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span><span class="preprocessor">#include &lt;<a class="code" href="build__macros_8h.html">qb/utility/build_macros.h</a>&gt;</span></div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span><span class="preprocessor">#include &lt;regex&gt;</span></div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span><span class="preprocessor">#include &lt;string&gt;</span></div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span><span class="preprocessor">#include &lt;string_view&gt;</span></div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span><span class="preprocessor">#include &lt;vector&gt;</span></div>
+<div class="line"><a id="l00037" name="l00037"></a><span class="lineno">   37</span> </div>
+<div class="line"><a id="l00038" name="l00038"></a><span class="lineno">   38</span><span class="preprocessor">#ifndef QB_IO_URI_H_</span></div>
+<div class="line"><a id="l00039" name="l00039"></a><span class="lineno">   39</span><span class="preprocessor">#define QB_IO_URI_H_</span></div>
+<div class="line"><a id="l00040" name="l00040"></a><span class="lineno">   40</span> </div>
+<div class="line"><a id="l00041" name="l00041"></a><span class="lineno">   41</span><span class="keyword">namespace </span>qb::io {</div>
+<div class="line"><a id="l00042" name="l00042"></a><span class="lineno">   42</span></div>
+<div class="line"><a id="l00048" name="l00048"></a><span class="lineno">   48</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00049" data-start="{" data-end="}">
+<div class="line"><a id="l00049" name="l00049"></a><span class="lineno"><a class="line" href="uri_8h.html#a546efd68a2f4ac82f02124eb86179b84">   49</a></span><a class="code hl_function" href="uri_8h.html#a546efd68a2f4ac82f02124eb86179b84">is_alnum</a>(<span class="keywordtype">int</span> c) {</div>
+<div class="line"><a id="l00050" name="l00050"></a><span class="lineno">   50</span>    <span class="keywordflow">return</span> (c &gt;= <span class="charliteral">&#39;0&#39;</span> &amp;&amp; c &lt;= <span class="charliteral">&#39;9&#39;</span>) || (c &gt;= <span class="charliteral">&#39;A&#39;</span> &amp;&amp; c &lt;= <span class="charliteral">&#39;Z&#39;</span>) || (c &gt;= <span class="charliteral">&#39;a&#39;</span> &amp;&amp; c &lt;= <span class="charliteral">&#39;z&#39;</span>);</div>
+<div class="line"><a id="l00051" name="l00051"></a><span class="lineno">   51</span>}</div>
+</div>
+<div class="line"><a id="l00052" name="l00052"></a><span class="lineno">   52</span></div>
+<div class="line"><a id="l00058" name="l00058"></a><span class="lineno">   58</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00059" data-start="{" data-end="}">
+<div class="line"><a id="l00059" name="l00059"></a><span class="lineno"><a class="line" href="uri_8h.html#a6e3fa1a0209ff3484f2e2dc9f1ea0b16">   59</a></span><a class="code hl_function" href="uri_8h.html#a6e3fa1a0209ff3484f2e2dc9f1ea0b16">is_unreserved</a>(<span class="keywordtype">int</span> c) {</div>
+<div class="line"><a id="l00060" name="l00060"></a><span class="lineno">   60</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="uri_8h.html#a546efd68a2f4ac82f02124eb86179b84">is_alnum</a>((<span class="keywordtype">char</span>) c) || c == <span class="charliteral">&#39;-&#39;</span> || c == <span class="charliteral">&#39;.&#39;</span> || c == <span class="charliteral">&#39;_&#39;</span> || c == <span class="charliteral">&#39;~&#39;</span>;</div>
+<div class="line"><a id="l00061" name="l00061"></a><span class="lineno">   61</span>}</div>
+</div>
+<div class="line"><a id="l00062" name="l00062"></a><span class="lineno">   62</span></div>
+<div class="line"><a id="l00068" name="l00068"></a><span class="lineno">   68</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00069" data-start="{" data-end="}">
+<div class="line"><a id="l00069" name="l00069"></a><span class="lineno"><a class="line" href="uri_8h.html#acd678b97802b8d6bae4700e86b571993">   69</a></span><a class="code hl_function" href="uri_8h.html#acd678b97802b8d6bae4700e86b571993">is_gen_delim</a>(<span class="keywordtype">int</span> c) {</div>
+<div class="line"><a id="l00070" name="l00070"></a><span class="lineno">   70</span>    <span class="keywordflow">return</span> c == <span class="charliteral">&#39;:&#39;</span> || c == <span class="charliteral">&#39;/&#39;</span> || c == <span class="charliteral">&#39;?&#39;</span> || c == <span class="charliteral">&#39;#&#39;</span> || c == <span class="charliteral">&#39;[&#39;</span> || c == <span class="charliteral">&#39;]&#39;</span> ||</div>
+<div class="line"><a id="l00071" name="l00071"></a><span class="lineno">   71</span>           c == <span class="charliteral">&#39;@&#39;</span>;</div>
+<div class="line"><a id="l00072" name="l00072"></a><span class="lineno">   72</span>}</div>
+</div>
+<div class="line"><a id="l00073" name="l00073"></a><span class="lineno">   73</span></div>
+<div class="line"><a id="l00079" name="l00079"></a><span class="lineno">   79</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00080" data-start="{" data-end="}">
+<div class="line"><a id="l00080" name="l00080"></a><span class="lineno"><a class="line" href="uri_8h.html#a56be6cd3ba132b03248427c2e98bda95">   80</a></span><a class="code hl_function" href="uri_8h.html#a56be6cd3ba132b03248427c2e98bda95">is_sub_delim</a>(<span class="keywordtype">int</span> c) {</div>
+<div class="line"><a id="l00081" name="l00081"></a><span class="lineno">   81</span>    <span class="keywordflow">switch</span> (c) {</div>
+<div class="line"><a id="l00082" name="l00082"></a><span class="lineno">   82</span>        <span class="keywordflow">case</span> <span class="charliteral">&#39;!&#39;</span>:</div>
+<div class="line"><a id="l00083" name="l00083"></a><span class="lineno">   83</span>        <span class="keywordflow">case</span> <span class="charliteral">&#39;$&#39;</span>:</div>
+<div class="line"><a id="l00084" name="l00084"></a><span class="lineno">   84</span>        <span class="keywordflow">case</span> <span class="charliteral">&#39;&amp;&#39;</span>:</div>
+<div class="line"><a id="l00085" name="l00085"></a><span class="lineno">   85</span>        <span class="keywordflow">case</span> <span class="charliteral">&#39;\&#39;&#39;</span>:</div>
+<div class="line"><a id="l00086" name="l00086"></a><span class="lineno">   86</span>        <span class="keywordflow">case</span> <span class="charliteral">&#39;(&#39;</span>:</div>
+<div class="line"><a id="l00087" name="l00087"></a><span class="lineno">   87</span>        <span class="keywordflow">case</span> <span class="charliteral">&#39;)&#39;</span>:</div>
+<div class="line"><a id="l00088" name="l00088"></a><span class="lineno">   88</span>        <span class="keywordflow">case</span> <span class="charliteral">&#39;*&#39;</span>:</div>
+<div class="line"><a id="l00089" name="l00089"></a><span class="lineno">   89</span>        <span class="keywordflow">case</span> <span class="charliteral">&#39;+&#39;</span>:</div>
+<div class="line"><a id="l00090" name="l00090"></a><span class="lineno">   90</span>        <span class="keywordflow">case</span> <span class="charliteral">&#39;,&#39;</span>:</div>
+<div class="line"><a id="l00091" name="l00091"></a><span class="lineno">   91</span>        <span class="keywordflow">case</span> <span class="charliteral">&#39;;&#39;</span>:</div>
+<div class="line"><a id="l00092" name="l00092"></a><span class="lineno">   92</span>        <span class="keywordflow">case</span> <span class="charliteral">&#39;=&#39;</span>:</div>
+<div class="line"><a id="l00093" name="l00093"></a><span class="lineno">   93</span>            <span class="keywordflow">return</span> <span class="keyword">true</span>;</div>
+<div class="line"><a id="l00094" name="l00094"></a><span class="lineno">   94</span>        <span class="keywordflow">default</span>:</div>
+<div class="line"><a id="l00095" name="l00095"></a><span class="lineno">   95</span>            <span class="keywordflow">return</span> <span class="keyword">false</span>;</div>
+<div class="line"><a id="l00096" name="l00096"></a><span class="lineno">   96</span>    }</div>
+<div class="line"><a id="l00097" name="l00097"></a><span class="lineno">   97</span>}</div>
+</div>
+<div class="line"><a id="l00098" name="l00098"></a><span class="lineno">   98</span></div>
+<div class="line"><a id="l00104" name="l00104"></a><span class="lineno">  104</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00105" data-start="{" data-end="}">
+<div class="line"><a id="l00105" name="l00105"></a><span class="lineno"><a class="line" href="uri_8h.html#abf67eb3022bfcd766c2e5b1ed040d62e">  105</a></span><a class="code hl_function" href="uri_8h.html#abf67eb3022bfcd766c2e5b1ed040d62e">is_reserved</a>(<span class="keywordtype">int</span> c) {</div>
+<div class="line"><a id="l00106" name="l00106"></a><span class="lineno">  106</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="uri_8h.html#acd678b97802b8d6bae4700e86b571993">is_gen_delim</a>(c) || <a class="code hl_function" href="uri_8h.html#a56be6cd3ba132b03248427c2e98bda95">is_sub_delim</a>(c);</div>
+<div class="line"><a id="l00107" name="l00107"></a><span class="lineno">  107</span>}</div>
+</div>
+<div class="line"><a id="l00108" name="l00108"></a><span class="lineno">  108</span></div>
+<div class="line"><a id="l00114" name="l00114"></a><span class="lineno">  114</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00115" data-start="{" data-end="}">
+<div class="line"><a id="l00115" name="l00115"></a><span class="lineno"><a class="line" href="uri_8h.html#a6443a0f3d393e4e667ed6d5b717249ca">  115</a></span><a class="code hl_function" href="uri_8h.html#a6443a0f3d393e4e667ed6d5b717249ca">is_scheme_character</a>(<span class="keywordtype">int</span> c) {</div>
+<div class="line"><a id="l00116" name="l00116"></a><span class="lineno">  116</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="uri_8h.html#a546efd68a2f4ac82f02124eb86179b84">is_alnum</a>((<span class="keywordtype">char</span>) c) || c == <span class="charliteral">&#39;+&#39;</span> || c == <span class="charliteral">&#39;-&#39;</span> || c == <span class="charliteral">&#39;.&#39;</span>;</div>
+<div class="line"><a id="l00117" name="l00117"></a><span class="lineno">  117</span>}</div>
+</div>
+<div class="line"><a id="l00118" name="l00118"></a><span class="lineno">  118</span></div>
+<div class="line"><a id="l00124" name="l00124"></a><span class="lineno">  124</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00125" data-start="{" data-end="}">
+<div class="line"><a id="l00125" name="l00125"></a><span class="lineno"><a class="line" href="uri_8h.html#a01f6f5452d982504b8bf4ee3ade22e00">  125</a></span><a class="code hl_function" href="uri_8h.html#a01f6f5452d982504b8bf4ee3ade22e00">is_user_info_character</a>(<span class="keywordtype">int</span> c) {</div>
+<div class="line"><a id="l00126" name="l00126"></a><span class="lineno">  126</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="uri_8h.html#a6e3fa1a0209ff3484f2e2dc9f1ea0b16">is_unreserved</a>(c) || <a class="code hl_function" href="uri_8h.html#a56be6cd3ba132b03248427c2e98bda95">is_sub_delim</a>(c) || c == <span class="charliteral">&#39;%&#39;</span> || c == <span class="charliteral">&#39;:&#39;</span>;</div>
+<div class="line"><a id="l00127" name="l00127"></a><span class="lineno">  127</span>}</div>
+</div>
+<div class="line"><a id="l00128" name="l00128"></a><span class="lineno">  128</span></div>
+<div class="line"><a id="l00134" name="l00134"></a><span class="lineno">  134</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00135" data-start="{" data-end="}">
+<div class="line"><a id="l00135" name="l00135"></a><span class="lineno"><a class="line" href="uri_8h.html#a18420e29d242eb1610f8c039837f2a6b">  135</a></span><a class="code hl_function" href="uri_8h.html#a18420e29d242eb1610f8c039837f2a6b">is_authority_character</a>(<span class="keywordtype">int</span> c) {</div>
+<div class="line"><a id="l00136" name="l00136"></a><span class="lineno">  136</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="uri_8h.html#a6e3fa1a0209ff3484f2e2dc9f1ea0b16">is_unreserved</a>(c) || <a class="code hl_function" href="uri_8h.html#a56be6cd3ba132b03248427c2e98bda95">is_sub_delim</a>(c) || c == <span class="charliteral">&#39;%&#39;</span> || c == <span class="charliteral">&#39;@&#39;</span> || c == <span class="charliteral">&#39;:&#39;</span> ||</div>
+<div class="line"><a id="l00137" name="l00137"></a><span class="lineno">  137</span>           c == <span class="charliteral">&#39;[&#39;</span> || c == <span class="charliteral">&#39;]&#39;</span>;</div>
+<div class="line"><a id="l00138" name="l00138"></a><span class="lineno">  138</span>}</div>
+</div>
+<div class="line"><a id="l00139" name="l00139"></a><span class="lineno">  139</span></div>
+<div class="line"><a id="l00145" name="l00145"></a><span class="lineno">  145</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00146" data-start="{" data-end="}">
+<div class="line"><a id="l00146" name="l00146"></a><span class="lineno"><a class="line" href="uri_8h.html#adea142e8070ead0e185427bf8a8109b1">  146</a></span><a class="code hl_function" href="uri_8h.html#adea142e8070ead0e185427bf8a8109b1">is_path_character</a>(<span class="keywordtype">int</span> c) {</div>
+<div class="line"><a id="l00147" name="l00147"></a><span class="lineno">  147</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="uri_8h.html#a6e3fa1a0209ff3484f2e2dc9f1ea0b16">is_unreserved</a>(c) || <a class="code hl_function" href="uri_8h.html#a56be6cd3ba132b03248427c2e98bda95">is_sub_delim</a>(c) || c == <span class="charliteral">&#39;%&#39;</span> || c == <span class="charliteral">&#39;/&#39;</span> || c == <span class="charliteral">&#39;:&#39;</span> ||</div>
+<div class="line"><a id="l00148" name="l00148"></a><span class="lineno">  148</span>           c == <span class="charliteral">&#39;@&#39;</span>;</div>
+<div class="line"><a id="l00149" name="l00149"></a><span class="lineno">  149</span>}</div>
+</div>
+<div class="line"><a id="l00150" name="l00150"></a><span class="lineno">  150</span></div>
+<div class="line"><a id="l00156" name="l00156"></a><span class="lineno">  156</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00157" data-start="{" data-end="}">
+<div class="line"><a id="l00157" name="l00157"></a><span class="lineno"><a class="line" href="uri_8h.html#ad91e7c9b58739893592b9d39de46eecc">  157</a></span><a class="code hl_function" href="uri_8h.html#ad91e7c9b58739893592b9d39de46eecc">is_query_character</a>(<span class="keywordtype">int</span> c) {</div>
+<div class="line"><a id="l00158" name="l00158"></a><span class="lineno">  158</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="uri_8h.html#adea142e8070ead0e185427bf8a8109b1">is_path_character</a>(c) || c == <span class="charliteral">&#39;?&#39;</span>;</div>
+<div class="line"><a id="l00159" name="l00159"></a><span class="lineno">  159</span>}</div>
+</div>
+<div class="line"><a id="l00160" name="l00160"></a><span class="lineno">  160</span></div>
+<div class="line"><a id="l00166" name="l00166"></a><span class="lineno">  166</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00167" data-start="{" data-end="}">
+<div class="line"><a id="l00167" name="l00167"></a><span class="lineno"><a class="line" href="uri_8h.html#a461fc1b2353a45f4352069b79dddac4f">  167</a></span><a class="code hl_function" href="uri_8h.html#a461fc1b2353a45f4352069b79dddac4f">is_fragment_character</a>(<span class="keywordtype">int</span> c) {</div>
+<div class="line"><a id="l00168" name="l00168"></a><span class="lineno">  168</span>    <span class="comment">// this is intentional, they have the same set of legal characters</span></div>
+<div class="line"><a id="l00169" name="l00169"></a><span class="lineno">  169</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="uri_8h.html#ad91e7c9b58739893592b9d39de46eecc">is_query_character</a>(c);</div>
+<div class="line"><a id="l00170" name="l00170"></a><span class="lineno">  170</span>}</div>
+</div>
+<div class="line"><a id="l00171" name="l00171"></a><span class="lineno">  171</span></div>
+<div class="foldopen" id="foldopen00181" data-start="{" data-end="};">
+<div class="line"><a id="l00181" name="l00181"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html">  181</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">uri</a> {</div>
+<div class="line"><a id="l00182" name="l00182"></a><span class="lineno">  182</span>    <span class="keywordtype">int</span>              _af = AF_INET; </div>
+<div class="line"><a id="l00183" name="l00183"></a><span class="lineno">  183</span>    std::string      _source;       </div>
+<div class="line"><a id="l00184" name="l00184"></a><span class="lineno">  184</span>    std::string_view _scheme;       </div>
+<div class="line"><a id="l00185" name="l00185"></a><span class="lineno">  185</span>    std::string_view _user_info;    </div>
+<div class="line"><a id="l00186" name="l00186"></a><span class="lineno">  186</span>    std::string_view _host;         </div>
+<div class="line"><a id="l00187" name="l00187"></a><span class="lineno">  187</span>    std::string_view _port;         </div>
+<div class="line"><a id="l00188" name="l00188"></a><span class="lineno">  188</span>    std::string_view _path;         </div>
+<div class="line"><a id="l00189" name="l00189"></a><span class="lineno">  189</span>    std::string_view _raw_queries;  </div>
+<div class="line"><a id="l00190" name="l00190"></a><span class="lineno">  190</span>    std::string_view _fragment;     </div>
+<div class="line"><a id="l00191" name="l00191"></a><span class="lineno">  191</span>    <a class="code hl_typedef" href="unordered__map_8h.html#abf164988a591998dd82f4ba27c806f31">qb::icase_unordered_map&lt;std::vector&lt;std::string&gt;</a>&gt;</div>
+<div class="line"><a id="l00192" name="l00192"></a><span class="lineno">  192</span>        _queries; </div>
+<div class="line"><a id="l00193" name="l00193"></a><span class="lineno">  193</span> </div>
+<div class="line"><a id="l00194" name="l00194"></a><span class="lineno">  194</span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> <span class="keyword">const</span> <span class="keywordtype">char</span> no_path[] = <span class="stringliteral">&quot;/&quot;</span>; </div>
+<div class="line"><a id="l00195" name="l00195"></a><span class="lineno">  195</span> </div>
+<div class="line"><a id="l00196" name="l00196"></a><span class="lineno">  196</span>    <span class="keywordtype">bool</span> parse_queries(std::size_t pos) <span class="keyword">noexcept</span>; </div>
+<div class="line"><a id="l00197" name="l00197"></a><span class="lineno">  197</span>    <span class="comment">//    bool parse_v6(std::size_t pos) noexcept;                /**&lt; Parse an IPv6</span></div>
+<div class="line"><a id="l00198" name="l00198"></a><span class="lineno">  198</span>    <span class="comment">//    address */ bool parse_v4() noexcept;                               /**&lt; Parse</span></div>
+<div class="line"><a id="l00199" name="l00199"></a><span class="lineno">  199</span>    <span class="comment">//    an IPv4 address */</span></div>
+<div class="line"><a id="l00200" name="l00200"></a><span class="lineno">  200</span></div>
+<div class="line"><a id="l00205" name="l00205"></a><span class="lineno">  205</span>    <span class="keywordtype">bool</span> parse() <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00206" name="l00206"></a><span class="lineno">  206</span></div>
+<div class="line"><a id="l00212" name="l00212"></a><span class="lineno">  212</span>    <span class="keywordtype">bool</span> from(std::string <span class="keyword">const</span> &amp;rhs) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00213" name="l00213"></a><span class="lineno">  213</span></div>
+<div class="line"><a id="l00219" name="l00219"></a><span class="lineno">  219</span>    <span class="keywordtype">bool</span> from(std::string &amp;&amp;rhs) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00220" name="l00220"></a><span class="lineno">  220</span></div>
+<div class="line"><a id="l00226" name="l00226"></a><span class="lineno">  226</span>    <span class="keywordtype">void</span> parse_query_parameters(<span class="keyword">const</span> <span class="keywordtype">char</span>* begin, <span class="keyword">const</span> <span class="keywordtype">char</span>* end);</div>
+<div class="line"><a id="l00227" name="l00227"></a><span class="lineno">  227</span> </div>
+<div class="line"><a id="l00228" name="l00228"></a><span class="lineno">  228</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00232" name="l00232"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">  232</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">uri</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00233" name="l00233"></a><span class="lineno">  233</span></div>
+<div class="line"><a id="l00238" name="l00238"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a2092753e0926d74c699c9d79ce247f58">  238</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a2092753e0926d74c699c9d79ce247f58">uri</a>(<a class="code hl_function" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">uri</a> &amp;&amp;rhs) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00239" name="l00239"></a><span class="lineno">  239</span></div>
+<div class="line"><a id="l00244" name="l00244"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a066a718c002618989721f48eac4227d9">  244</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a066a718c002618989721f48eac4227d9">uri</a>(<a class="code hl_function" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">uri</a> <span class="keyword">const</span> &amp;rhs);</div>
+<div class="line"><a id="l00245" name="l00245"></a><span class="lineno">  245</span></div>
+<div class="line"><a id="l00251" name="l00251"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a87da89532871d73e0dc9bc877bc8fd8a">  251</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a87da89532871d73e0dc9bc877bc8fd8a">uri</a>(std::string <span class="keyword">const</span> &amp;str, <span class="keywordtype">int</span> <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a1d316e89da893151bc786e2a1d12def1">af</a> = AF_INET);</div>
+<div class="line"><a id="l00252" name="l00252"></a><span class="lineno">  252</span></div>
+<div class="line"><a id="l00258" name="l00258"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a5d59c8f2507c26d8600892d6ad27b818">  258</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a5d59c8f2507c26d8600892d6ad27b818">uri</a>(std::string &amp;&amp;str, <span class="keywordtype">int</span> <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a1d316e89da893151bc786e2a1d12def1">af</a> = AF_INET) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00259" name="l00259"></a><span class="lineno">  259</span></div>
+<div class="line"><a id="l00264" name="l00264"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a7a415d852332ca27cd9827effbdfd0a5">  264</a></span>    <span class="keyword">static</span> <span class="keyword">const</span> <span class="keywordtype">char</span> <a class="code hl_variable" href="classqb_1_1io_1_1uri.html#a7a415d852332ca27cd9827effbdfd0a5">tbl</a>[256];</div>
+<div class="line"><a id="l00265" name="l00265"></a><span class="lineno">  265</span></div>
+<div class="line"><a id="l00276" name="l00276"></a><span class="lineno">  276</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> _IT&gt;</div>
+<div class="line"><a id="l00277" name="l00277"></a><span class="lineno">  277</span>    <span class="keyword">static</span> std::string</div>
+<div class="foldopen" id="foldopen00278" data-start="{" data-end="}">
+<div class="line"><a id="l00278" name="l00278"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a9247f905ae2ad2164e9d234e2d4a4a9a">  278</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a9247f905ae2ad2164e9d234e2d4a4a9a">decode</a>(_IT begin, _IT end) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00279" name="l00279"></a><span class="lineno">  279</span>        std::string out;</div>
+<div class="line"><a id="l00280" name="l00280"></a><span class="lineno">  280</span>        <span class="keywordtype">char</span>        c, v1, v2{};</div>
+<div class="line"><a id="l00281" name="l00281"></a><span class="lineno">  281</span> </div>
+<div class="line"><a id="l00282" name="l00282"></a><span class="lineno">  282</span>        <span class="keywordflow">while</span> (begin != end) {</div>
+<div class="line"><a id="l00283" name="l00283"></a><span class="lineno">  283</span>            c = *(begin++);</div>
+<div class="line"><a id="l00284" name="l00284"></a><span class="lineno">  284</span>            <span class="keywordflow">if</span> (c == <span class="charliteral">&#39;%&#39;</span>) {</div>
+<div class="line"><a id="l00285" name="l00285"></a><span class="lineno">  285</span>                <span class="keywordflow">if</span> ((v1 = <a class="code hl_variable" href="classqb_1_1io_1_1uri.html#a7a415d852332ca27cd9827effbdfd0a5">tbl</a>[(<span class="keywordtype">unsigned</span> <span class="keywordtype">char</span>) *(begin++)]) &lt; 0 ||</div>
+<div class="line"><a id="l00286" name="l00286"></a><span class="lineno">  286</span>                    (v2 = <a class="code hl_variable" href="classqb_1_1io_1_1uri.html#a7a415d852332ca27cd9827effbdfd0a5">tbl</a>[(<span class="keywordtype">unsigned</span> <span class="keywordtype">char</span>) *(begin++)]) &lt; 0) {</div>
+<div class="line"><a id="l00287" name="l00287"></a><span class="lineno">  287</span>                    <span class="keywordflow">break</span>;</div>
+<div class="line"><a id="l00288" name="l00288"></a><span class="lineno">  288</span>                }</div>
+<div class="line"><a id="l00289" name="l00289"></a><span class="lineno">  289</span>                c = (v1 &lt;&lt; 4) | v2;</div>
+<div class="line"><a id="l00290" name="l00290"></a><span class="lineno">  290</span>            }</div>
+<div class="line"><a id="l00291" name="l00291"></a><span class="lineno">  291</span>            out += (c);</div>
+<div class="line"><a id="l00292" name="l00292"></a><span class="lineno">  292</span>        }</div>
+<div class="line"><a id="l00293" name="l00293"></a><span class="lineno">  293</span> </div>
+<div class="line"><a id="l00294" name="l00294"></a><span class="lineno">  294</span>        <span class="keywordflow">return</span> out;</div>
+<div class="line"><a id="l00295" name="l00295"></a><span class="lineno">  295</span>    }</div>
+</div>
+<div class="line"><a id="l00296" name="l00296"></a><span class="lineno">  296</span></div>
+<div class="line"><a id="l00300" name="l00300"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a4bb93bbdb017cbd097211436adfa41ed">  300</a></span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> <span class="keyword">const</span> <span class="keywordtype">char</span> <a class="code hl_variable" href="classqb_1_1io_1_1uri.html#a4bb93bbdb017cbd097211436adfa41ed">hex</a>[] = <span class="stringliteral">&quot;0123456789ABCDEF&quot;</span>;</div>
+<div class="line"><a id="l00301" name="l00301"></a><span class="lineno">  301</span></div>
+<div class="line"><a id="l00312" name="l00312"></a><span class="lineno">  312</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> _IT&gt;</div>
+<div class="line"><a id="l00313" name="l00313"></a><span class="lineno">  313</span>    <span class="keyword">static</span> std::string</div>
+<div class="foldopen" id="foldopen00314" data-start="{" data-end="}">
+<div class="line"><a id="l00314" name="l00314"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#ab348c11fdb683fde67b14b605658367e">  314</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#ab348c11fdb683fde67b14b605658367e">encode</a>(_IT begin, _IT end) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00315" name="l00315"></a><span class="lineno">  315</span>        std::string encoded;</div>
+<div class="line"><a id="l00316" name="l00316"></a><span class="lineno">  316</span> </div>
+<div class="line"><a id="l00317" name="l00317"></a><span class="lineno">  317</span>        encoded.reserve(<span class="keyword">static_cast&lt;</span>ptrdiff_t<span class="keyword">&gt;</span>(end - begin) * 3);</div>
+<div class="line"><a id="l00318" name="l00318"></a><span class="lineno">  318</span>        <span class="keywordflow">for</span> (<span class="keyword">auto</span> iter = begin; iter != end; ++iter) {</div>
+<div class="line"><a id="l00319" name="l00319"></a><span class="lineno">  319</span>            <span class="comment">// for utf8 encoded string, char ASCII can be greater than 127.</span></div>
+<div class="line"><a id="l00320" name="l00320"></a><span class="lineno">  320</span>            <span class="keywordtype">int</span> ch = <span class="keyword">static_cast&lt;</span><span class="keywordtype">unsigned</span> <span class="keywordtype">char</span><span class="keyword">&gt;</span>(*iter);</div>
+<div class="line"><a id="l00321" name="l00321"></a><span class="lineno">  321</span>            <span class="comment">// ch should be same under both utf8 and utf16.</span></div>
+<div class="line"><a id="l00322" name="l00322"></a><span class="lineno">  322</span>            <span class="keywordflow">if</span> (!<a class="code hl_function" href="uri_8h.html#a6e3fa1a0209ff3484f2e2dc9f1ea0b16">is_unreserved</a>(ch) &amp;&amp; !<a class="code hl_function" href="uri_8h.html#abf67eb3022bfcd766c2e5b1ed040d62e">is_reserved</a>(ch)) {</div>
+<div class="line"><a id="l00323" name="l00323"></a><span class="lineno">  323</span>                encoded.push_back(<span class="charliteral">&#39;%&#39;</span>);</div>
+<div class="line"><a id="l00324" name="l00324"></a><span class="lineno">  324</span>                encoded.push_back(<a class="code hl_variable" href="classqb_1_1io_1_1uri.html#a4bb93bbdb017cbd097211436adfa41ed">hex</a>[(ch &gt;&gt; 4) &amp; 0xF]);</div>
+<div class="line"><a id="l00325" name="l00325"></a><span class="lineno">  325</span>                encoded.push_back(<a class="code hl_variable" href="classqb_1_1io_1_1uri.html#a4bb93bbdb017cbd097211436adfa41ed">hex</a>[ch &amp; 0xF]);</div>
+<div class="line"><a id="l00326" name="l00326"></a><span class="lineno">  326</span>            } <span class="keywordflow">else</span> {</div>
+<div class="line"><a id="l00327" name="l00327"></a><span class="lineno">  327</span>                <span class="comment">// ASCII don&#39;t need to be encoded, which should be same on both utf8 and</span></div>
+<div class="line"><a id="l00328" name="l00328"></a><span class="lineno">  328</span>                <span class="comment">// utf16.</span></div>
+<div class="line"><a id="l00329" name="l00329"></a><span class="lineno">  329</span>                encoded.push_back((<span class="keywordtype">char</span>) ch);</div>
+<div class="line"><a id="l00330" name="l00330"></a><span class="lineno">  330</span>            }</div>
+<div class="line"><a id="l00331" name="l00331"></a><span class="lineno">  331</span>        }</div>
+<div class="line"><a id="l00332" name="l00332"></a><span class="lineno">  332</span> </div>
+<div class="line"><a id="l00333" name="l00333"></a><span class="lineno">  333</span>        <span class="keywordflow">return</span> encoded;</div>
+<div class="line"><a id="l00334" name="l00334"></a><span class="lineno">  334</span>    }</div>
+</div>
+<div class="line"><a id="l00335" name="l00335"></a><span class="lineno">  335</span></div>
+<div class="line"><a id="l00341" name="l00341"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a8872f921dc02263071171e88ec256e91">  341</a></span>    <span class="keyword">static</span> std::string <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a8872f921dc02263071171e88ec256e91">decode</a>(std::string_view input) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00342" name="l00342"></a><span class="lineno">  342</span></div>
+<div class="line"><a id="l00348" name="l00348"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#ae73fb699db5d6ace80b73282929e5291">  348</a></span>    <span class="keyword">static</span> std::string <a class="code hl_function" href="classqb_1_1io_1_1uri.html#ae73fb699db5d6ace80b73282929e5291">encode</a>(std::string_view input) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00349" name="l00349"></a><span class="lineno">  349</span></div>
+<div class="line"><a id="l00356" name="l00356"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a247a69e126b4c0e3bc67af29d2f7765f">  356</a></span>    <span class="keyword">static</span> std::string <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a247a69e126b4c0e3bc67af29d2f7765f">decode</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *input, std::size_t size) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00357" name="l00357"></a><span class="lineno">  357</span></div>
+<div class="line"><a id="l00364" name="l00364"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a3396ac580ae6a6bc64ac0ff7fc4c45a3">  364</a></span>    <span class="keyword">static</span> std::string <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a3396ac580ae6a6bc64ac0ff7fc4c45a3">encode</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *input, std::size_t size) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00365" name="l00365"></a><span class="lineno">  365</span></div>
+<div class="line"><a id="l00372" name="l00372"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#aca3edecfb905d84e25c3174956c29084">  372</a></span>    <span class="keyword">static</span> <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">uri</a> <a class="code hl_function" href="classqb_1_1io_1_1uri.html#aca3edecfb905d84e25c3174956c29084">parse</a>(std::string <span class="keyword">const</span> &amp;str, <span class="keywordtype">int</span> <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a1d316e89da893151bc786e2a1d12def1">af</a> = AF_INET) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00373" name="l00373"></a><span class="lineno">  373</span></div>
+<div class="line"><a id="l00379" name="l00379"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a002a7517c5300424afaa12f40e5fa1ae">  379</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">uri</a> &amp;<a class="code hl_function" href="classqb_1_1io_1_1uri.html#a002a7517c5300424afaa12f40e5fa1ae">operator=</a>(<a class="code hl_function" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">uri</a> <span class="keyword">const</span> &amp;rhs);</div>
+<div class="line"><a id="l00380" name="l00380"></a><span class="lineno">  380</span></div>
+<div class="line"><a id="l00386" name="l00386"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a6cb4892d697f4a84d4770dfa296a43c5">  386</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">uri</a> &amp;<a class="code hl_function" href="classqb_1_1io_1_1uri.html#a6cb4892d697f4a84d4770dfa296a43c5">operator=</a>(<a class="code hl_function" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">uri</a> &amp;&amp;rhs) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00387" name="l00387"></a><span class="lineno">  387</span></div>
+<div class="line"><a id="l00393" name="l00393"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a78acc79d268752b5b25922bd10a31b5e">  393</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">uri</a> &amp;<a class="code hl_function" href="classqb_1_1io_1_1uri.html#a78acc79d268752b5b25922bd10a31b5e">operator=</a>(std::string <span class="keyword">const</span> &amp;str);</div>
+<div class="line"><a id="l00394" name="l00394"></a><span class="lineno">  394</span></div>
+<div class="line"><a id="l00400" name="l00400"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a9da580458668bc25f0690cb31d141906">  400</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">uri</a> &amp;<a class="code hl_function" href="classqb_1_1io_1_1uri.html#a9da580458668bc25f0690cb31d141906">operator=</a>(std::string &amp;&amp;str) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00401" name="l00401"></a><span class="lineno">  401</span></div>
+<div class="line"><a id="l00406" name="l00406"></a><span class="lineno">  406</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00407" data-start="{" data-end="}">
+<div class="line"><a id="l00407" name="l00407"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a1d316e89da893151bc786e2a1d12def1">  407</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a1d316e89da893151bc786e2a1d12def1">af</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00408" name="l00408"></a><span class="lineno">  408</span>        <span class="keywordflow">return</span> _af;</div>
+<div class="line"><a id="l00409" name="l00409"></a><span class="lineno">  409</span>    }</div>
+</div>
+<div class="line"><a id="l00410" name="l00410"></a><span class="lineno">  410</span></div>
+<div class="line"><a id="l00415" name="l00415"></a><span class="lineno">  415</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keyword">const</span> <span class="keyword">auto</span> &amp;</div>
+<div class="foldopen" id="foldopen00416" data-start="{" data-end="}">
+<div class="line"><a id="l00416" name="l00416"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#adaa391b9791edc5ad3441c129e4a8817">  416</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#adaa391b9791edc5ad3441c129e4a8817">source</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00417" name="l00417"></a><span class="lineno">  417</span>        <span class="keywordflow">return</span> _source;</div>
+<div class="line"><a id="l00418" name="l00418"></a><span class="lineno">  418</span>    }</div>
+</div>
+<div class="line"><a id="l00419" name="l00419"></a><span class="lineno">  419</span></div>
+<div class="line"><a id="l00424" name="l00424"></a><span class="lineno">  424</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00425" data-start="{" data-end="}">
+<div class="line"><a id="l00425" name="l00425"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a043c858642bda6982ffe788243650aff">  425</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a043c858642bda6982ffe788243650aff">scheme</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00426" name="l00426"></a><span class="lineno">  426</span>        <span class="keywordflow">return</span> _scheme;</div>
+<div class="line"><a id="l00427" name="l00427"></a><span class="lineno">  427</span>    }</div>
+</div>
+<div class="line"><a id="l00428" name="l00428"></a><span class="lineno">  428</span></div>
+<div class="line"><a id="l00433" name="l00433"></a><span class="lineno">  433</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00434" data-start="{" data-end="}">
+<div class="line"><a id="l00434" name="l00434"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a53578a0b376f26278798071e2e02609f">  434</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a53578a0b376f26278798071e2e02609f">user_info</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00435" name="l00435"></a><span class="lineno">  435</span>        <span class="keywordflow">return</span> _user_info;</div>
+<div class="line"><a id="l00436" name="l00436"></a><span class="lineno">  436</span>    }</div>
+</div>
+<div class="line"><a id="l00437" name="l00437"></a><span class="lineno">  437</span></div>
+<div class="line"><a id="l00442" name="l00442"></a><span class="lineno">  442</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00443" data-start="{" data-end="}">
+<div class="line"><a id="l00443" name="l00443"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#adbbbcf634487257280161280b1a7e3f3">  443</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#adbbbcf634487257280161280b1a7e3f3">host</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00444" name="l00444"></a><span class="lineno">  444</span>        <span class="keywordflow">return</span> _host;</div>
+<div class="line"><a id="l00445" name="l00445"></a><span class="lineno">  445</span>    }</div>
+</div>
+<div class="line"><a id="l00446" name="l00446"></a><span class="lineno">  446</span></div>
+<div class="line"><a id="l00451" name="l00451"></a><span class="lineno">  451</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00452" data-start="{" data-end="}">
+<div class="line"><a id="l00452" name="l00452"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#ac46c782dac730354508ed875f02a453a">  452</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#ac46c782dac730354508ed875f02a453a">port</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00453" name="l00453"></a><span class="lineno">  453</span>        <span class="keywordflow">return</span> _port;</div>
+<div class="line"><a id="l00454" name="l00454"></a><span class="lineno">  454</span>    }</div>
+</div>
+<div class="line"><a id="l00455" name="l00455"></a><span class="lineno">  455</span></div>
+<div class="line"><a id="l00460" name="l00460"></a><span class="lineno">  460</span>    [[nodiscard]] uint16_t</div>
+<div class="foldopen" id="foldopen00461" data-start="{" data-end="}">
+<div class="line"><a id="l00461" name="l00461"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#aad83782b7b9ef2257d7a690272f4c63a">  461</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#aad83782b7b9ef2257d7a690272f4c63a">u_port</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00462" name="l00462"></a><span class="lineno">  462</span>        <span class="keywordtype">int</span> p = 0;</div>
+<div class="line"><a id="l00463" name="l00463"></a><span class="lineno">  463</span> </div>
+<div class="line"><a id="l00464" name="l00464"></a><span class="lineno">  464</span>        std::from_chars(<a class="code hl_function" href="classqb_1_1io_1_1uri.html#ac46c782dac730354508ed875f02a453a">port</a>().data(), <a class="code hl_function" href="classqb_1_1io_1_1uri.html#ac46c782dac730354508ed875f02a453a">port</a>().data() + <a class="code hl_function" href="classqb_1_1io_1_1uri.html#ac46c782dac730354508ed875f02a453a">port</a>().size(), p);</div>
+<div class="line"><a id="l00465" name="l00465"></a><span class="lineno">  465</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>uint16_t<span class="keyword">&gt;</span>(p);</div>
+<div class="line"><a id="l00466" name="l00466"></a><span class="lineno">  466</span>    }</div>
+</div>
+<div class="line"><a id="l00467" name="l00467"></a><span class="lineno">  467</span></div>
+<div class="line"><a id="l00472" name="l00472"></a><span class="lineno">  472</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00473" data-start="{" data-end="}">
+<div class="line"><a id="l00473" name="l00473"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#aa824758a188efe3315f9dd0358031a00">  473</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#aa824758a188efe3315f9dd0358031a00">path</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00474" name="l00474"></a><span class="lineno">  474</span>        <span class="keywordflow">return</span> _path;</div>
+<div class="line"><a id="l00475" name="l00475"></a><span class="lineno">  475</span>    }</div>
+</div>
+<div class="line"><a id="l00476" name="l00476"></a><span class="lineno">  476</span></div>
+<div class="line"><a id="l00481" name="l00481"></a><span class="lineno">  481</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keyword">const</span> <span class="keyword">auto</span> &amp;</div>
+<div class="foldopen" id="foldopen00482" data-start="{" data-end="}">
+<div class="line"><a id="l00482" name="l00482"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#abda723f991b0e9dd0df810cec112397b">  482</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#abda723f991b0e9dd0df810cec112397b">encoded_queries</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00483" name="l00483"></a><span class="lineno">  483</span>        <span class="keywordflow">return</span> _raw_queries;</div>
+<div class="line"><a id="l00484" name="l00484"></a><span class="lineno">  484</span>    }</div>
+</div>
+<div class="line"><a id="l00485" name="l00485"></a><span class="lineno">  485</span></div>
+<div class="line"><a id="l00490" name="l00490"></a><span class="lineno">  490</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keyword">const</span> <span class="keyword">auto</span> &amp;</div>
+<div class="foldopen" id="foldopen00491" data-start="{" data-end="}">
+<div class="line"><a id="l00491" name="l00491"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#adce4cf58677654bbf2fc4de72c0d64c5">  491</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#adce4cf58677654bbf2fc4de72c0d64c5">queries</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00492" name="l00492"></a><span class="lineno">  492</span>        <span class="keywordflow">return</span> _queries;</div>
+<div class="line"><a id="l00493" name="l00493"></a><span class="lineno">  493</span>    }</div>
+</div>
+<div class="line"><a id="l00494" name="l00494"></a><span class="lineno">  494</span></div>
+<div class="line"><a id="l00499" name="l00499"></a><span class="lineno">  499</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keyword">auto</span> &amp;</div>
+<div class="foldopen" id="foldopen00500" data-start="{" data-end="}">
+<div class="line"><a id="l00500" name="l00500"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a2559e3fc86e0679e66b9bfb06c482a48">  500</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a2559e3fc86e0679e66b9bfb06c482a48">queries</a>() {</div>
+<div class="line"><a id="l00501" name="l00501"></a><span class="lineno">  501</span>        <span class="keywordflow">return</span> _queries;</div>
+<div class="line"><a id="l00502" name="l00502"></a><span class="lineno">  502</span>    }</div>
+</div>
+<div class="line"><a id="l00503" name="l00503"></a><span class="lineno">  503</span></div>
+<div class="line"><a id="l00513" name="l00513"></a><span class="lineno">  513</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00514" name="l00514"></a><span class="lineno">  514</span>    [[nodiscard]] std::string <span class="keyword">const</span> &amp;</div>
+<div class="foldopen" id="foldopen00515" data-start="{" data-end="}">
+<div class="line"><a id="l00515" name="l00515"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a8f131b281e80e18b2bab12bd1c804005">  515</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a8f131b281e80e18b2bab12bd1c804005">query</a>(T &amp;&amp;name, std::size_t <span class="keyword">const</span> index = 0,</div>
+<div class="line"><a id="l00516" name="l00516"></a><span class="lineno">  516</span>          std::string <span class="keyword">const</span> &amp;not_found = <span class="stringliteral">&quot;&quot;</span>)<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00517" name="l00517"></a><span class="lineno">  517</span>        <span class="keyword">const</span> <span class="keyword">auto</span> &amp;it = this-&gt;_queries.<a class="code hl_function" href="classqb_1_1icase__basic__map.html#a8eefe1af7244f4bbb36227f02b0544a1">find</a>(std::forward&lt;T&gt;(name));</div>
+<div class="line"><a id="l00518" name="l00518"></a><span class="lineno">  518</span>        <span class="keywordflow">if</span> (it != this-&gt;_queries.cend() &amp;&amp; index &lt; it-&gt;second.size())</div>
+<div class="line"><a id="l00519" name="l00519"></a><span class="lineno">  519</span>            <span class="keywordflow">return</span> it-&gt;second[index];</div>
+<div class="line"><a id="l00520" name="l00520"></a><span class="lineno">  520</span> </div>
+<div class="line"><a id="l00521" name="l00521"></a><span class="lineno">  521</span>        <span class="keywordflow">return</span> not_found;</div>
+<div class="line"><a id="l00522" name="l00522"></a><span class="lineno">  522</span>    }</div>
+</div>
+<div class="line"><a id="l00523" name="l00523"></a><span class="lineno">  523</span></div>
+<div class="line"><a id="l00528" name="l00528"></a><span class="lineno">  528</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00529" data-start="{" data-end="}">
+<div class="line"><a id="l00529" name="l00529"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a7267609c981f6281ed447df98f24c5e7">  529</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a7267609c981f6281ed447df98f24c5e7">fragment</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00530" name="l00530"></a><span class="lineno">  530</span>        <span class="keywordflow">return</span> _fragment;</div>
+<div class="line"><a id="l00531" name="l00531"></a><span class="lineno">  531</span>    }</div>
+</div>
+<div class="line"><a id="l00532" name="l00532"></a><span class="lineno">  532</span></div>
+<div class="line"><a id="l00538" name="l00538"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#a0545a96b64e79624cd12cc19f16bdec3">  538</a></span>    <span class="keyword">static</span> <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a0545a96b64e79624cd12cc19f16bdec3">is_valid_scheme</a>(std::string_view <a class="code hl_function" href="classqb_1_1io_1_1uri.html#a043c858642bda6982ffe788243650aff">scheme</a>) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00539" name="l00539"></a><span class="lineno">  539</span></div>
+<div class="line"><a id="l00545" name="l00545"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#ac533e5146a3b0b98baaff01e8c27fa8f">  545</a></span>    <span class="keyword">static</span> <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1io_1_1uri.html#ac533e5146a3b0b98baaff01e8c27fa8f">is_valid_host</a>(std::string_view <a class="code hl_function" href="classqb_1_1io_1_1uri.html#adbbbcf634487257280161280b1a7e3f3">host</a>) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00546" name="l00546"></a><span class="lineno">  546</span></div>
+<div class="line"><a id="l00552" name="l00552"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1uri.html#aacaca35fe64154105a314c1930002734">  552</a></span>    <span class="keyword">static</span> <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1io_1_1uri.html#aacaca35fe64154105a314c1930002734">normalize_path</a>(std::string &amp;<a class="code hl_function" href="classqb_1_1io_1_1uri.html#aa824758a188efe3315f9dd0358031a00">path</a>) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00553" name="l00553"></a><span class="lineno">  553</span>};</div>
+</div>
+<div class="line"><a id="l00554" name="l00554"></a><span class="lineno">  554</span>} <span class="comment">// namespace qb::io</span></div>
+<div class="line"><a id="l00555" name="l00555"></a><span class="lineno">  555</span> </div>
+<div class="line"><a id="l00556" name="l00556"></a><span class="lineno">  556</span><span class="preprocessor">#endif </span><span class="comment">// QB_IO_URI_H_</span></div>
+<div class="ttc" id="abuild__macros_8h_html"><div class="ttname"><a href="build__macros_8h.html">build_macros.h</a></div><div class="ttdoc">Platform, compiler, and C++ feature detection macros for the QB Framework.</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_a8eefe1af7244f4bbb36227f02b0544a1"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#a8eefe1af7244f4bbb36227f02b0544a1">qb::icase_basic_map::find</a></div><div class="ttdeci">auto find(T &amp;&amp;key)</div><div class="ttdoc">Find a key-value pair by key, with the key converted to lowercase.</div><div class="ttdef"><b>Definition</b> unordered_map.h:335</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a002a7517c5300424afaa12f40e5fa1ae"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a002a7517c5300424afaa12f40e5fa1ae">qb::io::uri::operator=</a></div><div class="ttdeci">uri &amp; operator=(uri const &amp;rhs)</div><div class="ttdoc">Copy assignment operator.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a043c858642bda6982ffe788243650aff"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a043c858642bda6982ffe788243650aff">qb::io::uri::scheme</a></div><div class="ttdeci">auto scheme() const</div><div class="ttdoc">Returns the scheme of this URI.</div><div class="ttdef"><b>Definition</b> uri.h:425</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a0545a96b64e79624cd12cc19f16bdec3"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a0545a96b64e79624cd12cc19f16bdec3">qb::io::uri::is_valid_scheme</a></div><div class="ttdeci">static bool is_valid_scheme(std::string_view scheme) noexcept</div><div class="ttdoc">Validates if a string is a valid URI scheme.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a066a718c002618989721f48eac4227d9"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a066a718c002618989721f48eac4227d9">qb::io::uri::uri</a></div><div class="ttdeci">uri(uri const &amp;rhs)</div><div class="ttdoc">Copy constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a1d316e89da893151bc786e2a1d12def1"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a1d316e89da893151bc786e2a1d12def1">qb::io::uri::af</a></div><div class="ttdeci">auto af() const</div><div class="ttdoc">Returns the address family of this URI.</div><div class="ttdef"><b>Definition</b> uri.h:407</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a2092753e0926d74c699c9d79ce247f58"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a2092753e0926d74c699c9d79ce247f58">qb::io::uri::uri</a></div><div class="ttdeci">uri(uri &amp;&amp;rhs) noexcept</div><div class="ttdoc">Move constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a247a69e126b4c0e3bc67af29d2f7765f"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a247a69e126b4c0e3bc67af29d2f7765f">qb::io::uri::decode</a></div><div class="ttdeci">static std::string decode(const char *input, std::size_t size) noexcept</div><div class="ttdoc">Decodes a URI-encoded memory block.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a2559e3fc86e0679e66b9bfb06c482a48"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a2559e3fc86e0679e66b9bfb06c482a48">qb::io::uri::queries</a></div><div class="ttdeci">auto &amp; queries()</div><div class="ttdoc">Returns the parsed query parameters of this URI (non-const version)</div><div class="ttdef"><b>Definition</b> uri.h:500</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a3396ac580ae6a6bc64ac0ff7fc4c45a3"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a3396ac580ae6a6bc64ac0ff7fc4c45a3">qb::io::uri::encode</a></div><div class="ttdeci">static std::string encode(const char *input, std::size_t size) noexcept</div><div class="ttdoc">Encodes a memory block in URI format.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a4bb93bbdb017cbd097211436adfa41ed"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a4bb93bbdb017cbd097211436adfa41ed">qb::io::uri::hex</a></div><div class="ttdeci">static constexpr const char hex[]</div><div class="ttdoc">Hexadecimal characters for encoding.</div><div class="ttdef"><b>Definition</b> uri.h:300</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a53578a0b376f26278798071e2e02609f"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a53578a0b376f26278798071e2e02609f">qb::io::uri::user_info</a></div><div class="ttdeci">auto user_info() const</div><div class="ttdoc">Returns the user information of this URI.</div><div class="ttdef"><b>Definition</b> uri.h:434</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a5d59c8f2507c26d8600892d6ad27b818"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a5d59c8f2507c26d8600892d6ad27b818">qb::io::uri::uri</a></div><div class="ttdeci">uri(std::string &amp;&amp;str, int af=AF_INET) noexcept</div><div class="ttdoc">Constructor from a string (move version)</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a6cb4892d697f4a84d4770dfa296a43c5"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a6cb4892d697f4a84d4770dfa296a43c5">qb::io::uri::operator=</a></div><div class="ttdeci">uri &amp; operator=(uri &amp;&amp;rhs) noexcept</div><div class="ttdoc">Move assignment operator.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a7267609c981f6281ed447df98f24c5e7"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a7267609c981f6281ed447df98f24c5e7">qb::io::uri::fragment</a></div><div class="ttdeci">auto fragment() const</div><div class="ttdoc">Returns the fragment of this URI.</div><div class="ttdef"><b>Definition</b> uri.h:529</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a741fbb0f38a4f0d399f711e6b7687e9c"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a741fbb0f38a4f0d399f711e6b7687e9c">qb::io::uri::uri</a></div><div class="ttdeci">uri()=default</div><div class="ttdoc">Default constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a78acc79d268752b5b25922bd10a31b5e"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a78acc79d268752b5b25922bd10a31b5e">qb::io::uri::operator=</a></div><div class="ttdeci">uri &amp; operator=(std::string const &amp;str)</div><div class="ttdoc">String assignment operator.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a7a415d852332ca27cd9827effbdfd0a5"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a7a415d852332ca27cd9827effbdfd0a5">qb::io::uri::tbl</a></div><div class="ttdeci">static const char tbl[256]</div><div class="ttdoc">Conversion table for hexadecimal characters Used for decoding XX sequences to characters.</div><div class="ttdef"><b>Definition</b> uri.h:264</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a87da89532871d73e0dc9bc877bc8fd8a"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a87da89532871d73e0dc9bc877bc8fd8a">qb::io::uri::uri</a></div><div class="ttdeci">uri(std::string const &amp;str, int af=AF_INET)</div><div class="ttdoc">Constructor from a string.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a8872f921dc02263071171e88ec256e91"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a8872f921dc02263071171e88ec256e91">qb::io::uri::decode</a></div><div class="ttdeci">static std::string decode(std::string_view input) noexcept</div><div class="ttdoc">Decodes a URI-encoded string view.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a8f131b281e80e18b2bab12bd1c804005"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a8f131b281e80e18b2bab12bd1c804005">qb::io::uri::query</a></div><div class="ttdeci">std::string const &amp; query(T &amp;&amp;name, std::size_t const index=0, std::string const &amp;not_found=&quot;&quot;) const</div><div class="ttdoc">Returns the value of a specific query parameter.</div><div class="ttdef"><b>Definition</b> uri.h:515</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a9247f905ae2ad2164e9d234e2d4a4a9a"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a9247f905ae2ad2164e9d234e2d4a4a9a">qb::io::uri::decode</a></div><div class="ttdeci">static std::string decode(_IT begin, _IT end) noexcept</div><div class="ttdoc">Decodes a sequence of URI-encoded characters.</div><div class="ttdef"><b>Definition</b> uri.h:278</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_a9da580458668bc25f0690cb31d141906"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#a9da580458668bc25f0690cb31d141906">qb::io::uri::operator=</a></div><div class="ttdeci">uri &amp; operator=(std::string &amp;&amp;str) noexcept</div><div class="ttdoc">String move assignment operator.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_aa824758a188efe3315f9dd0358031a00"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#aa824758a188efe3315f9dd0358031a00">qb::io::uri::path</a></div><div class="ttdeci">auto path() const</div><div class="ttdoc">Returns the path of this URI.</div><div class="ttdef"><b>Definition</b> uri.h:473</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_aacaca35fe64154105a314c1930002734"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#aacaca35fe64154105a314c1930002734">qb::io::uri::normalize_path</a></div><div class="ttdeci">static bool normalize_path(std::string &amp;path) noexcept</div><div class="ttdoc">Normalizes a path by resolving &#39;.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_aad83782b7b9ef2257d7a690272f4c63a"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#aad83782b7b9ef2257d7a690272f4c63a">qb::io::uri::u_port</a></div><div class="ttdeci">uint16_t u_port() const</div><div class="ttdoc">Returns the port number of this URI as a numeric value.</div><div class="ttdef"><b>Definition</b> uri.h:461</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_ab348c11fdb683fde67b14b605658367e"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#ab348c11fdb683fde67b14b605658367e">qb::io::uri::encode</a></div><div class="ttdeci">static std::string encode(_IT begin, _IT end) noexcept</div><div class="ttdoc">Encodes a sequence of characters in URI format.</div><div class="ttdef"><b>Definition</b> uri.h:314</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_abda723f991b0e9dd0df810cec112397b"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#abda723f991b0e9dd0df810cec112397b">qb::io::uri::encoded_queries</a></div><div class="ttdeci">const auto &amp; encoded_queries() const</div><div class="ttdoc">Returns the raw query string of this URI.</div><div class="ttdef"><b>Definition</b> uri.h:482</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_ac46c782dac730354508ed875f02a453a"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#ac46c782dac730354508ed875f02a453a">qb::io::uri::port</a></div><div class="ttdeci">auto port() const</div><div class="ttdoc">Returns the port number of this URI.</div><div class="ttdef"><b>Definition</b> uri.h:452</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_ac533e5146a3b0b98baaff01e8c27fa8f"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#ac533e5146a3b0b98baaff01e8c27fa8f">qb::io::uri::is_valid_host</a></div><div class="ttdeci">static bool is_valid_host(std::string_view host) noexcept</div><div class="ttdoc">Validates if a string is a valid URI host.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_aca3edecfb905d84e25c3174956c29084"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#aca3edecfb905d84e25c3174956c29084">qb::io::uri::parse</a></div><div class="ttdeci">static uri parse(std::string const &amp;str, int af=AF_INET) noexcept</div><div class="ttdoc">Creates and parses a URI from a string.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_adaa391b9791edc5ad3441c129e4a8817"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#adaa391b9791edc5ad3441c129e4a8817">qb::io::uri::source</a></div><div class="ttdeci">const auto &amp; source() const</div><div class="ttdoc">Returns the source string of this URI.</div><div class="ttdef"><b>Definition</b> uri.h:416</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_adbbbcf634487257280161280b1a7e3f3"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#adbbbcf634487257280161280b1a7e3f3">qb::io::uri::host</a></div><div class="ttdeci">auto host() const</div><div class="ttdoc">Returns the host name or IP address of this URI.</div><div class="ttdef"><b>Definition</b> uri.h:443</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_adce4cf58677654bbf2fc4de72c0d64c5"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#adce4cf58677654bbf2fc4de72c0d64c5">qb::io::uri::queries</a></div><div class="ttdeci">const auto &amp; queries() const</div><div class="ttdoc">Returns the parsed query parameters of this URI.</div><div class="ttdef"><b>Definition</b> uri.h:491</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1uri_html_ae73fb699db5d6ace80b73282929e5291"><div class="ttname"><a href="classqb_1_1io_1_1uri.html#ae73fb699db5d6ace80b73282929e5291">qb::io::uri::encode</a></div><div class="ttdeci">static std::string encode(std::string_view input) noexcept</div><div class="ttdoc">Encodes a string view in URI format.</div></div>
+<div class="ttc" id="aio_2config_8h_html"><div class="ttname"><a href="io_2config_8h.html">config.h</a></div><div class="ttdoc">Configuration and platform-specific definitions for the QB IO library.</div></div>
+<div class="ttc" id="aunordered__map_8h_html"><div class="ttname"><a href="unordered__map_8h.html">unordered_map.h</a></div><div class="ttdoc">Optimized unordered map implementations.</div></div>
+<div class="ttc" id="aunordered__map_8h_html_abf164988a591998dd82f4ba27c806f31"><div class="ttname"><a href="unordered__map_8h.html#abf164988a591998dd82f4ba27c806f31">qb::icase_unordered_map</a></div><div class="ttdeci">icase_basic_map&lt; qb::unordered_map&lt; std::string, Value &gt;, _Trait &gt; icase_unordered_map</div><div class="ttdoc">Case-insensitive unordered map using qb::unordered_map.</div><div class="ttdef"><b>Definition</b> unordered_map.h:422</div></div>
+<div class="ttc" id="auri_8h_html_a01f6f5452d982504b8bf4ee3ade22e00"><div class="ttname"><a href="uri_8h.html#a01f6f5452d982504b8bf4ee3ade22e00">qb::io::is_user_info_character</a></div><div class="ttdeci">bool is_user_info_character(int c)</div><div class="ttdoc">Checks if a character is valid for URI user information.</div><div class="ttdef"><b>Definition</b> uri.h:125</div></div>
+<div class="ttc" id="auri_8h_html_a18420e29d242eb1610f8c039837f2a6b"><div class="ttname"><a href="uri_8h.html#a18420e29d242eb1610f8c039837f2a6b">qb::io::is_authority_character</a></div><div class="ttdeci">bool is_authority_character(int c)</div><div class="ttdoc">Checks if a character is valid for the authority part of a URI.</div><div class="ttdef"><b>Definition</b> uri.h:135</div></div>
+<div class="ttc" id="auri_8h_html_a461fc1b2353a45f4352069b79dddac4f"><div class="ttname"><a href="uri_8h.html#a461fc1b2353a45f4352069b79dddac4f">qb::io::is_fragment_character</a></div><div class="ttdeci">bool is_fragment_character(int c)</div><div class="ttdoc">Checks if a character is valid for the fragment part of a URI.</div><div class="ttdef"><b>Definition</b> uri.h:167</div></div>
+<div class="ttc" id="auri_8h_html_a546efd68a2f4ac82f02124eb86179b84"><div class="ttname"><a href="uri_8h.html#a546efd68a2f4ac82f02124eb86179b84">qb::io::is_alnum</a></div><div class="ttdeci">bool is_alnum(int c)</div><div class="ttdoc">Checks if a character is alphanumeric.</div><div class="ttdef"><b>Definition</b> uri.h:49</div></div>
+<div class="ttc" id="auri_8h_html_a56be6cd3ba132b03248427c2e98bda95"><div class="ttname"><a href="uri_8h.html#a56be6cd3ba132b03248427c2e98bda95">qb::io::is_sub_delim</a></div><div class="ttdeci">bool is_sub_delim(int c)</div><div class="ttdoc">Checks if a character is a subdelimiter according to RFC 3986.</div><div class="ttdef"><b>Definition</b> uri.h:80</div></div>
+<div class="ttc" id="auri_8h_html_a6443a0f3d393e4e667ed6d5b717249ca"><div class="ttname"><a href="uri_8h.html#a6443a0f3d393e4e667ed6d5b717249ca">qb::io::is_scheme_character</a></div><div class="ttdeci">bool is_scheme_character(int c)</div><div class="ttdoc">Checks if a character is valid for a URI scheme.</div><div class="ttdef"><b>Definition</b> uri.h:115</div></div>
+<div class="ttc" id="auri_8h_html_a6e3fa1a0209ff3484f2e2dc9f1ea0b16"><div class="ttname"><a href="uri_8h.html#a6e3fa1a0209ff3484f2e2dc9f1ea0b16">qb::io::is_unreserved</a></div><div class="ttdeci">bool is_unreserved(int c)</div><div class="ttdoc">Checks if a character is unreserved according to RFC 3986.</div><div class="ttdef"><b>Definition</b> uri.h:59</div></div>
+<div class="ttc" id="auri_8h_html_abf67eb3022bfcd766c2e5b1ed040d62e"><div class="ttname"><a href="uri_8h.html#abf67eb3022bfcd766c2e5b1ed040d62e">qb::io::is_reserved</a></div><div class="ttdeci">bool is_reserved(int c)</div><div class="ttdoc">Checks if a character is reserved according to RFC 3986.</div><div class="ttdef"><b>Definition</b> uri.h:105</div></div>
+<div class="ttc" id="auri_8h_html_acd678b97802b8d6bae4700e86b571993"><div class="ttname"><a href="uri_8h.html#acd678b97802b8d6bae4700e86b571993">qb::io::is_gen_delim</a></div><div class="ttdeci">bool is_gen_delim(int c)</div><div class="ttdoc">Checks if a character is a general delimiter according to RFC 3986.</div><div class="ttdef"><b>Definition</b> uri.h:69</div></div>
+<div class="ttc" id="auri_8h_html_ad91e7c9b58739893592b9d39de46eecc"><div class="ttname"><a href="uri_8h.html#ad91e7c9b58739893592b9d39de46eecc">qb::io::is_query_character</a></div><div class="ttdeci">bool is_query_character(int c)</div><div class="ttdoc">Checks if a character is valid for the query part of a URI.</div><div class="ttdef"><b>Definition</b> uri.h:157</div></div>
+<div class="ttc" id="auri_8h_html_adea142e8070ead0e185427bf8a8109b1"><div class="ttname"><a href="uri_8h.html#adea142e8070ead0e185427bf8a8109b1">qb::io::is_path_character</a></div><div class="ttdeci">bool is_path_character(int c)</div><div class="ttdoc">Checks if a character is valid for the path part of a URI.</div><div class="ttdef"><b>Definition</b> uri.h:146</div></div>
+</div><!-- fragment --></div><!-- contents -->
+</div><!-- doc-content -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="uri_8h.html">uri.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

@@ -1,0 +1,399 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: Integrating Core &amp; IO: Asynchronous Operations within Actors</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: Integrating Core &amp; IO: Asynchronous Operations within Actors</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('core_io_async_in_actors_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">Integrating Core &amp; IO: Asynchronous Operations within Actors </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>Guide to using <span class="tt">qb-io</span> asynchronous features like callbacks and timers directly within QB actors for non-blocking behavior.</p>
+<h1>Integrating Core &amp; IO: Asynchronous Operations within Actors</h1>
+<p>Actors in the QB Framework can directly and seamlessly leverage the asynchronous capabilities of <span class="tt">qb-io</span>. This allows actors to perform time-based operations, schedule deferred tasks, or manage I/O-bound activities without blocking their <span class="tt">VirtualCore</span> and impeding the progress of other actors on the same core.</p>
+<h2>Using <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> for Delayed or Deferred Actions</h2>
+<p>(<span class="tt"><a class="el" href="io_2async_2io_8h.html" title="Core asynchronous I/O class templates for event-driven operations.">qb/io/async/io.h</a></span>)</p>
+<p>This is the <b>primary and most flexible way</b> for an actor to schedule a piece of code (typically a lambda) to be executed later by its own <span class="tt">VirtualCore</span>'s event loop.</p>
+<ul>
+<li><b>How to Use:</b> Call <span class="tt">qb::io::async::callback(your_lambda, delay_in_seconds);</span> from within an actor's <span class="tt">onInit()</span>, an <span class="tt">on(Event&amp;)</span> handler, or even another <span class="tt">onCallback()</span> (if the actor inherits <span class="tt"><a class="el" href="classqb_1_1_i_callback.html" title="Interface for actor callbacks.">qb::ICallback</a></span>).<ul>
+<li>A <span class="tt">delay_in_seconds</span> of <span class="tt">0.0</span> (or omitting it) schedules the lambda for the next available iteration of the event loop.</li>
+</ul>
+</li>
+<li><b>Execution Context:</b> The provided lambda will execute on the <b>same <span class="tt">VirtualCore</span></b> (and thus the same thread) as the actor that scheduled it. This means the lambda can safely interact with the actor's state <em>if and only if</em> the actor is still alive and proper checks are made.</li>
+<li><b>Capturing Actor Context (<span class="tt">this</span> or <span class="tt">id()</span>):</b><ul>
+<li><b>Crucial Safety Check:</b> When a lambda captures <span class="tt">this</span> (or <span class="tt">auto self_id = id();</span>), it is <b>essential</b> to check <span class="tt">this-&gt;is_alive()</span> (or <span class="tt">if (auto actor_ptr = VirtualCore::_handler-&gt;getActor(self_id)) { ... }</span> if only ID was captured and direct actor pointer needed, though this is less common for self-interaction) at the very beginning of the lambda's body. This is because the actor might be terminated and destroyed before the delayed callback gets a chance to execute.</li>
+<li><b>Sending Events Back to Self:</b> Instead of complex direct state manipulation from the lambda, a robust pattern is for the lambda to <span class="tt">push</span> a new, specific event back to the scheduling actor itself. The actor then handles this event in a dedicated <span class="tt">on()</span> handler.</li>
+</ul>
+</li>
+<li><b>Common Use Cases for Actors:</b><ul>
+<li><b>Implementing Timeouts:</b> For an operation initiated by the actor, schedule a callback. If the operation doesn't complete (e.g., by an incoming response event clearing a pending flag) before the callback runs, the callback can trigger timeout logic.</li>
+<li><b>Periodic Actions:</b> A callback can reschedule itself to create periodic behavior (an alternative to using <span class="tt"><a class="el" href="classqb_1_1_i_callback.html" title="Interface for actor callbacks.">qb::ICallback</a></span>).</li>
+<li><b>Breaking Down Complex Non-Blocking Tasks:</b> If an actor needs to perform a series of non-blocking steps, it can execute one step and then schedule the next step via <span class="tt">async::callback</span> with a zero delay, effectively yielding control back to the event loop between steps.</li>
+<li><b>Retry Mechanisms:</b> After a failed attempt (e.g., network connection), schedule a retry attempt using a delayed callback.</li>
+<li><b>Simulating Work/Delays:</b> Useful in examples or tests to introduce artificial processing times without actual blocking.</li>
+</ul>
+</li>
+</ul>
+<div class="fragment"><div class="line"><span class="comment">// Inside MyProcessingActor class</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="_actor_8h.html">qb/actor.h</a>&gt;</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="async_8h.html">qb/io/async.h</a>&gt;</span> <span class="comment">// For qb::io::async::callback</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="io_8h.html">qb/io.h</a>&gt;</span>       <span class="comment">// For qb::io::cout</span></div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// Event to signal task completion or timeout</span></div>
+<div class="line"><span class="keyword">struct </span>ProcessTaskCompleteEvent : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> {</div>
+<div class="line">    <span class="keywordtype">int</span> task_id;</div>
+<div class="line">    <span class="keywordtype">bool</span> timed_out;</div>
+<div class="line">    <span class="keyword">explicit</span> ProcessTaskCompleteEvent(<span class="keywordtype">int</span> <span class="keywordtype">id</span>, <span class="keywordtype">bool</span> timeout_status) </div>
+<div class="line">        : task_id(id), timed_out(timeout_status) {}</div>
+<div class="line">};</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">class </span>MyProcessingActor : <span class="keyword">public</span> <a class="code hl_class" href="classqb_1_1_actor.html">qb::Actor</a> {</div>
+<div class="line"><span class="keyword">private</span>:</div>
+<div class="line">    std::map&lt;int, bool&gt; _pending_tasks; <span class="comment">// task_id -&gt; is_pending</span></div>
+<div class="line">    <span class="keywordtype">int</span> _next_task_id = 1;</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">public</span>:</div>
+<div class="line">    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">onInit</a>()<span class="keyword"> override </span>{</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;ProcessTaskCompleteEvent&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;qb::KillEvent&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line">        <span class="comment">// Example: Start a task immediately</span></div>
+<div class="line">        startLongOperation(5.0); <span class="comment">// Operation that we expect to complete or timeout in 5s</span></div>
+<div class="line">        <span class="keywordflow">return</span> <span class="keyword">true</span>;</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> startLongOperation(<span class="keywordtype">double</span> timeout_seconds) {</div>
+<div class="line">        <span class="keywordtype">int</span> current_task_id = _next_task_id++;</div>
+<div class="line">        _pending_tasks[current_task_id] = <span class="keyword">true</span>;</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;Actor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Starting operation for task &quot;</span> &lt;&lt; current_task_id </div>
+<div class="line">                       &lt;&lt; <span class="stringliteral">&quot;, timeout in &quot;</span> &lt;&lt; timeout_seconds &lt;&lt; <span class="stringliteral">&quot;s.\n&quot;</span>;</div>
+<div class="line"> </div>
+<div class="line">        <span class="comment">// Simulate starting an external non-blocking operation here...</span></div>
+<div class="line"> </div>
+<div class="line">        <span class="comment">// Schedule a timeout check using async::callback</span></div>
+<div class="line">        <span class="comment">// Capture &#39;this&#39; to access actor members and methods</span></div>
+<div class="line">        <a class="code hl_function" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">qb::io::async::callback</a>([<span class="keyword">this</span>, current_task_id]() {</div>
+<div class="line">            <span class="keywordflow">if</span> (!this-&gt;<a class="code hl_function" href="classqb_1_1_actor.html#adea54248981ce2b0e66fbf4c3518acd1">is_alive</a>()) { <span class="comment">// Crucial check!</span></div>
+<div class="line">                <span class="comment">// qb::io::cout() &lt;&lt; &quot;Actor for task &quot; &lt;&lt; current_task_id &lt;&lt; &quot; no longer alive for timeout check.\n&quot;;</span></div>
+<div class="line">                <span class="keywordflow">return</span>;</div>
+<div class="line">            }</div>
+<div class="line">            <span class="comment">// Check if the task is still marked as pending</span></div>
+<div class="line">            <span class="keywordflow">if</span> (_pending_tasks.count(current_task_id) &amp;&amp; _pending_tasks[current_task_id]) {</div>
+<div class="line">                <span class="comment">// Task timed out, send a completion event indicating timeout</span></div>
+<div class="line">                qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;Actor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Task &quot;</span> &lt;&lt; current_task_id &lt;&lt; <span class="stringliteral">&quot; timed out!\n&quot;</span>;</div>
+<div class="line">                this-&gt;<a class="code hl_function" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">push&lt;ProcessTaskCompleteEvent&gt;</a>(this-&gt;<span class="keywordtype">id</span>(), current_task_id, <span class="keyword">true</span>);</div>
+<div class="line">                _pending_tasks.erase(current_task_id); <span class="comment">// Clean up</span></div>
+<div class="line">            }</div>
+<div class="line">            <span class="comment">// If not pending, it means a response was received before timeout</span></div>
+<div class="line">        }, timeout_seconds);</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Imagine this event is received from an external system or another actor</span></div>
+<div class="line">    <span class="comment">// when the long operation actually finishes (before timeout).</span></div>
+<div class="line">    <span class="keywordtype">void</span> onOperationActuallyCompleted(<span class="keywordtype">int</span> task_id_completed) { <span class="comment">// Not a qb::Event, but a conceptual method</span></div>
+<div class="line">        <span class="keywordflow">if</span> (_pending_tasks.count(task_id_completed) &amp;&amp; _pending_tasks[task_id_completed]) {</div>
+<div class="line">            qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;Actor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Task &quot;</span> &lt;&lt; task_id_completed &lt;&lt; <span class="stringliteral">&quot; completed successfully (before timeout).\n&quot;</span>;</div>
+<div class="line">            this-&gt;<a class="code hl_function" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">push&lt;ProcessTaskCompleteEvent&gt;</a>(this-&gt;<span class="keywordtype">id</span>(), task_id_completed, <span class="keyword">false</span>);</div>
+<div class="line">            _pending_tasks.erase(task_id_completed);</div>
+<div class="line">        }</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> ProcessTaskCompleteEvent&amp; event) {</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;Actor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Handling ProcessTaskCompleteEvent for task &quot;</span> &lt;&lt; <span class="keyword">event</span>.task_id</div>
+<div class="line">                       &lt;&lt; (<span class="keyword">event</span>.timed_out ? <span class="stringliteral">&quot; (TIMED OUT)&quot;</span> : <span class="stringliteral">&quot; (SUCCESS)&quot;</span>) &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line">        <span class="comment">// Further processing based on completion or timeout...</span></div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> qb::KillEvent&amp; <span class="comment">/*event*/</span>) { <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>(); }</div>
+<div class="line">};</div>
+<div class="ttc" id="a_actor_8h_html"><div class="ttname"><a href="_actor_8h.html">actor.h</a></div><div class="ttdoc">Convenience header for the core QB Actor components.</div></div>
+<div class="ttc" id="aasync_8h_html"><div class="ttname"><a href="async_8h.html">async.h</a></div><div class="ttdoc">Main include file for the QB asynchronous I/O library.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html"><div class="ttname"><a href="classqb_1_1_actor.html">qb::Actor</a></div><div class="ttdoc">Base class for all actors in the qb framework.</div><div class="ttdef"><b>Definition</b> Actor.h:106</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a0b7ee1d2a9d94988860df5ba5f19072c"><div class="ttname"><a href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">qb::Actor::registerEvent</a></div><div class="ttdeci">void registerEvent(_Actor &amp;actor) const noexcept</div><div class="ttdoc">Subscribe this actor to listen for a specific event type.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a245a2b7be6e086bf622d2acb78b9bded"><div class="ttname"><a href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">qb::Actor::on</a></div><div class="ttdeci">void on(KillEvent const &amp;event) noexcept</div><div class="ttdoc">Handler for KillEvent.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a45e94c367d5877e6406bf356c145a529"><div class="ttname"><a href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">qb::Actor::push</a></div><div class="ttdeci">_Event &amp; push(ActorId const &amp;dest, _Args &amp;&amp;...args) const noexcept</div><div class="ttdoc">Send a new event in an ordered fashion to a destination actor, returning a reference to it.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a9999e9e7f937bbcf96a20127fe993092"><div class="ttname"><a href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">qb::Actor::id</a></div><div class="ttdeci">ActorId id() const noexcept</div><div class="ttdoc">Get ActorId.</div><div class="ttdef"><b>Definition</b> Actor.h:368</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_ad097f332e8617029cbd8031c1f8fdf84"><div class="ttname"><a href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">qb::Actor::kill</a></div><div class="ttdeci">void kill() const noexcept</div><div class="ttdoc">Terminate this actor and mark it for removal from the system.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_adea54248981ce2b0e66fbf4c3518acd1"><div class="ttname"><a href="classqb_1_1_actor.html#adea54248981ce2b0e66fbf4c3518acd1">qb::Actor::is_alive</a></div><div class="ttdeci">bool is_alive() const noexcept</div><div class="ttdoc">Check if Actor is alive and processing events.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_ae61217d6ef37d4658b41cec6d2f6719f"><div class="ttname"><a href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">qb::Actor::onInit</a></div><div class="ttdeci">virtual bool onInit()</div><div class="ttdoc">Initialization callback, called once after construction and ID assignment.</div><div class="ttdef"><b>Definition</b> Actor.h:198</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html"><div class="ttname"><a href="classqb_1_1_event.html">qb::Event</a></div><div class="ttdoc">Base class for all events in the actor system.</div><div class="ttdef"><b>Definition</b> Event.h:85</div></div>
+<div class="ttc" id="agroup___async_html_ga79acd187eb2aeb629523ebb206ee004d"><div class="ttname"><a href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">qb::io::async::callback</a></div><div class="ttdeci">void callback(_Func &amp;&amp;func, double timeout=0.)</div><div class="ttdoc">Utility function to schedule a callable for execution after a timeout.</div><div class="ttdef"><b>Definition</b> io.h:233</div></div>
+<div class="ttc" id="aio_8h_html"><div class="ttname"><a href="io_8h.html">io.h</a></div><div class="ttdoc">Core I/O and logging utilities for the qb framework.</div></div>
+</div><!-- fragment --><p> <b>(Reference:</b> <span class="tt">test-actor-delayed-events.cpp</span>, <span class="tt">example10_distributed_computing.cpp</span> (extensive use for simulation and scheduling), <span class="tt">file_processor/file_worker.h</span> (wrapping blocking calls).**)</p>
+<h2>Using <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html" title="CRTP base class that adds timeout functionality to derived asynchronous components.">qb::io::async::with_timeout</a></span> for Actor Inactivity</h2>
+<p>While <span class="tt">async::callback</span> is versatile, if an actor needs a simple inactivity timeout (i.e., it should terminate or take action if no relevant messages arrive for a period), inheriting from <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html" title="CRTP base class that adds timeout functionality to derived asynchronous components.">qb::io::async::with_timeout</a>&lt;DerivedActor&gt;</span> can be an option.</p>
+<ul>
+<li><b>How it Works:</b><ol type="1">
+<li><b>Inheritance:</b> <span class="tt">class MyActor : public <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a>, public <a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html" title="CRTP base class that adds timeout functionality to derived asynchronous components.">qb::io::async::with_timeout</a>&lt;MyActor&gt; { ... };</span></li>
+<li><b>Constructor Initialization:</b> Call the base <span class="tt">with_timeout(timeout_duration_seconds);</span> in your actor's constructor.</li>
+<li><b>Implement Timeout Handler:</b> <span class="tt">void on(<a class="el" href="structqb_1_1io_1_1async_1_1event_1_1timer.html" title="Event for handling time-based operations (timers and timeouts).">qb::io::async::event::timer</a> const&amp; event)</span> will be called when the timer expires.</li>
+<li><b>Reset on Activity:</b> In your relevant <span class="tt">on(ApplicationEvent&amp;)</span> handlers (those that signify activity), call <span class="tt">this-&gt;updateTimeout();</span> to reset the inactivity countdown.</li>
+</ol>
+</li>
+<li><b>Use Case:</b> Terminating idle sessions, cleaning up actors that haven't received heartbeats or work for a while.</li>
+</ul>
+<div class="fragment"><div class="line"><span class="preprocessor">#include &lt;<a class="code" href="_actor_8h.html">qb/actor.h</a>&gt;</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="async_8h.html">qb/io/async.h</a>&gt;</span> <span class="comment">// For qb::io::async::with_timeout and event::timer</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="io_8h.html">qb/io.h</a>&gt;</span></div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">struct </span>ClientActivityPing : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> {};</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">class </span>SessionActorWithInactivity : <span class="keyword">public</span> <a class="code hl_class" href="classqb_1_1_actor.html">qb::Actor</a>, </div>
+<div class="line">                                   <span class="keyword">public</span> <a class="code hl_class" href="classqb_1_1io_1_1async_1_1with__timeout.html">qb::io::async::with_timeout</a>&lt;SessionActorWithInactivity&gt; {</div>
+<div class="line"><span class="keyword">public</span>:</div>
+<div class="line">    SessionActorWithInactivity() : with_timeout(30.0) { <span class="comment">// 30-second inactivity timeout</span></div>
+<div class="line">        <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;SessionActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Created with 30s inactivity timeout.\n&quot;</span>;</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">onInit</a>()<span class="keyword"> override </span>{</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;ClientActivityPing&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;qb::KillEvent&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1io_1_1async_1_1with__timeout.html#a0f234055cbc67e30c7fd03f5d4a4171f">updateTimeout</a>(); <span class="comment">// Start the initial countdown</span></div>
+<div class="line">        <span class="keywordflow">return</span> <span class="keyword">true</span>;</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> ClientActivityPing&amp; <span class="comment">/*event*/</span>) {</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;SessionActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Ping received, activity confirmed. Resetting timeout.\n&quot;</span>;</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1io_1_1async_1_1with__timeout.html#a0f234055cbc67e30c7fd03f5d4a4171f">updateTimeout</a>(); <span class="comment">// Reset inactivity timer upon receiving a ping</span></div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// This handler is called by the with_timeout base when the timer expires</span></div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(qb::io::async::event::timer <span class="keyword">const</span>&amp; <span class="comment">/*event*/</span>) {</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;SessionActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Inactivity timeout reached! Terminating session.\n&quot;</span>;</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>(); <span class="comment">// Terminate the actor due to inactivity</span></div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> qb::KillEvent&amp; <span class="comment">/*event*/</span>) {</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1io_1_1async_1_1with__timeout.html#ab704e926ac0ad765d42997dc00482924">setTimeout</a>(0.0); <span class="comment">// Disable timer explicitly during shutdown</span></div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>();</div>
+<div class="line">    }</div>
+<div class="line">    </div>
+<div class="line">    ~SessionActorWithInactivity()<span class="keyword"> override </span>{</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;SessionActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] destroyed.\n&quot;</span>;</div>
+<div class="line">    }</div>
+<div class="line">};</div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1with__timeout_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1with__timeout.html">qb::io::async::with_timeout</a></div><div class="ttdoc">CRTP base class that adds timeout functionality to derived asynchronous components.</div><div class="ttdef"><b>Definition</b> io.h:96</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1with__timeout_html_a0f234055cbc67e30c7fd03f5d4a4171f"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1with__timeout.html#a0f234055cbc67e30c7fd03f5d4a4171f">qb::io::async::with_timeout::updateTimeout</a></div><div class="ttdeci">void updateTimeout() noexcept</div><div class="ttdoc">Updates the last activity timestamp to the current event loop time.</div><div class="ttdef"><b>Definition</b> io.h:120</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1with__timeout_html_ab704e926ac0ad765d42997dc00482924"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1with__timeout.html#ab704e926ac0ad765d42997dc00482924">qb::io::async::with_timeout::setTimeout</a></div><div class="ttdeci">void setTimeout(ev_tstamp timeout) noexcept</div><div class="ttdoc">Sets a new timeout value and restarts the timer.</div><div class="ttdef"><b>Definition</b> io.h:131</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1cout_html"><div class="ttname"><a href="classqb_1_1io_1_1cout.html">qb::io::cout</a></div><div class="ttdoc">Thread-safe console output class.</div><div class="ttdef"><b>Definition</b> io.h:100</div></div>
+</div><!-- fragment --><p> <b>(Reference:</b> <span class="tt">chat_tcp/server/ChatSession.h</span> uses this pattern, though it's a non-actor class in that example, the principle is the same. <span class="tt">test-async-io.cpp::TimerHandler</span> also demonstrates <span class="tt">with_timeout</span>.)**</p>
+<h2>Asynchronous File Operations within Actors</h2>
+<p>Directly performing blocking file I/O (like <span class="tt">std::fstream::read</span> or <span class="tt">qb::io::sys::file::write</span>) within an actor's event handler or <span class="tt">onCallback</span> is <b>highly discouraged</b> as it will block the <span class="tt">VirtualCore</span>.</p>
+<p>To handle file operations asynchronously from an actor:</p>
+<ol type="1">
+<li><b>Wrap Blocking Calls in <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> (for simpler cases):</b><ul>
+<li>The actor receives a request to read/write a file.</li>
+<li>It captures necessary parameters (file path, data, original requester ID) into a lambda.</li>
+<li>It schedules this lambda using <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span>.</li>
+<li>The lambda executes on the actor's <span class="tt">VirtualCore</span> but in a way that doesn't block the primary event processing flow for <em>other</em> events while the blocking call itself is in progress (though the callback itself will block its turn in the event loop queue).</li>
+<li>After the blocking I/O in the lambda completes, the lambda should <span class="tt">push</span> a result event (containing data or error status) back to the original requester or to the scheduling actor itself.</li>
+<li><b>Caution:</b> While this makes the actor <em>appear</em> non-blocking to other actors, the <span class="tt">VirtualCore</span> processing this specific callback <em>will</em> be blocked during the actual file I/O. This is suitable for infrequent or less performance-critical file operations.</li>
+</ul>
+</li>
+<li><b>Dedicated File Worker Actors (Recommended for complex or frequent I/O):</b><ul>
+<li>Create specialized worker actors whose sole purpose is to perform file I/O.</li>
+<li>The main actor delegates file operation requests (as events) to these worker actors.</li>
+<li>Worker actors can use the <span class="tt">async::callback</span> pattern internally to perform the blocking I/O.</li>
+<li>This isolates blocking operations to specific actors/cores, potentially configured with higher latency if they are expected to block often.</li>
+<li><b>(Reference:</b> The <span class="tt">example/core_io/file_processor/</span> provides a good example of this pattern.)**</li>
+</ul>
+</li>
+<li><b>Asynchronous File Watching (<span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1file__watcher.html" title="CRTP base class for watching a single file for attribute changes and processing its contents.">qb::io::async::file_watcher</a></span> or <span class="tt">directory_watcher</span>):</b><ul>
+<li>For scenarios where an actor needs to react to changes in the file system (file creation, modification, deletion) without polling.</li>
+<li>The actor (or a helper class it owns) can inherit from <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1file__watcher.html" title="CRTP base class for watching a single file for attribute changes and processing its contents.">qb::io::async::file_watcher</a>&lt;MyActor&gt;</span> or <span class="tt">directory_watcher&lt;MyActor&gt;</span>.</li>
+<li>It then implements <span class="tt">void on(<a class="el" href="structqb_1_1io_1_1async_1_1event_1_1file.html" title="Event for file and directory attribute change monitoring.">qb::io::async::event::file</a> const&amp; event)</span> to handle notifications.</li>
+<li>The watcher is started with <span class="tt">this-&gt;start(path_to_watch, interval);</span>.</li>
+<li><b>(Reference:</b> The <span class="tt">example/core_io/file_monitor/</span> demonstrates this pattern with a <span class="tt">DirectoryWatcher</span> actor.)**</li>
+</ul>
+</li>
+</ol>
+<p>By using these asynchronous patterns, actors can effectively manage time-based logic and interact with potentially blocking resources like the file system without compromising the overall responsiveness and concurrency of the QB application.</p>
+<p><b>(Next:</b> Integrating Core &amp; IO: Network Actors to see how actors handle network I/O.**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

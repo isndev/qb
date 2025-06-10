@@ -1,0 +1,1205 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::io::udp::socket Class Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::io::udp::socket Class Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('classqb_1_1io_1_1udp_1_1socket.html','','classqb_1_1io_1_1udp_1_1socket-members'); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">qb::io::udp::socket Class Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___networking.html">Networking Utilities</a> &raquo; <a class="el" href="group___u_d_p.html">UDP Communication</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Class implementing UDP socket functionality for datagram-based communication.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="udp_2socket_8h_source.html">socket.h</a>&gt;</code></p>
+<div class="dynheader">
+Inheritance diagram for qb::io::udp::socket:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1udp_1_1socket__inherit__graph.png" border="0" usemap="#aqb_1_1io_1_1udp_1_1socket_inherit__map" loading="lazy" alt="Inheritance graph"/></div>
+<map name="aqb_1_1io_1_1udp_1_1socket_inherit__map" id="aqb_1_1io_1_1udp_1_1socket_inherit__map">
+<area shape="rect" title="Class implementing UDP socket functionality for datagram&#45;based communication." alt="" coords="5,79,135,105"/>
+<area shape="rect" title=" " alt="" coords="20,5,120,31"/>
+<area shape="poly" title=" " alt="" coords="73,46,73,79,67,79,67,46"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<div class="dynheader">
+Collaboration diagram for qb::io::udp::socket:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1udp_1_1socket__coll__graph.png" border="0" usemap="#aqb_1_1io_1_1udp_1_1socket_coll__map" loading="lazy" alt="Collaboration graph"/></div>
+<map name="aqb_1_1io_1_1udp_1_1socket_coll__map" id="aqb_1_1io_1_1udp_1_1socket_coll__map">
+<area shape="rect" title="Class implementing UDP socket functionality for datagram&#45;based communication." alt="" coords="5,79,135,105"/>
+<area shape="rect" title=" " alt="" coords="20,5,120,31"/>
+<area shape="poly" title=" " alt="" coords="73,46,73,79,67,79,67,46"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:abd6199b3a6d2589fd2873513e3aa5ab7" id="r_abd6199b3a6d2589fd2873513e3aa5ab7"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#abd6199b3a6d2589fd2873513e3aa5ab7">socket</a> ()=default</td></tr>
+<tr class="memdesc:abd6199b3a6d2589fd2873513e3aa5ab7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default constructor.  <br /></td></tr>
+<tr class="memitem:a7e2d490a304c00cdbe8cf5c41043fe6b" id="r_a7e2d490a304c00cdbe8cf5c41043fe6b"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7e2d490a304c00cdbe8cf5c41043fe6b">socket</a> (<a class="el" href="classqb_1_1io_1_1udp_1_1socket.html">socket</a> const &amp;)=delete</td></tr>
+<tr class="memdesc:a7e2d490a304c00cdbe8cf5c41043fe6b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Deleted copy constructor.  <br /></td></tr>
+<tr class="memitem:acd921c0ca078a1db2e97d6407116dcce" id="r_acd921c0ca078a1db2e97d6407116dcce"><td class="memItemLeft" align="right" valign="top"><a id="acd921c0ca078a1db2e97d6407116dcce" name="acd921c0ca078a1db2e97d6407116dcce"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>socket</b> (<a class="el" href="classqb_1_1io_1_1udp_1_1socket.html">socket</a> &amp;&amp;)=default</td></tr>
+<tr class="memdesc:acd921c0ca078a1db2e97d6407116dcce"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default move constructor. <br /></td></tr>
+<tr class="memitem:a7c1fc3bccb05e92260d8a542f848097f" id="r_a7c1fc3bccb05e92260d8a542f848097f"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html">socket</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7c1fc3bccb05e92260d8a542f848097f">operator=</a> (<a class="el" href="classqb_1_1io_1_1udp_1_1socket.html">socket</a> &amp;&amp;)=default</td></tr>
+<tr class="memdesc:a7c1fc3bccb05e92260d8a542f848097f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default move assignment operator.  <br /></td></tr>
+<tr class="memitem:a88911d94277f01b2752765ca143ef730" id="r_a88911d94277f01b2752765ca143ef730"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a88911d94277f01b2752765ca143ef730">socket</a> (io::socket &amp;&amp;sock) noexcept</td></tr>
+<tr class="memdesc:a88911d94277f01b2752765ca143ef730"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor from a generic <span class="tt">qb::io::socket</span> (move semantics).  <br /></td></tr>
+<tr class="memitem:a2292a1e2d21fe3ae91f986fdf5ab9b53" id="r_a2292a1e2d21fe3ae91f986fdf5ab9b53"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html">socket</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2292a1e2d21fe3ae91f986fdf5ab9b53">operator=</a> (io::socket &amp;&amp;sock) noexcept</td></tr>
+<tr class="memdesc:a2292a1e2d21fe3ae91f986fdf5ab9b53"><td class="mdescLeft">&#160;</td><td class="mdescRight">Move assignment operator from a generic <span class="tt">qb::io::socket</span>.  <br /></td></tr>
+<tr class="memitem:ae593c2d859216ab1d59867079470e801" id="r_ae593c2d859216ab1d59867079470e801"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae593c2d859216ab1d59867079470e801">init</a> (int af=AF_INET) noexcept</td></tr>
+<tr class="memdesc:ae593c2d859216ab1d59867079470e801"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initialize (open) the UDP socket.  <br /></td></tr>
+<tr class="memitem:a02355182d9a82eed9241b9abb4441e03" id="r_a02355182d9a82eed9241b9abb4441e03"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a02355182d9a82eed9241b9abb4441e03">bind</a> (qb::io::endpoint const &amp;ep) noexcept</td></tr>
+<tr class="memdesc:a02355182d9a82eed9241b9abb4441e03"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bind the socket to a specific local endpoint.  <br /></td></tr>
+<tr class="memitem:a19e6934495aff373db1abddaee257c82" id="r_a19e6934495aff373db1abddaee257c82"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a19e6934495aff373db1abddaee257c82">bind</a> (<a class="el" href="classqb_1_1io_1_1uri.html">qb::io::uri</a> const &amp;u) noexcept</td></tr>
+<tr class="memdesc:a19e6934495aff373db1abddaee257c82"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bind the socket to an endpoint specified by a URI.  <br /></td></tr>
+<tr class="memitem:a13142757a05fbb1f2f399328f552c705" id="r_a13142757a05fbb1f2f399328f552c705"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a13142757a05fbb1f2f399328f552c705">bind_v4</a> (uint16_t port, std::string const &amp;host=&quot;0.0.0.0&quot;) noexcept</td></tr>
+<tr class="memdesc:a13142757a05fbb1f2f399328f552c705"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bind the socket to a specific IPv4 address and port.  <br /></td></tr>
+<tr class="memitem:a886471c9c4d3d8bf575dc225711a20c1" id="r_a886471c9c4d3d8bf575dc225711a20c1"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a886471c9c4d3d8bf575dc225711a20c1">bind_v6</a> (uint16_t port, std::string const &amp;host=&quot;::&quot;) noexcept</td></tr>
+<tr class="memdesc:a886471c9c4d3d8bf575dc225711a20c1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bind the socket to a specific IPv6 address and port.  <br /></td></tr>
+<tr class="memitem:a4cd986814f7b90dc47d26e2de23a7341" id="r_a4cd986814f7b90dc47d26e2de23a7341"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4cd986814f7b90dc47d26e2de23a7341">bind_un</a> (std::string const &amp;path) noexcept</td></tr>
+<tr class="memdesc:a4cd986814f7b90dc47d26e2de23a7341"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bind the socket to a Unix domain socket path (for datagrams).  <br /></td></tr>
+<tr class="memitem:ac616b296ad01fbe07966b95e23bae6ac" id="r_ac616b296ad01fbe07966b95e23bae6ac"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac616b296ad01fbe07966b95e23bae6ac">read</a> (void *dest, std::size_t len, qb::io::endpoint &amp;peer) const noexcept</td></tr>
+<tr class="memdesc:ac616b296ad01fbe07966b95e23bae6ac"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read a datagram from the socket and get the sender's endpoint.  <br /></td></tr>
+<tr class="memitem:a1b299b78dafaf68b56d0239c6d692f9e" id="r_a1b299b78dafaf68b56d0239c6d692f9e"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a1b299b78dafaf68b56d0239c6d692f9e">read_timeout</a> (void *dest, std::size_t len, qb::io::endpoint &amp;peer, const std::chrono::microseconds &amp;timeout) const noexcept</td></tr>
+<tr class="memdesc:a1b299b78dafaf68b56d0239c6d692f9e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read a datagram from the socket with a specified timeout.  <br /></td></tr>
+<tr class="memitem:aa6b0621f6c5a0353a72d7ae4f59b8616" id="r_aa6b0621f6c5a0353a72d7ae4f59b8616"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aa6b0621f6c5a0353a72d7ae4f59b8616">try_read</a> (void *dest, std::size_t len, qb::io::endpoint &amp;peer) const noexcept</td></tr>
+<tr class="memdesc:aa6b0621f6c5a0353a72d7ae4f59b8616"><td class="mdescLeft">&#160;</td><td class="mdescRight">Try to read a datagram from the socket (non-blocking attempt).  <br /></td></tr>
+<tr class="memitem:acacfc0d7ee30c3fdb96f90cf79dcef49" id="r_acacfc0d7ee30c3fdb96f90cf79dcef49"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#acacfc0d7ee30c3fdb96f90cf79dcef49">write</a> (const void *data, std::size_t len, qb::io::endpoint const &amp;to) const noexcept</td></tr>
+<tr class="memdesc:acacfc0d7ee30c3fdb96f90cf79dcef49"><td class="mdescLeft">&#160;</td><td class="mdescRight">Write (send) a datagram to a specific remote endpoint.  <br /></td></tr>
+<tr class="memitem:a887cc0119251965d475dd3bffcebc3a4" id="r_a887cc0119251965d475dd3bffcebc3a4"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a887cc0119251965d475dd3bffcebc3a4">set_buffer_size</a> (std::size_t size) noexcept</td></tr>
+<tr class="memdesc:a887cc0119251965d475dd3bffcebc3a4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the socket's send and receive buffer sizes (SO_SNDBUF, SO_RCVBUF).  <br /></td></tr>
+<tr class="memitem:ae2dd25eb1f1fa24104c8af7e140a9c30" id="r_ae2dd25eb1f1fa24104c8af7e140a9c30"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae2dd25eb1f1fa24104c8af7e140a9c30">set_broadcast</a> (bool enable) noexcept</td></tr>
+<tr class="memdesc:ae2dd25eb1f1fa24104c8af7e140a9c30"><td class="mdescLeft">&#160;</td><td class="mdescRight">Enable or disable the SO_BROADCAST socket option.  <br /></td></tr>
+<tr class="memitem:aceb87f56b6c75ab290ea66d1dd294b41" id="r_aceb87f56b6c75ab290ea66d1dd294b41"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aceb87f56b6c75ab290ea66d1dd294b41">join_multicast_group</a> (const std::string &amp;group, const std::string &amp;iface=&quot;&quot;) noexcept</td></tr>
+<tr class="memdesc:aceb87f56b6c75ab290ea66d1dd294b41"><td class="mdescLeft">&#160;</td><td class="mdescRight">Join an IPv4 or IPv6 multicast group.  <br /></td></tr>
+<tr class="memitem:ab3eeebcec58cfddec791bd294089121f" id="r_ab3eeebcec58cfddec791bd294089121f"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab3eeebcec58cfddec791bd294089121f">leave_multicast_group</a> (const std::string &amp;group, const std::string &amp;iface=&quot;&quot;) noexcept</td></tr>
+<tr class="memdesc:ab3eeebcec58cfddec791bd294089121f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Leave an IPv4 or IPv6 multicast group.  <br /></td></tr>
+<tr class="memitem:af1aafbd079ca59be1b8c3e3d978a5738" id="r_af1aafbd079ca59be1b8c3e3d978a5738"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af1aafbd079ca59be1b8c3e3d978a5738">set_multicast_ttl</a> (int ttl) noexcept</td></tr>
+<tr class="memdesc:af1aafbd079ca59be1b8c3e3d978a5738"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the multicast Time-To-Live (TTL) for outgoing IPv4 packets or hop limit for IPv6.  <br /></td></tr>
+<tr class="memitem:a6408643be7d8851868c872ea62cd86ad" id="r_a6408643be7d8851868c872ea62cd86ad"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a6408643be7d8851868c872ea62cd86ad">set_multicast_loopback</a> (bool enable) noexcept</td></tr>
+<tr class="memdesc:a6408643be7d8851868c872ea62cd86ad"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set whether multicast packets sent from this socket are looped back to the local host.  <br /></td></tr>
+<tr class="memitem:adff8b2a94e9d06d380a45d02fd0aff75" id="r_adff8b2a94e9d06d380a45d02fd0aff75"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#adff8b2a94e9d06d380a45d02fd0aff75">address_family</a> () const noexcept</td></tr>
+<tr class="memdesc:adff8b2a94e9d06d380a45d02fd0aff75"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the address family of this UDP socket (e.g., AF_INET, AF_INET6).  <br /></td></tr>
+<tr class="memitem:a3b11f06c1ca39f3570247597fd6d01ab" id="r_a3b11f06c1ca39f3570247597fd6d01ab"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a3b11f06c1ca39f3570247597fd6d01ab">is_bound</a> () const noexcept</td></tr>
+<tr class="memdesc:a3b11f06c1ca39f3570247597fd6d01ab"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check if the UDP socket is currently bound to a local address and port.  <br /></td></tr>
+<tr class="memitem:acaf92ae3f940c6f99a5e043e4d4f249f" id="r_acaf92ae3f940c6f99a5e043e4d4f249f"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#acaf92ae3f940c6f99a5e043e4d4f249f">disconnect</a> () const noexcept</td></tr>
+<tr class="memdesc:acaf92ae3f940c6f99a5e043e4d4f249f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Disconnect a previously connected UDP socket or clear default remote endpoint.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-static-attribs" class="groupheader"><a id="pub-static-attribs" name="pub-static-attribs"></a>
+Static Public Attributes</h2></td></tr>
+<tr class="memitem:a9ec8e3036716c97e88ba03f0b4c79b59" id="r_a9ec8e3036716c97e88ba03f0b4c79b59"><td class="memItemLeft" align="right" valign="top">static constexpr const std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a9ec8e3036716c97e88ba03f0b4c79b59">DefaultDatagramSize</a> = 512</td></tr>
+<tr class="memdesc:a9ec8e3036716c97e88ba03f0b4c79b59"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default maximum size of a UDP datagram.  <br /></td></tr>
+<tr class="memitem:afd1ef06ba342ded036a733f4a52255cc" id="r_afd1ef06ba342ded036a733f4a52255cc"><td class="memItemLeft" align="right" valign="top">static constexpr const std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#afd1ef06ba342ded036a733f4a52255cc">MaxDatagramSize</a> = 65507</td></tr>
+<tr class="memdesc:afd1ef06ba342ded036a733f4a52255cc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Maximum possible size of a UDP datagram.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Class implementing UDP socket functionality for datagram-based communication. </p>
+<p>This class provides UDP socket functionality, inheriting protectedly from <span class="tt">qb::io::socket</span>. It supports sending and receiving datagrams over UDP/IPv4, UDP/IPv6, and Unix Domain Sockets (datagram type). It also includes methods for managing multicast group memberships. Used as the underlying I/O primitive for <span class="tt"><a class="el" href="classqb_1_1io_1_1transport_1_1udp.html" title="UDP transport providing connectionless, datagram-based communication.">qb::io::transport::udp</a></span>. </p>
+</div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="abd6199b3a6d2589fd2873513e3aa5ab7" name="abd6199b3a6d2589fd2873513e3aa5ab7"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abd6199b3a6d2589fd2873513e3aa5ab7">&#9670;&#160;</a></span>socket() <span class="overload">[1/3]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::io::udp::socket::socket </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel default">default</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Default constructor. </p>
+<p>Creates an uninitialized UDP socket. Call <span class="tt"><a class="el" href="#ae593c2d859216ab1d59867079470e801" title="Initialize (open) the UDP socket.">init()</a></span> before use. </p>
+
+</div>
+</div>
+<a id="a7e2d490a304c00cdbe8cf5c41043fe6b" name="a7e2d490a304c00cdbe8cf5c41043fe6b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7e2d490a304c00cdbe8cf5c41043fe6b">&#9670;&#160;</a></span>socket() <span class="overload">[2/3]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::io::udp::socket::socket </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html">socket</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel delete">delete</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Deleted copy constructor. </p>
+<p>Sockets are not copyable. </p>
+
+</div>
+</div>
+<a id="a88911d94277f01b2752765ca143ef730" name="a88911d94277f01b2752765ca143ef730"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a88911d94277f01b2752765ca143ef730">&#9670;&#160;</a></span>socket() <span class="overload">[3/3]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::io::udp::socket::socket </td>
+          <td>(</td>
+          <td class="paramtype">io::socket &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em>sock</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructor from a generic <span class="tt">qb::io::socket</span> (move semantics). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">sock</td><td>A generic <span class="tt">qb::io::socket</span> instance, typically already opened with <span class="tt">SOCK_DGRAM</span>. The state of <span class="tt">sock</span> is moved into this <span class="tt"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html" title="Class implementing UDP socket functionality for datagram-based communication.">udp::socket</a></span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="a7c1fc3bccb05e92260d8a542f848097f" name="a7c1fc3bccb05e92260d8a542f848097f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7c1fc3bccb05e92260d8a542f848097f">&#9670;&#160;</a></span>operator=() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html">socket</a> &amp; qb::io::udp::socket::operator= </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html">socket</a> &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel default">default</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Default move assignment operator. </p>
+<dl class="section return"><dt>Returns</dt><dd>Reference to this socket. </dd></dl>
+
+</div>
+</div>
+<a id="a2292a1e2d21fe3ae91f986fdf5ab9b53" name="a2292a1e2d21fe3ae91f986fdf5ab9b53"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2292a1e2d21fe3ae91f986fdf5ab9b53">&#9670;&#160;</a></span>operator=() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html">socket</a> &amp; qb::io::udp::socket::operator= </td>
+          <td>(</td>
+          <td class="paramtype">io::socket &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em>sock</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Move assignment operator from a generic <span class="tt">qb::io::socket</span>. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">sock</td><td>A generic <span class="tt">qb::io::socket</span> to move from. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Reference to this <span class="tt"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html" title="Class implementing UDP socket functionality for datagram-based communication.">udp::socket</a></span>. </dd></dl>
+
+</div>
+</div>
+<a id="ae593c2d859216ab1d59867079470e801" name="ae593c2d859216ab1d59867079470e801"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae593c2d859216ab1d59867079470e801">&#9670;&#160;</a></span>init()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::udp::socket::init </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>af</em></span><span class="paramdefsep"> = </span><span class="paramdefval">AF_INET</span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Initialize (open) the UDP socket. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">af</td><td>Address family (e.g., <span class="tt">AF_INET</span>, <span class="tt">AF_INET6</span>, <span class="tt">AF_UNIX</span>). Defaults to <span class="tt">AF_INET</span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd><span class="tt">true</span> on success, <span class="tt">false</span> on failure to open the socket.</dd></dl>
+<p>This method calls the base <span class="tt">qb::io::socket::open()</span> with <span class="tt">SOCK_DGRAM</span> type. </p>
+
+</div>
+</div>
+<a id="a02355182d9a82eed9241b9abb4441e03" name="a02355182d9a82eed9241b9abb4441e03"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a02355182d9a82eed9241b9abb4441e03">&#9670;&#160;</a></span>bind() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::bind </td>
+          <td>(</td>
+          <td class="paramtype">qb::io::endpoint const &amp;</td>          <td class="paramname"><span class="paramname"><em>ep</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Bind the socket to a specific local endpoint. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ep</td><td>The <span class="tt">qb::io::endpoint</span> to bind to. For UDP, this sets the local address and port from which packets will be sent and received. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure. </dd></dl>
+<dl class="section see"><dt>See also</dt><dd>qb::io::socket::bind(const endpoint &amp;) </dd></dl>
+
+</div>
+</div>
+<a id="a19e6934495aff373db1abddaee257c82" name="a19e6934495aff373db1abddaee257c82"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a19e6934495aff373db1abddaee257c82">&#9670;&#160;</a></span>bind() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::bind </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1uri.html">qb::io::uri</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em>u</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Bind the socket to an endpoint specified by a URI. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">u</td><td>The <span class="tt"><a class="el" href="classqb_1_1io_1_1uri.html" title="Class for parsing, manipulating, and representing URIs.">qb::io::uri</a></span> specifying the local address and port to bind to. Scheme should typically be "udp". </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure. </dd></dl>
+
+</div>
+</div>
+<a id="a13142757a05fbb1f2f399328f552c705" name="a13142757a05fbb1f2f399328f552c705"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a13142757a05fbb1f2f399328f552c705">&#9670;&#160;</a></span>bind_v4()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::bind_v4 </td>
+          <td>(</td>
+          <td class="paramtype">uint16_t</td>          <td class="paramname"><span class="paramname"><em>port</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::string const &amp;</td>          <td class="paramname"><span class="paramname"><em>host</em></span><span class="paramdefsep"> = </span><span class="paramdefval">&quot;0.0.0.0&quot;</span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Bind the socket to a specific IPv4 address and port. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">port</td><td>The port number to bind to. </td></tr>
+    <tr><td class="paramname">host</td><td>The IPv4 host address string (e.g., "0.0.0.0" for all interfaces). Defaults to "0.0.0.0". </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure. </dd></dl>
+
+</div>
+</div>
+<a id="a886471c9c4d3d8bf575dc225711a20c1" name="a886471c9c4d3d8bf575dc225711a20c1"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a886471c9c4d3d8bf575dc225711a20c1">&#9670;&#160;</a></span>bind_v6()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::bind_v6 </td>
+          <td>(</td>
+          <td class="paramtype">uint16_t</td>          <td class="paramname"><span class="paramname"><em>port</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::string const &amp;</td>          <td class="paramname"><span class="paramname"><em>host</em></span><span class="paramdefsep"> = </span><span class="paramdefval">&quot;::&quot;</span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Bind the socket to a specific IPv6 address and port. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">port</td><td>The port number to bind to. </td></tr>
+    <tr><td class="paramname">host</td><td>The IPv6 host address string (e.g., "::" for all interfaces). Defaults to "::". </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure. </dd></dl>
+
+</div>
+</div>
+<a id="a4cd986814f7b90dc47d26e2de23a7341" name="a4cd986814f7b90dc47d26e2de23a7341"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4cd986814f7b90dc47d26e2de23a7341">&#9670;&#160;</a></span>bind_un()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::bind_un </td>
+          <td>(</td>
+          <td class="paramtype">std::string const &amp;</td>          <td class="paramname"><span class="paramname"><em>path</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Bind the socket to a Unix domain socket path (for datagrams). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">path</td><td>The file system path for the Unix domain socket. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure. </dd></dl>
+<dl class="section note"><dt>Note</dt><dd>This is only effective if <span class="tt">QB_ENABLE_UDS</span> is active and the system supports AF_UNIX with SOCK_DGRAM. </dd></dl>
+
+</div>
+</div>
+<a id="ac616b296ad01fbe07966b95e23bae6ac" name="ac616b296ad01fbe07966b95e23bae6ac"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac616b296ad01fbe07966b95e23bae6ac">&#9670;&#160;</a></span>read()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::read </td>
+          <td>(</td>
+          <td class="paramtype">void *</td>          <td class="paramname"><span class="paramname"><em>dest</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>len</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">qb::io::endpoint &amp;</td>          <td class="paramname"><span class="paramname"><em>peer</em></span>&#160;) const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Read a datagram from the socket and get the sender's endpoint. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">dest</td><td>Pointer to the buffer where the received datagram will be stored. </td></tr>
+    <tr><td class="paramname">len</td><td>Maximum number of bytes to read (size of the <span class="tt">dest</span> buffer). </td></tr>
+    <tr><td class="paramname">peer</td><td>Output parameter: A <span class="tt">qb::io::endpoint</span> reference that will be populated with the source address of the received datagram. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Number of bytes actually read. Returns a negative value on error (e.g., <span class="tt">WSAEWOULDBLOCK</span> or <span class="tt">EAGAIN</span> if non-blocking and no data available). </dd></dl>
+<dl class="section see"><dt>See also</dt><dd>qb::io::socket::recvfrom(void*, int, endpoint&amp;, int) </dd></dl>
+
+</div>
+</div>
+<a id="a1b299b78dafaf68b56d0239c6d692f9e" name="a1b299b78dafaf68b56d0239c6d692f9e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1b299b78dafaf68b56d0239c6d692f9e">&#9670;&#160;</a></span>read_timeout()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::read_timeout </td>
+          <td>(</td>
+          <td class="paramtype">void *</td>          <td class="paramname"><span class="paramname"><em>dest</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>len</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">qb::io::endpoint &amp;</td>          <td class="paramname"><span class="paramname"><em>peer</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const std::chrono::microseconds &amp;</td>          <td class="paramname"><span class="paramname"><em>timeout</em></span>&#160;) const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Read a datagram from the socket with a specified timeout. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">dest</td><td>Pointer to the buffer for received data. </td></tr>
+    <tr><td class="paramname">len</td><td>Maximum number of bytes to read. </td></tr>
+    <tr><td class="paramname">peer</td><td>Output parameter for the sender's endpoint. </td></tr>
+    <tr><td class="paramname">timeout</td><td>Maximum time to wait for data. If the timeout expires before data arrives, an error (typically <span class="tt">ETIMEDOUT</span> or equivalent) is returned. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Number of bytes read, or a negative value on error or timeout.</dd></dl>
+<p>Uses <span class="tt">qb::io::socket::recv_n</span> which internally uses <span class="tt">select</span> for timeout handling. </p>
+
+</div>
+</div>
+<a id="aa6b0621f6c5a0353a72d7ae4f59b8616" name="aa6b0621f6c5a0353a72d7ae4f59b8616"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa6b0621f6c5a0353a72d7ae4f59b8616">&#9670;&#160;</a></span>try_read()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::try_read </td>
+          <td>(</td>
+          <td class="paramtype">void *</td>          <td class="paramname"><span class="paramname"><em>dest</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>len</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">qb::io::endpoint &amp;</td>          <td class="paramname"><span class="paramname"><em>peer</em></span>&#160;) const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Try to read a datagram from the socket (non-blocking attempt). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">dest</td><td>Pointer to the buffer for received data. </td></tr>
+    <tr><td class="paramname">len</td><td>Maximum number of bytes to read. </td></tr>
+    <tr><td class="paramname">peer</td><td>Output parameter for the sender's endpoint if data is successfully read. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Number of bytes read if data was available immediately. Returns 0 if no data was available (and socket is non-blocking, would otherwise block). Returns a negative value on error.</dd></dl>
+<p>Sets the socket to non-blocking, attempts a read, then restores its original blocking state. </p>
+
+</div>
+</div>
+<a id="acacfc0d7ee30c3fdb96f90cf79dcef49" name="acacfc0d7ee30c3fdb96f90cf79dcef49"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acacfc0d7ee30c3fdb96f90cf79dcef49">&#9670;&#160;</a></span>write()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::write </td>
+          <td>(</td>
+          <td class="paramtype">const void *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>len</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">qb::io::endpoint const &amp;</td>          <td class="paramname"><span class="paramname"><em>to</em></span>&#160;) const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Write (send) a datagram to a specific remote endpoint. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">data</td><td>Pointer to the data to be sent. </td></tr>
+    <tr><td class="paramname">len</td><td>Number of bytes to send from the <span class="tt">data</span> buffer. </td></tr>
+    <tr><td class="paramname">to</td><td>The destination <span class="tt">qb::io::endpoint</span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Number of bytes actually sent. For UDP, this is usually <span class="tt">len</span> on success. Returns a negative value on error. </dd></dl>
+<dl class="section see"><dt>See also</dt><dd>qb::io::socket::sendto(const void*, int, const endpoint&amp;, int) </dd></dl>
+
+</div>
+</div>
+<a id="a887cc0119251965d475dd3bffcebc3a4" name="a887cc0119251965d475dd3bffcebc3a4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a887cc0119251965d475dd3bffcebc3a4">&#9670;&#160;</a></span>set_buffer_size()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::set_buffer_size </td>
+          <td>(</td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Set the socket's send and receive buffer sizes (SO_SNDBUF, SO_RCVBUF). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">size</td><td>The desired buffer size in bytes for both send and receive buffers. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success for both options, or a non-zero error code if setting either option fails. </dd></dl>
+
+</div>
+</div>
+<a id="ae2dd25eb1f1fa24104c8af7e140a9c30" name="ae2dd25eb1f1fa24104c8af7e140a9c30"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae2dd25eb1f1fa24104c8af7e140a9c30">&#9670;&#160;</a></span>set_broadcast()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::set_broadcast </td>
+          <td>(</td>
+          <td class="paramtype">bool</td>          <td class="paramname"><span class="paramname"><em>enable</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Enable or disable the SO_BROADCAST socket option. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">enable</td><td><span class="tt">true</span> to enable broadcasting, <span class="tt">false</span> to disable. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure.</dd></dl>
+<p>Enabling this allows the socket to send packets to a broadcast address. </p>
+
+</div>
+</div>
+<a id="aceb87f56b6c75ab290ea66d1dd294b41" name="aceb87f56b6c75ab290ea66d1dd294b41"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aceb87f56b6c75ab290ea66d1dd294b41">&#9670;&#160;</a></span>join_multicast_group()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::join_multicast_group </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>group</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>iface</em></span><span class="paramdefsep"> = </span><span class="paramdefval">&quot;&quot;</span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Join an IPv4 or IPv6 multicast group. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">group</td><td>Multicast group address string (e.g., "224.0.0.1" or "ff02::1"). </td></tr>
+    <tr><td class="paramname">iface</td><td>Optional local interface address string or interface name to join the group on. If empty or null, the system chooses a default interface. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure.</dd></dl>
+<p>Uses <span class="tt">IP_ADD_MEMBERSHIP</span> or <span class="tt">IPV6_JOIN_GROUP</span> socket options. </p>
+
+</div>
+</div>
+<a id="ab3eeebcec58cfddec791bd294089121f" name="ab3eeebcec58cfddec791bd294089121f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab3eeebcec58cfddec791bd294089121f">&#9670;&#160;</a></span>leave_multicast_group()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::leave_multicast_group </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>group</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>iface</em></span><span class="paramdefsep"> = </span><span class="paramdefval">&quot;&quot;</span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Leave an IPv4 or IPv6 multicast group. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">group</td><td>Multicast group address string. </td></tr>
+    <tr><td class="paramname">iface</td><td>Optional local interface address string or interface name used when joining. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure.</dd></dl>
+<p>Uses <span class="tt">IP_DROP_MEMBERSHIP</span> or <span class="tt">IPV6_LEAVE_GROUP</span> socket options. </p>
+
+</div>
+</div>
+<a id="af1aafbd079ca59be1b8c3e3d978a5738" name="af1aafbd079ca59be1b8c3e3d978a5738"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af1aafbd079ca59be1b8c3e3d978a5738">&#9670;&#160;</a></span>set_multicast_ttl()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::set_multicast_ttl </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>ttl</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Set the multicast Time-To-Live (TTL) for outgoing IPv4 packets or hop limit for IPv6. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ttl</td><td>The TTL (for IPv4, typically 1-255) or hop limit (for IPv6) value. A TTL of 0 restricts packets to the local host. A TTL of 1 restricts packets to the local subnet. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure.</dd></dl>
+<p>Uses <span class="tt">IP_MULTICAST_TTL</span> or <span class="tt">IPV6_MULTICAST_HOPS</span> socket options. </p>
+
+</div>
+</div>
+<a id="a6408643be7d8851868c872ea62cd86ad" name="a6408643be7d8851868c872ea62cd86ad"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6408643be7d8851868c872ea62cd86ad">&#9670;&#160;</a></span>set_multicast_loopback()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::set_multicast_loopback </td>
+          <td>(</td>
+          <td class="paramtype">bool</td>          <td class="paramname"><span class="paramname"><em>enable</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Set whether multicast packets sent from this socket are looped back to the local host. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">enable</td><td><span class="tt">true</span> to enable multicast loopback (sender receives its own packets), <span class="tt">false</span> to disable (default is usually enabled). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure.</dd></dl>
+<p>Uses <span class="tt">IP_MULTICAST_LOOP</span> or <span class="tt">IPV6_MULTICAST_LOOP</span> socket options. </p>
+
+</div>
+</div>
+<a id="adff8b2a94e9d06d380a45d02fd0aff75" name="adff8b2a94e9d06d380a45d02fd0aff75"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#adff8b2a94e9d06d380a45d02fd0aff75">&#9670;&#160;</a></span>address_family()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::address_family </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the address family of this UDP socket (e.g., AF_INET, AF_INET6). </p>
+<dl class="section return"><dt>Returns</dt><dd>The integer value representing the address family.</dd></dl>
+<p>Retrieves this from the underlying <span class="tt">qb::io::socket</span>'s endpoint information if bound, or the family it was initialized with. </p>
+
+</div>
+</div>
+<a id="a3b11f06c1ca39f3570247597fd6d01ab" name="a3b11f06c1ca39f3570247597fd6d01ab"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a3b11f06c1ca39f3570247597fd6d01ab">&#9670;&#160;</a></span>is_bound()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::udp::socket::is_bound </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Check if the UDP socket is currently bound to a local address and port. </p>
+<dl class="section return"><dt>Returns</dt><dd><span class="tt">true</span> if the socket is bound, <span class="tt">false</span> otherwise.</dd></dl>
+<p>A UDP socket must be bound to receive unicast messages or to send packets from a specific local port. </p>
+
+</div>
+</div>
+<a id="acaf92ae3f940c6f99a5e043e4d4f249f" name="acaf92ae3f940c6f99a5e043e4d4f249f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acaf92ae3f940c6f99a5e043e4d4f249f">&#9670;&#160;</a></span>disconnect()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::udp::socket::disconnect </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Disconnect a previously connected UDP socket or clear default remote endpoint. </p>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure.</dd></dl>
+<p>For UDP, <span class="tt">connect</span> can be used to set a default destination for <span class="tt">send()</span> and to filter incoming packets to only those from that destination. This <span class="tt">disconnect</span> call removes that association. It then calls <span class="tt">qb::io::socket::close()</span>. </p>
+
+</div>
+</div>
+<a name="doc-variable-members" id="doc-variable-members"></a><h2 id="header-doc-variable-members" class="groupheader">Member Data Documentation</h2>
+<a id="a9ec8e3036716c97e88ba03f0b4c79b59" name="a9ec8e3036716c97e88ba03f0b4c79b59"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9ec8e3036716c97e88ba03f0b4c79b59">&#9670;&#160;</a></span>DefaultDatagramSize</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">const std::size_t qb::io::udp::socket::DefaultDatagramSize = 512</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel static">static</span><span class="mlabel constexpr">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Default maximum size of a UDP datagram. </p>
+<p>The theoretical maximum size of a UDP datagram is 65507 bytes, but this implementation uses a more conservative default value of 512 bytes. This can be adjusted by using <a class="el" href="#a887cc0119251965d475dd3bffcebc3a4" title="Set the socket&#39;s send and receive buffer sizes (SO_SNDBUF, SO_RCVBUF).">set_buffer_size()</a> method. </p>
+
+</div>
+</div>
+<a id="afd1ef06ba342ded036a733f4a52255cc" name="afd1ef06ba342ded036a733f4a52255cc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#afd1ef06ba342ded036a733f4a52255cc">&#9670;&#160;</a></span>MaxDatagramSize</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">const std::size_t qb::io::udp::socket::MaxDatagramSize = 65507</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel static">static</span><span class="mlabel constexpr">constexpr</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Maximum possible size of a UDP datagram. </p>
+<p>The theoretical maximum size of a UDP datagram is 65507 bytes (IPv4). </p>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><b>io</b></li><li class="navelem"><b>udp</b></li><li class="navelem"><a href="classqb_1_1io_1_1udp_1_1socket.html">socket</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

@@ -1,0 +1,344 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::io::async::Timeout&lt; _Func &gt; Class Template Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::io::async::Timeout&lt; _Func &gt; Class Template Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('classqb_1_1io_1_1async_1_1_timeout.html','','classqb_1_1io_1_1async_1_1_timeout-members'); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">qb::io::async::Timeout&lt; _Func &gt; Class Template Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___async.html">Asynchronous System</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Utility class to execute a function after a specified timeout using the event loop.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="io_2async_2io_8h_source.html">io.h</a>&gt;</code></p>
+<div class="dynheader">
+Inheritance diagram for qb::io::async::Timeout&lt; _Func &gt;:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1async_1_1_timeout__inherit__graph.png" border="0" usemap="#aqb_1_1io_1_1async_1_1_timeout_3_01___func_01_4_inherit__map" loading="lazy" alt="Inheritance graph"/></div>
+<map name="aqb_1_1io_1_1async_1_1_timeout_3_01___func_01_4_inherit__map" id="aqb_1_1io_1_1async_1_1_timeout_3_01___func_01_4_inherit__map">
+<area shape="rect" title="Utility class to execute a function after a specified timeout using the event loop." alt="" coords="21,213,172,253"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1with__timeout.html" title=" " alt="" coords="25,109,168,165"/>
+<area shape="poly" title=" " alt="" coords="99,180,99,212,94,212,94,180"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1base.html" title=" " alt="" coords="5,5,188,61"/>
+<area shape="poly" title=" " alt="" coords="99,77,99,108,94,108,94,77"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<div class="dynheader">
+Collaboration diagram for qb::io::async::Timeout&lt; _Func &gt;:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1async_1_1_timeout__coll__graph.png" border="0" usemap="#aqb_1_1io_1_1async_1_1_timeout_3_01___func_01_4_coll__map" loading="lazy" alt="Collaboration graph"/></div>
+<map name="aqb_1_1io_1_1async_1_1_timeout_3_01___func_01_4_coll__map" id="aqb_1_1io_1_1async_1_1_timeout_3_01___func_01_4_coll__map">
+<area shape="rect" title="Utility class to execute a function after a specified timeout using the event loop." alt="" coords="21,213,172,253"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1with__timeout.html" title=" " alt="" coords="25,109,168,165"/>
+<area shape="poly" title=" " alt="" coords="99,180,99,212,94,212,94,180"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1base.html" title=" " alt="" coords="5,5,188,61"/>
+<area shape="poly" title=" " alt="" coords="99,77,99,108,94,108,94,77"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:a78a360d2e2523c1a3d535d4e5ed98f6a" id="r_a78a360d2e2523c1a3d535d4e5ed98f6a"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a78a360d2e2523c1a3d535d4e5ed98f6a">Timeout</a> (_Func &amp;&amp;func, double timeout=0.)</td></tr>
+<tr class="memdesc:a78a360d2e2523c1a3d535d4e5ed98f6a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor that schedules a function to be called after a timeout.  <br /></td></tr>
+<tr class="memitem:a47cf770bd71534d331da9b3b733ca475" id="r_a47cf770bd71534d331da9b3b733ca475"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a47cf770bd71534d331da9b3b733ca475">on</a> (event::timer const &amp;) const</td></tr>
+<tr class="memdesc:a47cf770bd71534d331da9b3b733ca475"><td class="mdescLeft">&#160;</td><td class="mdescRight">Timer event handler called when the timeout expires.  <br /></td></tr>
+<tr class="inherit_header pub_methods_classqb_1_1io_1_1async_1_1with__timeout"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_methods_classqb_1_1io_1_1async_1_1with__timeout')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Member Functions inherited from <a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html">qb::io::async::with_timeout&lt; Timeout&lt; _Func &gt; &gt;</a></td></tr>
+<tr class="memitem:a77f00ac9e7ab164c72797bedbef82cdc inherit pub_methods_classqb_1_1io_1_1async_1_1with__timeout" id="r_a77f00ac9e7ab164c72797bedbef82cdc"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html#a77f00ac9e7ab164c72797bedbef82cdc">with_timeout</a> (ev_tstamp timeout=3)</td></tr>
+<tr class="memdesc:a77f00ac9e7ab164c72797bedbef82cdc inherit pub_methods_classqb_1_1io_1_1async_1_1with__timeout"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor that initializes the timeout.  <br /></td></tr>
+<tr class="memitem:a0f234055cbc67e30c7fd03f5d4a4171f inherit pub_methods_classqb_1_1io_1_1async_1_1with__timeout" id="r_a0f234055cbc67e30c7fd03f5d4a4171f"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html#a0f234055cbc67e30c7fd03f5d4a4171f">updateTimeout</a> () noexcept</td></tr>
+<tr class="memdesc:a0f234055cbc67e30c7fd03f5d4a4171f inherit pub_methods_classqb_1_1io_1_1async_1_1with__timeout"><td class="mdescLeft">&#160;</td><td class="mdescRight">Updates the last activity timestamp to the current event loop time.  <br /></td></tr>
+<tr class="memitem:ab704e926ac0ad765d42997dc00482924 inherit pub_methods_classqb_1_1io_1_1async_1_1with__timeout" id="r_ab704e926ac0ad765d42997dc00482924"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html#ab704e926ac0ad765d42997dc00482924">setTimeout</a> (ev_tstamp timeout) noexcept</td></tr>
+<tr class="memdesc:ab704e926ac0ad765d42997dc00482924 inherit pub_methods_classqb_1_1io_1_1async_1_1with__timeout"><td class="mdescLeft">&#160;</td><td class="mdescRight">Sets a new timeout value and restarts the timer.  <br /></td></tr>
+<tr class="memitem:ab5a0c9a30dc8bdc8d92190883a6704c8 inherit pub_methods_classqb_1_1io_1_1async_1_1with__timeout" id="r_ab5a0c9a30dc8bdc8d92190883a6704c8"><td class="memItemLeft" align="right" valign="top">auto&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html#ab5a0c9a30dc8bdc8d92190883a6704c8">getTimeout</a> () const noexcept</td></tr>
+<tr class="memdesc:ab5a0c9a30dc8bdc8d92190883a6704c8 inherit pub_methods_classqb_1_1io_1_1async_1_1with__timeout"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the current configured timeout value.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-inherited" class="groupheader"><a id="inherited" name="inherited"></a>
+Additional Inherited Members</h2></td></tr>
+<tr class="inherit_header pro_methods_classqb_1_1io_1_1async_1_1base"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pro_methods_classqb_1_1io_1_1async_1_1base')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Protected Member Functions inherited from <a class="el" href="classqb_1_1io_1_1async_1_1base.html">qb::io::async::base&lt; with_timeout&lt; Timeout&lt; _Func &gt; &gt;, event::timer &gt;</a></td></tr>
+<tr class="memitem:acd5fc1f29c162060caed257e78bd08ff inherit pro_methods_classqb_1_1io_1_1async_1_1base" id="r_acd5fc1f29c162060caed257e78bd08ff"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base</a> ()</td></tr>
+<tr class="memdesc:acd5fc1f29c162060caed257e78bd08ff inherit pro_methods_classqb_1_1io_1_1async_1_1base"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor that registers the event watcher with the current listener.  <br /></td></tr>
+<tr class="memitem:ac291f7676364a1f45e8b8973785e0589 inherit pro_methods_classqb_1_1io_1_1async_1_1base" id="r_ac291f7676364a1f45e8b8973785e0589"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1base.html#ac291f7676364a1f45e8b8973785e0589">~base</a> ()</td></tr>
+<tr class="memdesc:ac291f7676364a1f45e8b8973785e0589 inherit pro_methods_classqb_1_1io_1_1async_1_1base"><td class="mdescLeft">&#160;</td><td class="mdescRight">Destructor that unregisters the event watcher.  <br /></td></tr>
+<tr class="inherit_header pro_attribs_classqb_1_1io_1_1async_1_1base"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pro_attribs_classqb_1_1io_1_1async_1_1base')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Protected Attributes inherited from <a class="el" href="classqb_1_1io_1_1async_1_1base.html">qb::io::async::base&lt; with_timeout&lt; Timeout&lt; _Func &gt; &gt;, event::timer &gt;</a></td></tr>
+<tr class="memitem:aff6ff4170e260fa009034e7f52c1d0b9 inherit pro_attribs_classqb_1_1io_1_1async_1_1base" id="r_aff6ff4170e260fa009034e7f52c1d0b9"><td class="memItemLeft" align="right" valign="top">
+event::timer &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>_async_event</b></td></tr>
+<tr class="memdesc:aff6ff4170e260fa009034e7f52c1d0b9 inherit pro_attribs_classqb_1_1io_1_1async_1_1base"><td class="mdescLeft">&#160;</td><td class="mdescRight">Reference to the registered libev-based event watcher. <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><div class="compoundTemplParams">template&lt;typename _Func&gt;<br />
+class qb::io::async::Timeout&lt; _Func &gt;</div><p>Utility class to execute a function after a specified timeout using the event loop. </p>
+<p>This class inherits from <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html" title="CRTP base class that adds timeout functionality to derived asynchronous components.">with_timeout</a></span> to schedule a one-shot execution of a provided callable (function, lambda, functor). It automatically manages its own lifetime, deleting itself after the function is executed or if the timeout is explicitly cancelled.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_Func</td><td>The function type (or callable object type) to execute after the timeout. </td></tr>
+  </table>
+  </dd>
+</dl>
+</div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="a78a360d2e2523c1a3d535d4e5ed98f6a" name="a78a360d2e2523c1a3d535d4e5ed98f6a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a78a360d2e2523c1a3d535d4e5ed98f6a">&#9670;&#160;</a></span>Timeout()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Func&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1async_1_1_timeout.html">qb::io::async::Timeout</a>&lt; _Func &gt;::Timeout </td>
+          <td>(</td>
+          <td class="paramtype">_Func &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em>func</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">double</td>          <td class="paramname"><span class="paramname"><em>timeout</em></span><span class="paramdefsep"> = </span><span class="paramdefval">0.</span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructor that schedules a function to be called after a timeout. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">func</td><td>The function to execute. It will be moved into the <a class="el" href="classqb_1_1io_1_1async_1_1_timeout.html" title="Utility class to execute a function after a specified timeout using the event loop.">Timeout</a> object. </td></tr>
+    <tr><td class="paramname">timeout</td><td><a class="el" href="classqb_1_1io_1_1async_1_1_timeout.html" title="Utility class to execute a function after a specified timeout using the event loop.">Timeout</a> duration in seconds before execution. If <span class="tt">0.0</span> or less, the function is executed immediately (or in the next loop iteration, depending on <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html" title="CRTP base class that adds timeout functionality to derived asynchronous components.">with_timeout</a></span> behavior) and this <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1_timeout.html" title="Utility class to execute a function after a specified timeout using the event loop.">Timeout</a></span> object is deleted. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="a47cf770bd71534d331da9b3b733ca475" name="a47cf770bd71534d331da9b3b733ca475"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a47cf770bd71534d331da9b3b733ca475">&#9670;&#160;</a></span>on()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Func&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void <a class="el" href="classqb_1_1io_1_1async_1_1_timeout.html">qb::io::async::Timeout</a>&lt; _Func &gt;::on </td>
+          <td>(</td>
+          <td class="paramtype">event::timer const &amp;</td>          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Timer event handler called when the timeout expires. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">event</td><td>The <span class="tt"><a class="el" href="structqb_1_1io_1_1async_1_1event_1_1timer.html" title="Event for handling time-based operations (timers and timeouts).">event::timer</a></span> that triggered (marked as unused here as specific timer details are not needed).</td></tr>
+  </table>
+  </dd>
+</dl>
+<p>Executes the stored function <span class="tt">_func</span> and then deletes this <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1_timeout.html" title="Utility class to execute a function after a specified timeout using the event loop.">Timeout</a></span> object, ensuring one-shot execution and automatic cleanup. </p>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><b>io</b></li><li class="navelem"><b>async</b></li><li class="navelem"><a href="classqb_1_1io_1_1async_1_1_timeout.html">Timeout</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

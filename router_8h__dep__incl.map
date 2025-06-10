@@ -1,0 +1,5 @@
+<map id="include/qb/system/event/router.h" name="include/qb/system/event/router.h">
+<area shape="rect" id="Node000001" title="Event routing system." alt="" coords="18,5,182,46"/>
+<area shape="rect" id="Node000002" href="$_virtual_core_8h.html" title="Defines the VirtualCore class, representing a worker thread in the QB Actor Framework." alt="" coords="5,94,195,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="103,62,103,93,97,93,97,62"/>
+</map>

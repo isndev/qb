@@ -1,0 +1,1042 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::io::tcp::socket Class Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::io::tcp::socket Class Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('classqb_1_1io_1_1tcp_1_1socket.html','','classqb_1_1io_1_1tcp_1_1socket-members'); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">qb::io::tcp::socket Class Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___networking.html">Networking Utilities</a> &raquo; <a class="el" href="group___t_c_p.html">TCP Communication</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Class implementing TCP socket functionality for reliable, stream-oriented communication.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="tcp_2socket_8h_source.html">socket.h</a>&gt;</code></p>
+<div class="dynheader">
+Inheritance diagram for qb::io::tcp::socket:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1tcp_1_1socket__inherit__graph.png" border="0" usemap="#aqb_1_1io_1_1tcp_1_1socket_inherit__map" loading="lazy" alt="Inheritance graph"/></div>
+<map name="aqb_1_1io_1_1tcp_1_1socket_inherit__map" id="aqb_1_1io_1_1tcp_1_1socket_inherit__map">
+<area shape="rect" title="Class implementing TCP socket functionality for reliable, stream&#45;oriented communication." alt="" coords="18,79,144,105"/>
+<area shape="rect" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality." alt="" coords="5,153,157,178"/>
+<area shape="poly" title=" " alt="" coords="84,120,84,152,78,152,78,120"/>
+<area shape="rect" title=" " alt="" coords="31,5,131,31"/>
+<area shape="poly" title=" " alt="" coords="84,46,84,79,78,79,78,46"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<div class="dynheader">
+Collaboration diagram for qb::io::tcp::socket:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1tcp_1_1socket__coll__graph.png" border="0" usemap="#aqb_1_1io_1_1tcp_1_1socket_coll__map" loading="lazy" alt="Collaboration graph"/></div>
+<map name="aqb_1_1io_1_1tcp_1_1socket_coll__map" id="aqb_1_1io_1_1tcp_1_1socket_coll__map">
+<area shape="rect" title="Class implementing TCP socket functionality for reliable, stream&#45;oriented communication." alt="" coords="5,79,132,105"/>
+<area shape="rect" title=" " alt="" coords="18,5,119,31"/>
+<area shape="poly" title=" " alt="" coords="71,46,71,79,66,79,66,46"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:a7bd2b74d6b306eb0df80491bb5a82422" id="r_a7bd2b74d6b306eb0df80491bb5a82422"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7bd2b74d6b306eb0df80491bb5a82422">socket</a> ()=default</td></tr>
+<tr class="memdesc:a7bd2b74d6b306eb0df80491bb5a82422"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default constructor.  <br /></td></tr>
+<tr class="memitem:ae880ee8678d9dcaf0882acd5ad9da5c8" id="r_ae880ee8678d9dcaf0882acd5ad9da5c8"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae880ee8678d9dcaf0882acd5ad9da5c8">socket</a> (<a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html">socket</a> const &amp;)=delete</td></tr>
+<tr class="memdesc:ae880ee8678d9dcaf0882acd5ad9da5c8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Deleted copy constructor.  <br /></td></tr>
+<tr class="memitem:a48dadb980e53b97728c1e8dd415912fc" id="r_a48dadb980e53b97728c1e8dd415912fc"><td class="memItemLeft" align="right" valign="top"><a id="a48dadb980e53b97728c1e8dd415912fc" name="a48dadb980e53b97728c1e8dd415912fc"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>socket</b> (<a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html">socket</a> &amp;&amp;)=default</td></tr>
+<tr class="memdesc:a48dadb980e53b97728c1e8dd415912fc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default move constructor. <br /></td></tr>
+<tr class="memitem:a66a43ae654c9ee526f259e227185bb61" id="r_a66a43ae654c9ee526f259e227185bb61"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html">socket</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a66a43ae654c9ee526f259e227185bb61">operator=</a> (<a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html">socket</a> &amp;&amp;)=default</td></tr>
+<tr class="memdesc:a66a43ae654c9ee526f259e227185bb61"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default move assignment operator.  <br /></td></tr>
+<tr class="memitem:a8a9304f51b57b13ed7ff577e259cda22" id="r_a8a9304f51b57b13ed7ff577e259cda22"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a8a9304f51b57b13ed7ff577e259cda22">socket</a> (io::socket &amp;&amp;sock) noexcept</td></tr>
+<tr class="memdesc:a8a9304f51b57b13ed7ff577e259cda22"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor from a generic <span class="tt">qb::io::socket</span> (move semantics).  <br /></td></tr>
+<tr class="memitem:af09c692dd50aa31f55cc12ab7915c9ef" id="r_af09c692dd50aa31f55cc12ab7915c9ef"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html">socket</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af09c692dd50aa31f55cc12ab7915c9ef">operator=</a> (io::socket &amp;&amp;sock) noexcept</td></tr>
+<tr class="memdesc:af09c692dd50aa31f55cc12ab7915c9ef"><td class="mdescLeft">&#160;</td><td class="mdescRight">Move assignment operator from a generic <span class="tt">qb::io::socket</span>.  <br /></td></tr>
+<tr class="memitem:a9bf97824915e85a94016fb683af43259" id="r_a9bf97824915e85a94016fb683af43259"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a9bf97824915e85a94016fb683af43259">init</a> (int af=AF_INET) noexcept</td></tr>
+<tr class="memdesc:a9bf97824915e85a94016fb683af43259"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initialize (open) the TCP socket.  <br /></td></tr>
+<tr class="memitem:a082dff596dd5d43e16bfdfefce591aa0" id="r_a082dff596dd5d43e16bfdfefce591aa0"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a082dff596dd5d43e16bfdfefce591aa0">bind</a> (qb::io::endpoint const &amp;ep) noexcept</td></tr>
+<tr class="memdesc:a082dff596dd5d43e16bfdfefce591aa0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bind the socket to a specific local endpoint.  <br /></td></tr>
+<tr class="memitem:a1c8f1b6faca0b18ff8103cc5604d28d6" id="r_a1c8f1b6faca0b18ff8103cc5604d28d6"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a1c8f1b6faca0b18ff8103cc5604d28d6">bind</a> (<a class="el" href="classqb_1_1io_1_1uri.html">qb::io::uri</a> const &amp;u) noexcept</td></tr>
+<tr class="memdesc:a1c8f1b6faca0b18ff8103cc5604d28d6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Bind the socket to an endpoint specified by a URI.  <br /></td></tr>
+<tr class="memitem:a1f1ddb00595e5f9f3230acf85445b0cf" id="r_a1f1ddb00595e5f9f3230acf85445b0cf"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a1f1ddb00595e5f9f3230acf85445b0cf">connect</a> (qb::io::endpoint const &amp;ep) noexcept</td></tr>
+<tr class="memdesc:a1f1ddb00595e5f9f3230acf85445b0cf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Connect to a remote TCP endpoint.  <br /></td></tr>
+<tr class="memitem:ac3290d4aed43dbacc7cb5158cdd8b4c0" id="r_ac3290d4aed43dbacc7cb5158cdd8b4c0"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac3290d4aed43dbacc7cb5158cdd8b4c0">connect</a> (<a class="el" href="classqb_1_1io_1_1uri.html">uri</a> const &amp;u) noexcept</td></tr>
+<tr class="memdesc:ac3290d4aed43dbacc7cb5158cdd8b4c0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Connect to a remote TCP endpoint specified by a URI.  <br /></td></tr>
+<tr class="memitem:a7b9b36778acaa2dc820545633b485ca3" id="r_a7b9b36778acaa2dc820545633b485ca3"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7b9b36778acaa2dc820545633b485ca3">connect_v4</a> (std::string const &amp;host, uint16_t port) noexcept</td></tr>
+<tr class="memdesc:a7b9b36778acaa2dc820545633b485ca3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Connect to an IPv4 TCP server.  <br /></td></tr>
+<tr class="memitem:a91ae9444a94d4980b48f92e08856ba03" id="r_a91ae9444a94d4980b48f92e08856ba03"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a91ae9444a94d4980b48f92e08856ba03">connect_v6</a> (std::string const &amp;host, uint16_t port) noexcept</td></tr>
+<tr class="memdesc:a91ae9444a94d4980b48f92e08856ba03"><td class="mdescLeft">&#160;</td><td class="mdescRight">Connect to an IPv6 TCP server.  <br /></td></tr>
+<tr class="memitem:a3f24b61b24ba05631065027a4287c8be" id="r_a3f24b61b24ba05631065027a4287c8be"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a3f24b61b24ba05631065027a4287c8be">connect_un</a> (std::string const &amp;path) noexcept</td></tr>
+<tr class="memdesc:a3f24b61b24ba05631065027a4287c8be"><td class="mdescLeft">&#160;</td><td class="mdescRight">Connect to a Unix domain TCP-style socket.  <br /></td></tr>
+<tr class="memitem:a4c4829b3cbe2a1490a4b68774d4a51e5" id="r_a4c4829b3cbe2a1490a4b68774d4a51e5"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4c4829b3cbe2a1490a4b68774d4a51e5">n_connect</a> (qb::io::endpoint const &amp;ep) noexcept</td></tr>
+<tr class="memdesc:a4c4829b3cbe2a1490a4b68774d4a51e5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initiate a non-blocking connect to a remote TCP endpoint.  <br /></td></tr>
+<tr class="memitem:a2b5e7a8ba3f273f89032f7796713b9ed" id="r_a2b5e7a8ba3f273f89032f7796713b9ed"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2b5e7a8ba3f273f89032f7796713b9ed">connected</a> () noexcept</td></tr>
+<tr class="memdesc:a2b5e7a8ba3f273f89032f7796713b9ed"><td class="mdescLeft">&#160;</td><td class="mdescRight">Called after a non-blocking connect attempt succeeds or needs to be finalized.  <br /></td></tr>
+<tr class="memitem:ad7c365c22edd1d79f0b3c42f318edb47" id="r_ad7c365c22edd1d79f0b3c42f318edb47"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ad7c365c22edd1d79f0b3c42f318edb47">n_connect</a> (<a class="el" href="classqb_1_1io_1_1uri.html">uri</a> const &amp;u) noexcept</td></tr>
+<tr class="memdesc:ad7c365c22edd1d79f0b3c42f318edb47"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initiate a non-blocking connect to a remote TCP endpoint specified by a URI.  <br /></td></tr>
+<tr class="memitem:a08ca3119085768ddd40c4e7a6d8aef6e" id="r_a08ca3119085768ddd40c4e7a6d8aef6e"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a08ca3119085768ddd40c4e7a6d8aef6e">n_connect_v4</a> (std::string const &amp;host, uint16_t port) noexcept</td></tr>
+<tr class="memdesc:a08ca3119085768ddd40c4e7a6d8aef6e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initiate a non-blocking connect to an IPv4 TCP server.  <br /></td></tr>
+<tr class="memitem:a5d6c781b45daf5665da3f6e099d915fc" id="r_a5d6c781b45daf5665da3f6e099d915fc"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a5d6c781b45daf5665da3f6e099d915fc">n_connect_v6</a> (std::string const &amp;host, uint16_t port) noexcept</td></tr>
+<tr class="memdesc:a5d6c781b45daf5665da3f6e099d915fc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initiate a non-blocking connect to an IPv6 TCP server.  <br /></td></tr>
+<tr class="memitem:a327012443522268a8f763863b161fbbf" id="r_a327012443522268a8f763863b161fbbf"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a327012443522268a8f763863b161fbbf">n_connect_un</a> (std::string const &amp;path) noexcept</td></tr>
+<tr class="memdesc:a327012443522268a8f763863b161fbbf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initiate a non-blocking connect to a Unix domain TCP-style socket.  <br /></td></tr>
+<tr class="memitem:a40750b3fb57a36969773b10670f8433a" id="r_a40750b3fb57a36969773b10670f8433a"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a40750b3fb57a36969773b10670f8433a">read</a> (void *dest, std::size_t len) const noexcept</td></tr>
+<tr class="memdesc:a40750b3fb57a36969773b10670f8433a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Read data from the connected TCP socket.  <br /></td></tr>
+<tr class="memitem:afb719058159d29e560b5fd9f5c1d9990" id="r_afb719058159d29e560b5fd9f5c1d9990"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#afb719058159d29e560b5fd9f5c1d9990">write</a> (const void *data, std::size_t size) const noexcept</td></tr>
+<tr class="memdesc:afb719058159d29e560b5fd9f5c1d9990"><td class="mdescLeft">&#160;</td><td class="mdescRight">Write data to the connected TCP socket.  <br /></td></tr>
+<tr class="memitem:a4f0bcb85fde3c9c82e9e8f12b7b0d767" id="r_a4f0bcb85fde3c9c82e9e8f12b7b0d767"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4f0bcb85fde3c9c82e9e8f12b7b0d767">disconnect</a> () const noexcept</td></tr>
+<tr class="memdesc:a4f0bcb85fde3c9c82e9e8f12b7b0d767"><td class="mdescLeft">&#160;</td><td class="mdescRight">Disconnect the TCP socket.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-static-methods" class="groupheader"><a id="pub-static-methods" name="pub-static-methods"></a>
+Static Public Member Functions</h2></td></tr>
+<tr class="memitem:a8f6b8f6221d0467013100d4ca39d3b23" id="r_a8f6b8f6221d0467013100d4ca39d3b23"><td class="memItemLeft" align="right" valign="top"><a id="a8f6b8f6221d0467013100d4ca39d3b23" name="a8f6b8f6221d0467013100d4ca39d3b23"></a>
+static constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>is_secure</b> () noexcept</td></tr>
+<tr class="memdesc:a8f6b8f6221d0467013100d4ca39d3b23"><td class="mdescLeft">&#160;</td><td class="mdescRight">Indicates that this socket implementation is not secure. <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Class implementing TCP socket functionality for reliable, stream-oriented communication. </p>
+<p>This class provides TCP socket functionality, inheriting protectedly from the base <span class="tt">qb::io::socket</span> and exposing a TCP-specific interface. It supports connecting to and communicating over TCP/IPv4, TCP/IPv6, and Unix Domain Sockets (if enabled). It is used as the underlying I/O primitive for <span class="tt"><a class="el" href="classqb_1_1io_1_1transport_1_1tcp.html" title="TCP transport providing reliable, stream-based network communication.">qb::io::transport::tcp</a></span>. </p>
+</div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="a7bd2b74d6b306eb0df80491bb5a82422" name="a7bd2b74d6b306eb0df80491bb5a82422"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7bd2b74d6b306eb0df80491bb5a82422">&#9670;&#160;</a></span>socket() <span class="overload">[1/3]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::io::tcp::socket::socket </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel default">default</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Default constructor. </p>
+<p>Creates an uninitialized TCP socket. Call <span class="tt"><a class="el" href="#a9bf97824915e85a94016fb683af43259" title="Initialize (open) the TCP socket.">init()</a></span> before use. </p>
+
+</div>
+</div>
+<a id="ae880ee8678d9dcaf0882acd5ad9da5c8" name="ae880ee8678d9dcaf0882acd5ad9da5c8"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae880ee8678d9dcaf0882acd5ad9da5c8">&#9670;&#160;</a></span>socket() <span class="overload">[2/3]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::io::tcp::socket::socket </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html">socket</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel delete">delete</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Deleted copy constructor. </p>
+<p>Sockets are not copyable. </p>
+
+</div>
+</div>
+<a id="a8a9304f51b57b13ed7ff577e259cda22" name="a8a9304f51b57b13ed7ff577e259cda22"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8a9304f51b57b13ed7ff577e259cda22">&#9670;&#160;</a></span>socket() <span class="overload">[3/3]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::io::tcp::socket::socket </td>
+          <td>(</td>
+          <td class="paramtype">io::socket &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em>sock</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructor from a generic <span class="tt">qb::io::socket</span> (move semantics). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">sock</td><td>A generic <span class="tt">qb::io::socket</span> instance, typically already opened with <span class="tt">SOCK_STREAM</span>. The state of <span class="tt">sock</span> is moved into this <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html" title="Class implementing TCP socket functionality for reliable, stream-oriented communication.">tcp::socket</a></span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="a66a43ae654c9ee526f259e227185bb61" name="a66a43ae654c9ee526f259e227185bb61"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a66a43ae654c9ee526f259e227185bb61">&#9670;&#160;</a></span>operator=() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html">socket</a> &amp; qb::io::tcp::socket::operator= </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html">socket</a> &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel default">default</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Default move assignment operator. </p>
+<dl class="section return"><dt>Returns</dt><dd>Reference to this socket. </dd></dl>
+
+</div>
+</div>
+<a id="af09c692dd50aa31f55cc12ab7915c9ef" name="af09c692dd50aa31f55cc12ab7915c9ef"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af09c692dd50aa31f55cc12ab7915c9ef">&#9670;&#160;</a></span>operator=() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html">socket</a> &amp; qb::io::tcp::socket::operator= </td>
+          <td>(</td>
+          <td class="paramtype">io::socket &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em>sock</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Move assignment operator from a generic <span class="tt">qb::io::socket</span>. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">sock</td><td>A generic <span class="tt">qb::io::socket</span> to move from. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Reference to this <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html" title="Class implementing TCP socket functionality for reliable, stream-oriented communication.">tcp::socket</a></span>. </dd></dl>
+
+</div>
+</div>
+<a id="a9bf97824915e85a94016fb683af43259" name="a9bf97824915e85a94016fb683af43259"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9bf97824915e85a94016fb683af43259">&#9670;&#160;</a></span>init()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::init </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>af</em></span><span class="paramdefsep"> = </span><span class="paramdefval">AF_INET</span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Initialize (open) the TCP socket. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">af</td><td>Address family (e.g., <span class="tt">AF_INET</span>, <span class="tt">AF_INET6</span>, <span class="tt">AF_UNIX</span>). Defaults to <span class="tt">AF_INET</span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure.</dd></dl>
+<p>This method calls the base <span class="tt">qb::io::socket::open()</span> with <span class="tt">SOCK_STREAM</span> type. </p>
+
+</div>
+</div>
+<a id="a082dff596dd5d43e16bfdfefce591aa0" name="a082dff596dd5d43e16bfdfefce591aa0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a082dff596dd5d43e16bfdfefce591aa0">&#9670;&#160;</a></span>bind() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::bind </td>
+          <td>(</td>
+          <td class="paramtype">qb::io::endpoint const &amp;</td>          <td class="paramname"><span class="paramname"><em>ep</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Bind the socket to a specific local endpoint. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ep</td><td>The <span class="tt">qb::io::endpoint</span> to bind to. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure. </dd></dl>
+<dl class="section see"><dt>See also</dt><dd>qb::io::socket::bind(const endpoint &amp;) </dd></dl>
+
+</div>
+</div>
+<a id="a1c8f1b6faca0b18ff8103cc5604d28d6" name="a1c8f1b6faca0b18ff8103cc5604d28d6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1c8f1b6faca0b18ff8103cc5604d28d6">&#9670;&#160;</a></span>bind() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::bind </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1uri.html">qb::io::uri</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em>u</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Bind the socket to an endpoint specified by a URI. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">u</td><td>The <span class="tt"><a class="el" href="classqb_1_1io_1_1uri.html" title="Class for parsing, manipulating, and representing URIs.">qb::io::uri</a></span> specifying the local address and port to bind to. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure. </dd></dl>
+
+</div>
+</div>
+<a id="a1f1ddb00595e5f9f3230acf85445b0cf" name="a1f1ddb00595e5f9f3230acf85445b0cf"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1f1ddb00595e5f9f3230acf85445b0cf">&#9670;&#160;</a></span>connect() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::connect </td>
+          <td>(</td>
+          <td class="paramtype">qb::io::endpoint const &amp;</td>          <td class="paramname"><span class="paramname"><em>ep</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Connect to a remote TCP endpoint. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ep</td><td>The <span class="tt">qb::io::endpoint</span> of the remote server. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success (blocking connect), or a non-zero error code on failure. </dd></dl>
+<dl class="section see"><dt>See also</dt><dd>qb::io::socket::connect(const endpoint &amp;) </dd></dl>
+
+</div>
+</div>
+<a id="ac3290d4aed43dbacc7cb5158cdd8b4c0" name="ac3290d4aed43dbacc7cb5158cdd8b4c0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac3290d4aed43dbacc7cb5158cdd8b4c0">&#9670;&#160;</a></span>connect() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::connect </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1uri.html">uri</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em>u</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Connect to a remote TCP endpoint specified by a URI. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">u</td><td>The <span class="tt"><a class="el" href="classqb_1_1io_1_1uri.html" title="Class for parsing, manipulating, and representing URIs.">qb::io::uri</a></span> of the remote server. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure. </dd></dl>
+
+</div>
+</div>
+<a id="a7b9b36778acaa2dc820545633b485ca3" name="a7b9b36778acaa2dc820545633b485ca3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7b9b36778acaa2dc820545633b485ca3">&#9670;&#160;</a></span>connect_v4()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::connect_v4 </td>
+          <td>(</td>
+          <td class="paramtype">std::string const &amp;</td>          <td class="paramname"><span class="paramname"><em>host</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint16_t</td>          <td class="paramname"><span class="paramname"><em>port</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Connect to an IPv4 TCP server. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">host</td><td>The hostname or IP address string of the server. </td></tr>
+    <tr><td class="paramname">port</td><td>The port number of the server. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure. </dd></dl>
+
+</div>
+</div>
+<a id="a91ae9444a94d4980b48f92e08856ba03" name="a91ae9444a94d4980b48f92e08856ba03"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a91ae9444a94d4980b48f92e08856ba03">&#9670;&#160;</a></span>connect_v6()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::connect_v6 </td>
+          <td>(</td>
+          <td class="paramtype">std::string const &amp;</td>          <td class="paramname"><span class="paramname"><em>host</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint16_t</td>          <td class="paramname"><span class="paramname"><em>port</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Connect to an IPv6 TCP server. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">host</td><td>The hostname or IP address string of the server. </td></tr>
+    <tr><td class="paramname">port</td><td>The port number of the server. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure. </dd></dl>
+
+</div>
+</div>
+<a id="a3f24b61b24ba05631065027a4287c8be" name="a3f24b61b24ba05631065027a4287c8be"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a3f24b61b24ba05631065027a4287c8be">&#9670;&#160;</a></span>connect_un()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::connect_un </td>
+          <td>(</td>
+          <td class="paramtype">std::string const &amp;</td>          <td class="paramname"><span class="paramname"><em>path</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Connect to a Unix domain TCP-style socket. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">path</td><td>The file system path of the Unix domain socket. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure. </dd></dl>
+<dl class="section note"><dt>Note</dt><dd>This is only effective if <span class="tt">QB_ENABLE_UDS</span> is active and the system supports AF_UNIX. </dd></dl>
+
+</div>
+</div>
+<a id="a4c4829b3cbe2a1490a4b68774d4a51e5" name="a4c4829b3cbe2a1490a4b68774d4a51e5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4c4829b3cbe2a1490a4b68774d4a51e5">&#9670;&#160;</a></span>n_connect() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::n_connect </td>
+          <td>(</td>
+          <td class="paramtype">qb::io::endpoint const &amp;</td>          <td class="paramname"><span class="paramname"><em>ep</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Initiate a non-blocking connect to a remote TCP endpoint. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ep</td><td>The <span class="tt">qb::io::endpoint</span> of the remote server. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 if connection is in progress (use <span class="tt">select</span> or an event loop to check for completion) or succeeded immediately. Returns a non-zero error code on immediate failure.</dd></dl>
+<p>Sets the socket to non-blocking before attempting to connect. The <span class="tt"><a class="el" href="#a2b5e7a8ba3f273f89032f7796713b9ed" title="Called after a non-blocking connect attempt succeeds or needs to be finalized.">connected()</a></span> method (or <span class="tt">handle_write_ready</span>) should be checked later to confirm connection. </p><dl class="section see"><dt>See also</dt><dd>qb::io::socket::connect_n(const endpoint &amp;) </dd></dl>
+
+</div>
+</div>
+<a id="a2b5e7a8ba3f273f89032f7796713b9ed" name="a2b5e7a8ba3f273f89032f7796713b9ed"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2b5e7a8ba3f273f89032f7796713b9ed">&#9670;&#160;</a></span>connected()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::io::tcp::socket::connected </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Called after a non-blocking connect attempt succeeds or needs to be finalized. </p>
+<p>For TCP, this method typically checks for socket errors to confirm successful connection after <span class="tt">n_connect</span> indicated progress. In this base <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html" title="Class implementing TCP socket functionality for reliable, stream-oriented communication.">tcp::socket</a></span>, it's a no-op but can be overridden by derived classes (like <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">ssl::socket</a></span> for handshake). </p>
+
+</div>
+</div>
+<a id="ad7c365c22edd1d79f0b3c42f318edb47" name="ad7c365c22edd1d79f0b3c42f318edb47"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad7c365c22edd1d79f0b3c42f318edb47">&#9670;&#160;</a></span>n_connect() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::n_connect </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1uri.html">uri</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em>u</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Initiate a non-blocking connect to a remote TCP endpoint specified by a URI. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">u</td><td>The <span class="tt"><a class="el" href="classqb_1_1io_1_1uri.html" title="Class for parsing, manipulating, and representing URIs.">qb::io::uri</a></span> of the remote server. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 if connection is in progress or succeeded immediately, non-zero error code on immediate failure. </dd></dl>
+
+</div>
+</div>
+<a id="a08ca3119085768ddd40c4e7a6d8aef6e" name="a08ca3119085768ddd40c4e7a6d8aef6e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a08ca3119085768ddd40c4e7a6d8aef6e">&#9670;&#160;</a></span>n_connect_v4()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::n_connect_v4 </td>
+          <td>(</td>
+          <td class="paramtype">std::string const &amp;</td>          <td class="paramname"><span class="paramname"><em>host</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint16_t</td>          <td class="paramname"><span class="paramname"><em>port</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Initiate a non-blocking connect to an IPv4 TCP server. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">host</td><td>The hostname or IP address string of the server. </td></tr>
+    <tr><td class="paramname">port</td><td>The port number of the server. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 if connection is in progress or succeeded immediately, non-zero error code on immediate failure. </dd></dl>
+
+</div>
+</div>
+<a id="a5d6c781b45daf5665da3f6e099d915fc" name="a5d6c781b45daf5665da3f6e099d915fc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5d6c781b45daf5665da3f6e099d915fc">&#9670;&#160;</a></span>n_connect_v6()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::n_connect_v6 </td>
+          <td>(</td>
+          <td class="paramtype">std::string const &amp;</td>          <td class="paramname"><span class="paramname"><em>host</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint16_t</td>          <td class="paramname"><span class="paramname"><em>port</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Initiate a non-blocking connect to an IPv6 TCP server. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">host</td><td>The hostname or IP address string of the server. </td></tr>
+    <tr><td class="paramname">port</td><td>The port number of the server. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 if connection is in progress or succeeded immediately, non-zero error code on immediate failure. </dd></dl>
+
+</div>
+</div>
+<a id="a327012443522268a8f763863b161fbbf" name="a327012443522268a8f763863b161fbbf"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a327012443522268a8f763863b161fbbf">&#9670;&#160;</a></span>n_connect_un()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::n_connect_un </td>
+          <td>(</td>
+          <td class="paramtype">std::string const &amp;</td>          <td class="paramname"><span class="paramname"><em>path</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Initiate a non-blocking connect to a Unix domain TCP-style socket. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">path</td><td>The file system path of the Unix domain socket. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 if connection is in progress or succeeded immediately, non-zero error code on immediate failure. </dd></dl>
+
+</div>
+</div>
+<a id="a40750b3fb57a36969773b10670f8433a" name="a40750b3fb57a36969773b10670f8433a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a40750b3fb57a36969773b10670f8433a">&#9670;&#160;</a></span>read()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::read </td>
+          <td>(</td>
+          <td class="paramtype">void *</td>          <td class="paramname"><span class="paramname"><em>dest</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>len</em></span>&#160;) const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Read data from the connected TCP socket. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">dest</td><td>Pointer to the buffer where received data will be stored. </td></tr>
+    <tr><td class="paramname">len</td><td>Maximum number of bytes to read into the buffer. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Number of bytes actually read. <span class="tt">0</span> indicates graceful shutdown by the peer. A negative value indicates an error (e.g., <span class="tt">WSAEWOULDBLOCK</span> or <span class="tt">EAGAIN</span> if non-blocking and no data). </dd></dl>
+<dl class="section see"><dt>See also</dt><dd>qb::io::socket::recv(void*, int, int) </dd></dl>
+
+</div>
+</div>
+<a id="afb719058159d29e560b5fd9f5c1d9990" name="afb719058159d29e560b5fd9f5c1d9990"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#afb719058159d29e560b5fd9f5c1d9990">&#9670;&#160;</a></span>write()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::write </td>
+          <td>(</td>
+          <td class="paramtype">const void *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>&#160;) const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Write data to the connected TCP socket. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">data</td><td>Pointer to the data to be sent. </td></tr>
+    <tr><td class="paramname">size</td><td>Number of bytes to send from the <span class="tt">data</span> buffer. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Number of bytes actually written. This can be less than <span class="tt">size</span> if the send buffer is full. A negative value indicates an error. </dd></dl>
+<dl class="section see"><dt>See also</dt><dd>qb::io::socket::send(const void*, int, int) </dd></dl>
+
+</div>
+</div>
+<a id="a4f0bcb85fde3c9c82e9e8f12b7b0d767" name="a4f0bcb85fde3c9c82e9e8f12b7b0d767"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4f0bcb85fde3c9c82e9e8f12b7b0d767">&#9670;&#160;</a></span>disconnect()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::socket::disconnect </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Disconnect the TCP socket. </p>
+<dl class="section return"><dt>Returns</dt><dd>0 on success, or a non-zero error code on failure.</dd></dl>
+<p>This typically calls <span class="tt">qb::io::socket::shutdown()</span> with <span class="tt">SD_BOTH</span> and then <span class="tt">close()</span>. </p>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><b>io</b></li><li class="navelem"><b>tcp</b></li><li class="navelem"><a href="classqb_1_1io_1_1tcp_1_1socket.html">socket</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

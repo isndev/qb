@@ -1,0 +1,7 @@
+<map id="qb::is_map_iterator&lt; T &gt;" name="qb::is_map_iterator&lt; T &gt;">
+<area shape="rect" id="Node000001" title="Type trait to check if an iterator T points to map elements (i.e., std::pair)." alt="" coords="5,168,170,193"/>
+<area shape="rect" id="Node000002" href="$structqb_1_1is__pair.html" title=" " alt="" coords="21,79,154,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="90,135,90,167,85,167,85,135"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="34,5,141,31"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="90,46,90,79,85,79,85,46"/>
+</map>

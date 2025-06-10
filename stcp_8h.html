@@ -1,0 +1,336 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/transport/stcp.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/transport/stcp.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('stcp_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">stcp.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___networking.html">Networking Utilities</a> &raquo; <a class="el" href="group___s_s_l.html">Secure Sockets Layer (SSL/TLS)</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Secure TCP (SSL/TLS) stream transport for the QB IO library.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &lt;iostream&gt;</code><br />
+<code>#include &quot;<a class="el" href="stream_8h_source.html">../stream.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="tcp_2ssl_2socket_8h_source.html">../tcp/ssl/socket.h</a>&quot;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for stcp.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="stcp_8h__incl.png" border="0" usemap="#ainclude_2qb_2io_2transport_2stcp_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2transport_2stcp_8h" id="ainclude_2qb_2io_2transport_2stcp_8h">
+<area shape="rect" title="Secure TCP (SSL/TLS) stream transport for the QB IO library." alt="" coords="218,5,368,46"/>
+<area shape="rect" title=" " alt="" coords="308,426,380,452"/>
+<area shape="poly" title=" " alt="" coords="296,46,296,179,296,263,300,304,309,345,334,411,329,413,304,346,294,305,291,263,290,179,290,46"/>
+<area shape="rect" href="stream_8h.html" title="Core stream abstraction classes for the QB IO library." alt="" coords="171,168,255,193"/>
+<area shape="poly" title=" " alt="" coords="285,48,229,155,224,152,281,45"/>
+<area shape="rect" href="tcp_2ssl_2socket_8h.html" title="Implementation of SSL/TLS sockets for secure TCP communication in the QB IO library." alt="" coords="1066,94,1192,120"/>
+<area shape="poly" title=" " alt="" coords="369,31,1051,95,1051,101,368,37"/>
+<area shape="rect" href="system_2allocator_2_pipe_8h.html" title="Implementation of a dynamic extensible buffer." alt="" coords="798,241,933,282"/>
+<area shape="poly" title=" " alt="" coords="256,184,782,248,782,253,256,190"/>
+<area shape="rect" href="type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="109,249,256,274"/>
+<area shape="poly" title=" " alt="" coords="211,195,195,235,190,233,206,193"/>
+<area shape="poly" title=" " alt="" coords="797,266,688,269,561,279,500,287,446,299,401,314,371,332,358,349,350,369,345,411,340,410,345,368,353,346,367,328,399,309,444,294,499,282,560,273,687,264,797,260"/>
+<area shape="rect" title=" " alt="" coords="1179,426,1229,452"/>
+<area shape="poly" title=" " alt="" coords="934,271,1013,292,1055,308,1095,328,1137,364,1184,413,1181,416,1134,368,1092,332,1053,313,1012,297,933,277"/>
+<area shape="rect" title=" " alt="" coords="816,426,877,452"/>
+<area shape="poly" title=" " alt="" coords="897,280,920,302,938,329,944,351,938,372,916,400,889,421,885,416,913,396,933,369,939,350,933,331,916,305,893,284"/>
+<area shape="rect" title=" " alt="" coords="382,338,450,363"/>
+<area shape="poly" title=" " alt="" coords="797,272,642,293,551,310,462,333,457,334,455,329,460,327,550,305,641,288,797,267"/>
+<area shape="rect" href="string_8h.html" title="Fixed&#45;size string implementation optimized for performance." alt="" coords="999,338,1081,363"/>
+<area shape="poly" title=" " alt="" coords="906,280,1003,328,1001,333,904,285"/>
+<area shape="rect" href="branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="474,338,633,363"/>
+<area shape="poly" title=" " alt="" coords="798,284,612,335,611,330,796,279"/>
+<area shape="rect" href="nocopy_8h.html" title="Defines a base class to make derived classes non&#45;copyable." alt="" coords="657,338,782,363"/>
+<area shape="poly" title=" " alt="" coords="834,285,754,332,752,327,831,280"/>
+<area shape="rect" href="prefix_8h.html" title="Platform&#45;specific alignment macros, cache&#45;line definitions, and related utilities." alt="" coords="806,338,924,363"/>
+<area shape="poly" title=" " alt="" coords="868,283,868,322,862,322,862,283"/>
+<area shape="rect" title=" " alt="" coords="1156,338,1244,363"/>
+<area shape="poly" title=" " alt="" coords="934,276,1138,327,1147,330,1146,335,1136,333,932,281"/>
+<area shape="rect" title=" " alt="" coords="1267,338,1324,363"/>
+<area shape="poly" title=" " alt="" coords="934,266,1083,287,1171,304,1257,327,1260,329,1258,334,1255,333,1169,310,1082,292,933,272"/>
+<area shape="poly" title=" " alt="" coords="999,363,936,373,629,412,395,436,394,430,629,407,935,368,998,357"/>
+<area shape="poly" title=" " alt="" coords="1064,361,1168,416,1166,421,1062,366"/>
+<area shape="poly" title=" " alt="" coords="1014,366,890,421,888,422,886,417,888,416,1012,361"/>
+<area shape="rect" title=" " alt="" coords="1003,426,1077,452"/>
+<area shape="poly" title=" " alt="" coords="1042,364,1042,410,1037,410,1037,364"/>
+<area shape="rect" title=" " alt="" coords="1102,426,1154,452"/>
+<area shape="poly" title=" " alt="" coords="1054,362,1107,413,1103,417,1050,366"/>
+<area shape="rect" href="build__macros_8h.html" title="Platform, compiler, and C++ feature detection macros for the QB Framework." alt="" coords="1597,426,1760,452"/>
+<area shape="poly" title=" " alt="" coords="1082,357,1144,368,1268,383,1365,391,1462,400,1586,416,1609,420,1608,425,1585,421,1461,405,1364,397,1267,389,1143,373,1081,363"/>
+<area shape="rect" title=" " alt="" coords="1288,426,1341,452"/>
+<area shape="poly" title=" " alt="" coords="1079,361,1274,422,1272,427,1078,366"/>
+<area shape="rect" title=" " alt="" coords="901,426,979,452"/>
+<area shape="poly" title=" " alt="" coords="1028,366,967,418,963,414,1024,362"/>
+<area shape="rect" title=" " alt="" coords="1608,507,1666,533"/>
+<area shape="poly" title=" " alt="" coords="1675,453,1653,494,1648,492,1670,451"/>
+<area shape="rect" title=" " alt="" coords="1690,507,1750,533"/>
+<area shape="poly" title=" " alt="" coords="1687,451,1709,492,1704,494,1682,453"/>
+<area shape="poly" title=" " alt="" coords="256,263,617,283,854,302,1094,327,1141,335,1140,340,1093,333,853,307,616,288,256,269"/>
+<area shape="rect" title=" " alt="" coords="5,338,88,363"/>
+<area shape="poly" title=" " alt="" coords="165,277,80,331,77,327,162,273"/>
+<area shape="rect" title=" " alt="" coords="112,338,165,363"/>
+<area shape="poly" title=" " alt="" coords="179,276,154,325,149,323,174,274"/>
+<area shape="rect" title=" " alt="" coords="189,338,256,363"/>
+<area shape="poly" title=" " alt="" coords="190,274,213,322,208,324,186,276"/>
+<area shape="rect" title=" " alt="" coords="1252,168,1334,193"/>
+<area shape="poly" title=" " alt="" coords="1158,118,1253,159,1250,164,1156,123"/>
+<area shape="rect" title=" " alt="" coords="1023,168,1121,193"/>
+<area shape="poly" title=" " alt="" coords="1122,122,1093,157,1089,154,1118,118"/>
+<area shape="rect" href="tcp_2socket_8h.html" title="Implementation of TCP sockets for the QB IO library." alt="" coords="1145,168,1228,193"/>
+<area shape="poly" title=" " alt="" coords="1141,118,1169,154,1165,157,1137,122"/>
+<area shape="rect" title=" " alt="" coords="1104,249,1269,274"/>
+<area shape="poly" title=" " alt="" coords="1189,194,1189,233,1184,233,1184,194"/>
+<area shape="rect" href="uri_8h.html" title="URI parsing and manipulation utilities." alt="" coords="1440,249,1498,274"/>
+<area shape="poly" title=" " alt="" coords="1230,191,1426,245,1424,251,1228,196"/>
+<area shape="poly" title=" " alt="" coords="1499,264,1557,272,1626,285,1689,303,1713,315,1729,328,1737,351,1732,375,1719,397,1704,417,1700,413,1715,394,1727,373,1731,351,1724,332,1710,319,1687,308,1625,290,1556,277,1499,269"/>
+<area shape="poly" title=" " alt="" coords="1453,277,1422,301,1390,332,1357,374,1331,414,1327,411,1352,371,1386,328,1419,297,1450,273"/>
+<area shape="poly" title=" " alt="" coords="1440,275,1257,333,1249,335,1248,330,1255,327,1439,270"/>
+<area shape="poly" title=" " alt="" coords="1446,278,1335,333,1332,328,1444,273"/>
+<area shape="rect" title=" " alt="" coords="1563,338,1637,363"/>
+<area shape="poly" title=" " alt="" coords="1489,273,1570,326,1567,331,1486,277"/>
+<area shape="rect" href="io_2config_8h.html" title="Configuration and platform&#45;specific definitions for the QB IO library." alt="" coords="2365,338,2464,363"/>
+<area shape="poly" title=" " alt="" coords="1499,263,2350,340,2349,346,1498,268"/>
+<area shape="rect" href="unordered__map_8h.html" title="Optimized unordered map implementations." alt="" coords="1400,330,1539,371"/>
+<area shape="poly" title=" " alt="" coords="1472,275,1472,315,1466,315,1466,275"/>
+<area shape="rect" title=" " alt="" coords="1661,338,1714,363"/>
+<area shape="poly" title=" " alt="" coords="1500,271,1650,328,1652,328,1650,333,1648,332,1498,276"/>
+<area shape="poly" title=" " alt="" coords="2365,358,2110,380,1942,398,1772,421,1749,425,1748,420,1771,416,1941,393,2109,375,2364,353"/>
+<area shape="rect" title=" " alt="" coords="2425,426,2489,452"/>
+<area shape="poly" title=" " alt="" coords="2423,362,2447,411,2442,414,2418,365"/>
+<area shape="rect" href="signal_8h.html" title="System signal event handler for asynchronous I/O." alt="" coords="2513,426,2580,452"/>
+<area shape="poly" title=" " alt="" coords="2434,361,2517,415,2514,419,2431,366"/>
+<area shape="rect" title=" " alt="" coords="2603,426,2684,452"/>
+<area shape="poly" title=" " alt="" coords="2448,361,2598,418,2596,423,2446,366"/>
+<area shape="rect" title=" " alt="" coords="2709,426,2786,452"/>
+<area shape="poly" title=" " alt="" coords="2465,359,2573,383,2698,416,2704,418,2703,423,2696,421,2571,388,2464,364"/>
+<area shape="rect" title=" " alt="" coords="2811,426,2900,452"/>
+<area shape="poly" title=" " alt="" coords="2465,355,2615,378,2799,416,2808,419,2807,424,2798,421,2615,384,2464,361"/>
+<area shape="rect" title=" " alt="" coords="2925,426,2992,452"/>
+<area shape="poly" title=" " alt="" coords="2465,351,2551,358,2663,369,2789,388,2914,416,2920,418,2918,423,2912,421,2788,394,2662,375,2550,363,2464,357"/>
+<area shape="rect" title=" " alt="" coords="3016,426,3098,452"/>
+<area shape="poly" title=" " alt="" coords="2465,351,2565,357,2700,368,2852,387,3004,416,3013,418,3012,424,3003,421,2851,393,2699,373,2565,362,2465,356"/>
+<area shape="rect" title=" " alt="" coords="3122,426,3184,452"/>
+<area shape="poly" title=" " alt="" coords="2465,348,2582,350,2743,359,2927,379,3020,395,3111,416,3117,418,3115,423,3110,421,3019,401,2926,385,2743,364,2581,355,2465,354"/>
+<area shape="rect" title=" " alt="" coords="1784,426,1869,452"/>
+<area shape="poly" title=" " alt="" coords="2364,357,2153,376,2017,395,1882,421,1873,424,1871,419,1881,416,2017,390,2152,371,2364,352"/>
+<area shape="rect" title=" " alt="" coords="1893,426,1986,452"/>
+<area shape="poly" title=" " alt="" coords="2365,360,2201,382,2100,400,1999,421,1989,424,1988,419,1998,416,2099,394,2201,377,2364,355"/>
+<area shape="rect" title=" " alt="" coords="2011,426,2103,452"/>
+<area shape="poly" title=" " alt="" coords="2365,364,2251,388,2117,421,2107,424,2106,419,2115,416,2250,383,2364,359"/>
+<area shape="rect" title=" " alt="" coords="2128,426,2224,452"/>
+<area shape="poly" title=" " alt="" coords="2382,366,2224,423,2223,418,2380,361"/>
+<area shape="rect" title=" " alt="" coords="2248,426,2320,452"/>
+<area shape="poly" title=" " alt="" coords="2398,366,2316,419,2313,415,2395,361"/>
+<area shape="rect" title=" " alt="" coords="2343,426,2400,452"/>
+<area shape="poly" title=" " alt="" coords="2411,365,2387,414,2382,411,2406,362"/>
+<area shape="poly" title=" " alt="" coords="1435,374,1351,421,1348,416,1433,369"/>
+<area shape="rect" title=" " alt="" coords="1527,426,1574,452"/>
+<area shape="poly" title=" " alt="" coords="1490,369,1531,413,1527,417,1486,373"/>
+<area shape="rect" title=" " alt="" coords="1365,419,1504,459"/>
+<area shape="poly" title=" " alt="" coords="1464,372,1450,405,1445,403,1459,370"/>
+</map>
+</div>
+</div>
+<p><a href="stcp_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Atransport_3A_3Astcp" id="r_qb_3A_3Aio_3A_3Atransport_3A_3Astcp"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1transport_1_1stcp.html">qb::io::transport::stcp</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Secure TCP (SSL/TLS) transport providing encrypted stream communication.  <a href="classqb_1_1io_1_1transport_1_1stcp.html#details">More...</a><br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Secure TCP (SSL/TLS) stream transport for the QB IO library. </p>
+<p>This file provides a transport implementation for secure (SSL/TLS) TCP sockets, extending the <span class="tt"><a class="el" href="classqb_1_1io_1_1stream.html" title="Combined input/output stream template class.">qb::io::stream</a></span> class with <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">qb::io::tcp::ssl::socket</a></span> specific functionality. It handles encrypted stream-based communication. Requires OpenSSL.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div></div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="dir_bc43a483e977f0cb845c151c8f80b727.html">transport</a></li><li class="navelem"><a href="stcp_8h.html">stcp.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

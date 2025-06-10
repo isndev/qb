@@ -1,0 +1,5 @@
+<map id="qb::has_insert&lt; T, typename &gt;" name="qb::has_insert&lt; T, typename &gt;">
+<area shape="rect" id="Node000001" title="Type trait to check if a type T has an insert(T::const_iterator, T::value_type) member function." alt="" coords="5,79,131,120"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="14,5,122,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="71,46,71,79,65,79,65,46"/>
+</map>

@@ -1,0 +1,29 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="Node000000" href="$classqb_1_1_event.html" title="Base class for all events in the actor system." alt="" coords="5,252,83,278"/>
+<area shape="rect" id="Node000001" href="$structqb_1_1_with_data.html" title=" " alt="" coords="141,5,309,31"/>
+<area shape="poly" id="edge47_Node000000_Node000001" title=" " alt="" coords="45,236,53,193,67,140,92,86,109,62,129,40,145,29,148,34,132,44,113,65,97,89,72,142,58,194,51,237"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1_without_data.html" title=" " alt="" coords="132,55,318,80"/>
+<area shape="poly" id="edge49_Node000000_Node000003" title=" " alt="" coords="49,236,59,203,75,163,98,123,129,89,146,79,149,83,132,94,102,126,80,165,64,204,54,238"/>
+<area shape="rect" id="Node000005" href="$structqb_1_1_event_q_o_s0.html" title="Event with lowest quality of service level." alt="" coords="168,104,282,130"/>
+<area shape="poly" id="edge51_Node000000_Node000005" title=" " alt="" coords="54,237,83,187,104,161,129,139,167,122,169,127,132,143,108,164,88,190,59,239"/>
+<area shape="rect" id="Node000006" href="$structqb_1_1_kill_event.html" title="Event used to terminate an actor." alt="" coords="177,153,272,179"/>
+<area shape="poly" id="edge52_Node000000_Node000006" title=" " alt="" coords="65,239,94,212,129,188,176,171,177,176,132,193,97,216,69,243"/>
+<area shape="rect" id="Node000007" href="$structqb_1_1_ping_event.html" title="Event used for actor health checks." alt="" coords="173,203,276,228"/>
+<area shape="poly" id="edge53_Node000000_Node000007" title=" " alt="" coords="97,246,130,237,172,226,174,231,131,242,98,252"/>
+<area shape="rect" id="Node000008" href="$structqb_1_1_require_event.html" title="Event used to query actor status." alt="" coords="164,252,286,278"/>
+<area shape="poly" id="edge54_Node000000_Node000008" title=" " alt="" coords="98,262,163,262,163,268,98,268"/>
+<area shape="rect" id="Node000009" href="$structqb_1_1_service_event.html" title="Event type for service&#45;to&#45;service communication." alt="" coords="164,301,286,327"/>
+<area shape="poly" id="edge55_Node000000_Node000009" title=" " alt="" coords="98,278,131,288,171,298,170,303,130,293,97,283"/>
+<area shape="rect" id="Node000010" href="$structqb_1_1_signal_event.html" title="Event used to handle system signals." alt="" coords="168,351,282,376"/>
+<area shape="poly" id="edge56_Node000000_Node000010" title=" " alt="" coords="69,287,97,314,132,337,169,351,167,356,129,342,94,318,65,291"/>
+<area shape="rect" id="Node000011" href="$structqb_1_1_unregister_callback_event.html" title="Event used to unregister an actor&#39;s callback." alt="" coords="131,400,319,426"/>
+<area shape="poly" id="edge57_Node000000_Node000011" title=" " alt="" coords="59,290,88,340,108,365,132,387,152,397,149,402,129,391,104,369,83,343,54,293"/>
+<area shape="rect" id="Node000012" href="$structqb_1_1_with_data.html" title="Event template that includes data payload." alt="" coords="147,449,303,475"/>
+<area shape="poly" id="edge58_Node000000_Node000012" title=" " alt="" coords="54,292,64,325,80,364,102,403,132,436,149,446,146,451,129,440,98,406,75,367,59,327,49,293"/>
+<area shape="rect" id="Node000013" href="$classqb_1_1_without_data.html" title="Event template without data payload." alt="" coords="138,499,312,524"/>
+<area shape="poly" id="edge59_Node000000_Node000013" title=" " alt="" coords="51,293,58,336,72,388,97,441,113,465,132,485,148,496,145,500,129,490,109,468,92,443,67,390,53,337,45,294"/>
+<area shape="rect" id="Node000002" href="$structqb_1_1_fill_event.html" title="Event template for events that carry and &quot;fill&quot; data." alt="" coords="367,5,519,31"/>
+<area shape="poly" id="edge48_Node000001_Node000002" title=" " alt="" coords="325,16,366,16,366,21,325,21"/>
+<area shape="rect" id="Node000004" href="$structqb_1_1_ask_data.html" title="Event template for requesting data, typically without carrying data itself." alt="" coords="367,55,519,80"/>
+<area shape="poly" id="edge50_Node000003_Node000004" title=" " alt="" coords="334,65,367,65,367,70,334,70"/>
+</map>

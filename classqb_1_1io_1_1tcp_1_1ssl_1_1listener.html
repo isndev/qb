@@ -1,0 +1,1269 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::io::tcp::ssl::listener Class Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::io::tcp::ssl::listener Class Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html','','classqb_1_1io_1_1tcp_1_1ssl_1_1listener-members'); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">qb::io::tcp::ssl::listener Class Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___networking.html">Networking Utilities</a> &raquo; <a class="el" href="group___s_s_l.html">Secure Sockets Layer (SSL/TLS)</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Class implementing a secure SSL/TLS TCP listener for accepting encrypted connections.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="tcp_2ssl_2listener_8h_source.html">listener.h</a>&gt;</code></p>
+<div class="dynheader">
+Inheritance diagram for qb::io::tcp::ssl::listener:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1tcp_1_1ssl_1_1listener__inherit__graph.png" border="0" usemap="#aqb_1_1io_1_1tcp_1_1ssl_1_1listener_inherit__map" loading="lazy" alt="Inheritance graph"/></div>
+<map name="aqb_1_1io_1_1tcp_1_1ssl_1_1listener_inherit__map" id="aqb_1_1io_1_1tcp_1_1ssl_1_1listener_inherit__map">
+<area shape="rect" title="Class implementing a secure SSL/TLS TCP listener for accepting encrypted connections." alt="" coords="5,153,160,178"/>
+<area shape="rect" href="classqb_1_1io_1_1tcp_1_1listener.html" title="Class implementing a TCP listener for accepting incoming connections." alt="" coords="18,79,147,105"/>
+<area shape="poly" title=" " alt="" coords="85,120,85,152,80,152,80,120"/>
+<area shape="rect" title=" " alt="" coords="43,5,122,31"/>
+<area shape="poly" title=" " alt="" coords="85,46,85,79,80,79,80,46"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<div class="dynheader">
+Collaboration diagram for qb::io::tcp::ssl::listener:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1tcp_1_1ssl_1_1listener__coll__graph.png" border="0" usemap="#aqb_1_1io_1_1tcp_1_1ssl_1_1listener_coll__map" loading="lazy" alt="Collaboration graph"/></div>
+<map name="aqb_1_1io_1_1tcp_1_1ssl_1_1listener_coll__map" id="aqb_1_1io_1_1tcp_1_1ssl_1_1listener_coll__map">
+<area shape="rect" title="Class implementing a secure SSL/TLS TCP listener for accepting encrypted connections." alt="" coords="5,153,160,178"/>
+<area shape="rect" href="classqb_1_1io_1_1tcp_1_1listener.html" title="Class implementing a TCP listener for accepting incoming connections." alt="" coords="18,79,147,105"/>
+<area shape="poly" title=" " alt="" coords="85,120,85,152,80,152,80,120"/>
+<area shape="rect" title=" " alt="" coords="43,5,122,31"/>
+<area shape="poly" title=" " alt="" coords="85,46,85,79,80,79,80,46"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:afcdd4da3c81608fb79eb8c9214670acf" id="r_afcdd4da3c81608fb79eb8c9214670acf"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#afcdd4da3c81608fb79eb8c9214670acf">~listener</a> () noexcept</td></tr>
+<tr class="memdesc:afcdd4da3c81608fb79eb8c9214670acf"><td class="mdescLeft">&#160;</td><td class="mdescRight">Destructor.  <br /></td></tr>
+<tr class="memitem:a02fe90cf0177545ac763efd4c5d35a2c" id="r_a02fe90cf0177545ac763efd4c5d35a2c"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a02fe90cf0177545ac763efd4c5d35a2c">listener</a> () noexcept</td></tr>
+<tr class="memdesc:a02fe90cf0177545ac763efd4c5d35a2c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default constructor.  <br /></td></tr>
+<tr class="memitem:a045010e654979723cb24022f422610cb" id="r_a045010e654979723cb24022f422610cb"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a045010e654979723cb24022f422610cb">listener</a> (<a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html">listener</a> const &amp;)=delete</td></tr>
+<tr class="memdesc:a045010e654979723cb24022f422610cb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Deleted copy constructor.  <br /></td></tr>
+<tr class="memitem:a6e9edac1c83ed10b1d4542c0a48bbe56" id="r_a6e9edac1c83ed10b1d4542c0a48bbe56"><td class="memItemLeft" align="right" valign="top"><a id="a6e9edac1c83ed10b1d4542c0a48bbe56" name="a6e9edac1c83ed10b1d4542c0a48bbe56"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>listener</b> (<a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html">listener</a> &amp;&amp;)=default</td></tr>
+<tr class="memdesc:a6e9edac1c83ed10b1d4542c0a48bbe56"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default move constructor. <br /></td></tr>
+<tr class="memitem:a28c175dc2ae69baf5beece87796bbde3" id="r_a28c175dc2ae69baf5beece87796bbde3"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html">listener</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a28c175dc2ae69baf5beece87796bbde3">operator=</a> (<a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html">listener</a> &amp;&amp;)=default</td></tr>
+<tr class="memdesc:a28c175dc2ae69baf5beece87796bbde3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default move assignment operator.  <br /></td></tr>
+<tr class="memitem:ac96734af12ba363fee98b1cf1facb36a" id="r_ac96734af12ba363fee98b1cf1facb36a"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac96734af12ba363fee98b1cf1facb36a">init</a> (SSL_CTX *ctx) noexcept</td></tr>
+<tr class="memdesc:ac96734af12ba363fee98b1cf1facb36a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initialize the listener with a pre-configured SSL context.  <br /></td></tr>
+<tr class="memitem:a5021877d8b3c59a8cf10a1a02dfeb4eb" id="r_a5021877d8b3c59a8cf10a1a02dfeb4eb"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html">ssl::socket</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a5021877d8b3c59a8cf10a1a02dfeb4eb">accept</a> () const noexcept</td></tr>
+<tr class="memdesc:a5021877d8b3c59a8cf10a1a02dfeb4eb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Accept a new secure connection and return it as a new <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">ssl::socket</a></span>.  <br /></td></tr>
+<tr class="memitem:a1e19e72bfa61795a5500781ca5badf59" id="r_a1e19e72bfa61795a5500781ca5badf59"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a1e19e72bfa61795a5500781ca5badf59">accept</a> (<a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html">ssl::socket</a> &amp;<a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html">socket</a>) const noexcept</td></tr>
+<tr class="memdesc:a1e19e72bfa61795a5500781ca5badf59"><td class="mdescLeft">&#160;</td><td class="mdescRight">Accept a new secure connection into an existing <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">ssl::socket</a></span> object.  <br /></td></tr>
+<tr class="memitem:a4dc0eed4864e4dcaa863ececc0645b0b" id="r_a4dc0eed4864e4dcaa863ececc0645b0b"><td class="memItemLeft" align="right" valign="top">SSL_CTX *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4dc0eed4864e4dcaa863ececc0645b0b">ssl_handle</a> () const noexcept</td></tr>
+<tr class="memdesc:a4dc0eed4864e4dcaa863ececc0645b0b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the raw OpenSSL <span class="tt">SSL_CTX</span> handle.  <br /></td></tr>
+<tr class="memitem:ab1233813bd90de48973eba467126bc1d" id="r_ab1233813bd90de48973eba467126bc1d"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab1233813bd90de48973eba467126bc1d">load_ca_certificates_for_client_auth</a> (const std::string &amp;ca_file_path)</td></tr>
+<tr class="memdesc:ab1233813bd90de48973eba467126bc1d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Load CA certificates from a file for client peer verification (mTLS).  <br /></td></tr>
+<tr class="memitem:a4c15036fb4e9f781ccb3ac74acff8900" id="r_a4c15036fb4e9f781ccb3ac74acff8900"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4c15036fb4e9f781ccb3ac74acff8900">load_ca_directory_for_client_auth</a> (const std::string &amp;ca_dir_path)</td></tr>
+<tr class="memdesc:a4c15036fb4e9f781ccb3ac74acff8900"><td class="mdescLeft">&#160;</td><td class="mdescRight">Load CA certificates from a directory for client peer verification (mTLS).  <br /></td></tr>
+<tr class="memitem:a6ad7b8531b20b9c2d6f64d4cc621cdf0" id="r_a6ad7b8531b20b9c2d6f64d4cc621cdf0"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a6ad7b8531b20b9c2d6f64d4cc621cdf0">set_cipher_list</a> (const std::string &amp;ciphers)</td></tr>
+<tr class="memdesc:a6ad7b8531b20b9c2d6f64d4cc621cdf0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the preferred cipher suites for TLS 1.2 and earlier for this listener's context.  <br /></td></tr>
+<tr class="memitem:a6887177bbf4172feef701791f29dc4b6" id="r_a6887177bbf4172feef701791f29dc4b6"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a6887177bbf4172feef701791f29dc4b6">set_ciphersuites_tls13</a> (const std::string &amp;ciphersuites)</td></tr>
+<tr class="memdesc:a6887177bbf4172feef701791f29dc4b6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the preferred cipher suites for TLS 1.3 for this listener's context.  <br /></td></tr>
+<tr class="memitem:a356bcee97705164a154dca28439f4fcb" id="r_a356bcee97705164a154dca28439f4fcb"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a356bcee97705164a154dca28439f4fcb">set_tls_protocol_versions</a> (int min_version, int max_version)</td></tr>
+<tr class="memdesc:a356bcee97705164a154dca28439f4fcb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the minimum and maximum TLS protocol versions for this listener's context.  <br /></td></tr>
+<tr class="memitem:a2e472a6cec8bff3313660e0a3bb52980" id="r_a2e472a6cec8bff3313660e0a3bb52980"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2e472a6cec8bff3313660e0a3bb52980">configure_mtls</a> (const std::string &amp;client_ca_file_path, int verification_mode=SSL_VERIFY_PEER)</td></tr>
+<tr class="memdesc:a2e472a6cec8bff3313660e0a3bb52980"><td class="mdescLeft">&#160;</td><td class="mdescRight">Configure client certificate authentication (mTLS) for this listener.  <br /></td></tr>
+<tr class="memitem:afc83720884950ba141c67d78313d1900" id="r_afc83720884950ba141c67d78313d1900"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#afc83720884950ba141c67d78313d1900">set_alpn_selection_callback</a> (SSL_CTX_alpn_select_cb_func callback, void *arg)</td></tr>
+<tr class="memdesc:afc83720884950ba141c67d78313d1900"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the ALPN selection callback for this listener's context.  <br /></td></tr>
+<tr class="memitem:a30a60b60c3b500a635a99bf428483c68" id="r_a30a60b60c3b500a635a99bf428483c68"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a30a60b60c3b500a635a99bf428483c68">enable_session_caching</a> (long cache_size=SSL_SESSION_CACHE_MAX_SIZE_DEFAULT)</td></tr>
+<tr class="memdesc:a30a60b60c3b500a635a99bf428483c68"><td class="mdescLeft">&#160;</td><td class="mdescRight">Enable and configure server-side SSL session caching for this listener.  <br /></td></tr>
+<tr class="memitem:ac0d91c12428c62f2ae2abf48a782adcd" id="r_ac0d91c12428c62f2ae2abf48a782adcd"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac0d91c12428c62f2ae2abf48a782adcd">set_custom_client_verify_callback</a> (int(*callback)(int, X509_STORE_CTX *), int verification_mode)</td></tr>
+<tr class="memdesc:ac0d91c12428c62f2ae2abf48a782adcd"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set a custom callback for X.509 client certificate verification.  <br /></td></tr>
+<tr class="memitem:a4270675d67e8453aafde1c08671f9919" id="r_a4270675d67e8453aafde1c08671f9919"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4270675d67e8453aafde1c08671f9919">set_ocsp_stapling_responder_callback</a> (int(*callback)(SSL *s, void *arg), void *arg)</td></tr>
+<tr class="memdesc:a4270675d67e8453aafde1c08671f9919"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set a callback for this listener's server to provide an OCSP response to be stapled.  <br /></td></tr>
+<tr class="memitem:a99bfd004b7ae87dee0cee245e094e225" id="r_a99bfd004b7ae87dee0cee245e094e225"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a99bfd004b7ae87dee0cee245e094e225">set_sni_selection_callback</a> (int(*callback)(SSL *s, int *al, void *arg), void *arg)</td></tr>
+<tr class="memdesc:a99bfd004b7ae87dee0cee245e094e225"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set a callback for server-side SNI (Server Name Indication) handling.  <br /></td></tr>
+<tr class="memitem:a7e6734f86c0f88f8536179c69701de2f" id="r_a7e6734f86c0f88f8536179c69701de2f"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7e6734f86c0f88f8536179c69701de2f">set_keylog_callback</a> (SSL_CTX_keylog_cb_func callback)</td></tr>
+<tr class="memdesc:a7e6734f86c0f88f8536179c69701de2f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the SSL/TLS key log callback function for debugging.  <br /></td></tr>
+<tr class="memitem:ab6abf4c8bbbc1af0131b48bf9b2f7301" id="r_ab6abf4c8bbbc1af0131b48bf9b2f7301"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab6abf4c8bbbc1af0131b48bf9b2f7301">configure_dh_parameters</a> (const std::string &amp;dh_param_file_path)</td></tr>
+<tr class="memdesc:ab6abf4c8bbbc1af0131b48bf9b2f7301"><td class="mdescLeft">&#160;</td><td class="mdescRight">Configure Diffie-Hellman parameters for this listener's context.  <br /></td></tr>
+<tr class="memitem:a67b83c954a3aa0b937d115261d1f8237" id="r_a67b83c954a3aa0b937d115261d1f8237"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a67b83c954a3aa0b937d115261d1f8237">configure_ecdh_curves</a> (const std::string &amp;curve_names_list)</td></tr>
+<tr class="memdesc:a67b83c954a3aa0b937d115261d1f8237"><td class="mdescLeft">&#160;</td><td class="mdescRight">Configure preferred ECDH curves for this listener's context.  <br /></td></tr>
+<tr class="memitem:a3fd85c3a73693894bf094c8904a566dc" id="r_a3fd85c3a73693894bf094c8904a566dc"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a3fd85c3a73693894bf094c8904a566dc">enable_post_handshake_auth</a> ()</td></tr>
+<tr class="memdesc:a3fd85c3a73693894bf094c8904a566dc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Enable server-side support for TLS 1.3 Post-Handshake Authentication.  <br /></td></tr>
+<tr class="memitem:ae18e0deef9198750f4907f781bd4f9ff" id="r_ae18e0deef9198750f4907f781bd4f9ff"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae18e0deef9198750f4907f781bd4f9ff">set_supported_alpn_protocols</a> (const std::vector&lt; std::string &gt; &amp;protocols)</td></tr>
+<tr class="memdesc:ae18e0deef9198750f4907f781bd4f9ff"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the list of ALPN protocols supported by the server listener.  <br /></td></tr>
+<tr class="memitem:a40b3f2fb3f24ca356b855f086349f531" id="r_a40b3f2fb3f24ca356b855f086349f531"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a40b3f2fb3f24ca356b855f086349f531">get_min_protocol_version</a> () const</td></tr>
+<tr class="memdesc:a40b3f2fb3f24ca356b855f086349f531"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the minimum configured TLS protocol version.  <br /></td></tr>
+<tr class="memitem:a7308956b35ea3f4e3aeae30a0c36e146" id="r_a7308956b35ea3f4e3aeae30a0c36e146"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7308956b35ea3f4e3aeae30a0c36e146">get_max_protocol_version</a> () const</td></tr>
+<tr class="memdesc:a7308956b35ea3f4e3aeae30a0c36e146"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the maximum configured TLS protocol version.  <br /></td></tr>
+<tr class="memitem:a61d561389111cf0a36b8116fdf12f8e8" id="r_a61d561389111cf0a36b8116fdf12f8e8"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a61d561389111cf0a36b8116fdf12f8e8">get_verify_mode</a> () const</td></tr>
+<tr class="memdesc:a61d561389111cf0a36b8116fdf12f8e8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the current peer verification mode.  <br /></td></tr>
+<tr class="memitem:a0827021f1a980258ccce92d1c5ba9819" id="r_a0827021f1a980258ccce92d1c5ba9819"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a0827021f1a980258ccce92d1c5ba9819">get_verify_depth</a> () const</td></tr>
+<tr class="memdesc:a0827021f1a980258ccce92d1c5ba9819"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the current peer certificate verification depth.  <br /></td></tr>
+<tr class="memitem:a560f963ce67d7081d72fbbd07a09148f" id="r_a560f963ce67d7081d72fbbd07a09148f"><td class="memItemLeft" align="right" valign="top">long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a560f963ce67d7081d72fbbd07a09148f">get_session_cache_mode</a> () const</td></tr>
+<tr class="memdesc:a560f963ce67d7081d72fbbd07a09148f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the SSL session cache mode.  <br /></td></tr>
+<tr class="memitem:afde72a13cc5eafef1231f4f99dd93f6a" id="r_afde72a13cc5eafef1231f4f99dd93f6a"><td class="memItemLeft" align="right" valign="top">long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#afde72a13cc5eafef1231f4f99dd93f6a">get_session_cache_size</a> () const</td></tr>
+<tr class="memdesc:afde72a13cc5eafef1231f4f99dd93f6a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the SSL session cache size.  <br /></td></tr>
+<tr class="memitem:a50733f6766855634ea966a702a7fe467" id="r_a50733f6766855634ea966a702a7fe467"><td class="memItemLeft" align="right" valign="top">long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a50733f6766855634ea966a702a7fe467">set_options</a> (long options_to_set)</td></tr>
+<tr class="memdesc:a50733f6766855634ea966a702a7fe467"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set specific SSL options on the listener's context.  <br /></td></tr>
+<tr class="memitem:a8b58ccfc438931da605e8aa8c26d8eda" id="r_a8b58ccfc438931da605e8aa8c26d8eda"><td class="memItemLeft" align="right" valign="top">long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a8b58ccfc438931da605e8aa8c26d8eda">clear_options</a> (long options_to_clear)</td></tr>
+<tr class="memdesc:a8b58ccfc438931da605e8aa8c26d8eda"><td class="mdescLeft">&#160;</td><td class="mdescRight">Clear specific SSL options on the listener's context.  <br /></td></tr>
+<tr class="memitem:a47bae57741f052aba8b3adacf99ab0ca" id="r_a47bae57741f052aba8b3adacf99ab0ca"><td class="memItemLeft" align="right" valign="top">long&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a47bae57741f052aba8b3adacf99ab0ca">set_session_timeout</a> (long seconds)</td></tr>
+<tr class="memdesc:a47bae57741f052aba8b3adacf99ab0ca"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set the session timeout for the listener's SSL_CTX.  <br /></td></tr>
+<tr class="memitem:af76b3f15d8b83d3e3ca7814e7163f703" id="r_af76b3f15d8b83d3e3ca7814e7163f703"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af76b3f15d8b83d3e3ca7814e7163f703">set_info_callback</a> (void(*callback)(const SSL *ssl, int <a class="el" href="structqb_1_1type.html">type</a>, int val))</td></tr>
+<tr class="memdesc:af76b3f15d8b83d3e3ca7814e7163f703"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set an informational callback for the listener's SSL_CTX.  <br /></td></tr>
+<tr class="memitem:a76a820242aae771408b05e2d3cf3863f" id="r_a76a820242aae771408b05e2d3cf3863f"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a76a820242aae771408b05e2d3cf3863f">set_msg_callback</a> (void(*callback)(int write_p, int version, int content_type, const void *buf, size_t len, SSL *ssl, void *arg), void *arg)</td></tr>
+<tr class="memdesc:a76a820242aae771408b05e2d3cf3863f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Set a message callback for the listener's SSL_CTX for detailed protocol tracing.  <br /></td></tr>
+<tr class="inherit_header pub_methods_classqb_1_1io_1_1tcp_1_1listener"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_methods_classqb_1_1io_1_1tcp_1_1listener')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Member Functions inherited from <a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html">qb::io::tcp::listener</a></td></tr>
+<tr class="memitem:afdeb25915b375b5a4022d4637e89298f inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener" id="r_afdeb25915b375b5a4022d4637e89298f"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html#afdeb25915b375b5a4022d4637e89298f">listen</a> (io::endpoint const &amp;ep) noexcept</td></tr>
+<tr class="memdesc:afdeb25915b375b5a4022d4637e89298f inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener"><td class="mdescLeft">&#160;</td><td class="mdescRight">Start listening on a specific local endpoint.  <br /></td></tr>
+<tr class="memitem:af6b8a0d6214505be60bed2865cf9873e inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener" id="r_af6b8a0d6214505be60bed2865cf9873e"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html#af6b8a0d6214505be60bed2865cf9873e">listen</a> (<a class="el" href="classqb_1_1io_1_1uri.html">io::uri</a> const &amp;<a class="el" href="classqb_1_1io_1_1uri.html">uri</a>) noexcept</td></tr>
+<tr class="memdesc:af6b8a0d6214505be60bed2865cf9873e inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener"><td class="mdescLeft">&#160;</td><td class="mdescRight">Start listening on an endpoint specified by a URI.  <br /></td></tr>
+<tr class="memitem:ad122b206c5c652648f061cc1377b9e5f inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener" id="r_ad122b206c5c652648f061cc1377b9e5f"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html#ad122b206c5c652648f061cc1377b9e5f">listen_v4</a> (uint16_t port, std::string const &amp;host=&quot;0.0.0.0&quot;) noexcept</td></tr>
+<tr class="memdesc:ad122b206c5c652648f061cc1377b9e5f inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener"><td class="mdescLeft">&#160;</td><td class="mdescRight">Start listening on a specific IPv4 address and port.  <br /></td></tr>
+<tr class="memitem:aabbe049d895117bf2e003772b5fab73c inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener" id="r_aabbe049d895117bf2e003772b5fab73c"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html#aabbe049d895117bf2e003772b5fab73c">listen_v6</a> (uint16_t port, std::string const &amp;host=&quot;::&quot;) noexcept</td></tr>
+<tr class="memdesc:aabbe049d895117bf2e003772b5fab73c inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener"><td class="mdescLeft">&#160;</td><td class="mdescRight">Start listening on a specific IPv6 address and port.  <br /></td></tr>
+<tr class="memitem:acce6fcbb2e33d1d91e1c00216a56f600 inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener" id="r_acce6fcbb2e33d1d91e1c00216a56f600"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html#acce6fcbb2e33d1d91e1c00216a56f600">listen_un</a> (std::string const &amp;path) noexcept</td></tr>
+<tr class="memdesc:acce6fcbb2e33d1d91e1c00216a56f600 inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener"><td class="mdescLeft">&#160;</td><td class="mdescRight">Start listening on a Unix domain socket.  <br /></td></tr>
+<tr class="memitem:a3f13835eb1b16592065c7e1a7e369418 inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener" id="r_a3f13835eb1b16592065c7e1a7e369418"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html">tcp::socket</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html#a3f13835eb1b16592065c7e1a7e369418">accept</a> () const noexcept</td></tr>
+<tr class="memdesc:a3f13835eb1b16592065c7e1a7e369418 inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener"><td class="mdescLeft">&#160;</td><td class="mdescRight">Accept a new incoming TCP connection and return it as a new <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html" title="Class implementing TCP socket functionality for reliable, stream-oriented communication.">tcp::socket</a></span>.  <br /></td></tr>
+<tr class="memitem:a409e7f8c6bbcc5d1e630beb130153dc1 inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener" id="r_a409e7f8c6bbcc5d1e630beb130153dc1"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html#a409e7f8c6bbcc5d1e630beb130153dc1">accept</a> (<a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html">tcp::socket</a> &amp;sock) const noexcept</td></tr>
+<tr class="memdesc:a409e7f8c6bbcc5d1e630beb130153dc1 inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener"><td class="mdescLeft">&#160;</td><td class="mdescRight">Accept a new incoming TCP connection into an existing <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html" title="Class implementing TCP socket functionality for reliable, stream-oriented communication.">tcp::socket</a></span> object.  <br /></td></tr>
+<tr class="memitem:ac4c4aeda5543c0ffac69f2f8dd3c65dd inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener" id="r_ac4c4aeda5543c0ffac69f2f8dd3c65dd"><td class="memItemLeft" align="right" valign="top">int&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html#ac4c4aeda5543c0ffac69f2f8dd3c65dd">disconnect</a> () const noexcept</td></tr>
+<tr class="memdesc:ac4c4aeda5543c0ffac69f2f8dd3c65dd inherit pub_methods_classqb_1_1io_1_1tcp_1_1listener"><td class="mdescLeft">&#160;</td><td class="mdescRight">Disconnect the listener socket, stopping it from accepting new connections.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-static-methods" class="groupheader"><a id="pub-static-methods" name="pub-static-methods"></a>
+Static Public Member Functions</h2></td></tr>
+<tr class="memitem:a4bcce1a11de4894bdbe88bcc455927de" id="r_a4bcce1a11de4894bdbe88bcc455927de"><td class="memItemLeft" align="right" valign="top"><a id="a4bcce1a11de4894bdbe88bcc455927de" name="a4bcce1a11de4894bdbe88bcc455927de"></a>
+static constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>is_secure</b> () noexcept</td></tr>
+<tr class="memdesc:a4bcce1a11de4894bdbe88bcc455927de"><td class="mdescLeft">&#160;</td><td class="mdescRight">Indicates that this socket implementation is secure. <br /></td></tr>
+<tr class="inherit_header pub_static_methods_classqb_1_1io_1_1tcp_1_1listener"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_static_methods_classqb_1_1io_1_1tcp_1_1listener')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Static Public Member Functions inherited from <a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html">qb::io::tcp::listener</a></td></tr>
+<tr class="memitem:a4200921898d0861d8822c3d3f23f2a7d inherit pub_static_methods_classqb_1_1io_1_1tcp_1_1listener" id="r_a4200921898d0861d8822c3d3f23f2a7d"><td class="memItemLeft" align="right" valign="top">
+static constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>is_secure</b> () noexcept</td></tr>
+<tr class="memdesc:a4200921898d0861d8822c3d3f23f2a7d inherit pub_static_methods_classqb_1_1io_1_1tcp_1_1listener"><td class="mdescLeft">&#160;</td><td class="mdescRight">Indicates that this socket implementation is not secure. <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Class implementing a secure SSL/TLS TCP listener for accepting encrypted connections. </p>
+<p>This class provides functionality for listening for incoming SSL/TLS connections. It inherits from the base <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html" title="Class implementing a TCP listener for accepting incoming connections.">qb::io::tcp::listener</a></span> class and adds SSL/TLS encryption capabilities by managing an <span class="tt">SSL_CTX</span> (SSL Context). When a connection is accepted, it creates and returns a <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">qb::io::tcp::ssl::socket</a></span> ready for secure communication after handshake. </p>
+</div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="afcdd4da3c81608fb79eb8c9214670acf" name="afcdd4da3c81608fb79eb8c9214670acf"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#afcdd4da3c81608fb79eb8c9214670acf">&#9670;&#160;</a></span>~listener()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::io::tcp::ssl::listener::~listener </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Destructor. </p>
+<p>Ensures the <span class="tt">SSL_CTX</span> is freed if managed by this listener. The base class destructor handles closing the listening socket. </p>
+
+</div>
+</div>
+<a id="a02fe90cf0177545ac763efd4c5d35a2c" name="a02fe90cf0177545ac763efd4c5d35a2c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a02fe90cf0177545ac763efd4c5d35a2c">&#9670;&#160;</a></span>listener() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::io::tcp::ssl::listener::listener </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Default constructor. </p>
+<p>Initializes the listener with a null SSL context deleter. The SSL context must be set via <span class="tt"><a class="el" href="#ac96734af12ba363fee98b1cf1facb36a" title="Initialize the listener with a pre-configured SSL context.">init(SSL_CTX*)</a></span> before the listener can be used to accept secure connections. </p>
+
+</div>
+</div>
+<a id="a045010e654979723cb24022f422610cb" name="a045010e654979723cb24022f422610cb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a045010e654979723cb24022f422610cb">&#9670;&#160;</a></span>listener() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::io::tcp::ssl::listener::listener </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html">listener</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel delete">delete</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Deleted copy constructor. </p>
+<p>Listeners are not copyable. </p>
+
+</div>
+</div>
+<a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="a28c175dc2ae69baf5beece87796bbde3" name="a28c175dc2ae69baf5beece87796bbde3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a28c175dc2ae69baf5beece87796bbde3">&#9670;&#160;</a></span>operator=()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html">listener</a> &amp; qb::io::tcp::ssl::listener::operator= </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html">listener</a> &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel default">default</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Default move assignment operator. </p>
+<dl class="section return"><dt>Returns</dt><dd>Reference to this listener. </dd></dl>
+
+</div>
+</div>
+<a id="ac96734af12ba363fee98b1cf1facb36a" name="ac96734af12ba363fee98b1cf1facb36a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac96734af12ba363fee98b1cf1facb36a">&#9670;&#160;</a></span>init()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::io::tcp::ssl::listener::init </td>
+          <td>(</td>
+          <td class="paramtype">SSL_CTX *</td>          <td class="paramname"><span class="paramname"><em>ctx</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Initialize the listener with a pre-configured SSL context. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ctx</td><td>A pointer to an <span class="tt">SSL_CTX</span> object, typically created and configured using <span class="tt"><a class="el" href="group___s_s_l.html#ga7adaa54ad353ac3039d15f70f8971658" title="Create an SSL context (SSL_CTX) configured for server-side SSL/TLS operations.">qb::io::ssl::create_server_context()</a></span> or directly with OpenSSL functions. This listener takes ownership of the context via <span class="tt">std::unique_ptr</span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section note"><dt>Note</dt><dd>This must be called before <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html#afdeb25915b375b5a4022d4637e89298f" title="Start listening on a specific local endpoint.">listen()</a></span> if secure connections are to be accepted. </dd></dl>
+
+</div>
+</div>
+<a id="a5021877d8b3c59a8cf10a1a02dfeb4eb" name="a5021877d8b3c59a8cf10a1a02dfeb4eb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5021877d8b3c59a8cf10a1a02dfeb4eb">&#9670;&#160;</a></span>accept() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html">ssl::socket</a> qb::io::tcp::ssl::listener::accept </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Accept a new secure connection and return it as a new <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">ssl::socket</a></span>. </p>
+<dl class="section return"><dt>Returns</dt><dd>A new <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">qb::io::tcp::ssl::socket</a></span> instance representing the client connection. The returned socket will have an associated <span class="tt">SSL</span> object created from this listener's context. The SSL handshake is typically initiated by the <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html#a4d3686d405efb2ad7f4c8eb4f2dc4219" title="Finalizes a non-blocking SSL connection after the underlying TCP socket is connected.">ssl::socket::connected()</a></span> method or implicitly during the first read/write on the <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">ssl::socket</a></span> if it's blocking. If an error occurs during TCP accept, the returned socket will not be open.</dd></dl>
+<p>This method first calls the base <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html#a3f13835eb1b16592065c7e1a7e369418" title="Accept a new incoming TCP connection and return it as a new tcp::socket.">tcp::listener::accept()</a></span> to get a plain TCP socket, then creates an <span class="tt">SSL</span> object from its <span class="tt">_ctx</span>, associates it with the new socket descriptor, and wraps it in an <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">ssl::socket</a></span>. </p>
+
+</div>
+</div>
+<a id="a1e19e72bfa61795a5500781ca5badf59" name="a1e19e72bfa61795a5500781ca5badf59"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a1e19e72bfa61795a5500781ca5badf59">&#9670;&#160;</a></span>accept() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::ssl::listener::accept </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html">ssl::socket</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>socket</em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Accept a new secure connection into an existing <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">ssl::socket</a></span> object. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">socket</td><td>A reference to an <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">ssl::socket</a></span> object. If a TCP connection is accepted, an <span class="tt">SSL</span> object is created from this listener's context, associated with the new socket descriptor, and then <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html#a961220bd955382a3acb9d4d60e4883ef" title="Initialize the SSL socket with an OpenSSL SSL handle.">socket.init(SSL*)</a></span> and <span class="tt">socket = std::move(new_tcp_socket)</span> are used to configure the provided <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">ssl::socket</a></span> instance. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>0 on successful TCP accept (SSL handshake will follow on the <span class="tt">socket</span> object). A non-zero error code on TCP accept failure. </dd></dl>
+
+</div>
+</div>
+<a id="a4dc0eed4864e4dcaa863ececc0645b0b" name="a4dc0eed4864e4dcaa863ececc0645b0b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4dc0eed4864e4dcaa863ececc0645b0b">&#9670;&#160;</a></span>ssl_handle()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">SSL_CTX * qb::io::tcp::ssl::listener::ssl_handle </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the raw OpenSSL <span class="tt">SSL_CTX</span> handle. </p>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the <span class="tt">SSL_CTX</span> object, or <span class="tt">nullptr</span> if not initialized. </dd></dl>
+<dl class="section note"><dt>Note</dt><dd>Allows direct access to the OpenSSL API for advanced context configuration if needed. </dd></dl>
+
+</div>
+</div>
+<a id="ab1233813bd90de48973eba467126bc1d" name="ab1233813bd90de48973eba467126bc1d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab1233813bd90de48973eba467126bc1d">&#9670;&#160;</a></span>load_ca_certificates_for_client_auth()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::load_ca_certificates_for_client_auth </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>ca_file_path</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Load CA certificates from a file for client peer verification (mTLS). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ca_file_path</td><td>Path to the PEM-encoded CA certificate file. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false on failure or if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="a4c15036fb4e9f781ccb3ac74acff8900" name="a4c15036fb4e9f781ccb3ac74acff8900"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4c15036fb4e9f781ccb3ac74acff8900">&#9670;&#160;</a></span>load_ca_directory_for_client_auth()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::load_ca_directory_for_client_auth </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>ca_dir_path</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Load CA certificates from a directory for client peer verification (mTLS). </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ca_dir_path</td><td>Path to the directory containing PEM-encoded CA certificates. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false on failure or if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="a6ad7b8531b20b9c2d6f64d4cc621cdf0" name="a6ad7b8531b20b9c2d6f64d4cc621cdf0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6ad7b8531b20b9c2d6f64d4cc621cdf0">&#9670;&#160;</a></span>set_cipher_list()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::set_cipher_list </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>ciphers</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set the preferred cipher suites for TLS 1.2 and earlier for this listener's context. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ciphers</td><td>A string in OpenSSL cipher list format. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false on failure or if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="a6887177bbf4172feef701791f29dc4b6" name="a6887177bbf4172feef701791f29dc4b6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6887177bbf4172feef701791f29dc4b6">&#9670;&#160;</a></span>set_ciphersuites_tls13()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::set_ciphersuites_tls13 </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>ciphersuites</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set the preferred cipher suites for TLS 1.3 for this listener's context. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">ciphersuites</td><td>A string in OpenSSL TLS 1.3 ciphersuite format. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false on failure or if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="a356bcee97705164a154dca28439f4fcb" name="a356bcee97705164a154dca28439f4fcb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a356bcee97705164a154dca28439f4fcb">&#9670;&#160;</a></span>set_tls_protocol_versions()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::set_tls_protocol_versions </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>min_version</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>max_version</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set the minimum and maximum TLS protocol versions for this listener's context. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">min_version</td><td>The minimum protocol version (e.g., TLS1_2_VERSION). 0 for default. </td></tr>
+    <tr><td class="paramname">max_version</td><td>The maximum protocol version (e.g., TLS1_3_VERSION). 0 for default. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false on failure or if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="a2e472a6cec8bff3313660e0a3bb52980" name="a2e472a6cec8bff3313660e0a3bb52980"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2e472a6cec8bff3313660e0a3bb52980">&#9670;&#160;</a></span>configure_mtls()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::configure_mtls </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>client_ca_file_path</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>verification_mode</em></span><span class="paramdefsep"> = </span><span class="paramdefval">SSL_VERIFY_PEER</span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Configure client certificate authentication (mTLS) for this listener. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">client_ca_file_path</td><td>Path to the CA cert file for verifying client certs. Can be empty. </td></tr>
+    <tr><td class="paramname">verification_mode</td><td>Verification mode (e.g., SSL_VERIFY_PEER | SSL_VERIFY_FAIL_IF_NO_PEER_CERT). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false on failure or if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="afc83720884950ba141c67d78313d1900" name="afc83720884950ba141c67d78313d1900"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#afc83720884950ba141c67d78313d1900">&#9670;&#160;</a></span>set_alpn_selection_callback()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::set_alpn_selection_callback </td>
+          <td>(</td>
+          <td class="paramtype">SSL_CTX_alpn_select_cb_func</td>          <td class="paramname"><span class="paramname"><em>callback</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">void *</td>          <td class="paramname"><span class="paramname"><em>arg</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set the ALPN selection callback for this listener's context. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">callback</td><td>The OpenSSL ALPN selection callback function. </td></tr>
+    <tr><td class="paramname">arg</td><td>User-defined argument for the callback. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false on failure or if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="a30a60b60c3b500a635a99bf428483c68" name="a30a60b60c3b500a635a99bf428483c68"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a30a60b60c3b500a635a99bf428483c68">&#9670;&#160;</a></span>enable_session_caching()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::enable_session_caching </td>
+          <td>(</td>
+          <td class="paramtype">long</td>          <td class="paramname"><span class="paramname"><em>cache_size</em></span><span class="paramdefsep"> = </span><span class="paramdefval">SSL_SESSION_CACHE_MAX_SIZE_DEFAULT</span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Enable and configure server-side SSL session caching for this listener. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">cache_size</td><td>Max number of sessions in cache. (OpenSSL default: SSL_SESSION_CACHE_MAX_SIZE_DEFAULT). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false on failure or if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="ac0d91c12428c62f2ae2abf48a782adcd" name="ac0d91c12428c62f2ae2abf48a782adcd"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac0d91c12428c62f2ae2abf48a782adcd">&#9670;&#160;</a></span>set_custom_client_verify_callback()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::set_custom_client_verify_callback </td>
+          <td>(</td>
+          <td class="paramtype">int(*</td>          <td class="paramname"><span class="paramname"><em>callback&#160;</em></span>)(int, X509_STORE_CTX *), </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>verification_mode</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set a custom callback for X.509 client certificate verification. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">callback</td><td>User-defined callback: <span class="tt">int callback(int preverify_ok, X509_STORE_CTX *x509_ctx)</span>. </td></tr>
+    <tr><td class="paramname">verification_mode</td><td>Verification mode (e.g., SSL_VERIFY_PEER). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="a4270675d67e8453aafde1c08671f9919" name="a4270675d67e8453aafde1c08671f9919"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4270675d67e8453aafde1c08671f9919">&#9670;&#160;</a></span>set_ocsp_stapling_responder_callback()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::set_ocsp_stapling_responder_callback </td>
+          <td>(</td>
+          <td class="paramtype">int(*</td>          <td class="paramname"><span class="paramname"><em>callback&#160;</em></span>)(SSL *s, void *arg), </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">void *</td>          <td class="paramname"><span class="paramname"><em>arg</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set a callback for this listener's server to provide an OCSP response to be stapled. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">callback</td><td>Callback: <span class="tt">int (*cb)(SSL *, void *)</span>. Responsible for SSL_set_tlsext_status_ocsp_resp(). </td></tr>
+    <tr><td class="paramname">arg</td><td>User-defined argument for the callback. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="a99bfd004b7ae87dee0cee245e094e225" name="a99bfd004b7ae87dee0cee245e094e225"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a99bfd004b7ae87dee0cee245e094e225">&#9670;&#160;</a></span>set_sni_selection_callback()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::set_sni_selection_callback </td>
+          <td>(</td>
+          <td class="paramtype">int(*</td>          <td class="paramname"><span class="paramname"><em>callback&#160;</em></span>)(SSL *s, int *al, void *arg), </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">void *</td>          <td class="paramname"><span class="paramname"><em>arg</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set a callback for server-side SNI (Server Name Indication) handling. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">callback</td><td>Callback: <span class="tt">int (*cb)(SSL *s, int *al, void *arg)</span>. Can switch SSL_CTX. </td></tr>
+    <tr><td class="paramname">arg</td><td>User-defined argument for the callback. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="a7e6734f86c0f88f8536179c69701de2f" name="a7e6734f86c0f88f8536179c69701de2f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7e6734f86c0f88f8536179c69701de2f">&#9670;&#160;</a></span>set_keylog_callback()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::set_keylog_callback </td>
+          <td>(</td>
+          <td class="paramtype">SSL_CTX_keylog_cb_func</td>          <td class="paramname"><span class="paramname"><em>callback</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set the SSL/TLS key log callback function for debugging. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">callback</td><td>Keylog callback: <span class="tt">void (*cb)(const SSL *ssl, const char *line)</span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="ab6abf4c8bbbc1af0131b48bf9b2f7301" name="ab6abf4c8bbbc1af0131b48bf9b2f7301"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab6abf4c8bbbc1af0131b48bf9b2f7301">&#9670;&#160;</a></span>configure_dh_parameters()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::configure_dh_parameters </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>dh_param_file_path</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Configure Diffie-Hellman parameters for this listener's context. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">dh_param_file_path</td><td>Path to a PEM-encoded DH parameters file. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false on failure or if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="a67b83c954a3aa0b937d115261d1f8237" name="a67b83c954a3aa0b937d115261d1f8237"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a67b83c954a3aa0b937d115261d1f8237">&#9670;&#160;</a></span>configure_ecdh_curves()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::configure_ecdh_curves </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>curve_names_list</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Configure preferred ECDH curves for this listener's context. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">curve_names_list</td><td>Colon-separated list of curve NIDs or names (e.g., "P-256:X25519"). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false on failure or if context is not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="a3fd85c3a73693894bf094c8904a566dc" name="a3fd85c3a73693894bf094c8904a566dc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a3fd85c3a73693894bf094c8904a566dc">&#9670;&#160;</a></span>enable_post_handshake_auth()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::enable_post_handshake_auth </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Enable server-side support for TLS 1.3 Post-Handshake Authentication. </p>
+<dl class="section return"><dt>Returns</dt><dd>true if PHA enabled or already enabled, false on error or if context not initialized. </dd></dl>
+
+</div>
+</div>
+<a id="ae18e0deef9198750f4907f781bd4f9ff" name="ae18e0deef9198750f4907f781bd4f9ff"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae18e0deef9198750f4907f781bd4f9ff">&#9670;&#160;</a></span>set_supported_alpn_protocols()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::set_supported_alpn_protocols </td>
+          <td>(</td>
+          <td class="paramtype">const std::vector&lt; std::string &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>protocols</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set the list of ALPN protocols supported by the server listener. </p>
+<p>This list is used if no ALPN selection callback is registered via <span class="tt">set_alpn_selection_callback</span>. The server will automatically select a protocol from this list if it's also offered by the client. </p><dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">protocols</td><td>A vector of protocol strings (e.g., {"h2", "http/1.1"}). </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true on success, false if context is not initialized or protocols are invalid. </dd></dl>
+
+</div>
+</div>
+<a id="a40b3f2fb3f24ca356b855f086349f531" name="a40b3f2fb3f24ca356b855f086349f531"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a40b3f2fb3f24ca356b855f086349f531">&#9670;&#160;</a></span>get_min_protocol_version()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::ssl::listener::get_min_protocol_version </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Gets the minimum configured TLS protocol version. </p>
+<dl class="section return"><dt>Returns</dt><dd>Minimum version or 0 if not set/error. </dd></dl>
+
+</div>
+</div>
+<a id="a7308956b35ea3f4e3aeae30a0c36e146" name="a7308956b35ea3f4e3aeae30a0c36e146"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7308956b35ea3f4e3aeae30a0c36e146">&#9670;&#160;</a></span>get_max_protocol_version()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::ssl::listener::get_max_protocol_version </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Gets the maximum configured TLS protocol version. </p>
+<dl class="section return"><dt>Returns</dt><dd>Maximum version or 0 if not set/error. </dd></dl>
+
+</div>
+</div>
+<a id="a61d561389111cf0a36b8116fdf12f8e8" name="a61d561389111cf0a36b8116fdf12f8e8"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a61d561389111cf0a36b8116fdf12f8e8">&#9670;&#160;</a></span>get_verify_mode()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::ssl::listener::get_verify_mode </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Gets the current peer verification mode. </p>
+<dl class="section return"><dt>Returns</dt><dd>Verification flags or -1 if not set/error. </dd></dl>
+
+</div>
+</div>
+<a id="a0827021f1a980258ccce92d1c5ba9819" name="a0827021f1a980258ccce92d1c5ba9819"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0827021f1a980258ccce92d1c5ba9819">&#9670;&#160;</a></span>get_verify_depth()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">int qb::io::tcp::ssl::listener::get_verify_depth </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Gets the current peer certificate verification depth. </p>
+<dl class="section return"><dt>Returns</dt><dd>Depth or -1 if not set/error. </dd></dl>
+
+</div>
+</div>
+<a id="a560f963ce67d7081d72fbbd07a09148f" name="a560f963ce67d7081d72fbbd07a09148f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a560f963ce67d7081d72fbbd07a09148f">&#9670;&#160;</a></span>get_session_cache_mode()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">long qb::io::tcp::ssl::listener::get_session_cache_mode </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Gets the SSL session cache mode. </p>
+<dl class="section return"><dt>Returns</dt><dd>Cache mode flags or -1 if not set/error. </dd></dl>
+
+</div>
+</div>
+<a id="afde72a13cc5eafef1231f4f99dd93f6a" name="afde72a13cc5eafef1231f4f99dd93f6a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#afde72a13cc5eafef1231f4f99dd93f6a">&#9670;&#160;</a></span>get_session_cache_size()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">long qb::io::tcp::ssl::listener::get_session_cache_size </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Gets the SSL session cache size. </p>
+<dl class="section return"><dt>Returns</dt><dd>Cache size or -1 if not set/error. </dd></dl>
+
+</div>
+</div>
+<a id="a50733f6766855634ea966a702a7fe467" name="a50733f6766855634ea966a702a7fe467"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a50733f6766855634ea966a702a7fe467">&#9670;&#160;</a></span>set_options()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">long qb::io::tcp::ssl::listener::set_options </td>
+          <td>(</td>
+          <td class="paramtype">long</td>          <td class="paramname"><span class="paramname"><em>options_to_set</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set specific SSL options on the listener's context. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">options_to_set</td><td>A bitmask of SSL_OP_* flags to set. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>The new options mask after setting, or current options if context is null. </dd></dl>
+
+</div>
+</div>
+<a id="a8b58ccfc438931da605e8aa8c26d8eda" name="a8b58ccfc438931da605e8aa8c26d8eda"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8b58ccfc438931da605e8aa8c26d8eda">&#9670;&#160;</a></span>clear_options()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">long qb::io::tcp::ssl::listener::clear_options </td>
+          <td>(</td>
+          <td class="paramtype">long</td>          <td class="paramname"><span class="paramname"><em>options_to_clear</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Clear specific SSL options on the listener's context. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">options_to_clear</td><td>A bitmask of SSL_OP_* flags to clear. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>The new options mask after clearing, or current options if context is null. </dd></dl>
+
+</div>
+</div>
+<a id="a47bae57741f052aba8b3adacf99ab0ca" name="a47bae57741f052aba8b3adacf99ab0ca"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a47bae57741f052aba8b3adacf99ab0ca">&#9670;&#160;</a></span>set_session_timeout()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">long qb::io::tcp::ssl::listener::set_session_timeout </td>
+          <td>(</td>
+          <td class="paramtype">long</td>          <td class="paramname"><span class="paramname"><em>seconds</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set the session timeout for the listener's SSL_CTX. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">seconds</td><td>The timeout duration in seconds. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>The previously set timeout value, or 0 if context is null. </dd></dl>
+
+</div>
+</div>
+<a id="af76b3f15d8b83d3e3ca7814e7163f703" name="af76b3f15d8b83d3e3ca7814e7163f703"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af76b3f15d8b83d3e3ca7814e7163f703">&#9670;&#160;</a></span>set_info_callback()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::set_info_callback </td>
+          <td>(</td>
+          <td class="paramtype">void(*</td>          <td class="paramname"><span class="paramname"><em>callback&#160;</em></span>)(const SSL *ssl, int <a class="el" href="structqb_1_1type.html">type</a>, int val)</td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set an informational callback for the listener's SSL_CTX. </p>
+<p>Used for debugging SSL/TLS operations. </p><dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">callback</td><td>The callback function: <span class="tt">void (*cb)(const SSL *ssl, int type, int val)</span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if context exists, false otherwise. </dd></dl>
+
+</div>
+</div>
+<a id="a76a820242aae771408b05e2d3cf3863f" name="a76a820242aae771408b05e2d3cf3863f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a76a820242aae771408b05e2d3cf3863f">&#9670;&#160;</a></span>set_msg_callback()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::tcp::ssl::listener::set_msg_callback </td>
+          <td>(</td>
+          <td class="paramtype">void(*</td>          <td class="paramname"><span class="paramname"><em>callback&#160;</em></span>)(int write_p, int version, int content_type, const void *buf, size_t len, SSL *ssl, void *arg), </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">void *</td>          <td class="paramname"><span class="paramname"><em>arg</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Set a message callback for the listener's SSL_CTX for detailed protocol tracing. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">callback</td><td>The callback function: <span class="tt">void (*cb)(int write_p, int version, int content_type, const void *buf, size_t len, SSL *ssl, void *arg)</span>. </td></tr>
+    <tr><td class="paramname">arg</td><td>User-defined argument for the callback. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if context exists, false otherwise. </dd></dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><b>io</b></li><li class="navelem"><b>tcp</b></li><li class="navelem"><b>ssl</b></li><li class="navelem"><a href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html">listener</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

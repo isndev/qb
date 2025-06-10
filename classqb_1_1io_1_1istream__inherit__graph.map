@@ -1,0 +1,13 @@
+<map id="qb::io::istream&lt; _IO_ &gt;" name="qb::io::istream&lt; _IO_ &gt;">
+<area shape="rect" id="Node000001" title="Input stream template class." alt="" coords="158,5,314,31"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1stream.html" title=" " alt="" coords="93,79,216,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="215,44,177,81,173,77,211,40"/>
+<area shape="rect" id="Node000006" href="$classqb_1_1io_1_1stream.html" title="Combined input/output stream template class." alt="" coords="241,86,394,112"/>
+<area shape="poly" id="edge5_Node000001_Node000006" title=" " alt="" coords="261,40,307,84,303,88,258,44"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1transport_1_1udp.html" title="UDP transport providing connectionless, datagram&#45;based communication." alt="" coords="84,168,226,193"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="158,135,158,167,152,167,152,135"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1io_1_1async_1_1udp_1_1client.html" title="Asynchronous UDP client implementation." alt="" coords="5,241,142,282"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="133,206,95,243,92,239,130,202"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1io_1_1async_1_1udp_1_1server.html" title="Asynchronous UDP server implementation." alt="" coords="166,241,307,282"/>
+<area shape="poly" id="edge4_Node000003_Node000005" title=" " alt="" coords="180,202,218,239,214,243,176,206"/>
+</map>

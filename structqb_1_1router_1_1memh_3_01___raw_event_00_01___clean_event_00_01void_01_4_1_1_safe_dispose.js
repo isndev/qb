@@ -1,0 +1,4 @@
+var structqb_1_1router_1_1memh_3_01___raw_event_00_01___clean_event_00_01void_01_4_1_1_safe_dispose =
+[
+    [ "SafeDispose", "structqb_1_1router_1_1memh_3_01___raw_event_00_01___clean_event_00_01void_01_4_1_1_safe_dispose.html#a2522fb235973569aa7ddbe5cb6eb9d28", null ]
+];

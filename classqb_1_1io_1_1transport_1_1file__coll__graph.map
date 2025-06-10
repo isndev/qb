@@ -1,0 +1,15 @@
+<map id="qb::io::transport::file" name="qb::io::transport::file">
+<area shape="rect" id="Node000001" title="File transport providing stream&#45;based access to local files." alt="" coords="5,462,143,488"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1stream.html" title=" " alt="" coords="12,372,136,413"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="77,428,77,462,71,462,71,428"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1istream.html" title=" " alt="" coords="155,282,281,323"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="174,333,108,374,105,369,171,329"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="17,170,142,211"/>
+<area shape="poly" id="edge7_Node000002_Node000004" title=" " alt="" coords="78,227,73,282,73,323,75,372,70,372,68,323,68,282,72,226"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="118,219,195,280,192,284,115,223"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1allocator_1_1base__pipe.html" title=" " alt="" coords="15,80,144,121"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="73,136,74,170,69,170,68,137"/>
+<area shape="poly" id="edge6_Node000004_Node000005" title=" " alt="" coords="91,137,90,170,84,170,85,136"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="7,5,152,31"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="82,47,82,80,77,80,77,47"/>
+</map>

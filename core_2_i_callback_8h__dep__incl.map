@@ -1,0 +1,30 @@
+<map id="include/qb/core/ICallback.h" name="include/qb/core/ICallback.h">
+<area shape="rect" id="Node000001" title="Callback interface for the QB Actor Framework." alt="" coords="449,5,629,31"/>
+<area shape="rect" id="Node000002" href="$core_2_actor_8h.html" title="Actor base class and core actor model implementation." alt="" coords="350,226,504,252"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="566,40,592,69,616,104,624,123,628,143,626,162,617,180,594,203,566,219,536,230,505,237,504,232,534,225,564,214,591,199,613,177,621,160,623,143,619,125,612,107,588,72,562,43"/>
+<area shape="rect" id="Node000005" href="$_virtual_core_8h.html" title="Defines the VirtualCore class, representing a worker thread in the QB Actor Framework." alt="" coords="152,300,342,326"/>
+<area shape="poly" id="edge16_Node000001_Node000005" title=" " alt="" coords="434,29,330,46,272,61,215,81,159,107,108,139,63,179,27,228,22,239,26,250,46,265,79,278,161,297,160,302,77,283,44,270,22,254,17,239,22,225,59,176,104,135,157,102,213,76,271,56,328,41,433,23"/>
+<area shape="rect" id="Node000006" href="$core_2_event_8h.html" title="Event system for the QB Actor Framework." alt="" coords="302,79,461,105"/>
+<area shape="poly" id="edge5_Node000001_Node000006" title=" " alt="" coords="500,40,410,81,407,76,497,35"/>
+<area shape="rect" id="Node000011" href="$_i_callback_8h.html" title="Convenience header for the QB ICallback interface." alt="" coords="678,79,824,105"/>
+<area shape="poly" id="edge17_Node000001_Node000011" title=" " alt="" coords="590,34,716,76,714,81,588,39"/>
+<area shape="rect" id="Node000003" href="$_actor_8h.html" title="Convenience header for the core QB Actor components." alt="" coords="365,300,489,326"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="430,267,430,300,424,300,424,267"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="383,261,279,302,277,297,381,256"/>
+<area shape="rect" id="Node000004" href="$cube_8h.html" title="Main include file for the QB Actor Framework." alt="" coords="194,374,300,399"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="383,334,279,376,277,371,381,329"/>
+<area shape="poly" id="edge6_Node000006_Node000002" title=" " alt="" coords="399,117,415,152,424,192,429,226,423,226,419,193,410,154,394,119"/>
+<area shape="poly" id="edge14_Node000006_Node000005" title=" " alt="" coords="298,113,266,129,241,154,232,172,228,192,227,233,235,270,244,299,239,300,230,272,222,233,222,191,227,170,237,151,263,125,296,108"/>
+<area shape="rect" id="Node000007" href="$core_2main_8h.html" title="Main control for the QB Actor Framework." alt="" coords="36,226,188,252"/>
+<area shape="poly" id="edge7_Node000006_Node000007" title=" " alt="" coords="304,112,249,129,196,155,173,172,153,192,123,228,119,224,149,188,170,168,194,150,247,124,302,106"/>
+<area shape="rect" id="Node000009" href="$core_2_pipe_8h.html" title="Actor communication channel for the QB Actor Framework." alt="" coords="250,153,401,178"/>
+<area shape="poly" id="edge11_Node000006_Node000009" title=" " alt="" coords="365,118,337,154,333,151,361,115"/>
+<area shape="rect" id="Node000010" href="$_event_8h.html" title="Convenience header for the QB Event system." alt="" coords="475,153,603,178"/>
+<area shape="poly" id="edge15_Node000006_Node000010" title=" " alt="" coords="423,109,513,150,511,154,421,114"/>
+<area shape="poly" id="edge8_Node000007_Node000005" title=" " alt="" coords="150,257,225,297,223,302,148,262"/>
+<area shape="rect" id="Node000008" href="$main_8h.html" title="Convenience header for the QB Main engine controller." alt="" coords="5,300,129,326"/>
+<area shape="poly" id="edge9_Node000007_Node000008" title=" " alt="" coords="99,266,77,301,72,298,95,263"/>
+<area shape="poly" id="edge10_Node000008_Node000004" title=" " alt="" coords="113,329,217,371,215,376,111,334"/>
+<area shape="poly" id="edge12_Node000009_Node000002" title=" " alt="" coords="357,185,411,224,408,228,354,190"/>
+<area shape="poly" id="edge13_Node000009_Node000005" title=" " alt="" coords="314,193,256,301,251,298,310,191"/>
+</map>

@@ -1,0 +1,358 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: QB &amp; IO: Building Network-Enabled Actors</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: QB &amp; IO: Building Network-Enabled Actors</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('core_io_network_actors_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">QB &amp; IO: Building Network-Enabled Actors </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>Master how QB actors become powerful network clients and servers using the <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;&gt;</span> template for seamless asynchronous I/O.</p>
+<h1>QB &amp; IO: Building Network-Enabled Actors</h1>
+<p>One of the most powerful aspects of the QB Actor Framework is its seamless integration of asynchronous network I/O directly into actors. This allows you to build highly concurrent and responsive network applications—clients, servers, or peer-to-peer systems—where each network endpoint can be an independent, stateful actor.</p>
+<p>The primary mechanism for this integration is the <b><span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;DerivedActor&gt;</span></b> helper template.</p>
+<h2>The <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;&gt;</span> Template: Your Actor's Networking Toolkit</h2>
+<p>Defined in <span class="tt"><a class="el" href="async_8h.html" title="Main include file for the QB asynchronous I/O library.">qb/io/async.h</a></span>, the <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;DerivedActor&gt;</span> template is a sophisticated CRTP (Curiously Recurring Template Pattern) utility. When your actor class inherits from one of its nested specializations (e.g., <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MyClient&gt;::tcp::client</span>), it automatically gains the necessary base classes and methods to function as a specific type of network endpoint. This integration is deep: the actor's network operations become part of its <span class="tt">VirtualCore</span>'s event loop, ensuring non-blocking behavior.</p>
+<p><b>Key Specializations for Networked Actors:</b></p>
+<ul>
+<li><b>TCP Client Actors:</b><ul>
+<li><span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MyClientActor&gt;::tcp::client&lt;OptionalServerActorType = void&gt;</span>: Transforms <span class="tt">MyClientActor</span> into an asynchronous TCP client.</li>
+<li><span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MySSLClientActor&gt;::tcp::ssl::client&lt;OptionalServerActorType = void&gt;</span>: Creates an SSL/TLS-secured TCP client actor.</li>
+</ul>
+</li>
+<li><b>TCP Server Actors &amp; Session Handlers:</b><ul>
+<li><span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MyAcceptorActor&gt;::tcp::acceptor</span>: Equips <span class="tt">MyAcceptorActor</span> to listen for and accept incoming TCP connections, typically forwarding them to other actors.</li>
+<li><span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MySSLAcceptorActor&gt;::tcp::ssl::acceptor</span>: Same as above, but for SSL/TLS connections.</li>
+<li><span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MyServerActor&gt;::tcp::server&lt;MySessionClass&gt;</span>: A comprehensive base for an actor that both listens for TCP connections and manages <span class="tt">MySessionClass</span> instances for each client.</li>
+<li><span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MySSLServerActor&gt;::tcp::ssl::server&lt;MySecureSessionClass&gt;</span>: Secure version of the combined server.</li>
+<li><span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MySessionClass&gt;::tcp::client&lt;MyServerActor&gt;</span>: This is commonly used for <span class="tt">MySessionClass</span> itself, making it a server-managed component that handles communication for one connected client. <span class="tt">MyServerActor</span> is its logical parent or manager.</li>
+<li><span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MySecureSessionClass&gt;::tcp::ssl::client&lt;MyServerActor&gt;</span>: Secure version for server-managed sessions.</li>
+</ul>
+</li>
+<li><b>UDP Endpoint Actors:</b><ul>
+<li><span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MyUDPActor&gt;::udp::client</span>: Turns <span class="tt">MyUDPActor</span> into an asynchronous UDP endpoint capable of sending and receiving datagrams. Can function as a client or a simple server.</li>
+<li><span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MyUDPServerActor&gt;::udp::server</span>: Semantically similar to <span class="tt">udp::client</span>, often used for actors primarily designed to receive UDP messages on a bound port.</li>
+</ul>
+</li>
+</ul>
+<p><b>Core Functionality Provided by <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;&gt;</span>:</b></p>
+<p>When your actor inherits from one of these <span class="tt">use&lt;&gt;</span> specializations, it gains:</p>
+<ol type="1">
+<li><b><span class="tt">transport()</span> Method:</b> Access to the underlying <span class="tt">qb-io</span> transport object (e.g., <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html" title="Class implementing TCP socket functionality for reliable, stream-oriented communication.">qb::io::tcp::socket</a></span>, <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html" title="Class implementing a secure SSL/TLS TCP listener for accepting encrypted connections.">qb::io::tcp::ssl::listener</a></span>, <span class="tt"><a class="el" href="classqb_1_1io_1_1udp_1_1socket.html" title="Class implementing UDP socket functionality for datagram-based communication.">qb::io::udp::socket</a></span>). This is your primary interface for initiating connections, listening on ports, binding, and other socket-level operations.</li>
+<li><b>Input/Output Buffers (<span class="tt">in()</span> and <span class="tt">out()</span>):</b> Access to <span class="tt"><a class="el" href="classqb_1_1allocator_1_1pipe.html" title="Extensible buffer optimized for performance.">qb::allocator::pipe</a>&lt;char&gt;</span> instances for efficient, buffered management of incoming and outgoing byte streams.</li>
+<li><b>Protocol Handling Framework:</b> Your actor class is expected to define a nested type alias <span class="tt">using Protocol = YourChosenProtocol&lt;DerivedActor&gt;;</span> (this is not required for pure acceptor actors). The <span class="tt">use&lt;&gt;</span> base classes leverage this <span class="tt">Protocol</span> to automatically frame incoming byte streams into meaningful messages and parse them.</li>
+<li><b>Event Loop Integration:</b> The actor's network I/O operations are automatically registered with its <span class="tt">VirtualCore</span>'s <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1listener.html" title="Central event loop manager for asynchronous IO operations.">qb::io::async::listener</a></span>. This means I/O readiness (data arrival, send buffer available) triggers events processed by the actor's event loop.</li>
+<li><b>Asynchronous Event Handlers:</b> You will implement specific <span class="tt">on(...)</span> methods in your actor to react to:<ul>
+<li>Parsed messages from your <span class="tt">Protocol</span> (e.g., <span class="tt">void on(Protocol::message&amp;&amp; msg)</span>).</li>
+<li>Network status changes (e.g., <span class="tt">void on(<a class="el" href="structqb_1_1io_1_1async_1_1event_1_1disconnected.html" title="Event triggered when a connection is closed or lost.">qb::io::async::event::disconnected</a> const&amp; event)</span>).</li>
+<li>For acceptors, newly established connections (e.g., <span class="tt">void on(accepted_socket_type&amp;&amp; new_socket)</span>).</li>
+</ul>
+</li>
+</ol>
+<h2>Implementing a Network Client Actor (TCP/SSL Focus)</h2>
+<p>Let's outline the structure for an actor that connects to a server.</p>
+<p>Conceptual Client-Side Network Interaction: </p><div class="fragment"><div class="line">+---------------------+     +-----------------------+     +-------------------+</div>
+<div class="line">| MyNetworkClient     |     | qb-io (Transport/     |     | External Server   |</div>
+<div class="line">| (Actor on VC0)      |----&gt;| Protocol via use&lt;&gt;)   |----&gt;| (Remote Machine)  |</div>
+<div class="line">|                     |     | (Manages async socket)|     |                   |</div>
+<div class="line">| - Calls connect()   |&lt;----| &amp; SSL Handshake)      |&lt;----|                   |</div>
+<div class="line">| - Sends app events  |     |                       |     |                   |</div>
+<div class="line">| - Handles responses |     +-----------------------+     +-------------------+</div>
+<div class="line">+---------------------+</div>
+</div><!-- fragment --><ol type="1">
+<li><p class="startli"><b>Inherit and Define Protocol:</b> ```cpp #include &lt;<a class="el" href="_actor_8h.html" title="Convenience header for the core QB Actor components.">qb/actor.h</a>&gt; #include &lt;<a class="el" href="async_8h.html" title="Main include file for the QB asynchronous I/O library.">qb/io/async.h</a>&gt; // For <a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use&lt;&gt;</a> #include &lt;<a class="el" href="uri_8h.html" title="URI parsing and manipulation utilities.">qb/io/uri.h</a>&gt; // For <a class="el" href="classqb_1_1io_1_1uri.html" title="Class for parsing, manipulating, and representing URIs.">qb::io::uri</a> parsing #include &lt;<a class="el" href="text_8h.html" title="Protocols for processing text and binary messages in the QB IO system.">qb/io/protocol/text.h</a>&gt; // Example: for text::command protocol #include &lt;<a class="el" href="io_8h.html" title="Core I/O and logging utilities for the qb framework.">qb/io.h</a>&gt; // For <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout</a> // For SSL: // #include &lt;<a class="el" href="tcp_2ssl_2socket_8h.html" title="Implementation of SSL/TLS sockets for secure TCP communication in the QB IO library.">qb/io/tcp/ssl/socket.h</a>&gt; // For SSL_CTX, <a class="el" href="group___s_s_l.html#ga09935d5d47117a3a991679ddd528430b" title="Create an SSL context (SSL_CTX) configured for client-side SSL/TLS operations.">qb::io::ssl::create_client_context</a></p>
+<p class="startli">// Forward declaration for any events this actor sends/receives from other actors struct SendToServerCommand : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;128&gt;</a> command_data; };</p>
+<p class="startli">class MyNetworkClient : public <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a>, public <a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use&lt;MyNetworkClient&gt;::tcp::client&lt;&gt;</a> { // For SSL: public <a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use&lt;MyNetworkClient&gt;::tcp::ssl::client&lt;&gt;</a> { public: // Define the protocol for framing messages over the connection using Protocol = <a class="el" href="group___protocol.html#ga0120c970b4d50b4d782cc1c6d215d371" title="Protocol for newline-terminated (\n) commands, yielding std::string.">qb::protocol::text::command&lt;MyNetworkClient&gt;</a>; // Example: newline-terminated</p>
+<p class="startli">private: <a class="el" href="classqb_1_1io_1_1uri.html" title="Class for parsing, manipulating, and representing URIs.">qb::io::uri</a> _server_uri; bool _connected = false; // For SSL clients: // SSL_CTX* _ssl_ctx = nullptr; // Remember to manage its lifecycle (create/free)</p>
+<p class="startli">public: explicit MyNetworkClient(const std::string&amp; server_uri_string) : _server_uri(server_uri_string) { // For SSL: // _ssl_ctx = qb::io::ssl::create_client_context(TLS_client_method()); // if (!_ssl_ctx) { /* Handle error: throw or log &amp; fail onInit */ } }</p>
+<p class="startli">// For SSL: // ~MyNetworkClient() override { // if (_ssl_ctx) { SSL_CTX_free(_ssl_ctx); } // }</p>
+<p class="startli">// ... (onInit, event handlers, etc., follow) }; ```</p>
+</li>
+<li><b><span class="tt">onInit()</span> - Establish Connection:</b><ul>
+<li>Register any actor-specific events.</li>
+<li><b>For SSL:</b> Initialize the transport with the <span class="tt">SSL_CTX</span>: <span class="tt">this-&gt;transport().init(_ssl_ctx);</span></li>
+<li><p class="startli">Use <span class="tt"><a class="el" href="connector_8h.html#ad0a3210805ff5e6d0b92b7c8eb051d68" title="Initiates an asynchronous TCP connection.">qb::io::async::tcp::connect</a></span> for non-blocking connection establishment. Provide a callback lambda to handle the connection result. ```cpp // Inside MyNetworkClient bool onInit() override { registerEvent&lt;SendToServerCommand&gt;(*this); registerEvent&lt;qb::KillEvent&gt;(*this);</p>
+<p class="startli">// For SSL: // if (!_ssl_ctx) return false; // Ensure SSL_CTX was created // this-&gt;transport().init(_ssl_ctx);</p>
+<p class="startli"><a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Client [" &lt;&lt; id() &lt;&lt; "]: Attempting connection to " &lt;&lt; _server_uri.source().data() &lt;&lt; ".\n";</p>
+<p class="startli">// Deduce the socket type (tcp::socket or tcp::ssl::socket) using UnderlyingSocketType = decltype(this-&gt;transport());</p>
+<p class="startli"><a class="el" href="connector_8h.html#ad0a3210805ff5e6d0b92b7c8eb051d68" title="Initiates an asynchronous TCP connection.">qb::io::async::tcp::connect&lt;UnderlyingSocketType&gt;</a>( _server_uri, // Target URI _server_uri.host().data(), // SNI hostname (esp. for SSL) [this](UnderlyingSocketType resulting_socket) { // Connection callback if (!this-&gt;is_alive()) return; // Actor might have been killed</p>
+<p class="startli">if (resulting_socket.is_open()) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Client [" &lt;&lt; id() &lt;&lt; "]: TCP connection established.\n"; // Move the connected socket into our transport this-&gt;transport() = std::move(resulting_socket); // Initialize our chosen protocol on the now-active transport this-&gt;template switch_protocol&lt;Protocol&gt;(*this); // Start monitoring I/O events (read/write readiness) this-&gt;start(); _connected = true;</p>
+<p class="startli">// For SSL, after start(), complete the handshake if constexpr (std::is_same_v&lt;UnderlyingSocketType, qb::io::tcp::ssl::socket&gt;) { if (this-&gt;transport().connected() != 0) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Client [" &lt;&lt; id() &lt;&lt; "]: SSL handshake failed.\n"; _connected = false; this-&gt;close(); // Close the underlying socket // Consider retry logic here via async::callback return; } <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Client [" &lt;&lt; id() &lt;&lt; "]: SSL handshake successful.\n"; }</p>
+<p class="startli">// Optional: Send an initial message (e.g., authentication) // *this &lt;&lt; "HELLO_SERVER" &lt;&lt; Protocol::end; } else { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Client [" &lt;&lt; id() &lt;&lt; "]: Connection failed.\n"; // Schedule a retry or terminate // <a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a>([this](){ if(this-&gt;is_alive()) this-&gt;onInit(); }, 5.0); } } //, 5.0 // Optional timeout for the connect attempt in seconds ); return true; } ```</p>
+</li>
+</ul>
+</li>
+<li><b>Implement Event Handlers:</b><ul>
+<li><span class="tt">void on(Protocol::message&amp;&amp; msg)</span>: Process messages received from the server, which have been parsed by your <span class="tt">Protocol</span>.</li>
+<li><span class="tt">void on(<a class="el" href="structqb_1_1io_1_1async_1_1event_1_1disconnected.html" title="Event triggered when a connection is closed or lost.">qb::io::async::event::disconnected</a> const&amp; event)</span>: This is critical. Handle connection loss: reset state (<span class="tt">_connected = false;</span>), clear I/O buffers (<span class="tt">this-&gt;in().reset(); this-&gt;out().reset();</span>), optionally reset protocol state (<span class="tt">if(this-&gt;protocol()) this-&gt;protocol()-&gt;reset();</span>), and implement reconnection logic if desired (often using <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> to schedule the next connection attempt).</li>
+<li><span class="tt">on(SendToServerCommand&amp; event)</span>: If your client actor receives commands from other parts of your actor system to send data, check if <span class="tt">_connected</span> and <span class="tt">this-&gt;transport().is_open()</span>, then send the data using <span class="tt">*this &lt;&lt; event.command_data.c_str() &lt;&lt; Protocol::end;</span> (ensuring you append any protocol-specific delimiters like <span class="tt">Protocol::end</span>).</li>
+<li><span class="tt">void on(const <a class="el" href="structqb_1_1_kill_event.html" title="Event used to terminate an actor.">qb::KillEvent</a>&amp;)</span>: Call <span class="tt">this-&gt;close();</span> (which handles the transport shutdown, including SSL_shutdown if applicable) and then <span class="tt">this-&gt;kill();</span>.</li>
+</ul>
+</li>
+</ol>
+<p><b>(Reference:</b> <span class="tt">chat_tcp/client/ClientActor.h/.cpp</span>, <span class="tt">message_broker/client/ClientActor.h/.cpp</span> for complete client implementations. <span class="tt">test-async-io.cpp</span> in <span class="tt">qb/source/io/tests/system/</span> also shows SSL client setup within tests.**)</p>
+<h2>Implementing Network Server Actors</h2>
+<p>Servers generally consist of two main roles: an <b>acceptor</b> that listens for new connections, and <b>session handlers</b> that manage communication with individual connected clients. QB supports different ways to structure this:</p>
+<p>Basic Server Architecture (Separate Acceptor &amp; Session Managers): </p><div class="fragment"><div class="line">+---------------------+</div>
+<div class="line">| External TCP Client |</div>
+<div class="line">+----------^----------+</div>
+<div class="line">           | 1. Connects</div>
+<div class="line">+----------v----------+</div>
+<div class="line">| AcceptorActor       |</div>
+<div class="line">| (on VC0, uses       |</div>
+<div class="line">|  tcp::acceptor)     |</div>
+<div class="line">+----------|----------+</div>
+<div class="line">           | 2. Accepts socket, forwards via Event</div>
+<div class="line">+----------v----------+</div>
+<div class="line">| SessionManagerActor |</div>
+<div class="line">| (on VC1, uses       |</div>
+<div class="line">|  io_handler&lt;Session&gt;|</div>
+<div class="line">+----------|----------+</div>
+<div class="line">           | 3. Creates &amp; Manages SessionActor</div>
+<div class="line">+----------v----------+</div>
+<div class="line">| SessionActor        |</div>
+<div class="line">| (on VC1, uses       |</div>
+<div class="line">|  tcp::client&lt;Mgr&gt;)  |</div>
+<div class="line">| (Handles I/O for    |</div>
+<div class="line">|  one client)        |</div>
+<div class="line">+----------^----------+</div>
+<div class="line">           | 4. Bidirectional App Data</div>
+<div class="line">+----------v----------+</div>
+<div class="line">| External TCP Client |</div>
+<div class="line">+---------------------+</div>
+</div><!-- fragment --><h3>Pattern 1: Combined Server Actor (Acceptor + Session Manager)</h3>
+<p>Suitable for simpler servers where a single actor class can manage both listening for new connections and handling all active client sessions.</p>
+<ol type="1">
+<li><p class="startli"><b>Define Session Class:</b> This class will handle I/O for <em>one</em> connected client. It usually inherits from <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MySessionClass&gt;::tcp::client&lt;MyServerActorType&gt;</span> (or its SSL variant), making it a client from <span class="tt">qb-io</span>'s perspective but managed by your <span class="tt">MyServerActorType</span>. ```cpp // MySession.h class MyServerActor; // Forward declaration</p>
+<p class="startli">class MyClientSession : public <a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use&lt;MyClientSession&gt;::tcp::client&lt;MyServerActor&gt;</a> { public: using Protocol = <a class="el" href="group___protocol.html#ga0120c970b4d50b4d782cc1c6d215d371" title="Protocol for newline-terminated (\n) commands, yielding std::string.">qb::protocol::text::command&lt;MyClientSession&gt;</a>; // Or your custom protocol</p>
+<p class="startli">explicit MyClientSession(MyServerActor&amp; server_logic) : client(server_logic) {}</p>
+<p class="startli">void on(Protocol::message&amp;&amp; msg) { // Process data received from this client // Example: server().handleClientCommand(this-&gt;id(), msg.text); } void on(qb::io::async::event::disconnected const&amp; event) { // Notify the main server actor of this client's disconnection // server().handleClientDisconnect(this-&gt;id()); } // ... other session logic ... }; <span class="tt"></span></p>
+</li>
+<li><p class="startli"><span class="tt"> **Define Server Actor:** This actor inherits from `qb::Actor` and `qb::io::use&lt;MyServerActorType&gt;::tcp::server&lt;MySessionClass&gt;` (or `::tcp::ssl::server`). The `tcp::server` base provides `io_handler` capabilities.
+    </span>cpp // MyServerActor.h class MyServerActor : public <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a>, public <a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use&lt;MyServerActor&gt;::tcp::server&lt;MyClientSession&gt;</a> { private: // For SSL: // SSL_CTX* _server_ssl_ctx = nullptr; // Manage its lifecycle public: explicit MyServerActor(const qb::io::uri&amp; listen_uri) { // For SSL: // _server_ssl_ctx = qb::io::ssl::create_server_context(TLS_server_method(), cert_path, key_path); // if (!_server_ssl_ctx) { /* error */ } // this-&gt;transport().init(_server_ssl_ctx);</p>
+<p class="startli">if (this-&gt;transport().listen(listen_uri) != 0) { /* Handle listen error */ } this-&gt;start(); // Start accepting connections <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Server [" &lt;&lt; id() &lt;&lt; "] listening on " &lt;&lt; listen_uri.source().data() &lt;&lt; ".\n"; } // For SSL: ~MyServerActor() { if (_server_ssl_ctx) SSL_CTX_free(_server_ssl_ctx); }</p>
+<p class="startli">// This method is called by the <span class="tt">tcp::server</span> base <em>after</em> a new MyClientSession // instance is created and its transport (the accepted socket) is set up. void on(IOSession&amp; new_session) { // IOSession is MyClientSession here <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Server [" &lt;&lt; id() &lt;&lt; "]: New client session [" &lt;&lt; new_session.id() &lt;&lt; "] connected from " &lt;&lt; new_session.transport().peer_endpoint().to_string() &lt;&lt; ".\n"; // new_session.start() is typically called by the base when registering the session. // You can send a welcome message, etc. // new_session &lt;&lt; "Welcome!" &lt;&lt; MyClientSession::Protocol::end; }</p>
+<p class="startli">// Example methods to be called by MyClientSession instances: // void handleClientCommand(qb::uuid session_uuid, const std::string&amp; command) { /* ... */ } // void handleClientDisconnect(qb::uuid session_uuid) { // if (this-&gt;sessions().count(session_uuid)) { // this-&gt;sessions().erase(session_uuid); // Remove from managed sessions // <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Server: Session " &lt;&lt; session_uuid &lt;&lt; " removed.\n"; // } // }</p>
+<p class="startli">void on(const <a class="el" href="structqb_1_1_kill_event.html" title="Event used to terminate an actor.">qb::KillEvent</a>&amp; /*event*/) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Server [" &lt;&lt; id() &lt;&lt; "] shutting down.\n"; for (auto&amp; [uuid, session_ptr] : this-&gt;sessions()) { if (session_ptr) session_ptr-&gt;disconnect(); // Request graceful session shutdown } this-&gt;sessions().clear(); this-&gt;close(); // Close the listener socket this-&gt;kill(); } }; ```</p>
+</li>
+</ol>
+<h3>Pattern 2: Separate Acceptor Actor and Session-Managing Actor(s)</h3>
+<p>For greater scalability, especially to distribute session handling across multiple cores, you can separate the connection accepting logic from the session management logic.</p>
+<ol type="1">
+<li><b>Session Class:</b> Defined as in Pattern 1 (e.g., <span class="tt">MyClientSession</span> inheriting from <span class="tt">use&lt;MyClientSession&gt;::tcp::client&lt;MySessionManagerActor&gt;</span>).</li>
+<li><b>Session-Managing Actor(s):</b> One or more actors, potentially on different cores, that inherit from <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span> and <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1io__handler.html" title="Session manager for asynchronous IO.">qb::io::async::io_handler</a>&lt;MySessionManagerActor, MyClientSession&gt;</span>. These actors <em>do not listen</em> for connections themselves.<ul>
+<li>They receive an event (e.g., <span class="tt">NewClientConnectionEvent</span>) from the Acceptor Actor, which contains the newly accepted socket.</li>
+<li>In the handler for this event (e.g., <span class="tt">on(NewClientConnectionEvent&amp; event)</span>), they call <span class="tt">this-&gt;registerSession(std::move(event.client_socket_data))</span> to take ownership of the socket, create a <span class="tt">MyClientSession</span> instance, and start managing it.</li>
+</ul>
+</li>
+<li><b>Acceptor Actor:</b> An actor inheriting from <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span> and <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MyAcceptorActor&gt;::tcp::acceptor</span> (or its SSL variant).<ul>
+<li><b><span class="tt">onInit()</span>:</b> Initializes its SSL context (if SSL), then calls <span class="tt">this-&gt;transport().init(...)</span> if applicable, <span class="tt">this-&gt;transport().listen(...)</span>, and finally <span class="tt">this-&gt;start()</span> to begin accepting connections.</li>
+<li><b><span class="tt">on(accepted_socket_type&amp;&amp; new_socket)</span>:</b> This method is automatically called by the <span class="tt">acceptor</span> base when a new raw TCP connection is established. Inside this handler, your Acceptor Actor would:<ul>
+<li>Choose a Session-Managing Actor (e.g., via round-robin, load balancing logic, or based on some criteria).</li>
+<li><span class="tt">push</span> a <span class="tt">NewClientConnectionEvent</span> (containing the <span class="tt">std::move(new_socket)</span>) to the chosen Session-Managing Actor.</li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<p><b>(Reference:</b> The <span class="tt">chat_tcp</span> and <span class="tt">message_broker</span> examples robustly implement Pattern 2. They have an <span class="tt">AcceptActor</span>, one or more <span class="tt">ServerActor</span>s (which act as session managers), and specific <span class="tt">Session</span> classes (<span class="tt">ChatSession</span>, <span class="tt">BrokerSession</span>).**)</p>
+<h2>Key Considerations for Networked Actors</h2>
+<ul>
+<li><b>Protocol Definition:</b> A well-defined <span class="tt">Protocol</span> is essential for reliable communication. Choose a built-in one or implement a custom one carefully.</li>
+<li><b>Connection State Management:</b> Actors often need to track their connection state (e.g., <span class="tt">_is_connecting</span>, <span class="tt">_is_connected</span>, <span class="tt">_is_authenticated</span>).</li>
+<li><b>Error Handling &amp; Disconnections:</b> Robustly implement <span class="tt">on(<a class="el" href="structqb_1_1io_1_1async_1_1event_1_1disconnected.html" title="Event triggered when a connection is closed or lost.">qb::io::async::event::disconnected</a> const&amp;)</span> in client/session actors. Handle potential connection failures during <span class="tt">async::tcp::connect</span>. Servers should gracefully manage client disconnections.</li>
+<li><b>Resource Cleanup:</b> Ensure underlying sockets, <span class="tt">SSL_CTX*</span> (if manually managed), and other resources are properly closed/freed. <span class="tt">qb-io</span>'s RAII patterns and the actor lifecycle (destructors, <span class="tt">close()</span> in <span class="tt">KillEvent</span> handlers) generally handle this, but explicit management of <span class="tt">SSL_CTX</span> is often necessary.</li>
+<li><b>Flow Control:</b> For high-throughput applications, consider application-level flow control if actors can produce data faster than the network or receiving actors can consume it (e.g., pausing senders if <span class="tt">out()</span> buffer sizes grow too large, or using <span class="tt">pending_write</span> events).</li>
+</ul>
+<p>By leveraging <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;&gt;</span> and understanding these patterns, your QB actors can become powerful, self-contained network participants, capable of handling complex asynchronous communication with clarity and efficiency.</p>
+<p><b>(Next:</b> Review specific example analyses like chat_tcp Example Analysis to see these patterns in larger contexts.**) <b>(See also:</b> QB-IO: Transports, QB-IO: Protocols**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

@@ -1,0 +1,293 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/async/protocol.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/async/protocol.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('protocol_8h_source.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">protocol.h</div></div>
+</div><!--header-->
+<div class="contents">
+<a href="protocol_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00026" name="l00026"></a><span class="lineno">   26</span> </div>
+<div class="line"><a id="l00027" name="l00027"></a><span class="lineno">   27</span><span class="preprocessor">#ifndef QB_IO_ASYNC_PROTOCOL_H</span></div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span><span class="preprocessor">#define QB_IO_ASYNC_PROTOCOL_H</span></div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span> </div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span><span class="preprocessor">#include &lt;<a class="code" href="type__traits_8h.html">qb/utility/type_traits.h</a>&gt;</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span> </div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span><span class="keyword">namespace </span>qb::io::async {</div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span></div>
+<div class="foldopen" id="foldopen00043" data-start="{" data-end="};">
+<div class="line"><a id="l00043" name="l00043"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_i_protocol.html">   43</a></span><span class="keyword">class </span><a class="code hl_interface" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> {</div>
+<div class="line"><a id="l00044" name="l00044"></a><span class="lineno">   44</span>    <span class="keywordtype">bool</span> _status = <span class="keyword">true</span>; </div>
+<div class="line"><a id="l00045" name="l00045"></a><span class="lineno">   45</span>    <span class="keywordtype">bool</span> _should_flush = <span class="keyword">true</span>; </div>
+<div class="line"><a id="l00046" name="l00046"></a><span class="lineno">   46</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00051" name="l00051"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a96a7cbefa5f01674ec91eae1cb9d2693">   51</a></span>    <span class="keyword">virtual</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a96a7cbefa5f01674ec91eae1cb9d2693">~IProtocol</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00052" name="l00052"></a><span class="lineno">   52</span></div>
+<div class="line"><a id="l00065" name="l00065"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_i_protocol.html#ac6fbfd77652b09d4801fdb968b853e4a">   65</a></span>    <span class="keyword">virtual</span> std::size_t <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#ac6fbfd77652b09d4801fdb968b853e4a">getMessageSize</a>() noexcept = 0;</div>
+<div class="line"><a id="l00066" name="l00066"></a><span class="lineno">   66</span></div>
+<div class="line"><a id="l00079" name="l00079"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a9cd95933e98fcb5c16e7417b572c938b">   79</a></span>    virtual <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a9cd95933e98fcb5c16e7417b572c938b">onMessage</a>(std::<span class="keywordtype">size_t</span> size) noexcept = 0;</div>
+<div class="line"><a id="l00080" name="l00080"></a><span class="lineno">   80</span></div>
+<div class="line"><a id="l00088" name="l00088"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_i_protocol.html#ac82e684ad7b868d59307516245c6841e">   88</a></span>    virtual <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#ac82e684ad7b868d59307516245c6841e">reset</a>() noexcept = 0;</div>
+<div class="line"><a id="l00089" name="l00089"></a><span class="lineno">   89</span> </div>
+<div class="line"><a id="l00090" name="l00090"></a><span class="lineno">   90</span>public:</div>
+<div class="line"><a id="l00096" name="l00096"></a><span class="lineno">   96</span>    [[nodiscard]] <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00097" data-start="{" data-end="}">
+<div class="line"><a id="l00097" name="l00097"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_i_protocol.html#acddb63fbb3d34ecb17ef5d615cd40b78">   97</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#acddb63fbb3d34ecb17ef5d615cd40b78">ok</a>() const noexcept {</div>
+<div class="line"><a id="l00098" name="l00098"></a><span class="lineno">   98</span>        <span class="keywordflow">return</span> _status;</div>
+<div class="line"><a id="l00099" name="l00099"></a><span class="lineno">   99</span>    }</div>
+</div>
+<div class="line"><a id="l00100" name="l00100"></a><span class="lineno">  100</span></div>
+<div class="line"><a id="l00108" name="l00108"></a><span class="lineno">  108</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00109" data-start="{" data-end="}">
+<div class="line"><a id="l00109" name="l00109"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_i_protocol.html#aba563530833eca4ab719eb36421b4a6d">  109</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#aba563530833eca4ab719eb36421b4a6d">not_ok</a>() noexcept {</div>
+<div class="line"><a id="l00110" name="l00110"></a><span class="lineno">  110</span>        _status = <span class="keyword">false</span>;</div>
+<div class="line"><a id="l00111" name="l00111"></a><span class="lineno">  111</span>    }</div>
+</div>
+<div class="line"><a id="l00112" name="l00112"></a><span class="lineno">  112</span></div>
+<div class="foldopen" id="foldopen00117" data-start="{" data-end="}">
+<div class="line"><a id="l00117" name="l00117"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a9838efa4d6cd543305fcd8c080ade08e">  117</a></span>    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a9838efa4d6cd543305fcd8c080ade08e">set_should_flush</a>(<span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a84ff398f6de8afca2e7ee7627c4fff6e">should_flush</a>) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00118" name="l00118"></a><span class="lineno">  118</span>        _should_flush = <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a84ff398f6de8afca2e7ee7627c4fff6e">should_flush</a>;</div>
+<div class="line"><a id="l00119" name="l00119"></a><span class="lineno">  119</span>    }</div>
+</div>
+<div class="line"><a id="l00120" name="l00120"></a><span class="lineno">  120</span></div>
+<div class="foldopen" id="foldopen00125" data-start="{" data-end="}">
+<div class="line"><a id="l00125" name="l00125"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a84ff398f6de8afca2e7ee7627c4fff6e">  125</a></span>    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_i_protocol.html#a84ff398f6de8afca2e7ee7627c4fff6e">should_flush</a>() const noexcept {</div>
+<div class="line"><a id="l00126" name="l00126"></a><span class="lineno">  126</span>        <span class="keywordflow">return</span> _should_flush;</div>
+<div class="line"><a id="l00127" name="l00127"></a><span class="lineno">  127</span>    }</div>
+</div>
+<div class="line"><a id="l00128" name="l00128"></a><span class="lineno">  128</span>};</div>
+</div>
+<div class="line"><a id="l00129" name="l00129"></a><span class="lineno">  129</span></div>
+<div class="line"><a id="l00145" name="l00145"></a><span class="lineno">  145</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _IO_&gt;</div>
+<div class="foldopen" id="foldopen00146" data-start="{" data-end="};">
+<div class="line"><a id="l00146" name="l00146"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_a_protocol.html">  146</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a4f85284270383645b0acabe3ddb25dc4">AProtocol</a> : <span class="keyword">public</span> <a class="code hl_interface" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> {</div>
+<div class="line"><a id="l00162" name="l00162"></a><span class="lineno">  162</span>    <span class="keyword">friend</span> <span class="keyword">typename</span> _IO_::base_io_t;</div>
+<div class="line"><a id="l00163" name="l00163"></a><span class="lineno">  163</span> </div>
+<div class="line"><a id="l00164" name="l00164"></a><span class="lineno">  164</span> </div>
+<div class="line"><a id="l00165" name="l00165"></a><span class="lineno">  165</span><span class="keyword">protected</span>:</div>
+<div class="line"><a id="l00166" name="l00166"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_a_protocol.html#aec99485e2c6ff9bf0eb86aafba8a4e2d">  166</a></span>    _IO_ &amp;<a class="code hl_variable" href="classqb_1_1io_1_1async_1_1_a_protocol.html#aec99485e2c6ff9bf0eb86aafba8a4e2d">_io</a>; </div>
+<div class="line"><a id="l00167" name="l00167"></a><span class="lineno">  167</span></div>
+<div class="line"><a id="l00171" name="l00171"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a4f85284270383645b0acabe3ddb25dc4">  171</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a4f85284270383645b0acabe3ddb25dc4">AProtocol</a>() = <span class="keyword">delete</span>;</div>
+<div class="line"><a id="l00172" name="l00172"></a><span class="lineno">  172</span></div>
+<div class="foldopen" id="foldopen00177" data-start="{" data-end="}">
+<div class="line"><a id="l00177" name="l00177"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a1e0ebbec0cacdf685db0bc9487f0ac73">  177</a></span>    <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a1e0ebbec0cacdf685db0bc9487f0ac73">AProtocol</a>(_IO_ &amp;<a class="code hl_class" href="classqb_1_1io_1_1async_1_1io.html">io</a>) noexcept</div>
+<div class="line"><a id="l00178" name="l00178"></a><span class="lineno">  178</span>        : <a class="code hl_variable" href="classqb_1_1io_1_1async_1_1_a_protocol.html#aec99485e2c6ff9bf0eb86aafba8a4e2d">_io</a>(<a class="code hl_class" href="classqb_1_1io_1_1async_1_1io.html">io</a>) {}</div>
+</div>
+<div class="line"><a id="l00179" name="l00179"></a><span class="lineno">  179</span></div>
+<div class="line"><a id="l00183" name="l00183"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a125b424fd1ba522fd121930298445829">  183</a></span>    <span class="keyword">virtual</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a125b424fd1ba522fd121930298445829">~AProtocol</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00184" name="l00184"></a><span class="lineno">  184</span> </div>
+<div class="line"><a id="l00185" name="l00185"></a><span class="lineno">  185</span>    <span class="comment">// Pure virtual methods inherited from IProtocol, to be implemented by concrete protocols.</span></div>
+<div class="line"><a id="l00186" name="l00186"></a><span class="lineno">  186</span></div>
+<div class="line"><a id="l00193" name="l00193"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a6644f42aaa0cfe6f7fa6f5bc8ea87790">  193</a></span>    <span class="keyword">virtual</span> std::size_t <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a6644f42aaa0cfe6f7fa6f5bc8ea87790">getMessageSize</a>() noexcept = 0;</div>
+<div class="line"><a id="l00194" name="l00194"></a><span class="lineno">  194</span></div>
+<div class="line"><a id="l00201" name="l00201"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a5a8f83662259d9341c5fbb5d14cce953">  201</a></span>    virtual <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a5a8f83662259d9341c5fbb5d14cce953">onMessage</a>(std::<span class="keywordtype">size_t</span> size) noexcept = 0;</div>
+<div class="line"><a id="l00202" name="l00202"></a><span class="lineno">  202</span></div>
+<div class="line"><a id="l00207" name="l00207"></a><span class="lineno"><a class="line" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a7ee36ef672d2eae8324936adbc66711b">  207</a></span>    virtual <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a7ee36ef672d2eae8324936adbc66711b">reset</a>() noexcept = 0;</div>
+<div class="line"><a id="l00208" name="l00208"></a><span class="lineno">  208</span> </div>
+<div class="line"><a id="l00209" name="l00209"></a><span class="lineno">  209</span> </div>
+<div class="line"><a id="l00210" name="l00210"></a><span class="lineno">  210</span>};</div>
+</div>
+<div class="line"><a id="l00211" name="l00211"></a><span class="lineno">  211</span> </div>
+<div class="line"><a id="l00212" name="l00212"></a><span class="lineno">  212</span>} <span class="comment">// namespace qb::io::async</span></div>
+<div class="line"><a id="l00213" name="l00213"></a><span class="lineno">  213</span> </div>
+<div class="line"><a id="l00214" name="l00214"></a><span class="lineno">  214</span><span class="preprocessor">#endif </span><span class="comment">// QB_IO_ASYNC_PROTOCOL_H</span></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_a_protocol_html_a125b424fd1ba522fd121930298445829"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_a_protocol.html#a125b424fd1ba522fd121930298445829">qb::io::async::AProtocol::~AProtocol</a></div><div class="ttdeci">virtual ~AProtocol()=default</div><div class="ttdoc">Virtual destructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_a_protocol_html_a1e0ebbec0cacdf685db0bc9487f0ac73"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_a_protocol.html#a1e0ebbec0cacdf685db0bc9487f0ac73">qb::io::async::AProtocol::AProtocol</a></div><div class="ttdeci">AProtocol(_IO_ &amp;io) noexcept</div><div class="ttdoc">Constructor that associates the protocol with an I/O component.</div><div class="ttdef"><b>Definition</b> protocol.h:177</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_a_protocol_html_a4f85284270383645b0acabe3ddb25dc4"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_a_protocol.html#a4f85284270383645b0acabe3ddb25dc4">qb::io::async::AProtocol::AProtocol</a></div><div class="ttdeci">AProtocol()=delete</div><div class="ttdoc">Default constructor is deleted to ensure an I/O component is always associated.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_a_protocol_html_a5a8f83662259d9341c5fbb5d14cce953"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_a_protocol.html#a5a8f83662259d9341c5fbb5d14cce953">qb::io::async::AProtocol::onMessage</a></div><div class="ttdeci">virtual void onMessage(std::size_t size) noexcept=0</div><div class="ttdoc">Processes a complete message from the input buffer of the associated I/O component.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_a_protocol_html_a6644f42aaa0cfe6f7fa6f5bc8ea87790"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_a_protocol.html#a6644f42aaa0cfe6f7fa6f5bc8ea87790">qb::io::async::AProtocol::getMessageSize</a></div><div class="ttdeci">virtual std::size_t getMessageSize() noexcept=0</div><div class="ttdoc">Determines the size of the next complete message in the input buffer of the associated I/O component.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_a_protocol_html_a7ee36ef672d2eae8324936adbc66711b"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_a_protocol.html#a7ee36ef672d2eae8324936adbc66711b">qb::io::async::AProtocol::reset</a></div><div class="ttdeci">virtual void reset() noexcept=0</div><div class="ttdoc">Resets the internal parsing state of the protocol.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_a_protocol_html_aec99485e2c6ff9bf0eb86aafba8a4e2d"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_a_protocol.html#aec99485e2c6ff9bf0eb86aafba8a4e2d">qb::io::async::AProtocol::_io</a></div><div class="ttdeci">_IO_ &amp; _io</div><div class="ttdoc">Reference to the I/O component instance that this protocol is associated with.</div><div class="ttdef"><b>Definition</b> protocol.h:166</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html">qb::io::async::IProtocol</a></div><div class="ttdoc">Base interface for all message processing protocols.</div><div class="ttdef"><b>Definition</b> protocol.h:43</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html_a84ff398f6de8afca2e7ee7627c4fff6e"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html#a84ff398f6de8afca2e7ee7627c4fff6e">qb::io::async::IProtocol::should_flush</a></div><div class="ttdeci">bool should_flush() const noexcept</div><div class="ttdoc">Gets the flag indicating whether the protocol should flush the input buffer after processing a messag...</div><div class="ttdef"><b>Definition</b> protocol.h:125</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html_a96a7cbefa5f01674ec91eae1cb9d2693"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html#a96a7cbefa5f01674ec91eae1cb9d2693">qb::io::async::IProtocol::~IProtocol</a></div><div class="ttdeci">virtual ~IProtocol()=default</div><div class="ttdoc">Virtual destructor.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html_a9838efa4d6cd543305fcd8c080ade08e"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html#a9838efa4d6cd543305fcd8c080ade08e">qb::io::async::IProtocol::set_should_flush</a></div><div class="ttdeci">void set_should_flush(bool should_flush) noexcept</div><div class="ttdoc">Sets the flag indicating whether the protocol should flush the input buffer after processing a messag...</div><div class="ttdef"><b>Definition</b> protocol.h:117</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html_a9cd95933e98fcb5c16e7417b572c938b"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html#a9cd95933e98fcb5c16e7417b572c938b">qb::io::async::IProtocol::onMessage</a></div><div class="ttdeci">virtual void onMessage(std::size_t size) noexcept=0</div><div class="ttdoc">Processes a complete message that has been identified in the input buffer.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html_aba563530833eca4ab719eb36421b4a6d"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html#aba563530833eca4ab719eb36421b4a6d">qb::io::async::IProtocol::not_ok</a></div><div class="ttdeci">void not_ok() noexcept</div><div class="ttdoc">Marks the protocol as being in an invalid or non-operational state.</div><div class="ttdef"><b>Definition</b> protocol.h:109</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html_ac6fbfd77652b09d4801fdb968b853e4a"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html#ac6fbfd77652b09d4801fdb968b853e4a">qb::io::async::IProtocol::getMessageSize</a></div><div class="ttdeci">virtual std::size_t getMessageSize() noexcept=0</div><div class="ttdoc">Determines the size of the next complete message in the input buffer.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html_ac82e684ad7b868d59307516245c6841e"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html#ac82e684ad7b868d59307516245c6841e">qb::io::async::IProtocol::reset</a></div><div class="ttdeci">virtual void reset() noexcept=0</div><div class="ttdoc">Resets the internal state of the protocol.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1_i_protocol_html_acddb63fbb3d34ecb17ef5d615cd40b78"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html#acddb63fbb3d34ecb17ef5d615cd40b78">qb::io::async::IProtocol::ok</a></div><div class="ttdeci">bool ok() const noexcept</div><div class="ttdoc">Checks if the protocol is in a valid operational state.</div><div class="ttdef"><b>Definition</b> protocol.h:97</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1async_1_1io_html"><div class="ttname"><a href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a></div><div class="ttdoc">CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing.</div><div class="ttdef"><b>Definition</b> io.h:938</div></div>
+<div class="ttc" id="atype__traits_8h_html"><div class="ttname"><a href="type__traits_8h.html">type_traits.h</a></div><div class="ttdoc">Advanced type traits and metaprogramming utilities for the QB Framework.</div></div>
+</div><!-- fragment --></div><!-- contents -->
+</div><!-- doc-content -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="dir_8eba9db56c7516495e7fe9ef247fc2c3.html">async</a></li><li class="navelem"><a href="protocol_8h.html">protocol.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

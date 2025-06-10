@@ -1,0 +1,6 @@
+<map id="qb::lockfree::mpsc::ringbuffer&lt; T, max_size, 0 &gt;" name="qb::lockfree::mpsc::ringbuffer&lt; T, max_size, 0 &gt;">
+<area shape="rect" id="Node000001" title="Multi&#45;Producer Single&#45;Consumer ring buffer with runtime&#45;determined number of producers." alt="" coords="5,79,140,135"/>
+<area shape="rect" id="Node000002" href="$structqb_1_1nocopy.html" title="Base class to make derived classes non&#45;copyable." alt="" coords="30,5,115,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="67,46,67,78,61,78,61,46"/>
+<area shape="poly" id="edge2_Node000001_Node000002" title=" " alt="" coords="84,46,84,78,78,78,78,46"/>
+</map>

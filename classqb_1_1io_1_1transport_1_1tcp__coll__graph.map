@@ -1,0 +1,19 @@
+<map id="qb::io::transport::tcp" name="qb::io::transport::tcp">
+<area shape="rect" id="Node000001" title="TCP transport providing reliable, stream&#45;based network communication." alt="" coords="93,462,231,488"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1stream.html" title=" " alt="" coords="100,372,224,413"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="164,428,164,462,159,462,159,428"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1istream.html" title=" " alt="" coords="44,282,170,323"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="130,334,152,370,147,373,125,337"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1io_1_1tcp_1_1socket.html" title="Class implementing TCP socket functionality for reliable, stream&#45;oriented communication." alt="" coords="5,178,132,204"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="72,219,79,257,93,280,88,283,74,259,66,220"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="18,88,119,114"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="71,129,71,177,66,177,66,129"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="156,170,280,211"/>
+<area shape="poly" id="edge9_Node000002_Node000006" title=" " alt="" coords="211,227,184,323,170,373,165,371,179,322,206,225"/>
+<area shape="poly" id="edge5_Node000003_Node000006" title=" " alt="" coords="155,221,136,237,122,259,114,283,109,281,117,257,132,233,151,217"/>
+<area shape="rect" id="Node000007" href="$classqb_1_1allocator_1_1base__pipe.html" title=" " alt="" coords="154,80,282,121"/>
+<area shape="poly" id="edge6_Node000006_Node000007" title=" " alt="" coords="212,136,213,170,208,170,206,137"/>
+<area shape="poly" id="edge8_Node000006_Node000007" title=" " alt="" coords="229,137,228,170,223,170,224,136"/>
+<area shape="rect" id="Node000008" title=" " alt="" coords="145,5,290,31"/>
+<area shape="poly" id="edge7_Node000007_Node000008" title=" " alt="" coords="220,47,220,80,215,80,215,47"/>
+</map>

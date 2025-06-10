@@ -1,0 +1,438 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/system/container/unordered_map.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/system/container/unordered_map.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('unordered__map_8h_source.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">unordered_map.h</div></div>
+</div><!--header-->
+<div class="contents">
+<a href="unordered__map_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00025" name="l00025"></a><span class="lineno">   25</span> </div>
+<div class="line"><a id="l00026" name="l00026"></a><span class="lineno">   26</span><span class="preprocessor">#ifndef QB_UNORDERED_MAP_H</span></div>
+<div class="line"><a id="l00027" name="l00027"></a><span class="lineno">   27</span><span class="preprocessor">#define QB_UNORDERED_MAP_H</span></div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span><span class="preprocessor">#include &lt;string&gt;</span></div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span><span class="preprocessor">#include &lt;map&gt;</span></div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span><span class="preprocessor">#include &lt;ska_hash/unordered_map.hpp&gt;</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span><span class="preprocessor">#include &lt;unordered_map&gt;</span></div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span> </div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span><span class="keyword">namespace </span>qb {</div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span></div>
+<div class="line"><a id="l00048" name="l00048"></a><span class="lineno">   48</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> K, <span class="keyword">typename</span> V, <span class="keyword">typename</span> H = std::hash&lt;K&gt;,</div>
+<div class="line"><a id="l00049" name="l00049"></a><span class="lineno">   49</span>          <span class="keyword">typename</span> E = std::equal_to&lt;K&gt;,</div>
+<div class="line"><a id="l00050" name="l00050"></a><span class="lineno">   50</span>          <span class="keyword">typename</span> A = std::allocator&lt;std::pair&lt;const K, V&gt;&gt;&gt;</div>
+<div class="line"><a id="l00051" name="l00051"></a><span class="lineno"><a class="line" href="unordered__map_8h.html#af3c3312bf8f7e4f25e7d789c6785c744">   51</a></span><span class="keyword">using </span><a class="code hl_typedef" href="unordered__map_8h.html#af3c3312bf8f7e4f25e7d789c6785c744">unordered_flat_map</a> = ska::flat_hash_map&lt;K, V, H, E, A&gt;;</div>
+<div class="line"><a id="l00052" name="l00052"></a><span class="lineno">   52</span> </div>
+<div class="line"><a id="l00053" name="l00053"></a><span class="lineno">   53</span><span class="preprocessor">#ifdef NDEBUG</span><span class="preprocessor"></span></div>
+<div class="line"><a id="l00068" name="l00068"></a><span class="lineno">   68</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> K, <span class="keyword">typename</span> V, <span class="keyword">typename</span> H = std::hash&lt;K&gt;,</div>
+<div class="line"><a id="l00069" name="l00069"></a><span class="lineno">   69</span>          <span class="keyword">typename</span> E = std::equal_to&lt;K&gt;,</div>
+<div class="line"><a id="l00070" name="l00070"></a><span class="lineno">   70</span>          <span class="keyword">typename</span> A = std::allocator&lt;std::pair&lt;const K, V&gt;&gt;&gt;</div>
+<div class="line"><a id="l00071" name="l00071"></a><span class="lineno">   71</span><span class="keyword">using </span><a class="code hl_typedef" href="group___container.html#ga9d156b7ae1a1ef61bbb6bf272fdd4c6b">unordered_map</a> = ska::unordered_map&lt;K, V, H, E, A&gt;;</div>
+<div class="line"><a id="l00072" name="l00072"></a><span class="lineno">   72</span><span class="preprocessor">#else</span><span class="preprocessor"></span></div>
+<div class="line"><a id="l00087" name="l00087"></a><span class="lineno">   87</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> K, <span class="keyword">typename</span> V, <span class="keyword">typename</span> H = std::hash&lt;K&gt;,</div>
+<div class="line"><a id="l00088" name="l00088"></a><span class="lineno">   88</span>          <span class="keyword">typename</span> E = std::equal_to&lt;K&gt;,</div>
+<div class="line"><a id="l00089" name="l00089"></a><span class="lineno">   89</span>          <span class="keyword">typename</span> A = std::allocator&lt;std::pair&lt;const K, V&gt;&gt;&gt;</div>
+<div class="line"><a id="l00090" name="l00090"></a><span class="lineno"><a class="line" href="group___container.html#ga9d156b7ae1a1ef61bbb6bf272fdd4c6b">   90</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___container.html#ga9d156b7ae1a1ef61bbb6bf272fdd4c6b">unordered_map</a> = std::unordered_map&lt;K, V, H, E, A&gt;;</div>
+<div class="line"><a id="l00091" name="l00091"></a><span class="lineno">   91</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00092" name="l00092"></a><span class="lineno">   92</span></div>
+<div class="foldopen" id="foldopen00099" data-start="{" data-end="};">
+<div class="line"><a id="l00099" name="l00099"></a><span class="lineno"><a class="line" href="classqb_1_1string__to__lower.html">   99</a></span><span class="keyword">class </span><a class="code hl_class" href="classqb_1_1string__to__lower.html">string_to_lower</a> {</div>
+<div class="line"><a id="l00106" name="l00106"></a><span class="lineno">  106</span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> <span class="keywordtype">char</span></div>
+<div class="line"><a id="l00107" name="l00107"></a><span class="lineno">  107</span>    charToLower(<span class="keyword">const</span> <span class="keywordtype">char</span> c) {</div>
+<div class="line"><a id="l00108" name="l00108"></a><span class="lineno">  108</span>        <span class="keywordflow">return</span> (c &gt;= <span class="charliteral">&#39;A&#39;</span> &amp;&amp; c &lt;= <span class="charliteral">&#39;Z&#39;</span>) ? c + (<span class="charliteral">&#39;a&#39;</span> - <span class="charliteral">&#39;A&#39;</span>) : c;</div>
+<div class="line"><a id="l00109" name="l00109"></a><span class="lineno">  109</span>    }</div>
+<div class="line"><a id="l00110" name="l00110"></a><span class="lineno">  110</span></div>
+<div class="line"><a id="l00116" name="l00116"></a><span class="lineno">  116</span>    <span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> N&gt;</div>
+<div class="line"><a id="l00117" name="l00117"></a><span class="lineno">  117</span>    <span class="keyword">class </span>const_str {</div>
+<div class="line"><a id="l00118" name="l00118"></a><span class="lineno">  118</span>    <span class="keyword">private</span>:</div>
+<div class="line"><a id="l00119" name="l00119"></a><span class="lineno">  119</span>        <span class="keyword">const</span> <span class="keywordtype">char</span> s[N + 1]; <span class="comment">// One extra byte to fill with a 0 value</span></div>
+<div class="line"><a id="l00120" name="l00120"></a><span class="lineno">  120</span> </div>
+<div class="line"><a id="l00121" name="l00121"></a><span class="lineno">  121</span>    <span class="keyword">public</span>:</div>
+<div class="line"><a id="l00130" name="l00130"></a><span class="lineno">  130</span>        <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T, T... Nums&gt;</div>
+<div class="line"><a id="l00131" name="l00131"></a><span class="lineno">  131</span>        <span class="keyword">constexpr</span> const_str(<span class="keyword">const</span> <span class="keywordtype">char</span> (&amp;str)[N], std::integer_sequence&lt;T, Nums...&gt;)</div>
+<div class="line"><a id="l00132" name="l00132"></a><span class="lineno">  132</span>            : s{charToLower(str[Nums])..., 0} {}</div>
+<div class="line"><a id="l00133" name="l00133"></a><span class="lineno">  133</span></div>
+<div class="line"><a id="l00140" name="l00140"></a><span class="lineno">  140</span>        <span class="keyword">constexpr</span> <span class="keywordtype">char</span></div>
+<div class="line"><a id="l00141" name="l00141"></a><span class="lineno">  141</span>        operator[](std::size_t i)<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00142" name="l00142"></a><span class="lineno">  142</span>            <span class="keywordflow">return</span> s[i];</div>
+<div class="line"><a id="l00143" name="l00143"></a><span class="lineno">  143</span>        }</div>
+<div class="line"><a id="l00144" name="l00144"></a><span class="lineno">  144</span></div>
+<div class="line"><a id="l00150" name="l00150"></a><span class="lineno">  150</span>        <span class="keyword">operator</span> <span class="keyword">const</span> <span class="keywordtype">char</span> *() <span class="keyword">const</span> {</div>
+<div class="line"><a id="l00151" name="l00151"></a><span class="lineno">  151</span>            <span class="keywordflow">return</span> s;</div>
+<div class="line"><a id="l00152" name="l00152"></a><span class="lineno">  152</span>        }</div>
+<div class="line"><a id="l00153" name="l00153"></a><span class="lineno">  153</span>    };</div>
+<div class="line"><a id="l00154" name="l00154"></a><span class="lineno">  154</span></div>
+<div class="line"><a id="l00162" name="l00162"></a><span class="lineno">  162</span>    <span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> N&gt;</div>
+<div class="line"><a id="l00163" name="l00163"></a><span class="lineno">  163</span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> const_str&lt;N&gt;</div>
+<div class="line"><a id="l00164" name="l00164"></a><span class="lineno">  164</span>    toLower(<span class="keyword">const</span> <span class="keywordtype">char</span> (&amp;str)[N]) {</div>
+<div class="line"><a id="l00165" name="l00165"></a><span class="lineno">  165</span>        <span class="keywordflow">return</span> {str, std::make_integer_sequence&lt;unsigned, N&gt;()};</div>
+<div class="line"><a id="l00166" name="l00166"></a><span class="lineno">  166</span>    }</div>
+<div class="line"><a id="l00167" name="l00167"></a><span class="lineno">  167</span> </div>
+<div class="line"><a id="l00168" name="l00168"></a><span class="lineno">  168</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00176" name="l00176"></a><span class="lineno">  176</span>    <span class="keyword">template</span> &lt;std::<span class="keywordtype">size_t</span> N&gt;</div>
+<div class="line"><a id="l00177" name="l00177"></a><span class="lineno">  177</span>    <span class="keyword">static</span> std::string</div>
+<div class="foldopen" id="foldopen00178" data-start="{" data-end="}">
+<div class="line"><a id="l00178" name="l00178"></a><span class="lineno"><a class="line" href="classqb_1_1string__to__lower.html#a69577a3e7c9810bbfc4d7893a5236f7f">  178</a></span>    <a class="code hl_function" href="classqb_1_1string__to__lower.html#a69577a3e7c9810bbfc4d7893a5236f7f">convert</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> (&amp;str)[N]) {</div>
+<div class="line"><a id="l00179" name="l00179"></a><span class="lineno">  179</span>        <span class="keywordflow">return</span> std::string{toLower(str), N - 1};</div>
+<div class="line"><a id="l00180" name="l00180"></a><span class="lineno">  180</span>    }</div>
+</div>
+<div class="line"><a id="l00181" name="l00181"></a><span class="lineno">  181</span></div>
+<div class="line"><a id="l00188" name="l00188"></a><span class="lineno">  188</span>    <span class="keyword">static</span> std::string</div>
+<div class="foldopen" id="foldopen00189" data-start="{" data-end="}">
+<div class="line"><a id="l00189" name="l00189"></a><span class="lineno"><a class="line" href="classqb_1_1string__to__lower.html#ab596921e4a9851d1f1eb691d1d5b6a28">  189</a></span>    <a class="code hl_function" href="classqb_1_1string__to__lower.html#ab596921e4a9851d1f1eb691d1d5b6a28">convert</a>(std::string <span class="keyword">const</span> &amp;str) {</div>
+<div class="line"><a id="l00190" name="l00190"></a><span class="lineno">  190</span>        std::string copy;</div>
+<div class="line"><a id="l00191" name="l00191"></a><span class="lineno">  191</span>        copy.reserve(str.size());</div>
+<div class="line"><a id="l00192" name="l00192"></a><span class="lineno">  192</span>        std::for_each(str.cbegin(), str.cend(),</div>
+<div class="line"><a id="l00193" name="l00193"></a><span class="lineno">  193</span>                      [&amp;copy](<span class="keyword">const</span> <span class="keywordtype">char</span> &amp;c) { copy += charToLower(c); });</div>
+<div class="line"><a id="l00194" name="l00194"></a><span class="lineno">  194</span>        <span class="keywordflow">return</span> copy;</div>
+<div class="line"><a id="l00195" name="l00195"></a><span class="lineno">  195</span>    }</div>
+</div>
+<div class="line"><a id="l00196" name="l00196"></a><span class="lineno">  196</span></div>
+<div class="line"><a id="l00203" name="l00203"></a><span class="lineno">  203</span>    <span class="keyword">static</span> std::string</div>
+<div class="foldopen" id="foldopen00204" data-start="{" data-end="}">
+<div class="line"><a id="l00204" name="l00204"></a><span class="lineno"><a class="line" href="classqb_1_1string__to__lower.html#ad8ca582ed5bfe25103630f64a055317f">  204</a></span>    <a class="code hl_function" href="classqb_1_1string__to__lower.html#ad8ca582ed5bfe25103630f64a055317f">convert</a>(std::string_view <span class="keyword">const</span> &amp;str) {</div>
+<div class="line"><a id="l00205" name="l00205"></a><span class="lineno">  205</span>        std::string copy;</div>
+<div class="line"><a id="l00206" name="l00206"></a><span class="lineno">  206</span>        copy.reserve(str.size());</div>
+<div class="line"><a id="l00207" name="l00207"></a><span class="lineno">  207</span>        std::for_each(str.cbegin(), str.cend(),</div>
+<div class="line"><a id="l00208" name="l00208"></a><span class="lineno">  208</span>                      [&amp;copy](<span class="keyword">const</span> <span class="keywordtype">char</span> &amp;c) { copy += charToLower(c); });</div>
+<div class="line"><a id="l00209" name="l00209"></a><span class="lineno">  209</span>        <span class="keywordflow">return</span> copy;</div>
+<div class="line"><a id="l00210" name="l00210"></a><span class="lineno">  210</span>    }</div>
+</div>
+<div class="line"><a id="l00211" name="l00211"></a><span class="lineno">  211</span>};</div>
+</div>
+<div class="line"><a id="l00212" name="l00212"></a><span class="lineno">  212</span></div>
+<div class="line"><a id="l00222" name="l00222"></a><span class="lineno">  222</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> _Map, <span class="keyword">typename</span> _Trait = <span class="keywordtype">string</span>_to_lower&gt;</div>
+<div class="foldopen" id="foldopen00223" data-start="{" data-end="};">
+<div class="line"><a id="l00223" name="l00223"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html">  223</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1icase__basic__map.html#ac32d5671aec88133a22064244c4385fe">icase_basic_map</a> : _Map {</div>
+<div class="line"><a id="l00224" name="l00224"></a><span class="lineno">  224</span>    <span class="keyword">using </span>base_t = _Map;</div>
+<div class="line"><a id="l00225" name="l00225"></a><span class="lineno">  225</span> </div>
+<div class="line"><a id="l00226" name="l00226"></a><span class="lineno">  226</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00228" name="l00228"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#ac32d5671aec88133a22064244c4385fe">  228</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#ac32d5671aec88133a22064244c4385fe">icase_basic_map</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00229" name="l00229"></a><span class="lineno">  229</span></div>
+<div class="line"><a id="l00231" name="l00231"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#a9c1e232a2e00a5a4ee0ffcb301b50d73">  231</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#a9c1e232a2e00a5a4ee0ffcb301b50d73">icase_basic_map</a>(<a class="code hl_function" href="classqb_1_1icase__basic__map.html#ac32d5671aec88133a22064244c4385fe">icase_basic_map</a> <span class="keyword">const</span> &amp;) = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00232" name="l00232"></a><span class="lineno">  232</span></div>
+<div class="line"><a id="l00234" name="l00234"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#a92c31ff684128d3cb9b9faa65ef44654">  234</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#a92c31ff684128d3cb9b9faa65ef44654">icase_basic_map</a>(<a class="code hl_function" href="classqb_1_1icase__basic__map.html#ac32d5671aec88133a22064244c4385fe">icase_basic_map</a> &amp;&amp;) noexcept = default;</div>
+<div class="line"><a id="l00235" name="l00235"></a><span class="lineno">  235</span></div>
+<div class="foldopen" id="foldopen00241" data-start="{" data-end="}">
+<div class="line"><a id="l00241" name="l00241"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#ad719dd851fd84fc4311a687187b5e75d">  241</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#ac32d5671aec88133a22064244c4385fe">icase_basic_map</a>(std::initializer_list&lt;typename _Map::value_type&gt; il) {</div>
+<div class="line"><a id="l00242" name="l00242"></a><span class="lineno">  242</span>        <span class="keywordflow">for</span> (<span class="keyword">auto</span> &amp;it : il)</div>
+<div class="line"><a id="l00243" name="l00243"></a><span class="lineno">  243</span>            <a class="code hl_function" href="classqb_1_1icase__basic__map.html#aca5a5140f74ab41fa4e5ea839571cd46">emplace</a>(it.first, std::move(it.second));</div>
+<div class="line"><a id="l00244" name="l00244"></a><span class="lineno">  244</span>    }</div>
+</div>
+<div class="line"><a id="l00245" name="l00245"></a><span class="lineno">  245</span></div>
+<div class="line"><a id="l00247" name="l00247"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#a4134968229f03eebc877c944f07f44f2">  247</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#ac32d5671aec88133a22064244c4385fe">icase_basic_map</a> &amp;<a class="code hl_function" href="classqb_1_1icase__basic__map.html#a4134968229f03eebc877c944f07f44f2">operator=</a>(<a class="code hl_function" href="classqb_1_1icase__basic__map.html#ac32d5671aec88133a22064244c4385fe">icase_basic_map</a> <span class="keyword">const</span> &amp;) = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00248" name="l00248"></a><span class="lineno">  248</span></div>
+<div class="line"><a id="l00250" name="l00250"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#ad14a1ea895c310b9d3e70c49f1756f30">  250</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#ac32d5671aec88133a22064244c4385fe">icase_basic_map</a> &amp;<a class="code hl_function" href="classqb_1_1icase__basic__map.html#ad14a1ea895c310b9d3e70c49f1756f30">operator=</a>(<a class="code hl_function" href="classqb_1_1icase__basic__map.html#ac32d5671aec88133a22064244c4385fe">icase_basic_map</a> &amp;&amp;) noexcept = default;</div>
+<div class="line"><a id="l00251" name="l00251"></a><span class="lineno">  251</span></div>
+<div class="line"><a id="l00261" name="l00261"></a><span class="lineno">  261</span>    template &lt;typename T, typename... _Args&gt;</div>
+<div class="line"><a id="l00262" name="l00262"></a><span class="lineno">  262</span>    auto</div>
+<div class="foldopen" id="foldopen00263" data-start="{" data-end="}">
+<div class="line"><a id="l00263" name="l00263"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#aca5a5140f74ab41fa4e5ea839571cd46">  263</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#aca5a5140f74ab41fa4e5ea839571cd46">emplace</a>(T &amp;&amp;key, _Args &amp;&amp;...args) {</div>
+<div class="line"><a id="l00264" name="l00264"></a><span class="lineno">  264</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>base_t &amp;<span class="keyword">&gt;</span>(*this).emplace(</div>
+<div class="line"><a id="l00265" name="l00265"></a><span class="lineno">  265</span>            _Trait::convert(std::forward&lt;T&gt;(key)), std::forward&lt;_Args&gt;(args)...);</div>
+<div class="line"><a id="l00266" name="l00266"></a><span class="lineno">  266</span>    }</div>
+</div>
+<div class="line"><a id="l00267" name="l00267"></a><span class="lineno">  267</span></div>
+<div class="line"><a id="l00277" name="l00277"></a><span class="lineno">  277</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T, <span class="keyword">typename</span>... _Args&gt;</div>
+<div class="line"><a id="l00278" name="l00278"></a><span class="lineno">  278</span>    <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00279" data-start="{" data-end="}">
+<div class="line"><a id="l00279" name="l00279"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#a9d4ac18dc816afc125753cf6064c2b6e">  279</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#a9d4ac18dc816afc125753cf6064c2b6e">try_emplace</a>(T &amp;&amp;key, _Args &amp;&amp;...args) {</div>
+<div class="line"><a id="l00280" name="l00280"></a><span class="lineno">  280</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>base_t &amp;<span class="keyword">&gt;</span>(*this).try_emplace(</div>
+<div class="line"><a id="l00281" name="l00281"></a><span class="lineno">  281</span>            _Trait::convert(std::forward&lt;T&gt;(key)), std::forward&lt;_Args&gt;(args)...);</div>
+<div class="line"><a id="l00282" name="l00282"></a><span class="lineno">  282</span>    }</div>
+</div>
+<div class="line"><a id="l00283" name="l00283"></a><span class="lineno">  283</span></div>
+<div class="line"><a id="l00292" name="l00292"></a><span class="lineno">  292</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00293" name="l00293"></a><span class="lineno">  293</span>    <span class="keyword">auto</span> &amp;</div>
+<div class="foldopen" id="foldopen00294" data-start="{" data-end="}">
+<div class="line"><a id="l00294" name="l00294"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#af479c8e19f6c98e3c5580fdce59a3e4f">  294</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#af479c8e19f6c98e3c5580fdce59a3e4f">at</a>(T &amp;&amp;key) {</div>
+<div class="line"><a id="l00295" name="l00295"></a><span class="lineno">  295</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>base_t &amp;<span class="keyword">&gt;</span>(*this).at(_Trait::convert(std::forward&lt;T&gt;(key)));</div>
+<div class="line"><a id="l00296" name="l00296"></a><span class="lineno">  296</span>    }</div>
+</div>
+<div class="line"><a id="l00297" name="l00297"></a><span class="lineno">  297</span></div>
+<div class="line"><a id="l00306" name="l00306"></a><span class="lineno">  306</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00307" name="l00307"></a><span class="lineno">  307</span>    <span class="keyword">const</span> <span class="keyword">auto</span> &amp;</div>
+<div class="foldopen" id="foldopen00308" data-start="{" data-end="}">
+<div class="line"><a id="l00308" name="l00308"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#a32c4115c6a1098bd5bbd8851ea19646c">  308</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#a32c4115c6a1098bd5bbd8851ea19646c">at</a>(T &amp;&amp;key)<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00309" name="l00309"></a><span class="lineno">  309</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>base_t <span class="keyword">const </span>&amp;<span class="keyword">&gt;</span>(*this).at(</div>
+<div class="line"><a id="l00310" name="l00310"></a><span class="lineno">  310</span>            _Trait::convert(std::forward&lt;T&gt;(key)));</div>
+<div class="line"><a id="l00311" name="l00311"></a><span class="lineno">  311</span>    }</div>
+</div>
+<div class="line"><a id="l00312" name="l00312"></a><span class="lineno">  312</span></div>
+<div class="line"><a id="l00320" name="l00320"></a><span class="lineno">  320</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00321" name="l00321"></a><span class="lineno">  321</span>    <span class="keyword">auto</span> &amp;</div>
+<div class="foldopen" id="foldopen00322" data-start="{" data-end="}">
+<div class="line"><a id="l00322" name="l00322"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#ad6549d144934ba7d8abe409b4da01acd">  322</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#ad6549d144934ba7d8abe409b4da01acd">operator[]</a>(T &amp;&amp;key) {</div>
+<div class="line"><a id="l00323" name="l00323"></a><span class="lineno">  323</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>base_t &amp;<span class="keyword">&gt;</span>(*this)[_Trait::convert(std::forward&lt;T&gt;(key))];</div>
+<div class="line"><a id="l00324" name="l00324"></a><span class="lineno">  324</span>    }</div>
+</div>
+<div class="line"><a id="l00325" name="l00325"></a><span class="lineno">  325</span></div>
+<div class="line"><a id="l00333" name="l00333"></a><span class="lineno">  333</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00334" name="l00334"></a><span class="lineno">  334</span>    <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00335" data-start="{" data-end="}">
+<div class="line"><a id="l00335" name="l00335"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#a8eefe1af7244f4bbb36227f02b0544a1">  335</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#a8eefe1af7244f4bbb36227f02b0544a1">find</a>(T &amp;&amp;key) {</div>
+<div class="line"><a id="l00336" name="l00336"></a><span class="lineno">  336</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>base_t &amp;<span class="keyword">&gt;</span>(*this).find(_Trait::convert(std::forward&lt;T&gt;(key)));</div>
+<div class="line"><a id="l00337" name="l00337"></a><span class="lineno">  337</span>    }</div>
+</div>
+<div class="line"><a id="l00338" name="l00338"></a><span class="lineno">  338</span></div>
+<div class="line"><a id="l00347" name="l00347"></a><span class="lineno">  347</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00348" name="l00348"></a><span class="lineno">  348</span>    <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00349" data-start="{" data-end="}">
+<div class="line"><a id="l00349" name="l00349"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#a604eb7d6ae28d2a4f95c49267c2af068">  349</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#a604eb7d6ae28d2a4f95c49267c2af068">find</a>(T &amp;&amp;key)<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00350" name="l00350"></a><span class="lineno">  350</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>base_t <span class="keyword">const </span>&amp;<span class="keyword">&gt;</span>(*this).find(</div>
+<div class="line"><a id="l00351" name="l00351"></a><span class="lineno">  351</span>            _Trait::convert(std::forward&lt;T&gt;(key)));</div>
+<div class="line"><a id="l00352" name="l00352"></a><span class="lineno">  352</span>    }</div>
+</div>
+<div class="line"><a id="l00353" name="l00353"></a><span class="lineno">  353</span></div>
+<div class="line"><a id="l00361" name="l00361"></a><span class="lineno">  361</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00362" name="l00362"></a><span class="lineno">  362</span>    <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00363" data-start="{" data-end="}">
+<div class="line"><a id="l00363" name="l00363"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#a98a4c71ac3dd1108cb776c74cff3b509">  363</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#a98a4c71ac3dd1108cb776c74cff3b509">has</a>(T &amp;&amp;key)<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00364" name="l00364"></a><span class="lineno">  364</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1icase__basic__map.html#a8eefe1af7244f4bbb36227f02b0544a1">find</a>(std::forward&lt;T&gt;(key)) != this-&gt;cend();</div>
+<div class="line"><a id="l00365" name="l00365"></a><span class="lineno">  365</span>    }</div>
+</div>
+<div class="line"><a id="l00366" name="l00366"></a><span class="lineno">  366</span></div>
+<div class="line"><a id="l00374" name="l00374"></a><span class="lineno">  374</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00375" name="l00375"></a><span class="lineno">  375</span>    <span class="keyword">auto</span></div>
+<div class="foldopen" id="foldopen00376" data-start="{" data-end="}">
+<div class="line"><a id="l00376" name="l00376"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#ab83415f096740101f8a87481cdbb7b20">  376</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#ab83415f096740101f8a87481cdbb7b20">erase</a>(T &amp;&amp;key) {</div>
+<div class="line"><a id="l00377" name="l00377"></a><span class="lineno">  377</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>base_t &amp;<span class="keyword">&gt;</span>(*this).erase(_Trait::convert(std::forward&lt;T&gt;(key)));</div>
+<div class="line"><a id="l00378" name="l00378"></a><span class="lineno">  378</span>    }</div>
+</div>
+<div class="line"><a id="l00379" name="l00379"></a><span class="lineno">  379</span> </div>
+<div class="line"><a id="l00380" name="l00380"></a><span class="lineno">  380</span>    <span class="comment">// Import methods from the base map</span></div>
+<div class="line"><a id="l00381" name="l00381"></a><span class="lineno">  381</span>    <span class="keyword">using </span>base_t::begin;</div>
+<div class="line"><a id="l00382" name="l00382"></a><span class="lineno">  382</span>    <span class="keyword">using </span>base_t::cbegin;</div>
+<div class="line"><a id="l00383" name="l00383"></a><span class="lineno">  383</span>    <span class="keyword">using </span>base_t::cend;</div>
+<div class="line"><a id="l00384" name="l00384"></a><span class="lineno">  384</span>    <span class="keyword">using </span>base_t::clear;</div>
+<div class="line"><a id="l00385" name="l00385"></a><span class="lineno">  385</span>    <span class="keyword">using </span>base_t::end;</div>
+<div class="line"><a id="l00386" name="l00386"></a><span class="lineno">  386</span>    <span class="keyword">using </span>base_t::erase;</div>
+<div class="line"><a id="l00387" name="l00387"></a><span class="lineno">  387</span>    <span class="keyword">using </span>base_t::size;</div>
+<div class="line"><a id="l00388" name="l00388"></a><span class="lineno">  388</span>    <span class="keyword">using </span>base_t::empty;</div>
+<div class="line"><a id="l00389" name="l00389"></a><span class="lineno">  389</span></div>
+<div class="line"><a id="l00399" name="l00399"></a><span class="lineno">  399</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00400" name="l00400"></a><span class="lineno">  400</span>    <span class="keyword">static</span> std::string</div>
+<div class="foldopen" id="foldopen00401" data-start="{" data-end="}">
+<div class="line"><a id="l00401" name="l00401"></a><span class="lineno"><a class="line" href="classqb_1_1icase__basic__map.html#a922f89554b606c8a1185a90e952bd97a">  401</a></span>    <a class="code hl_function" href="classqb_1_1icase__basic__map.html#a922f89554b606c8a1185a90e952bd97a">convert_key</a>(T &amp;&amp;key) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00402" name="l00402"></a><span class="lineno">  402</span>        <span class="keywordflow">return</span> _Trait::convert(std::forward&lt;T&gt;(key));</div>
+<div class="line"><a id="l00403" name="l00403"></a><span class="lineno">  403</span>    }</div>
+</div>
+<div class="line"><a id="l00404" name="l00404"></a><span class="lineno">  404</span>};</div>
+</div>
+<div class="line"><a id="l00405" name="l00405"></a><span class="lineno">  405</span></div>
+<div class="line"><a id="l00412" name="l00412"></a><span class="lineno">  412</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Value, <span class="keyword">typename</span> _Trait = <span class="keywordtype">string</span>_to_lower&gt;</div>
+<div class="line"><a id="l00413" name="l00413"></a><span class="lineno"><a class="line" href="unordered__map_8h.html#a9c76ed796d64d5b603b834383d8eda9d">  413</a></span><span class="keyword">using </span><a class="code hl_typedef" href="unordered__map_8h.html#a9c76ed796d64d5b603b834383d8eda9d">icase_map</a> = <a class="code hl_class" href="classqb_1_1icase__basic__map.html">icase_basic_map&lt;std::map&lt;std::string, Value&gt;</a>, _Trait&gt;;</div>
+<div class="line"><a id="l00414" name="l00414"></a><span class="lineno">  414</span></div>
+<div class="line"><a id="l00421" name="l00421"></a><span class="lineno">  421</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Value, <span class="keyword">typename</span> _Trait = <span class="keywordtype">string</span>_to_lower&gt;</div>
+<div class="line"><a id="l00422" name="l00422"></a><span class="lineno"><a class="line" href="unordered__map_8h.html#abf164988a591998dd82f4ba27c806f31">  422</a></span><span class="keyword">using </span><a class="code hl_typedef" href="unordered__map_8h.html#abf164988a591998dd82f4ba27c806f31">icase_unordered_map</a> =</div>
+<div class="line"><a id="l00423" name="l00423"></a><span class="lineno">  423</span>    <a class="code hl_class" href="classqb_1_1icase__basic__map.html">icase_basic_map&lt;qb::unordered_map&lt;std::string, Value&gt;</a>, _Trait&gt;;</div>
+<div class="line"><a id="l00424" name="l00424"></a><span class="lineno">  424</span> </div>
+<div class="line"><a id="l00425" name="l00425"></a><span class="lineno">  425</span>} <span class="comment">// namespace qb</span></div>
+<div class="line"><a id="l00426" name="l00426"></a><span class="lineno">  426</span> </div>
+<div class="line"><a id="l00427" name="l00427"></a><span class="lineno">  427</span><span class="preprocessor">#endif </span><span class="comment">// QB_UNORDERED_MAP_H</span></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html"><div class="ttname"><a href="classqb_1_1icase__basic__map.html">qb::icase_basic_map</a></div><div class="ttdoc">A case-insensitive map implementation.</div><div class="ttdef"><b>Definition</b> unordered_map.h:223</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_a32c4115c6a1098bd5bbd8851ea19646c"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#a32c4115c6a1098bd5bbd8851ea19646c">qb::icase_basic_map::at</a></div><div class="ttdeci">const auto &amp; at(T &amp;&amp;key) const</div><div class="ttdoc">Access a value by key, with the key converted to lowercase (const version)</div><div class="ttdef"><b>Definition</b> unordered_map.h:308</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_a4134968229f03eebc877c944f07f44f2"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#a4134968229f03eebc877c944f07f44f2">qb::icase_basic_map::operator=</a></div><div class="ttdeci">icase_basic_map &amp; operator=(icase_basic_map const &amp;)=default</div><div class="ttdoc">Copy assignment operator.</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_a604eb7d6ae28d2a4f95c49267c2af068"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#a604eb7d6ae28d2a4f95c49267c2af068">qb::icase_basic_map::find</a></div><div class="ttdeci">auto find(T &amp;&amp;key) const</div><div class="ttdoc">Find a key-value pair by key, with the key converted to lowercase (const version)</div><div class="ttdef"><b>Definition</b> unordered_map.h:349</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_a8eefe1af7244f4bbb36227f02b0544a1"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#a8eefe1af7244f4bbb36227f02b0544a1">qb::icase_basic_map::find</a></div><div class="ttdeci">auto find(T &amp;&amp;key)</div><div class="ttdoc">Find a key-value pair by key, with the key converted to lowercase.</div><div class="ttdef"><b>Definition</b> unordered_map.h:335</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_a922f89554b606c8a1185a90e952bd97a"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#a922f89554b606c8a1185a90e952bd97a">qb::icase_basic_map::convert_key</a></div><div class="ttdeci">static std::string convert_key(T &amp;&amp;key) noexcept</div><div class="ttdoc">Convert a key to lowercase.</div><div class="ttdef"><b>Definition</b> unordered_map.h:401</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_a92c31ff684128d3cb9b9faa65ef44654"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#a92c31ff684128d3cb9b9faa65ef44654">qb::icase_basic_map::icase_basic_map</a></div><div class="ttdeci">icase_basic_map(icase_basic_map &amp;&amp;) noexcept=default</div><div class="ttdoc">Move constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_a98a4c71ac3dd1108cb776c74cff3b509"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#a98a4c71ac3dd1108cb776c74cff3b509">qb::icase_basic_map::has</a></div><div class="ttdeci">bool has(T &amp;&amp;key) const</div><div class="ttdoc">Check if a key exists in the map.</div><div class="ttdef"><b>Definition</b> unordered_map.h:363</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_a9c1e232a2e00a5a4ee0ffcb301b50d73"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#a9c1e232a2e00a5a4ee0ffcb301b50d73">qb::icase_basic_map::icase_basic_map</a></div><div class="ttdeci">icase_basic_map(icase_basic_map const &amp;)=default</div><div class="ttdoc">Copy constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_a9d4ac18dc816afc125753cf6064c2b6e"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#a9d4ac18dc816afc125753cf6064c2b6e">qb::icase_basic_map::try_emplace</a></div><div class="ttdeci">auto try_emplace(T &amp;&amp;key, _Args &amp;&amp;...args)</div><div class="ttdoc">Try to emplace a new key-value pair with the key converted to lowercase.</div><div class="ttdef"><b>Definition</b> unordered_map.h:279</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_ab83415f096740101f8a87481cdbb7b20"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#ab83415f096740101f8a87481cdbb7b20">qb::icase_basic_map::erase</a></div><div class="ttdeci">auto erase(T &amp;&amp;key)</div><div class="ttdoc">Erase a key-value pair by key, with the key converted to lowercase.</div><div class="ttdef"><b>Definition</b> unordered_map.h:376</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_ac32d5671aec88133a22064244c4385fe"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#ac32d5671aec88133a22064244c4385fe">qb::icase_basic_map::icase_basic_map</a></div><div class="ttdeci">icase_basic_map()=default</div><div class="ttdoc">Default constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_aca5a5140f74ab41fa4e5ea839571cd46"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#aca5a5140f74ab41fa4e5ea839571cd46">qb::icase_basic_map::emplace</a></div><div class="ttdeci">auto emplace(T &amp;&amp;key, _Args &amp;&amp;...args)</div><div class="ttdoc">Emplace a new key-value pair with the key converted to lowercase.</div><div class="ttdef"><b>Definition</b> unordered_map.h:263</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_ad14a1ea895c310b9d3e70c49f1756f30"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#ad14a1ea895c310b9d3e70c49f1756f30">qb::icase_basic_map::operator=</a></div><div class="ttdeci">icase_basic_map &amp; operator=(icase_basic_map &amp;&amp;) noexcept=default</div><div class="ttdoc">Move assignment operator.</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_ad6549d144934ba7d8abe409b4da01acd"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#ad6549d144934ba7d8abe409b4da01acd">qb::icase_basic_map::operator[]</a></div><div class="ttdeci">auto &amp; operator[](T &amp;&amp;key)</div><div class="ttdoc">Access or insert a value by key, with the key converted to lowercase.</div><div class="ttdef"><b>Definition</b> unordered_map.h:322</div></div>
+<div class="ttc" id="aclassqb_1_1icase__basic__map_html_af479c8e19f6c98e3c5580fdce59a3e4f"><div class="ttname"><a href="classqb_1_1icase__basic__map.html#af479c8e19f6c98e3c5580fdce59a3e4f">qb::icase_basic_map::at</a></div><div class="ttdeci">auto &amp; at(T &amp;&amp;key)</div><div class="ttdoc">Access a value by key, with the key converted to lowercase.</div><div class="ttdef"><b>Definition</b> unordered_map.h:294</div></div>
+<div class="ttc" id="aclassqb_1_1string__to__lower_html"><div class="ttname"><a href="classqb_1_1string__to__lower.html">qb::string_to_lower</a></div><div class="ttdoc">Utility class for case-insensitive string operations.</div><div class="ttdef"><b>Definition</b> unordered_map.h:99</div></div>
+<div class="ttc" id="aclassqb_1_1string__to__lower_html_a69577a3e7c9810bbfc4d7893a5236f7f"><div class="ttname"><a href="classqb_1_1string__to__lower.html#a69577a3e7c9810bbfc4d7893a5236f7f">qb::string_to_lower::convert</a></div><div class="ttdeci">static std::string convert(const char(&amp;str)[N])</div><div class="ttdoc">Converts a character array to lowercase.</div><div class="ttdef"><b>Definition</b> unordered_map.h:178</div></div>
+<div class="ttc" id="aclassqb_1_1string__to__lower_html_ab596921e4a9851d1f1eb691d1d5b6a28"><div class="ttname"><a href="classqb_1_1string__to__lower.html#ab596921e4a9851d1f1eb691d1d5b6a28">qb::string_to_lower::convert</a></div><div class="ttdeci">static std::string convert(std::string const &amp;str)</div><div class="ttdoc">Converts a string to lowercase.</div><div class="ttdef"><b>Definition</b> unordered_map.h:189</div></div>
+<div class="ttc" id="aclassqb_1_1string__to__lower_html_ad8ca582ed5bfe25103630f64a055317f"><div class="ttname"><a href="classqb_1_1string__to__lower.html#ad8ca582ed5bfe25103630f64a055317f">qb::string_to_lower::convert</a></div><div class="ttdeci">static std::string convert(std::string_view const &amp;str)</div><div class="ttdoc">Converts a string_view to lowercase.</div><div class="ttdef"><b>Definition</b> unordered_map.h:204</div></div>
+<div class="ttc" id="agroup___container_html_ga9d156b7ae1a1ef61bbb6bf272fdd4c6b"><div class="ttname"><a href="group___container.html#ga9d156b7ae1a1ef61bbb6bf272fdd4c6b">qb::unordered_map</a></div><div class="ttdeci">std::unordered_map&lt; K, V, H, E, A &gt; unordered_map</div><div class="ttdoc">The primary unordered map implementation.</div><div class="ttdef"><b>Definition</b> unordered_map.h:90</div></div>
+<div class="ttc" id="aunordered__map_8h_html_a9c76ed796d64d5b603b834383d8eda9d"><div class="ttname"><a href="unordered__map_8h.html#a9c76ed796d64d5b603b834383d8eda9d">qb::icase_map</a></div><div class="ttdeci">icase_basic_map&lt; std::map&lt; std::string, Value &gt;, _Trait &gt; icase_map</div><div class="ttdoc">Case-insensitive ordered map using std::map.</div><div class="ttdef"><b>Definition</b> unordered_map.h:413</div></div>
+<div class="ttc" id="aunordered__map_8h_html_abf164988a591998dd82f4ba27c806f31"><div class="ttname"><a href="unordered__map_8h.html#abf164988a591998dd82f4ba27c806f31">qb::icase_unordered_map</a></div><div class="ttdeci">icase_basic_map&lt; qb::unordered_map&lt; std::string, Value &gt;, _Trait &gt; icase_unordered_map</div><div class="ttdoc">Case-insensitive unordered map using qb::unordered_map.</div><div class="ttdef"><b>Definition</b> unordered_map.h:422</div></div>
+<div class="ttc" id="aunordered__map_8h_html_af3c3312bf8f7e4f25e7d789c6785c744"><div class="ttname"><a href="unordered__map_8h.html#af3c3312bf8f7e4f25e7d789c6785c744">qb::unordered_flat_map</a></div><div class="ttdeci">ska::flat_hash_map&lt; K, V, H, E, A &gt; unordered_flat_map</div><div class="ttdoc">A high-performance flat hash map implementation.</div><div class="ttdef"><b>Definition</b> unordered_map.h:51</div></div>
+</div><!-- fragment --></div><!-- contents -->
+</div><!-- doc-content -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_c8578dc3b5a075444df510993a4b023d.html">system</a></li><li class="navelem"><a href="dir_93e670a3772e2464b544bff22277d416.html">container</a></li><li class="navelem"><a href="unordered__map_8h.html">unordered_map.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

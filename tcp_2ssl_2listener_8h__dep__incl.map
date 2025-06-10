@@ -1,0 +1,5 @@
+<map id="include/qb/io/tcp/ssl/listener.h" name="include/qb/io/tcp/ssl/listener.h">
+<area shape="rect" id="Node000001" title="Implementation of a secure SSL/TLS listener for the QB IO library." alt="" coords="11,5,149,46"/>
+<area shape="rect" id="Node000002" href="$saccept_8h.html" title="Secure (SSL/TLS) TCP connection acceptance transport for the QB IO library." alt="" coords="5,94,155,135"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="83,62,83,94,77,94,77,62"/>
+</map>

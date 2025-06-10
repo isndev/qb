@@ -1,0 +1,43 @@
+<map id="include/qb/actorid.h" name="include/qb/actorid.h">
+<area shape="rect" id="Node000001" title="Convenience header for QB ActorId and related identifiers." alt="" coords="390,5,524,31"/>
+<area shape="rect" id="Node000002" href="$core_2_actor_id_8h.html" title="Actor and core identification for the QB Actor Framework." alt="" coords="406,79,509,105"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="460,31,460,63,454,63,454,31"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="5,160,80,186"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="405,101,263,120,177,135,93,155,86,157,85,152,91,150,176,130,262,115,405,96"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="104,160,157,186"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="406,104,299,124,177,155,172,157,170,152,175,150,298,119,405,99"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="164,249,225,274"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="406,102,299,122,252,137,222,155,209,172,202,192,196,234,191,233,196,191,205,170,218,151,250,132,298,117,405,97"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="232,160,285,186"/>
+<area shape="poly" id="edge5_Node000002_Node000006" title=" " alt="" coords="423,108,298,155,297,156,295,151,296,150,421,103"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="782,249,885,274"/>
+<area shape="poly" id="edge6_Node000002_Node000007" title=" " alt="" coords="508,103,576,123,650,150,735,194,804,237,801,242,733,199,648,155,575,128,506,108"/>
+<area shape="rect" id="Node000008" title=" " alt="" coords="495,160,552,186"/>
+<area shape="poly" id="edge7_Node000002_Node000008" title=" " alt="" coords="469,103,506,147,502,150,465,107"/>
+<area shape="rect" id="Node000009" href="$io_8h.html" title="Core I/O and logging utilities for the qb framework." alt="" coords="576,160,637,186"/>
+<area shape="poly" id="edge8_Node000002_Node000009" title=" " alt="" coords="481,103,572,150,569,155,479,107"/>
+<area shape="rect" id="Node000015" href="$unordered__set_8h.html" title="Optimized unordered set implementations." alt="" coords="764,153,903,193"/>
+<area shape="poly" id="edge14_Node000002_Node000015" title=" " alt="" coords="510,101,749,151,748,157,509,107"/>
+<area shape="rect" id="Node000018" href="$build__macros_8h.html" title="Platform, compiler, and C++ feature detection macros for the QB Framework." alt="" coords="309,160,472,186"/>
+<area shape="poly" id="edge18_Node000002_Node000018" title=" " alt="" coords="449,107,412,150,408,147,445,103"/>
+<area shape="rect" id="Node000020" href="$prefix_8h.html" title="Platform&#45;specific alignment macros, cache&#45;line definitions, and related utilities." alt="" coords="926,160,1044,186"/>
+<area shape="poly" id="edge21_Node000002_Node000020" title=" " alt="" coords="510,95,690,115,802,130,915,150,930,153,929,158,914,155,801,136,689,120,509,100"/>
+<area shape="rect" id="Node000010" title=" " alt="" coords="330,249,401,274"/>
+<area shape="poly" id="edge9_Node000009_Node000010" title=" " alt="" coords="582,189,566,196,490,221,414,244,409,246,408,240,412,239,489,215,564,191,580,184"/>
+<area shape="rect" id="Node000011" title=" " alt="" coords="424,249,482,274"/>
+<area shape="poly" id="edge10_Node000009_Node000011" title=" " alt="" coords="586,189,489,243,487,238,584,184"/>
+<area shape="rect" id="Node000012" title=" " alt="" coords="506,249,574,274"/>
+<area shape="poly" id="edge11_Node000009_Node000012" title=" " alt="" coords="599,188,560,238,556,235,595,185"/>
+<area shape="rect" id="Node000013" title=" " alt="" coords="599,249,681,274"/>
+<area shape="poly" id="edge12_Node000009_Node000013" title=" " alt="" coords="614,185,632,234,627,236,609,187"/>
+<area shape="rect" id="Node000014" title=" " alt="" coords="706,249,758,274"/>
+<area shape="poly" id="edge13_Node000009_Node000014" title=" " alt="" coords="625,184,703,237,700,242,622,188"/>
+<area shape="poly" id="edge17_Node000015_Node000007" title=" " alt="" coords="836,194,836,233,830,233,830,194"/>
+<area shape="rect" id="Node000016" title=" " alt="" coords="910,249,949,274"/>
+<area shape="poly" id="edge15_Node000015_Node000016" title=" " alt="" coords="857,192,907,237,903,241,853,196"/>
+<area shape="rect" id="Node000017" title=" " alt="" coords="973,241,1112,282"/>
+<area shape="poly" id="edge16_Node000015_Node000017" title=" " alt="" coords="882,191,982,232,980,237,880,196"/>
+<area shape="poly" id="edge20_Node000018_Node000005" title=" " alt="" coords="364,189,238,244,236,245,234,240,236,239,362,184"/>
+<area shape="rect" id="Node000019" title=" " alt="" coords="248,249,306,274"/>
+<area shape="poly" id="edge19_Node000018_Node000019" title=" " alt="" coords="376,188,307,241,303,237,373,184"/>
+</map>

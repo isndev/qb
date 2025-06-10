@@ -1,0 +1,493 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::LocalTimePoint Class Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::LocalTimePoint Class Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('classqb_1_1_local_time_point.html','','classqb_1_1_local_time_point-members'); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">qb::LocalTimePoint Class Reference</div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Represents a local time point with nanosecond precision.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="timestamp_8h_source.html">timestamp.h</a>&gt;</code></p>
+<div class="dynheader">
+Inheritance diagram for qb::LocalTimePoint:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1_local_time_point__inherit__graph.png" border="0" usemap="#aqb_1_1_local_time_point_inherit__map" loading="lazy" alt="Inheritance graph"/></div>
+<map name="aqb_1_1_local_time_point_inherit__map" id="aqb_1_1_local_time_point_inherit__map">
+<area shape="rect" title="Represents a local time point with nanosecond precision." alt="" coords="5,79,139,105"/>
+<area shape="rect" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision." alt="" coords="21,5,123,31"/>
+<area shape="poly" title=" " alt="" coords="75,46,75,79,69,79,69,46"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<div class="dynheader">
+Collaboration diagram for qb::LocalTimePoint:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1_local_time_point__coll__graph.png" border="0" usemap="#aqb_1_1_local_time_point_coll__map" loading="lazy" alt="Collaboration graph"/></div>
+<map name="aqb_1_1_local_time_point_coll__map" id="aqb_1_1_local_time_point_coll__map">
+<area shape="rect" title="Represents a local time point with nanosecond precision." alt="" coords="5,79,139,105"/>
+<area shape="rect" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision." alt="" coords="21,5,123,31"/>
+<area shape="poly" title=" " alt="" coords="75,46,75,79,69,79,69,46"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:a564535fb68561a91c5e17467a9389528" id="r_a564535fb68561a91c5e17467a9389528"><td class="memItemLeft" align="right" valign="top"><a id="a564535fb68561a91c5e17467a9389528" name="a564535fb68561a91c5e17467a9389528"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>LocalTimePoint</b> ()</td></tr>
+<tr class="memdesc:a564535fb68561a91c5e17467a9389528"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default constructor, initializes to current local time. <br /></td></tr>
+<tr class="memitem:ac11eabfd6f30410d11051674d977fae7" id="r_ac11eabfd6f30410d11051674d977fae7"><td class="memItemLeft" align="right" valign="top">std::string&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac11eabfd6f30410d11051674d977fae7">format_local</a> (std::string_view <a class="el" href="classqb_1_1_time_point.html#a2e8eb6f9c5fead322c2683586a361b3d">format</a>) const</td></tr>
+<tr class="memdesc:ac11eabfd6f30410d11051674d977fae7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Formats the time point as a local time string.  <br /></td></tr>
+<tr class="memitem:a5327936947d94503d3b82c0672348f93" id="r_a5327936947d94503d3b82c0672348f93"><td class="memItemLeft" align="right" valign="top"><a id="a5327936947d94503d3b82c0672348f93" name="a5327936947d94503d3b82c0672348f93"></a>
+constexpr&#160;</td><td class="memItemRight" valign="bottom"><b>TimePoint</b> () noexcept=default</td></tr>
+<tr class="memdesc:a5327936947d94503d3b82c0672348f93"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default constructor, initializes to epoch. <br /></td></tr>
+<tr class="memitem:ae50d05fc3f8cbf6a8907f8a68b3b5b40" id="r_ae50d05fc3f8cbf6a8907f8a68b3b5b40"><td class="memItemLeft" align="right" valign="top">constexpr&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae50d05fc3f8cbf6a8907f8a68b3b5b40">TimePoint</a> (<a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a> <a class="el" href="classqb_1_1_time_point.html#a3271517d2fe6a79e709c9ed94b746bdf">nanoseconds</a>) noexcept</td></tr>
+<tr class="memdesc:ae50d05fc3f8cbf6a8907f8a68b3b5b40"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs a time point with specified time since epoch.  <br /></td></tr>
+<tr class="memitem:a17118e9932d328327d6cd39e14be3e0d" id="r_a17118e9932d328327d6cd39e14be3e0d"><td class="memTemplParams" colspan="2">template&lt;typename Clock, typename ChronoDuration&gt; </td></tr>
+<tr class="memitem:a17118e9932d328327d6cd39e14be3e0d template"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a17118e9932d328327d6cd39e14be3e0d">TimePoint</a> (const std::chrono::time_point&lt; Clock, ChronoDuration &gt; &amp;time_point) noexcept</td></tr>
+<tr class="memdesc:a17118e9932d328327d6cd39e14be3e0d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs a time point from std::chrono::time_point.  <br /></td></tr>
+<tr class="memitem:a7504a110298ffb442ebd19edefa5f1b9" id="r_a7504a110298ffb442ebd19edefa5f1b9"><td class="memItemLeft" align="right" valign="top"><a id="a7504a110298ffb442ebd19edefa5f1b9" name="a7504a110298ffb442ebd19edefa5f1b9"></a>
+constexpr&#160;</td><td class="memItemRight" valign="bottom"><b>TimePoint</b> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;) noexcept=default</td></tr>
+<tr class="memitem:a86e418350b113eeda5429ef3b6537257" id="r_a86e418350b113eeda5429ef3b6537257"><td class="memItemLeft" align="right" valign="top"><a id="a86e418350b113eeda5429ef3b6537257" name="a86e418350b113eeda5429ef3b6537257"></a>
+constexpr&#160;</td><td class="memItemRight" valign="bottom"><b>TimePoint</b> (<a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;&amp;) noexcept=default</td></tr>
+<tr class="inherit_header pub_methods_classqb_1_1_time_point"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_methods_classqb_1_1_time_point')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Member Functions inherited from <a class="el" href="classqb_1_1_time_point.html">qb::TimePoint</a></td></tr>
+<tr class="memitem:a5327936947d94503d3b82c0672348f93 inherit pub_methods_classqb_1_1_time_point" id="r_a5327936947d94503d3b82c0672348f93"><td class="memItemLeft" align="right" valign="top">
+constexpr&#160;</td><td class="memItemRight" valign="bottom"><b>TimePoint</b> () noexcept=default</td></tr>
+<tr class="memdesc:a5327936947d94503d3b82c0672348f93 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default constructor, initializes to epoch. <br /></td></tr>
+<tr class="memitem:ae50d05fc3f8cbf6a8907f8a68b3b5b40 inherit pub_methods_classqb_1_1_time_point" id="r_ae50d05fc3f8cbf6a8907f8a68b3b5b40"><td class="memItemLeft" align="right" valign="top">constexpr&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#ae50d05fc3f8cbf6a8907f8a68b3b5b40">TimePoint</a> (<a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a> <a class="el" href="classqb_1_1_time_point.html#a3271517d2fe6a79e709c9ed94b746bdf">nanoseconds</a>) noexcept</td></tr>
+<tr class="memdesc:ae50d05fc3f8cbf6a8907f8a68b3b5b40 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs a time point with specified time since epoch.  <br /></td></tr>
+<tr class="memitem:a17118e9932d328327d6cd39e14be3e0d inherit pub_methods_classqb_1_1_time_point" id="r_a17118e9932d328327d6cd39e14be3e0d"><td class="memTemplParams" colspan="2">template&lt;typename Clock, typename ChronoDuration&gt; </td></tr>
+<tr class="memitem:a17118e9932d328327d6cd39e14be3e0d inherit pub_methods_classqb_1_1_time_point template"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a17118e9932d328327d6cd39e14be3e0d">TimePoint</a> (const std::chrono::time_point&lt; Clock, ChronoDuration &gt; &amp;time_point) noexcept</td></tr>
+<tr class="memdesc:a17118e9932d328327d6cd39e14be3e0d inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructs a time point from std::chrono::time_point.  <br /></td></tr>
+<tr class="memitem:a7504a110298ffb442ebd19edefa5f1b9 inherit pub_methods_classqb_1_1_time_point" id="r_a7504a110298ffb442ebd19edefa5f1b9"><td class="memItemLeft" align="right" valign="top">
+constexpr&#160;</td><td class="memItemRight" valign="bottom"><b>TimePoint</b> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;) noexcept=default</td></tr>
+<tr class="memitem:a86e418350b113eeda5429ef3b6537257 inherit pub_methods_classqb_1_1_time_point" id="r_a86e418350b113eeda5429ef3b6537257"><td class="memItemLeft" align="right" valign="top">
+constexpr&#160;</td><td class="memItemRight" valign="bottom"><b>TimePoint</b> (<a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;&amp;) noexcept=default</td></tr>
+<tr class="memitem:a47ee67915549b805ed15900068dfa0b4 inherit pub_methods_classqb_1_1_time_point" id="r_a47ee67915549b805ed15900068dfa0b4"><td class="memItemLeft" align="right" valign="top">
+constexpr <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator=</b> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;) noexcept=default</td></tr>
+<tr class="memitem:abac5ff32cc49ccae48c050e7558e1d4d inherit pub_methods_classqb_1_1_time_point" id="r_abac5ff32cc49ccae48c050e7558e1d4d"><td class="memItemLeft" align="right" valign="top">
+constexpr <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator=</b> (<a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;&amp;) noexcept=default</td></tr>
+<tr class="memitem:a56698b53df6f0707f2ec2077b3c1e304 inherit pub_methods_classqb_1_1_time_point" id="r_a56698b53df6f0707f2ec2077b3c1e304"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_time_point.html#af60ac3b6b1e3939d118eaea1addb27bd">chrono_time_point</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a56698b53df6f0707f2ec2077b3c1e304">to_chrono</a> () const noexcept</td></tr>
+<tr class="memdesc:a56698b53df6f0707f2ec2077b3c1e304 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts to std::chrono::time_point.  <br /></td></tr>
+<tr class="memitem:adb3e263b2adfb6fb8d98edf463ea2527 inherit pub_methods_classqb_1_1_time_point" id="r_adb3e263b2adfb6fb8d98edf463ea2527"><td class="memTemplParams" colspan="2">template&lt;typename Clock, typename ChronoDuration = typename Clock::duration&gt; </td></tr>
+<tr class="memitem:adb3e263b2adfb6fb8d98edf463ea2527 inherit pub_methods_classqb_1_1_time_point template"><td class="memItemLeft" align="right" valign="top">std::chrono::time_point&lt; Clock, ChronoDuration &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#adb3e263b2adfb6fb8d98edf463ea2527">to</a> () const noexcept</td></tr>
+<tr class="memdesc:adb3e263b2adfb6fb8d98edf463ea2527 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts to any std::chrono::time_point.  <br /></td></tr>
+<tr class="memitem:a74c70aca97655c9e73cecb7d1629abcd inherit pub_methods_classqb_1_1_time_point" id="r_a74c70aca97655c9e73cecb7d1629abcd"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a74c70aca97655c9e73cecb7d1629abcd">days</a> () const noexcept</td></tr>
+<tr class="memdesc:a74c70aca97655c9e73cecb7d1629abcd inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in days since epoch.  <br /></td></tr>
+<tr class="memitem:a34485fbe6742fc8d9d2343fe5a78d9fa inherit pub_methods_classqb_1_1_time_point" id="r_a34485fbe6742fc8d9d2343fe5a78d9fa"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a34485fbe6742fc8d9d2343fe5a78d9fa">days_float</a> () const noexcept</td></tr>
+<tr class="memdesc:a34485fbe6742fc8d9d2343fe5a78d9fa inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in days since epoch with fractional precision.  <br /></td></tr>
+<tr class="memitem:a54ac6581aa6c132da0b3186d20c9a46b inherit pub_methods_classqb_1_1_time_point" id="r_a54ac6581aa6c132da0b3186d20c9a46b"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a54ac6581aa6c132da0b3186d20c9a46b">hours</a> () const noexcept</td></tr>
+<tr class="memdesc:a54ac6581aa6c132da0b3186d20c9a46b inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in hours since epoch.  <br /></td></tr>
+<tr class="memitem:a235caa74bb1a43dc88b042ced8266141 inherit pub_methods_classqb_1_1_time_point" id="r_a235caa74bb1a43dc88b042ced8266141"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a235caa74bb1a43dc88b042ced8266141">hours_float</a> () const noexcept</td></tr>
+<tr class="memdesc:a235caa74bb1a43dc88b042ced8266141 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in hours since epoch with fractional precision.  <br /></td></tr>
+<tr class="memitem:a32f86fa09a7104463f369c115973fdb5 inherit pub_methods_classqb_1_1_time_point" id="r_a32f86fa09a7104463f369c115973fdb5"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a32f86fa09a7104463f369c115973fdb5">minutes</a> () const noexcept</td></tr>
+<tr class="memdesc:a32f86fa09a7104463f369c115973fdb5 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in minutes since epoch.  <br /></td></tr>
+<tr class="memitem:a14cdc2e73f48c0ba5d551089307a60e9 inherit pub_methods_classqb_1_1_time_point" id="r_a14cdc2e73f48c0ba5d551089307a60e9"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a14cdc2e73f48c0ba5d551089307a60e9">minutes_float</a> () const noexcept</td></tr>
+<tr class="memdesc:a14cdc2e73f48c0ba5d551089307a60e9 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in minutes since epoch with fractional precision.  <br /></td></tr>
+<tr class="memitem:a49e9274c34c3890242592d7908a5a9b6 inherit pub_methods_classqb_1_1_time_point" id="r_a49e9274c34c3890242592d7908a5a9b6"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a49e9274c34c3890242592d7908a5a9b6">seconds</a> () const noexcept</td></tr>
+<tr class="memdesc:a49e9274c34c3890242592d7908a5a9b6 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in seconds since epoch.  <br /></td></tr>
+<tr class="memitem:aff145e35317823c0eb985f8c99846b57 inherit pub_methods_classqb_1_1_time_point" id="r_aff145e35317823c0eb985f8c99846b57"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#aff145e35317823c0eb985f8c99846b57">seconds_float</a> () const noexcept</td></tr>
+<tr class="memdesc:aff145e35317823c0eb985f8c99846b57 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in seconds since epoch with fractional precision.  <br /></td></tr>
+<tr class="memitem:ad93d92aee7f31826824e01b624975ca0 inherit pub_methods_classqb_1_1_time_point" id="r_ad93d92aee7f31826824e01b624975ca0"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#ad93d92aee7f31826824e01b624975ca0">milliseconds</a> () const noexcept</td></tr>
+<tr class="memdesc:ad93d92aee7f31826824e01b624975ca0 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in milliseconds since epoch.  <br /></td></tr>
+<tr class="memitem:acb1ae81c810e6d9e8c3cc76c1159513a inherit pub_methods_classqb_1_1_time_point" id="r_acb1ae81c810e6d9e8c3cc76c1159513a"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#acb1ae81c810e6d9e8c3cc76c1159513a">milliseconds_float</a> () const noexcept</td></tr>
+<tr class="memdesc:acb1ae81c810e6d9e8c3cc76c1159513a inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in milliseconds since epoch with fractional precision.  <br /></td></tr>
+<tr class="memitem:afe582db4e6376b9f59b0c29828ad26e5 inherit pub_methods_classqb_1_1_time_point" id="r_afe582db4e6376b9f59b0c29828ad26e5"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#afe582db4e6376b9f59b0c29828ad26e5">microseconds</a> () const noexcept</td></tr>
+<tr class="memdesc:afe582db4e6376b9f59b0c29828ad26e5 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in microseconds since epoch.  <br /></td></tr>
+<tr class="memitem:a2ee7788291c152152126f21e1778143f inherit pub_methods_classqb_1_1_time_point" id="r_a2ee7788291c152152126f21e1778143f"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a2ee7788291c152152126f21e1778143f">microseconds_float</a> () const noexcept</td></tr>
+<tr class="memdesc:a2ee7788291c152152126f21e1778143f inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in microseconds since epoch with fractional precision.  <br /></td></tr>
+<tr class="memitem:a3271517d2fe6a79e709c9ed94b746bdf inherit pub_methods_classqb_1_1_time_point" id="r_a3271517d2fe6a79e709c9ed94b746bdf"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a3271517d2fe6a79e709c9ed94b746bdf">nanoseconds</a> () const noexcept</td></tr>
+<tr class="memdesc:a3271517d2fe6a79e709c9ed94b746bdf inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in nanoseconds since epoch.  <br /></td></tr>
+<tr class="memitem:a82c2c88eb59996f3f22a37435a6428c2 inherit pub_methods_classqb_1_1_time_point" id="r_a82c2c88eb59996f3f22a37435a6428c2"><td class="memItemLeft" align="right" valign="top">constexpr double&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a82c2c88eb59996f3f22a37435a6428c2">nanoseconds_float</a> () const noexcept</td></tr>
+<tr class="memdesc:a82c2c88eb59996f3f22a37435a6428c2 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the time in nanoseconds since epoch with double precision.  <br /></td></tr>
+<tr class="memitem:a48e60cc7db6b72b9f1f984e343da64bc inherit pub_methods_classqb_1_1_time_point" id="r_a48e60cc7db6b72b9f1f984e343da64bc"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a48e60cc7db6b72b9f1f984e343da64bc">time_since_epoch</a> () const noexcept</td></tr>
+<tr class="memdesc:a48e60cc7db6b72b9f1f984e343da64bc inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the duration since epoch.  <br /></td></tr>
+<tr class="memitem:a8b59d233ea9804da02e1aec51a8e734a inherit pub_methods_classqb_1_1_time_point" id="r_a8b59d233ea9804da02e1aec51a8e734a"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a8b59d233ea9804da02e1aec51a8e734a">count</a> () const noexcept</td></tr>
+<tr class="memdesc:a8b59d233ea9804da02e1aec51a8e734a inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the total time in nanoseconds since epoch.  <br /></td></tr>
+<tr class="memitem:a2e8eb6f9c5fead322c2683586a361b3d inherit pub_methods_classqb_1_1_time_point" id="r_a2e8eb6f9c5fead322c2683586a361b3d"><td class="memItemLeft" align="right" valign="top">std::string&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a2e8eb6f9c5fead322c2683586a361b3d">format</a> (std::string_view format) const</td></tr>
+<tr class="memdesc:a2e8eb6f9c5fead322c2683586a361b3d inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Formats the time point as a string.  <br /></td></tr>
+<tr class="memitem:aaca5177c32cc6fd45a7a2ed2edeab6a3 inherit pub_methods_classqb_1_1_time_point" id="r_aaca5177c32cc6fd45a7a2ed2edeab6a3"><td class="memItemLeft" align="right" valign="top">std::string&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#aaca5177c32cc6fd45a7a2ed2edeab6a3">to_iso8601</a> () const</td></tr>
+<tr class="memdesc:aaca5177c32cc6fd45a7a2ed2edeab6a3 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts to ISO8601 string.  <br /></td></tr>
+<tr class="memitem:a5c9ae99228011c0bd30198380b0b0f30 inherit pub_methods_classqb_1_1_time_point" id="r_a5c9ae99228011c0bd30198380b0b0f30"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a5c9ae99228011c0bd30198380b0b0f30">operator+=</a> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;duration) noexcept</td></tr>
+<tr class="memdesc:a5c9ae99228011c0bd30198380b0b0f30 inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Adds a duration to this time point.  <br /></td></tr>
+<tr class="memitem:a57df0fdd543187692ffe66959cf0712f inherit pub_methods_classqb_1_1_time_point" id="r_a57df0fdd543187692ffe66959cf0712f"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a57df0fdd543187692ffe66959cf0712f">operator-=</a> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;duration) noexcept</td></tr>
+<tr class="memdesc:a57df0fdd543187692ffe66959cf0712f inherit pub_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Subtracts a duration from this time point.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-static-methods" class="groupheader"><a id="pub-static-methods" name="pub-static-methods"></a>
+Static Public Member Functions</h2></td></tr>
+<tr class="memitem:aa7f4b87f9cb6b9afd6cb2f7a246a5d91" id="r_aa7f4b87f9cb6b9afd6cb2f7a246a5d91"><td class="memItemLeft" align="right" valign="top">static <a class="el" href="classqb_1_1_local_time_point.html">LocalTimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aa7f4b87f9cb6b9afd6cb2f7a246a5d91">now</a> () noexcept</td></tr>
+<tr class="memdesc:aa7f4b87f9cb6b9afd6cb2f7a246a5d91"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets current local time.  <br /></td></tr>
+<tr class="inherit_header pub_static_methods_classqb_1_1_time_point"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_static_methods_classqb_1_1_time_point')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Static Public Member Functions inherited from <a class="el" href="classqb_1_1_time_point.html">qb::TimePoint</a></td></tr>
+<tr class="memitem:aacef26880476b662d7c20e234e3f1d1f inherit pub_static_methods_classqb_1_1_time_point" id="r_aacef26880476b662d7c20e234e3f1d1f"><td class="memItemLeft" align="right" valign="top">
+static constexpr <a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><b>epoch</b> () noexcept</td></tr>
+<tr class="memdesc:aacef26880476b662d7c20e234e3f1d1f inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Represents the epoch (1970-01-01 00:00:00 UTC) <br /></td></tr>
+<tr class="memitem:a55501a48a980bc2ee35af7d78d08e16b inherit pub_static_methods_classqb_1_1_time_point" id="r_a55501a48a980bc2ee35af7d78d08e16b"><td class="memItemLeft" align="right" valign="top">static <a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a55501a48a980bc2ee35af7d78d08e16b">now</a> () noexcept</td></tr>
+<tr class="memdesc:a55501a48a980bc2ee35af7d78d08e16b inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets current system time.  <br /></td></tr>
+<tr class="memitem:a73e7dc628e445d48487fa2481c1a30e9 inherit pub_static_methods_classqb_1_1_time_point" id="r_a73e7dc628e445d48487fa2481c1a30e9"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a73e7dc628e445d48487fa2481c1a30e9">from_days</a> (int64_t <a class="el" href="classqb_1_1_time_point.html#a74c70aca97655c9e73cecb7d1629abcd">days</a>) noexcept</td></tr>
+<tr class="memdesc:a73e7dc628e445d48487fa2481c1a30e9 inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">TimePoint</a> from days since epoch.  <br /></td></tr>
+<tr class="memitem:afa506de251fc6acdac4eee2ad401f8b9 inherit pub_static_methods_classqb_1_1_time_point" id="r_afa506de251fc6acdac4eee2ad401f8b9"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#afa506de251fc6acdac4eee2ad401f8b9">from_hours</a> (int64_t <a class="el" href="classqb_1_1_time_point.html#a54ac6581aa6c132da0b3186d20c9a46b">hours</a>) noexcept</td></tr>
+<tr class="memdesc:afa506de251fc6acdac4eee2ad401f8b9 inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">TimePoint</a> from hours since epoch.  <br /></td></tr>
+<tr class="memitem:a744ba35be3e235340bf625eba1fcfa02 inherit pub_static_methods_classqb_1_1_time_point" id="r_a744ba35be3e235340bf625eba1fcfa02"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a744ba35be3e235340bf625eba1fcfa02">from_minutes</a> (int64_t <a class="el" href="classqb_1_1_time_point.html#a32f86fa09a7104463f369c115973fdb5">minutes</a>) noexcept</td></tr>
+<tr class="memdesc:a744ba35be3e235340bf625eba1fcfa02 inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">TimePoint</a> from minutes since epoch.  <br /></td></tr>
+<tr class="memitem:a7a7a221ecca908370c0d0c5d6b878701 inherit pub_static_methods_classqb_1_1_time_point" id="r_a7a7a221ecca908370c0d0c5d6b878701"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a7a7a221ecca908370c0d0c5d6b878701">from_seconds</a> (int64_t <a class="el" href="classqb_1_1_time_point.html#a49e9274c34c3890242592d7908a5a9b6">seconds</a>) noexcept</td></tr>
+<tr class="memdesc:a7a7a221ecca908370c0d0c5d6b878701 inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">TimePoint</a> from seconds since epoch.  <br /></td></tr>
+<tr class="memitem:a4b1fb6e7e4b0e1a2a7c15bc3422094ce inherit pub_static_methods_classqb_1_1_time_point" id="r_a4b1fb6e7e4b0e1a2a7c15bc3422094ce"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a4b1fb6e7e4b0e1a2a7c15bc3422094ce">from_milliseconds</a> (int64_t ms) noexcept</td></tr>
+<tr class="memdesc:a4b1fb6e7e4b0e1a2a7c15bc3422094ce inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">TimePoint</a> from milliseconds since epoch.  <br /></td></tr>
+<tr class="memitem:ade7d3930a34ddb8b4f14be46588f3bda inherit pub_static_methods_classqb_1_1_time_point" id="r_ade7d3930a34ddb8b4f14be46588f3bda"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#ade7d3930a34ddb8b4f14be46588f3bda">from_microseconds</a> (int64_t us) noexcept</td></tr>
+<tr class="memdesc:ade7d3930a34ddb8b4f14be46588f3bda inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">TimePoint</a> from microseconds since epoch.  <br /></td></tr>
+<tr class="memitem:a775818bb6acc4732418594d4bd12fa1b inherit pub_static_methods_classqb_1_1_time_point" id="r_a775818bb6acc4732418594d4bd12fa1b"><td class="memItemLeft" align="right" valign="top">static constexpr <a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a775818bb6acc4732418594d4bd12fa1b">from_nanoseconds</a> (int64_t ns) noexcept</td></tr>
+<tr class="memdesc:a775818bb6acc4732418594d4bd12fa1b inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to create a <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">TimePoint</a> from nanoseconds since epoch.  <br /></td></tr>
+<tr class="memitem:a36e72fa9c2e8b075b1cad8af801319c4 inherit pub_static_methods_classqb_1_1_time_point" id="r_a36e72fa9c2e8b075b1cad8af801319c4"><td class="memItemLeft" align="right" valign="top">static std::optional&lt; <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#a36e72fa9c2e8b075b1cad8af801319c4">from_iso8601</a> (std::string_view iso8601) noexcept</td></tr>
+<tr class="memdesc:a36e72fa9c2e8b075b1cad8af801319c4 inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Creates a <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">TimePoint</a> from ISO8601 string.  <br /></td></tr>
+<tr class="memitem:afd1aed90ee849ba8cf3250cf2c41b56e inherit pub_static_methods_classqb_1_1_time_point" id="r_afd1aed90ee849ba8cf3250cf2c41b56e"><td class="memItemLeft" align="right" valign="top">static std::optional&lt; <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#afd1aed90ee849ba8cf3250cf2c41b56e">parse</a> (std::string_view time_string, std::string_view <a class="el" href="classqb_1_1_time_point.html#a2e8eb6f9c5fead322c2683586a361b3d">format</a>) noexcept</td></tr>
+<tr class="memdesc:afd1aed90ee849ba8cf3250cf2c41b56e inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory method to parse a string into a <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">TimePoint</a>.  <br /></td></tr>
+<tr class="memitem:aea7e709811156fb0c5225ff5a530e4f2 inherit pub_static_methods_classqb_1_1_time_point" id="r_aea7e709811156fb0c5225ff5a530e4f2"><td class="memItemLeft" align="right" valign="top">static uint64_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#aea7e709811156fb0c5225ff5a530e4f2">read_tsc</a> () noexcept</td></tr>
+<tr class="memdesc:aea7e709811156fb0c5225ff5a530e4f2 inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Reads <a class="el" href="classqb_1_1_c_p_u.html" title="Provides platform-independent access to CPU information.">CPU</a> timestamp counter.  <br /></td></tr>
+<tr class="memitem:aae0d86260f411b043aa411769c141519 inherit pub_static_methods_classqb_1_1_time_point" id="r_aae0d86260f411b043aa411769c141519"><td class="memItemLeft" align="right" valign="top">static uint64_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#aae0d86260f411b043aa411769c141519">nano</a> () noexcept</td></tr>
+<tr class="memdesc:aae0d86260f411b043aa411769c141519 inherit pub_static_methods_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the current time in nanoseconds since epoch.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-inherited" class="groupheader"><a id="inherited" name="inherited"></a>
+Additional Inherited Members</h2></td></tr>
+<tr class="inherit_header pub_types_classqb_1_1_time_point"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pub_types_classqb_1_1_time_point')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Public Types inherited from <a class="el" href="classqb_1_1_time_point.html">qb::TimePoint</a></td></tr>
+<tr class="memitem:aa034ca43491d4ca72fa93a85947cd12e inherit pub_types_classqb_1_1_time_point" id="r_aa034ca43491d4ca72fa93a85947cd12e"><td class="memItemLeft" align="right" valign="top">
+using&#160;</td><td class="memItemRight" valign="bottom"><b>rep</b> = uint64_t</td></tr>
+<tr class="memdesc:aa034ca43491d4ca72fa93a85947cd12e inherit pub_types_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Type used for nanosecond representation. <br /></td></tr>
+<tr class="memitem:af60ac3b6b1e3939d118eaea1addb27bd inherit pub_types_classqb_1_1_time_point" id="r_af60ac3b6b1e3939d118eaea1addb27bd"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html#af60ac3b6b1e3939d118eaea1addb27bd">chrono_time_point</a></td></tr>
+<tr class="memdesc:af60ac3b6b1e3939d118eaea1addb27bd inherit pub_types_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Underlying std::chrono time point type.  <br /></td></tr>
+<tr class="inherit_header pro_attribs_classqb_1_1_time_point"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pro_attribs_classqb_1_1_time_point')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Protected Attributes inherited from <a class="el" href="classqb_1_1_time_point.html">qb::TimePoint</a></td></tr>
+<tr class="memitem:a34889fcfe923ed8fd776bb09c6db7c86 inherit pro_attribs_classqb_1_1_time_point" id="r_a34889fcfe923ed8fd776bb09c6db7c86"><td class="memItemLeft" align="right" valign="top">
+<a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a>&#160;</td><td class="memItemRight" valign="bottom"><b>_time_since_epoch</b> {0}</td></tr>
+<tr class="memdesc:a34889fcfe923ed8fd776bb09c6db7c86 inherit pro_attribs_classqb_1_1_time_point"><td class="mdescLeft">&#160;</td><td class="mdescRight">Time in nanoseconds since epoch. <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Represents a local time point with nanosecond precision. </p>
+<p>Extends <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">TimePoint</a> to specifically represent times in local timezone. </p>
+</div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="aa7f4b87f9cb6b9afd6cb2f7a246a5d91" name="aa7f4b87f9cb6b9afd6cb2f7a246a5d91"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa7f4b87f9cb6b9afd6cb2f7a246a5d91">&#9670;&#160;</a></span>now()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1_local_time_point.html">LocalTimePoint</a> qb::LocalTimePoint::now </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel static">static</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets current local time. </p>
+<dl class="section return"><dt>Returns</dt><dd><a class="el" href="classqb_1_1_local_time_point.html" title="Represents a local time point with nanosecond precision.">LocalTimePoint</a> representing current local time </dd></dl>
+
+</div>
+</div>
+<a id="ac11eabfd6f30410d11051674d977fae7" name="ac11eabfd6f30410d11051674d977fae7"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac11eabfd6f30410d11051674d977fae7">&#9670;&#160;</a></span>format_local()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::string qb::LocalTimePoint::format_local </td>
+          <td>(</td>
+          <td class="paramtype">std::string_view</td>          <td class="paramname"><span class="paramname"><em>format</em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Formats the time point as a local time string. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">format</td><td>Format string (strftime compatible) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Formatted local time string </dd></dl>
+
+</div>
+</div>
+<a id="ae50d05fc3f8cbf6a8907f8a68b3b5b40" name="ae50d05fc3f8cbf6a8907f8a68b3b5b40"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae50d05fc3f8cbf6a8907f8a68b3b5b40">&#9670;&#160;</a></span>TimePoint() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::TimePoint::TimePoint </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1_time_point.html#aa034ca43491d4ca72fa93a85947cd12e">rep</a></td>          <td class="paramname"><span class="paramname"><em>nanoseconds</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel explicit">explicit</span><span class="mlabel constexpr">constexpr</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructs a time point with specified time since epoch. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">nanoseconds</td><td>Time in nanoseconds since epoch </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="a17118e9932d328327d6cd39e14be3e0d" name="a17118e9932d328327d6cd39e14be3e0d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a17118e9932d328327d6cd39e14be3e0d">&#9670;&#160;</a></span>TimePoint() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Clock, typename ChronoDuration&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">qb::TimePoint::TimePoint </td>
+          <td>(</td>
+          <td class="paramtype">const std::chrono::time_point&lt; Clock, ChronoDuration &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>time_point</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel explicit">explicit</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructs a time point from std::chrono::time_point. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Clock</td><td>The clock type </td></tr>
+    <tr><td class="paramname"><a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a></td><td>The duration type </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">time_point</td><td>A std::chrono time point </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><a href="classqb_1_1_local_time_point.html">LocalTimePoint</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

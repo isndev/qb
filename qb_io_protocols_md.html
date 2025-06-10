@@ -1,0 +1,358 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: QB-IO: Framing Messages with Protocols</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: QB-IO: Framing Messages with Protocols</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('qb_io_protocols_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">QB-IO: Framing Messages with Protocols </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>Learn how <span class="tt">qb-io</span> uses protocols to define message boundaries and parse data from byte streams.</p>
+<h1>QB-IO: Framing Messages with Protocols</h1>
+<p>Network transports like TCP deliver a continuous stream of bytes. To make sense of this stream, applications need a way to identify where one logical message ends and the next begins—a process called <b>message framing</b>. In <span class="tt">qb-io</span>, this is the job of <b>protocols</b>.</p>
+<p>Protocols define the rules for interpreting raw byte streams, enabling <span class="tt">qb-io</span> components to extract meaningful application-level messages.</p>
+<h2>The <span class="tt">AProtocol&lt;IO_Type&gt;</span> Interface: Your Protocol Blueprint</h2>
+<p>(<span class="tt"><a class="el" href="protocol_8h.html" title="Protocol interfaces for message processing in the asynchronous IO framework.">qb/io/async/protocol.h</a></span>)</p>
+<p>All custom and built-in protocols in <span class="tt">qb-io</span> are built upon the <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html" title="Abstract base class for I/O-component-aware protocols (CRTP).">qb::io::async::AProtocol</a>&lt;IO_Type&gt;</span> abstract base class. This class uses the Curiously Recurring Template Pattern (CRTP), where <span class="tt">IO_Type</span> is the specific I/O component (e.g., your TCP session class) that will use the protocol.</p>
+<p><b>Key Responsibilities &amp; Methods to Implement in a Custom Protocol:</b></p>
+<ol type="1">
+<li><b><span class="tt">using message = YourMessageType;</span></b><ul>
+<li>Your protocol <b>must</b> define a nested type alias named <span class="tt">message</span>. This <span class="tt">YourMessageType</span> (often a struct) represents the structure of a fully parsed application message that your protocol will produce.</li>
+</ul>
+</li>
+<li><b><span class="tt">std::size_t getMessageSize() noexcept override;</span></b><ul>
+<li><b>Purpose:</b> Inspects the incoming byte stream (available via <span class="tt">this-&gt;_io.in()</span>, which is the input buffer of your <span class="tt">IO_Type</span> class) to determine if a complete message is present according to the protocol's framing rules.</li>
+<li><b>Return Value:</b> If a complete message is found, it returns the <b>total size of that message in bytes</b> (including any headers, delimiters, or length fields that are part of the message unit as it exists in the buffer). If a complete message is not yet available, it must return <span class="tt">0</span>.</li>
+<li><b>Non-Consuming:</b> This method should <em>only inspect</em> the buffer; it must not remove (flush) data.</li>
+</ul>
+</li>
+<li><b><span class="tt">void onMessage(std::size_t size) noexcept override;</span></b><ul>
+<li><b>Purpose:</b> Called by the <span class="tt">qb-io</span> framework when <span class="tt">getMessageSize()</span> has returned a non-zero <span class="tt">size</span>.</li>
+<li><b>Action:</b> This method is responsible for actually processing the complete message of <span class="tt">size</span> bytes from the beginning of the input buffer (<span class="tt">this-&gt;_io.in()</span>). This typically involves:<ul>
+<li>Parsing the raw bytes into your <span class="tt">Protocol::message</span> struct.</li>
+<li>Dispatching this parsed message to a handler in your <span class="tt">IO_Type</span> class, usually by calling <span class="tt">this-&gt;_io.on(typename Protocol::message{/* parsed data */});</span>.</li>
+</ul>
+</li>
+<li>The framework will automatically call <span class="tt">this-&gt;_io.flush(size)</span> after <span class="tt">onMessage</span> returns to remove the processed message from the input buffer.</li>
+</ul>
+</li>
+<li><b><span class="tt">void reset() noexcept override;</span></b><ul>
+<li><b>Purpose:</b> Clears any internal parsing state within the protocol instance. This is crucial after successfully parsing a message, encountering a parsing error, or when the connection is reset, to ensure the protocol is ready for the next message from a clean slate.</li>
+</ul>
+</li>
+</ol>
+<h2>Built-in Protocols: Ready for Common Tasks</h2>
+<p><span class="tt">qb-io</span> provides several pre-built protocols for common framing strategies, saving you from reinventing the wheel. These are found in <span class="tt"><a class="el" href="protocol_2base_8h.html" title="Base protocol implementations for message framing in the QB IO system.">qb/io/protocol/base.h</a></span>, <span class="tt"><a class="el" href="text_8h.html" title="Protocols for processing text and binary messages in the QB IO system.">qb/io/protocol/text.h</a></span>, and <span class="tt"><a class="el" href="io_2protocol_2json_8h.html" title="JSON protocol implementations for the QB IO system.">qb/io/protocol/json.h</a></span>.</p>
+<h3>1. Delimiter-Based Protocols</h3>
+<p>(From <span class="tt"><a class="el" href="protocol_2base_8h.html" title="Base protocol implementations for message framing in the QB IO system.">qb/io/protocol/base.h</a></span> and <span class="tt"><a class="el" href="text_8h.html" title="Protocols for processing text and binary messages in the QB IO system.">qb/io/protocol/text.h</a></span>)</p>
+<ul>
+<li><b>Use Case:</b> Messages are separated by a known character or sequence of bytes.</li>
+<li><b><span class="tt"><a class="el" href="classqb_1_1protocol_1_1base_1_1byte__terminated.html" title="Protocol for messages delimited by a specific single byte character.">qb::protocol::base::byte_terminated</a>&lt;IO_Type, DelimiterChar&gt;</span>:</b><ul>
+<li>Frames messages based on a single <span class="tt">DelimiterChar</span> (e.g., &lsquo;&rsquo;\0'<span class="tt"> for null-terminated strings, </span>'<br  />
+'<span class="tt"> for line-based messages).</span></li>
+</ul>
+</li>
+<li><span class="tt">  **</span><a class="el" href="classqb_1_1protocol_1_1base_1_1bytes__terminated.html" title="Protocol for messages delimited by a specific sequence of bytes (a string literal).">qb::protocol::base::bytes_terminated&lt;IO_Type, TraitStruct&gt;</a><span class="tt">:**<ul>
+<li>Frames messages based on a sequence of bytes defined in </li>
+</ul>
+</span>TraitStruct::_EndBytes<span class="tt"> (e.g., </span>"\r\n\r\n"<span class="tt"> for HTTP-like headers).</span></li>
+<li><span class="tt">  **Convenience Text Aliases (from </span>qb::protocol::text<span class="tt">):**<ul>
+<li></li>
+</ul>
+</span>text::string&lt;IO_Type&gt;<span class="tt">: Null-terminated (</span>'\0'<span class="tt">), produces </span>std::string<span class="tt"> in </span>Protocol::message<span class="tt">.<ul>
+<li></li>
+</ul>
+</span>text::command&lt;IO_Type&gt;<span class="tt">: Newline-terminated (</span>'<br  />
+'<span class="tt">), produces </span>std::string<span class="tt">.<ul>
+<li></li>
+</ul>
+</span>text::string_view&lt;IO_Type&gt;<span class="tt">: Null-terminated, produces </span>std::string_view<span class="tt"> (zero-copy for payload).<ul>
+<li></li>
+</ul>
+</span>text::command_view&lt;IO_Type&gt;<span class="tt">: Newline-terminated, produces </span>std::string_view` (zero-copy for payload).</li>
+</ul>
+<h3>2. Size-Header-Based Protocols</h3>
+<p>(From <span class="tt"><a class="el" href="protocol_2base_8h.html" title="Base protocol implementations for message framing in the QB IO system.">qb/io/protocol/base.h</a></span> and <span class="tt"><a class="el" href="text_8h.html" title="Protocols for processing text and binary messages in the QB IO system.">qb/io/protocol/text.h</a></span>)</p>
+<ul>
+<li><b>Use Case:</b> Each message payload is preceded by a fixed-size integer header indicating the payload's length.</li>
+<li><b><span class="tt"><a class="el" href="classqb_1_1protocol_1_1base_1_1size__as__header.html" title="Protocol for messages where the payload is preceded by a fixed-size header indicating its length.">qb::protocol::base::size_as_header</a>&lt;IO_Type, SizeHeaderType&gt;</span>:</b><ul>
+<li><span class="tt">SizeHeaderType</span> can be <span class="tt">uint8_t</span>, <span class="tt">uint16_t</span>, or <span class="tt">uint32_t</span>.</li>
+<li>Automatically handles network byte order conversion (e.g., <span class="tt">ntohs</span>, <span class="tt">ntohl</span>) for 16-bit and 32-bit headers.</li>
+</ul>
+</li>
+<li><b>Convenience Binary Aliases (from <span class="tt">qb::protocol::text</span>):</b><ul>
+<li><span class="tt">text::binary8&lt;IO_Type&gt;</span>: Uses <span class="tt">uint8_t</span> for payload size. <span class="tt">Protocol::message</span> contains <span class="tt">const char* data</span> and <span class="tt">size_t size</span>.</li>
+<li><span class="tt">text::binary16&lt;IO_Type&gt;</span>: Uses <span class="tt">uint16_t</span> for payload size.</li>
+<li><span class="tt">text::binary32&lt;IO_Type&gt;</span>: Uses <span class="tt">uint32_t</span> for payload size.</li>
+</ul>
+</li>
+</ul>
+<h3>3. JSON Protocols</h3>
+<p>(From <span class="tt"><a class="el" href="io_2protocol_2json_8h.html" title="JSON protocol implementations for the QB IO system.">qb/io/protocol/json.h</a></span>)</p>
+<ul>
+<li><b><span class="tt"><a class="el" href="classqb_1_1protocol_1_1json.html" title="Protocol for parsing null-terminated JSON messages.">qb::protocol::json</a>&lt;IO_Type&gt;</span>:</b><ul>
+<li>Expects null-terminated JSON strings.</li>
+<li><span class="tt">Protocol::message</span> contains the raw <span class="tt">const char* data</span>, <span class="tt">size_t size</span>, and a <span class="tt">nlohmann::json json</span> object holding the parsed JSON.</li>
+</ul>
+</li>
+<li><b><span class="tt"><a class="el" href="classqb_1_1protocol_1_1json__packed.html" title="Protocol for parsing null-terminated, MessagePack encoded JSON messages.">qb::protocol::json_packed</a>&lt;IO_Type&gt;</span>:</b><ul>
+<li>Expects null-terminated, MessagePack-encoded JSON data.</li>
+<li><span class="tt">Protocol::message</span> is the same as for <span class="tt">protocol::json</span>, with <span class="tt">nlohmann::json::from_msgpack()</span> used for deserialization.</li>
+</ul>
+</li>
+</ul>
+<h2>Using Protocols with Asynchronous I/O Components</h2>
+<p>Protocols are typically integrated into classes that handle asynchronous I/O, often those derived using the <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;&gt;</span> helper template.</p>
+<ol type="1">
+<li><p class="startli"><b>Declare the Protocol Type:</b> Inside your I/O component class (e.g., <span class="tt">MyTCPSession</span> inheriting from <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;MyTCPSession&gt;::tcp::client</span>), define your chosen protocol as a nested type alias named <span class="tt">Protocol</span>. ```cpp #include &lt;<a class="el" href="async_8h.html" title="Main include file for the QB asynchronous I/O library.">qb/io/async.h</a>&gt; // For <a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use&lt;&gt;</a> #include &lt;<a class="el" href="text_8h.html" title="Protocols for processing text and binary messages in the QB IO system.">qb/io/protocol/text.h</a>&gt; // For text::command #include &lt;iostream&gt;</p>
+<p class="startli">class MyTCPSession : public qb::io::use&lt;MyTCPSession&gt;::tcp::client&lt;/*optional ServerType*/&gt; { public: // *** 1. Declare the protocol to be used by this session *** using Protocol = <a class="el" href="group___protocol.html#ga0120c970b4d50b4d782cc1c6d215d371" title="Protocol for newline-terminated (\n) commands, yielding std::string.">qb::protocol::text::command&lt;MyTCPSession&gt;</a>;</p>
+<p class="startli">explicit MyTCPSession(/* constructor args */) /* : client(args) */ { // The base qb::io::use&lt;...&gt;::tcp::client will often automatically instantiate // your declared Protocol if it has a constructor taking MyTCPSession&amp;. // If not, or for more control, you might call: // this-&gt;switch_protocol&lt;Protocol&gt;(*this); }</p>
+<p class="startli">// ... other methods ... }; ```</p>
+</li>
+<li><p class="startli"><b>Implement the Message Handler:</b> Your I/O component class must implement a public method <span class="tt">void on(Protocol::message&amp;&amp; msg)</span> (or <span class="tt">void on(const Protocol::message&amp; msg)</span>) to receive and process fully parsed messages from the protocol. ```cpp // Continuing MyTCPSession from above public: // *** 2. Implement the handler for messages parsed by your Protocol *** void on(Protocol::message&amp;&amp; received_command) { // text::command::message is {size, data, text} std::cout &lt;&lt; "Received command: " &lt;&lt; received_command.text &lt;&lt; std::endl; if (received_command.text == "QUIT") { this-&gt;disconnect(); } // Process the command... }</p>
+<p class="startli">void on(qb::io::async::event::disconnected const&amp; event) { std::cout &lt;&lt; "Disconnected. Reason: " &lt;&lt; event.reason &lt;&lt; std::endl; } }; ```</p>
+</li>
+<li><p class="startli"><b>Sending Data According to Protocol:</b> When sending data, ensure it conforms to the chosen protocol's framing rules. ```cpp // Inside MyTCPSession or another class interacting with it void sendCommandToServer(MyTCPSession&amp; session, const std::string&amp; command_text) { // For text::command, messages are newline-terminated. // Protocol::end is typically defined by byte_terminated based protocols. session &lt;&lt; command_text &lt;&lt; MyTCPSession::Protocol::end; }</p>
+<p class="startli">// For a binary protocol (e.g., text::binary16) // void sendBinaryData(MyBinarySession&amp; session, const char* data, uint16_t len) { // auto header = MyBinarySession::Protocol::Header(len); // Get network-byte-order header // session.publish(reinterpret_cast&lt;const char*&gt;(&amp;header), sizeof(header)); // session.publish(data, len); // } ```</p>
+</li>
+</ol>
+<p><b>(Reference examples:</b> <span class="tt">test-session-text.cpp</span>, <span class="tt">test-session-json.cpp</span>, <span class="tt">chat_tcp/shared/Protocol.h</span>, <span class="tt">message_broker/shared/Protocol.h</span>**)</p>
+<h2>Implementing a Custom Protocol: A Step-by-Step Guide</h2>
+<p>When the built-in protocols don't fit your application's specific message structure, <span class="tt">qb-io</span> makes it straightforward to define your own. Here's how:</p>
+<ol type="1">
+<li><p class="startli"><b>Define Your Message Structure(s):</b> First, determine what constitutes a "message" in your protocol. This might involve a header part and a payload part. Define C++ structs or classes for these.</p>
+<p class="startli">```cpp // In a suitable header, e.g., my_custom_protocol_messages.h namespace my_app { // Example: A header structure for your messages struct MessageHeader { uint32_t magic_number; // To identify your protocol uint16_t message_type; // To differentiate kinds of messages uint32_t payload_length; // Add other fixed-size header fields as needed (checksum, sequence no, etc.) }; constexpr uint32_t MY_PROTOCOL_MAGIC = 0xABCD1234;</p>
+<p class="startli">// Example: The structure your IO component will receive struct ParsedMessage { MessageHeader header; std::vector&lt;char&gt; payload; // Or std::string, or a shared_ptr to a buffer // Add other parsed fields if your payload has structure }; } // namespace my_app ```</p>
+</li>
+<li><p class="startli"><b>Create Your Protocol Class:</b> Inherit from <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html" title="Abstract base class for I/O-component-aware protocols (CRTP).">qb::io::async::AProtocol</a>&lt;YourIOComponent&gt;</span> and implement the required methods. <span class="tt">YourIOComponent</span> is the class (e.g., your TCP session handler) that will use this protocol.</p>
+<p class="startli">```cpp // In your protocol header, e.g., my_custom_protocol.h #include &lt;<a class="el" href="protocol_8h.html" title="Protocol interfaces for message processing in the asynchronous IO framework.">qb/io/async/protocol.h</a>&gt; #include "my_custom_protocol_messages.h" // Your message structs #include &lt;cstring&gt; // For std::memcpy #include &lt;vector&gt; // For std::vector in ParsedMessage</p>
+<p class="startli">// Forward declare your IO component if necessary, or include its header // class YourIOComponent;</p>
+<p class="startli">template&lt;typename YourIOComponent&gt; class MyCustomProtocol : public <a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html" title="Abstract base class for I/O-component-aware protocols (CRTP).">qb::io::async::AProtocol&lt;YourIOComponent&gt;</a> { private: // Internal state for parsing my_app::MessageHeader _current_header; bool _reading_header = true; static constexpr size_t HEADER_SIZE = sizeof(my_app::MessageHeader);</p>
+<p class="startli">public: // *** This is crucial: Define what your IO_Type::on() will receive *** using message = my_app::ParsedMessage;</p>
+<p class="startli">// Constructor: Takes a reference to the IO component that owns it explicit MyCustomProtocol(YourIOComponent&amp; io_component) noexcept : qb::io::async::AProtocol&lt;YourIOComponent&gt;(io_component) {}</p>
+<p class="startli">// &mdash; Implementation of AProtocol virtual methods &mdash;</p>
+<p class="startli">std::size_t getMessageSize() noexcept override { auto&amp; input_buffer = this-&gt;_io.in(); // Access the IO component's input buffer</p>
+<p class="startli">if (_reading_header) { if (input_buffer.size() &lt; HEADER_SIZE) { return 0; // Not enough data for the header yet } // Copy header data from buffer std::memcpy(&amp;_current_header, input_buffer.cbegin(), HEADER_SIZE);</p>
+<p class="startli">// Basic validation (e.g., magic number) if (_current_header.magic_number != my_app::MY_PROTOCOL_MAGIC) { //qb::io::cerr() &lt;&lt; "Invalid magic number!" &lt;&lt; std::endl; // Protocol error: How to handle? // Option 1: Mark protocol as bad, IO component should disconnect. this-&gt;not_ok(); // Mark protocol as not okay // Option 2: Try to find next magic number (resynchronize) - more complex. // For now, let's assume we disconnect on error. return 0; // Or indicate an error that leads to flushing this data } _reading_header = false; }</p>
+<p class="startli">// Now we have the header, check if the full payload has arrived size_t total_message_size = HEADER_SIZE + _current_header.payload_length; if (input_buffer.size() &lt; total_message_size) { return 0; // Not enough data for the full payload yet }</p>
+<p class="startli">// A complete message (header + payload) is available return total_message_size; }</p>
+<p class="startli">void onMessage(std::size_t total_message_size) noexcept override { auto&amp; input_buffer = this-&gt;_io.in();</p>
+<p class="startli">// Construct the message object to pass to the IO component's handler my_app::ParsedMessage received_msg; received_msg.header = _current_header; // Header was already read in getMessageSize</p>
+<p class="startli">if (_current_header.payload_length &gt; 0) { // Copy payload from the input buffer const char* payload_start = input_buffer.cbegin() + HEADER_SIZE; received_msg.payload.assign(payload_start, payload_start + _current_header.payload_length); }</p>
+<p class="startli">// Dispatch the fully parsed message to the IO component // YourIOComponent must have a method: void on(my_app::ParsedMessage&amp;&amp; msg) this-&gt;_io.on(std::move(received_msg));</p>
+<p class="startli">// Reset state for the next message reset(); }</p>
+<p class="startli">void reset() noexcept override { _reading_header = true; // Clear any other partial parsing state _current_header = {}; } }; ```</p>
+</li>
+<li><p class="startli"><b>Integrate with Your I/O Component:</b> In your class that handles the I/O (e.g., <span class="tt">MyTCPSession</span>): ```cpp class MyTCPSession : public qb::io::use&lt;MyTCPSession&gt;::tcp::client&lt;/*...*/&gt; { public: // Declare your custom protocol using Protocol = MyCustomProtocol&lt;MyTCPSession&gt;;</p>
+<p class="startli">explicit MyTCPSession(/*...*/) { // Protocol is often instantiated by the <span class="tt">use&lt;&gt;</span> base if it has a constructor // taking <span class="tt">YourIOComponent&amp;</span>. If not, you might need: this-&gt;switch_protocol&lt;Protocol&gt;(*this); }</p>
+<p class="startli">// Implement the handler for your parsed message type void on(my_app::ParsedMessage&amp;&amp; msg) { // Process the structured message // <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Received message type: " &lt;&lt; msg.header.message_type // &lt;&lt; " with payload size: " &lt;&lt; msg.header.payload_length &lt;&lt; std::endl; } // ... other handlers (disconnected, etc.) }; ```</p>
+</li>
+<li><b>Serialization (Sending Data):</b> When sending data, you'll need to construct the byte stream according to your protocol (header + payload).<ul>
+<li><p class="startli"><b>Manual Construction:</b> ```cpp // Inside MyTCPSession or another class that sends void sendMyData(const std::vector&lt;char&gt;&amp; payload_data, uint16_t type) { my_app::MessageHeader header; header.magic_number = my_app::MY_PROTOCOL_MAGIC; header.message_type = type; header.payload_length = static_cast&lt;uint32_t&gt;(payload_data.size()); // header.id = ...; // Set other header fields</p>
+<p class="startli">// Send header this-&gt;publish(reinterpret_cast&lt;const char*&gt;(&amp;header), sizeof(header)); // Send payload if (!payload_data.empty()) { this-&gt;publish(payload_data.data(), payload_data.size()); } } ``<span class="tt"></span></p>
+</li>
+<li><span class="tt">  **Helper Functions/Classes:** You might create helper functions or a dedicated "Serializer" class to make this cleaner.</span></li>
+<li><span class="tt">  **</span><a class="el" href="classqb_1_1allocator_1_1pipe.html#a6557f3224879e9b58104cfc2ae932ead">qb::allocator::pipe&lt;char&gt;::put</a><span class="tt"> Specialization (Advanced):** For very high performance, you can specialize </span><a class="el" href="classqb_1_1allocator_1_1pipe.html#a6557f3224879e9b58104cfc2ae932ead">qb::allocator::pipe&lt;char&gt;::put&lt;YourMessageType&gt;</a><span class="tt"> to serialize your message type directly into the output buffer without intermediate copies. The </span>chat_tcp<span class="tt"> and </span>message_broker` examples demonstrate this technique.</li>
+</ul>
+</li>
+</ol>
+<p><b>Important Considerations for Custom Protocols:</b></p>
+<ul>
+<li><b>Error Handling:</b> Robustly handle malformed data in <span class="tt">getMessageSize()</span>. Decide on a strategy: disconnect, try to resynchronize, or log and skip. Marking the protocol as <span class="tt">not_ok()</span> can signal the I/O component.</li>
+<li><b>State Management:</b> <span class="tt">reset()</span> is critical to ensure that partial parsing state from a previous message (or erroneous data) doesn't affect the next one.</li>
+<li><b>Efficiency:</b> For performance-sensitive protocols, be mindful of data copies. <span class="tt">std::string_view</span> can be useful for payload if its lifetime is managed carefully.</li>
+<li><b>Endianness:</b> If your header contains multi-byte integers (like <span class="tt">uint32_t payload_length</span>), ensure you consistently use network byte order (big-endian) when serializing and deserialize correctly (e.g., using <span class="tt">ntohl</span>, <span class="tt">htonl</span>, or <span class="tt">qb::endian</span> utilities) if your systems might have different native endianness.</li>
+</ul>
+<p><b>(Reference Examples:</b> The <span class="tt">example/io/example5_custom_protocol.cpp</span> provides a good starting point. For more advanced serialization and protocol design, examine the protocols in <span class="tt">example/core_io/chat_tcp/shared/Protocol.h</span> and <span class="tt">example/core_io/message_broker/shared/Protocol.h</span>.**)</p>
+<p>By understanding and utilizing this protocol framework, you can build robust and flexible communication layers for your <span class="tt">qb-io</span> based applications.</p>
+<p><b>(Next:</b> QB-IO: Secure TCP (SSL/TLS) Transport or QB-IO: Utilities**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

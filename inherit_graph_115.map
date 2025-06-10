@@ -1,0 +1,11 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="Node000000" href="$classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision." alt="" coords="5,80,108,106"/>
+<area shape="rect" id="Node000001" href="$classqb_1_1_high_res_time_point.html" title="Represents a high&#45;resolution time point." alt="" coords="156,5,309,31"/>
+<area shape="poly" id="edge119_Node000000_Node000001" title=" " alt="" coords="93,70,155,40,184,29,186,34,157,45,95,75"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1_local_time_point.html" title="Represents a local time point with nanosecond precision." alt="" coords="166,55,299,80"/>
+<area shape="poly" id="edge120_Node000000_Node000002" title=" " alt="" coords="122,81,165,74,166,80,123,86"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1_tsc_time_point.html" title="Represents a time point based on CPU&#39;s timestamp counter." alt="" coords="171,104,294,130"/>
+<area shape="poly" id="edge121_Node000000_Node000003" title=" " alt="" coords="123,99,171,106,170,111,123,105"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1_utc_time_point.html" title="Represents a UTC time point with nanosecond precision." alt="" coords="171,153,294,179"/>
+<area shape="poly" id="edge122_Node000000_Node000004" title=" " alt="" coords="96,111,157,140,186,150,184,155,155,145,94,116"/>
+</map>

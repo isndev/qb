@@ -1,0 +1,9 @@
+<map id="qb::io::async::tcp::client&lt; _Derived, _Transport, _Server &gt;" name="qb::io::async::tcp::client&lt; _Derived, _Transport, _Server &gt;">
+<area shape="rect" id="Node000001" title="Server&#45;associated asynchronous TCP client." alt="" coords="86,183,239,238"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1async_1_1io.html" title="CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing." alt="" coords="39,94,161,135"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="124,146,147,181,142,184,119,149"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1async_1_1base.html" title=" " alt="" coords="5,5,195,46"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="103,62,103,94,97,94,97,62"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="185,102,268,127"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="212,142,183,184,179,181,208,139"/>
+</map>

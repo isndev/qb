@@ -1,0 +1,626 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/system/container/ring_buffer.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/system/container/ring_buffer.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('ring__buffer_8h_source.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">ring_buffer.h</div></div>
+</div><!--header-->
+<div class="contents">
+<a href="ring__buffer_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00024" name="l00024"></a><span class="lineno">   24</span> </div>
+<div class="line"><a id="l00025" name="l00025"></a><span class="lineno">   25</span><span class="preprocessor">#ifndef QB_RINGBUFFER_H</span></div>
+<div class="line"><a id="l00026" name="l00026"></a><span class="lineno">   26</span><span class="preprocessor">#define QB_RINGBUFFER_H</span></div>
+<div class="line"><a id="l00027" name="l00027"></a><span class="lineno">   27</span> </div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span><span class="preprocessor">#include &lt;algorithm&gt;</span></div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span><span class="preprocessor">#include &lt;cstring&gt;</span></div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span><span class="preprocessor">#include &lt;iostream&gt;</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span><span class="preprocessor">#include &lt;type_traits&gt;</span></div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span><span class="preprocessor">#include &lt;vector&gt;</span></div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span> </div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span><span class="keyword">namespace </span>qb {</div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span></div>
+<div class="line"><a id="l00044" name="l00044"></a><span class="lineno">   44</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> T, <span class="keywordtype">size_t</span> N, <span class="keywordtype">bool</span> Overwrite = true&gt;</div>
+<div class="line"><a id="l00045" name="l00045"></a><span class="lineno">   45</span><span class="keyword">class </span><a class="code hl_class" href="classqb_1_1ring__buffer.html">ring_buffer</a>;</div>
+<div class="line"><a id="l00046" name="l00046"></a><span class="lineno">   46</span> </div>
+<div class="line"><a id="l00047" name="l00047"></a><span class="lineno">   47</span><span class="keyword">namespace </span>detail {</div>
+<div class="line"><a id="l00056" name="l00056"></a><span class="lineno">   56</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> T, <span class="keywordtype">size_t</span> N, <span class="keywordtype">bool</span> C, <span class="keywordtype">bool</span> Overwrite&gt;</div>
+<div class="foldopen" id="foldopen00057" data-start="{" data-end="};">
+<div class="line"><a id="l00057" name="l00057"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html">   57</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#af876a59bedb6686eacdae7864a02e3ca">ring_buffer_iterator</a> {</div>
+<div class="line"><a id="l00058" name="l00058"></a><span class="lineno">   58</span>    <span class="keyword">using </span>buffer_t =</div>
+<div class="line"><a id="l00059" name="l00059"></a><span class="lineno">   59</span>        <span class="keyword">typename</span> std::conditional&lt;!C, ring_buffer&lt;T, N, Overwrite&gt; *,</div>
+<div class="line"><a id="l00060" name="l00060"></a><span class="lineno">   60</span>                                  <a class="code hl_class" href="classqb_1_1ring__buffer.html">ring_buffer&lt;T, N, Overwrite&gt;</a> <span class="keyword">const</span> *&gt;<a class="code hl_struct" href="structqb_1_1type.html">::type</a>;</div>
+<div class="line"><a id="l00061" name="l00061"></a><span class="lineno">   61</span> </div>
+<div class="line"><a id="l00062" name="l00062"></a><span class="lineno">   62</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00063" name="l00063"></a><span class="lineno">   63</span>    <span class="keyword">using </span>self_type         = <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#af876a59bedb6686eacdae7864a02e3ca">ring_buffer_iterator&lt;T, N, C, Overwrite&gt;</a>;</div>
+<div class="line"><a id="l00064" name="l00064"></a><span class="lineno">   64</span>    <span class="keyword">using </span>value_type        = T;</div>
+<div class="line"><a id="l00065" name="l00065"></a><span class="lineno">   65</span>    <span class="keyword">using </span>reference         = T &amp;;</div>
+<div class="line"><a id="l00066" name="l00066"></a><span class="lineno">   66</span>    <span class="keyword">using </span>const_reference   = T <span class="keyword">const</span> &amp;;</div>
+<div class="line"><a id="l00067" name="l00067"></a><span class="lineno">   67</span>    <span class="keyword">using </span>pointer           = T *;</div>
+<div class="line"><a id="l00068" name="l00068"></a><span class="lineno">   68</span>    <span class="keyword">using </span>const_pointer     = T <span class="keyword">const</span> *;</div>
+<div class="line"><a id="l00069" name="l00069"></a><span class="lineno">   69</span>    <span class="keyword">using </span>size_type         = size_t;</div>
+<div class="line"><a id="l00070" name="l00070"></a><span class="lineno">   70</span>    <span class="keyword">using </span>difference_type   = ptrdiff_t;</div>
+<div class="line"><a id="l00071" name="l00071"></a><span class="lineno">   71</span>    <span class="keyword">using </span>iterator_category = std::forward_iterator_tag;</div>
+<div class="line"><a id="l00072" name="l00072"></a><span class="lineno">   72</span></div>
+<div class="line"><a id="l00076" name="l00076"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#af876a59bedb6686eacdae7864a02e3ca">   76</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#af876a59bedb6686eacdae7864a02e3ca">ring_buffer_iterator</a>() noexcept = default;</div>
+<div class="line"><a id="l00077" name="l00077"></a><span class="lineno">   77</span></div>
+<div class="foldopen" id="foldopen00085" data-start="{" data-end="}">
+<div class="line"><a id="l00085" name="l00085"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#aea5ba488cd1a1c520677d2216f978300">   85</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#af876a59bedb6686eacdae7864a02e3ca">ring_buffer_iterator</a>(buffer_t source, size_type <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#aa9574bcf76706030aa92a2cdcf0dbcc5">index</a>, size_type <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#aa65fff589d22741285d54234b4a946c9">count</a>) noexcept</div>
+<div class="line"><a id="l00086" name="l00086"></a><span class="lineno">   86</span>        : source_{source}</div>
+<div class="line"><a id="l00087" name="l00087"></a><span class="lineno">   87</span>        , index_{<a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#aa9574bcf76706030aa92a2cdcf0dbcc5">index</a>}</div>
+<div class="line"><a id="l00088" name="l00088"></a><span class="lineno">   88</span>        , count_{<a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#aa65fff589d22741285d54234b4a946c9">count</a>} {}</div>
+</div>
+<div class="line"><a id="l00089" name="l00089"></a><span class="lineno">   89</span></div>
+<div class="line"><a id="l00093" name="l00093"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#af5806402e1899ac47001e67e184b1c2c">   93</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#af5806402e1899ac47001e67e184b1c2c">ring_buffer_iterator</a>(<a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#af876a59bedb6686eacdae7864a02e3ca">ring_buffer_iterator</a> <span class="keyword">const</span> &amp;) <span class="keyword">noexcept</span> = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00094" name="l00094"></a><span class="lineno">   94</span></div>
+<div class="line"><a id="l00098" name="l00098"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#a502c5cdebf5ef2bb42238f397a7ac688">   98</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#af876a59bedb6686eacdae7864a02e3ca">ring_buffer_iterator</a> &amp;<a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#a502c5cdebf5ef2bb42238f397a7ac688">operator=</a>(<a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#af876a59bedb6686eacdae7864a02e3ca">ring_buffer_iterator</a> <span class="keyword">const</span> &amp;) <span class="keyword">noexcept</span> = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00099" name="l00099"></a><span class="lineno">   99</span></div>
+<div class="line"><a id="l00105" name="l00105"></a><span class="lineno">  105</span>    <span class="keyword">template</span> &lt;<span class="keywordtype">bool</span> Z = C, <span class="keyword">typename</span> std::enable_if&lt;(!Z), <span class="keywordtype">int</span>&gt;::type * = <span class="keywordtype">nullptr</span>&gt;</div>
+<div class="line"><a id="l00106" name="l00106"></a><span class="lineno">  106</span>    [[nodiscard]] reference</div>
+<div class="foldopen" id="foldopen00107" data-start="{" data-end="}">
+<div class="line"><a id="l00107" name="l00107"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#a79c57fe13a64cd23dc2c6fe3e8321dd9">  107</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#a79c57fe13a64cd23dc2c6fe3e8321dd9">operator*</a>() noexcept {</div>
+<div class="line"><a id="l00108" name="l00108"></a><span class="lineno">  108</span>        <span class="keywordflow">return</span> (*source_)[index_];</div>
+<div class="line"><a id="l00109" name="l00109"></a><span class="lineno">  109</span>    }</div>
+</div>
+<div class="line"><a id="l00110" name="l00110"></a><span class="lineno">  110</span></div>
+<div class="line"><a id="l00116" name="l00116"></a><span class="lineno">  116</span>    <span class="keyword">template</span> &lt;<span class="keywordtype">bool</span> Z = C, <span class="keyword">typename</span> std::enable_if&lt;(Z), <span class="keywordtype">int</span>&gt;::type * = <span class="keywordtype">nullptr</span>&gt;</div>
+<div class="line"><a id="l00117" name="l00117"></a><span class="lineno">  117</span>    [[nodiscard]] const_reference</div>
+<div class="foldopen" id="foldopen00118" data-start="{" data-end="}">
+<div class="line"><a id="l00118" name="l00118"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#a5815a4ec3e7e7753229be5e496802646">  118</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#a5815a4ec3e7e7753229be5e496802646">operator*</a>() const noexcept {</div>
+<div class="line"><a id="l00119" name="l00119"></a><span class="lineno">  119</span>        <span class="keywordflow">return</span> (*source_)[index_];</div>
+<div class="line"><a id="l00120" name="l00120"></a><span class="lineno">  120</span>    }</div>
+</div>
+<div class="line"><a id="l00121" name="l00121"></a><span class="lineno">  121</span></div>
+<div class="line"><a id="l00127" name="l00127"></a><span class="lineno">  127</span>    <span class="keyword">template</span> &lt;<span class="keywordtype">bool</span> Z = C, <span class="keyword">typename</span> std::enable_if&lt;(!Z), <span class="keywordtype">int</span>&gt;::type * = <span class="keywordtype">nullptr</span>&gt;</div>
+<div class="line"><a id="l00128" name="l00128"></a><span class="lineno">  128</span>    [[nodiscard]] reference</div>
+<div class="foldopen" id="foldopen00129" data-start="{" data-end="}">
+<div class="line"><a id="l00129" name="l00129"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#adb4e7e54b7c163d79c02d571354facb2">  129</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#adb4e7e54b7c163d79c02d571354facb2">operator-&gt;</a>() noexcept {</div>
+<div class="line"><a id="l00130" name="l00130"></a><span class="lineno">  130</span>        <span class="keywordflow">return</span> &amp;((*source_)[index_]);</div>
+<div class="line"><a id="l00131" name="l00131"></a><span class="lineno">  131</span>    }</div>
+</div>
+<div class="line"><a id="l00132" name="l00132"></a><span class="lineno">  132</span></div>
+<div class="line"><a id="l00138" name="l00138"></a><span class="lineno">  138</span>    <span class="keyword">template</span> &lt;<span class="keywordtype">bool</span> Z = C, <span class="keyword">typename</span> std::enable_if&lt;(Z), <span class="keywordtype">int</span>&gt;::type * = <span class="keywordtype">nullptr</span>&gt;</div>
+<div class="line"><a id="l00139" name="l00139"></a><span class="lineno">  139</span>    [[nodiscard]] const_reference</div>
+<div class="foldopen" id="foldopen00140" data-start="{" data-end="}">
+<div class="line"><a id="l00140" name="l00140"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#a98d2ff79c5e59c86e001bcf7315bd1b0">  140</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#a98d2ff79c5e59c86e001bcf7315bd1b0">operator-&gt;</a>() const noexcept {</div>
+<div class="line"><a id="l00141" name="l00141"></a><span class="lineno">  141</span>        <span class="keywordflow">return</span> &amp;((*source_)[index_]);</div>
+<div class="line"><a id="l00142" name="l00142"></a><span class="lineno">  142</span>    }</div>
+</div>
+<div class="line"><a id="l00143" name="l00143"></a><span class="lineno">  143</span></div>
+<div class="line"><a id="l00149" name="l00149"></a><span class="lineno">  149</span>    self_type &amp;</div>
+<div class="foldopen" id="foldopen00150" data-start="{" data-end="}">
+<div class="line"><a id="l00150" name="l00150"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#ad65f25bd8b445fb3dd82190096e1c844">  150</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#ad65f25bd8b445fb3dd82190096e1c844">operator++</a>() noexcept {</div>
+<div class="line"><a id="l00151" name="l00151"></a><span class="lineno">  151</span>        index_ = ++index_ % N;</div>
+<div class="line"><a id="l00152" name="l00152"></a><span class="lineno">  152</span>        ++count_;</div>
+<div class="line"><a id="l00153" name="l00153"></a><span class="lineno">  153</span>        <span class="keywordflow">return</span> *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00154" name="l00154"></a><span class="lineno">  154</span>    }</div>
+</div>
+<div class="line"><a id="l00155" name="l00155"></a><span class="lineno">  155</span></div>
+<div class="line"><a id="l00161" name="l00161"></a><span class="lineno">  161</span>    [[nodiscard]] self_type</div>
+<div class="foldopen" id="foldopen00162" data-start="{" data-end="}">
+<div class="line"><a id="l00162" name="l00162"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#a871480d39e3ebc7fb28c83a6a7e03d0a">  162</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#a871480d39e3ebc7fb28c83a6a7e03d0a">operator++</a>(<span class="keywordtype">int</span>) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00163" name="l00163"></a><span class="lineno">  163</span>        <span class="keyword">auto</span> result = *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00164" name="l00164"></a><span class="lineno">  164</span>        this-&gt;<a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#ad65f25bd8b445fb3dd82190096e1c844">operator++</a>();</div>
+<div class="line"><a id="l00165" name="l00165"></a><span class="lineno">  165</span>        <span class="keywordflow">return</span> result;</div>
+<div class="line"><a id="l00166" name="l00166"></a><span class="lineno">  166</span>    }</div>
+</div>
+<div class="line"><a id="l00167" name="l00167"></a><span class="lineno">  167</span></div>
+<div class="line"><a id="l00173" name="l00173"></a><span class="lineno">  173</span>    [[nodiscard]] size_type</div>
+<div class="foldopen" id="foldopen00174" data-start="{" data-end="}">
+<div class="line"><a id="l00174" name="l00174"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#aa9574bcf76706030aa92a2cdcf0dbcc5">  174</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#aa9574bcf76706030aa92a2cdcf0dbcc5">index</a>() const noexcept {</div>
+<div class="line"><a id="l00175" name="l00175"></a><span class="lineno">  175</span>        <span class="keywordflow">return</span> index_;</div>
+<div class="line"><a id="l00176" name="l00176"></a><span class="lineno">  176</span>    }</div>
+</div>
+<div class="line"><a id="l00177" name="l00177"></a><span class="lineno">  177</span></div>
+<div class="line"><a id="l00183" name="l00183"></a><span class="lineno">  183</span>    [[nodiscard]] size_type</div>
+<div class="foldopen" id="foldopen00184" data-start="{" data-end="}">
+<div class="line"><a id="l00184" name="l00184"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#aa65fff589d22741285d54234b4a946c9">  184</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#aa65fff589d22741285d54234b4a946c9">count</a>() const noexcept {</div>
+<div class="line"><a id="l00185" name="l00185"></a><span class="lineno">  185</span>        <span class="keywordflow">return</span> count_;</div>
+<div class="line"><a id="l00186" name="l00186"></a><span class="lineno">  186</span>    }</div>
+</div>
+<div class="line"><a id="l00187" name="l00187"></a><span class="lineno">  187</span></div>
+<div class="line"><a id="l00191" name="l00191"></a><span class="lineno"><a class="line" href="classqb_1_1detail_1_1ring__buffer__iterator.html#ac947268d7ce8b0b37cf65fdf9ff8bd56">  191</a></span>    <a class="code hl_function" href="classqb_1_1detail_1_1ring__buffer__iterator.html#ac947268d7ce8b0b37cf65fdf9ff8bd56">~ring_buffer_iterator</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00192" name="l00192"></a><span class="lineno">  192</span> </div>
+<div class="line"><a id="l00193" name="l00193"></a><span class="lineno">  193</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00194" name="l00194"></a><span class="lineno">  194</span>    buffer_t  source_{}; </div>
+<div class="line"><a id="l00195" name="l00195"></a><span class="lineno">  195</span>    size_type index_{};  </div>
+<div class="line"><a id="l00196" name="l00196"></a><span class="lineno">  196</span>    size_type count_{};  </div>
+<div class="line"><a id="l00197" name="l00197"></a><span class="lineno">  197</span>};</div>
+</div>
+<div class="line"><a id="l00198" name="l00198"></a><span class="lineno">  198</span></div>
+<div class="line"><a id="l00210" name="l00210"></a><span class="lineno">  210</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> T, <span class="keywordtype">size_t</span> N, <span class="keywordtype">bool</span> C, <span class="keywordtype">bool</span> Overwrite&gt;</div>
+<div class="line"><a id="l00211" name="l00211"></a><span class="lineno">  211</span><span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00212" data-start="{" data-end="}">
+<div class="line"><a id="l00212" name="l00212"></a><span class="lineno"><a class="line" href="ring__buffer_8h.html#a75f149c2161e7d60955027bdf09176c9">  212</a></span><a class="code hl_function" href="ring__buffer_8h.html#a75f149c2161e7d60955027bdf09176c9">operator==</a>(<a class="code hl_class" href="classqb_1_1detail_1_1ring__buffer__iterator.html">ring_buffer_iterator&lt;T, N, C, Overwrite&gt;</a> <span class="keyword">const</span> &amp;l,</div>
+<div class="line"><a id="l00213" name="l00213"></a><span class="lineno">  213</span>           <a class="code hl_class" href="classqb_1_1detail_1_1ring__buffer__iterator.html">ring_buffer_iterator&lt;T, N, C, Overwrite&gt;</a> <span class="keyword">const</span> &amp;r) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00214" name="l00214"></a><span class="lineno">  214</span>    <span class="keywordflow">return</span> l.count() == r.count();</div>
+<div class="line"><a id="l00215" name="l00215"></a><span class="lineno">  215</span>}</div>
+</div>
+<div class="line"><a id="l00216" name="l00216"></a><span class="lineno">  216</span></div>
+<div class="line"><a id="l00228" name="l00228"></a><span class="lineno">  228</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> T, <span class="keywordtype">size_t</span> N, <span class="keywordtype">bool</span> C, <span class="keywordtype">bool</span> Overwrite&gt;</div>
+<div class="line"><a id="l00229" name="l00229"></a><span class="lineno">  229</span><span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00230" data-start="{" data-end="}">
+<div class="line"><a id="l00230" name="l00230"></a><span class="lineno"><a class="line" href="ring__buffer_8h.html#abae43714d86a04b3fba169a58b21d046">  230</a></span><a class="code hl_function" href="ring__buffer_8h.html#abae43714d86a04b3fba169a58b21d046">operator!=</a>(<a class="code hl_class" href="classqb_1_1detail_1_1ring__buffer__iterator.html">ring_buffer_iterator&lt;T, N, C, Overwrite&gt;</a> <span class="keyword">const</span> &amp;l,</div>
+<div class="line"><a id="l00231" name="l00231"></a><span class="lineno">  231</span>           <a class="code hl_class" href="classqb_1_1detail_1_1ring__buffer__iterator.html">ring_buffer_iterator&lt;T, N, C, Overwrite&gt;</a> <span class="keyword">const</span> &amp;r) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00232" name="l00232"></a><span class="lineno">  232</span>    <span class="keywordflow">return</span> l.count() != r.count();</div>
+<div class="line"><a id="l00233" name="l00233"></a><span class="lineno">  233</span>}</div>
+</div>
+<div class="line"><a id="l00234" name="l00234"></a><span class="lineno">  234</span>} <span class="comment">// namespace detail</span></div>
+<div class="line"><a id="l00235" name="l00235"></a><span class="lineno">  235</span></div>
+<div class="line"><a id="l00249" name="l00249"></a><span class="lineno">  249</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> T, <span class="keywordtype">size_t</span> N, <span class="keywordtype">bool</span> Overwrite&gt;</div>
+<div class="foldopen" id="foldopen00250" data-start="{" data-end="};">
+<div class="line"><a id="l00250" name="l00250"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html">  250</a></span><span class="keyword">class </span><a class="code hl_function" href="classqb_1_1ring__buffer.html#a585fb4a644ef760af89d1c1419ad88b8">ring_buffer</a> {</div>
+<div class="line"><a id="l00251" name="l00251"></a><span class="lineno">  251</span>    <span class="keyword">using </span>self_type = <a class="code hl_function" href="classqb_1_1ring__buffer.html#a585fb4a644ef760af89d1c1419ad88b8">ring_buffer&lt;T, N, Overwrite&gt;</a>;</div>
+<div class="line"><a id="l00252" name="l00252"></a><span class="lineno">  252</span> </div>
+<div class="line"><a id="l00253" name="l00253"></a><span class="lineno">  253</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00254" name="l00254"></a><span class="lineno">  254</span>    <span class="keyword">static_assert</span>(N &gt; 0, <span class="stringliteral">&quot;ring buffer must have a size greater than zero.&quot;</span>);</div>
+<div class="line"><a id="l00255" name="l00255"></a><span class="lineno">  255</span> </div>
+<div class="line"><a id="l00256" name="l00256"></a><span class="lineno">  256</span>    <span class="keyword">using </span>value_type      = T;</div>
+<div class="line"><a id="l00257" name="l00257"></a><span class="lineno">  257</span>    <span class="keyword">using </span>reference       = T &amp;;</div>
+<div class="line"><a id="l00258" name="l00258"></a><span class="lineno">  258</span>    <span class="keyword">using </span>const_reference = T <span class="keyword">const</span> &amp;;</div>
+<div class="line"><a id="l00259" name="l00259"></a><span class="lineno">  259</span>    <span class="keyword">using </span>pointer         = T *;</div>
+<div class="line"><a id="l00260" name="l00260"></a><span class="lineno">  260</span>    <span class="keyword">using </span>const_pointer   = T <span class="keyword">const</span> *;</div>
+<div class="line"><a id="l00261" name="l00261"></a><span class="lineno">  261</span>    <span class="keyword">using </span>size_type       = size_t;</div>
+<div class="line"><a id="l00262" name="l00262"></a><span class="lineno">  262</span>    <span class="keyword">using </span>iterator        = <a class="code hl_class" href="classqb_1_1detail_1_1ring__buffer__iterator.html">detail::ring_buffer_iterator&lt;T, N, false, Overwrite&gt;</a>;</div>
+<div class="line"><a id="l00263" name="l00263"></a><span class="lineno">  263</span>    <span class="keyword">using </span>const_iterator  = <a class="code hl_class" href="classqb_1_1detail_1_1ring__buffer__iterator.html">detail::ring_buffer_iterator&lt;T, N, true, Overwrite&gt;</a>;</div>
+<div class="line"><a id="l00264" name="l00264"></a><span class="lineno">  264</span></div>
+<div class="line"><a id="l00268" name="l00268"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#a585fb4a644ef760af89d1c1419ad88b8">  268</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#a585fb4a644ef760af89d1c1419ad88b8">ring_buffer</a>() noexcept = default;</div>
+<div class="line"><a id="l00269" name="l00269"></a><span class="lineno">  269</span></div>
+<div class="foldopen" id="foldopen00275" data-start="{" data-end="}">
+<div class="line"><a id="l00275" name="l00275"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#a0a22f80caddb2f6b0161fe8bc0ebbd7b">  275</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#a585fb4a644ef760af89d1c1419ad88b8">ring_buffer</a>(<a class="code hl_function" href="classqb_1_1ring__buffer.html#a585fb4a644ef760af89d1c1419ad88b8">ring_buffer</a> const &amp;rhs) noexcept(</div>
+<div class="line"><a id="l00276" name="l00276"></a><span class="lineno">  276</span>        std::is_nothrow_copy_constructible_v&lt;value_type&gt;) {</div>
+<div class="line"><a id="l00277" name="l00277"></a><span class="lineno">  277</span>        copy_impl(rhs, std::bool_constant&lt;std::is_trivially_copyable_v&lt;T&gt;&gt;{});</div>
+<div class="line"><a id="l00278" name="l00278"></a><span class="lineno">  278</span>    }</div>
+</div>
+<div class="line"><a id="l00279" name="l00279"></a><span class="lineno">  279</span></div>
+<div class="line"><a id="l00286" name="l00286"></a><span class="lineno">  286</span>    <a class="code hl_class" href="classqb_1_1ring__buffer.html">ring_buffer</a> &amp;</div>
+<div class="foldopen" id="foldopen00287" data-start="{" data-end="}">
+<div class="line"><a id="l00287" name="l00287"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#abef839fa13904f6adcc7fcdfeaa5b070">  287</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#abef839fa13904f6adcc7fcdfeaa5b070">operator=</a>(<a class="code hl_function" href="classqb_1_1ring__buffer.html#a585fb4a644ef760af89d1c1419ad88b8">ring_buffer</a> <span class="keyword">const</span> &amp;rhs) <span class="keyword">noexcept</span>(</div>
+<div class="line"><a id="l00288" name="l00288"></a><span class="lineno">  288</span>        std::is_nothrow_copy_constructible_v&lt;value_type&gt;) {</div>
+<div class="line"><a id="l00289" name="l00289"></a><span class="lineno">  289</span>        <span class="keywordflow">if</span> (<span class="keyword">this</span> == &amp;rhs)</div>
+<div class="line"><a id="l00290" name="l00290"></a><span class="lineno">  290</span>            <span class="keywordflow">return</span> *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00291" name="l00291"></a><span class="lineno">  291</span> </div>
+<div class="line"><a id="l00292" name="l00292"></a><span class="lineno">  292</span>        destroy_all(std::bool_constant&lt;std::is_trivially_copyable_v&lt;T&gt;&gt;{});</div>
+<div class="line"><a id="l00293" name="l00293"></a><span class="lineno">  293</span>        copy_impl(rhs, std::bool_constant&lt;std::is_trivially_copyable_v&lt;T&gt;&gt;{});</div>
+<div class="line"><a id="l00294" name="l00294"></a><span class="lineno">  294</span> </div>
+<div class="line"><a id="l00295" name="l00295"></a><span class="lineno">  295</span>        <span class="keywordflow">return</span> *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00296" name="l00296"></a><span class="lineno">  296</span>    }</div>
+</div>
+<div class="line"><a id="l00297" name="l00297"></a><span class="lineno">  297</span></div>
+<div class="line"><a id="l00308" name="l00308"></a><span class="lineno">  308</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> U&gt;</div>
+<div class="line"><a id="l00309" name="l00309"></a><span class="lineno">  309</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00310" data-start="{" data-end="}">
+<div class="line"><a id="l00310" name="l00310"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#ad3c5425edc16634c3e581f5f0bf889f6">  310</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#ad3c5425edc16634c3e581f5f0bf889f6">push_back</a>(U &amp;&amp;value) {</div>
+<div class="line"><a id="l00311" name="l00311"></a><span class="lineno">  311</span>        <a class="code hl_function" href="classqb_1_1ring__buffer.html#ad3c5425edc16634c3e581f5f0bf889f6">push_back</a>(std::forward&lt;U&gt;(value), std::bool_constant&lt;Overwrite&gt;{});</div>
+<div class="line"><a id="l00312" name="l00312"></a><span class="lineno">  312</span>    }</div>
+</div>
+<div class="line"><a id="l00313" name="l00313"></a><span class="lineno">  313</span></div>
+<div class="line"><a id="l00317" name="l00317"></a><span class="lineno">  317</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00318" data-start="{" data-end="}">
+<div class="line"><a id="l00318" name="l00318"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#a2045f255206ca35146dbfb110acd0d90">  318</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#a2045f255206ca35146dbfb110acd0d90">pop_front</a>() noexcept {</div>
+<div class="line"><a id="l00319" name="l00319"></a><span class="lineno">  319</span>        <span class="keywordflow">if</span> (<a class="code hl_function" href="classqb_1_1ring__buffer.html#a7d0ce8c103113c9d580cf70140779e32">empty</a>())</div>
+<div class="line"><a id="l00320" name="l00320"></a><span class="lineno">  320</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l00321" name="l00321"></a><span class="lineno">  321</span> </div>
+<div class="line"><a id="l00322" name="l00322"></a><span class="lineno">  322</span>        destroy(tail_,</div>
+<div class="line"><a id="l00323" name="l00323"></a><span class="lineno">  323</span>                std::bool_constant&lt;std::is_trivially_destructible_v&lt;value_type&gt;&gt;{});</div>
+<div class="line"><a id="l00324" name="l00324"></a><span class="lineno">  324</span> </div>
+<div class="line"><a id="l00325" name="l00325"></a><span class="lineno">  325</span>        --size_;</div>
+<div class="line"><a id="l00326" name="l00326"></a><span class="lineno">  326</span>        tail_ = ++tail_ % N;</div>
+<div class="line"><a id="l00327" name="l00327"></a><span class="lineno">  327</span>    }</div>
+</div>
+<div class="line"><a id="l00328" name="l00328"></a><span class="lineno">  328</span></div>
+<div class="line"><a id="l00334" name="l00334"></a><span class="lineno">  334</span>    [[nodiscard]] reference</div>
+<div class="foldopen" id="foldopen00335" data-start="{" data-end="}">
+<div class="line"><a id="l00335" name="l00335"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#a0820878e59ddac3e9101c69ed072819e">  335</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#a0820878e59ddac3e9101c69ed072819e">back</a>() noexcept {</div>
+<div class="line"><a id="l00336" name="l00336"></a><span class="lineno">  336</span>        <span class="keywordflow">return</span> <span class="keyword">reinterpret_cast&lt;</span>reference<span class="keyword">&gt;</span>(</div>
+<div class="line"><a id="l00337" name="l00337"></a><span class="lineno">  337</span>            elements_[std::clamp&lt;size_type&gt;(head_ - 1, 0UL, N - 1)]);</div>
+<div class="line"><a id="l00338" name="l00338"></a><span class="lineno">  338</span>    }</div>
+</div>
+<div class="line"><a id="l00339" name="l00339"></a><span class="lineno">  339</span></div>
+<div class="line"><a id="l00345" name="l00345"></a><span class="lineno">  345</span>    [[nodiscard]] const_reference</div>
+<div class="foldopen" id="foldopen00346" data-start="{" data-end="}">
+<div class="line"><a id="l00346" name="l00346"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#a62f6f526bea0fcf4bdbdabed059cb6b6">  346</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#a62f6f526bea0fcf4bdbdabed059cb6b6">back</a>() const noexcept {</div>
+<div class="line"><a id="l00347" name="l00347"></a><span class="lineno">  347</span>        <span class="keywordflow">return</span> <span class="keyword">const_cast&lt;</span>self_type *<span class="keyword">&gt;</span>(<span class="keyword">this</span>)-&gt;<a class="code hl_function" href="classqb_1_1ring__buffer.html#a0820878e59ddac3e9101c69ed072819e">back</a>();</div>
+<div class="line"><a id="l00348" name="l00348"></a><span class="lineno">  348</span>    }</div>
+</div>
+<div class="line"><a id="l00349" name="l00349"></a><span class="lineno">  349</span></div>
+<div class="line"><a id="l00355" name="l00355"></a><span class="lineno">  355</span>    [[nodiscard]] reference</div>
+<div class="foldopen" id="foldopen00356" data-start="{" data-end="}">
+<div class="line"><a id="l00356" name="l00356"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#aab1f1e2ade90f4cd3147936eda899d98">  356</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#aab1f1e2ade90f4cd3147936eda899d98">front</a>() noexcept {</div>
+<div class="line"><a id="l00357" name="l00357"></a><span class="lineno">  357</span>        <span class="keywordflow">return</span> <span class="keyword">reinterpret_cast&lt;</span>reference<span class="keyword">&gt;</span>(elements_[tail_]);</div>
+<div class="line"><a id="l00358" name="l00358"></a><span class="lineno">  358</span>    }</div>
+</div>
+<div class="line"><a id="l00359" name="l00359"></a><span class="lineno">  359</span></div>
+<div class="line"><a id="l00365" name="l00365"></a><span class="lineno">  365</span>    [[nodiscard]] const_reference</div>
+<div class="foldopen" id="foldopen00366" data-start="{" data-end="}">
+<div class="line"><a id="l00366" name="l00366"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#a9471ed14cbcef930a9fa170f255d1777">  366</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#a9471ed14cbcef930a9fa170f255d1777">front</a>() const noexcept {</div>
+<div class="line"><a id="l00367" name="l00367"></a><span class="lineno">  367</span>        <span class="keywordflow">return</span> <span class="keyword">const_cast&lt;</span>self_type *<span class="keyword">&gt;</span>(<span class="keyword">this</span>)-&gt;<a class="code hl_function" href="classqb_1_1ring__buffer.html#aab1f1e2ade90f4cd3147936eda899d98">front</a>();</div>
+<div class="line"><a id="l00368" name="l00368"></a><span class="lineno">  368</span>    }</div>
+</div>
+<div class="line"><a id="l00369" name="l00369"></a><span class="lineno">  369</span></div>
+<div class="line"><a id="l00376" name="l00376"></a><span class="lineno">  376</span>    [[nodiscard]] reference</div>
+<div class="foldopen" id="foldopen00377" data-start="{" data-end="}">
+<div class="line"><a id="l00377" name="l00377"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#ae9c70fe180ac1a30cd4d8b2a5e24d24b">  377</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#ae9c70fe180ac1a30cd4d8b2a5e24d24b">operator[]</a>(size_type index) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00378" name="l00378"></a><span class="lineno">  378</span>        <span class="keywordflow">return</span> <span class="keyword">reinterpret_cast&lt;</span>reference<span class="keyword">&gt;</span>(elements_[index]);</div>
+<div class="line"><a id="l00379" name="l00379"></a><span class="lineno">  379</span>    }</div>
+</div>
+<div class="line"><a id="l00380" name="l00380"></a><span class="lineno">  380</span></div>
+<div class="line"><a id="l00387" name="l00387"></a><span class="lineno">  387</span>    [[nodiscard]] const_reference</div>
+<div class="foldopen" id="foldopen00388" data-start="{" data-end="}">
+<div class="line"><a id="l00388" name="l00388"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#ab869f19815ab7feb305df77ea34292ff">  388</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#ab869f19815ab7feb305df77ea34292ff">operator[]</a>(size_type index) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00389" name="l00389"></a><span class="lineno">  389</span>        <span class="keywordflow">return</span> <span class="keyword">const_cast&lt;</span>self_type *<span class="keyword">&gt;</span>(<span class="keyword">this</span>)-&gt;<span class="keyword">operator</span>[](index);</div>
+<div class="line"><a id="l00390" name="l00390"></a><span class="lineno">  390</span>    }</div>
+</div>
+<div class="line"><a id="l00391" name="l00391"></a><span class="lineno">  391</span></div>
+<div class="line"><a id="l00397" name="l00397"></a><span class="lineno">  397</span>    [[nodiscard]] iterator</div>
+<div class="foldopen" id="foldopen00398" data-start="{" data-end="}">
+<div class="line"><a id="l00398" name="l00398"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#aa049bde6747fd4b56047d9e3bac44fe5">  398</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#aa049bde6747fd4b56047d9e3bac44fe5">begin</a>() noexcept {</div>
+<div class="line"><a id="l00399" name="l00399"></a><span class="lineno">  399</span>        <span class="keywordflow">return</span> iterator{<span class="keyword">this</span>, tail_, 0};</div>
+<div class="line"><a id="l00400" name="l00400"></a><span class="lineno">  400</span>    }</div>
+</div>
+<div class="line"><a id="l00401" name="l00401"></a><span class="lineno">  401</span></div>
+<div class="line"><a id="l00407" name="l00407"></a><span class="lineno">  407</span>    [[nodiscard]] iterator</div>
+<div class="foldopen" id="foldopen00408" data-start="{" data-end="}">
+<div class="line"><a id="l00408" name="l00408"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#a9738e81c1ec2b6f6db10bbb50c93e922">  408</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#a9738e81c1ec2b6f6db10bbb50c93e922">end</a>() noexcept {</div>
+<div class="line"><a id="l00409" name="l00409"></a><span class="lineno">  409</span>        <span class="keywordflow">return</span> iterator{<span class="keyword">this</span>, head_, size_};</div>
+<div class="line"><a id="l00410" name="l00410"></a><span class="lineno">  410</span>    }</div>
+</div>
+<div class="line"><a id="l00411" name="l00411"></a><span class="lineno">  411</span></div>
+<div class="line"><a id="l00417" name="l00417"></a><span class="lineno">  417</span>    [[nodiscard]] const_iterator</div>
+<div class="foldopen" id="foldopen00418" data-start="{" data-end="}">
+<div class="line"><a id="l00418" name="l00418"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#a467cf4b9002909058126ebcbd98f1223">  418</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#a467cf4b9002909058126ebcbd98f1223">cbegin</a>() const noexcept {</div>
+<div class="line"><a id="l00419" name="l00419"></a><span class="lineno">  419</span>        <span class="keywordflow">return</span> const_iterator{<span class="keyword">this</span>, tail_, 0};</div>
+<div class="line"><a id="l00420" name="l00420"></a><span class="lineno">  420</span>    }</div>
+</div>
+<div class="line"><a id="l00421" name="l00421"></a><span class="lineno">  421</span></div>
+<div class="line"><a id="l00427" name="l00427"></a><span class="lineno">  427</span>    [[nodiscard]] const_iterator</div>
+<div class="foldopen" id="foldopen00428" data-start="{" data-end="}">
+<div class="line"><a id="l00428" name="l00428"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#ae2ef62154874c155cee2a555c7f44b4f">  428</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#ae2ef62154874c155cee2a555c7f44b4f">cend</a>() const noexcept {</div>
+<div class="line"><a id="l00429" name="l00429"></a><span class="lineno">  429</span>        <span class="keywordflow">return</span> const_iterator{<span class="keyword">this</span>, head_, size_};</div>
+<div class="line"><a id="l00430" name="l00430"></a><span class="lineno">  430</span>    }</div>
+</div>
+<div class="line"><a id="l00431" name="l00431"></a><span class="lineno">  431</span></div>
+<div class="line"><a id="l00437" name="l00437"></a><span class="lineno">  437</span>    [[nodiscard]] <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00438" data-start="{" data-end="}">
+<div class="line"><a id="l00438" name="l00438"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#a7d0ce8c103113c9d580cf70140779e32">  438</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#a7d0ce8c103113c9d580cf70140779e32">empty</a>() const noexcept {</div>
+<div class="line"><a id="l00439" name="l00439"></a><span class="lineno">  439</span>        <span class="keywordflow">return</span> size_ == 0;</div>
+<div class="line"><a id="l00440" name="l00440"></a><span class="lineno">  440</span>    }</div>
+</div>
+<div class="line"><a id="l00441" name="l00441"></a><span class="lineno">  441</span></div>
+<div class="line"><a id="l00447" name="l00447"></a><span class="lineno">  447</span>    [[nodiscard]] <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00448" data-start="{" data-end="}">
+<div class="line"><a id="l00448" name="l00448"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#ac56d2cbbaee3c89fff7bc1a58cd24066">  448</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#ac56d2cbbaee3c89fff7bc1a58cd24066">full</a>() const noexcept {</div>
+<div class="line"><a id="l00449" name="l00449"></a><span class="lineno">  449</span>        <span class="keywordflow">return</span> size_ == N;</div>
+<div class="line"><a id="l00450" name="l00450"></a><span class="lineno">  450</span>    }</div>
+</div>
+<div class="line"><a id="l00451" name="l00451"></a><span class="lineno">  451</span></div>
+<div class="line"><a id="l00457" name="l00457"></a><span class="lineno">  457</span>    [[nodiscard]] size_type</div>
+<div class="foldopen" id="foldopen00458" data-start="{" data-end="}">
+<div class="line"><a id="l00458" name="l00458"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#af93d66173c383beeb5c48d270357de8b">  458</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#af93d66173c383beeb5c48d270357de8b">capacity</a>() const noexcept {</div>
+<div class="line"><a id="l00459" name="l00459"></a><span class="lineno">  459</span>        <span class="keywordflow">return</span> N;</div>
+<div class="line"><a id="l00460" name="l00460"></a><span class="lineno">  460</span>    }</div>
+</div>
+<div class="line"><a id="l00461" name="l00461"></a><span class="lineno">  461</span></div>
+<div class="line"><a id="l00465" name="l00465"></a><span class="lineno">  465</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00466" data-start="{" data-end="}">
+<div class="line"><a id="l00466" name="l00466"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#a32110e4619568633874465b5613534fd">  466</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#a32110e4619568633874465b5613534fd">clear</a>() noexcept {</div>
+<div class="line"><a id="l00467" name="l00467"></a><span class="lineno">  467</span>        destroy_all(std::bool_constant&lt;std::is_trivially_destructible_v&lt;value_type&gt;&gt;{});</div>
+<div class="line"><a id="l00468" name="l00468"></a><span class="lineno">  468</span>    }</div>
+</div>
+<div class="line"><a id="l00469" name="l00469"></a><span class="lineno">  469</span></div>
+<div class="foldopen" id="foldopen00473" data-start="{" data-end="}">
+<div class="line"><a id="l00473" name="l00473"></a><span class="lineno"><a class="line" href="classqb_1_1ring__buffer.html#a7092b65149bd7c8d70aac58c0d5bd1ab">  473</a></span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#a7092b65149bd7c8d70aac58c0d5bd1ab">~ring_buffer</a>() {</div>
+<div class="line"><a id="l00474" name="l00474"></a><span class="lineno">  474</span>        <a class="code hl_function" href="classqb_1_1ring__buffer.html#a32110e4619568633874465b5613534fd">clear</a>();</div>
+<div class="line"><a id="l00475" name="l00475"></a><span class="lineno">  475</span>    };</div>
+</div>
+<div class="line"><a id="l00476" name="l00476"></a><span class="lineno">  476</span> </div>
+<div class="line"><a id="l00477" name="l00477"></a><span class="lineno">  477</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00485" name="l00485"></a><span class="lineno">  485</span>    <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00486" name="l00486"></a><span class="lineno">  486</span>    destroy_all(std::true_type) {}</div>
+<div class="line"><a id="l00487" name="l00487"></a><span class="lineno">  487</span></div>
+<div class="line"><a id="l00495" name="l00495"></a><span class="lineno">  495</span>    <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00496" name="l00496"></a><span class="lineno">  496</span>    destroy_all(std::false_type) {</div>
+<div class="line"><a id="l00497" name="l00497"></a><span class="lineno">  497</span>        <span class="keywordflow">while</span> (!<a class="code hl_function" href="classqb_1_1ring__buffer.html#a7d0ce8c103113c9d580cf70140779e32">empty</a>()) {</div>
+<div class="line"><a id="l00498" name="l00498"></a><span class="lineno">  498</span>            destroy(tail_,</div>
+<div class="line"><a id="l00499" name="l00499"></a><span class="lineno">  499</span>                    std::bool_constant&lt;std::is_trivially_destructible_v&lt;value_type&gt;&gt;{});</div>
+<div class="line"><a id="l00500" name="l00500"></a><span class="lineno">  500</span>            tail_ = ++tail_ % N;</div>
+<div class="line"><a id="l00501" name="l00501"></a><span class="lineno">  501</span>            --size_;</div>
+<div class="line"><a id="l00502" name="l00502"></a><span class="lineno">  502</span>        }</div>
+<div class="line"><a id="l00503" name="l00503"></a><span class="lineno">  503</span>    }</div>
+<div class="line"><a id="l00504" name="l00504"></a><span class="lineno">  504</span></div>
+<div class="line"><a id="l00513" name="l00513"></a><span class="lineno">  513</span>    <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00514" name="l00514"></a><span class="lineno">  514</span>    copy_impl(self_type <span class="keyword">const</span> &amp;rhs, std::true_type) {</div>
+<div class="line"><a id="l00515" name="l00515"></a><span class="lineno">  515</span>        std::memcpy(elements_, rhs.elements_, rhs.size_ * <span class="keyword">sizeof</span>(T));</div>
+<div class="line"><a id="l00516" name="l00516"></a><span class="lineno">  516</span>        size_ = rhs.size_;</div>
+<div class="line"><a id="l00517" name="l00517"></a><span class="lineno">  517</span>        tail_ = rhs.tail_;</div>
+<div class="line"><a id="l00518" name="l00518"></a><span class="lineno">  518</span>        head_ = rhs.head_;</div>
+<div class="line"><a id="l00519" name="l00519"></a><span class="lineno">  519</span>    }</div>
+<div class="line"><a id="l00520" name="l00520"></a><span class="lineno">  520</span></div>
+<div class="line"><a id="l00529" name="l00529"></a><span class="lineno">  529</span>    <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00530" name="l00530"></a><span class="lineno">  530</span>    copy_impl(self_type <span class="keyword">const</span> &amp;rhs, std::false_type) {</div>
+<div class="line"><a id="l00531" name="l00531"></a><span class="lineno">  531</span>        tail_ = rhs.tail_;</div>
+<div class="line"><a id="l00532" name="l00532"></a><span class="lineno">  532</span>        head_ = rhs.head_;</div>
+<div class="line"><a id="l00533" name="l00533"></a><span class="lineno">  533</span>        size_ = rhs.size_;</div>
+<div class="line"><a id="l00534" name="l00534"></a><span class="lineno">  534</span> </div>
+<div class="line"><a id="l00535" name="l00535"></a><span class="lineno">  535</span>        <span class="keywordflow">try</span> {</div>
+<div class="line"><a id="l00536" name="l00536"></a><span class="lineno">  536</span>            <span class="keywordflow">for</span> (<span class="keyword">auto</span> i = 0; i &lt; size_; ++i)</div>
+<div class="line"><a id="l00537" name="l00537"></a><span class="lineno">  537</span>                <span class="keyword">new</span> (elements_ + ((tail_ + i) % N)) T(rhs[tail_ + ((tail_ + i) % N)]);</div>
+<div class="line"><a id="l00538" name="l00538"></a><span class="lineno">  538</span>        } <span class="keywordflow">catch</span> (...) {</div>
+<div class="line"><a id="l00539" name="l00539"></a><span class="lineno">  539</span>            <span class="keywordflow">while</span> (!<a class="code hl_function" href="classqb_1_1ring__buffer.html#a7d0ce8c103113c9d580cf70140779e32">empty</a>()) {</div>
+<div class="line"><a id="l00540" name="l00540"></a><span class="lineno">  540</span>                destroy(</div>
+<div class="line"><a id="l00541" name="l00541"></a><span class="lineno">  541</span>                    tail_,</div>
+<div class="line"><a id="l00542" name="l00542"></a><span class="lineno">  542</span>                    std::bool_constant&lt;std::is_trivially_destructible_v&lt;value_type&gt;&gt;{});</div>
+<div class="line"><a id="l00543" name="l00543"></a><span class="lineno">  543</span>                tail_ = ++tail_ % N;</div>
+<div class="line"><a id="l00544" name="l00544"></a><span class="lineno">  544</span>                --size_;</div>
+<div class="line"><a id="l00545" name="l00545"></a><span class="lineno">  545</span>            }</div>
+<div class="line"><a id="l00546" name="l00546"></a><span class="lineno">  546</span>            <span class="keywordflow">throw</span>;</div>
+<div class="line"><a id="l00547" name="l00547"></a><span class="lineno">  547</span>        }</div>
+<div class="line"><a id="l00548" name="l00548"></a><span class="lineno">  548</span>    }</div>
+<div class="line"><a id="l00549" name="l00549"></a><span class="lineno">  549</span></div>
+<div class="line"><a id="l00557" name="l00557"></a><span class="lineno">  557</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> U&gt;</div>
+<div class="line"><a id="l00558" name="l00558"></a><span class="lineno">  558</span>    <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00559" name="l00559"></a><span class="lineno">  559</span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#ad3c5425edc16634c3e581f5f0bf889f6">push_back</a>(U &amp;&amp;value, std::true_type) {</div>
+<div class="line"><a id="l00560" name="l00560"></a><span class="lineno">  560</span>        push_back_impl(std::forward&lt;U&gt;(value));</div>
+<div class="line"><a id="l00561" name="l00561"></a><span class="lineno">  561</span>    }</div>
+<div class="line"><a id="l00562" name="l00562"></a><span class="lineno">  562</span></div>
+<div class="line"><a id="l00570" name="l00570"></a><span class="lineno">  570</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> U&gt;</div>
+<div class="line"><a id="l00571" name="l00571"></a><span class="lineno">  571</span>    <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00572" name="l00572"></a><span class="lineno">  572</span>    <a class="code hl_function" href="classqb_1_1ring__buffer.html#ad3c5425edc16634c3e581f5f0bf889f6">push_back</a>(U &amp;&amp;value, std::false_type) {</div>
+<div class="line"><a id="l00573" name="l00573"></a><span class="lineno">  573</span>        <span class="keywordflow">if</span> (<a class="code hl_function" href="classqb_1_1ring__buffer.html#ac56d2cbbaee3c89fff7bc1a58cd24066">full</a>() &amp;&amp; !Overwrite)</div>
+<div class="line"><a id="l00574" name="l00574"></a><span class="lineno">  574</span>            <span class="keywordflow">return</span>;</div>
+<div class="line"><a id="l00575" name="l00575"></a><span class="lineno">  575</span>        push_back_impl(std::forward&lt;U&gt;(value));</div>
+<div class="line"><a id="l00576" name="l00576"></a><span class="lineno">  576</span>    }</div>
+<div class="line"><a id="l00577" name="l00577"></a><span class="lineno">  577</span></div>
+<div class="line"><a id="l00584" name="l00584"></a><span class="lineno">  584</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> U&gt;</div>
+<div class="line"><a id="l00585" name="l00585"></a><span class="lineno">  585</span>    <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00586" name="l00586"></a><span class="lineno">  586</span>    push_back_impl(U &amp;&amp;value) {</div>
+<div class="line"><a id="l00587" name="l00587"></a><span class="lineno">  587</span>        <span class="keywordflow">if</span> (<a class="code hl_function" href="classqb_1_1ring__buffer.html#ac56d2cbbaee3c89fff7bc1a58cd24066">full</a>())</div>
+<div class="line"><a id="l00588" name="l00588"></a><span class="lineno">  588</span>            destroy(head_,</div>
+<div class="line"><a id="l00589" name="l00589"></a><span class="lineno">  589</span>                    std::bool_constant&lt;std::is_trivially_destructible_v&lt;value_type&gt;&gt;{});</div>
+<div class="line"><a id="l00590" name="l00590"></a><span class="lineno">  590</span> </div>
+<div class="line"><a id="l00591" name="l00591"></a><span class="lineno">  591</span>        <span class="keyword">new</span> (elements_ + head_) T{std::forward&lt;U&gt;(value)};</div>
+<div class="line"><a id="l00592" name="l00592"></a><span class="lineno">  592</span>        head_ = ++head_ % N;</div>
+<div class="line"><a id="l00593" name="l00593"></a><span class="lineno">  593</span> </div>
+<div class="line"><a id="l00594" name="l00594"></a><span class="lineno">  594</span>        <span class="keywordflow">if</span> (<a class="code hl_function" href="classqb_1_1ring__buffer.html#ac56d2cbbaee3c89fff7bc1a58cd24066">full</a>())</div>
+<div class="line"><a id="l00595" name="l00595"></a><span class="lineno">  595</span>            tail_ = ++tail_ % N;</div>
+<div class="line"><a id="l00596" name="l00596"></a><span class="lineno">  596</span> </div>
+<div class="line"><a id="l00597" name="l00597"></a><span class="lineno">  597</span>        <span class="keywordflow">if</span> (!<a class="code hl_function" href="classqb_1_1ring__buffer.html#ac56d2cbbaee3c89fff7bc1a58cd24066">full</a>())</div>
+<div class="line"><a id="l00598" name="l00598"></a><span class="lineno">  598</span>            ++size_;</div>
+<div class="line"><a id="l00599" name="l00599"></a><span class="lineno">  599</span>    }</div>
+<div class="line"><a id="l00600" name="l00600"></a><span class="lineno">  600</span></div>
+<div class="line"><a id="l00609" name="l00609"></a><span class="lineno">  609</span>    <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00610" name="l00610"></a><span class="lineno">  610</span>    destroy(size_type index, std::true_type) <span class="keyword">noexcept</span> {}</div>
+<div class="line"><a id="l00611" name="l00611"></a><span class="lineno">  611</span></div>
+<div class="line"><a id="l00620" name="l00620"></a><span class="lineno">  620</span>    <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00621" name="l00621"></a><span class="lineno">  621</span>    destroy(size_type index, std::false_type) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00622" name="l00622"></a><span class="lineno">  622</span>        <span class="keyword">reinterpret_cast&lt;</span>pointer<span class="keyword">&gt;</span>(&amp;elements_[index])-&gt;~T();</div>
+<div class="line"><a id="l00623" name="l00623"></a><span class="lineno">  623</span>    }</div>
+<div class="line"><a id="l00624" name="l00624"></a><span class="lineno">  624</span></div>
+<div class="line"><a id="l00626" name="l00626"></a><span class="lineno">  626</span>    <span class="keyword">typename</span> std::aligned_storage&lt;<span class="keyword">sizeof</span>(T), <span class="keyword">alignof</span>(T)&gt;::type elements_[N]{};</div>
+<div class="line"><a id="l00627" name="l00627"></a><span class="lineno">  627</span>    size_type head_{}; </div>
+<div class="line"><a id="l00628" name="l00628"></a><span class="lineno">  628</span>    size_type tail_{}; </div>
+<div class="line"><a id="l00629" name="l00629"></a><span class="lineno">  629</span>    size_type size_{}; </div>
+<div class="line"><a id="l00630" name="l00630"></a><span class="lineno">  630</span>};</div>
+</div>
+<div class="line"><a id="l00631" name="l00631"></a><span class="lineno">  631</span> </div>
+<div class="line"><a id="l00632" name="l00632"></a><span class="lineno">  632</span>} <span class="comment">// namespace qb</span></div>
+<div class="line"><a id="l00633" name="l00633"></a><span class="lineno">  633</span> </div>
+<div class="line"><a id="l00634" name="l00634"></a><span class="lineno">  634</span><span class="preprocessor">#endif </span><span class="comment">// QB_RINGBUFFER_H</span></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html">qb::detail::ring_buffer_iterator</a></div><div class="ttdoc">Iterator for ring_buffer.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:57</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_a502c5cdebf5ef2bb42238f397a7ac688"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#a502c5cdebf5ef2bb42238f397a7ac688">qb::detail::ring_buffer_iterator::operator=</a></div><div class="ttdeci">ring_buffer_iterator &amp; operator=(ring_buffer_iterator const &amp;) noexcept=default</div><div class="ttdoc">Copy assignment operator.</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_a5815a4ec3e7e7753229be5e496802646"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#a5815a4ec3e7e7753229be5e496802646">qb::detail::ring_buffer_iterator::operator*</a></div><div class="ttdeci">const_reference operator*() const noexcept</div><div class="ttdoc">Dereference operator (const version)</div><div class="ttdef"><b>Definition</b> ring_buffer.h:118</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_a79c57fe13a64cd23dc2c6fe3e8321dd9"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#a79c57fe13a64cd23dc2c6fe3e8321dd9">qb::detail::ring_buffer_iterator::operator*</a></div><div class="ttdeci">reference operator*() noexcept</div><div class="ttdoc">Dereference operator (non-const version)</div><div class="ttdef"><b>Definition</b> ring_buffer.h:107</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_a871480d39e3ebc7fb28c83a6a7e03d0a"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#a871480d39e3ebc7fb28c83a6a7e03d0a">qb::detail::ring_buffer_iterator::operator++</a></div><div class="ttdeci">self_type operator++(int) noexcept</div><div class="ttdoc">Post-increment operator.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:162</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_a98d2ff79c5e59c86e001bcf7315bd1b0"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#a98d2ff79c5e59c86e001bcf7315bd1b0">qb::detail::ring_buffer_iterator::operator-&gt;</a></div><div class="ttdeci">const_reference operator-&gt;() const noexcept</div><div class="ttdoc">Arrow operator (const version)</div><div class="ttdef"><b>Definition</b> ring_buffer.h:140</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_aa65fff589d22741285d54234b4a946c9"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#aa65fff589d22741285d54234b4a946c9">qb::detail::ring_buffer_iterator&lt; T, N, false, Overwrite &gt;::count</a></div><div class="ttdeci">size_type count() const noexcept</div><div class="ttdef"><b>Definition</b> ring_buffer.h:184</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_aa9574bcf76706030aa92a2cdcf0dbcc5"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#aa9574bcf76706030aa92a2cdcf0dbcc5">qb::detail::ring_buffer_iterator&lt; T, N, false, Overwrite &gt;::index</a></div><div class="ttdeci">size_type index() const noexcept</div><div class="ttdef"><b>Definition</b> ring_buffer.h:174</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_ac947268d7ce8b0b37cf65fdf9ff8bd56"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#ac947268d7ce8b0b37cf65fdf9ff8bd56">qb::detail::ring_buffer_iterator::~ring_buffer_iterator</a></div><div class="ttdeci">~ring_buffer_iterator()=default</div><div class="ttdoc">Destructor.</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_ad65f25bd8b445fb3dd82190096e1c844"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#ad65f25bd8b445fb3dd82190096e1c844">qb::detail::ring_buffer_iterator::operator++</a></div><div class="ttdeci">self_type &amp; operator++() noexcept</div><div class="ttdoc">Pre-increment operator.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:150</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_adb4e7e54b7c163d79c02d571354facb2"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#adb4e7e54b7c163d79c02d571354facb2">qb::detail::ring_buffer_iterator::operator-&gt;</a></div><div class="ttdeci">reference operator-&gt;() noexcept</div><div class="ttdoc">Arrow operator (non-const version)</div><div class="ttdef"><b>Definition</b> ring_buffer.h:129</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_af5806402e1899ac47001e67e184b1c2c"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#af5806402e1899ac47001e67e184b1c2c">qb::detail::ring_buffer_iterator::ring_buffer_iterator</a></div><div class="ttdeci">ring_buffer_iterator(ring_buffer_iterator const &amp;) noexcept=default</div><div class="ttdoc">Copy constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1detail_1_1ring__buffer__iterator_html_af876a59bedb6686eacdae7864a02e3ca"><div class="ttname"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html#af876a59bedb6686eacdae7864a02e3ca">qb::detail::ring_buffer_iterator::ring_buffer_iterator</a></div><div class="ttdeci">ring_buffer_iterator() noexcept=default</div><div class="ttdoc">Default constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html"><div class="ttname"><a href="classqb_1_1ring__buffer.html">qb::ring_buffer</a></div><div class="ttdoc">A fixed-size ring buffer (circular buffer) implementation.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:250</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_a0820878e59ddac3e9101c69ed072819e"><div class="ttname"><a href="classqb_1_1ring__buffer.html#a0820878e59ddac3e9101c69ed072819e">qb::ring_buffer::back</a></div><div class="ttdeci">reference back() noexcept</div><div class="ttdoc">Access the newest element in the buffer.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:335</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_a2045f255206ca35146dbfb110acd0d90"><div class="ttname"><a href="classqb_1_1ring__buffer.html#a2045f255206ca35146dbfb110acd0d90">qb::ring_buffer::pop_front</a></div><div class="ttdeci">void pop_front() noexcept</div><div class="ttdoc">Remove the oldest element from the buffer.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:318</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_a32110e4619568633874465b5613534fd"><div class="ttname"><a href="classqb_1_1ring__buffer.html#a32110e4619568633874465b5613534fd">qb::ring_buffer::clear</a></div><div class="ttdeci">void clear() noexcept</div><div class="ttdoc">Clear all elements from the buffer.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:466</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_a467cf4b9002909058126ebcbd98f1223"><div class="ttname"><a href="classqb_1_1ring__buffer.html#a467cf4b9002909058126ebcbd98f1223">qb::ring_buffer::cbegin</a></div><div class="ttdeci">const_iterator cbegin() const noexcept</div><div class="ttdoc">Get a const iterator to the first element.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:418</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_a585fb4a644ef760af89d1c1419ad88b8"><div class="ttname"><a href="classqb_1_1ring__buffer.html#a585fb4a644ef760af89d1c1419ad88b8">qb::ring_buffer::ring_buffer</a></div><div class="ttdeci">ring_buffer() noexcept=default</div><div class="ttdoc">Default constructor.</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_a62f6f526bea0fcf4bdbdabed059cb6b6"><div class="ttname"><a href="classqb_1_1ring__buffer.html#a62f6f526bea0fcf4bdbdabed059cb6b6">qb::ring_buffer::back</a></div><div class="ttdeci">const_reference back() const noexcept</div><div class="ttdoc">Access the newest element in the buffer (const version)</div><div class="ttdef"><b>Definition</b> ring_buffer.h:346</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_a7092b65149bd7c8d70aac58c0d5bd1ab"><div class="ttname"><a href="classqb_1_1ring__buffer.html#a7092b65149bd7c8d70aac58c0d5bd1ab">qb::ring_buffer::~ring_buffer</a></div><div class="ttdeci">~ring_buffer()</div><div class="ttdoc">Destructor.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:473</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_a7d0ce8c103113c9d580cf70140779e32"><div class="ttname"><a href="classqb_1_1ring__buffer.html#a7d0ce8c103113c9d580cf70140779e32">qb::ring_buffer::empty</a></div><div class="ttdeci">bool empty() const noexcept</div><div class="ttdoc">Check if the buffer is empty.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:438</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_a9471ed14cbcef930a9fa170f255d1777"><div class="ttname"><a href="classqb_1_1ring__buffer.html#a9471ed14cbcef930a9fa170f255d1777">qb::ring_buffer::front</a></div><div class="ttdeci">const_reference front() const noexcept</div><div class="ttdoc">Access the oldest element in the buffer (const version)</div><div class="ttdef"><b>Definition</b> ring_buffer.h:366</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_a9738e81c1ec2b6f6db10bbb50c93e922"><div class="ttname"><a href="classqb_1_1ring__buffer.html#a9738e81c1ec2b6f6db10bbb50c93e922">qb::ring_buffer::end</a></div><div class="ttdeci">iterator end() noexcept</div><div class="ttdoc">Get an iterator to the end of the buffer.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:408</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_aa049bde6747fd4b56047d9e3bac44fe5"><div class="ttname"><a href="classqb_1_1ring__buffer.html#aa049bde6747fd4b56047d9e3bac44fe5">qb::ring_buffer::begin</a></div><div class="ttdeci">iterator begin() noexcept</div><div class="ttdoc">Get an iterator to the first element.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:398</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_aab1f1e2ade90f4cd3147936eda899d98"><div class="ttname"><a href="classqb_1_1ring__buffer.html#aab1f1e2ade90f4cd3147936eda899d98">qb::ring_buffer::front</a></div><div class="ttdeci">reference front() noexcept</div><div class="ttdoc">Access the oldest element in the buffer.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:356</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_ab869f19815ab7feb305df77ea34292ff"><div class="ttname"><a href="classqb_1_1ring__buffer.html#ab869f19815ab7feb305df77ea34292ff">qb::ring_buffer::operator[]</a></div><div class="ttdeci">const_reference operator[](size_type index) const noexcept</div><div class="ttdoc">Access an element by index (const version)</div><div class="ttdef"><b>Definition</b> ring_buffer.h:388</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_abef839fa13904f6adcc7fcdfeaa5b070"><div class="ttname"><a href="classqb_1_1ring__buffer.html#abef839fa13904f6adcc7fcdfeaa5b070">qb::ring_buffer::operator=</a></div><div class="ttdeci">ring_buffer &amp; operator=(ring_buffer const &amp;rhs) noexcept(std::is_nothrow_copy_constructible_v&lt; value_type &gt;)</div><div class="ttdoc">Copy assignment operator.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:287</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_ac56d2cbbaee3c89fff7bc1a58cd24066"><div class="ttname"><a href="classqb_1_1ring__buffer.html#ac56d2cbbaee3c89fff7bc1a58cd24066">qb::ring_buffer::full</a></div><div class="ttdeci">bool full() const noexcept</div><div class="ttdoc">Check if the buffer is full.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:448</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_ad3c5425edc16634c3e581f5f0bf889f6"><div class="ttname"><a href="classqb_1_1ring__buffer.html#ad3c5425edc16634c3e581f5f0bf889f6">qb::ring_buffer::push_back</a></div><div class="ttdeci">void push_back(U &amp;&amp;value)</div><div class="ttdoc">Add an element to the back of the buffer.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:310</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_ae2ef62154874c155cee2a555c7f44b4f"><div class="ttname"><a href="classqb_1_1ring__buffer.html#ae2ef62154874c155cee2a555c7f44b4f">qb::ring_buffer::cend</a></div><div class="ttdeci">const_iterator cend() const noexcept</div><div class="ttdoc">Get a const iterator to the end of the buffer.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:428</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_ae9c70fe180ac1a30cd4d8b2a5e24d24b"><div class="ttname"><a href="classqb_1_1ring__buffer.html#ae9c70fe180ac1a30cd4d8b2a5e24d24b">qb::ring_buffer::operator[]</a></div><div class="ttdeci">reference operator[](size_type index) noexcept</div><div class="ttdoc">Access an element by index.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:377</div></div>
+<div class="ttc" id="aclassqb_1_1ring__buffer_html_af93d66173c383beeb5c48d270357de8b"><div class="ttname"><a href="classqb_1_1ring__buffer.html#af93d66173c383beeb5c48d270357de8b">qb::ring_buffer::capacity</a></div><div class="ttdeci">size_type capacity() const noexcept</div><div class="ttdoc">Get the capacity of the buffer.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:458</div></div>
+<div class="ttc" id="aring__buffer_8h_html_a75f149c2161e7d60955027bdf09176c9"><div class="ttname"><a href="ring__buffer_8h.html#a75f149c2161e7d60955027bdf09176c9">qb::detail::operator==</a></div><div class="ttdeci">bool operator==(ring_buffer_iterator&lt; T, N, C, Overwrite &gt; const &amp;l, ring_buffer_iterator&lt; T, N, C, Overwrite &gt; const &amp;r) noexcept</div><div class="ttdoc">Equality comparison operator for ring buffer iterators.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:212</div></div>
+<div class="ttc" id="aring__buffer_8h_html_abae43714d86a04b3fba169a58b21d046"><div class="ttname"><a href="ring__buffer_8h.html#abae43714d86a04b3fba169a58b21d046">qb::detail::operator!=</a></div><div class="ttdeci">bool operator!=(ring_buffer_iterator&lt; T, N, C, Overwrite &gt; const &amp;l, ring_buffer_iterator&lt; T, N, C, Overwrite &gt; const &amp;r) noexcept</div><div class="ttdoc">Inequality comparison operator for ring buffer iterators.</div><div class="ttdef"><b>Definition</b> ring_buffer.h:230</div></div>
+<div class="ttc" id="astructqb_1_1type_html"><div class="ttname"><a href="structqb_1_1type.html">qb::type</a></div><div class="ttdoc">Template struct used for type identification in the event system.</div><div class="ttdef"><b>Definition</b> Event.h:53</div></div>
+</div><!-- fragment --></div><!-- contents -->
+</div><!-- doc-content -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_c8578dc3b5a075444df510993a4b023d.html">system</a></li><li class="navelem"><a href="dir_93e670a3772e2464b544bff22277d416.html">container</a></li><li class="navelem"><a href="ring__buffer_8h.html">ring_buffer.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

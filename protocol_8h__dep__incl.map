@@ -1,0 +1,34 @@
+<map id="include/qb/io/async/protocol.h" name="include/qb/io/async/protocol.h">
+<area shape="rect" id="Node000001" title="Protocol interfaces for message processing in the asynchronous IO framework." alt="" coords="645,5,778,46"/>
+<area shape="rect" id="Node000002" href="$io_2async_2io_8h.html" title="Core asynchronous I/O class templates for event&#45;driven operations." alt="" coords="275,102,433,127"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="630,49,405,104,404,98,629,44"/>
+<area shape="rect" id="Node000010" href="$protocol_2base_8h.html" title="Base protocol implementations for message framing in the QB IO system." alt="" coords="639,94,784,135"/>
+<area shape="poly" id="edge14_Node000001_Node000010" title=" " alt="" coords="714,62,714,94,709,94,709,62"/>
+<area shape="rect" id="Node000014" href="$protocol_2handshake_8h.html" title="Protocol for handling the handshake of a new connection." alt="" coords="807,94,952,135"/>
+<area shape="poly" id="edge18_Node000001_Node000014" title=" " alt="" coords="764,51,843,91,840,96,762,56"/>
+<area shape="rect" id="Node000003" href="$async_8h.html" title="Main include file for the QB asynchronous I/O library." alt="" coords="150,360,294,386"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="260,124,188,131,115,143,54,161,31,172,16,184,9,199,9,216,20,255,39,291,53,310,75,327,99,340,150,358,149,363,97,345,72,331,49,314,34,294,15,257,3,217,4,197,12,181,28,167,52,156,114,138,187,126,259,119"/>
+<area shape="rect" id="Node000004" href="$async_2file_8h.html" title="Asynchronous file operations for the QB IO library." alt="" coords="26,183,159,223"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="303,135,153,185,151,180,302,130"/>
+<area shape="rect" id="Node000005" href="$acceptor_8h.html" title="Asynchronous TCP connection acceptor implementation." alt="" coords="183,183,317,223"/>
+<area shape="poly" id="edge5_Node000002_Node000005" title=" " alt="" coords="330,139,275,184,272,180,326,135"/>
+<area shape="rect" id="Node000007" href="$tcp_2client_8h.html" title="Asynchronous TCP client implementation for the QB IO library." alt="" coords="234,271,367,312"/>
+<area shape="poly" id="edge8_Node000002_Node000007" title=" " alt="" coords="352,143,331,224,312,272,307,270,326,223,346,142"/>
+<area shape="rect" id="Node000008" href="$udp_2client_8h.html" title="Asynchronous UDP client implementation." alt="" coords="391,271,525,312"/>
+<area shape="poly" id="edge10_Node000002_Node000008" title=" " alt="" coords="371,139,449,270,444,272,366,142"/>
+<area shape="rect" id="Node000009" href="$udp_2server_8h.html" title="Asynchronous UDP server implementation." alt="" coords="549,271,682,312"/>
+<area shape="poly" id="edge12_Node000002_Node000009" title=" " alt="" coords="386,134,588,269,585,273,383,138"/>
+<area shape="poly" id="edge4_Node000004_Node000003" title=" " alt="" coords="74,238,60,275,60,294,67,311,83,328,104,342,150,360,148,365,101,347,80,332,62,313,55,295,55,274,69,236"/>
+<area shape="rect" id="Node000006" href="$tcp_2server_8h.html" title="Asynchronous TCP server implementation for the QB IO library." alt="" coords="77,271,210,312"/>
+<area shape="poly" id="edge6_Node000005_Node000006" title=" " alt="" coords="216,235,169,273,166,269,212,231"/>
+<area shape="poly" id="edge7_Node000006_Node000003" title=" " alt="" coords="175,321,212,358,208,361,172,325"/>
+<area shape="poly" id="edge9_Node000007_Node000003" title=" " alt="" coords="272,325,236,361,232,358,269,321"/>
+<area shape="poly" id="edge11_Node000008_Node000003" title=" " alt="" coords="385,320,259,362,258,357,384,315"/>
+<area shape="poly" id="edge13_Node000009_Node000003" title=" " alt="" coords="534,315,292,362,291,357,533,310"/>
+<area shape="rect" id="Node000011" href="$io_2protocol_2json_8h.html" title="JSON protocol implementations for the QB IO system." alt="" coords="639,183,784,223"/>
+<area shape="poly" id="edge15_Node000010_Node000011" title=" " alt="" coords="714,150,714,182,709,182,709,150"/>
+<area shape="rect" id="Node000013" href="$text_8h.html" title="Protocols for processing text and binary messages in the QB IO system." alt="" coords="807,183,952,223"/>
+<area shape="poly" id="edge17_Node000010_Node000013" title=" " alt="" coords="764,140,843,180,840,185,762,144"/>
+<area shape="rect" id="Node000012" href="$json_8h.html" title="JSON utility functions and types for the qb framework." alt="" coords="706,279,826,304"/>
+<area shape="poly" id="edge16_Node000011_Node000012" title=" " alt="" coords="734,235,761,277,756,280,730,238"/>
+</map>
