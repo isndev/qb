@@ -1,0 +1,34 @@
+<map id="include/qb/core/ActorId.h" name="include/qb/core/ActorId.h">
+<area shape="rect" id="Node000001" title="Actor and core identification for the QB Actor Framework." alt="" coords="189,5,356,31"/>
+<area shape="rect" id="Node000002" href="$_actor_id_8h.html" title="Convenience header for QB ActorId and related identifiers." alt="" coords="44,79,178,105"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="232,40,140,81,138,76,230,35"/>
+<area shape="rect" id="Node000003" href="$core_2_core_set_8h.html" title="Core set management for the QB Actor Framework." alt="" coords="434,79,607,105"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="330,33,479,76,477,81,329,38"/>
+<area shape="rect" id="Node000009" href="$core_2_event_8h.html" title="Event system for the QB Actor Framework." alt="" coords="252,79,410,105"/>
+<area shape="poly" id="edge8_Node000001_Node000009" title=" " alt="" coords="294,41,323,77,319,80,290,45"/>
+<area shape="rect" id="Node000012" href="$core_2_pipe_8h.html" title="Actor communication channel for the QB Actor Framework." alt="" coords="5,153,156,178"/>
+<area shape="poly" id="edge19_Node000001_Node000012" title=" " alt="" coords="255,45,226,76,191,107,149,134,109,154,107,150,146,129,188,103,223,72,251,41"/>
+<area shape="rect" id="Node000004" href="$core_2main_8h.html" title="Main control for the QB Actor Framework." alt="" coords="432,153,585,178"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="519,120,513,153,508,152,513,119"/>
+<area shape="rect" id="Node000008" href="$_core_set_8h.html" title="Convenience header for the QB CoreSet component." alt="" coords="609,153,747,178"/>
+<area shape="poly" id="edge7_Node000003_Node000008" title=" " alt="" coords="562,109,652,150,650,154,560,114"/>
+<area shape="rect" id="Node000005" href="$_virtual_core_8h.html" title="Defines the VirtualCore class, representing a worker thread in the QB Actor Framework." alt="" coords="304,300,494,326"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="493,192,410,301,406,298,488,189"/>
+<area shape="rect" id="Node000006" href="$main_8h.html" title="Convenience header for the QB Main engine controller." alt="" coords="483,226,606,252"/>
+<area shape="poly" id="edge5_Node000004_Node000006" title=" " alt="" coords="524,191,541,225,536,227,519,193"/>
+<area shape="rect" id="Node000007" href="$cube_8h.html" title="Main include file for the QB Actor Framework." alt="" coords="322,374,428,399"/>
+<area shape="poly" id="edge6_Node000006_Node000007" title=" " alt="" coords="540,268,528,298,508,327,488,344,466,357,422,376,420,371,464,352,485,339,504,324,523,296,535,266"/>
+<area shape="poly" id="edge13_Node000009_Node000004" title=" " alt="" coords="376,108,479,150,477,155,374,113"/>
+<area shape="poly" id="edge17_Node000009_Node000005" title=" " alt="" coords="342,119,398,299,393,300,337,120"/>
+<area shape="rect" id="Node000010" href="$core_2_actor_8h.html" title="Actor base class and core actor model implementation." alt="" coords="182,226,336,252"/>
+<area shape="poly" id="edge9_Node000009_Node000010" title=" " alt="" coords="334,120,331,150,322,180,301,207,278,228,275,224,297,204,317,177,326,148,329,120"/>
+<area shape="poly" id="edge14_Node000009_Node000012" title=" " alt="" coords="275,112,124,155,123,149,274,107"/>
+<area shape="rect" id="Node000013" href="$_event_8h.html" title="Convenience header for the QB Event system." alt="" coords="180,153,307,178"/>
+<area shape="poly" id="edge18_Node000009_Node000013" title=" " alt="" coords="306,117,260,154,256,150,303,113"/>
+<area shape="poly" id="edge12_Node000010_Node000005" title=" " alt="" coords="298,257,377,297,374,302,295,262"/>
+<area shape="rect" id="Node000011" href="$_actor_8h.html" title="Convenience header for the core QB Actor components." alt="" coords="158,300,281,326"/>
+<area shape="poly" id="edge10_Node000010_Node000011" title=" " alt="" coords="247,267,228,301,224,298,243,264"/>
+<area shape="poly" id="edge11_Node000011_Node000007" title=" " alt="" coords="261,330,350,371,347,375,258,335"/>
+<area shape="poly" id="edge16_Node000012_Node000005" title=" " alt="" coords="101,188,132,220,171,250,205,266,241,279,311,297,310,302,239,284,203,271,168,254,128,224,97,192"/>
+<area shape="poly" id="edge15_Node000012_Node000010" title=" " alt="" coords="126,182,230,223,228,228,124,187"/>
+</map>

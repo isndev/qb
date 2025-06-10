@@ -1,0 +1,21 @@
+<map id="include/qb/io/tcp/socket.h" name="include/qb/io/tcp/socket.h">
+<area shape="rect" id="Node000001" title="Implementation of TCP sockets for the QB IO library." alt="" coords="258,5,428,31"/>
+<area shape="rect" id="Node000002" href="$tcp_2listener_8h.html" title="Implementation of a TCP listener for the QB IO library." alt="" coords="256,86,429,112"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="345,47,345,86,340,86,340,47"/>
+<area shape="rect" id="Node000007" href="$tcp_2ssl_2socket_8h.html" title="Implementation of SSL/TLS sockets for secure TCP communication in the QB IO library." alt="" coords="95,79,233,120"/>
+<area shape="poly" id="edge6_Node000001_Node000007" title=" " alt="" coords="302,40,210,81,208,76,300,35"/>
+<area shape="rect" id="Node000009" href="$tcp_8h.html" title="TCP stream transport implementation for the QB IO library." alt="" coords="453,79,603,120"/>
+<area shape="poly" id="edge9_Node000001_Node000009" title=" " alt="" coords="386,35,483,76,481,81,384,40"/>
+<area shape="rect" id="Node000003" href="$tcp_2ssl_2listener_8h.html" title="Implementation of a secure SSL/TLS listener for the QB IO library." alt="" coords="179,168,317,208"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="320,125,271,169,268,165,317,121"/>
+<area shape="rect" id="Node000005" href="$transport_2accept_8h.html" title="TCP connection acceptance transport implementation for the QB IO library." alt="" coords="341,168,491,208"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="365,122,402,166,398,169,361,126"/>
+<area shape="rect" id="Node000004" href="$saccept_8h.html" title="Secure (SSL/TLS) TCP connection acceptance transport for the QB IO library." alt="" coords="173,256,323,297"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="251,224,251,256,245,256,245,224"/>
+<area shape="rect" id="Node000006" href="$async_8h.html" title="Main include file for the QB asynchronous I/O library." alt="" coords="401,264,546,290"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="439,220,468,262,463,265,435,223"/>
+<area shape="poly" id="edge7_Node000007_Node000003" title=" " alt="" coords="196,129,231,165,227,169,192,133"/>
+<area shape="rect" id="Node000008" href="$stcp_8h.html" title="Secure TCP (SSL/TLS) stream transport for the QB IO library." alt="" coords="5,168,155,208"/>
+<area shape="poly" id="edge8_Node000007_Node000008" title=" " alt="" coords="136,133,101,169,97,165,132,129"/>
+<area shape="poly" id="edge10_Node000009_Node000006" title=" " alt="" coords="524,136,505,209,482,264,477,262,500,207,519,134"/>
+</map>

@@ -1,0 +1,524 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::io::async::IProtocol Interface Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::io::async::IProtocol Interface Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('classqb_1_1io_1_1async_1_1_i_protocol.html','','classqb_1_1io_1_1async_1_1_i_protocol-members'); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">qb::io::async::IProtocol Interface Reference<span class="mlabels"><span class="mlabel abstract">abstract</span></span><div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___protocol.html">Protocol Handling</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Base interface for all message processing protocols.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="protocol_8h_source.html">protocol.h</a>&gt;</code></p>
+<div class="dynheader">
+Inheritance diagram for qb::io::async::IProtocol:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1async_1_1_i_protocol__inherit__graph.png" border="0" usemap="#aqb_1_1io_1_1async_1_1_i_protocol_inherit__map" loading="lazy" alt="Inheritance graph"/></div>
+<map name="aqb_1_1io_1_1async_1_1_i_protocol_inherit__map" id="aqb_1_1io_1_1async_1_1_i_protocol_inherit__map">
+<area shape="rect" title="Base interface for all message processing protocols." alt="" coords="5,354,162,380"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1_a_protocol.html" title=" " alt="" coords="210,191,371,231"/>
+<area shape="poly" title=" " alt="" coords="113,342,260,230,263,234,116,347"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1_a_protocol.html" title="Abstract base class for I/O&#45;component&#45;aware protocols (CRTP)." alt="" coords="210,379,371,419"/>
+<area shape="poly" title=" " alt="" coords="177,379,210,384,209,389,177,384"/>
+<area shape="rect" href="classqb_1_1protocol_1_1base_1_1byte__terminated.html" title=" " alt="" coords="436,59,584,115"/>
+<area shape="poly" title=" " alt="" coords="331,179,418,125,441,113,443,118,420,129,334,184"/>
+<area shape="rect" href="classqb_1_1protocol_1_1json.html" title="Protocol for parsing null&#45;terminated JSON messages." alt="" coords="666,5,788,46"/>
+<area shape="poly" title=" " alt="" coords="598,59,665,40,666,45,600,64"/>
+<area shape="rect" href="classqb_1_1protocol_1_1json__packed.html" title="Protocol for parsing null&#45;terminated, MessagePack encoded JSON messages." alt="" coords="666,71,788,111"/>
+<area shape="poly" title=" " alt="" coords="600,86,666,87,666,93,600,91"/>
+<area shape="rect" href="classqb_1_1io_1_1protocol_1_1accept.html" title=" " alt="" coords="419,139,601,195"/>
+<area shape="poly" title=" " alt="" coords="305,363,349,285,380,243,417,205,434,193,437,197,421,209,384,246,353,288,309,366"/>
+<area shape="rect" href="classqb_1_1protocol_1_1base_1_1byte__terminated.html" title=" " alt="" coords="443,219,577,275"/>
+<area shape="poly" title=" " alt="" coords="320,366,364,325,418,285,441,272,444,276,420,289,368,329,323,370"/>
+<area shape="rect" href="classqb_1_1protocol_1_1base_1_1size__as__header.html" title=" " alt="" coords="434,299,587,355"/>
+<area shape="poly" title=" " alt="" coords="368,371,432,350,434,355,369,376"/>
+<area shape="rect" href="classqb_1_1io_1_1protocol_1_1accept.html" title="Protocol for handling the acceptance of new network connections." alt="" coords="433,379,587,419"/>
+<area shape="poly" title=" " alt="" coords="386,396,432,396,432,402,386,402"/>
+<area shape="rect" href="classqb_1_1io_1_1protocol_1_1handshake.html" title="Protocol for handling the handshake of a new connection." alt="" coords="421,444,599,485"/>
+<area shape="poly" title=" " alt="" coords="376,422,440,441,438,446,375,427"/>
+<area shape="rect" href="classqb_1_1protocol_1_1base_1_1byte__terminated.html" title="Protocol for messages delimited by a specific single byte character." alt="" coords="443,508,577,564"/>
+<area shape="poly" title=" " alt="" coords="329,428,371,461,420,494,444,507,441,511,418,499,368,465,325,432"/>
+<area shape="rect" href="classqb_1_1protocol_1_1base_1_1bytes__terminated.html" title="Protocol for messages delimited by a specific sequence of bytes (a string literal)." alt="" coords="442,588,579,644"/>
+<area shape="poly" title=" " alt="" coords="311,432,356,503,386,541,421,574,443,589,440,593,417,578,382,544,351,506,307,434"/>
+<area shape="rect" href="classqb_1_1protocol_1_1base_1_1size__as__header.html" title="Protocol for messages where the payload is preceded by a fixed&#45;size header indicating its length." alt="" coords="434,751,587,807"/>
+<area shape="poly" title=" " alt="" coords="309,432,356,534,421,655,455,706,488,749,484,752,451,709,417,658,351,536,304,435"/>
+<area shape="rect" href="classqb_1_1protocol_1_1text_1_1basic__text.html" title="Protocol for text messages delimited by a specific character, yielding a specified string type." alt="" coords="656,163,798,219"/>
+<area shape="poly" title=" " alt="" coords="592,223,655,207,656,212,593,228"/>
+<area shape="rect" href="classqb_1_1protocol_1_1text_1_1basic__binary.html" title=" " alt="" coords="659,243,795,299"/>
+<area shape="poly" title=" " alt="" coords="601,301,658,286,659,291,602,306"/>
+<area shape="rect" href="classqb_1_1protocol_1_1text_1_1basic__binary.html" title="Protocol for binary messages where the payload is preceded by a fixed&#45;size header indicating its leng..." alt="" coords="659,323,795,379"/>
+<area shape="poly" title=" " alt="" coords="602,334,659,341,658,346,602,340"/>
+<area shape="rect" href="classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="660,403,794,459"/>
+<area shape="poly" title=" " alt="" coords="589,499,600,494,648,469,670,457,673,462,651,473,603,499,591,504"/>
+<area shape="rect" href="classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="660,483,794,539"/>
+<area shape="poly" title=" " alt="" coords="592,524,660,516,660,521,593,529"/>
+<area shape="rect" href="classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="649,562,805,633"/>
+<area shape="poly" title=" " alt="" coords="593,557,650,573,648,578,591,562"/>
+<area shape="rect" href="classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="649,657,805,728"/>
+<area shape="poly" title=" " alt="" coords="592,566,603,574,619,592,628,608,637,625,651,642,665,654,662,658,647,646,632,628,624,611,615,595,600,578,589,571"/>
+<area shape="rect" href="classqb_1_1protocol_1_1text_1_1basic__binary.html" title=" " alt="" coords="659,751,795,807"/>
+<area shape="poly" title=" " alt="" coords="602,776,659,776,659,782,602,782"/>
+<area shape="rect" href="classqb_1_1protocol_1_1text_1_1basic__binary.html" title=" " alt="" coords="659,831,795,887"/>
+<area shape="poly" title=" " alt="" coords="602,810,660,831,658,836,600,815"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:a96a7cbefa5f01674ec91eae1cb9d2693" id="r_a96a7cbefa5f01674ec91eae1cb9d2693"><td class="memItemLeft" align="right" valign="top">virtual&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a96a7cbefa5f01674ec91eae1cb9d2693">~IProtocol</a> ()=default</td></tr>
+<tr class="memdesc:a96a7cbefa5f01674ec91eae1cb9d2693"><td class="mdescLeft">&#160;</td><td class="mdescRight">Virtual destructor.  <br /></td></tr>
+<tr class="memitem:ac6fbfd77652b09d4801fdb968b853e4a" id="r_ac6fbfd77652b09d4801fdb968b853e4a"><td class="memItemLeft" align="right" valign="top">virtual std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac6fbfd77652b09d4801fdb968b853e4a">getMessageSize</a> () noexcept=0</td></tr>
+<tr class="memdesc:ac6fbfd77652b09d4801fdb968b853e4a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Determines the size of the next complete message in the input buffer.  <br /></td></tr>
+<tr class="memitem:a9cd95933e98fcb5c16e7417b572c938b" id="r_a9cd95933e98fcb5c16e7417b572c938b"><td class="memItemLeft" align="right" valign="top">virtual void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a9cd95933e98fcb5c16e7417b572c938b">onMessage</a> (std::size_t size) noexcept=0</td></tr>
+<tr class="memdesc:a9cd95933e98fcb5c16e7417b572c938b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Processes a complete message that has been identified in the input buffer.  <br /></td></tr>
+<tr class="memitem:ac82e684ad7b868d59307516245c6841e" id="r_ac82e684ad7b868d59307516245c6841e"><td class="memItemLeft" align="right" valign="top">virtual void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac82e684ad7b868d59307516245c6841e">reset</a> () noexcept=0</td></tr>
+<tr class="memdesc:ac82e684ad7b868d59307516245c6841e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Resets the internal state of the protocol.  <br /></td></tr>
+<tr class="memitem:acddb63fbb3d34ecb17ef5d615cd40b78" id="r_acddb63fbb3d34ecb17ef5d615cd40b78"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#acddb63fbb3d34ecb17ef5d615cd40b78">ok</a> () const noexcept</td></tr>
+<tr class="memdesc:acddb63fbb3d34ecb17ef5d615cd40b78"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if the protocol is in a valid operational state.  <br /></td></tr>
+<tr class="memitem:aba563530833eca4ab719eb36421b4a6d" id="r_aba563530833eca4ab719eb36421b4a6d"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aba563530833eca4ab719eb36421b4a6d">not_ok</a> () noexcept</td></tr>
+<tr class="memdesc:aba563530833eca4ab719eb36421b4a6d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Marks the protocol as being in an invalid or non-operational state.  <br /></td></tr>
+<tr class="memitem:a9838efa4d6cd543305fcd8c080ade08e" id="r_a9838efa4d6cd543305fcd8c080ade08e"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a9838efa4d6cd543305fcd8c080ade08e">set_should_flush</a> (bool <a class="el" href="#a84ff398f6de8afca2e7ee7627c4fff6e">should_flush</a>) noexcept</td></tr>
+<tr class="memdesc:a9838efa4d6cd543305fcd8c080ade08e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Sets the flag indicating whether the protocol should flush the input buffer after processing a message.  <br /></td></tr>
+<tr class="memitem:a84ff398f6de8afca2e7ee7627c4fff6e" id="r_a84ff398f6de8afca2e7ee7627c4fff6e"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a84ff398f6de8afca2e7ee7627c4fff6e">should_flush</a> () const noexcept</td></tr>
+<tr class="memdesc:a84ff398f6de8afca2e7ee7627c4fff6e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets the flag indicating whether the protocol should flush the input buffer after processing a message.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Base interface for all message processing protocols. </p>
+<p>This interface defines the essential methods that all protocol implementations must provide for message framing (identifying message boundaries in a byte stream) and processing. </p>
+</div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="a96a7cbefa5f01674ec91eae1cb9d2693" name="a96a7cbefa5f01674ec91eae1cb9d2693"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a96a7cbefa5f01674ec91eae1cb9d2693">&#9670;&#160;</a></span>~IProtocol()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">virtual qb::io::async::IProtocol::~IProtocol </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel virtual">virtual</span><span class="mlabel default">default</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Virtual destructor. </p>
+<p>Ensures proper cleanup for derived protocol classes. </p>
+
+</div>
+</div>
+<a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="ac6fbfd77652b09d4801fdb968b853e4a" name="ac6fbfd77652b09d4801fdb968b853e4a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac6fbfd77652b09d4801fdb968b853e4a">&#9670;&#160;</a></span>getMessageSize()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">virtual std::size_t qb::io::async::IProtocol::getMessageSize </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel pure-virtual">pure virtual</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Determines the size of the next complete message in the input buffer. </p>
+<p>This method must be implemented by concrete protocols to examine the current input buffer (typically accessed via the associated I/O component) and determine if a complete message is available according to the protocol's framing rules.</p>
+<dl class="section return"><dt>Returns</dt><dd>Size of the next complete message in bytes (including any headers or delimiters that are part of the message unit). Returns <span class="tt">0</span> if no complete message is yet available in the buffer, indicating more data is needed. </dd></dl>
+<dl class="section note"><dt>Note</dt><dd>This method should not consume data from the buffer; it only inspects it. </dd></dl>
+
+<p>Implemented in <a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a6644f42aaa0cfe6f7fa6f5bc8ea87790">qb::io::async::AProtocol&lt; _IO_ &gt;</a>, <a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a6644f42aaa0cfe6f7fa6f5bc8ea87790">qb::io::async::AProtocol&lt; IO_ &gt;</a>, <a class="el" href="classqb_1_1io_1_1protocol_1_1accept.html#ae855c4d58f4a89a7f1b102f50a60d05a">qb::io::protocol::accept&lt; _IO_, _Socket &gt;</a>, <a class="el" href="classqb_1_1io_1_1protocol_1_1accept.html#ae855c4d58f4a89a7f1b102f50a60d05a">qb::io::protocol::accept&lt; acceptor, typename _Prot::socket_type &gt;</a>, <a class="el" href="classqb_1_1io_1_1protocol_1_1handshake.html#ae524f890f0ba904af0974e21e56fa0b3">qb::io::protocol::handshake&lt; _IO_ &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1base_1_1byte__terminated.html#ab12cee3a0a6dcc48ef9a5d90c60edf6b">qb::protocol::base::byte_terminated&lt; _IO_, _EndByte &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1base_1_1byte__terminated.html#ab12cee3a0a6dcc48ef9a5d90c60edf6b">qb::protocol::base::byte_terminated&lt; _IO_, '\0' &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1base_1_1byte__terminated.html#ab12cee3a0a6dcc48ef9a5d90c60edf6b">qb::protocol::base::byte_terminated&lt; IO_, '\0'&gt;</a>, <a class="el" href="classqb_1_1protocol_1_1base_1_1bytes__terminated.html#aceecb7100ae403ba3503d85771a09080">qb::protocol::base::bytes_terminated&lt; _IO_, _Trait &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1base_1_1size__as__header.html#a68a3579ce603577368895c1f374b792c">qb::protocol::base::size_as_header&lt; _IO_, _Size &gt;</a>, and <a class="el" href="classqb_1_1protocol_1_1base_1_1size__as__header.html#a68a3579ce603577368895c1f374b792c">qb::protocol::base::size_as_header&lt; _IO_, uint16_t &gt;</a>.</p>
+
+</div>
+</div>
+<a id="a9cd95933e98fcb5c16e7417b572c938b" name="a9cd95933e98fcb5c16e7417b572c938b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9cd95933e98fcb5c16e7417b572c938b">&#9670;&#160;</a></span>onMessage()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">virtual void qb::io::async::IProtocol::onMessage </td>
+          <td>(</td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel pure-virtual">pure virtual</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Processes a complete message that has been identified in the input buffer. </p>
+<p>This method is called by the framework when <span class="tt"><a class="el" href="#ac6fbfd77652b09d4801fdb968b853e4a" title="Determines the size of the next complete message in the input buffer.">getMessageSize()</a></span> has returned a non-zero size. The implementation should process the message of the given <span class="tt">size</span> starting from the beginning of the current input buffer. After processing, the derived I/O component is usually responsible for flushing these <span class="tt">size</span> bytes from its input buffer.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">size</td><td>The size of the complete message to process, as determined by <span class="tt"><a class="el" href="#ac6fbfd77652b09d4801fdb968b853e4a" title="Determines the size of the next complete message in the input buffer.">getMessageSize()</a></span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section note"><dt>Note</dt><dd>The protocol should typically dispatch the parsed message to a handler in its associated I/O component (e.g., by calling <span class="tt">_io.on(MyProtocol::message{...})</span>). </dd></dl>
+
+<p>Implemented in <a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a5a8f83662259d9341c5fbb5d14cce953">qb::io::async::AProtocol&lt; _IO_ &gt;</a>, <a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a5a8f83662259d9341c5fbb5d14cce953">qb::io::async::AProtocol&lt; IO_ &gt;</a>, <a class="el" href="classqb_1_1io_1_1protocol_1_1accept.html#aed7ab536051f2290fe3722c78e044c42">qb::io::protocol::accept&lt; _IO_, _Socket &gt;</a>, <a class="el" href="classqb_1_1io_1_1protocol_1_1accept.html#aed7ab536051f2290fe3722c78e044c42">qb::io::protocol::accept&lt; acceptor, typename _Prot::socket_type &gt;</a>, <a class="el" href="classqb_1_1io_1_1protocol_1_1handshake.html#ae4ac91f0772cfaa80016a7d55a42db62">qb::io::protocol::handshake&lt; _IO_ &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1json.html#aa7ad76e95c7b0df8122afa72f5da9e43">qb::protocol::json&lt; IO_ &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1json__packed.html#a714d0e1bb77589817e1962c22ea6caf8">qb::protocol::json_packed&lt; IO_ &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html#ab5319c403e206fab96ab321ad4c3fb82">qb::protocol::text::basic_text&lt; _IO_, _StringTrait, _Sep &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html#ab5319c403e206fab96ab321ad4c3fb82">qb::protocol::text::basic_text&lt; _IO_, const std::string_view, '\0'&gt;</a>, <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html#ab5319c403e206fab96ab321ad4c3fb82">qb::protocol::text::basic_text&lt; _IO_, const std::string_view, '\n'&gt;</a>, <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html#ab5319c403e206fab96ab321ad4c3fb82">qb::protocol::text::basic_text&lt; _IO_, std::string, '\0'&gt;</a>, and <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html#ab5319c403e206fab96ab321ad4c3fb82">qb::protocol::text::basic_text&lt; _IO_, std::string, '\n'&gt;</a>.</p>
+
+</div>
+</div>
+<a id="ac82e684ad7b868d59307516245c6841e" name="ac82e684ad7b868d59307516245c6841e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac82e684ad7b868d59307516245c6841e">&#9670;&#160;</a></span>reset()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">virtual void qb::io::async::IProtocol::reset </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel pure-virtual">pure virtual</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Resets the internal state of the protocol. </p>
+<p>This method should be called to clear any partial parsing state, preparing the protocol to start parsing a new message from a fresh state. This is important after errors, disconnections, or when switching protocols. </p>
+
+<p>Implemented in <a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a7ee36ef672d2eae8324936adbc66711b">qb::io::async::AProtocol&lt; _IO_ &gt;</a>, <a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html#a7ee36ef672d2eae8324936adbc66711b">qb::io::async::AProtocol&lt; IO_ &gt;</a>, <a class="el" href="classqb_1_1io_1_1protocol_1_1accept.html#a8a2c6b2aaf5eecc94ddbf942bb9fa858">qb::io::protocol::accept&lt; _IO_, _Socket &gt;</a>, <a class="el" href="classqb_1_1io_1_1protocol_1_1accept.html#a8a2c6b2aaf5eecc94ddbf942bb9fa858">qb::io::protocol::accept&lt; acceptor, typename _Prot::socket_type &gt;</a>, <a class="el" href="classqb_1_1io_1_1protocol_1_1handshake.html#af21e9748358ace7f144ec1516bfd4a55">qb::io::protocol::handshake&lt; _IO_ &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1base_1_1byte__terminated.html#aaa4b03ad49228106b83e56e3420be26b">qb::protocol::base::byte_terminated&lt; _IO_, _EndByte &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1base_1_1byte__terminated.html#aaa4b03ad49228106b83e56e3420be26b">qb::protocol::base::byte_terminated&lt; _IO_, '\0' &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1base_1_1byte__terminated.html#aaa4b03ad49228106b83e56e3420be26b">qb::protocol::base::byte_terminated&lt; IO_, '\0'&gt;</a>, <a class="el" href="classqb_1_1protocol_1_1base_1_1bytes__terminated.html#a6b7b0d1d01ebab8bf90049562f221d11">qb::protocol::base::bytes_terminated&lt; _IO_, _Trait &gt;</a>, <a class="el" href="classqb_1_1protocol_1_1base_1_1size__as__header.html#a6f6c1fe6083c8b91d1ce50f6d8d91aeb">qb::protocol::base::size_as_header&lt; _IO_, _Size &gt;</a>, and <a class="el" href="classqb_1_1protocol_1_1base_1_1size__as__header.html#a6f6c1fe6083c8b91d1ce50f6d8d91aeb">qb::protocol::base::size_as_header&lt; _IO_, uint16_t &gt;</a>.</p>
+
+</div>
+</div>
+<a id="acddb63fbb3d34ecb17ef5d615cd40b78" name="acddb63fbb3d34ecb17ef5d615cd40b78"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acddb63fbb3d34ecb17ef5d615cd40b78">&#9670;&#160;</a></span>ok()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::async::IProtocol::ok </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if the protocol is in a valid operational state. </p>
+<dl class="section return"><dt>Returns</dt><dd><span class="tt">true</span> if the protocol is considered okay and can continue processing, <span class="tt">false</span> if it has encountered an unrecoverable error or has been marked as not okay. </dd></dl>
+
+</div>
+</div>
+<a id="aba563530833eca4ab719eb36421b4a6d" name="aba563530833eca4ab719eb36421b4a6d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aba563530833eca4ab719eb36421b4a6d">&#9670;&#160;</a></span>not_ok()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::io::async::IProtocol::not_ok </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Marks the protocol as being in an invalid or non-operational state. </p>
+<p>This method can be called by the protocol implementation (or externally) to indicate that it has encountered an unrecoverable parsing error or that the connection should be closed after processing any pending data. The I/O component might check this status via <span class="tt"><a class="el" href="#acddb63fbb3d34ecb17ef5d615cd40b78" title="Checks if the protocol is in a valid operational state.">ok()</a></span>. </p>
+
+</div>
+</div>
+<a id="a9838efa4d6cd543305fcd8c080ade08e" name="a9838efa4d6cd543305fcd8c080ade08e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9838efa4d6cd543305fcd8c080ade08e">&#9670;&#160;</a></span>set_should_flush()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::io::async::IProtocol::set_should_flush </td>
+          <td>(</td>
+          <td class="paramtype">bool</td>          <td class="paramname"><span class="paramname"><em>should_flush</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Sets the flag indicating whether the protocol should flush the input buffer after processing a message. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">should_flush</td><td><span class="tt">true</span> if the protocol should flush the input buffer after processing a message, <span class="tt">false</span> otherwise. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="a84ff398f6de8afca2e7ee7627c4fff6e" name="a84ff398f6de8afca2e7ee7627c4fff6e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a84ff398f6de8afca2e7ee7627c4fff6e">&#9670;&#160;</a></span>should_flush()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::async::IProtocol::should_flush </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets the flag indicating whether the protocol should flush the input buffer after processing a message. </p>
+<dl class="section return"><dt>Returns</dt><dd><span class="tt">true</span> if the protocol should flush the input buffer after processing a message, <span class="tt">false</span> otherwise. </dd></dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><b>io</b></li><li class="navelem"><b>async</b></li><li class="navelem"><a href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

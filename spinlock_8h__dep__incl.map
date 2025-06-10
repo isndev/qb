@@ -1,0 +1,14 @@
+<map id="include/qb/system/lockfree/spinlock.h" name="include/qb/system/lockfree/spinlock.h">
+<area shape="rect" id="Node000001" title="Spinlock synchronization primitives." alt="" coords="67,5,245,46"/>
+<area shape="rect" id="Node000002" href="$mpsc_8h.html" title="Multiple&#45;Producer Single&#45;Consumer lockfree queue." alt="" coords="67,94,245,135"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="159,62,159,94,153,94,153,62"/>
+<area shape="rect" id="Node000003" href="$core_2main_8h.html" title="Main control for the QB Actor Framework." alt="" coords="137,183,290,208"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="181,146,207,180,202,184,177,149"/>
+<area shape="rect" id="Node000004" href="$_virtual_core_8h.html" title="Defines the VirtualCore class, representing a worker thread in the QB Actor Framework." alt="" coords="5,256,195,282"/>
+<area shape="poly" id="edge6_Node000002_Node000004" title=" " alt="" coords="142,150,128,184,105,257,100,255,123,182,137,148"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="183,219,121,258,118,253,180,215"/>
+<area shape="rect" id="Node000005" href="$main_8h.html" title="Convenience header for the QB Main engine controller." alt="" coords="218,256,342,282"/>
+<area shape="poly" id="edge4_Node000003_Node000005" title=" " alt="" coords="237,218,271,254,267,258,233,221"/>
+<area shape="rect" id="Node000006" href="$cube_8h.html" title="Main include file for the QB Actor Framework." alt="" coords="227,330,333,356"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="283,297,283,330,277,330,277,297"/>
+</map>

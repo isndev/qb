@@ -1,0 +1,450 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/async/tcp/connector.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/async/tcp/connector.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('connector_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">connector.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___networking.html">Networking Utilities</a> &raquo; <a class="el" href="group___t_c_p.html">TCP Communication</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Asynchronous TCP connection establishment utilities.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &lt;<a class="el" href="io_8h_source.html">qb/io.h</a>&gt;</code><br />
+<code>#include &lt;qb/io/system/sys__socket.h&gt;</code><br />
+<code>#include &quot;<a class="el" href="uri_8h_source.html">../../uri.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="io_2async_2event_2io_8h_source.html">../event/io.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="async_2listener_8h_source.html">../listener.h</a>&quot;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for connector.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="connector_8h__incl.png" border="0" usemap="#ainclude_2qb_2io_2async_2tcp_2connector_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2async_2tcp_2connector_8h" id="ainclude_2qb_2io_2async_2tcp_2connector_8h">
+<area shape="rect" title="Asynchronous TCP connection establishment utilities." alt="" coords="1061,5,1194,46"/>
+<area shape="rect" href="io_8h.html" title="Core I/O and logging utilities for the qb framework." alt="" coords="236,175,296,201"/>
+<area shape="poly" title=" " alt="" coords="1061,42,312,181,311,176,1060,37"/>
+<area shape="rect" title=" " alt="" coords="1963,94,2148,120"/>
+<area shape="poly" title=" " alt="" coords="1195,29,1515,54,1948,91,1947,96,1514,59,1195,35"/>
+<area shape="rect" href="uri_8h.html" title="URI parsing and manipulation utilities." alt="" coords="1092,94,1163,120"/>
+<area shape="poly" title=" " alt="" coords="1130,46,1130,78,1125,78,1125,46"/>
+<area shape="rect" href="io_2async_2event_2io_8h.html" title="Low&#45;level I/O notification event for asynchronous operations." alt="" coords="924,94,1014,120"/>
+<area shape="poly" title=" " alt="" coords="1089,49,1008,89,1006,84,1087,44"/>
+<area shape="rect" href="async_2listener_8h.html" title="Core event loop manager for the asynchronous IO framework." alt="" coords="1853,94,1938,120"/>
+<area shape="poly" title=" " alt="" coords="1195,31,1838,97,1837,102,1195,37"/>
+<area shape="rect" title=" " alt="" coords="5,264,77,290"/>
+<area shape="poly" title=" " alt="" coords="237,203,89,259,85,260,83,255,87,254,235,198"/>
+<area shape="rect" title=" " alt="" coords="100,264,158,290"/>
+<area shape="poly" title=" " alt="" coords="249,204,163,257,160,253,246,199"/>
+<area shape="rect" title=" " alt="" coords="182,264,250,290"/>
+<area shape="poly" title=" " alt="" coords="262,203,233,252,228,249,257,200"/>
+<area shape="rect" title=" " alt="" coords="274,264,357,290"/>
+<area shape="poly" title=" " alt="" coords="276,200,304,249,299,252,271,203"/>
+<area shape="rect" title=" " alt="" coords="382,264,434,290"/>
+<area shape="poly" title=" " alt="" coords="287,199,376,253,373,258,285,204"/>
+<area shape="rect" title=" " alt="" coords="698,175,773,201"/>
+<area shape="poly" title=" " alt="" coords="1092,115,960,135,792,170,784,173,782,167,791,165,959,130,1092,110"/>
+<area shape="rect" href="io_2config_8h.html" title="Configuration and platform&#45;specific definitions for the QB IO library." alt="" coords="1666,175,1765,201"/>
+<area shape="poly" title=" " alt="" coords="1163,110,1651,175,1650,181,1163,116"/>
+<area shape="rect" href="build__macros_8h.html" title="Platform, compiler, and C++ feature detection macros for the QB Framework." alt="" coords="661,264,824,290"/>
+<area shape="poly" title=" " alt="" coords="1093,116,1000,134,946,150,894,170,858,189,824,212,769,255,765,251,821,208,855,185,892,165,945,145,999,129,1092,110"/>
+<area shape="rect" href="unordered__map_8h.html" title="Optimized unordered map implementations." alt="" coords="1005,168,1144,208"/>
+<area shape="poly" title=" " alt="" coords="1122,122,1098,156,1094,153,1117,119"/>
+<area shape="rect" title=" " alt="" coords="1153,264,1206,290"/>
+<area shape="poly" title=" " alt="" coords="1137,119,1158,167,1178,249,1173,250,1153,169,1132,121"/>
+<area shape="rect" title=" " alt="" coords="1789,175,1842,201"/>
+<area shape="poly" title=" " alt="" coords="1163,107,1471,126,1649,143,1722,153,1778,165,1782,166,1780,171,1776,170,1721,159,1648,148,1470,131,1163,112"/>
+<area shape="rect" title=" " alt="" coords="549,264,637,290"/>
+<area shape="poly" title=" " alt="" coords="1092,115,858,143,743,159,687,170,663,187,641,209,609,252,605,249,637,205,659,183,685,165,743,154,857,138,1092,110"/>
+<area shape="rect" title=" " alt="" coords="1867,175,1924,201"/>
+<area shape="poly" title=" " alt="" coords="1164,107,1507,125,1708,142,1792,153,1855,165,1860,166,1858,172,1854,170,1791,158,1708,147,1507,130,1163,112"/>
+<area shape="poly" title=" " alt="" coords="1666,196,937,259,839,268,839,263,937,254,1665,191"/>
+<area shape="rect" title=" " alt="" coords="1230,264,1294,290"/>
+<area shape="poly" title=" " alt="" coords="1666,196,1505,216,1405,235,1307,259,1302,260,1301,255,1306,254,1404,229,1504,211,1665,191"/>
+<area shape="rect" href="signal_8h.html" title="System signal event handler for asynchronous I/O." alt="" coords="1318,264,1385,290"/>
+<area shape="poly" title=" " alt="" coords="1666,199,1543,222,1398,259,1393,260,1391,255,1396,254,1542,217,1665,194"/>
+<area shape="rect" title=" " alt="" coords="1571,264,1652,290"/>
+<area shape="poly" title=" " alt="" coords="1703,203,1639,256,1636,252,1700,199"/>
+<area shape="rect" title=" " alt="" coords="1677,264,1754,290"/>
+<area shape="poly" title=" " alt="" coords="1718,201,1718,248,1713,248,1713,201"/>
+<area shape="rect" title=" " alt="" coords="1779,264,1868,290"/>
+<area shape="poly" title=" " alt="" coords="1732,199,1798,252,1795,256,1729,203"/>
+<area shape="rect" title=" " alt="" coords="1893,264,1960,290"/>
+<area shape="poly" title=" " alt="" coords="1747,199,1882,254,1885,255,1883,260,1880,259,1745,204"/>
+<area shape="rect" title=" " alt="" coords="1984,264,2066,290"/>
+<area shape="poly" title=" " alt="" coords="1754,199,1778,206,1875,229,1972,254,1979,256,1978,261,1971,259,1874,234,1776,211,1752,204"/>
+<area shape="rect" title=" " alt="" coords="2090,264,2152,290"/>
+<area shape="poly" title=" " alt="" coords="1752,199,1778,206,1862,221,1929,227,1995,234,2079,254,2084,255,2082,260,2078,259,1995,240,1928,232,1861,226,1776,211,1751,204"/>
+<area shape="rect" title=" " alt="" coords="2176,264,2261,290"/>
+<area shape="poly" title=" " alt="" coords="1752,199,1778,206,1885,223,1971,229,2056,235,2164,254,2174,256,2172,261,2163,259,2056,240,1970,234,1885,228,1776,211,1750,204"/>
+<area shape="rect" title=" " alt="" coords="2285,264,2378,290"/>
+<area shape="poly" title=" " alt="" coords="1751,199,1778,206,1852,218,1916,225,2025,229,2135,233,2199,240,2274,254,2284,256,2283,261,2272,259,2198,246,2134,239,2025,234,1915,231,1851,224,1776,211,1750,204"/>
+<area shape="rect" title=" " alt="" coords="2403,264,2495,290"/>
+<area shape="poly" title=" " alt="" coords="1750,199,1778,206,1870,220,1949,227,2084,229,2219,231,2298,238,2391,254,2402,256,2401,262,2390,259,2298,244,2219,236,2084,234,1948,233,1869,226,1776,211,1749,204"/>
+<area shape="rect" title=" " alt="" coords="2520,264,2616,290"/>
+<area shape="poly" title=" " alt="" coords="1750,199,1778,206,1887,222,1981,230,2064,231,2142,229,2220,228,2304,229,2398,237,2508,254,2520,256,2519,262,2507,259,2397,242,2303,234,2220,233,2142,235,2064,236,1981,235,1887,228,1776,211,1749,204"/>
+<area shape="rect" title=" " alt="" coords="2640,264,2711,290"/>
+<area shape="poly" title=" " alt="" coords="1750,199,1778,206,1906,224,2015,230,2112,229,2203,224,2294,220,2391,221,2501,231,2628,254,2636,256,2635,261,2627,259,2500,236,2391,227,2294,226,2204,230,2112,234,2015,235,1905,229,1776,211,1749,204"/>
+<area shape="rect" title=" " alt="" coords="2735,264,2792,290"/>
+<area shape="poly" title=" " alt="" coords="1750,199,1778,206,1920,225,2042,230,2151,226,2253,219,2354,213,2462,213,2583,225,2724,254,2729,255,2728,260,2723,259,2582,230,2462,218,2354,218,2253,224,2151,231,2042,235,1920,230,1776,211,1748,204"/>
+<area shape="rect" title=" " alt="" coords="672,345,730,371"/>
+<area shape="poly" title=" " alt="" coords="738,291,717,332,712,330,734,289"/>
+<area shape="rect" title=" " alt="" coords="754,345,814,371"/>
+<area shape="poly" title=" " alt="" coords="751,289,773,330,768,332,746,291"/>
+<area shape="rect" href="async_2event_2base_8h.html" title="Base class for asynchronous events in the QB IO library." alt="" coords="882,345,942,371"/>
+<area shape="poly" title=" " alt="" coords="1327,292,1307,300,1211,322,1114,338,958,356,957,351,1113,333,1210,317,1306,294,1325,287"/>
+<area shape="rect" title=" " alt="" coords="872,419,952,444"/>
+<area shape="poly" title=" " alt="" coords="914,371,914,403,909,403,909,371"/>
+<area shape="poly" title=" " alt="" coords="1100,207,1155,252,1152,256,1097,211"/>
+<area shape="rect" title=" " alt="" coords="948,264,995,290"/>
+<area shape="poly" title=" " alt="" coords="1053,211,999,256,996,252,1049,207"/>
+<area shape="rect" title=" " alt="" coords="1409,256,1548,297"/>
+<area shape="poly" title=" " alt="" coords="1145,201,1395,253,1394,258,1144,206"/>
+<area shape="rect" title=" " alt="" coords="1019,264,1130,290"/>
+<area shape="poly" title=" " alt="" coords="1077,209,1077,248,1072,248,1072,209"/>
+<area shape="poly" title=" " alt="" coords="945,123,917,142,895,169,888,189,884,211,885,255,893,296,903,330,898,332,888,297,879,255,879,210,883,188,891,166,914,138,942,118"/>
+<area shape="poly" title=" " alt="" coords="1853,111,1657,115,1387,125,1135,143,1045,155,1014,162,994,170,975,185,959,203,936,246,923,291,916,330,911,329,918,290,931,244,955,200,972,181,992,165,1012,157,1044,150,1135,137,1387,120,1657,110,1853,106"/>
+<area shape="poly" title=" " alt="" coords="1898,120,1898,159,1893,159,1893,120"/>
+<area shape="rect" title=" " alt="" coords="1948,175,2022,201"/>
+<area shape="poly" title=" " alt="" coords="1911,118,1962,163,1958,167,1907,122"/>
+<area shape="rect" href="unordered__set_8h.html" title="Optimized unordered set implementations." alt="" coords="2046,168,2185,208"/>
+<area shape="poly" title=" " alt="" coords="1930,118,2048,160,2046,165,1929,123"/>
+<area shape="rect" href="branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="2209,175,2369,201"/>
+<area shape="poly" title=" " alt="" coords="1939,114,1952,117,2198,165,2216,169,2215,174,2196,170,1951,122,1938,120"/>
+<area shape="rect" href="type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="418,175,565,201"/>
+<area shape="poly" title=" " alt="" coords="1853,112,1382,131,1039,148,687,170,580,180,580,174,686,165,1039,143,1382,125,1853,107"/>
+<area shape="rect" title=" " alt="" coords="2392,175,2450,201"/>
+<area shape="poly" title=" " alt="" coords="1939,115,1952,117,2073,130,2168,133,2263,140,2318,149,2382,165,2386,166,2384,171,2380,170,2317,154,2262,145,2168,138,2073,135,1951,122,1938,120"/>
+<area shape="poly" title=" " alt="" coords="2046,209,2035,211,1904,228,1800,235,1696,242,1563,259,1562,253,1695,237,1800,230,1903,223,2034,206,2045,204"/>
+<area shape="rect" title=" " alt="" coords="2816,264,2855,290"/>
+<area shape="poly" title=" " alt="" coords="2186,204,2197,206,2290,216,2369,219,2505,214,2570,212,2639,216,2716,229,2806,254,2807,254,2805,259,2804,259,2715,234,2639,222,2570,218,2505,219,2369,224,2289,222,2197,211,2185,209"/>
+<area shape="rect" title=" " alt="" coords="2880,264,2983,290"/>
+<area shape="poly" title=" " alt="" coords="2186,204,2197,206,2299,218,2385,225,2533,226,2681,230,2767,238,2868,254,2882,257,2881,262,2867,259,2766,243,2680,235,2533,232,2385,230,2298,224,2197,211,2185,209"/>
+<area shape="poly" title=" " alt="" coords="468,204,355,259,353,254,466,199"/>
+<area shape="poly" title=" " alt="" coords="482,203,432,254,428,251,478,199"/>
+<area shape="poly" title=" " alt="" coords="507,199,570,252,566,256,504,203"/>
+<area shape="rect" title=" " alt="" coords="458,264,525,290"/>
+<area shape="poly" title=" " alt="" coords="494,201,494,248,489,248,489,201"/>
+</map>
+</div>
+</div><div class="textblock"><div class="dynheader">
+This graph shows which files directly or indirectly include this file:</div>
+<div class="dyncontent">
+<div class="center"><img src="connector_8h__dep__incl.png" border="0" usemap="#ainclude_2qb_2io_2async_2tcp_2connector_8hdep" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2async_2tcp_2connector_8hdep" id="ainclude_2qb_2io_2async_2tcp_2connector_8hdep">
+<area shape="rect" title="Asynchronous TCP connection establishment utilities." alt="" coords="11,5,144,46"/>
+<area shape="rect" href="async_8h.html" title="Main include file for the QB asynchronous I/O library." alt="" coords="5,94,150,120"/>
+<area shape="poly" title=" " alt="" coords="80,62,80,93,75,93,75,62"/>
+</map>
+</div>
+</div>
+<p><a href="connector_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3Atcp_3A_3Aconnector_3C_20Socket_5F_2C_20Func_5F_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3Atcp_3A_3Aconnector_3C_20Socket_5F_2C_20Func_5F_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1tcp_1_1connector.html">qb::io::async::tcp::connector&lt; Socket_, Func_ &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Handles asynchronous TCP connection establishment.  <a href="classqb_1_1io_1_1async_1_1tcp_1_1connector.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-func-members" class="groupheader"><a id="func-members" name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:ad0a3210805ff5e6d0b92b7c8eb051d68" id="r_ad0a3210805ff5e6d0b92b7c8eb051d68"><td class="memTemplParams" colspan="2">template&lt;typename Socket_, typename Func_&gt; </td></tr>
+<tr class="memitem:ad0a3210805ff5e6d0b92b7c8eb051d68 template"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ad0a3210805ff5e6d0b92b7c8eb051d68">qb::io::async::tcp::connect</a> (<a class="el" href="classqb_1_1io_1_1uri.html">uri</a> const &amp;remote, Func_ &amp;&amp;func, double timeout=0.)</td></tr>
+<tr class="memdesc:ad0a3210805ff5e6d0b92b7c8eb051d68"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initiates an asynchronous TCP connection.  <br /></td></tr>
+<tr class="memitem:a457c7a1724724b72ca9e554d7d5ec6b4" id="r_a457c7a1724724b72ca9e554d7d5ec6b4"><td class="memTemplParams" colspan="2">template&lt;typename Socket_, typename Func_&gt; </td></tr>
+<tr class="memitem:a457c7a1724724b72ca9e554d7d5ec6b4 template"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a457c7a1724724b72ca9e554d7d5ec6b4">qb::io::async::tcp::connect</a> (Socket_ &amp;&amp;existing_socket, <a class="el" href="classqb_1_1io_1_1uri.html">uri</a> const &amp;remote, Func_ &amp;&amp;func, double timeout=0.)</td></tr>
+<tr class="memdesc:a457c7a1724724b72ca9e554d7d5ec6b4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initiates an asynchronous TCP connection using an existing socket.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Asynchronous TCP connection establishment utilities. </p>
+<p>This file provides utilities for establishing asynchronous TCP connections. It defines the connector class template which handles the async connection process and a connect function for initiating asynchronous connections.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Function Documentation</h2>
+<a id="ad0a3210805ff5e6d0b92b7c8eb051d68" name="ad0a3210805ff5e6d0b92b7c8eb051d68"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad0a3210805ff5e6d0b92b7c8eb051d68">&#9670;&#160;</a></span>connect() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Socket_, typename Func_&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::io::async::tcp::connect </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1uri.html">uri</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em>remote</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Func_ &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em>func</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">double</td>          <td class="paramname"><span class="paramname"><em>timeout</em></span><span class="paramdefsep"> = </span><span class="paramdefval">0.</span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Initiates an asynchronous TCP connection. </p>
+<p>This function creates a new connector object to establish an asynchronous TCP connection to the specified remote endpoint. When the connection completes or fails, the provided callback function is called with the socket. The connector object manages its own lifetime.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Socket_</td><td>The socket class type to use for the connection </td></tr>
+    <tr><td class="paramname">Func_</td><td>The callback function type that will be called on connection completion </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">remote</td><td>URI of the remote endpoint to connect to </td></tr>
+    <tr><td class="paramname">func</td><td>Callback function to call when connection completes </td></tr>
+    <tr><td class="paramname">timeout</td><td>Connection timeout in seconds (0 = no timeout) </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="a457c7a1724724b72ca9e554d7d5ec6b4" name="a457c7a1724724b72ca9e554d7d5ec6b4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a457c7a1724724b72ca9e554d7d5ec6b4">&#9670;&#160;</a></span>connect() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Socket_, typename Func_&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::io::async::tcp::connect </td>
+          <td>(</td>
+          <td class="paramtype">Socket_ &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em>existing_socket</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1uri.html">uri</a> const &amp;</td>          <td class="paramname"><span class="paramname"><em>remote</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">Func_ &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em>func</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">double</td>          <td class="paramname"><span class="paramname"><em>timeout</em></span><span class="paramdefsep"> = </span><span class="paramdefval">0.</span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Initiates an asynchronous TCP connection using an existing socket. </p>
+<p>This function creates a new connector object to establish an asynchronous TCP connection to the specified remote endpoint, using an existing socket instance. The provided socket is moved. When the connection completes or fails, the provided callback function is called with the socket. The connector object manages its own lifetime.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Socket_</td><td>The socket class type to use for the connection </td></tr>
+    <tr><td class="paramname">Func_</td><td>The callback function type that will be called on connection completion </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">existing_socket</td><td>An rvalue reference to an existing socket to be used for the connection </td></tr>
+    <tr><td class="paramname">remote</td><td>URI of the remote endpoint to connect to </td></tr>
+    <tr><td class="paramname">func</td><td>Callback function to call when connection completes </td></tr>
+    <tr><td class="paramname">timeout</td><td>Connection timeout in seconds (0 = no timeout) </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="dir_8eba9db56c7516495e7fe9ef247fc2c3.html">async</a></li><li class="navelem"><a href="dir_247aa6b6d277c2fe335888718b9ab836.html">tcp</a></li><li class="navelem"><a href="connector_8h.html">connector.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

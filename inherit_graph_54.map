@@ -1,0 +1,13 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="Node000000" href="$classqb_1_1io_1_1async_1_1base.html" title=" " alt="" coords="180,5,347,61"/>
+<area shape="rect" id="Node000001" href="$classqb_1_1io_1_1async_1_1file__watcher.html" title="CRTP base class for watching a single file for attribute changes and processing its contents." alt="" coords="395,17,545,58"/>
+<area shape="poly" id="edge62_Node000000_Node000001" title=" " alt="" coords="362,32,395,33,395,38,362,38"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1async_1_1file.html" title="Asynchronous file operations handler." alt="" coords="593,50,715,91"/>
+<area shape="poly" id="edge63_Node000001_Node000002" title=" " alt="" coords="561,51,593,57,592,62,560,56"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1io_1_1istream.html" title=" " alt="" coords="5,85,132,126"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1io_1_1stream.html" title=" " alt="" coords="202,85,325,126"/>
+<area shape="poly" id="edge64_Node000005_Node000004" title=" " alt="" coords="147,102,201,102,201,108,147,108"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1transport_1_1file.html" title="File transport providing stream&#45;based access to local files." alt="" coords="402,86,539,111"/>
+<area shape="poly" id="edge65_Node000004_Node000003" title=" " alt="" coords="340,100,401,98,401,103,340,105"/>
+<area shape="poly" id="edge66_Node000003_Node000002" title=" " alt="" coords="554,83,593,77,594,82,555,88"/>
+</map>

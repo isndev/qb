@@ -1,4 +1,28 @@
 var searchData=
 [
-  ['core',['core',['../classqb_1_1_main.html#a375cd46cd8ea4db8f7e0587624e84a96',1,'qb::Main']]]
+  ['back_0',['back',['../classqb_1_1string.html#a0a1d505698b7347698a34a9f79c0e12d',1,'qb::string::back() noexcept'],['../classqb_1_1string.html#a7812db426aba38fcc417cfe65d9e1a29',1,'qb::string::back() const noexcept'],['../classqb_1_1ring__buffer.html#a0820878e59ddac3e9101c69ed072819e',1,'qb::ring_buffer::back() noexcept'],['../classqb_1_1ring__buffer.html#a62f6f526bea0fcf4bdbdabed059cb6b6',1,'qb::ring_buffer::back() const noexcept']]],
+  ['base_1',['base',['../structqb_1_1io_1_1async_1_1event_1_1base.html#aaf880fcf9ce86f8fe5b80c07723db610',1,'qb::io::async::event::base::base()'],['../classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff',1,'qb::io::async::base::base()']]],
+  ['base64_5fdecode_2',['base64_decode',['../classqb_1_1crypto.html#ab01379bb4580a342eddfebd9a47c9a31',1,'qb::crypto']]],
+  ['base64_5fencode_3',['base64_encode',['../classqb_1_1crypto.html#aaaf36d810a1ed90fcadb4558047b779d',1,'qb::crypto']]],
+  ['base64url_5fdecode_4',['base64url_decode',['../classqb_1_1crypto.html#a8777cdd79e7b914b6badb0ea89b76ef6',1,'qb::crypto']]],
+  ['base64url_5fencode_5',['base64url_encode',['../classqb_1_1crypto.html#aded5c61abba9d7c4573cba6a0bc3da22',1,'qb::crypto']]],
+  ['base_5fpipe_6',['base_pipe',['../classqb_1_1allocator_1_1base__pipe.html#a4d48e0adb9c0c8e88395f10f2661d4e1',1,'qb::allocator::base_pipe::base_pipe()'],['../classqb_1_1allocator_1_1base__pipe.html#aa2984ba3b189b8600cac79e8f40784ea',1,'qb::allocator::base_pipe::base_pipe(base_pipe const &amp;rhs)'],['../classqb_1_1allocator_1_1base__pipe.html#ada607a694f0150e016e41b568a768226',1,'qb::allocator::base_pipe::base_pipe(base_pipe &amp;&amp;rhs) noexcept']]],
+  ['basic_5fbinary_7',['basic_binary',['../classqb_1_1protocol_1_1text_1_1basic__binary.html#afb41b5cd9d0ef2c0d021e661b9401319',1,'qb::protocol::text::basic_binary::basic_binary()=delete'],['../classqb_1_1protocol_1_1text_1_1basic__binary.html#afb08f952ef5420259db72a2e000871a2',1,'qb::protocol::text::basic_binary::basic_binary(_IO_ &amp;io) noexcept']]],
+  ['basic_5ftext_8',['basic_text',['../classqb_1_1protocol_1_1text_1_1basic__text.html#a4eaa3624be8625cb1141efd871b81b6a',1,'qb::protocol::text::basic_text::basic_text()=delete'],['../classqb_1_1protocol_1_1text_1_1basic__text.html#ac8ed4e7d83ffbca8611b6a5f180359b4',1,'qb::protocol::text::basic_text::basic_text(_IO_ &amp;io) noexcept']]],
+  ['begin_9',['begin',['../classqb_1_1_core_id_bit_set.html#a3cca4e7e5a8f2eb10d219d4074f21a74',1,'qb::CoreIdBitSet::begin()'],['../classqb_1_1allocator_1_1base__pipe.html#a90a2bbd888b4e959580bb3fc14ca78e3',1,'qb::allocator::base_pipe::begin()'],['../classqb_1_1ring__buffer.html#aa049bde6747fd4b56047d9e3bac44fe5',1,'qb::ring_buffer::begin()']]],
+  ['bind_10',['bind',['../classqb_1_1io_1_1tcp_1_1socket.html#a082dff596dd5d43e16bfdfefce591aa0',1,'qb::io::tcp::socket::bind(qb::io::endpoint const &amp;ep) noexcept'],['../classqb_1_1io_1_1tcp_1_1socket.html#a1c8f1b6faca0b18ff8103cc5604d28d6',1,'qb::io::tcp::socket::bind(qb::io::uri const &amp;u) noexcept'],['../classqb_1_1io_1_1udp_1_1socket.html#a02355182d9a82eed9241b9abb4441e03',1,'qb::io::udp::socket::bind(qb::io::endpoint const &amp;ep) noexcept'],['../classqb_1_1io_1_1udp_1_1socket.html#a19e6934495aff373db1abddaee257c82',1,'qb::io::udp::socket::bind(qb::io::uri const &amp;u) noexcept']]],
+  ['bind_5fun_11',['bind_un',['../classqb_1_1io_1_1udp_1_1socket.html#a4cd986814f7b90dc47d26e2de23a7341',1,'qb::io::udp::socket']]],
+  ['bind_5fv4_12',['bind_v4',['../classqb_1_1io_1_1udp_1_1socket.html#a13142757a05fbb1f2f399328f552c705',1,'qb::io::udp::socket']]],
+  ['bind_5fv6_13',['bind_v6',['../classqb_1_1io_1_1udp_1_1socket.html#a886471c9c4d3d8bf575dc225711a20c1',1,'qb::io::udp::socket']]],
+  ['bits_14',['bits',['../classqb_1_1_core_id_bit_set.html#a184afd129c6750cc24655ce24344643c',1,'qb::CoreIdBitSet']]],
+  ['break_5fone_15',['break_one',['../classqb_1_1io_1_1async_1_1listener.html#a5d397772509d2a3b093bdb64434a7299',1,'qb::io::async::listener']]],
+  ['break_5fparent_16',['break_parent',['../group___async.html#ga65878adaef3511f35eb35ea1fba20024',1,'qb::io::async']]],
+  ['broadcast_17',['broadcast',['../classqb_1_1_actor.html#ab229da5c0fdd23b494427e5de43bb394',1,'qb::Actor']]],
+  ['broadcastid_18',['BroadcastId',['../group___actor.html#ga59aa92ee05bf4aef7f4c6d0e6a525e1e',1,'qb::BroadcastId']]],
+  ['build_19',['build',['../classqb_1_1_core_set.html#a256d53994262734e8319b1ec1e32db52',1,'qb::CoreSet']]],
+  ['build_5fevent_20',['build_event',['../classqb_1_1_actor.html#a20c8319b3fb3fb578cf75f6fc37760c6',1,'qb::Actor']]],
+  ['builder_21',['builder',['../classqb_1_1_core_initializer.html#ac6900142b45b52cc04577ee8704142f4',1,'qb::CoreInitializer']]],
+  ['byte_5fterminated_22',['byte_terminated',['../classqb_1_1protocol_1_1base_1_1byte__terminated.html#ad4bb32926f5c843788b034d89e301c50',1,'qb::protocol::base::byte_terminated::byte_terminated()=delete'],['../classqb_1_1protocol_1_1base_1_1byte__terminated.html#aee0a926b4eb151c50866c48faced59cc',1,'qb::protocol::base::byte_terminated::byte_terminated(_IO_ &amp;io) noexcept']]],
+  ['bytes_5fterminated_23',['bytes_terminated',['../classqb_1_1protocol_1_1base_1_1bytes__terminated.html#a1a4fd1b261a84287c8fa074c3371474b',1,'qb::protocol::base::bytes_terminated::bytes_terminated()=delete'],['../classqb_1_1protocol_1_1base_1_1bytes__terminated.html#a8cc4ac4a8f62ea1182a6e68fa02eb2f3',1,'qb::protocol::base::bytes_terminated::bytes_terminated(_IO_ &amp;io) noexcept']]],
+  ['byteswap_24',['byteswap',['../endian_8h.html#aca9ed93fce72fac5e10a4b9991eb50f5',1,'qb::endian']]]
 ];

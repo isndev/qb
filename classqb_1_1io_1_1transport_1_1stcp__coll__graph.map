@@ -1,0 +1,21 @@
+<map id="qb::io::transport::stcp" name="qb::io::transport::stcp">
+<area shape="rect" id="Node000001" title="Secure TCP (SSL/TLS) transport providing encrypted stream communication." alt="" coords="112,462,258,488"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1stream.html" title=" " alt="" coords="119,372,251,413"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="188,428,188,462,182,462,182,428"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1istream.html" title=" " alt="" coords="63,282,195,323"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="152,334,175,370,170,373,147,337"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality." alt="" coords="5,178,157,204"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="88,218,100,257,114,280,110,283,95,259,83,220"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1io_1_1tcp_1_1socket.html" title="Class implementing TCP socket functionality for reliable, stream&#45;oriented communication." alt="" coords="18,88,144,114"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="84,129,84,177,78,177,78,129"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="31,5,131,31"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="84,47,84,88,78,88,78,47"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="180,170,304,211"/>
+<area shape="poly" id="edge10_Node000002_Node000007" title=" " alt="" coords="236,227,209,323,194,373,189,371,204,322,231,225"/>
+<area shape="poly" id="edge6_Node000003_Node000007" title=" " alt="" coords="180,221,161,237,146,259,136,283,131,281,141,257,157,233,176,217"/>
+<area shape="rect" id="Node000008" href="$classqb_1_1allocator_1_1base__pipe.html" title=" " alt="" coords="178,80,306,121"/>
+<area shape="poly" id="edge7_Node000007_Node000008" title=" " alt="" coords="236,136,237,170,232,170,231,137"/>
+<area shape="poly" id="edge9_Node000007_Node000008" title=" " alt="" coords="254,137,253,170,247,170,248,136"/>
+<area shape="rect" id="Node000009" title=" " alt="" coords="170,5,315,31"/>
+<area shape="poly" id="edge8_Node000008_Node000009" title=" " alt="" coords="245,47,245,80,240,80,240,47"/>
+</map>

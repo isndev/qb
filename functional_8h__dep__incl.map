@@ -1,0 +1,12 @@
+<map id="include/qb/utility/functional.h" name="include/qb/utility/functional.h">
+<area shape="rect" id="Node000001" title="Functional utilities, primarily for hash computations." alt="" coords="93,5,208,46"/>
+<area shape="rect" id="Node000002" href="$udp_8h.html" title="UDP datagram transport implementation for the QB IO library." alt="" coords="76,94,225,135"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="153,62,153,94,148,94,148,62"/>
+<area shape="rect" id="Node000003" href="$udp_2client_8h.html" title="Asynchronous UDP client implementation." alt="" coords="5,183,139,223"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="124,148,92,184,88,180,121,145"/>
+<area shape="rect" id="Node000005" href="$udp_2server_8h.html" title="Asynchronous UDP server implementation." alt="" coords="163,183,296,223"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="181,145,214,180,210,184,177,148"/>
+<area shape="rect" id="Node000004" href="$async_8h.html" title="Main include file for the QB asynchronous I/O library." alt="" coords="78,271,223,297"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="104,232,140,269,137,273,100,236"/>
+<area shape="poly" id="edge5_Node000005_Node000004" title=" " alt="" coords="201,236,165,273,161,269,197,232"/>
+</map>

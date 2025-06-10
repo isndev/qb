@@ -1,0 +1,11 @@
+<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
+<area shape="rect" id="Node000000" title=" " alt="" coords="5,46,102,72"/>
+<area shape="rect" id="Node000001" href="$classqb_1_1allocator_1_1base__pipe.html" title=" " alt="" coords="150,5,278,46"/>
+<area shape="poly" id="edge124_Node000000_Node000001" title=" " alt="" coords="116,43,149,36,150,42,117,48"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1allocator_1_1base__pipe.html" title="Base class for the extensible buffer." alt="" coords="150,71,278,111"/>
+<area shape="poly" id="edge125_Node000000_Node000002" title=" " alt="" coords="117,69,150,76,149,81,116,74"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1allocator_1_1pipe.html" title=" " alt="" coords="342,41,466,82"/>
+<area shape="poly" id="edge126_Node000002_Node000003" title=" " alt="" coords="292,76,341,69,342,74,293,81"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1allocator_1_1pipe.html" title="Extensible buffer optimized for performance." alt="" coords="326,106,482,132"/>
+<area shape="poly" id="edge127_Node000002_Node000004" title=" " alt="" coords="294,100,326,105,326,110,293,105"/>
+</map>

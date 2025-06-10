@@ -1,0 +1,13 @@
+<map id="include/qb/io/async/protocol.h" name="include/qb/io/async/protocol.h">
+<area shape="rect" id="Node000001" title="Protocol interfaces for message processing in the asynchronous IO framework." alt="" coords="137,5,270,46"/>
+<area shape="rect" id="Node000002" href="$type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="130,94,277,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="206,46,206,78,201,78,201,46"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="5,168,93,193"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="179,123,90,163,88,158,176,118"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="117,168,200,193"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="198,121,176,156,172,153,194,118"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="224,168,276,193"/>
+<area shape="poly" id="edge4_Node000002_Node000005" title=" " alt="" coords="214,118,236,153,232,156,209,121"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="301,168,368,193"/>
+<area shape="poly" id="edge5_Node000002_Node000006" title=" " alt="" coords="227,118,300,158,298,162,225,123"/>
+</map>

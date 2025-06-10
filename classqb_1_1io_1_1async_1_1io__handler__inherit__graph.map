@@ -1,0 +1,5 @@
+<map id="qb::io::async::io_handler&lt; _Derived, _Session &gt;" name="qb::io::async::io_handler&lt; _Derived, _Session &gt;">
+<area shape="rect" id="Node000001" title="Session manager for asynchronous IO." alt="" coords="5,5,169,46"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1async_1_1tcp_1_1server.html" title="Asynchronous TCP server implementation." alt="" coords="20,94,154,150"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="90,61,90,93,84,93,84,61"/>
+</map>

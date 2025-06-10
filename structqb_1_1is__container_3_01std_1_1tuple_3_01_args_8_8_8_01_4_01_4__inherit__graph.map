@@ -1,0 +1,7 @@
+<map id="qb::is_container&lt; std::tuple&lt; Args... &gt; &gt;" name="qb::is_container&lt; std::tuple&lt; Args... &gt; &gt;">
+<area shape="rect" id="Node000001" title="Specialization for std::tuple, which is a container." alt="" coords="294,91,437,132"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,5,246,121"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="261,88,294,94,293,99,260,93"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="75,145,176,171"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="191,143,293,122,294,128,192,148"/>
+</map>

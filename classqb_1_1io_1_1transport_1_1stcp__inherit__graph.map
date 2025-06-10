@@ -1,0 +1,7 @@
+<map id="qb::io::transport::stcp" name="qb::io::transport::stcp">
+<area shape="rect" id="Node000001" title="Secure TCP (SSL/TLS) transport providing encrypted stream communication." alt="" coords="5,183,151,208"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1stream.html" title=" " alt="" coords="12,94,144,135"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="81,150,81,182,75,182,75,150"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1istream.html" title=" " alt="" coords="12,5,144,46"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="81,62,81,94,75,94,75,62"/>
+</map>

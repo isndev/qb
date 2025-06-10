@@ -1,0 +1,145 @@
+<map id="include/cube.h" name="include/cube.h">
+<area shape="rect" id="Node000001" title="Main include file for the QB Actor Framework." alt="" coords="689,5,794,31"/>
+<area shape="rect" id="Node000002" href="$_actor_8h.html" title="Convenience header for the core QB Actor components." alt="" coords="1266,79,1344,105"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="795,24,1251,81,1250,86,794,29"/>
+<area shape="rect" id="Node000035" href="$io_8h.html" title="Core I/O and logging utilities for the qb framework." alt="" coords="432,485,493,510"/>
+<area shape="poly" id="edge65_Node000001_Node000035" title=" " alt="" coords="688,22,605,29,559,38,514,50,474,69,442,93,420,125,414,143,412,164,412,322,416,363,426,404,452,470,447,472,421,405,411,364,407,322,407,164,409,142,415,122,438,89,471,64,513,45,558,32,605,24,688,17"/>
+<area shape="rect" id="Node000044" href="$main_8h.html" title="Convenience header for the QB Main engine controller." alt="" coords="702,153,780,178"/>
+<area shape="poly" id="edge66_Node000001_Node000044" title=" " alt="" coords="744,31,744,137,739,137,739,31"/>
+<area shape="rect" id="Node000003" href="$core_2_actor_8h.html" title="Actor base class and core actor model implementation." alt="" coords="1685,153,1776,178"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="1345,97,1670,151,1669,157,1344,102"/>
+<area shape="rect" id="Node000042" href="$_actor_8tpp_source.html" title=" " alt="" coords="1193,153,1295,178"/>
+<area shape="poly" id="edge63_Node000002_Node000042" title=" " alt="" coords="1297,107,1266,142,1262,139,1293,103"/>
+<area shape="rect" id="Node000043" href="$_pipe_8tpp_source.html" title=" " alt="" coords="1319,153,1417,178"/>
+<area shape="poly" id="edge64_Node000002_Node000043" title=" " alt="" coords="1318,103,1349,139,1345,142,1314,107"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="1839,396,1886,422"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="1739,177,1851,381,1846,384,1735,180"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="1643,226,1693,252"/>
+<area shape="poly" id="edge4_Node000003_Node000005" title=" " alt="" coords="1722,180,1691,216,1687,213,1718,177"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="555,574,607,599"/>
+<area shape="poly" id="edge5_Node000003_Node000006" title=" " alt="" coords="1684,170,1575,174,1423,183,1249,201,1074,229,1008,244,957,260,843,303,778,321,724,333,676,351,651,367,624,391,609,409,598,429,585,475,580,520,581,558,576,558,575,520,579,474,593,427,605,406,621,387,648,363,674,346,723,328,776,316,842,297,955,255,1006,239,1073,224,1248,196,1423,178,1575,169,1684,165"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="1951,485,2009,510"/>
+<area shape="poly" id="edge6_Node000003_Node000007" title=" " alt="" coords="1777,165,1851,170,1936,180,2013,197,2042,209,2062,224,2080,250,2092,275,2098,299,2098,323,2087,374,2062,431,2043,458,2018,478,2014,474,2039,454,2058,428,2082,372,2093,323,2093,300,2087,277,2076,253,2058,228,2039,214,2011,202,1935,185,1850,175,1776,171"/>
+<area shape="rect" id="Node000008" href="$unordered__map_8h.html" title="Optimized unordered map implementations." alt="" coords="1624,300,1763,341"/>
+<area shape="poly" id="edge7_Node000003_Node000008" title=" " alt="" coords="1730,179,1704,286,1699,284,1725,178"/>
+<area shape="rect" id="Node000012" href="$nocopy_8h.html" title="Defines a base class to make derived classes non&#45;copyable." alt="" coords="973,485,1099,510"/>
+<area shape="poly" id="edge12_Node000003_Node000012" title=" " alt="" coords="1685,175,1583,194,1525,209,1467,229,1406,257,1344,289,1229,359,1132,426,1064,477,1061,473,1129,422,1226,355,1342,284,1403,252,1466,224,1523,204,1582,188,1684,170"/>
+<area shape="rect" id="Node000013" href="$type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="635,396,781,422"/>
+<area shape="poly" id="edge13_Node000003_Node000013" title=" " alt="" coords="1684,170,1588,173,1458,183,1310,200,1162,229,1040,266,922,311,820,356,746,391,743,387,818,351,920,306,1038,261,1161,224,1309,195,1457,177,1588,168,1684,165"/>
+<area shape="rect" id="Node000017" href="$core_2_event_8h.html" title="Event system for the QB Actor Framework." alt="" coords="1939,308,2005,333"/>
+<area shape="poly" id="edge18_Node000003_Node000017" title=" " alt="" coords="1777,169,1849,186,1887,202,1922,224,1949,257,1966,292,1961,294,1944,260,1918,228,1885,207,1847,191,1776,174"/>
+<area shape="rect" id="Node000040" href="$core_2_i_callback_8h.html" title="Callback interface for the QB Actor Framework." alt="" coords="1960,396,2048,422"/>
+<area shape="poly" id="edge59_Node000003_Node000040" title=" " alt="" coords="1746,177,1928,339,1980,384,1977,388,1925,343,1742,181"/>
+<area shape="rect" id="Node000041" href="$core_2_pipe_8h.html" title="Actor communication channel for the QB Actor Framework." alt="" coords="1989,226,2048,252"/>
+<area shape="poly" id="edge60_Node000003_Node000041" title=" " alt="" coords="1777,176,1975,224,1974,230,1776,181"/>
+<area shape="poly" id="edge9_Node000008_Node000004" title=" " alt="" coords="1733,339,1827,386,1824,391,1730,344"/>
+<area shape="rect" id="Node000009" title=" " alt="" coords="1565,574,1619,599"/>
+<area shape="poly" id="edge8_Node000008_Node000009" title=" " alt="" coords="1675,343,1658,362,1644,384,1639,407,1641,418,1646,428,1667,446,1690,454,1714,454,1740,451,1766,447,1792,448,1817,456,1839,476,1848,498,1839,519,1817,542,1794,555,1770,560,1745,560,1692,558,1663,561,1631,569,1629,569,1627,564,1630,563,1662,555,1692,553,1745,555,1769,555,1792,550,1813,538,1835,517,1843,498,1835,479,1814,460,1791,453,1767,453,1741,456,1715,459,1689,459,1664,451,1642,431,1636,419,1634,407,1640,382,1654,359,1671,339"/>
+<area shape="rect" id="Node000010" title=" " alt="" coords="2056,566,2194,607"/>
+<area shape="poly" id="edge10_Node000008_Node000010" title=" " alt="" coords="1719,339,1779,387,1857,456,1892,485,1941,516,1991,540,2042,559,2040,564,1989,544,1939,520,1889,489,1854,460,1775,391,1716,343"/>
+<area shape="rect" id="Node000011" title=" " alt="" coords="1655,396,1766,422"/>
+<area shape="poly" id="edge11_Node000008_Node000011" title=" " alt="" coords="1700,341,1708,381,1703,382,1694,342"/>
+<area shape="poly" id="edge16_Node000013_Node000006" title=" " alt="" coords="680,425,642,447,624,461,609,479,598,498,591,518,585,558,579,557,586,517,594,496,604,476,620,458,639,442,677,420"/>
+<area shape="rect" id="Node000014" title=" " alt="" coords="710,485,797,510"/>
+<area shape="poly" id="edge14_Node000013_Node000014" title=" " alt="" coords="716,421,742,470,738,472,712,424"/>
+<area shape="rect" id="Node000015" title=" " alt="" coords="305,574,388,599"/>
+<area shape="poly" id="edge15_Node000013_Node000015" title=" " alt="" coords="639,425,476,455,408,470,377,480,364,496,356,517,349,558,344,557,351,515,360,494,374,475,407,465,475,450,638,420"/>
+<area shape="rect" id="Node000016" title=" " alt="" coords="618,485,686,510"/>
+<area shape="poly" id="edge17_Node000013_Node000016" title=" " alt="" coords="702,424,670,473,666,470,698,421"/>
+<area shape="poly" id="edge39_Node000017_Node000006" title=" " alt="" coords="1939,328,1775,343,1693,346,1590,346,1353,345,1232,347,1118,354,1020,368,979,379,944,391,919,404,902,419,876,452,851,487,834,504,811,520,763,544,712,561,623,582,622,576,711,556,761,539,808,516,831,500,847,483,872,449,898,415,917,400,941,386,977,373,1019,363,1118,349,1231,342,1353,339,1590,341,1693,341,1774,338,1938,323"/>
+<area shape="rect" id="Node000018" title=" " alt="" coords="2449,485,2503,510"/>
+<area shape="poly" id="edge19_Node000017_Node000018" title=" " alt="" coords="2006,327,2099,352,2210,386,2322,428,2432,475,2435,476,2433,481,2429,480,2320,433,2208,391,2097,357,2005,333"/>
+<area shape="rect" id="Node000019" href="$system_2allocator_2_pipe_8h.html" title="Implementation of a dynamic extensible buffer." alt="" coords="1344,389,1480,429"/>
+<area shape="poly" id="edge20_Node000017_Node000019" title=" " alt="" coords="1938,329,1495,398,1495,392,1938,324"/>
+<area shape="rect" id="Node000033" href="$core_2_actor_id_8h.html" title="Actor and core identification for the QB Actor Framework." alt="" coords="2123,396,2197,422"/>
+<area shape="poly" id="edge40_Node000017_Node000033" title=" " alt="" coords="1999,331,2121,387,2119,392,1997,336"/>
+<area shape="poly" id="edge58_Node000017_Node000040" title=" " alt="" coords="1979,333,1997,381,1992,382,1974,335"/>
+<area shape="poly" id="edge38_Node000019_Node000007" title=" " alt="" coords="1480,418,1936,487,1936,492,1479,423"/>
+<area shape="poly" id="edge35_Node000019_Node000012" title=" " alt="" coords="1345,427,1111,480,1098,483,1096,478,1110,475,1343,422"/>
+<area shape="poly" id="edge37_Node000019_Node000014" title=" " alt="" coords="1344,422,813,491,812,486,1343,417"/>
+<area shape="rect" id="Node000020" title=" " alt="" coords="1491,574,1541,599"/>
+<area shape="poly" id="edge21_Node000019_Node000020" title=" " alt="" coords="1426,428,1454,476,1504,559,1499,562,1450,479,1421,431"/>
+<area shape="rect" id="Node000021" title=" " alt="" coords="1406,574,1466,599"/>
+<area shape="poly" id="edge22_Node000019_Node000021" title=" " alt="" coords="1421,429,1433,477,1439,558,1433,558,1428,478,1416,430"/>
+<area shape="rect" id="Node000022" title=" " alt="" coords="1311,574,1382,599"/>
+<area shape="poly" id="edge23_Node000019_Node000022" title=" " alt="" coords="1412,430,1404,472,1389,519,1366,562,1361,560,1384,517,1398,470,1406,429"/>
+<area shape="rect" id="Node000023" title=" " alt="" coords="1123,485,1191,510"/>
+<area shape="poly" id="edge24_Node000019_Node000023" title=" " alt="" coords="1346,433,1203,480,1200,481,1198,476,1202,475,1344,427"/>
+<area shape="rect" id="Node000024" href="$string_8h.html" title="Fixed&#45;size string implementation optimized for performance." alt="" coords="1551,485,1633,510"/>
+<area shape="poly" id="edge25_Node000019_Node000024" title=" " alt="" coords="1454,427,1554,475,1552,480,1452,432"/>
+<area shape="rect" id="Node000031" href="$branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="1215,485,1374,510"/>
+<area shape="poly" id="edge34_Node000019_Node000031" title=" " alt="" coords="1387,432,1325,478,1321,473,1384,428"/>
+<area shape="rect" id="Node000032" href="$prefix_8h.html" title="Platform&#45;specific alignment macros, cache&#45;line definitions, and related utilities." alt="" coords="1708,485,1825,510"/>
+<area shape="poly" id="edge36_Node000019_Node000032" title=" " alt="" coords="1480,424,1690,475,1703,478,1702,483,1689,480,1479,429"/>
+<area shape="poly" id="edge33_Node000024_Node000009" title=" " alt="" coords="1595,511,1595,558,1589,558,1589,511"/>
+<area shape="poly" id="edge27_Node000024_Node000020" title=" " alt="" coords="1583,513,1538,564,1534,560,1579,509"/>
+<area shape="poly" id="edge28_Node000024_Node000021" title=" " alt="" coords="1571,513,1472,568,1470,563,1569,509"/>
+<area shape="poly" id="edge29_Node000024_Node000022" title=" " alt="" coords="1554,514,1394,569,1390,570,1388,565,1392,563,1553,509"/>
+<area shape="rect" id="Node000025" title=" " alt="" coords="1643,574,1717,599"/>
+<area shape="poly" id="edge26_Node000024_Node000025" title=" " alt="" coords="1606,509,1659,561,1655,565,1602,513"/>
+<area shape="rect" id="Node000026" title=" " alt="" coords="1742,574,1794,599"/>
+<area shape="poly" id="edge30_Node000024_Node000026" title=" " alt="" coords="1618,509,1730,564,1731,564,1728,569,1728,568,1615,513"/>
+<area shape="rect" id="Node000027" href="$build__macros_8h.html" title="Platform, compiler, and C++ feature detection macros for the QB Framework." alt="" coords="1819,574,1981,599"/>
+<area shape="poly" id="edge31_Node000024_Node000027" title=" " alt="" coords="1634,508,1843,566,1841,571,1633,513"/>
+<area shape="rect" id="Node000029" title=" " alt="" coords="1132,655,1193,680"/>
+<area shape="poly" id="edge32_Node000027_Node000029" title=" " alt="" coords="1846,602,1807,609,1634,631,1463,648,1208,666,1208,661,1463,643,1633,626,1806,604,1845,597"/>
+<area shape="poly" id="edge46_Node000033_Node000007" title=" " alt="" coords="2136,425,2020,480,2017,475,2133,420"/>
+<area shape="poly" id="edge42_Node000033_Node000018" title=" " alt="" coords="2198,415,2304,439,2431,475,2435,476,2434,481,2430,480,2303,444,2197,420"/>
+<area shape="poly" id="edge41_Node000033_Node000025" title=" " alt="" coords="2143,425,2067,479,2046,501,2037,511,2022,520,1981,538,1944,548,1879,553,1812,555,1774,559,1730,569,1723,570,1722,565,1729,563,1773,554,1812,549,1878,548,1943,542,1979,533,2020,516,2034,507,2042,498,2063,475,2140,420"/>
+<area shape="poly" id="edge44_Node000033_Node000026" title=" " alt="" coords="2155,424,2122,472,2096,498,2067,520,2030,538,1998,547,1939,553,1880,554,1846,558,1807,569,1805,569,1803,564,1806,563,1845,553,1879,548,1939,547,1997,542,2028,533,2064,516,2093,494,2118,468,2151,421"/>
+<area shape="poly" id="edge56_Node000033_Node000027" title=" " alt="" coords="2161,423,2149,469,2136,497,2118,520,2091,540,2060,556,1997,576,1996,571,2058,551,2088,536,2114,516,2132,494,2144,468,2156,422"/>
+<area shape="poly" id="edge43_Node000033_Node000029" title=" " alt="" coords="2188,420,2205,427,2251,437,2291,438,2309,441,2327,446,2344,458,2361,476,2370,503,2372,541,2368,580,2362,597,2354,609,2335,617,2300,623,2186,635,1845,653,1471,663,1208,668,1208,663,1471,658,1844,648,2185,630,2299,618,2334,611,2350,605,2357,594,2362,579,2367,541,2365,504,2356,479,2341,462,2325,451,2308,446,2290,444,2250,442,2203,432,2186,425"/>
+<area shape="poly" id="edge57_Node000033_Node000032" title=" " alt="" coords="2123,421,1837,484,1836,478,2122,416"/>
+<area shape="rect" id="Node000034" title=" " alt="" coords="2236,574,2340,599"/>
+<area shape="poly" id="edge45_Node000033_Node000034" title=" " alt="" coords="2198,410,2233,416,2272,428,2309,447,2338,476,2345,499,2340,522,2328,545,2313,564,2309,561,2324,542,2335,521,2340,499,2334,479,2305,451,2270,432,2232,421,2197,415"/>
+<area shape="poly" id="edge47_Node000033_Node000035" title=" " alt="" coords="2122,422,2060,432,1840,452,1652,462,1488,465,1334,463,1015,460,828,466,607,480,509,492,508,486,606,475,827,460,1015,455,1334,457,1488,459,1652,457,1839,447,2059,427,2122,416"/>
+<area shape="rect" id="Node000038" href="$unordered__set_8h.html" title="Optimized unordered set implementations." alt="" coords="2185,477,2324,518"/>
+<area shape="poly" id="edge53_Node000033_Node000038" title=" " alt="" coords="2175,420,2224,465,2220,469,2171,424"/>
+<area shape="poly" id="edge52_Node000035_Node000006" title=" " alt="" coords="481,509,554,562,550,566,477,513"/>
+<area shape="poly" id="edge51_Node000035_Node000015" title=" " alt="" coords="448,513,377,566,373,562,445,509"/>
+<area shape="poly" id="edge48_Node000035_Node000022" title=" " alt="" coords="493,501,607,515,1003,554,1295,578,1295,584,1002,559,606,521,492,506"/>
+<area shape="rect" id="Node000036" title=" " alt="" coords="153,574,210,599"/>
+<area shape="poly" id="edge49_Node000035_Node000036" title=" " alt="" coords="433,511,226,574,224,569,431,506"/>
+<area shape="rect" id="Node000037" title=" " alt="" coords="463,574,531,599"/>
+<area shape="poly" id="edge50_Node000035_Node000037" title=" " alt="" coords="470,510,489,558,484,560,465,512"/>
+<area shape="poly" id="edge54_Node000038_Node000010" title=" " alt="" coords="2227,521,2168,559,2165,555,2224,516"/>
+<area shape="poly" id="edge55_Node000038_Node000034" title=" " alt="" coords="2265,518,2280,558,2275,560,2260,519"/>
+<area shape="poly" id="edge62_Node000041_Node000017" title=" " alt="" coords="2014,254,1989,295,1985,292,2009,251"/>
+<area shape="poly" id="edge61_Node000041_Node000033" title=" " alt="" coords="2031,251,2142,383,2138,386,2027,254"/>
+<area shape="rect" id="Node000045" href="$core_2main_8h.html" title="Main control for the QB Actor Framework." alt="" coords="1478,226,1567,252"/>
+<area shape="poly" id="edge67_Node000044_Node000045" title=" " alt="" coords="781,168,1463,230,1462,235,781,173"/>
+<area shape="rect" id="Node000059" href="$_main_8tpp_source.html" title=" " alt="" coords="447,226,547,252"/>
+<area shape="poly" id="edge93_Node000044_Node000059" title=" " alt="" coords="702,181,554,224,553,219,701,176"/>
+<area shape="poly" id="edge71_Node000045_Node000007" title=" " alt="" coords="1568,243,1665,261,1721,277,1776,298,1814,317,1842,335,1899,387,1937,430,1966,471,1962,474,1933,433,1895,391,1839,339,1811,321,1773,302,1720,282,1664,266,1567,248"/>
+<area shape="poly" id="edge69_Node000045_Node000008" title=" " alt="" coords="1550,250,1638,291,1636,296,1548,255"/>
+<area shape="poly" id="edge92_Node000045_Node000017" title=" " alt="" coords="1568,246,1924,308,1923,313,1567,251"/>
+<area shape="rect" id="Node000046" title=" " alt="" coords="1371,308,1496,333"/>
+<area shape="poly" id="edge68_Node000045_Node000046" title=" " alt="" coords="1511,254,1460,299,1457,295,1507,250"/>
+<area shape="rect" id="Node000047" title=" " alt="" coords="198,485,255,510"/>
+<area shape="poly" id="edge70_Node000045_Node000047" title=" " alt="" coords="1477,244,1195,248,781,259,384,276,239,288,155,303,94,324,40,351,21,367,10,385,10,405,21,428,36,445,54,459,97,478,142,489,183,494,182,499,141,494,95,484,52,463,32,449,16,431,4,406,5,384,17,364,37,347,92,319,154,297,239,283,384,271,780,254,1195,243,1477,238"/>
+<area shape="rect" id="Node000048" href="$mpsc_8h.html" title="Multiple&#45;Producer Single&#45;Consumer lockfree queue." alt="" coords="167,300,299,341"/>
+<area shape="poly" id="edge72_Node000045_Node000048" title=" " alt="" coords="1478,246,315,317,315,311,1477,241"/>
+<area shape="rect" id="Node000058" href="$core_2_core_set_8h.html" title="Core set management for the QB Actor Framework." alt="" coords="1520,308,1600,333"/>
+<area shape="poly" id="edge86_Node000045_Node000058" title=" " alt="" coords="1531,251,1550,292,1545,295,1526,254"/>
+<area shape="poly" id="edge74_Node000048_Node000036" title=" " alt="" coords="232,342,224,383,210,430,198,454,188,478,182,520,182,558,177,558,177,519,183,477,193,452,205,428,219,381,227,341"/>
+<area shape="rect" id="Node000049" title=" " alt="" coords="31,396,91,422"/>
+<area shape="poly" id="edge73_Node000048_Node000049" title=" " alt="" coords="195,344,100,391,98,386,193,339"/>
+<area shape="rect" id="Node000050" href="$spinlock_8h.html" title="Spinlock synchronization primitives." alt="" coords="116,396,196,422"/>
+<area shape="poly" id="edge75_Node000048_Node000050" title=" " alt="" coords="218,343,179,386,175,383,214,339"/>
+<area shape="rect" id="Node000057" href="$spsc_8h.html" title="Single&#45;Producer Single&#45;Consumer lockfree data structures." alt="" coords="955,396,1015,422"/>
+<area shape="poly" id="edge76_Node000048_Node000057" title=" " alt="" coords="300,327,940,400,939,405,300,332"/>
+<area shape="poly" id="edge83_Node000057_Node000012" title=" " alt="" coords="995,421,1024,470,1019,473,990,424"/>
+<area shape="poly" id="edge78_Node000057_Node000020" title=" " alt="" coords="979,424,967,444,957,469,954,495,957,506,963,516,980,530,1002,541,1060,554,1130,560,1207,559,1362,554,1428,556,1479,563,1483,564,1481,570,1478,569,1427,561,1362,560,1207,565,1130,565,1059,560,1000,546,977,534,959,520,952,508,948,495,952,468,962,442,974,421"/>
+<area shape="poly" id="edge80_Node000057_Node000021" title=" " alt="" coords="970,424,946,444,924,468,912,493,913,505,919,516,935,529,955,539,1008,552,1073,558,1144,558,1287,555,1348,556,1395,563,1400,565,1398,570,1394,569,1347,562,1287,560,1144,564,1072,563,1007,558,953,544,932,533,915,520,908,507,907,492,919,465,942,440,966,420"/>
+<area shape="poly" id="edge81_Node000057_Node000023" title=" " alt="" coords="1011,420,1121,475,1118,480,1008,425"/>
+<area shape="poly" id="edge77_Node000057_Node000025" title=" " alt="" coords="1016,410,1369,438,1554,457,1617,467,1647,475,1662,493,1673,515,1682,557,1676,558,1668,516,1658,496,1644,480,1616,472,1554,463,1368,443,1015,415"/>
+<area shape="poly" id="edge79_Node000057_Node000029" title=" " alt="" coords="955,416,647,449,491,467,421,480,417,488,417,496,422,518,428,568,435,586,452,604,489,618,556,630,748,647,958,658,1117,663,1117,668,957,663,747,653,556,635,487,623,449,609,431,589,423,569,417,518,412,496,412,486,418,475,490,462,647,443,954,411"/>
+<area shape="poly" id="edge82_Node000057_Node000031" title=" " alt="" coords="1017,416,1237,478,1236,483,1015,421"/>
+<area shape="poly" id="edge84_Node000057_Node000032" title=" " alt="" coords="1016,409,1293,427,1489,447,1690,475,1708,478,1707,483,1689,480,1489,452,1292,432,1016,414"/>
+<area shape="poly" id="edge85_Node000057_Node000047" title=" " alt="" coords="955,416,376,480,271,493,270,488,376,475,954,411"/>
+<area shape="poly" id="edge90_Node000058_Node000007" title=" " alt="" coords="1563,333,1572,380,1584,406,1601,427,1645,439,1736,455,1936,487,1935,492,1736,461,1643,444,1598,432,1579,409,1567,381,1558,334"/>
+<area shape="poly" id="edge89_Node000058_Node000013" title=" " alt="" coords="1532,336,1508,343,1404,362,1316,373,1237,377,1164,377,1011,377,921,381,816,391,785,396,785,390,816,386,921,376,1011,372,1164,372,1237,372,1315,367,1404,357,1507,338,1530,331"/>
+<area shape="poly" id="edge87_Node000058_Node000029" title=" " alt="" coords="1532,336,1508,343,1375,365,1261,374,1160,374,1066,370,971,365,870,365,756,372,623,391,509,409,459,419,414,431,376,450,343,477,316,515,296,567,289,588,290,596,295,605,311,615,338,624,422,639,534,650,662,657,924,664,1117,664,1117,669,924,669,662,662,533,655,421,644,337,629,309,620,291,609,285,598,284,588,291,565,311,512,339,473,373,445,413,426,458,413,508,404,622,386,756,367,870,359,971,360,1066,365,1160,369,1261,369,1375,360,1507,338,1531,331"/>
+<area shape="poly" id="edge91_Node000058_Node000033" title=" " alt="" coords="1590,331,1612,338,1737,361,1835,368,1934,372,2060,386,2108,394,2107,400,2059,391,1933,378,1835,373,1736,366,1611,343,1588,336"/>
+<area shape="poly" id="edge88_Node000058_Node000038" title=" " alt="" coords="1570,332,1606,385,1627,411,1645,427,1713,439,1855,456,2170,486,2169,491,1854,461,1712,445,1643,432,1624,415,1602,388,1565,335"/>
+</map>

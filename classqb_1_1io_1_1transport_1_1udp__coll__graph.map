@@ -1,0 +1,14 @@
+<map id="qb::io::transport::udp" name="qb::io::transport::udp">
+<area shape="rect" id="Node000001" title="UDP transport providing connectionless, datagram&#45;based communication." alt="" coords="13,447,154,473"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1stream.html" title=" " alt="" coords="22,357,145,398"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="86,413,86,447,81,447,81,413"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1istream.html" title="Input stream template class." alt="" coords="5,282,162,308"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="86,323,86,357,81,357,81,323"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="21,170,146,211"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="86,227,86,282,81,282,81,227"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1allocator_1_1base__pipe.html" title=" " alt="" coords="19,80,148,121"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="77,136,79,170,73,170,72,137"/>
+<area shape="poly" id="edge6_Node000004_Node000005" title=" " alt="" coords="95,137,94,170,88,170,90,136"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="11,5,156,31"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="86,47,86,80,81,80,81,47"/>
+</map>

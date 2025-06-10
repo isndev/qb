@@ -1,0 +1,5 @@
+<map id="qb::PingEvent" name="qb::PingEvent">
+<area shape="rect" id="Node000001" title="Event used for actor health checks." alt="" coords="5,79,109,105"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1_event.html" title="Base class for all events in the actor system." alt="" coords="18,5,96,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="60,46,60,79,54,79,54,46"/>
+</map>

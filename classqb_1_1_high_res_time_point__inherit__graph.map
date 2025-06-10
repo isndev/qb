@@ -1,0 +1,5 @@
+<map id="qb::HighResTimePoint" name="qb::HighResTimePoint">
+<area shape="rect" id="Node000001" title="Represents a high&#45;resolution time point." alt="" coords="5,79,159,105"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision." alt="" coords="31,5,133,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="85,46,85,79,79,79,79,46"/>
+</map>

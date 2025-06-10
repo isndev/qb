@@ -1,0 +1,27 @@
+<map id="include/qb/io/async/event/disconnected.h" name="include/qb/io/async/event/disconnected.h">
+<area shape="rect" id="Node000001" title="Disconnection event for asynchronous I/O operations." alt="" coords="5,5,155,46"/>
+<area shape="rect" id="Node000002" href="$all_8h.html" title="Aggregation of all event types for the asynchronous I/O system." alt="" coords="13,94,147,135"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="83,62,83,94,77,94,77,62"/>
+<area shape="rect" id="Node000003" href="$async_8h.html" title="Main include file for the QB asynchronous I/O library." alt="" coords="217,434,362,459"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="62,149,37,200,17,262,12,295,12,326,20,357,35,384,46,394,63,402,109,417,217,436,216,441,108,422,61,407,43,398,31,387,15,359,7,327,6,294,12,261,32,198,58,147"/>
+<area shape="rect" id="Node000004" href="$io_2async_2io_8h.html" title="Core asynchronous I/O class templates for event&#45;driven operations." alt="" coords="104,183,262,208"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="119,142,168,180,165,184,116,146"/>
+<area shape="poly" id="edge4_Node000004_Node000003" title=" " alt="" coords="145,218,119,236,95,258,68,291,47,322,42,337,41,352,45,367,55,384,80,401,120,415,217,434,216,439,119,420,77,406,51,387,40,369,36,352,37,335,42,319,63,288,91,254,116,232,142,214"/>
+<area shape="rect" id="Node000005" href="$async_2file_8h.html" title="Asynchronous file operations for the QB IO library." alt="" coords="65,345,199,386"/>
+<area shape="poly" id="edge5_Node000004_Node000005" title=" " alt="" coords="145,219,123,236,106,257,101,279,104,302,121,343,117,346,99,304,96,279,102,255,119,232,141,215"/>
+<area shape="rect" id="Node000006" href="$acceptor_8h.html" title="Asynchronous TCP connection acceptor implementation." alt="" coords="116,256,249,297"/>
+<area shape="poly" id="edge7_Node000004_Node000006" title=" " alt="" coords="185,224,185,256,180,256,180,224"/>
+<area shape="rect" id="Node000008" href="$tcp_2client_8h.html" title="Asynchronous TCP client implementation for the QB IO library." alt="" coords="273,256,407,297"/>
+<area shape="poly" id="edge10_Node000004_Node000008" title=" " alt="" coords="222,213,302,253,300,258,219,218"/>
+<area shape="rect" id="Node000009" href="$udp_2client_8h.html" title="Asynchronous UDP client implementation." alt="" coords="431,256,564,297"/>
+<area shape="poly" id="edge12_Node000004_Node000009" title=" " alt="" coords="247,210,431,256,429,261,245,215"/>
+<area shape="rect" id="Node000010" href="$udp_2server_8h.html" title="Asynchronous UDP server implementation." alt="" coords="521,345,655,386"/>
+<area shape="poly" id="edge14_Node000004_Node000010" title=" " alt="" coords="277,196,362,200,451,210,528,228,557,240,578,255,591,276,597,300,595,344,590,344,591,300,586,278,574,258,555,244,526,233,450,216,362,206,277,201"/>
+<area shape="poly" id="edge6_Node000005_Node000003" title=" " alt="" coords="186,391,266,431,264,436,184,395"/>
+<area shape="rect" id="Node000007" href="$tcp_2server_8h.html" title="Asynchronous TCP server implementation for the QB IO library." alt="" coords="223,345,356,386"/>
+<area shape="poly" id="edge8_Node000006_Node000007" title=" " alt="" coords="220,305,267,342,264,347,217,309"/>
+<area shape="poly" id="edge9_Node000007_Node000003" title=" " alt="" coords="292,401,292,433,287,433,287,401"/>
+<area shape="poly" id="edge11_Node000008_Node000003" title=" " alt="" coords="363,310,375,347,376,367,370,387,360,402,347,416,318,435,315,431,343,412,356,399,366,385,371,367,370,348,358,312"/>
+<area shape="poly" id="edge13_Node000009_Node000003" title=" " alt="" coords="473,310,435,349,391,388,352,415,315,435,312,431,349,410,388,384,432,345,469,307"/>
+<area shape="poly" id="edge15_Node000010_Node000003" title=" " alt="" coords="507,391,336,436,335,431,506,386"/>
+</map>

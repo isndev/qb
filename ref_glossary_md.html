@@ -1,0 +1,253 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: QB Actor Framework: Glossary of Terms</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: QB Actor Framework: Glossary of Terms</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('ref_glossary_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">QB Actor Framework: Glossary of Terms </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>A comprehensive glossary defining key terms, classes, and concepts used throughout the QB Actor Framework documentation.</p>
+<h1>QB Actor Framework: Glossary of Terms</h1>
+<p>This glossary provides definitions for key terms, classes, and concepts frequently encountered when working with the QB Actor Framework. Understanding this terminology will help you navigate the documentation and the framework itself more effectively.</p>
+<hr  />
+<ul>
+<li><b>Actor (<span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span>):</b> The fundamental, concurrent unit of computation and state in the QB framework. Actors encapsulate their state and behavior, interacting with other actors exclusively through asynchronous message passing (Events).</li>
+<li><b>Actor ID (<span class="tt"><a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a></span>):</b> A unique system-wide identifier for an actor instance. It's typically composed of a <span class="tt">CoreId</span> (identifying the <span class="tt">VirtualCore</span> the actor runs on) and a <span class="tt">ServiceId</span> (unique within that core).</li>
+<li><b>Actor Model:</b> A mathematical model of concurrent computation where "actors" are universal primitives. Key characteristics include state encapsulation, message-based communication, and independent execution.</li>
+<li><b>Affinity (CPU Affinity):</b> The tendency or configuration for a thread (like a <span class="tt">VirtualCore</span>) to run on a specific set or subset of CPU cores. QB allows configuring this via <span class="tt">CoreInitializer::setAffinity</span>.</li>
+<li><b>Asynchronous I/O (<span class="tt">qb-io</span>):</b> Input/Output operations (network, file) that do not block the calling thread while waiting for completion. QB relies heavily on this model for responsiveness and scalability.</li>
+<li><b>Async System (<span class="tt">qb::io::async</span>):</b> The subsystem within <span class="tt">qb-io</span> responsible for managing the event loop (<span class="tt">listener</span>), timers, and asynchronous callbacks.</li>
+<li><b><span class="tt">AProtocol&lt;IO_Type&gt;</span> (<span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html" title="Abstract base class for I/O-component-aware protocols (CRTP).">qb::io::async::AProtocol</a></span>):</b> An abstract base class (using CRTP) for defining custom message framing and parsing logic over byte streams in <span class="tt">qb-io</span>.</li>
+<li><b>Broadcast (<span class="tt">actor.broadcast&lt;T&gt;()</span>, <span class="tt"><a class="el" href="classqb_1_1_broadcast_id.html" title="Specialized ActorId for broadcasting messages to all actors on a core.">qb::BroadcastId</a></span>):</b> A mechanism for sending an event to all actors, either system-wide or to all actors on a specific <span class="tt">VirtualCore</span> (using <span class="tt"><a class="el" href="classqb_1_1_broadcast_id.html" title="Specialized ActorId for broadcasting messages to all actors on a core.">qb::BroadcastId</a></span>).</li>
+<li><b>Callback (Actor - <span class="tt"><a class="el" href="classqb_1_1_i_callback.html" title="Interface for actor callbacks.">qb::ICallback</a></span>):</b> An interface an actor can implement (<span class="tt">onCallback()</span>) to have a method executed periodically by its <span class="tt">VirtualCore</span> after event processing.</li>
+<li><b>Callback (I/O - <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span>):</b> A <span class="tt">qb-io</span> utility to schedule a callable (lambda, function) for asynchronous execution on the current thread's event loop, often after a specified delay.</li>
+<li><b><span class="tt">CoreId</span> (<span class="tt"><a class="el" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1" title="Type definition for core identifiers.">qb::CoreId</a></span>):</b> An identifier for a specific <span class="tt">VirtualCore</span> instance (worker thread).</li>
+<li><b><span class="tt">CoreInitializer</span> (<span class="tt"><a class="el" href="classqb_1_1_core_initializer.html" title="Handles pre-start configuration for a single VirtualCore.">qb::CoreInitializer</a></span>):</b> A helper class obtained via <span class="tt">qb::Main::core(id)</span> to configure <span class="tt">VirtualCore</span> properties (like affinity and latency) <em>before</em> the engine starts.</li>
+<li><b><span class="tt">CoreSet</span> (<span class="tt"><a class="el" href="classqb_1_1_core_set.html" title="Manages a set of core identifiers.">qb::CoreSet</a></span>):</b> Represents a set of physical CPU core identifiers, primarily used for setting thread affinity.</li>
+<li><b>CRTP (Curiously Recurring Template Pattern):</b> A C++ idiom where a class derives from a class template that takes the derived class itself as a template argument (e.g., <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1io.html" title="CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing.">qb::io::async::io</a>&lt;MyDerivedClass&gt;</span>). Used extensively in <span class="tt">qb-io</span> for static polymorphism and code reuse without vtable overhead.</li>
+<li><b>Endpoint (<span class="tt">qb::io::endpoint</span>):</b> A <span class="tt">qb-io</span> structure representing a network address, encompassing IP address (v4 or v6) and port number, or a Unix domain socket path.</li>
+<li><b>Event (<span class="tt"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a></span>):</b> The fundamental unit of communication between actors. Events are messages derived from the <span class="tt"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a></span> base class, carrying data and representing requests, notifications, or state changes.</li>
+<li><b>Event Loop (<span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1listener.html" title="Central event loop manager for asynchronous IO operations.">qb::io::async::listener</a></span>):</b> The central mechanism in <span class="tt">qb-io</span> (and thus in each <span class="tt">VirtualCore</span>) that monitors I/O readiness, timers, and other event sources, dispatching them to appropriate handlers. It is based on <span class="tt">libev</span>.</li>
+<li><b>Event Sourcing:</b> An advanced persistence pattern where changes to an actor's state are captured as a sequence of events, which are then stored. The actor's state can be rebuilt by replaying these events.</li>
+<li><b>Forward (<span class="tt">actor.forward(dest, event)</span>):</b> An efficient method for an actor to redirect a received event to a new destination actor, reusing the original event object while updating its source to be the forwarding actor.</li>
+<li><b>Framing (Message Framing):</b> The process of defining and recognizing message boundaries within a continuous byte stream (e.g., from a TCP connection). Handled by <span class="tt">qb-io</span> Protocols.</li>
+<li><b>IO Handler (<span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1io__handler.html" title="Session manager for asynchronous IO.">qb::io::async::io_handler</a></span>):</b> A base class template in <span class="tt">qb-io</span> (often used via <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;...&gt;::tcp::server</span>) for managing multiple client I/O sessions within a server component.</li>
+<li><b><span class="tt">libev</span>:</b> A high-performance C event loop library used internally by <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1listener.html" title="Central event loop manager for asynchronous IO operations.">qb::io::async::listener</a></span> to interact with the operating system's event notification mechanisms (like epoll, kqueue).</li>
+<li><b>Listener (Networking - <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1listener.html" title="Class implementing a TCP listener for accepting incoming connections.">qb::io::tcp::listener</a></span>, <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html" title="Class implementing a secure SSL/TLS TCP listener for accepting encrypted connections.">qb::io::tcp::ssl::listener</a></span>):</b> A <span class="tt">qb-io</span> class responsible for binding to a local network address and port, and accepting incoming TCP or SSL/TLS connections.</li>
+<li><b>Lock-Free:</b> Refers to data structures or algorithms designed to allow concurrent access from multiple threads without using traditional locks (like mutexes), often relying on atomic CPU operations. QB uses these for high-performance inter-core communication.</li>
+<li><b>Mailbox:</b> Conceptually, a queue associated with each actor (managed by its <span class="tt">VirtualCore</span>) where incoming events are stored before being processed by the actor sequentially.</li>
+<li><b>MPSC Queue (Multiple-Producer, Single-Consumer):</b> A queue optimized for scenarios where many threads can write (produce) items, but only one thread reads (consumes) items. Used in QB for inter-<span class="tt">VirtualCore</span> event communication (<span class="tt"><a class="el" href="classqb_1_1lockfree_1_1mpsc_1_1ringbuffer.html" title="Multi-Producer Single-Consumer ring buffer with fixed number of producers.">qb::lockfree::mpsc::ringbuffer</a></span>).</li>
+<li><b>Pipe (<span class="tt"><a class="el" href="classqb_1_1allocator_1_1pipe.html" title="Extensible buffer optimized for performance.">qb::allocator::pipe</a>&lt;T&gt;</span>):</b> A highly efficient, dynamically resizable memory buffer provided by QB. It's used extensively for I/O buffering and event serialization.</li>
+<li><b>Pipe (Communication Channel - <span class="tt"><a class="el" href="classqb_1_1_pipe.html" title="Represents a communication channel between actors.">qb::Pipe</a></span>):</b> An object obtained via <span class="tt">actor.getPipe(dest_id)</span> representing a direct, optimized communication channel for sending events to another actor.</li>
+<li><b>Protocol (<span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html" title="Abstract base class for I/O-component-aware protocols (CRTP).">qb::io::async::AProtocol</a>&lt;IO_Type&gt;</span>):</b> In <span class="tt">qb-io</span>, a class that defines the rules for interpreting a raw byte stream as a sequence of discrete application messages. It handles message framing and often initial parsing.</li>
+<li><b><span class="tt">push&lt;Event&gt;(...)</span> (<span class="tt">actor.push&lt;T&gt;()</span>):</b> The primary and recommended method for sending <b>ordered</b> asynchronous events between actors. Handles non-trivially destructible event types.</li>
+<li><b>RAII (Resource Acquisition Is Initialization):</b> A core C++ programming technique where resource lifetime is bound to object lifetime. Resources are acquired in an object's constructor and released in its destructor. This is the recommended way to manage resources (memory, file handles, sockets) within QB actors.</li>
+<li><b>Referenced Actor:</b> An actor created via <span class="tt">parent_actor.addRefActor&lt;ChildType&gt;()</span>. The parent receives a raw pointer to the child, which resides on the same <span class="tt">VirtualCore</span>. The parent does not own the child in terms of C++ lifetime; the child manages its own termination.</li>
+<li><b><span class="tt">reply(Event&amp;)</span> (<span class="tt">actor.reply()</span>):</b> An efficient method for an actor to send a received event (potentially modified) back to its original sender, reusing the event object.</li>
+<li><b><span class="tt">require&lt;T&gt;()</span> (<span class="tt">actor.require&lt;T&gt;()</span>):</b> A mechanism for an actor to request discovery of other live actors of type <span class="tt">T</span>. Responses are received as <span class="tt"><a class="el" href="structqb_1_1_require_event.html" title="Event used to query actor status.">qb::RequireEvent</a></span>s.</li>
+<li><b><span class="tt">send&lt;Event&gt;(...)</span> (<span class="tt">actor.send&lt;T&gt;()</span>):</b> A method for sending <b>unordered</b> asynchronous events. It may offer slightly lower latency for same-core communication but requires the event type to be trivially destructible and offers no ordering guarantees.</li>
+<li><b>Service Actor (<span class="tt"><a class="el" href="classqb_1_1_service_actor.html" title="SingletonActor base class, ensuring one instance per VirtualCore per Tag.">qb::ServiceActor</a>&lt;Tag&gt;</span>):</b> A specialized actor type designed to be a singleton instance per <span class="tt">VirtualCore</span>, identified by a unique <span class="tt">Tag</span> struct.</li>
+<li><b>Service ID (<span class="tt"><a class="el" href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30" title="Type definition for service identifiers.">qb::ServiceId</a></span>):</b> The component of an <span class="tt">ActorId</span> that uniquely identifies an actor <em>within</em> its assigned <span class="tt">VirtualCore</span>.</li>
+<li><b>Session (Networking):</b> Typically represents a single, stateful client connection managed by a server-side component (e.g., <span class="tt">ChatSession</span> in the chat example).</li>
+<li><b>Spinlock (<span class="tt"><a class="el" href="classqb_1_1lockfree_1_1_spin_lock.html" title="A spinlock implementation for lightweight thread synchronization.">qb::lockfree::SpinLock</a></span>):</b> A low-level mutual exclusion lock that uses busy-waiting (spinning) rather than yielding the CPU. Used for very short critical sections where contention is low.</li>
+<li><b>SPSC Queue (Single-Producer, Single-Consumer):</b> A queue optimized for communication where only one thread produces items and only one thread consumes them (<span class="tt"><a class="el" href="classqb_1_1lockfree_1_1spsc_1_1ringbuffer.html" title="Fixed-size implementation of the SPSC ringbuffer.">qb::lockfree::spsc::ringbuffer</a></span>).</li>
+<li><b>Stream (<span class="tt"><a class="el" href="classqb_1_1io_1_1istream.html" title="Input stream template class.">qb::io::istream</a></span>, <span class="tt"><a class="el" href="classqb_1_1io_1_1ostream.html" title="Output stream template class.">qb::io::ostream</a></span>, <span class="tt"><a class="el" href="classqb_1_1io_1_1stream.html" title="Combined input/output stream template class.">qb::io::stream</a></span>):</b> Base class templates in <span class="tt">qb-io</span> that provide buffered I/O abstractions over various underlying I/O types (transports).</li>
+<li><b>Transport (<span class="tt">qb::io::transport::*</span>):</b> A <span class="tt">qb-io</span> component that implements the specifics of communication over a particular medium (e.g., <span class="tt">transport::tcp</span>, <span class="tt">transport::udp</span>, <span class="tt">transport::file</span>, <span class="tt">transport::stcp</span> for SSL/TLS), typically by specializing a <span class="tt"><a class="el" href="classqb_1_1io_1_1stream.html" title="Combined input/output stream template class.">qb::io::stream</a></span> template.</li>
+<li><b>URI (<span class="tt"><a class="el" href="classqb_1_1io_1_1uri.html" title="Class for parsing, manipulating, and representing URIs.">qb::io::uri</a></span>):</b> A <span class="tt">qb-io</span> class for parsing, representing, and manipulating Uniform Resource Identifiers (RFC 3986).</li>
+<li><b><span class="tt">use&lt;&gt;</span> (<span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;DerivedActor&gt;</span>):</b> A CRTP helper template in <span class="tt">qb-io</span> that simplifies integrating asynchronous I/O capabilities (like TCP client/server behavior, UDP endpoint functionality) directly into an actor class by providing appropriate base class inheritance.</li>
+<li><b>UUID (<span class="tt"><a class="el" href="uuid_8h.html#acd92a3e374d3cbc05094c4f6a8b547a1" title="UUID type alias for the underlying implementation.">qb::uuid</a></span>):</b> Universally Unique Identifier (RFC 4122). <span class="tt"><a class="el" href="uuid_8h.html#a914c017a717180d10d49ebe5f1989d4d" title="Generates a random (version 4) UUID.">qb::generate_random_uuid()</a></span> provides version 4 UUIDs.</li>
+<li><b><span class="tt">VirtualCore</span> (<span class="tt"><a class="el" href="classqb_1_1_virtual_core.html" title="Manages a virtual processing core (worker thread) in the actor system.">qb::VirtualCore</a></span>):</b> A worker thread managed by <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">qb::Main</a></span>. Each <span class="tt">VirtualCore</span> executes a group of assigned actors and runs its own independent <span class="tt">qb-io</span> event loop.</li>
+<li><b><span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span>:</b> A fixed-capacity string class optimized for performance by avoiding heap allocations for strings up to <span class="tt">N</span> characters. Recommended over <span class="tt">std::string</span> for direct members in events due to ABI stability.</li>
+</ul>
+<p><b>(Next:</b> You might want to review the QB Actor Framework: Frequently Asked Questions (FAQ) or revisit the QB Framework: Detailed API Overview.)** </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

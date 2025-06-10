@@ -1,0 +1,389 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/crypto_jwt.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/crypto_jwt.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('crypto__jwt_8h_source.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">crypto_jwt.h</div></div>
+</div><!--header-->
+<div class="contents">
+<a href="crypto__jwt_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00024" name="l00024"></a><span class="lineno">   24</span> </div>
+<div class="line"><a id="l00025" name="l00025"></a><span class="lineno">   25</span><span class="preprocessor">#ifndef QB_IO_CRYPTO_JWT_H</span></div>
+<div class="line"><a id="l00026" name="l00026"></a><span class="lineno">   26</span><span class="preprocessor">#define QB_IO_CRYPTO_JWT_H</span></div>
+<div class="line"><a id="l00027" name="l00027"></a><span class="lineno">   27</span> </div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span><span class="preprocessor">#include &lt;chrono&gt;</span></div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span><span class="preprocessor">#include &lt;map&gt;</span></div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span><span class="preprocessor">#include &lt;optional&gt;</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span><span class="preprocessor">#include &lt;string&gt;</span></div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span><span class="preprocessor">#include &lt;vector&gt;</span></div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span><span class="preprocessor">#include &quot;<a class="code" href="crypto_8h.html">crypto.h</a>&quot;</span></div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span> </div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span><span class="keyword">namespace </span>qb {</div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span></div>
+<div class="foldopen" id="foldopen00046" data-start="{" data-end="};">
+<div class="line"><a id="l00046" name="l00046"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html">   46</a></span><span class="keyword">class </span><a class="code hl_class" href="classqb_1_1jwt.html">jwt</a> {</div>
+<div class="line"><a id="l00047" name="l00047"></a><span class="lineno">   47</span><span class="keyword">public</span>:</div>
+<div class="foldopen" id="foldopen00051" data-start="{" data-end="};">
+<div class="line"><a id="l00051" name="l00051"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0">   51</a></span>    <span class="keyword">enum class</span> <a class="code hl_enumeration" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0">Algorithm</a> {</div>
+<div class="line"><a id="l00052" name="l00052"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0aeb86be6fe0588de61c66e415b1e789a6">   52</a></span>        <a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0aeb86be6fe0588de61c66e415b1e789a6">HS256</a>, </div>
+<div class="line"><a id="l00053" name="l00053"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0af29fe2e02af29dc284213787eec34264">   53</a></span>        <a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0af29fe2e02af29dc284213787eec34264">HS384</a>, </div>
+<div class="line"><a id="l00054" name="l00054"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0acc302b6a187ce46ca24f03e737b35ce0">   54</a></span>        <a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0acc302b6a187ce46ca24f03e737b35ce0">HS512</a>, </div>
+<div class="line"><a id="l00055" name="l00055"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0ab774c36caa844a2b0e94f9c04c3ccacc">   55</a></span>        <a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0ab774c36caa844a2b0e94f9c04c3ccacc">RS256</a>, </div>
+<div class="line"><a id="l00056" name="l00056"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0ab03bdb0d07788e23633412c2e6126beb">   56</a></span>        <a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0ab03bdb0d07788e23633412c2e6126beb">RS384</a>, </div>
+<div class="line"><a id="l00057" name="l00057"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a712d59cd4e4ebe95bb0b24e0e188f17b">   57</a></span>        <a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a712d59cd4e4ebe95bb0b24e0e188f17b">RS512</a>, </div>
+<div class="line"><a id="l00058" name="l00058"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0afd60368f8e6bdf74fddcbd09f89c4aa5">   58</a></span>        <a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0afd60368f8e6bdf74fddcbd09f89c4aa5">ES256</a>, </div>
+<div class="line"><a id="l00059" name="l00059"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a0b24963bd9959fbc123de61adbdc07e4">   59</a></span>        <a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a0b24963bd9959fbc123de61adbdc07e4">ES384</a>, </div>
+<div class="line"><a id="l00060" name="l00060"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a9bed1c03a3ddb9495e6bf7d6699dd595">   60</a></span>        <a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a9bed1c03a3ddb9495e6bf7d6699dd595">ES512</a>, </div>
+<div class="line"><a id="l00061" name="l00061"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a549d69372575c42fd4d1d2e6a6b96372">   61</a></span>        <a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a549d69372575c42fd4d1d2e6a6b96372">EdDSA</a>  </div>
+<div class="line"><a id="l00062" name="l00062"></a><span class="lineno">   62</span>    };</div>
+</div>
+<div class="line"><a id="l00063" name="l00063"></a><span class="lineno">   63</span></div>
+<div class="foldopen" id="foldopen00067" data-start="{" data-end="};">
+<div class="line"><a id="l00067" name="l00067"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a931241c2284c4b33a2e064ab993c3bc5">   67</a></span>    <span class="keyword">enum class</span> <a class="code hl_enumeration" href="classqb_1_1jwt.html#a931241c2284c4b33a2e064ab993c3bc5">ValidationError</a> {</div>
+<div class="line"><a id="l00068" name="l00068"></a><span class="lineno">   68</span>        NONE,</div>
+<div class="line"><a id="l00069" name="l00069"></a><span class="lineno">   69</span>        INVALID_FORMAT,</div>
+<div class="line"><a id="l00070" name="l00070"></a><span class="lineno">   70</span>        INVALID_SIGNATURE,</div>
+<div class="line"><a id="l00071" name="l00071"></a><span class="lineno">   71</span>        TOKEN_EXPIRED,</div>
+<div class="line"><a id="l00072" name="l00072"></a><span class="lineno">   72</span>        TOKEN_NOT_ACTIVE,</div>
+<div class="line"><a id="l00073" name="l00073"></a><span class="lineno">   73</span>        INVALID_ISSUER,</div>
+<div class="line"><a id="l00074" name="l00074"></a><span class="lineno">   74</span>        INVALID_AUDIENCE,</div>
+<div class="line"><a id="l00075" name="l00075"></a><span class="lineno">   75</span>        INVALID_SUBJECT,</div>
+<div class="line"><a id="l00076" name="l00076"></a><span class="lineno">   76</span>        CLAIM_MISMATCH</div>
+<div class="line"><a id="l00077" name="l00077"></a><span class="lineno">   77</span>    };</div>
+</div>
+<div class="line"><a id="l00078" name="l00078"></a><span class="lineno">   78</span></div>
+<div class="foldopen" id="foldopen00083" data-start="{" data-end="};">
+<div class="line"><a id="l00083" name="l00083"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_validation_result.html">   83</a></span>    <span class="keyword">struct </span><a class="code hl_function" href="structqb_1_1jwt_1_1_validation_result.html#a08e948418883acf2f39d24f09c92ace0">ValidationResult</a> {</div>
+<div class="line"><a id="l00084" name="l00084"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_validation_result.html#ac3fc1eded0c81dd3bcf727569b34121f">   84</a></span>        <a class="code hl_enumeration" href="classqb_1_1jwt.html#a931241c2284c4b33a2e064ab993c3bc5">ValidationError</a> <a class="code hl_variable" href="structqb_1_1jwt_1_1_validation_result.html#ac3fc1eded0c81dd3bcf727569b34121f">error</a>; </div>
+<div class="line"><a id="l00085" name="l00085"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_validation_result.html#acf6652652131d2db6d058d59413d336d">   85</a></span>        std::map&lt;std::string, std::string&gt; <a class="code hl_variable" href="structqb_1_1jwt_1_1_validation_result.html#acf6652652131d2db6d058d59413d336d">payload</a>; </div>
+<div class="line"><a id="l00086" name="l00086"></a><span class="lineno">   86</span>        </div>
+<div class="line"><a id="l00088" name="l00088"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_validation_result.html#a22dcb646f4d5e8036bc83cf74423ecc2">   88</a></span>        <span class="keywordtype">bool</span> <a class="code hl_function" href="structqb_1_1jwt_1_1_validation_result.html#a22dcb646f4d5e8036bc83cf74423ecc2">is_valid</a>()<span class="keyword"> const </span>{ <span class="keywordflow">return</span> <a class="code hl_variable" href="structqb_1_1jwt_1_1_validation_result.html#ac3fc1eded0c81dd3bcf727569b34121f">error</a> == ValidationError::NONE; }</div>
+<div class="line"><a id="l00089" name="l00089"></a><span class="lineno">   89</span>        </div>
+<div class="line"><a id="l00091" name="l00091"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_validation_result.html#a08e948418883acf2f39d24f09c92ace0">   91</a></span>        <a class="code hl_function" href="structqb_1_1jwt_1_1_validation_result.html#a08e948418883acf2f39d24f09c92ace0">ValidationResult</a>() : <a class="code hl_variable" href="structqb_1_1jwt_1_1_validation_result.html#ac3fc1eded0c81dd3bcf727569b34121f">error</a>(<a class="code hl_enumeration" href="classqb_1_1jwt.html#a931241c2284c4b33a2e064ab993c3bc5">ValidationError</a>::NONE) {}</div>
+<div class="line"><a id="l00093" name="l00093"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_validation_result.html#a28774e42ee828a110fd793bba576d4ef">   93</a></span>        <a class="code hl_function" href="structqb_1_1jwt_1_1_validation_result.html#a28774e42ee828a110fd793bba576d4ef">ValidationResult</a>(<a class="code hl_enumeration" href="classqb_1_1jwt.html#a931241c2284c4b33a2e064ab993c3bc5">ValidationError</a> err) : <a class="code hl_variable" href="structqb_1_1jwt_1_1_validation_result.html#ac3fc1eded0c81dd3bcf727569b34121f">error</a>(err) {}</div>
+<div class="line"><a id="l00094" name="l00094"></a><span class="lineno">   94</span>    };</div>
+</div>
+<div class="line"><a id="l00095" name="l00095"></a><span class="lineno">   95</span></div>
+<div class="foldopen" id="foldopen00100" data-start="{" data-end="};">
+<div class="line"><a id="l00100" name="l00100"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_token_parts.html">  100</a></span>    <span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1jwt_1_1_token_parts.html">TokenParts</a> {</div>
+<div class="line"><a id="l00101" name="l00101"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_token_parts.html#a12565fb6052e5f704f8884215e276d04">  101</a></span>        std::string <a class="code hl_variable" href="structqb_1_1jwt_1_1_token_parts.html#a12565fb6052e5f704f8884215e276d04">header</a>;    </div>
+<div class="line"><a id="l00102" name="l00102"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_token_parts.html#a76abca86e9f6769bd736fdc1469487e2">  102</a></span>        std::string <a class="code hl_variable" href="structqb_1_1jwt_1_1_token_parts.html#a76abca86e9f6769bd736fdc1469487e2">payload</a>;   </div>
+<div class="line"><a id="l00103" name="l00103"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_token_parts.html#acaf07e2eaa64d338a2db6df1d2da5bc9">  103</a></span>        std::string <a class="code hl_variable" href="structqb_1_1jwt_1_1_token_parts.html#acaf07e2eaa64d338a2db6df1d2da5bc9">signature</a>; </div>
+<div class="line"><a id="l00104" name="l00104"></a><span class="lineno">  104</span>    };</div>
+</div>
+<div class="line"><a id="l00105" name="l00105"></a><span class="lineno">  105</span>    </div>
+<div class="foldopen" id="foldopen00110" data-start="{" data-end="};">
+<div class="line"><a id="l00110" name="l00110"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_create_options.html">  110</a></span>    <span class="keyword">struct </span>CreateOptions {</div>
+<div class="line"><a id="l00111" name="l00111"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_create_options.html#aea4eb9602d111f7396296e52b21e6038">  111</a></span>        <a class="code hl_enumeration" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0">Algorithm</a> <a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>; </div>
+<div class="line"><a id="l00112" name="l00112"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_create_options.html#ada8c6684f5fa7857100d9f6bd998769e">  112</a></span>        std::string <a class="code hl_variable" href="structqb_1_1jwt_1_1_create_options.html#ada8c6684f5fa7857100d9f6bd998769e">key</a>;     </div>
+<div class="line"><a id="l00113" name="l00113"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_create_options.html#ad7bef87a29ff4f91c65a8fd4d534b98b">  113</a></span>        std::optional&lt;std::string&gt; <a class="code hl_variable" href="structqb_1_1jwt_1_1_create_options.html#ad7bef87a29ff4f91c65a8fd4d534b98b">type</a>; </div>
+<div class="line"><a id="l00114" name="l00114"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_create_options.html#a49bce8fc04b2f4a0b1d99d91e86cd4eb">  114</a></span>        std::optional&lt;std::string&gt; <a class="code hl_variable" href="structqb_1_1jwt_1_1_create_options.html#a49bce8fc04b2f4a0b1d99d91e86cd4eb">content_type</a>; </div>
+<div class="line"><a id="l00115" name="l00115"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_create_options.html#aa5c23259a36c27538b8d1fbe1a771409">  115</a></span>        std::optional&lt;std::string&gt; <a class="code hl_variable" href="structqb_1_1jwt_1_1_create_options.html#aa5c23259a36c27538b8d1fbe1a771409">key_id</a>;       </div>
+<div class="line"><a id="l00116" name="l00116"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_create_options.html#a4a420b99da09386e5c3aa7ba7bc26c9e">  116</a></span>        std::map&lt;std::string, std::string&gt; <a class="code hl_variable" href="structqb_1_1jwt_1_1_create_options.html#a4a420b99da09386e5c3aa7ba7bc26c9e">header_claims</a>; </div>
+<div class="line"><a id="l00117" name="l00117"></a><span class="lineno">  117</span>        </div>
+<div class="line"><a id="l00118" name="l00118"></a><span class="lineno">  118</span>        CreateOptions() : <a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>(<a class="code hl_enumeration" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0">Algorithm</a>::<a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0aeb86be6fe0588de61c66e415b1e789a6">HS256</a>), <a class="code hl_variable" href="structqb_1_1jwt_1_1_create_options.html#ad7bef87a29ff4f91c65a8fd4d534b98b">type</a>(<span class="stringliteral">&quot;JWT&quot;</span>) {}</div>
+<div class="line"><a id="l00119" name="l00119"></a><span class="lineno">  119</span>    };</div>
+</div>
+<div class="line"><a id="l00120" name="l00120"></a><span class="lineno">  120</span>    </div>
+<div class="foldopen" id="foldopen00125" data-start="{" data-end="};">
+<div class="line"><a id="l00125" name="l00125"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html">  125</a></span>    <span class="keyword">struct </span>VerifyOptions {</div>
+<div class="line"><a id="l00126" name="l00126"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#aeb5588883e0b105fad6025fdc628fb26">  126</a></span>        <a class="code hl_enumeration" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0">Algorithm</a> <a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>; </div>
+<div class="line"><a id="l00127" name="l00127"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#adf94c8c579354a943c8b2aed17d9df42">  127</a></span>        std::string <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#adf94c8c579354a943c8b2aed17d9df42">key</a>;     </div>
+<div class="line"><a id="l00128" name="l00128"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#ad887382fa4120da0373330257bea018f">  128</a></span>        <span class="keywordtype">bool</span> <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#ad887382fa4120da0373330257bea018f">verify_expiration</a>; </div>
+<div class="line"><a id="l00129" name="l00129"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#a4f4bc057031c1880d0be7a7d22f626a1">  129</a></span>        <span class="keywordtype">bool</span> <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a4f4bc057031c1880d0be7a7d22f626a1">verify_not_before</a>; </div>
+<div class="line"><a id="l00130" name="l00130"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#a7c058d50e9a2d2231e04fd389a4dd283">  130</a></span>        <span class="keywordtype">bool</span> <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a7c058d50e9a2d2231e04fd389a4dd283">verify_issuer</a>;     </div>
+<div class="line"><a id="l00131" name="l00131"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#a9fea231fbfa2a471e205d47034cc26f7">  131</a></span>        std::optional&lt;std::string&gt; <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a9fea231fbfa2a471e205d47034cc26f7">issuer</a>; </div>
+<div class="line"><a id="l00132" name="l00132"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#a97cde2e34db249c48f62e184079a4cf8">  132</a></span>        <span class="keywordtype">bool</span> <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a97cde2e34db249c48f62e184079a4cf8">verify_audience</a>;   </div>
+<div class="line"><a id="l00133" name="l00133"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#a1dc1e21916877e76e3a6e615de2a48fd">  133</a></span>        std::optional&lt;std::string&gt; <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a1dc1e21916877e76e3a6e615de2a48fd">audience</a>; </div>
+<div class="line"><a id="l00134" name="l00134"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#af568f8f2b56dc52c4ad5a7e2b6a565e6">  134</a></span>        <span class="keywordtype">bool</span> <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#af568f8f2b56dc52c4ad5a7e2b6a565e6">verify_subject</a>;    </div>
+<div class="line"><a id="l00135" name="l00135"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#aff7f985e40600ff37180fef38373f897">  135</a></span>        std::optional&lt;std::string&gt; <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#aff7f985e40600ff37180fef38373f897">subject</a>;  </div>
+<div class="line"><a id="l00136" name="l00136"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#af71e30036ec5a2f662ccfdc7a78b070a">  136</a></span>        <span class="keywordtype">bool</span> <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#af71e30036ec5a2f662ccfdc7a78b070a">verify_jti</a>;        </div>
+<div class="line"><a id="l00137" name="l00137"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#a68a2f3829792daf704478787bc4f305e">  137</a></span>        std::optional&lt;std::string&gt; <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a68a2f3829792daf704478787bc4f305e">jti</a>;      </div>
+<div class="line"><a id="l00138" name="l00138"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#a7368d48cd9461cbf12cc49ae1769771e">  138</a></span>        std::chrono::seconds <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a7368d48cd9461cbf12cc49ae1769771e">clock_skew</a>; </div>
+<div class="line"><a id="l00139" name="l00139"></a><span class="lineno"><a class="line" href="structqb_1_1jwt_1_1_verify_options.html#a9f3649eb3ab697d0b42be0d0e05ab80f">  139</a></span>        std::map&lt;std::string, std::string&gt; <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a9f3649eb3ab697d0b42be0d0e05ab80f">required_claims</a>; </div>
+<div class="line"><a id="l00140" name="l00140"></a><span class="lineno">  140</span>        </div>
+<div class="line"><a id="l00141" name="l00141"></a><span class="lineno">  141</span>        VerifyOptions() </div>
+<div class="line"><a id="l00142" name="l00142"></a><span class="lineno">  142</span>            : <a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>(<a class="code hl_enumeration" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0">Algorithm</a>::<a class="code hl_enumvalue" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0aeb86be6fe0588de61c66e415b1e789a6">HS256</a>),</div>
+<div class="line"><a id="l00143" name="l00143"></a><span class="lineno">  143</span>              <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#ad887382fa4120da0373330257bea018f">verify_expiration</a>(true),</div>
+<div class="line"><a id="l00144" name="l00144"></a><span class="lineno">  144</span>              <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a4f4bc057031c1880d0be7a7d22f626a1">verify_not_before</a>(true),</div>
+<div class="line"><a id="l00145" name="l00145"></a><span class="lineno">  145</span>              <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a7c058d50e9a2d2231e04fd389a4dd283">verify_issuer</a>(false),</div>
+<div class="line"><a id="l00146" name="l00146"></a><span class="lineno">  146</span>              <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a97cde2e34db249c48f62e184079a4cf8">verify_audience</a>(false),</div>
+<div class="line"><a id="l00147" name="l00147"></a><span class="lineno">  147</span>              <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#af568f8f2b56dc52c4ad5a7e2b6a565e6">verify_subject</a>(false),</div>
+<div class="line"><a id="l00148" name="l00148"></a><span class="lineno">  148</span>              <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#af71e30036ec5a2f662ccfdc7a78b070a">verify_jti</a>(false),</div>
+<div class="line"><a id="l00149" name="l00149"></a><span class="lineno">  149</span>              <a class="code hl_variable" href="structqb_1_1jwt_1_1_verify_options.html#a7368d48cd9461cbf12cc49ae1769771e">clock_skew</a>(std::chrono::seconds(0)) {}</div>
+<div class="line"><a id="l00150" name="l00150"></a><span class="lineno">  150</span>    };</div>
+</div>
+<div class="line"><a id="l00151" name="l00151"></a><span class="lineno">  151</span></div>
+<div class="line"><a id="l00159" name="l00159"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a09fe12fde3ea70422525672fb18b6751">  159</a></span>    <span class="keyword">static</span> std::string <a class="code hl_function" href="classqb_1_1jwt.html#a09fe12fde3ea70422525672fb18b6751">create</a>(<span class="keyword">const</span> std::map&lt;std::string, std::string&gt;&amp; payload, </div>
+<div class="line"><a id="l00160" name="l00160"></a><span class="lineno">  160</span>                             <span class="keyword">const</span> <a class="code hl_struct" href="structqb_1_1jwt_1_1_create_options.html">CreateOptions</a>&amp; options);</div>
+<div class="line"><a id="l00161" name="l00161"></a><span class="lineno">  161</span>    </div>
+<div class="line"><a id="l00175" name="l00175"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#a3ccc9607164a08fdb75dbe077e93a4ce">  175</a></span>    <span class="keyword">static</span> std::string <a class="code hl_function" href="classqb_1_1jwt.html#a3ccc9607164a08fdb75dbe077e93a4ce">create_token</a>(</div>
+<div class="line"><a id="l00176" name="l00176"></a><span class="lineno">  176</span>        <span class="keyword">const</span> std::map&lt;std::string, std::string&gt;&amp; payload,</div>
+<div class="line"><a id="l00177" name="l00177"></a><span class="lineno">  177</span>        <span class="keyword">const</span> std::string&amp; issuer,</div>
+<div class="line"><a id="l00178" name="l00178"></a><span class="lineno">  178</span>        <span class="keyword">const</span> std::string&amp; subject,</div>
+<div class="line"><a id="l00179" name="l00179"></a><span class="lineno">  179</span>        <span class="keyword">const</span> std::string&amp; audience,</div>
+<div class="line"><a id="l00180" name="l00180"></a><span class="lineno">  180</span>        std::chrono::seconds expires_in,</div>
+<div class="line"><a id="l00181" name="l00181"></a><span class="lineno">  181</span>        std::chrono::seconds not_before = std::chrono::seconds(0),</div>
+<div class="line"><a id="l00182" name="l00182"></a><span class="lineno">  182</span>        <span class="keyword">const</span> std::string&amp; jti = <span class="stringliteral">&quot;&quot;</span>,</div>
+<div class="line"><a id="l00183" name="l00183"></a><span class="lineno">  183</span>        <span class="keyword">const</span> <a class="code hl_struct" href="structqb_1_1jwt_1_1_create_options.html">CreateOptions</a>&amp; options = <a class="code hl_struct" href="structqb_1_1jwt_1_1_create_options.html">CreateOptions</a>());</div>
+<div class="line"><a id="l00184" name="l00184"></a><span class="lineno">  184</span>    </div>
+<div class="line"><a id="l00192" name="l00192"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#acd75b3b6d9c8d681903bef5d0ce9bb8d">  192</a></span>    <span class="keyword">static</span> <a class="code hl_struct" href="structqb_1_1jwt_1_1_validation_result.html">ValidationResult</a> <a class="code hl_function" href="classqb_1_1jwt.html#acd75b3b6d9c8d681903bef5d0ce9bb8d">verify</a>(<span class="keyword">const</span> std::string&amp; token, <span class="keyword">const</span> <a class="code hl_struct" href="structqb_1_1jwt_1_1_verify_options.html">VerifyOptions</a>&amp; options);</div>
+<div class="line"><a id="l00193" name="l00193"></a><span class="lineno">  193</span>    </div>
+<div class="line"><a id="l00201" name="l00201"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#ae4b4ebc95044270c3f6cda3e51a34f5e">  201</a></span>    <span class="keyword">static</span> <a class="code hl_struct" href="structqb_1_1jwt_1_1_token_parts.html">TokenParts</a> <a class="code hl_function" href="classqb_1_1jwt.html#ae4b4ebc95044270c3f6cda3e51a34f5e">decode</a>(<span class="keyword">const</span> std::string&amp; token);</div>
+<div class="line"><a id="l00202" name="l00202"></a><span class="lineno">  202</span>    </div>
+<div class="line"><a id="l00209" name="l00209"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#ab41aba5d2932122de917954d97546501">  209</a></span>    <span class="keyword">static</span> std::string <a class="code hl_function" href="classqb_1_1jwt.html#ab41aba5d2932122de917954d97546501">algorithm_to_string</a>(<a class="code hl_enumeration" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0">Algorithm</a> <a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>);</div>
+<div class="line"><a id="l00210" name="l00210"></a><span class="lineno">  210</span>    </div>
+<div class="line"><a id="l00217" name="l00217"></a><span class="lineno"><a class="line" href="classqb_1_1jwt.html#aa3f50be1273281294e05cb3238a9d544">  217</a></span>    <span class="keyword">static</span> std::optional&lt;Algorithm&gt; <a class="code hl_function" href="classqb_1_1jwt.html#aa3f50be1273281294e05cb3238a9d544">algorithm_from_string</a>(<span class="keyword">const</span> std::string&amp; algorithm_str);</div>
+<div class="line"><a id="l00218" name="l00218"></a><span class="lineno">  218</span> </div>
+<div class="line"><a id="l00219" name="l00219"></a><span class="lineno">  219</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00227" name="l00227"></a><span class="lineno">  227</span>    <span class="keyword">static</span> std::vector&lt;unsigned char&gt; sign_data(<span class="keyword">const</span> std::string&amp; data, </div>
+<div class="line"><a id="l00228" name="l00228"></a><span class="lineno">  228</span>                                               <span class="keyword">const</span> <a class="code hl_struct" href="structqb_1_1jwt_1_1_create_options.html">CreateOptions</a>&amp; options);</div>
+<div class="line"><a id="l00229" name="l00229"></a><span class="lineno">  229</span>    </div>
+<div class="line"><a id="l00238" name="l00238"></a><span class="lineno">  238</span>    <span class="keyword">static</span> <span class="keywordtype">bool</span> verify_signature(<span class="keyword">const</span> std::string&amp; data,</div>
+<div class="line"><a id="l00239" name="l00239"></a><span class="lineno">  239</span>                                <span class="keyword">const</span> std::vector&lt;unsigned char&gt;&amp; signature,</div>
+<div class="line"><a id="l00240" name="l00240"></a><span class="lineno">  240</span>                                <span class="keyword">const</span> <a class="code hl_struct" href="structqb_1_1jwt_1_1_verify_options.html">VerifyOptions</a>&amp; options);</div>
+<div class="line"><a id="l00241" name="l00241"></a><span class="lineno">  241</span>    </div>
+<div class="line"><a id="l00248" name="l00248"></a><span class="lineno">  248</span>    <span class="keyword">static</span> <a class="code hl_enumeration" href="classqb_1_1crypto.html#aa9baac0850aa32d59d2107994f250020">crypto::DigestAlgorithm</a> get_digest_algorithm(<a class="code hl_enumeration" href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0">Algorithm</a> <a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>);</div>
+<div class="line"><a id="l00249" name="l00249"></a><span class="lineno">  249</span>    </div>
+<div class="line"><a id="l00255" name="l00255"></a><span class="lineno">  255</span>    <span class="keyword">static</span> int64_t current_timestamp();</div>
+<div class="line"><a id="l00256" name="l00256"></a><span class="lineno">  256</span>};</div>
+</div>
+<div class="line"><a id="l00257" name="l00257"></a><span class="lineno">  257</span> </div>
+<div class="line"><a id="l00258" name="l00258"></a><span class="lineno">  258</span>} <span class="comment">// namespace qb</span></div>
+<div class="line"><a id="l00259" name="l00259"></a><span class="lineno">  259</span> </div>
+<div class="line"><a id="l00260" name="l00260"></a><span class="lineno">  260</span><span class="preprocessor">#endif </span><span class="comment">// QB_IO_CRYPTO_JWT_H </span></div>
+<div class="ttc" id="aclassqb_1_1crypto_html_aa9baac0850aa32d59d2107994f250020"><div class="ttname"><a href="classqb_1_1crypto.html#aa9baac0850aa32d59d2107994f250020">qb::crypto::DigestAlgorithm</a></div><div class="ttdeci">DigestAlgorithm</div><div class="ttdoc">Supported digest algorithms.</div><div class="ttdef"><b>Definition</b> crypto.h:153</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html"><div class="ttname"><a href="classqb_1_1jwt.html">qb::jwt</a></div><div class="ttdoc">Comprehensive JWT implementation for the QB IO library.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:46</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a09fe12fde3ea70422525672fb18b6751"><div class="ttname"><a href="classqb_1_1jwt.html#a09fe12fde3ea70422525672fb18b6751">qb::jwt::create</a></div><div class="ttdeci">static std::string create(const std::map&lt; std::string, std::string &gt; &amp;payload, const CreateOptions &amp;options)</div><div class="ttdoc">Create a JWT token with custom payload and options.</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a3ccc9607164a08fdb75dbe077e93a4ce"><div class="ttname"><a href="classqb_1_1jwt.html#a3ccc9607164a08fdb75dbe077e93a4ce">qb::jwt::create_token</a></div><div class="ttdeci">static std::string create_token(const std::map&lt; std::string, std::string &gt; &amp;payload, const std::string &amp;issuer, const std::string &amp;subject, const std::string &amp;audience, std::chrono::seconds expires_in, std::chrono::seconds not_before=std::chrono::seconds(0), const std::string &amp;jti=&quot;&quot;, const CreateOptions &amp;options=CreateOptions())</div><div class="ttdoc">Create a JWT token with standard claims and custom payload.</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a4bf86d340ffba981be1b5b854be654b0"><div class="ttname"><a href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0">qb::jwt::Algorithm</a></div><div class="ttdeci">Algorithm</div><div class="ttdoc">Supported JWT signing algorithms.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:51</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a4bf86d340ffba981be1b5b854be654b0a0b24963bd9959fbc123de61adbdc07e4"><div class="ttname"><a href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a0b24963bd9959fbc123de61adbdc07e4">qb::jwt::Algorithm::ES384</a></div><div class="ttdeci">@ ES384</div><div class="ttdoc">ECDSA using P-384 and SHA-384.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:59</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a4bf86d340ffba981be1b5b854be654b0a549d69372575c42fd4d1d2e6a6b96372"><div class="ttname"><a href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a549d69372575c42fd4d1d2e6a6b96372">qb::jwt::Algorithm::EdDSA</a></div><div class="ttdeci">@ EdDSA</div><div class="ttdoc">Edwards-curve Digital Signature Algorithm (Ed25519)</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:61</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a4bf86d340ffba981be1b5b854be654b0a712d59cd4e4ebe95bb0b24e0e188f17b"><div class="ttname"><a href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a712d59cd4e4ebe95bb0b24e0e188f17b">qb::jwt::Algorithm::RS512</a></div><div class="ttdeci">@ RS512</div><div class="ttdoc">RSASSA-PKCS1-v1_5 using SHA-512.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:57</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a4bf86d340ffba981be1b5b854be654b0a9bed1c03a3ddb9495e6bf7d6699dd595"><div class="ttname"><a href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0a9bed1c03a3ddb9495e6bf7d6699dd595">qb::jwt::Algorithm::ES512</a></div><div class="ttdeci">@ ES512</div><div class="ttdoc">ECDSA using P-521 and SHA-512.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:60</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a4bf86d340ffba981be1b5b854be654b0ab03bdb0d07788e23633412c2e6126beb"><div class="ttname"><a href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0ab03bdb0d07788e23633412c2e6126beb">qb::jwt::Algorithm::RS384</a></div><div class="ttdeci">@ RS384</div><div class="ttdoc">RSASSA-PKCS1-v1_5 using SHA-384.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:56</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a4bf86d340ffba981be1b5b854be654b0ab774c36caa844a2b0e94f9c04c3ccacc"><div class="ttname"><a href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0ab774c36caa844a2b0e94f9c04c3ccacc">qb::jwt::Algorithm::RS256</a></div><div class="ttdeci">@ RS256</div><div class="ttdoc">RSASSA-PKCS1-v1_5 using SHA-256.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:55</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a4bf86d340ffba981be1b5b854be654b0acc302b6a187ce46ca24f03e737b35ce0"><div class="ttname"><a href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0acc302b6a187ce46ca24f03e737b35ce0">qb::jwt::Algorithm::HS512</a></div><div class="ttdeci">@ HS512</div><div class="ttdoc">HMAC using SHA-512.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:54</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a4bf86d340ffba981be1b5b854be654b0aeb86be6fe0588de61c66e415b1e789a6"><div class="ttname"><a href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0aeb86be6fe0588de61c66e415b1e789a6">qb::jwt::Algorithm::HS256</a></div><div class="ttdeci">@ HS256</div><div class="ttdoc">HMAC using SHA-256.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:52</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a4bf86d340ffba981be1b5b854be654b0af29fe2e02af29dc284213787eec34264"><div class="ttname"><a href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0af29fe2e02af29dc284213787eec34264">qb::jwt::Algorithm::HS384</a></div><div class="ttdeci">@ HS384</div><div class="ttdoc">HMAC using SHA-384.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:53</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a4bf86d340ffba981be1b5b854be654b0afd60368f8e6bdf74fddcbd09f89c4aa5"><div class="ttname"><a href="classqb_1_1jwt.html#a4bf86d340ffba981be1b5b854be654b0afd60368f8e6bdf74fddcbd09f89c4aa5">qb::jwt::Algorithm::ES256</a></div><div class="ttdeci">@ ES256</div><div class="ttdoc">ECDSA using P-256 and SHA-256.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:58</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_a931241c2284c4b33a2e064ab993c3bc5"><div class="ttname"><a href="classqb_1_1jwt.html#a931241c2284c4b33a2e064ab993c3bc5">qb::jwt::ValidationError</a></div><div class="ttdeci">ValidationError</div><div class="ttdoc">JWT validation error codes.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:67</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_aa3f50be1273281294e05cb3238a9d544"><div class="ttname"><a href="classqb_1_1jwt.html#aa3f50be1273281294e05cb3238a9d544">qb::jwt::algorithm_from_string</a></div><div class="ttdeci">static std::optional&lt; Algorithm &gt; algorithm_from_string(const std::string &amp;algorithm_str)</div><div class="ttdoc">Get algorithm from string representation.</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_ab41aba5d2932122de917954d97546501"><div class="ttname"><a href="classqb_1_1jwt.html#ab41aba5d2932122de917954d97546501">qb::jwt::algorithm_to_string</a></div><div class="ttdeci">static std::string algorithm_to_string(Algorithm algorithm)</div><div class="ttdoc">Get string representation of algorithm.</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_acd75b3b6d9c8d681903bef5d0ce9bb8d"><div class="ttname"><a href="classqb_1_1jwt.html#acd75b3b6d9c8d681903bef5d0ce9bb8d">qb::jwt::verify</a></div><div class="ttdeci">static ValidationResult verify(const std::string &amp;token, const VerifyOptions &amp;options)</div><div class="ttdoc">Verify a JWT token.</div></div>
+<div class="ttc" id="aclassqb_1_1jwt_html_ae4b4ebc95044270c3f6cda3e51a34f5e"><div class="ttname"><a href="classqb_1_1jwt.html#ae4b4ebc95044270c3f6cda3e51a34f5e">qb::jwt::decode</a></div><div class="ttdeci">static TokenParts decode(const std::string &amp;token)</div><div class="ttdoc">Decode a JWT token without verification.</div></div>
+<div class="ttc" id="acrypto_8h_html"><div class="ttname"><a href="crypto_8h.html">crypto.h</a></div><div class="ttdoc">Cryptographic utilities for the QB IO library.</div></div>
+<div class="ttc" id="anamespacealgorithm_html"><div class="ttname"><a href="namespacealgorithm.html">algorithm</a></div><div class="ttdoc">Namespace containing algorithm constants and utilities.</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_create_options_html"><div class="ttname"><a href="structqb_1_1jwt_1_1_create_options.html">qb::jwt::CreateOptions</a></div><div class="ttdoc">JWT creation options.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:110</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_create_options_html_a49bce8fc04b2f4a0b1d99d91e86cd4eb"><div class="ttname"><a href="structqb_1_1jwt_1_1_create_options.html#a49bce8fc04b2f4a0b1d99d91e86cd4eb">qb::jwt::CreateOptions::content_type</a></div><div class="ttdeci">std::optional&lt; std::string &gt; content_type</div><div class="ttdoc">Optional content type.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:114</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_create_options_html_a4a420b99da09386e5c3aa7ba7bc26c9e"><div class="ttname"><a href="structqb_1_1jwt_1_1_create_options.html#a4a420b99da09386e5c3aa7ba7bc26c9e">qb::jwt::CreateOptions::header_claims</a></div><div class="ttdeci">std::map&lt; std::string, std::string &gt; header_claims</div><div class="ttdoc">Additional custom claims to include in the JWT header.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:116</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_create_options_html_aa5c23259a36c27538b8d1fbe1a771409"><div class="ttname"><a href="structqb_1_1jwt_1_1_create_options.html#aa5c23259a36c27538b8d1fbe1a771409">qb::jwt::CreateOptions::key_id</a></div><div class="ttdeci">std::optional&lt; std::string &gt; key_id</div><div class="ttdoc">Optional key ID.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:115</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_create_options_html_ad7bef87a29ff4f91c65a8fd4d534b98b"><div class="ttname"><a href="structqb_1_1jwt_1_1_create_options.html#ad7bef87a29ff4f91c65a8fd4d534b98b">qb::jwt::CreateOptions::type</a></div><div class="ttdeci">std::optional&lt; std::string &gt; type</div><div class="ttdoc">Optional token type, typically &quot;JWT&quot;.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:113</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_create_options_html_ada8c6684f5fa7857100d9f6bd998769e"><div class="ttname"><a href="structqb_1_1jwt_1_1_create_options.html#ada8c6684f5fa7857100d9f6bd998769e">qb::jwt::CreateOptions::key</a></div><div class="ttdeci">std::string key</div><div class="ttdoc">Secret key for HMAC algorithms, or PEM-encoded private key for asymmetric algorithms.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:112</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_token_parts_html"><div class="ttname"><a href="structqb_1_1jwt_1_1_token_parts.html">qb::jwt::TokenParts</a></div><div class="ttdoc">JWT token parts.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:100</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_token_parts_html_a12565fb6052e5f704f8884215e276d04"><div class="ttname"><a href="structqb_1_1jwt_1_1_token_parts.html#a12565fb6052e5f704f8884215e276d04">qb::jwt::TokenParts::header</a></div><div class="ttdeci">std::string header</div><div class="ttdoc">The decoded header part of the JWT (JSON string).</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:101</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_token_parts_html_a76abca86e9f6769bd736fdc1469487e2"><div class="ttname"><a href="structqb_1_1jwt_1_1_token_parts.html#a76abca86e9f6769bd736fdc1469487e2">qb::jwt::TokenParts::payload</a></div><div class="ttdeci">std::string payload</div><div class="ttdoc">The decoded payload part of the JWT (JSON string).</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:102</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_token_parts_html_acaf07e2eaa64d338a2db6df1d2da5bc9"><div class="ttname"><a href="structqb_1_1jwt_1_1_token_parts.html#acaf07e2eaa64d338a2db6df1d2da5bc9">qb::jwt::TokenParts::signature</a></div><div class="ttdeci">std::string signature</div><div class="ttdoc">The signature part of the JWT (Base64URL encoded).</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:103</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_validation_result_html"><div class="ttname"><a href="structqb_1_1jwt_1_1_validation_result.html">qb::jwt::ValidationResult</a></div><div class="ttdoc">Result of JWT validation containing error code and payload if valid.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:83</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_validation_result_html_a08e948418883acf2f39d24f09c92ace0"><div class="ttname"><a href="structqb_1_1jwt_1_1_validation_result.html#a08e948418883acf2f39d24f09c92ace0">qb::jwt::ValidationResult::ValidationResult</a></div><div class="ttdeci">ValidationResult()</div><div class="ttdoc">Default constructor, initializes error to NONE.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:91</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_validation_result_html_a22dcb646f4d5e8036bc83cf74423ecc2"><div class="ttname"><a href="structqb_1_1jwt_1_1_validation_result.html#a22dcb646f4d5e8036bc83cf74423ecc2">qb::jwt::ValidationResult::is_valid</a></div><div class="ttdeci">bool is_valid() const</div><div class="ttdoc">Checks if the token validation was successful (error is NONE).</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:88</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_validation_result_html_a28774e42ee828a110fd793bba576d4ef"><div class="ttname"><a href="structqb_1_1jwt_1_1_validation_result.html#a28774e42ee828a110fd793bba576d4ef">qb::jwt::ValidationResult::ValidationResult</a></div><div class="ttdeci">ValidationResult(ValidationError err)</div><div class="ttdoc">Constructor to set a specific validation error.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:93</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_validation_result_html_ac3fc1eded0c81dd3bcf727569b34121f"><div class="ttname"><a href="structqb_1_1jwt_1_1_validation_result.html#ac3fc1eded0c81dd3bcf727569b34121f">qb::jwt::ValidationResult::error</a></div><div class="ttdeci">ValidationError error</div><div class="ttdoc">The validation error code, NONE if valid.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:84</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_validation_result_html_acf6652652131d2db6d058d59413d336d"><div class="ttname"><a href="structqb_1_1jwt_1_1_validation_result.html#acf6652652131d2db6d058d59413d336d">qb::jwt::ValidationResult::payload</a></div><div class="ttdeci">std::map&lt; std::string, std::string &gt; payload</div><div class="ttdoc">Decoded payload claims if validation was successful.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:85</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html">qb::jwt::VerifyOptions</a></div><div class="ttdoc">JWT verification options.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:125</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_a1dc1e21916877e76e3a6e615de2a48fd"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#a1dc1e21916877e76e3a6e615de2a48fd">qb::jwt::VerifyOptions::audience</a></div><div class="ttdeci">std::optional&lt; std::string &gt; audience</div><div class="ttdoc">Expected audience if verify_audience is true.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:133</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_a4f4bc057031c1880d0be7a7d22f626a1"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#a4f4bc057031c1880d0be7a7d22f626a1">qb::jwt::VerifyOptions::verify_not_before</a></div><div class="ttdeci">bool verify_not_before</div><div class="ttdoc">Whether to validate the nbf (not before) claim.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:129</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_a68a2f3829792daf704478787bc4f305e"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#a68a2f3829792daf704478787bc4f305e">qb::jwt::VerifyOptions::jti</a></div><div class="ttdeci">std::optional&lt; std::string &gt; jti</div><div class="ttdoc">Expected JWT ID if verify_jti is true.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:137</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_a7368d48cd9461cbf12cc49ae1769771e"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#a7368d48cd9461cbf12cc49ae1769771e">qb::jwt::VerifyOptions::clock_skew</a></div><div class="ttdeci">std::chrono::seconds clock_skew</div><div class="ttdoc">Clock skew tolerance for exp and nbf validations.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:138</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_a7c058d50e9a2d2231e04fd389a4dd283"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#a7c058d50e9a2d2231e04fd389a4dd283">qb::jwt::VerifyOptions::verify_issuer</a></div><div class="ttdeci">bool verify_issuer</div><div class="ttdoc">Whether to validate the iss (issuer) claim.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:130</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_a97cde2e34db249c48f62e184079a4cf8"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#a97cde2e34db249c48f62e184079a4cf8">qb::jwt::VerifyOptions::verify_audience</a></div><div class="ttdeci">bool verify_audience</div><div class="ttdoc">Whether to validate the aud (audience) claim.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:132</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_a9f3649eb3ab697d0b42be0d0e05ab80f"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#a9f3649eb3ab697d0b42be0d0e05ab80f">qb::jwt::VerifyOptions::required_claims</a></div><div class="ttdeci">std::map&lt; std::string, std::string &gt; required_claims</div><div class="ttdoc">Additional custom claims that must be present in the payload and match the provided values.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:139</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_a9fea231fbfa2a471e205d47034cc26f7"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#a9fea231fbfa2a471e205d47034cc26f7">qb::jwt::VerifyOptions::issuer</a></div><div class="ttdeci">std::optional&lt; std::string &gt; issuer</div><div class="ttdoc">Expected issuer if verify_issuer is true.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:131</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_ad887382fa4120da0373330257bea018f"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#ad887382fa4120da0373330257bea018f">qb::jwt::VerifyOptions::verify_expiration</a></div><div class="ttdeci">bool verify_expiration</div><div class="ttdoc">Whether to validate the exp (expiration time) claim.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:128</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_adf94c8c579354a943c8b2aed17d9df42"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#adf94c8c579354a943c8b2aed17d9df42">qb::jwt::VerifyOptions::key</a></div><div class="ttdeci">std::string key</div><div class="ttdoc">Secret key for HMAC algorithms, or PEM-encoded public key for asymmetric algorithms.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:127</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_af568f8f2b56dc52c4ad5a7e2b6a565e6"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#af568f8f2b56dc52c4ad5a7e2b6a565e6">qb::jwt::VerifyOptions::verify_subject</a></div><div class="ttdeci">bool verify_subject</div><div class="ttdoc">Whether to validate the sub (subject) claim.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:134</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_af71e30036ec5a2f662ccfdc7a78b070a"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#af71e30036ec5a2f662ccfdc7a78b070a">qb::jwt::VerifyOptions::verify_jti</a></div><div class="ttdeci">bool verify_jti</div><div class="ttdoc">Whether to validate the jti (JWT ID) claim.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:136</div></div>
+<div class="ttc" id="astructqb_1_1jwt_1_1_verify_options_html_aff7f985e40600ff37180fef38373f897"><div class="ttname"><a href="structqb_1_1jwt_1_1_verify_options.html#aff7f985e40600ff37180fef38373f897">qb::jwt::VerifyOptions::subject</a></div><div class="ttdeci">std::optional&lt; std::string &gt; subject</div><div class="ttdoc">Expected subject if verify_subject is true.</div><div class="ttdef"><b>Definition</b> crypto_jwt.h:135</div></div>
+</div><!-- fragment --></div><!-- contents -->
+</div><!-- doc-content -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="crypto__jwt_8h.html">crypto_jwt.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

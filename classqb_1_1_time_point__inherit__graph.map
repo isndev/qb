@@ -1,0 +1,11 @@
+<map id="qb::TimePoint" name="qb::TimePoint">
+<area shape="rect" id="Node000001" title="Represents a point in time with nanosecond precision." alt="" coords="275,5,377,31"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1_high_res_time_point.html" title="Represents a high&#45;resolution time point." alt="" coords="5,79,159,105"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="271,38,124,81,123,76,269,33"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1_local_time_point.html" title="Represents a local time point with nanosecond precision." alt="" coords="183,79,317,105"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="304,44,265,81,261,77,300,40"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1_tsc_time_point.html" title="Represents a time point based on CPU&#39;s timestamp counter." alt="" coords="341,79,463,105"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="352,40,391,77,387,81,348,44"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1_utc_time_point.html" title="Represents a UTC time point with nanosecond precision." alt="" coords="487,79,610,105"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="379,34,512,76,510,81,377,39"/>
+</map>

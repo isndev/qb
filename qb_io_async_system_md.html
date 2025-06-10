@@ -1,0 +1,326 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: QB-IO: The Asynchronous Engine (`qb::io::async`)</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: QB-IO: The Asynchronous Engine (`qb::io::async`)</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('qb_io_async_system_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">QB-IO: The Asynchronous Engine (`qbio::async`) </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>A deep dive into <span class="tt">qb-io</span>'s event loop, timers, callbacks, and event management for standalone asynchronous programming.</p>
+<h1>QB-IO: The Asynchronous Engine (<span class="tt">qb::io::async</span>)</h1>
+<p>The <span class="tt">qb::io::async</span> namespace is the powerhouse behind <span class="tt">qb-io</span>'s non-blocking capabilities. It provides a complete, event-driven asynchronous programming model built around a high-performance event loop. While it seamlessly integrates with the <span class="tt">qb-core</span> actor system, <span class="tt">qb::io::async</span> is also designed to be fully usable as a standalone toolkit for any C++17 application requiring efficient asynchronous operations.</p>
+<h2>The Event Loop: <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1listener.html" title="Central event loop manager for asynchronous IO operations.">qb::io::async::listener</a></span></h2>
+<p>At the heart of the asynchronous system is the <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1listener.html" title="Central event loop manager for asynchronous IO operations.">qb::io::async::listener</a></span> class (defined in <span class="tt"><a class="el" href="async_2listener_8h.html" title="Core event loop manager for the asynchronous IO framework.">qb/io/async/listener.h</a></span>). This class is your primary interface to the event loop.</p>
+<ul>
+<li><b>Underlying Engine:</b> <span class="tt">listener</span> wraps the <span class="tt">libev</span> C library, known for its high performance and portability across POSIX systems (epoll, kqueue) and Windows (IOCP, select).</li>
+<li><b>Thread-Local Instance (<span class="tt">listener::current</span>):</b> Crucially, <span class="tt">qb-io</span> provides a <b>thread-local static instance</b> of the <span class="tt">listener</span> named <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1listener.html#a4b1d56f544dc8f60eac6464038885bf8" title="Thread-local instance of the listener.">qb::io::async::listener::current</a></span>. This means each thread that intends to perform asynchronous operations with <span class="tt">qb-io</span> has its own dedicated event loop manager. You don't need to pass listener objects around; you simply access <span class="tt">listener::current</span> from the thread where you want to register or manage events.</li>
+<li><b>Initialization (Standalone Usage):</b> If you're using <span class="tt">qb-io</span> without <span class="tt">qb-core</span>, you must initialize the listener for each participating thread by calling <span class="tt"><a class="el" href="group___async.html#ga3d0a05b7d643be12ca6cf17281cd0de7" title="Initialize the asynchronous event system for the current thread.">qb::io::async::init()</a>;</span> once per thread before using other <span class="tt">qb::io::async</span> features. (When using <span class="tt">qb-core</span>, <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">qb::Main</a></span> handles this for its <span class="tt">VirtualCore</span> threads).</li>
+</ul>
+<h3>Responsibilities of the <span class="tt">listener</span>:</h3>
+<ol type="1">
+<li><b>Monitoring Event Sources:</b> The <span class="tt">listener</span> continuously monitors various sources of events:<ul>
+<li><b>I/O Events (<span class="tt"><a class="el" href="structqb_1_1io_1_1async_1_1event_1_1io.html" title="Event for file descriptor I/O readiness notifications (read/write).">qb::io::async::event::io</a></span>):</b> Readiness of file descriptors (sockets, pipes, files) for reading or writing.</li>
+<li><b>Timer Events (<span class="tt"><a class="el" href="structqb_1_1io_1_1async_1_1event_1_1timer.html" title="Event for handling time-based operations (timers and timeouts).">qb::io::async::event::timer</a></span>):</b> Expiration of scheduled timers for delayed or periodic actions.</li>
+<li><b>Signal Events (<span class="tt"><a class="el" href="structqb_1_1io_1_1async_1_1event_1_1signal.html" title="Event for handling system signals asynchronously.">qb::io::async::event::signal</a></span>):</b> Asynchronous notification of operating system signals (e.g., SIGINT, SIGTERM).</li>
+<li><b>File System Stat Events (<span class="tt"><a class="el" href="structqb_1_1io_1_1async_1_1event_1_1file.html" title="Event for file and directory attribute change monitoring.">qb::io::async::event::file</a></span>):</b> Notifications about changes to file attributes (used by <span class="tt">file_watcher</span> and <span class="tt">directory_watcher</span>).</li>
+</ul>
+</li>
+<li><b>Event Dispatching:</b> When an event source becomes active (e.g., data arrives on a socket, a timer expires), the <span class="tt">listener</span> identifies the corresponding registered handler (an object implementing <span class="tt">IRegisteredKernelEvent</span>) and invokes its <span class="tt">invoke()</span> method. This, in turn, typically calls the user-defined <span class="tt">on(SpecificEvent&amp;)</span> method within the I/O component or handler class.</li>
+</ol>
+<h3>Driving the Event Loop (Standalone Usage)</h3>
+<p>For the <span class="tt">listener</span> to process events, its loop must be actively run:</p>
+<ul>
+<li><b><span class="tt"><a class="el" href="group___async.html#ga5c6e9344c375a1c25745ee2e50b6cf65" title="Run the event loop for the current thread.">qb::io::async::run</a>(int flag = 0)</span>:</b> This function executes the event loop for <span class="tt">listener::current</span>. The <span class="tt">flag</span> argument controls its behavior:<ul>
+<li><span class="tt">0</span> (default): Runs the loop until <span class="tt"><a class="el" href="group___async.html#ga65878adaef3511f35eb35ea1fba20024" title="Request the parent (current thread&#39;s) event loop to break.">qb::io::async::break_parent()</a></span> is called or no active event watchers remain. This is a blocking call.</li>
+<li><span class="tt">EVRUN_ONCE</span>: Waits for at least one event to occur, processes the block of available events, and then returns.</li>
+<li><span class="tt">EVRUN_NOWAIT</span>: Checks for any immediately pending events, processes them, and returns without waiting if none are pending.</li>
+</ul>
+</li>
+<li><b><span class="tt"><a class="el" href="group___async.html#ga8eb3ad61b80f349e384fed8e555954d5" title="Run the event loop once for the current thread, waiting for at least one event.">qb::io::async::run_once()</a></span>:</b> Convenience for <span class="tt">run(EVRUN_ONCE)</span>.</li>
+<li><b><span class="tt"><a class="el" href="group___async.html#ga3ad243c574ce07cfcdfd2fdbe04db905" title="Run the event loop for the current thread until a condition is met.">qb::io::async::run_until</a>(const bool&amp; status_flag)</span>:</b> Runs the loop with <span class="tt">EVRUN_NOWAIT</span> repeatedly as long as <span class="tt">status_flag</span> is true.</li>
+<li><b><span class="tt"><a class="el" href="group___async.html#ga65878adaef3511f35eb35ea1fba20024" title="Request the parent (current thread&#39;s) event loop to break.">qb::io::async::break_parent()</a></span>:</b> Signals <span class="tt">listener::current</span> to stop its current <span class="tt">run()</span> cycle.</li>
+</ul>
+<div class="fragment"><div class="line"><span class="comment">// Standalone qb-io example sketch</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="async_8h.html">qb/io/async.h</a>&gt;</span></div>
+<div class="line"><span class="preprocessor">#include &lt;iostream&gt;</span></div>
+<div class="line"><span class="preprocessor">#include &lt;atomic&gt;</span></div>
+<div class="line"> </div>
+<div class="line">std::atomic&lt;bool&gt; g_is_running = <span class="keyword">true</span>;</div>
+<div class="line"> </div>
+<div class="line"><span class="keywordtype">void</span> my_periodic_task() {</div>
+<div class="line">    std::cout &lt;&lt; <span class="stringliteral">&quot;Periodic task executed at: &quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_utc_time_point.html#a2f15b3cb0393737f8ca8520df1bda22b">qb::UtcTimePoint::now</a>().<a class="code hl_function" href="classqb_1_1_time_point.html#aaca5177c32cc6fd45a7a2ed2edeab6a3">to_iso8601</a>() &lt;&lt; std::endl;</div>
+<div class="line">    <span class="keywordflow">if</span> (g_is_running) {</div>
+<div class="line">        <span class="comment">// Reschedule self</span></div>
+<div class="line">        <a class="code hl_function" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">qb::io::async::callback</a>(my_periodic_task, 1.0); <span class="comment">// Every 1 second</span></div>
+<div class="line">    }</div>
+<div class="line">}</div>
+<div class="line"> </div>
+<div class="line"><span class="keywordtype">int</span> main() {</div>
+<div class="line">    <a class="code hl_function" href="group___async.html#ga3d0a05b7d643be12ca6cf17281cd0de7">qb::io::async::init</a>(); <span class="comment">// Initialize listener for the main thread</span></div>
+<div class="line"> </div>
+<div class="line">    std::cout &lt;&lt; <span class="stringliteral">&quot;Starting standalone qb-io event loop demo.\n&quot;</span>;</div>
+<div class="line">    std::cout &lt;&lt; <span class="stringliteral">&quot;Press Ctrl+C to exit (if signal handling is set up, or wait for tasks).\n&quot;</span>;</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Schedule an initial periodic task</span></div>
+<div class="line">    <a class="code hl_function" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">qb::io::async::callback</a>(my_periodic_task, 1.0);</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Schedule a one-shot task to stop the loop after 5 seconds</span></div>
+<div class="line">    <a class="code hl_function" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">qb::io::async::callback</a>([]() {</div>
+<div class="line">        std::cout &lt;&lt; <span class="stringliteral">&quot;5 seconds elapsed. Signaling application to stop.\n&quot;</span>;</div>
+<div class="line">        g_is_running = <span class="keyword">false</span>;</div>
+<div class="line">        <a class="code hl_function" href="group___async.html#ga65878adaef3511f35eb35ea1fba20024">qb::io::async::break_parent</a>(); <span class="comment">// Request the run loop to exit</span></div>
+<div class="line">    }, 5.0);</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Run the event loop until break_parent() is called or g_is_running is false</span></div>
+<div class="line">    <span class="comment">// In a real app, this might be: while(g_is_running) { qb::io::async::run(EVRUN_ONCE); /* other logic */ }</span></div>
+<div class="line">    <a class="code hl_function" href="group___async.html#ga5c6e9344c375a1c25745ee2e50b6cf65">qb::io::async::run</a>(); <span class="comment">// Runs until break_parent() or no more active watchers</span></div>
+<div class="line"> </div>
+<div class="line">    std::cout &lt;&lt; <span class="stringliteral">&quot;Event loop finished.\n&quot;</span>;</div>
+<div class="line">    <span class="keywordflow">return</span> 0;</div>
+<div class="line">}</div>
+<div class="ttc" id="aasync_8h_html"><div class="ttname"><a href="async_8h.html">async.h</a></div><div class="ttdoc">Main include file for the QB asynchronous I/O library.</div></div>
+<div class="ttc" id="aclassqb_1_1_time_point_html_aaca5177c32cc6fd45a7a2ed2edeab6a3"><div class="ttname"><a href="classqb_1_1_time_point.html#aaca5177c32cc6fd45a7a2ed2edeab6a3">qb::TimePoint::to_iso8601</a></div><div class="ttdeci">std::string to_iso8601() const</div><div class="ttdoc">Converts to ISO8601 string.</div><div class="ttdef"><b>Definition</b> timestamp.h:910</div></div>
+<div class="ttc" id="aclassqb_1_1_utc_time_point_html_a2f15b3cb0393737f8ca8520df1bda22b"><div class="ttname"><a href="classqb_1_1_utc_time_point.html#a2f15b3cb0393737f8ca8520df1bda22b">qb::UtcTimePoint::now</a></div><div class="ttdeci">static UtcTimePoint now() noexcept</div><div class="ttdoc">Gets current UTC time.</div><div class="ttdef"><b>Definition</b> timestamp.h:1121</div></div>
+<div class="ttc" id="agroup___async_html_ga3d0a05b7d643be12ca6cf17281cd0de7"><div class="ttname"><a href="group___async.html#ga3d0a05b7d643be12ca6cf17281cd0de7">qb::io::async::init</a></div><div class="ttdeci">void init()</div><div class="ttdoc">Initialize the asynchronous event system for the current thread.</div><div class="ttdef"><b>Definition</b> listener.h:294</div></div>
+<div class="ttc" id="agroup___async_html_ga5c6e9344c375a1c25745ee2e50b6cf65"><div class="ttname"><a href="group___async.html#ga5c6e9344c375a1c25745ee2e50b6cf65">qb::io::async::run</a></div><div class="ttdeci">std::size_t run(int flag=0)</div><div class="ttdoc">Run the event loop for the current thread.</div><div class="ttdef"><b>Definition</b> listener.h:309</div></div>
+<div class="ttc" id="agroup___async_html_ga65878adaef3511f35eb35ea1fba20024"><div class="ttname"><a href="group___async.html#ga65878adaef3511f35eb35ea1fba20024">qb::io::async::break_parent</a></div><div class="ttdeci">void break_parent()</div><div class="ttdoc">Request the parent (current thread&#39;s) event loop to break.</div><div class="ttdef"><b>Definition</b> listener.h:351</div></div>
+<div class="ttc" id="agroup___async_html_ga79acd187eb2aeb629523ebb206ee004d"><div class="ttname"><a href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d">qb::io::async::callback</a></div><div class="ttdeci">void callback(_Func &amp;&amp;func, double timeout=0.)</div><div class="ttdoc">Utility function to schedule a callable for execution after a timeout.</div><div class="ttdef"><b>Definition</b> io.h:233</div></div>
+</div><!-- fragment --><h2>Registering Event Handlers</h2>
+<p>The <span class="tt">listener::current.registerEvent&lt;_Event, _Actor, _Args...&gt;(actor, args...)</span> method is the core mechanism for associating an event watcher (like <span class="tt"><a class="el" href="structqb_1_1io_1_1async_1_1event_1_1io.html" title="Event for file descriptor I/O readiness notifications (read/write).">qb::io::async::event::io</a></span> or <span class="tt">timer</span>) with a handler object (<span class="tt">_Actor</span>) and the event loop.</p>
+<ul>
+<li><span class="tt">_Event</span>: The qb-io event type (e.g., <span class="tt"><a class="el" href="structqb_1_1io_1_1async_1_1event_1_1timer.html" title="Event for handling time-based operations (timers and timeouts).">qb::io::async::event::timer</a></span>). This wraps a specific <span class="tt">libev</span> watcher.</li>
+<li><span class="tt">_Actor</span>: The class instance that will handle the event (must have an <span class="tt">on(_Event&amp;)</span> method).</li>
+<li><span class="tt">_Args...</span>: Arguments specific to the <span class="tt">libev</span> watcher being set up (e.g., file descriptor and <span class="tt">EV_READ</span>/<span class="tt">EV_WRITE</span> flags for an <span class="tt">event::io</span> watcher, or timeout values for an <span class="tt">event::timer</span>).</li>
+</ul>
+<p>Most <span class="tt">qb-io</span> components designed for asynchronous operations (e.g., those inheriting from <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1io.html" title="CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing.">qb::io::async::io</a></span>, <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1file__watcher.html" title="CRTP base class for watching a single file for attribute changes and processing its contents.">qb::io::async::file_watcher</a></span>, or <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html" title="CRTP base class that adds timeout functionality to derived asynchronous components.">qb::io::async::with_timeout</a></span>) handle this registration internally when they are constructed or started.</p>
+<h2>Asynchronous Callbacks: <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span></h2>
+<p>(<span class="tt"><a class="el" href="io_2async_2io_8h.html" title="Core asynchronous I/O class templates for event-driven operations.">qb/io/async/io.h</a></span>)</p>
+<p>This utility function provides a straightforward way to schedule a callable (lambda, function pointer, functor) for execution by the current thread's event loop, optionally after a delay.</p>
+<ul>
+<li><b>Execution:</b> The callback runs on the same thread that scheduled it.</li>
+<li><b>Lifetime:</b> The internal timer object (<span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1_timeout.html" title="Utility class to execute a function after a specified timeout using the event loop.">qb::io::async::Timeout</a></span>) created by <span class="tt">callback</span> is self-managing; it registers with the listener and deletes itself after the callback is invoked.</li>
+<li><b>Usage:</b> <span class="tt">qb::io::async::callback(my_function, delay_seconds);</span> or <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a>([]{ /* lambda body */ });</span></li>
+<li><b>Use Cases:</b> Delaying operations, breaking work into smaller non-blocking chunks, scheduling retries, and simple periodic tasks (by re-scheduling from within the callback).</li>
+</ul>
+<p><b>(See practical examples in:</b> Core Concepts: Asynchronous I/O Model in QB for actor-centric usage, and <span class="tt">example1_async_io.cpp</span> for general usage.**)**</p>
+<h2>Timeout Management: <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html" title="CRTP base class that adds timeout functionality to derived asynchronous components.">qb::io::async::with_timeout</a>&lt;Derived&gt;</span></h2>
+<p>(<span class="tt"><a class="el" href="io_2async_2io_8h.html" title="Core asynchronous I/O class templates for event-driven operations.">qb/io/async/io.h</a></span>)</p>
+<p>This CRTP base class allows you to easily add timeout functionality to your own classes.</p>
+<ul>
+<li><b>Inheritance:</b> <span class="tt">class MyClass : public <a class="el" href="classqb_1_1io_1_1async_1_1with__timeout.html" title="CRTP base class that adds timeout functionality to derived asynchronous components.">qb::io::async::with_timeout</a>&lt;MyClass&gt; { ... };</span></li>
+<li><b>Handler Method:</b> Implement <span class="tt">void on(<a class="el" href="structqb_1_1io_1_1async_1_1event_1_1timer.html" title="Event for handling time-based operations (timers and timeouts).">qb::io::async::event::timer</a> const&amp; event)</span> in <span class="tt">MyClass</span> to define what happens when the timeout occurs.</li>
+<li><b>Control:</b><ul>
+<li>The constructor <span class="tt">with_timeout(timeout_in_seconds)</span> initializes and starts the timer.</li>
+<li>Call <span class="tt">updateTimeout()</span> on any activity that should reset the timeout countdown.</li>
+<li>Use <span class="tt">setTimeout(new_duration_seconds)</span> to change the timeout period or disable it (by passing <span class="tt">0.0</span>).</li>
+</ul>
+</li>
+</ul>
+<p>This mechanism is ideal for implementing inactivity timeouts in network sessions, operation timeouts, or any scenario where an action needs to be taken if something doesn't happen within a specific timeframe.</p>
+<p><b>(A detailed example is available in:</b> Core Concepts: Asynchronous I/O Model in QB and <span class="tt">test-async-io.cpp::TimerHandler</span>**)**</p>
+<h2>Standard Asynchronous Event Types (<span class="tt">qb::io::async::event::*</span>)</h2>
+<p>(<span class="tt"><a class="el" href="all_8h.html" title="Aggregation of all event types for the asynchronous I/O system.">qb/io/async/event/all.h</a></span>)</p>
+<p><span class="tt">qb-io</span> defines a suite of event structures used to notify components about various asynchronous occurrences. When building custom I/O components (often by inheriting from <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1input.html" title="CRTP base class for managing asynchronous input operations with protocol processing.">qb::io::async::input</a></span>, <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1output.html" title="CRTP base class for managing asynchronous output operations.">qb::io::async::output</a></span>, or <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1io.html" title="CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing.">qb::io::async::io</a></span>), you will typically override <span class="tt">on(SpecificEvent&amp;)</span> methods to handle these:</p>
+<ul>
+<li><span class="tt">disconnected</span>: A network connection was closed or an error occurred.</li>
+<li><span class="tt">eof</span>: End-of-file reached on an input stream; no more data to read.</li>
+<li><span class="tt">eos</span>: End-of-stream reached on an output stream; all buffered data has been sent.</li>
+<li><span class="tt">file</span>: Attributes of a monitored file or directory have changed (used by <span class="tt">file_watcher</span>).</li>
+<li><span class="tt">io</span>: Raw low-level I/O readiness on a file descriptor (e.g., socket is readable/writable).</li>
+<li><span class="tt">pending_read</span>/<span class="tt">pending_write</span>: Data remains in input/output buffers after a partial operation.</li>
+<li><span class="tt">signal</span>: An OS signal was caught.</li>
+<li><span class="tt">timer</span>/<span class="tt">timeout</span>: A previously set timer or timeout has expired.</li>
+</ul>
+<p>These events form the backbone of communication between the <span class="tt">listener</span> and the I/O handling components, enabling a fully event-driven architecture.</p>
+<p><b>(Next:</b> QB-IO: Transports to see how these async mechanisms are applied to TCP, UDP, etc.**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

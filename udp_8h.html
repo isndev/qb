@@ -1,0 +1,357 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/transport/udp.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/transport/udp.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('udp_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">udp.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___networking.html">Networking Utilities</a> &raquo; <a class="el" href="group___u_d_p.html">UDP Communication</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>UDP datagram transport implementation for the QB IO library.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &lt;<a class="el" href="functional_8h_source.html">qb/utility/functional.h</a>&gt;</code><br />
+<code>#include &quot;<a class="el" href="stream_8h_source.html">../stream.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="udp_2socket_8h_source.html">../udp/socket.h</a>&quot;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for udp.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="udp_8h__incl.png" border="0" usemap="#ainclude_2qb_2io_2transport_2udp_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2transport_2udp_8h" id="ainclude_2qb_2io_2transport_2udp_8h">
+<area shape="rect" title="UDP datagram transport implementation for the QB IO library." alt="" coords="799,5,949,46"/>
+<area shape="rect" href="functional_8h.html" title="Functional utilities, primarily for hash computations." alt="" coords="537,94,678,120"/>
+<area shape="poly" title=" " alt="" coords="808,49,664,92,663,86,807,44"/>
+<area shape="rect" href="stream_8h.html" title="Core stream abstraction classes for the QB IO library." alt="" coords="832,94,916,120"/>
+<area shape="poly" title=" " alt="" coords="877,46,877,78,871,78,871,46"/>
+<area shape="rect" href="udp_2socket_8h.html" title="Implementation of UDP sockets for datagram communication in the QB IO library." alt="" coords="1417,94,1525,120"/>
+<area shape="poly" title=" " alt="" coords="949,34,1402,94,1401,99,949,40"/>
+<area shape="rect" title=" " alt="" coords="465,175,542,201"/>
+<area shape="poly" title=" " alt="" coords="593,122,533,168,529,164,590,118"/>
+<area shape="rect" href="system_2allocator_2_pipe_8h.html" title="Implementation of a dynamic extensible buffer." alt="" coords="566,168,702,208"/>
+<area shape="poly" title=" " alt="" coords="838,123,709,165,707,160,836,118"/>
+<area shape="rect" href="type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="865,175,1011,201"/>
+<area shape="poly" title=" " alt="" coords="886,118,921,161,916,164,882,122"/>
+<area shape="rect" title=" " alt="" coords="137,352,187,378"/>
+<area shape="poly" title=" " alt="" coords="566,209,554,211,451,216,278,222,109,234,48,245,28,251,17,258,9,272,10,286,19,299,35,311,77,334,123,350,121,355,75,338,32,316,15,302,5,288,4,271,13,254,26,246,47,239,108,229,277,217,450,211,554,206,566,204"/>
+<area shape="rect" title=" " alt="" coords="384,352,444,378"/>
+<area shape="poly" title=" " alt="" coords="607,211,542,258,440,344,437,340,539,254,604,207"/>
+<area shape="rect" title=" " alt="" coords="746,352,818,378"/>
+<area shape="poly" title=" " alt="" coords="645,208,668,250,700,295,726,320,753,342,750,346,722,324,696,299,663,253,641,210"/>
+<area shape="rect" title=" " alt="" coords="710,264,779,290"/>
+<area shape="poly" title=" " alt="" coords="661,207,719,252,716,256,657,211"/>
+<area shape="rect" href="string_8h.html" title="Fixed&#45;size string implementation optimized for performance." alt="" coords="553,264,635,290"/>
+<area shape="poly" title=" " alt="" coords="627,210,608,251,603,249,622,208"/>
+<area shape="rect" href="branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="28,264,187,290"/>
+<area shape="poly" title=" " alt="" coords="566,209,554,211,455,227,377,236,299,244,200,259,178,263,177,258,199,254,299,239,376,231,454,222,553,206,565,203"/>
+<area shape="rect" href="nocopy_8h.html" title="Defines a base class to make derived classes non&#45;copyable." alt="" coords="211,264,337,290"/>
+<area shape="poly" title=" " alt="" coords="566,208,555,211,349,259,336,262,335,257,348,254,553,206,565,203"/>
+<area shape="rect" href="prefix_8h.html" title="Platform&#45;specific alignment macros, cache&#45;line definitions, and related utilities." alt="" coords="361,264,478,290"/>
+<area shape="poly" title=" " alt="" coords="586,211,464,260,463,255,584,206"/>
+<area shape="rect" title=" " alt="" coords="894,264,982,290"/>
+<area shape="poly" title=" " alt="" coords="703,204,883,254,890,256,889,261,881,259,701,209"/>
+<area shape="rect" title=" " alt="" coords="1005,264,1063,290"/>
+<area shape="poly" title=" " alt="" coords="703,194,839,215,918,232,995,254,998,255,996,260,993,259,916,237,838,221,702,199"/>
+<area shape="poly" title=" " alt="" coords="553,289,203,359,202,353,552,284"/>
+<area shape="poly" title=" " alt="" coords="570,293,454,348,452,343,567,288"/>
+<area shape="poly" title=" " alt="" coords="622,288,743,343,741,348,619,293"/>
+<area shape="rect" title=" " alt="" coords="469,352,543,378"/>
+<area shape="poly" title=" " alt="" coords="584,292,531,344,527,340,580,288"/>
+<area shape="rect" title=" " alt="" coords="568,352,620,378"/>
+<area shape="poly" title=" " alt="" coords="597,290,597,337,591,337,591,290"/>
+<area shape="rect" href="build__macros_8h.html" title="Platform, compiler, and C++ feature detection macros for the QB Framework." alt="" coords="1666,352,1828,378"/>
+<area shape="poly" title=" " alt="" coords="636,284,698,294,843,308,966,315,1176,317,1386,319,1509,327,1654,342,1681,346,1680,352,1654,348,1509,332,1386,325,1176,322,966,320,843,314,698,300,635,290"/>
+<area shape="rect" title=" " alt="" coords="1222,352,1275,378"/>
+<area shape="poly" title=" " alt="" coords="636,284,698,294,989,333,1207,357,1206,362,988,338,698,300,635,289"/>
+<area shape="rect" title=" " alt="" coords="644,352,722,378"/>
+<area shape="poly" title=" " alt="" coords="608,288,662,340,658,344,605,292"/>
+<area shape="poly" title=" " alt="" coords="941,201,941,248,935,248,935,201"/>
+<area shape="rect" title=" " alt="" coords="1086,264,1168,290"/>
+<area shape="poly" title=" " alt="" coords="966,199,1088,255,1086,259,964,204"/>
+<area shape="rect" title=" " alt="" coords="1193,264,1245,290"/>
+<area shape="poly" title=" " alt="" coords="994,199,1083,222,1181,254,1184,255,1182,260,1180,259,1081,227,993,204"/>
+<area shape="rect" title=" " alt="" coords="803,264,870,290"/>
+<area shape="poly" title=" " alt="" coords="926,203,863,256,860,252,922,199"/>
+<area shape="poly" title=" " alt="" coords="1417,118,1361,136,1334,150,1311,169,1294,199,1278,245,1256,338,1251,337,1273,243,1289,197,1307,166,1331,146,1359,131,1416,113"/>
+<area shape="rect" title=" " alt="" coords="1321,175,1486,201"/>
+<area shape="poly" title=" " alt="" coords="1463,122,1426,165,1422,161,1459,118"/>
+<area shape="rect" href="uri_8h.html" title="URI parsing and manipulation utilities." alt="" coords="1510,175,1568,201"/>
+<area shape="poly" title=" " alt="" coords="1484,118,1521,161,1517,165,1480,122"/>
+<area shape="rect" title=" " alt="" coords="1593,175,1659,201"/>
+<area shape="poly" title=" " alt="" coords="1496,118,1590,166,1588,170,1494,123"/>
+<area shape="rect" title=" " alt="" coords="1684,175,1744,201"/>
+<area shape="poly" title=" " alt="" coords="1519,118,1592,138,1672,165,1675,166,1674,171,1670,170,1590,144,1518,123"/>
+<area shape="poly" title=" " alt="" coords="1555,199,1622,254,1723,340,1720,344,1619,258,1552,203"/>
+<area shape="poly" title=" " alt="" coords="1515,204,1499,211,1459,224,1427,231,1397,240,1361,259,1309,300,1269,342,1265,339,1305,296,1358,254,1395,235,1426,226,1458,219,1497,206,1513,199"/>
+<area shape="poly" title=" " alt="" coords="1518,204,1499,211,1423,228,1359,237,1247,239,1135,240,1070,246,994,259,985,261,983,256,993,254,1069,240,1135,235,1247,234,1358,231,1422,223,1497,206,1516,199"/>
+<area shape="poly" title=" " alt="" coords="1518,204,1499,211,1435,226,1380,233,1286,235,1192,237,1138,244,1075,259,1071,260,1069,255,1073,254,1137,239,1191,231,1286,229,1380,227,1434,220,1497,206,1516,199"/>
+<area shape="rect" title=" " alt="" coords="1371,264,1446,290"/>
+<area shape="poly" title=" " alt="" coords="1523,204,1441,257,1438,253,1520,199"/>
+<area shape="rect" href="io_2config_8h.html" title="Configuration and platform&#45;specific definitions for the QB IO library." alt="" coords="2440,264,2540,290"/>
+<area shape="poly" title=" " alt="" coords="1563,199,1581,206,1656,220,1755,233,1996,252,2240,264,2425,271,2425,276,2240,270,1995,257,1755,238,1655,225,1580,211,1561,204"/>
+<area shape="rect" href="unordered__map_8h.html" title="Optimized unordered map implementations." alt="" coords="1470,256,1609,297"/>
+<area shape="poly" title=" " alt="" coords="1542,201,1542,241,1537,241,1537,201"/>
+<area shape="rect" title=" " alt="" coords="1683,264,1737,290"/>
+<area shape="poly" title=" " alt="" coords="1565,199,1673,254,1671,259,1562,204"/>
+<area shape="poly" title=" " alt="" coords="2440,284,2183,306,2013,325,1841,348,1818,352,1817,346,1840,342,2012,319,2182,301,2439,279"/>
+<area shape="rect" title=" " alt="" coords="2686,352,2750,378"/>
+<area shape="poly" title=" " alt="" coords="2526,288,2675,343,2677,344,2676,349,2673,347,2524,293"/>
+<area shape="rect" href="signal_8h.html" title="System signal event handler for asynchronous I/O." alt="" coords="2774,352,2840,378"/>
+<area shape="poly" title=" " alt="" coords="2541,285,2644,309,2763,342,2767,344,2765,349,2761,348,2643,314,2540,291"/>
+<area shape="rect" title=" " alt="" coords="2864,352,2945,378"/>
+<area shape="poly" title=" " alt="" coords="2540,282,2682,305,2768,322,2853,342,2860,344,2859,350,2852,348,2767,327,2681,310,2539,287"/>
+<area shape="rect" title=" " alt="" coords="2970,352,3047,378"/>
+<area shape="poly" title=" " alt="" coords="2540,279,2726,299,2842,317,2959,342,2966,344,2964,350,2957,348,2841,323,2725,304,2540,284"/>
+<area shape="rect" title=" " alt="" coords="3072,352,3161,378"/>
+<area shape="poly" title=" " alt="" coords="2540,278,2766,296,2913,315,3060,342,3070,345,3069,350,3059,348,2912,321,2766,302,2540,283"/>
+<area shape="rect" title=" " alt="" coords="3186,352,3253,378"/>
+<area shape="poly" title=" " alt="" coords="2540,275,2655,278,2813,287,2994,307,3085,323,3175,342,3181,344,3180,349,3173,348,3084,328,2993,313,2813,292,2655,283,2540,280"/>
+<area shape="rect" title=" " alt="" coords="1853,352,1935,378"/>
+<area shape="poly" title=" " alt="" coords="2440,283,2225,302,2086,321,1948,348,1939,350,1938,345,1947,342,2085,315,2224,296,2440,278"/>
+<area shape="rect" title=" " alt="" coords="1959,352,2021,378"/>
+<area shape="poly" title=" " alt="" coords="2440,284,2259,302,2146,321,2033,348,2029,349,2027,344,2032,342,2145,316,2258,297,2440,278"/>
+<area shape="rect" title=" " alt="" coords="2045,352,2130,378"/>
+<area shape="poly" title=" " alt="" coords="2440,288,2305,311,2143,348,2135,350,2133,345,2141,342,2304,306,2439,283"/>
+<area shape="rect" title=" " alt="" coords="2154,352,2247,378"/>
+<area shape="poly" title=" " alt="" coords="2448,293,2260,348,2253,350,2251,345,2258,342,2446,288"/>
+<area shape="rect" title=" " alt="" coords="2272,352,2364,378"/>
+<area shape="poly" title=" " alt="" coords="2467,293,2357,348,2354,343,2464,288"/>
+<area shape="rect" title=" " alt="" coords="2388,352,2485,378"/>
+<area shape="poly" title=" " alt="" coords="2485,291,2454,341,2450,338,2480,289"/>
+<area shape="rect" title=" " alt="" coords="2509,352,2580,378"/>
+<area shape="poly" title=" " alt="" coords="2500,289,2531,338,2527,341,2495,291"/>
+<area shape="rect" title=" " alt="" coords="2604,352,2661,378"/>
+<area shape="poly" title=" " alt="" coords="2511,288,2601,342,2598,346,2508,292"/>
+<area shape="poly" title=" " alt="" coords="1470,298,1368,324,1288,348,1286,348,1284,343,1286,342,1366,319,1468,292"/>
+<area shape="rect" title=" " alt="" coords="1433,352,1480,378"/>
+<area shape="poly" title=" " alt="" coords="1522,299,1480,343,1476,340,1519,296"/>
+<area shape="rect" title=" " alt="" coords="1503,345,1642,386"/>
+<area shape="poly" title=" " alt="" coords="1549,297,1562,329,1557,331,1544,298"/>
+<area shape="rect" title=" " alt="" coords="1299,352,1409,378"/>
+<area shape="poly" title=" " alt="" coords="1498,300,1394,348,1392,343,1496,295"/>
+</map>
+</div>
+</div><div class="textblock"><div class="dynheader">
+This graph shows which files directly or indirectly include this file:</div>
+<div class="dyncontent">
+<div class="center"><img src="udp_8h__dep__incl.png" border="0" usemap="#ainclude_2qb_2io_2transport_2udp_8hdep" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2transport_2udp_8hdep" id="ainclude_2qb_2io_2transport_2udp_8hdep">
+<area shape="rect" title="UDP datagram transport implementation for the QB IO library." alt="" coords="76,5,225,46"/>
+<area shape="rect" href="udp_2client_8h.html" title="Asynchronous UDP client implementation." alt="" coords="5,94,139,135"/>
+<area shape="poly" title=" " alt="" coords="124,60,92,95,88,92,121,56"/>
+<area shape="rect" href="udp_2server_8h.html" title="Asynchronous UDP server implementation." alt="" coords="163,94,296,135"/>
+<area shape="poly" title=" " alt="" coords="181,56,214,92,210,95,177,60"/>
+<area shape="rect" href="async_8h.html" title="Main include file for the QB asynchronous I/O library." alt="" coords="78,183,223,208"/>
+<area shape="poly" title=" " alt="" coords="104,144,140,180,137,184,100,148"/>
+<area shape="poly" title=" " alt="" coords="201,148,165,184,161,180,197,144"/>
+</map>
+</div>
+</div>
+<p><a href="udp_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Atransport_3A_3Audp" id="r_qb_3A_3Aio_3A_3Atransport_3A_3Audp"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1transport_1_1udp.html">qb::io::transport::udp</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">UDP transport providing connectionless, datagram-based communication.  <a href="classqb_1_1io_1_1transport_1_1udp.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Atransport_3A_3Audp_3A_3Aidentity" id="r_qb_3A_3Aio_3A_3Atransport_3A_3Audp_3A_3Aidentity"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html">qb::io::transport::udp::identity</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Identifies a UDP endpoint, extending <span class="tt">qb::io::endpoint</span> with hashing support.  <a href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Atransport_3A_3Audp_3A_3Aidentity_3A_3Ahasher" id="r_qb_3A_3Aio_3A_3Atransport_3A_3Audp_3A_3Aidentity_3A_3Ahasher"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity_1_1hasher.html">qb::io::transport::udp::identity::hasher</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Hash function for <span class="tt"><a class="el" href="structqb_1_1io_1_1transport_1_1udp_1_1identity.html" title="Identifies a UDP endpoint, extending qb::io::endpoint with hashing support.">udp::identity</a></span> objects.  <a href="structqb_1_1io_1_1transport_1_1udp_1_1identity_1_1hasher.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Atransport_3A_3Audp_3A_3AProxyOut" id="r_qb_3A_3Aio_3A_3Atransport_3A_3Audp_3A_3AProxyOut"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1transport_1_1udp_1_1_proxy_out.html">qb::io::transport::udp::ProxyOut</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Proxy class providing a stream-like interface for sending UDP datagrams.  <a href="classqb_1_1io_1_1transport_1_1udp_1_1_proxy_out.html#details">More...</a><br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>UDP datagram transport implementation for the QB IO library. </p>
+<p>This file provides a transport implementation for UDP sockets, extending the <span class="tt"><a class="el" href="classqb_1_1io_1_1stream.html" title="Combined input/output stream template class.">qb::io::stream</a></span> class with UDP-specific functionality including support for datagram-based communication, endpoint identity management (<span class="tt">udp::identity</span>), and message buffering with destination tracking.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div></div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="dir_bc43a483e977f0cb845c151c8f80b727.html">transport</a></li><li class="navelem"><a href="udp_8h.html">udp.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

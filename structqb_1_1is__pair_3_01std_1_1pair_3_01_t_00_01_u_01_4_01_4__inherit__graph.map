@@ -1,0 +1,7 @@
+<map id="qb::is_pair&lt; std::pair&lt; T, U &gt; &gt;" name="qb::is_pair&lt; std::pair&lt; T, U &gt; &gt;">
+<area shape="rect" id="Node000001" title="Specialization for std::pair, which returns true." alt="" coords="53,79,193,120"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,5,113,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="80,41,109,77,105,80,76,45"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="136,5,238,31"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="170,45,141,80,137,77,166,41"/>
+</map>

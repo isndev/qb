@@ -1,0 +1,40 @@
+<map id="include/qb/system/allocator/pipe.h" name="include/qb/system/allocator/pipe.h">
+<area shape="rect" id="Node000001" title="Implementation of a dynamic extensible buffer." alt="" coords="356,5,537,46"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,168,56,193"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="357,43,263,64,166,96,108,127,59,160,56,156,105,123,164,92,262,59,355,38"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="80,168,141,193"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="357,44,281,65,243,79,207,96,165,126,132,158,129,154,162,122,204,92,241,74,280,60,355,39"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="164,168,236,193"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="357,37,322,45,288,57,255,73,227,96,211,123,204,153,199,152,206,121,223,92,252,69,286,52,321,40,355,32"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="344,94,413,120"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="432,48,401,84,397,80,428,45"/>
+<area shape="rect" id="Node000006" href="$string_8h.html" title="Fixed&#45;size string implementation optimized for performance." alt="" coords="237,94,320,120"/>
+<area shape="poly" id="edge5_Node000001_Node000006" title=" " alt="" coords="406,49,319,89,317,85,403,44"/>
+<area shape="rect" id="Node000014" href="$branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="436,94,596,120"/>
+<area shape="poly" id="edge16_Node000001_Node000014" title=" " alt="" coords="466,45,497,80,493,84,462,48"/>
+<area shape="rect" id="Node000015" href="$nocopy_8h.html" title="Defines a base class to make derived classes non&#45;copyable." alt="" coords="620,94,745,120"/>
+<area shape="poly" id="edge17_Node000001_Node000015" title=" " alt="" coords="506,44,632,86,631,91,505,49"/>
+<area shape="rect" id="Node000016" href="$prefix_8h.html" title="Platform&#45;specific alignment macros, cache&#45;line definitions, and related utilities." alt="" coords="769,94,886,120"/>
+<area shape="poly" id="edge18_Node000001_Node000016" title=" " alt="" coords="537,43,755,88,754,93,536,48"/>
+<area shape="rect" id="Node000017" title=" " alt="" coords="911,94,998,120"/>
+<area shape="poly" id="edge19_Node000001_Node000017" title=" " alt="" coords="538,36,700,59,896,91,895,96,699,65,537,42"/>
+<area shape="rect" id="Node000018" title=" " alt="" coords="1022,94,1079,120"/>
+<area shape="poly" id="edge20_Node000001_Node000018" title=" " alt="" coords="537,31,748,51,876,68,1007,91,1006,96,875,74,748,56,537,36"/>
+<area shape="poly" id="edge7_Node000006_Node000002" title=" " alt="" coords="238,122,71,170,70,164,236,117"/>
+<area shape="poly" id="edge8_Node000006_Node000003" title=" " alt="" coords="251,123,154,164,152,159,249,118"/>
+<area shape="poly" id="edge9_Node000006_Node000004" title=" " alt="" coords="267,122,226,159,223,155,263,118"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="361,168,436,193"/>
+<area shape="poly" id="edge6_Node000006_Node000007" title=" " alt="" coords="300,118,366,157,364,162,297,123"/>
+<area shape="rect" id="Node000008" title=" " alt="" coords="460,168,513,193"/>
+<area shape="poly" id="edge10_Node000006_Node000008" title=" " alt="" coords="315,118,447,163,445,168,313,123"/>
+<area shape="rect" id="Node000009" href="$build__macros_8h.html" title="Platform, compiler, and C++ feature detection macros for the QB Framework." alt="" coords="537,168,700,193"/>
+<area shape="poly" id="edge11_Node000006_Node000009" title=" " alt="" coords="320,115,332,117,545,161,544,167,331,122,319,120"/>
+<area shape="rect" id="Node000012" title=" " alt="" coords="724,168,777,193"/>
+<area shape="poly" id="edge14_Node000006_Node000012" title=" " alt="" coords="320,115,332,117,436,131,519,139,603,147,709,165,708,170,602,152,519,144,436,137,331,122,319,120"/>
+<area shape="rect" id="Node000013" title=" " alt="" coords="259,168,338,193"/>
+<area shape="poly" id="edge15_Node000006_Node000013" title=" " alt="" coords="284,119,294,152,288,153,279,121"/>
+<area shape="rect" id="Node000010" title=" " alt="" coords="548,241,606,267"/>
+<area shape="poly" id="edge12_Node000009_Node000010" title=" " alt="" coords="614,195,594,229,589,226,609,192"/>
+<area shape="rect" id="Node000011" title=" " alt="" coords="630,241,690,267"/>
+<area shape="poly" id="edge13_Node000009_Node000011" title=" " alt="" coords="628,192,648,226,643,229,623,195"/>
+</map>

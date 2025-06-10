@@ -1,0 +1,285 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: QB Framework: Error Handling &amp; Resilience Strategies</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: QB Framework: Error Handling &amp; Resilience Strategies</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('guides_error_handling_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">QB Framework: Error Handling &amp; Resilience Strategies </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>A practical guide to designing robust actor systems in QB by effectively handling errors and implementing resilience patterns.</p>
+<h1>QB Framework: Error Handling &amp; Resilience Strategies</h1>
+<p>Building concurrent and distributed systems with actors requires a thoughtful approach to error handling and fault tolerance. While the QB Actor Framework provides isolation that can contain failures, it's up to the developer to implement strategies for detecting, managing, and recovering from errors. This guide outlines key techniques for creating resilient QB applications.</p>
+<h2>1. Actor-Level Error Management (Internal Robustness)</h2>
+<p>Each actor should be responsible for handling errors that occur within its own operational scope where possible.</p>
+<ul>
+<li><p class="startli"><b>Standard C++ Exception Handling (<span class="tt">try...catch</span>):</b></p><ul>
+<li><b>Use Case:</b> Within <span class="tt">on(Event&amp;)</span> handlers or <span class="tt">onCallback()</span> methods, wrap operations that might throw exceptions. This includes interactions with external libraries, complex parsing, or any logic that could fail under specific conditions.</li>
+<li><b>Action:</b> Catch specific exceptions, log the error, potentially send a status/error event back to a requester, or decide if the actor needs to enter a specific error state or terminate itself. ```cpp #include &lt;<a class="el" href="_actor_8h.html" title="Convenience header for the core QB Actor components.">qb/actor.h</a>&gt; #include &lt;<a class="el" href="_event_8h.html" title="Convenience header for the QB Event system.">qb/event.h</a>&gt; #include &lt;<a class="el" href="io_8h.html" title="Core I/O and logging utilities for the qb framework.">qb/io.h</a>&gt; // For <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout</a> #include &lt;<a class="el" href="string_8h.html" title="Fixed-size string implementation optimized for performance.">qb/string.h</a>&gt; #include &lt;stdexcept&gt; // For std::runtime_error, std::invalid_argument</li>
+</ul>
+<p class="startli">struct ProcessCommandReq : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;128&gt;</a> command; }; struct CommandStatusRes : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { bool success; <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;256&gt;</a> info; };</p>
+<p class="startli">class CommandHandlerActor : public <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a> { public: bool onInit() override { registerEvent&lt;ProcessCommandReq&gt;(*this); registerEvent&lt;qb::KillEvent&gt;(*this); return true; }</p>
+<p class="startli">void on(const ProcessCommandReq&amp; event) { try { if (event.command == "CRASH_NOW") { throw std::runtime_error("Simulated critical failure in command processing"); } if (event.command.empty()) { throw std::invalid_argument("Command cannot be empty"); } // ... process command ... <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Actor [" &lt;&lt; id() &lt;&lt; "] processed command: " &lt;&lt; event.command.c_str() &lt;&lt; ".\n"; push&lt;CommandStatusRes&gt;(event.getSource(), true, "Command processed successfully"); } catch (const std::invalid_argument&amp; ia) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Actor [" &lt;&lt; id() &lt;&lt; "] Error: Invalid command argument - " &lt;&lt; ia.what() &lt;&lt; ".\n"; push&lt;CommandStatusRes&gt;(event.getSource(), false, "Invalid command format"); } catch (const std::exception&amp; e) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Actor [" &lt;&lt; id() &lt;&lt; "] Error: Failed to process command '" &lt;&lt; event.command.c_str() &lt;&lt; "': " &lt;&lt; e.what() &lt;&lt; ".\n"; push&lt;CommandStatusRes&gt;(event.getSource(), false, "Internal processing error"); // For a severe, unrecoverable error, the actor might decide to terminate: // if (isUnrecoverable(e)) { // <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Actor [" &lt;&lt; id() &lt;&lt; "]: Unrecoverable error, terminating.\n"; // kill(); // } } } void on(const <a class="el" href="structqb_1_1_kill_event.html" title="Event used to terminate an actor.">qb::KillEvent</a>&amp; /*event*/) { kill(); } }; ```</p>
+</li>
+<li><b>Status/Result Events for Predictable Failures:</b> For operations where failure is a common or expected outcome (e.g., validation failing, resource temporarily unavailable), it's often cleaner to communicate this via specific fields in your response events rather than throwing exceptions for control flow. <span class="tt">cpp
+    struct ValidateDataReq : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { int data_to_validate; };
+    struct ValidationRes : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> {
+        boolis_valid;
+        <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;128&gt; validation_message;
+        // ... constructor ...
+    };
+    // Responder would check data and push&lt;ValidationRes&gt;(source, true/false, message);
+    </span></li>
+<li><b>Self-Termination via <span class="tt">kill()</span>:</b> If an actor encounters an internal error that leaves its state inconsistent or prevents it from functioning correctly, it should call <span class="tt">this-&gt;kill()</span> to initiate its own graceful shutdown. This is often the last step in a <span class="tt">catch</span> block for critical errors or after handling a specific <span class="tt">StopProcessingOrderEvent</span>.</li>
+</ul>
+<h2>2. Unhandled Exceptions and <span class="tt">VirtualCore</span> Termination</h2>
+<p>This is a critical aspect of QB's behavior:</p>
+<ul>
+<li><b>What Happens:</b> If an exception is thrown from an actor's <span class="tt">on(Event&amp;)</span> handler or <span class="tt">onCallback()</span> method and is <b>not caught within that actor's code</b>, the <span class="tt">VirtualCore</span> executing that actor will catch the exception.</li>
+<li><b>Default Framework Action:</b> Upon catching such an unhandled exception, the <span class="tt">VirtualCore</span> will log the error (if logging is configured) and then <b>terminate itself</b>. This is a "fail-fast" approach designed to prevent a potentially corrupted actor or <span class="tt">VirtualCore</span> from causing further damage or inconsistent behavior in the system.</li>
+<li><b>Impact on Other Actors:</b> When a <span class="tt">VirtualCore</span> terminates, <b>all other actors assigned to that same <span class="tt">VirtualCore</span> will also cease processing new events.</b> Their <span class="tt"><a class="el" href="classqb_1_1_i_callback.html#abaccc7c519a89b821bc142b078166d56" title="Callback function executed during each VirtualCore loop iteration.">qb::ICallback::onCallback()</a></span> methods will no longer be called. They become effectively unresponsive from the perspective of the rest of the system.</li>
+<li><b>System-Level Detection:</b> The <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">qb::Main</a></span> engine monitors its <span class="tt">VirtualCore</span> threads. After <span class="tt">main.join()</span> returns (or if <span class="tt">main.start(false)</span> was used and it unblocks), you can call <span class="tt">main.hasError()</span>. This method will return <span class="tt">true</span> if one or more <span class="tt">VirtualCore</span>s terminated due to an error (like an unhandled exception).</li>
+</ul>
+<p><b>(Reference:</b> <span class="tt">test-main.cpp</span> includes tests for <span class="tt">hasError()</span> functionality. <span class="tt">test-actor-error-handling.cpp</span> simulates various actor error conditions.)**</p>
+<h2>3. Application-Level Supervision Strategies</h2>
+<p>QB-Core does not provide a built-in, Erlang-style supervisor hierarchy. Instead, you implement supervision using standard actor patterns. This gives you flexibility but requires explicit design.</p>
+<ul>
+<li><b>Monitoring Liveness (Health Checks):</b><ul>
+<li><b>Pattern:</b> A supervisor actor periodically sends a <span class="tt">PingHealthEvent</span> to its child/worker actors. Monitored actors are expected to promptly reply with a <span class="tt">PongHealthResponse</span>.</li>
+<li><b>Timeout:</b> The supervisor uses <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> to schedule a check for each <span class="tt">PingHealthEvent</span>. If a <span class="tt">PongHealthResponse</span> isn't received for a specific child within the timeout, that child is considered unresponsive or may have terminated silently.</li>
+<li><b>State:</b> The supervisor needs to maintain state about pending pings (e.g., a map of <span class="tt">ActorId</span> to a timestamp or a request ID).</li>
+</ul>
+</li>
+<li><b>Explicit Failure Reporting by Children:</b><ul>
+<li>A child actor, upon encountering an unrecoverable internal error (even one it catches), can proactively notify its designated supervisor by <span class="tt">push</span>ing a specific <span class="tt">ChildFailedNotificationEvent(reason, child_id)</span> before calling <span class="tt">this-&gt;kill()</span>.</li>
+</ul>
+</li>
+<li><b>Supervisor's Recovery Actions:</b> Based on detected failures (timeout or explicit notification), a supervisor can take various actions:<ul>
+<li><b>Restart:</b> Create a new instance of the failed child actor (<span class="tt">addActor</span> or <span class="tt">addRefActor</span>). The newly created actor might need its own logic in <span class="tt">onInit()</span> to recover its state (e.g., load from a persistent store, query sibling actors, or start fresh).</li>
+<li><b>Delegate:</b> Reassign pending tasks or responsibilities of the failed actor to other existing, healthy workers.</li>
+<li><b>Escalate:</b> If the failure is critical or a child repeatedly fails, the supervisor might notify its own supervisor (if part of a deeper hierarchy) or a system-level manager/alerting actor.</li>
+<li><b>Stop/Degrade Service:</b> In some cases, the supervisor might decide to stop itself or other dependent actors, or operate in a degraded mode if a critical dependency is lost.</li>
+</ul>
+</li>
+<li><p class="startli"><b>Conceptual Supervisor Snippet:</b> ```cpp // Events for supervision struct PingWorkerEvent : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> {}; struct PongWorkerResponse : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> {}; struct WorkerTimeoutCheck : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> worker_id; }; // Self-sent by supervisor struct WorkerErrorReport : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;128&gt;</a> error_details; };</p>
+<p class="startli">class WorkerSupervisor : public <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a> { private: std::map&lt;qb::ActorId, qb::TimePoint&gt; _pending_pings; // Worker ID -&gt; Ping Sent Time std::vector&lt;qb::ActorId&gt; _worker_pool; const <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">qb::Duration</a> PING_TIMEOUT = qb::literals::operator""_s(5); // 5 seconds</p>
+<p class="startli">public: bool onInit() override { // ... create worker actors and store their IDs in _worker_pool ... // for (<a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> worker_id : _worker_pool) { sendPingAndScheduleCheck(worker_id); } registerEvent&lt;PongWorkerResponse&gt;(*this); registerEvent&lt;WorkerTimeoutCheck&gt;(*this); registerEvent&lt;WorkerErrorReport&gt;(*this); registerEvent&lt;qb::KillEvent&gt;(*this); return true; }</p>
+<p class="startli">void sendPingAndScheduleCheck(qb::ActorId worker_id) { if (!isActorKnownAndAlive(worker_id)) return; // Simplified check push&lt;PingWorkerEvent&gt;(worker_id); _pending_pings[worker_id] = <a class="el" href="classqb_1_1_high_res_time_point.html#a3020cb5f60251f98d10c169b60ff0df4" title="Gets current high-resolution time.">qb::HighResTimePoint::now()</a>;</p>
+<p class="startli"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a>([this, worker_id](){ if (this-&gt;is_alive()) this-&gt;push&lt;WorkerTimeoutCheck&gt;(this-&gt;id(), worker_id); }, PING_TIMEOUT.seconds_float()); }</p>
+<p class="startli">void on(const PongWorkerResponse&amp; event) { _pending_pings.erase(event.getSource()); // Pong received, clear pending // Optionally, schedule next ping after an interval // <a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a>([this, sid=event.getSource()](){ if(this-&gt;is_alive()) sendPingAndScheduleCheck(sid);}, 30.0); }</p>
+<p class="startli">void on(const WorkerTimeoutCheck&amp; event) { if (_pending_pings.count(event.worker_id)) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Supervisor: Worker " &lt;&lt; event.worker_id &lt;&lt; " timed out!\n"; _pending_pings.erase(event.worker_id); handleWorkerFailure(event.worker_id, "Ping Timeout"); } } void on(const WorkerErrorReport&amp; event) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Supervisor: Worker " &lt;&lt; event.getSource() &lt;&lt; " reported error: " &lt;&lt; event.error_details.c_str() &lt;&lt; ".\n"; handleWorkerFailure(event.getSource(), event.error_details.c_str()); }</p>
+<p class="startli">void handleWorkerFailure(qb::ActorId failed_worker_id, const qb::string&lt;128&gt;&amp; reason) { // Remove from active pool, potentially restart, log, etc. // Example: _worker_pool.erase(std::remove(_worker_pool.begin(), _worker_pool.end(), failed_worker_id), _worker_pool.end()); // auto new_worker_id = addActor&lt;MyWorkerType&gt;(getIndex(), /*..args..*/); // _worker_pool.push_back(new_worker_id); sendPingAndScheduleCheck(new_worker_id); } // ... KillEvent handler to stop pings and workers ... bool isActorKnownAndAlive(<a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> /*id*/) { return true; } // Placeholder }; ```</p>
+</li>
+</ul>
+<h2>4. Handling Asynchronous I/O Errors (from <span class="tt">qb-io</span>)</h2>
+<p>Actors that perform network or file I/O using <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;&gt;</span> helpers must be prepared to handle I/O-related errors, typically signaled by <span class="tt">qb-io</span> events:</p>
+<ul>
+<li><b><span class="tt">on(<a class="el" href="structqb_1_1io_1_1async_1_1event_1_1disconnected.html" title="Event triggered when a connection is closed or lost.">qb::io::async::event::disconnected</a> const&amp; event)</span>:</b> This is the most common error notification for network actors. It's triggered by:<ul>
+<li>Graceful peer shutdown.</li>
+<li>Network errors (connection reset, host unreachable).</li>
+<li>Internal socket errors detected by <span class="tt">qb-io</span>'s underlying socket operations.</li>
+<li>Explicit <span class="tt">this-&gt;disconnect()</span> called by the actor itself.</li>
+<li><b>Action:</b> Clean up state associated with the connection (e.g., session data), reset protocol state (<span class="tt">if (this-&gt;protocol()) this-&gt;protocol()-&gt;reset();</span>), attempt reconnection if it's a client, or notify a manager if it's a server-side session.</li>
+</ul>
+</li>
+<li><b>Protocol Errors:</b> If your <span class="tt">AProtocol</span> implementation detects malformed data (e.g., in <span class="tt">getMessageSize()</span> or <span class="tt">onMessage()</span>), it should ideally:<ol type="1">
+<li>Call its own <span class="tt">reset()</span> method to clear its parsing state.</li>
+<li>Optionally, call <span class="tt">this-&gt;not_ok()</span> on the <span class="tt">AProtocol</span> instance to mark it as invalid.</li>
+<li>The I/O component (your actor) might then check <span class="tt">if (!this-&gt;protocol()-&gt;ok())</span> and decide to call <span class="tt">this-&gt;disconnect()</span> on its transport, which will eventually lead to an <span class="tt">on(event::disconnected&amp;)</span> callback.</li>
+</ol>
+</li>
+<li><b>Low-Level Socket Errors:</b> Errors from direct socket calls (<span class="tt">read</span>, <span class="tt">write</span>) within the transport layer are generally caught by the <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1io.html" title="CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing.">qb::io::async::io</a></span> (or <span class="tt">input</span>/<span class="tt">output</span>) base classes. These errors typically lead to the <span class="tt">dispose()</span> mechanism being invoked, which then triggers the <span class="tt">on(event::disconnected&amp;)</span> handler in your actor.</li>
+</ul>
+<p><b>(Reference:</b> Client actors in <span class="tt">chat_tcp/client/ClientActor.cpp</span> and <span class="tt">message_broker/client/ClientActor.cpp</span> demonstrate reconnection logic in <span class="tt">on(event::disconnected&amp;)</span>.)**</p>
+<p>By combining these strategies—internal actor robustness, awareness of framework behavior for unhandled exceptions, application-level supervision, and proper handling of I/O events—you can build QB actor systems that are significantly more resilient to failures and easier to maintain.</p>
+<p><b>(Next:</b> QB Framework: Effective Resource Management to learn about managing actor and system resources effectively.**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

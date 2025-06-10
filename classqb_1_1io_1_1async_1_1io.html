@@ -1,0 +1,785 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::io::async::io&lt; _Derived &gt; Class Template Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::io::async::io&lt; _Derived &gt; Class Template Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('classqb_1_1io_1_1async_1_1io.html','','classqb_1_1io_1_1async_1_1io-members'); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">qb::io::async::io&lt; _Derived &gt; Class Template Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___async.html">Asynchronous System</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="io_2async_2io_8h_source.html">io.h</a>&gt;</code></p>
+<div class="dynheader">
+Inheritance diagram for qb::io::async::io&lt; _Derived &gt;:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1async_1_1io__inherit__graph.png" border="0" usemap="#aqb_1_1io_1_1async_1_1io_3_01___derived_01_4_inherit__map" loading="lazy" alt="Inheritance graph"/></div>
+<map name="aqb_1_1io_1_1async_1_1io_3_01___derived_01_4_inherit__map" id="aqb_1_1io_1_1async_1_1io_3_01___derived_01_4_inherit__map">
+<area shape="rect" title="CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing." alt="" coords="243,133,365,174"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1tcp_1_1client.html" title=" " alt="" coords="413,5,580,61"/>
+<area shape="poly" title=" " alt="" coords="341,121,412,71,432,59,435,64,414,75,344,125"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1tcp_1_1client_3_01___derived_00_01___transport_00_01void_01_4.html" title=" " alt="" coords="431,85,562,141"/>
+<area shape="poly" title=" " alt="" coords="380,144,430,133,432,138,381,149"/>
+<area shape="poly" title=" " alt="" coords="379,126,430,116,431,121,380,131"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1tcp_1_1client.html" title="Server&#45;associated asynchronous TCP client." alt="" coords="420,165,573,221"/>
+<area shape="poly" title=" " alt="" coords="381,166,421,175,420,180,379,172"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1udp_1_1client.html" title="Asynchronous UDP client implementation." alt="" coords="428,245,565,286"/>
+<area shape="poly" title=" " alt="" coords="343,181,376,207,414,231,437,242,435,247,412,235,373,211,339,186"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1udp_1_1server.html" title="Asynchronous UDP server implementation." alt="" coords="426,310,567,351"/>
+<area shape="poly" title=" " alt="" coords="326,186,363,241,387,270,415,295,434,307,432,312,411,299,383,274,358,245,321,189"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1base.html" title=" " alt="" coords="5,133,195,174"/>
+<area shape="poly" title=" " alt="" coords="210,150,243,150,243,156,210,156"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<div class="dynheader">
+Collaboration diagram for qb::io::async::io&lt; _Derived &gt;:</div>
+<div class="dyncontent">
+<div class="center"><img src="classqb_1_1io_1_1async_1_1io__coll__graph.png" border="0" usemap="#aqb_1_1io_1_1async_1_1io_3_01___derived_01_4_coll__map" loading="lazy" alt="Collaboration graph"/></div>
+<map name="aqb_1_1io_1_1async_1_1io_3_01___derived_01_4_coll__map" id="aqb_1_1io_1_1async_1_1io_3_01___derived_01_4_coll__map">
+<area shape="rect" title="CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing." alt="" coords="39,94,161,135"/>
+<area shape="rect" href="classqb_1_1io_1_1async_1_1base.html" title=" " alt="" coords="5,5,195,46"/>
+<area shape="poly" title=" " alt="" coords="103,62,103,94,97,94,97,62"/>
+</map>
+<center><span class="legend">[<a target="top" href="graph_legend.html">legend</a>]</span></center></div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-types" class="groupheader"><a id="pub-types" name="pub-types"></a>
+Public Types</h2></td></tr>
+<tr class="memitem:ae5c74c76a46cb0afb35ef08a816ffb34" id="r_ae5c74c76a46cb0afb35ef08a816ffb34"><td class="memItemLeft" align="right" valign="top"><a id="ae5c74c76a46cb0afb35ef08a816ffb34" name="ae5c74c76a46cb0afb35ef08a816ffb34"></a>
+typedef <a class="el" href="classqb_1_1io_1_1async_1_1io.html">io</a>&lt; _Derived &gt;&#160;</td><td class="memItemRight" valign="bottom"><b>base_io_t</b></td></tr>
+<tr class="memdesc:ae5c74c76a46cb0afb35ef08a816ffb34"><td class="mdescLeft">&#160;</td><td class="mdescRight">Base I/O type alias for CRTP. <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:a3069504126981dd994a808d4c00f9476" id="r_a3069504126981dd994a808d4c00f9476"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a3069504126981dd994a808d4c00f9476">io</a> ()=default</td></tr>
+<tr class="memdesc:a3069504126981dd994a808d4c00f9476"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default constructor.  <br /></td></tr>
+<tr class="memitem:a3d5d5b6fe5933ecff3ee9689e85fc2f7" id="r_a3d5d5b6fe5933ecff3ee9689e85fc2f7"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a3d5d5b6fe5933ecff3ee9689e85fc2f7">io</a> (<a class="el" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> *<a class="el" href="#add0512a685b93ddf87b41b1e8efaa1b0">protocol</a>) noexcept</td></tr>
+<tr class="memdesc:a3d5d5b6fe5933ecff3ee9689e85fc2f7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor with an initial protocol instance.  <br /></td></tr>
+<tr class="memitem:a4416ba398b3a4d9ec54aab7b910be457" id="r_a4416ba398b3a4d9ec54aab7b910be457"><td class="memItemLeft" align="right" valign="top"><a id="a4416ba398b3a4d9ec54aab7b910be457" name="a4416ba398b3a4d9ec54aab7b910be457"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>io</b> (<a class="el" href="classqb_1_1io_1_1async_1_1io.html">io</a> const &amp;)=delete</td></tr>
+<tr class="memdesc:a4416ba398b3a4d9ec54aab7b910be457"><td class="mdescLeft">&#160;</td><td class="mdescRight">Deleted copy constructor. <br /></td></tr>
+<tr class="memitem:ab8fdf076ca6b6786684cdee93ee44236" id="r_ab8fdf076ca6b6786684cdee93ee44236"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab8fdf076ca6b6786684cdee93ee44236">~io</a> () noexcept</td></tr>
+<tr class="memdesc:ab8fdf076ca6b6786684cdee93ee44236"><td class="mdescLeft">&#160;</td><td class="mdescRight">Destructor.  <br /></td></tr>
+<tr class="memitem:a0c62c7018f860920b4ce1c1806c63afa" id="r_a0c62c7018f860920b4ce1c1806c63afa"><td class="memTemplParams" colspan="2">template&lt;typename _Protocol, typename... _Args&gt; </td></tr>
+<tr class="memitem:a0c62c7018f860920b4ce1c1806c63afa template"><td class="memItemLeft" align="right" valign="top">_Protocol *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a0c62c7018f860920b4ce1c1806c63afa">switch_protocol</a> (_Args &amp;&amp;...args)</td></tr>
+<tr class="memdesc:a0c62c7018f860920b4ce1c1806c63afa"><td class="mdescLeft">&#160;</td><td class="mdescRight">Switches to a new protocol for I/O processing, taking ownership.  <br /></td></tr>
+<tr class="memitem:a8280a059fa4f0b9989906c2659f1a04b" id="r_a8280a059fa4f0b9989906c2659f1a04b"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a8280a059fa4f0b9989906c2659f1a04b">clear_protocols</a> ()</td></tr>
+<tr class="memdesc:a8280a059fa4f0b9989906c2659f1a04b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Clears all owned protocol instances.  <br /></td></tr>
+<tr class="memitem:add0512a685b93ddf87b41b1e8efaa1b0" id="r_add0512a685b93ddf87b41b1e8efaa1b0"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> *&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#add0512a685b93ddf87b41b1e8efaa1b0">protocol</a> ()</td></tr>
+<tr class="memdesc:add0512a685b93ddf87b41b1e8efaa1b0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Gets a pointer to the current active protocol instance.  <br /></td></tr>
+<tr class="memitem:a385165bc96cd8197393a2d872acc22f1" id="r_a385165bc96cd8197393a2d872acc22f1"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a385165bc96cd8197393a2d872acc22f1">start</a> () noexcept</td></tr>
+<tr class="memdesc:a385165bc96cd8197393a2d872acc22f1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Starts bidirectional asynchronous I/O operations.  <br /></td></tr>
+<tr class="memitem:af5805d8f44f1cb325ab87259834f097b" id="r_af5805d8f44f1cb325ab87259834f097b"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af5805d8f44f1cb325ab87259834f097b">ready_to_read</a> () noexcept</td></tr>
+<tr class="memdesc:af5805d8f44f1cb325ab87259834f097b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ensures the I/O watcher is listening for read events (<span class="tt">EV_READ</span>).  <br /></td></tr>
+<tr class="memitem:a6d9d525a12b5d47eada531ddb51ec999" id="r_a6d9d525a12b5d47eada531ddb51ec999"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a6d9d525a12b5d47eada531ddb51ec999">ready_to_write</a> () noexcept</td></tr>
+<tr class="memdesc:a6d9d525a12b5d47eada531ddb51ec999"><td class="mdescLeft">&#160;</td><td class="mdescRight">Ensures the I/O watcher is listening for write events (<span class="tt">EV_WRITE</span>).  <br /></td></tr>
+<tr class="memitem:af032d093daf72775a520f034255b23c2" id="r_af032d093daf72775a520f034255b23c2"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af032d093daf72775a520f034255b23c2">close_after_deliver</a> () const noexcept</td></tr>
+<tr class="memdesc:af032d093daf72775a520f034255b23c2"><td class="mdescLeft">&#160;</td><td class="mdescRight">Requests connection closure after all pending output data is delivered.  <br /></td></tr>
+<tr class="memitem:aaf3d4dfc5ac2890a0c977f437a3bb768" id="r_aaf3d4dfc5ac2890a0c977f437a3bb768"><td class="memTemplParams" colspan="2">template&lt;typename... _Args&gt; </td></tr>
+<tr class="memitem:aaf3d4dfc5ac2890a0c977f437a3bb768 template"><td class="memItemLeft" align="right" valign="top">auto &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aaf3d4dfc5ac2890a0c977f437a3bb768">publish</a> (_Args &amp;&amp;...args) noexcept</td></tr>
+<tr class="memdesc:aaf3d4dfc5ac2890a0c977f437a3bb768"><td class="mdescLeft">&#160;</td><td class="mdescRight">Publishes data to the output buffer and ensures write readiness.  <br /></td></tr>
+<tr class="memitem:a31be10c116c20469f3920430c9d6e5ea" id="r_a31be10c116c20469f3920430c9d6e5ea"><td class="memTemplParams" colspan="2">template&lt;typename T&gt; </td></tr>
+<tr class="memitem:a31be10c116c20469f3920430c9d6e5ea template"><td class="memItemLeft" align="right" valign="top">auto &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a31be10c116c20469f3920430c9d6e5ea">operator&lt;&lt;</a> (T &amp;&amp;data)</td></tr>
+<tr class="memdesc:a31be10c116c20469f3920430c9d6e5ea"><td class="mdescLeft">&#160;</td><td class="mdescRight">Stream operator for publishing data.  <br /></td></tr>
+<tr class="memitem:ad7d312004eca3abe4b16ac2969802c0a" id="r_ad7d312004eca3abe4b16ac2969802c0a"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ad7d312004eca3abe4b16ac2969802c0a">disconnect</a> (int reason=1)</td></tr>
+<tr class="memdesc:ad7d312004eca3abe4b16ac2969802c0a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Initiates a graceful disconnection.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-static-attribs" class="groupheader"><a id="pub-static-attribs" name="pub-static-attribs"></a>
+Static Public Attributes</h2></td></tr>
+<tr class="memitem:a837ab97ec1903cd4ff1455b90d4fee99" id="r_a837ab97ec1903cd4ff1455b90d4fee99"><td class="memItemLeft" align="right" valign="top"><a id="a837ab97ec1903cd4ff1455b90d4fee99" name="a837ab97ec1903cd4ff1455b90d4fee99"></a>
+static constexpr const bool&#160;</td><td class="memItemRight" valign="bottom"><b>has_server</b> = false</td></tr>
+<tr class="memdesc:a837ab97ec1903cd4ff1455b90d4fee99"><td class="mdescLeft">&#160;</td><td class="mdescRight">Indicates this component is not inherently a server. <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pro-methods" class="groupheader"><a id="pro-methods" name="pro-methods"></a>
+Protected Member Functions</h2></td></tr>
+<tr class="memitem:abe361caed8c74905936ac6c23edf326f" id="r_abe361caed8c74905936ac6c23edf326f"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#abe361caed8c74905936ac6c23edf326f">dispose</a> ()</td></tr>
+<tr class="memdesc:abe361caed8c74905936ac6c23edf326f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Disposes of resources and finalizes disconnection for the I/O component.  <br /></td></tr>
+<tr class="inherit_header pro_methods_classqb_1_1io_1_1async_1_1base"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pro_methods_classqb_1_1io_1_1async_1_1base')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Protected Member Functions inherited from <a class="el" href="classqb_1_1io_1_1async_1_1base.html">qb::io::async::base&lt; io&lt; _Derived &gt;, event::io &gt;</a></td></tr>
+<tr class="memitem:acd5fc1f29c162060caed257e78bd08ff inherit pro_methods_classqb_1_1io_1_1async_1_1base" id="r_acd5fc1f29c162060caed257e78bd08ff"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1base.html#acd5fc1f29c162060caed257e78bd08ff">base</a> ()</td></tr>
+<tr class="memdesc:acd5fc1f29c162060caed257e78bd08ff inherit pro_methods_classqb_1_1io_1_1async_1_1base"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor that registers the event watcher with the current listener.  <br /></td></tr>
+<tr class="memitem:ac291f7676364a1f45e8b8973785e0589 inherit pro_methods_classqb_1_1io_1_1async_1_1base" id="r_ac291f7676364a1f45e8b8973785e0589"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1base.html#ac291f7676364a1f45e8b8973785e0589">~base</a> ()</td></tr>
+<tr class="memdesc:ac291f7676364a1f45e8b8973785e0589 inherit pro_methods_classqb_1_1io_1_1async_1_1base"><td class="mdescLeft">&#160;</td><td class="mdescRight">Destructor that unregisters the event watcher.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-inherited" class="groupheader"><a id="inherited" name="inherited"></a>
+Additional Inherited Members</h2></td></tr>
+<tr class="inherit_header pro_attribs_classqb_1_1io_1_1async_1_1base"><td colspan="2" onclick="javascript:dynsection.toggleInherit('pro_attribs_classqb_1_1io_1_1async_1_1base')"><span class="dynarrow"><span class="arrowhead closed"></span></span>Protected Attributes inherited from <a class="el" href="classqb_1_1io_1_1async_1_1base.html">qb::io::async::base&lt; io&lt; _Derived &gt;, event::io &gt;</a></td></tr>
+<tr class="memitem:aff6ff4170e260fa009034e7f52c1d0b9 inherit pro_attribs_classqb_1_1io_1_1async_1_1base" id="r_aff6ff4170e260fa009034e7f52c1d0b9"><td class="memItemLeft" align="right" valign="top">
+event::io &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>_async_event</b></td></tr>
+<tr class="memdesc:aff6ff4170e260fa009034e7f52c1d0b9 inherit pro_attribs_classqb_1_1io_1_1async_1_1base"><td class="mdescLeft">&#160;</td><td class="mdescRight">Reference to the registered libev-based event watcher. <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><div class="compoundTemplParams">template&lt;typename _Derived&gt;<br />
+class qb::io::async::io&lt; _Derived &gt;</div><p>CRTP base class for managing bidirectional asynchronous I/O operations with protocol processing. </p>
+<p>This template class combines input and output capabilities. It uses a single <span class="tt"><a class="el" href="structqb_1_1io_1_1async_1_1event_1_1io.html" title="Event for file descriptor I/O readiness notifications (read/write).">event::io</a></span> watcher to monitor a file descriptor for both read and write readiness. Data is read into an input buffer and processed by a protocol, while outgoing data is buffered and written to the transport when ready.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_Derived</td><td>The derived class type (CRTP pattern) that provides the transport and handles protocol messages and I/O events. </td></tr>
+  </table>
+  </dd>
+</dl>
+</div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="a3069504126981dd994a808d4c00f9476" name="a3069504126981dd994a808d4c00f9476"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a3069504126981dd994a808d4c00f9476">&#9670;&#160;</a></span>io() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::io </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel default">default</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Default constructor. </p>
+<p>Initializes the I/O component without a specific protocol. </p>
+
+</div>
+</div>
+<a id="a3d5d5b6fe5933ecff3ee9689e85fc2f7" name="a3d5d5b6fe5933ecff3ee9689e85fc2f7"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a3d5d5b6fe5933ecff3ee9689e85fc2f7">&#9670;&#160;</a></span>io() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::io </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> *</td>          <td class="paramname"><span class="paramname"><em>protocol</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructor with an initial protocol instance. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">protocol</td><td>Pointer to an existing protocol instance. This <span class="tt">io</span> component will use it and take ownership by adding it to its internal list of protocols. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="ab8fdf076ca6b6786684cdee93ee44236" name="ab8fdf076ca6b6786684cdee93ee44236"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab8fdf076ca6b6786684cdee93ee44236">&#9670;&#160;</a></span>~io()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::~<a class="el" href="classqb_1_1io_1_1async_1_1io.html">io</a> </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Destructor. </p>
+<p>Cleans up owned protocols via <span class="tt"><a class="el" href="#a8280a059fa4f0b9989906c2659f1a04b" title="Clears all owned protocol instances.">clear_protocols()</a></span>. Base class handles watcher unregistration. </p>
+
+</div>
+</div>
+<a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="a0c62c7018f860920b4ce1c1806c63afa" name="a0c62c7018f860920b4ce1c1806c63afa"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0c62c7018f860920b4ce1c1806c63afa">&#9670;&#160;</a></span>switch_protocol()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<div class="memtemplate">
+template&lt;typename _Protocol, typename... _Args&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">_Protocol * <a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::switch_protocol </td>
+          <td>(</td>
+          <td class="paramtype">_Args &amp;&amp;...</td>          <td class="paramname"><span class="paramname"><em>args</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Switches to a new protocol for I/O processing, taking ownership. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_Protocol</td><td>The concrete <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html" title="Abstract base class for I/O-component-aware protocols (CRTP).">AProtocol</a></span> type to instantiate. </td></tr>
+    <tr><td class="paramname">_Args</td><td>Argument types for the <span class="tt">_Protocol</span> constructor. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">args</td><td>Arguments to forward to the <span class="tt">_Protocol</span> constructor. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the new protocol if successful, <span class="tt">nullptr</span> otherwise. </dd></dl>
+
+</div>
+</div>
+<a id="a8280a059fa4f0b9989906c2659f1a04b" name="a8280a059fa4f0b9989906c2659f1a04b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8280a059fa4f0b9989906c2659f1a04b">&#9670;&#160;</a></span>clear_protocols()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void <a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::clear_protocols </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Clears all owned protocol instances. </p>
+<p>Deletes protocols in <span class="tt">_protocol_list</span> and resets <span class="tt">_protocol</span> pointer to <span class="tt">nullptr</span>. </p>
+
+</div>
+</div>
+<a id="add0512a685b93ddf87b41b1e8efaa1b0" name="add0512a685b93ddf87b41b1e8efaa1b0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#add0512a685b93ddf87b41b1e8efaa1b0">&#9670;&#160;</a></span>protocol()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1async_1_1_i_protocol.html">IProtocol</a> * <a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::protocol </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Gets a pointer to the current active protocol instance. </p>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1_i_protocol.html" title="Base interface for all message processing protocols.">IProtocol</a></span> for message parsing/formatting. </dd></dl>
+
+</div>
+</div>
+<a id="a385165bc96cd8197393a2d872acc22f1" name="a385165bc96cd8197393a2d872acc22f1"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a385165bc96cd8197393a2d872acc22f1">&#9670;&#160;</a></span>start()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void <a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::start </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Starts bidirectional asynchronous I/O operations. </p>
+<p>Sets the transport to non-blocking and starts listening for read events (<span class="tt">EV_READ</span>). Resets disconnection reason. </p>
+
+</div>
+</div>
+<a id="af5805d8f44f1cb325ab87259834f097b" name="af5805d8f44f1cb325ab87259834f097b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af5805d8f44f1cb325ab87259834f097b">&#9670;&#160;</a></span>ready_to_read()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void <a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::ready_to_read </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Ensures the I/O watcher is listening for read events (<span class="tt">EV_READ</span>). </p>
+<p>Modifies the event watcher flags to include <span class="tt">EV_READ</span> if not already set. </p>
+
+</div>
+</div>
+<a id="a6d9d525a12b5d47eada531ddb51ec999" name="a6d9d525a12b5d47eada531ddb51ec999"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6d9d525a12b5d47eada531ddb51ec999">&#9670;&#160;</a></span>ready_to_write()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void <a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::ready_to_write </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Ensures the I/O watcher is listening for write events (<span class="tt">EV_WRITE</span>). </p>
+<p>Modifies the event watcher flags to include <span class="tt">EV_WRITE</span> if not already set. </p>
+
+</div>
+</div>
+<a id="af032d093daf72775a520f034255b23c2" name="af032d093daf72775a520f034255b23c2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af032d093daf72775a520f034255b23c2">&#9670;&#160;</a></span>close_after_deliver()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void <a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::close_after_deliver </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Requests connection closure after all pending output data is delivered. </p>
+<p>Marks the current protocol as invalid (<span class="tt">_protocol-&gt;not_ok()</span>). The <span class="tt">on(<a class="el" href="structqb_1_1io_1_1async_1_1event_1_1io.html" title="Event for file descriptor I/O readiness notifications (read/write).">event::io</a>&amp;)</span> handler will then initiate <span class="tt"><a class="el" href="#abe361caed8c74905936ac6c23edf326f" title="Disposes of resources and finalizes disconnection for the I/O component.">dispose()</a></span> after successfully writing any remaining buffered output if the protocol is not ok and output buffer is empty. </p>
+
+</div>
+</div>
+<a id="aaf3d4dfc5ac2890a0c977f437a3bb768" name="aaf3d4dfc5ac2890a0c977f437a3bb768"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aaf3d4dfc5ac2890a0c977f437a3bb768">&#9670;&#160;</a></span>publish()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<div class="memtemplate">
+template&lt;typename... _Args&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">auto &amp; <a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::publish </td>
+          <td>(</td>
+          <td class="paramtype">_Args &amp;&amp;...</td>          <td class="paramname"><span class="paramname"><em>args</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Publishes data to the output buffer and ensures write readiness. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_Args</td><td>Types of data to publish. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">args</td><td>Data arguments to stream into <span class="tt">_Derived::out()</span>. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Reference to <span class="tt">_Derived::out()</span> buffer. </dd></dl>
+
+</div>
+</div>
+<a id="a31be10c116c20469f3920430c9d6e5ea" name="a31be10c116c20469f3920430c9d6e5ea"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a31be10c116c20469f3920430c9d6e5ea">&#9670;&#160;</a></span>operator&lt;&lt;()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<div class="memtemplate">
+template&lt;typename T&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">auto &amp; <a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::operator&lt;&lt; </td>
+          <td>(</td>
+          <td class="paramtype">T &amp;&amp;</td>          <td class="paramname"><span class="paramname"><em>data</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Stream operator for publishing data. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">T</td><td>Type of data. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">data</td><td>Data to publish. </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Reference to <span class="tt">_Derived::out()</span> buffer. </dd></dl>
+
+</div>
+</div>
+<a id="ad7d312004eca3abe4b16ac2969802c0a" name="ad7d312004eca3abe4b16ac2969802c0a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad7d312004eca3abe4b16ac2969802c0a">&#9670;&#160;</a></span>disconnect()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void <a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::disconnect </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>reason</em></span><span class="paramdefsep"> = </span><span class="paramdefval">1</span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Initiates a graceful disconnection. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">reason</td><td>Optional reason code for disconnection.</td></tr>
+  </table>
+  </dd>
+</dl>
+<p>Triggers the <span class="tt"><a class="el" href="#abe361caed8c74905936ac6c23edf326f" title="Disposes of resources and finalizes disconnection for the I/O component.">dispose()</a></span> mechanism via an <span class="tt">EV_UNDEF</span> event sent to the event loop. </p>
+
+</div>
+</div>
+<a id="abe361caed8c74905936ac6c23edf326f" name="abe361caed8c74905936ac6c23edf326f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abe361caed8c74905936ac6c23edf326f">&#9670;&#160;</a></span>dispose()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _Derived&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void <a class="el" href="classqb_1_1io_1_1async_1_1io.html">qb::io::async::io</a>&lt; _Derived &gt;::dispose </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel protected">protected</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Disposes of resources and finalizes disconnection for the I/O component. </p>
+<p>Ensures cleanup happens only once (via <span class="tt">_is_disposed</span>). Triggers <span class="tt">_Derived::on(<a class="el" href="structqb_1_1io_1_1async_1_1event_1_1disconnected.html" title="Event triggered when a connection is closed or lost.">event::disconnected</a>&amp;)</span> (with <span class="tt">_reason</span>) or <span class="tt">_Derived::on(<a class="el" href="structqb_1_1io_1_1async_1_1event_1_1dispose.html" title="Event triggered just before an asynchronous I/O object is destroyed or cleaned up.">event::dispose</a>&amp;)</span> based on derived class capabilities and server association. This is the primary cleanup point before the <span class="tt"><a class="el" href="classqb_1_1io_1_1async_1_1base.html" title="Base class for all qb-io asynchronous components that interact with the event listener.">async::base</a></span> destructor unregisters the watcher. </p>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><b>io</b></li><li class="navelem"><b>async</b></li><li class="navelem"><a href="classqb_1_1io_1_1async_1_1io.html">io</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

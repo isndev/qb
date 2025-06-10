@@ -1,0 +1,41 @@
+<map id="include/qb/system/lockfree/spinlock.h" name="include/qb/system/lockfree/spinlock.h">
+<area shape="rect" id="Node000001" title="Spinlock synchronization primitives." alt="" coords="342,5,519,46"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="333,94,394,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="416,48,386,83,382,80,412,45"/>
+<area shape="rect" id="Node000003" href="$timestamp_8h.html" title="High&#45;precision timing utilities." alt="" coords="418,94,576,120"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="449,45,479,80,475,83,445,48"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="5,168,66,193"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="418,122,81,170,80,165,417,116"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="89,168,150,193"/>
+<area shape="poly" id="edge4_Node000003_Node000005" title=" " alt="" coords="418,123,302,143,165,170,164,165,301,137,417,118"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="174,168,220,193"/>
+<area shape="poly" id="edge5_Node000003_Node000006" title=" " alt="" coords="435,123,345,142,236,170,234,164,343,137,434,118"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="244,168,297,193"/>
+<area shape="poly" id="edge6_Node000003_Node000007" title=" " alt="" coords="459,123,313,169,311,164,458,118"/>
+<area shape="rect" id="Node000008" title=" " alt="" coords="321,168,408,193"/>
+<area shape="poly" id="edge7_Node000003_Node000008" title=" " alt="" coords="476,123,402,162,399,158,473,118"/>
+<area shape="rect" id="Node000009" title=" " alt="" coords="364,241,446,267"/>
+<area shape="poly" id="edge8_Node000003_Node000009" title=" " alt="" coords="492,121,423,230,418,227,487,119"/>
+<area shape="rect" id="Node000010" title=" " alt="" coords="471,241,523,267"/>
+<area shape="poly" id="edge9_Node000003_Node000010" title=" " alt="" coords="500,120,500,226,494,226,494,120"/>
+<area shape="rect" id="Node000011" title=" " alt="" coords="620,168,686,193"/>
+<area shape="poly" id="edge10_Node000003_Node000011" title=" " alt="" coords="524,118,614,158,611,163,522,123"/>
+<area shape="rect" id="Node000012" title=" " alt="" coords="710,168,761,193"/>
+<area shape="poly" id="edge11_Node000003_Node000012" title=" " alt="" coords="539,118,696,164,695,169,537,123"/>
+<area shape="rect" id="Node000013" title=" " alt="" coords="785,168,851,193"/>
+<area shape="poly" id="edge12_Node000003_Node000013" title=" " alt="" coords="557,118,770,164,769,170,556,123"/>
+<area shape="rect" id="Node000014" title=" " alt="" coords="876,168,953,193"/>
+<area shape="poly" id="edge13_Node000003_Node000014" title=" " alt="" coords="577,117,861,165,860,170,576,122"/>
+<area shape="rect" id="Node000015" title=" " alt="" coords="978,168,1035,193"/>
+<area shape="poly" id="edge14_Node000003_Node000015" title=" " alt="" coords="577,112,750,131,855,146,963,165,962,170,854,151,749,136,576,117"/>
+<area shape="rect" id="Node000016" href="$io_8h.html" title="Core I/O and logging utilities for the qb framework." alt="" coords="535,168,595,193"/>
+<area shape="poly" id="edge15_Node000003_Node000016" title=" " alt="" coords="510,118,545,155,541,158,506,122"/>
+<area shape="poly" id="edge19_Node000016_Node000009" title=" " alt="" coords="539,196,447,237,445,232,537,191"/>
+<area shape="poly" id="edge20_Node000016_Node000010" title=" " alt="" coords="556,195,521,232,517,228,552,192"/>
+<area shape="rect" id="Node000017" title=" " alt="" coords="546,241,618,267"/>
+<area shape="poly" id="edge16_Node000016_Node000017" title=" " alt="" coords="570,193,578,226,573,227,565,194"/>
+<area shape="rect" id="Node000018" title=" " alt="" coords="642,241,699,267"/>
+<area shape="poly" id="edge17_Node000016_Node000018" title=" " alt="" coords="584,192,641,230,638,235,581,196"/>
+<area shape="rect" id="Node000019" title=" " alt="" coords="723,241,791,267"/>
+<area shape="poly" id="edge18_Node000016_Node000019" title=" " alt="" coords="596,191,711,233,709,238,594,196"/>
+</map>

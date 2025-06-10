@@ -1,13 +1,12 @@
 var classqb_1_1_main =
 [
-    [ "CoreBuilder", "classqb_1_1_main_1_1_core_builder.html", "classqb_1_1_main_1_1_core_builder" ],
-    [ "Main", "classqb_1_1_main.html#a994776d3511b4641b2448e86d409a1c2", null ],
-    [ "Main", "classqb_1_1_main.html#a2462ee4e975d7117d141c7b1845fa6d1", null ],
-    [ "Main", "classqb_1_1_main.html#a7d9a320f2291671ac4a49319a907b0c4", null ],
-    [ "~Main", "classqb_1_1_main.html#a8b02966fd3d2cd482b46d0acc4977a8c", null ],
-    [ "start", "classqb_1_1_main.html#ab0e036fbd8a78ee8c5da4c807dcb7891", null ],
-    [ "join", "classqb_1_1_main.html#a952719a136a264714d5b5cfc93a05c05", null ],
-    [ "addActor", "classqb_1_1_main.html#a356bae48b1b99c7ce26e427bc1e107fd", null ],
-    [ "core", "classqb_1_1_main.html#a375cd46cd8ea4db8f7e0587624e84a96", null ],
-    [ "VirtualCore", "classqb_1_1_main.html#aedaeed9c91f4a0e5c8bfde8b2515d1a2", null ]
+    [ "Main", "classqb_1_1_main.html#acd99664d23a242977ddf5beeaf6289b3", null ],
+    [ "~Main", "classqb_1_1_main.html#a01df23baf910c0b7043c333b0f4c702d", null ],
+    [ "start", "group___engine.html#ga0990bde9edb018a122be3dfe30069181", null ],
+    [ "hasError", "group___engine.html#gad337df7d61e82fe2d32c0cc328c44835", null ],
+    [ "join", "group___engine.html#ga0f82608ca2a0ba910873d0caabbf6e65", null ],
+    [ "addActor", "group___engine.html#ga84dff5faea16cfa7108cd9ff209fbc24", null ],
+    [ "core", "group___engine.html#ga96fc97c8925370ac024fccbedbdfb733", null ],
+    [ "setLatency", "group___engine.html#gacfa830a94e6e829b35d39d7728d2873e", null ],
+    [ "usedCoreSet", "group___engine.html#gaaa96436e2e8891109387ffcbca55ff17", null ]
 ];

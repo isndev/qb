@@ -1,0 +1,336 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/actor.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/actor.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('_actor_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">actor.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___core.html">Core Actor System</a> &raquo; <a class="el" href="group___actor.html">Actor Components</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Convenience header for the core QB Actor components.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &quot;<a class="el" href="core_2_actor_8h_source.html">core/Actor.h</a>&quot;</code><br />
+<code>#include &quot;core/Actor.tpp&quot;</code><br />
+<code>#include &quot;core/Pipe.tpp&quot;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for actor.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="_actor_8h__incl.png" border="0" usemap="#ainclude_2qb_2actor_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2actor_8h" id="ainclude_2qb_2actor_8h">
+<area shape="rect" title="Convenience header for the core QB Actor components." alt="" coords="442,5,565,31"/>
+<area shape="rect" href="core_2_actor_8h.html" title="Actor base class and core actor model implementation." alt="" coords="336,79,428,105"/>
+<area shape="poly" title=" " alt="" coords="484,34,417,73,415,68,482,29"/>
+<area shape="rect" href="_actor_8tpp_source.html" title=" " alt="" coords="452,79,555,105"/>
+<area shape="poly" title=" " alt="" coords="506,31,506,63,501,63,501,31"/>
+<area shape="rect" href="_pipe_8tpp_source.html" title=" " alt="" coords="578,79,677,105"/>
+<area shape="poly" title=" " alt="" coords="526,29,595,69,592,73,523,34"/>
+<area shape="rect" title=" " alt="" coords="168,241,215,267"/>
+<area shape="poly" title=" " alt="" coords="337,108,292,126,249,155,221,190,203,228,198,225,217,187,246,151,289,122,335,103"/>
+<area shape="rect" title=" " alt="" coords="45,160,95,186"/>
+<area shape="poly" title=" " alt="" coords="336,103,234,124,115,155,110,157,109,152,113,150,233,118,335,98"/>
+<area shape="rect" title=" " alt="" coords="133,500,186,526"/>
+<area shape="poly" title=" " alt="" coords="336,98,260,103,170,113,87,130,56,141,35,155,17,176,10,198,10,253,10,337,13,362,22,386,35,408,51,428,89,463,126,489,123,494,85,467,47,432,30,411,17,388,8,363,5,337,5,253,5,197,12,174,31,151,54,136,86,125,169,108,259,97,336,92"/>
+<area shape="rect" title=" " alt="" coords="1360,411,1417,437"/>
+<area shape="poly" title=" " alt="" coords="429,101,612,150,984,265,1145,322,1348,401,1351,402,1349,407,1346,406,1143,327,982,270,611,155,427,107"/>
+<area shape="rect" href="unordered__map_8h.html" title="Optimized unordered map implementations." alt="" coords="259,153,398,193"/>
+<area shape="poly" title=" " alt="" coords="376,107,353,141,348,138,372,104"/>
+<area shape="rect" href="nocopy_8h.html" title="Defines a base class to make derived classes non&#45;copyable." alt="" coords="399,411,525,437"/>
+<area shape="poly" title=" " alt="" coords="391,104,413,152,431,220,446,288,462,395,457,396,440,289,426,221,408,154,386,106"/>
+<area shape="rect" href="type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="58,322,205,348"/>
+<area shape="poly" title=" " alt="" coords="337,103,274,121,242,136,213,155,182,189,160,231,146,272,138,308,133,307,141,271,155,229,178,186,210,151,240,131,272,116,335,98"/>
+<area shape="rect" href="core_2_event_8h.html" title="Event system for the QB Actor Framework." alt="" coords="772,241,838,267"/>
+<area shape="poly" title=" " alt="" coords="415,103,760,233,758,238,413,108"/>
+<area shape="rect" href="core_2_i_callback_8h.html" title="Callback interface for the QB Actor Framework." alt="" coords="473,322,560,348"/>
+<area shape="poly" title=" " alt="" coords="403,103,431,123,456,151,479,191,496,233,515,307,510,308,491,235,474,193,452,154,427,127,400,107"/>
+<area shape="rect" href="core_2_pipe_8h.html" title="Actor communication channel for the QB Actor Framework." alt="" coords="1429,160,1487,186"/>
+<area shape="poly" title=" " alt="" coords="428,100,441,102,588,115,714,119,928,111,1031,108,1141,111,1265,124,1411,150,1418,152,1417,157,1410,155,1265,129,1141,117,1031,114,928,117,714,124,588,121,440,107,428,105"/>
+<area shape="poly" title=" " alt="" coords="296,196,227,236,224,231,293,192"/>
+<area shape="rect" title=" " alt="" coords="533,500,586,526"/>
+<area shape="poly" title=" " alt="" coords="310,196,293,217,279,242,259,300,247,349,246,371,250,394,261,418,277,442,288,449,310,457,375,474,518,502,517,507,373,479,308,462,286,454,274,446,256,420,245,396,241,372,241,348,254,298,274,240,288,214,306,192"/>
+<area shape="rect" title=" " alt="" coords="1722,492,1861,533"/>
+<area shape="poly" title=" " alt="" coords="399,175,645,188,981,214,1153,232,1314,255,1450,281,1506,296,1551,313,1618,348,1678,393,1729,440,1767,479,1763,483,1725,443,1675,398,1615,353,1549,317,1504,301,1449,287,1313,260,1153,238,980,219,645,193,399,180"/>
+<area shape="rect" title=" " alt="" coords="288,241,399,267"/>
+<area shape="poly" title=" " alt="" coords="335,193,341,225,336,226,330,194"/>
+<area shape="poly" title=" " alt="" coords="121,350,106,369,91,392,82,418,82,431,86,443,103,469,126,489,123,493,99,472,81,445,77,431,77,417,86,390,101,366,117,347"/>
+<area shape="rect" title=" " alt="" coords="288,411,375,437"/>
+<area shape="poly" title=" " alt="" coords="161,346,290,402,288,407,159,351"/>
+<area shape="rect" title=" " alt="" coords="354,500,437,526"/>
+<area shape="poly" title=" " alt="" coords="142,347,178,392,204,419,233,442,286,472,340,493,338,498,284,477,230,447,201,423,174,396,138,350"/>
+<area shape="rect" title=" " alt="" coords="95,411,162,437"/>
+<area shape="poly" title=" " alt="" coords="134,349,132,396,127,395,128,349"/>
+<area shape="poly" title=" " alt="" coords="790,270,655,369,582,420,538,447,471,466,378,483,201,509,201,504,378,478,470,461,536,442,579,415,652,364,787,265"/>
+<area shape="rect" title=" " alt="" coords="1442,411,1495,437"/>
+<area shape="poly" title=" " alt="" coords="839,258,941,276,1088,306,1259,348,1431,401,1434,402,1432,407,1429,406,1258,353,1087,311,940,281,838,263"/>
+<area shape="rect" href="system_2allocator_2_pipe_8h.html" title="Implementation of a dynamic extensible buffer." alt="" coords="737,315,872,356"/>
+<area shape="poly" title=" " alt="" coords="807,267,807,300,802,300,802,267"/>
+<area shape="rect" href="core_2_actor_id_8h.html" title="Actor and core identification for the QB Actor Framework." alt="" coords="1464,322,1538,348"/>
+<area shape="poly" title=" " alt="" coords="839,257,1448,325,1448,331,838,262"/>
+<area shape="poly" title=" " alt="" coords="772,267,580,318,571,320,570,315,579,312,770,261"/>
+<area shape="poly" title=" " alt="" coords="873,336,968,341,1087,352,1218,372,1348,401,1352,402,1351,407,1347,406,1217,377,1087,358,967,346,873,341"/>
+<area shape="poly" title=" " alt="" coords="737,356,525,410,524,404,736,351"/>
+<area shape="poly" title=" " alt="" coords="737,347,577,369,482,386,388,406,379,409,377,404,387,401,481,380,576,364,736,341"/>
+<area shape="rect" title=" " alt="" coords="1166,500,1217,526"/>
+<area shape="poly" title=" " alt="" coords="873,339,949,347,1033,359,1107,377,1136,389,1157,402,1172,420,1183,441,1192,484,1187,485,1178,443,1168,423,1154,406,1134,393,1106,382,1032,365,949,352,873,344"/>
+<area shape="rect" title=" " alt="" coords="647,500,707,526"/>
+<area shape="poly" title=" " alt="" coords="738,350,687,370,665,385,647,405,640,425,642,446,650,467,661,486,657,489,646,470,637,447,635,424,642,402,661,381,685,365,736,345"/>
+<area shape="rect" title=" " alt="" coords="969,500,1040,526"/>
+<area shape="poly" title=" " alt="" coords="758,359,725,376,698,397,689,408,684,420,684,431,691,443,719,470,748,484,778,489,809,488,878,481,916,482,959,490,964,492,963,497,957,495,916,487,878,486,809,493,777,494,747,489,716,474,687,446,679,432,679,419,684,406,694,393,722,372,755,354"/>
+<area shape="rect" title=" " alt="" coords="701,411,770,437"/>
+<area shape="poly" title=" " alt="" coords="791,358,756,401,752,398,787,355"/>
+<area shape="rect" href="string_8h.html" title="Fixed&#45;size string implementation optimized for performance." alt="" coords="1061,411,1143,437"/>
+<area shape="poly" title=" " alt="" coords="874,351,1050,401,1056,403,1054,408,1048,406,872,357"/>
+<area shape="rect" href="branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="793,411,952,437"/>
+<area shape="poly" title=" " alt="" coords="822,355,856,398,852,401,818,358"/>
+<area shape="rect" href="prefix_8h.html" title="Platform&#45;specific alignment macros, cache&#45;line definitions, and related utilities." alt="" coords="1218,411,1335,437"/>
+<area shape="poly" title=" " alt="" coords="873,344,1023,368,1200,401,1216,404,1215,410,1199,406,1022,373,872,349"/>
+<area shape="poly" title=" " alt="" coords="1073,440,1049,447,934,467,842,474,751,479,635,495,602,502,601,497,634,490,750,474,842,469,933,462,1048,442,1071,435"/>
+<area shape="poly" title=" " alt="" coords="1116,435,1170,487,1166,491,1113,439"/>
+<area shape="poly" title=" " alt="" coords="1072,440,1049,447,723,506,722,501,1048,442,1070,435"/>
+<area shape="poly" title=" " alt="" coords="1090,439,1031,492,1028,488,1087,435"/>
+<area shape="rect" title=" " alt="" coords="1257,500,1331,526"/>
+<area shape="poly" title=" " alt="" coords="1130,435,1254,491,1252,495,1128,440"/>
+<area shape="rect" title=" " alt="" coords="1391,500,1443,526"/>
+<area shape="poly" title=" " alt="" coords="1145,434,1376,498,1375,503,1143,439"/>
+<area shape="rect" href="build__macros_8h.html" title="Platform, compiler, and C++ feature detection macros for the QB Framework." alt="" coords="1485,500,1647,526"/>
+<area shape="poly" title=" " alt="" coords="1144,430,1486,494,1485,499,1143,436"/>
+<area shape="rect" title=" " alt="" coords="1064,500,1143,526"/>
+<area shape="poly" title=" " alt="" coords="1105,437,1106,484,1100,484,1100,437"/>
+<area shape="rect" title=" " alt="" coords="1537,581,1595,607"/>
+<area shape="poly" title=" " alt="" coords="1569,526,1569,565,1563,565,1563,526"/>
+<area shape="rect" title=" " alt="" coords="1636,581,1696,607"/>
+<area shape="poly" title=" " alt="" coords="1583,524,1641,569,1637,573,1580,528"/>
+<area shape="poly" title=" " alt="" coords="1487,351,1418,404,1415,399,1484,347"/>
+<area shape="poly" title=" " alt="" coords="1499,350,1481,397,1476,396,1494,348"/>
+<area shape="poly" title=" " alt="" coords="1509,348,1521,394,1520,421,1509,446,1488,459,1447,473,1347,501,1346,496,1445,468,1486,454,1505,443,1515,420,1515,394,1503,349"/>
+<area shape="poly" title=" " alt="" coords="1516,347,1534,366,1551,391,1560,418,1559,432,1554,446,1539,460,1515,474,1458,499,1456,494,1512,469,1536,456,1549,443,1554,431,1555,419,1546,393,1530,369,1512,351"/>
+<area shape="poly" title=" " alt="" coords="1536,346,1573,368,1591,384,1605,403,1610,425,1607,448,1599,470,1587,489,1583,486,1594,467,1602,446,1605,425,1600,405,1587,387,1570,372,1533,351"/>
+<area shape="poly" title=" " alt="" coords="1538,346,1583,368,1605,383,1625,402,1650,441,1664,486,1670,530,1670,566,1665,566,1664,530,1659,487,1645,444,1621,405,1602,388,1580,373,1536,351"/>
+<area shape="poly" title=" " alt="" coords="1470,351,1323,408,1321,403,1468,346"/>
+<area shape="rect" title=" " alt="" coords="1949,500,2052,526"/>
+<area shape="poly" title=" " alt="" coords="1539,336,1631,342,1749,354,1861,373,1906,386,1938,401,1958,419,1974,441,1995,484,1990,486,1970,444,1954,423,1935,406,1904,391,1860,378,1748,359,1631,347,1538,341"/>
+<area shape="rect" href="io_8h.html" title="Core I/O and logging utilities for the qb framework." alt="" coords="976,411,1036,437"/>
+<area shape="poly" title=" " alt="" coords="1463,341,1283,359,1166,379,1049,406,1045,408,1043,403,1048,401,1165,373,1282,354,1463,336"/>
+<area shape="rect" href="unordered__set_8h.html" title="Optimized unordered set implementations." alt="" coords="1786,404,1925,444"/>
+<area shape="poly" title=" " alt="" coords="1539,343,1771,399,1770,405,1537,348"/>
+<area shape="poly" title=" " alt="" coords="984,440,966,447,873,468,793,480,723,486,656,488,518,487,437,489,342,495,201,509,201,504,342,490,437,483,518,481,656,482,722,481,793,475,872,463,964,442,983,435"/>
+<area shape="poly" title=" " alt="" coords="984,440,966,447,899,463,843,473,745,481,646,484,521,495,453,505,452,500,520,490,646,479,745,476,842,468,898,458,964,442,982,435"/>
+<area shape="poly" title=" " alt="" coords="1009,437,1008,484,1003,484,1003,437"/>
+<area shape="rect" title=" " alt="" coords="796,500,853,526"/>
+<area shape="poly" title=" " alt="" coords="982,440,866,495,865,495,863,490,864,490,979,435"/>
+<area shape="rect" title=" " alt="" coords="877,500,946,526"/>
+<area shape="poly" title=" " alt="" coords="995,439,937,492,934,488,991,435"/>
+<area shape="poly" title=" " alt="" coords="1843,446,1817,481,1813,478,1839,443"/>
+<area shape="poly" title=" " alt="" coords="1890,443,1969,489,1966,494,1887,447"/>
+<area shape="rect" title=" " alt="" coords="1885,500,1924,526"/>
+<area shape="poly" title=" " alt="" coords="1869,444,1893,485,1888,488,1864,446"/>
+<area shape="poly" title=" " alt="" coords="1429,181,854,250,853,244,1428,175"/>
+<area shape="poly" title=" " alt="" coords="1464,186,1496,307,1491,308,1459,187"/>
+</map>
+</div>
+</div><div class="textblock"><div class="dynheader">
+This graph shows which files directly or indirectly include this file:</div>
+<div class="dyncontent">
+<div class="center"><img src="_actor_8h__dep__incl.png" border="0" usemap="#ainclude_2qb_2actor_8hdep" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2actor_8hdep" id="ainclude_2qb_2actor_8hdep">
+<area shape="rect" title="Convenience header for the core QB Actor components." alt="" coords="5,5,129,31"/>
+<area shape="rect" href="cube_8h.html" title="Main include file for the QB Actor Framework." alt="" coords="14,79,120,105"/>
+<area shape="poly" title=" " alt="" coords="70,46,70,79,64,79,64,46"/>
+</map>
+</div>
+</div>
+<p><a href="_actor_8h_source.html">Go to the source code of this file.</a></p>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Convenience header for the core QB Actor components. </p>
+<p>This file includes the primary headers related to actor definition, implementation, and actor communication pipes. Include this file for easy access to core actor functionalities.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) // Assuming similar copyright as others </dd></dl>
+</div></div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="_actor_8h.html">actor.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

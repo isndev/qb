@@ -1,0 +1,290 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: Reference: Testing the QB Actor Framework</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: Reference: Testing the QB Actor Framework</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('ref_testing_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">Reference: Testing the QB Actor Framework </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>A guide to building, running, and writing tests for the QB Actor Framework using Google Test and CTest.</p>
+<h1>Reference: Testing the QB Actor Framework</h1>
+<p>The QB Actor Framework includes a comprehensive suite of unit and system tests designed to ensure correctness, stability, and robustness. These tests are built using the Google Test framework and managed via CTest.</p>
+<h2>Test Philosophy in QB</h2>
+<p>Our testing strategy is divided into two main categories:</p>
+<ul>
+<li><b>Unit Tests (typically found in <span class="tt">qb/source/&lt;module&gt;/tests/unit/</span>):</b><ul>
+<li>Focus on testing individual classes, functions, or small, isolated modules in detail.</li>
+<li>Aim for minimal dependencies to verify component logic in isolation.</li>
+<li>Examples: Testing <span class="tt"><a class="el" href="group___time.html#ga44ec803d9cda3fdc961419159fb92e71" title="Backward compatibility alias for TimePoint.">qb::Timestamp</a></span> functionality, <span class="tt"><a class="el" href="classqb_1_1io_1_1uri.html" title="Class for parsing, manipulating, and representing URIs.">qb::io::uri</a></span> parsing, or specific cryptographic functions.</li>
+</ul>
+</li>
+<li><b>System/Integration Tests (typically found in <span class="tt">qb/source/&lt;module&gt;/tests/system/</span>):</b><ul>
+<li>Focus on testing the interaction and integration of multiple framework components.</li>
+<li>Often involve creating <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">qb::Main</a></span> engine instances, launching multiple actors (potentially across different <span class="tt">VirtualCore</span>s), and verifying their collective behavior, message passing, lifecycle management, and concurrency aspects.</li>
+<li>Examples: Testing actor event delivery, inter-core communication, service actor resolution, or full client-server interactions using <span class="tt">qb-io</span> components within actors.</li>
+</ul>
+</li>
+</ul>
+<h2>Building the Tests</h2>
+<p>Tests are compiled as part of the standard QB Framework build process if the <span class="tt">QB_BUILD_TEST</span> CMake option is enabled (it is often <span class="tt">ON</span> by default).</p>
+<ol type="1">
+<li><b>Ensure <span class="tt">QB_BUILD_TEST=ON</span>:</b> When configuring CMake: <span class="tt">bash
+&lt;h1&gt;In your build directory&lt;/h1&gt;
+    cmake .. -DQB_BUILD_TEST=ON # Add other options as needed (e.g., -DCMAKE_BUILD_TYPE=Debug)
+    </span></li>
+<li><b>Build the Project:</b> <span class="tt">bash
+&lt;h1&gt;In your build directory&lt;/h1&gt;
+    cmake --build . --config Debug # Or Release
+&lt;h1&gt;Alternatively: make -jN (Linux/macOS) or build the solution in Visual Studio (Windows)&lt;/h1&gt;
+    </span></li>
+</ol>
+<p>Test executables are typically generated in your build directory, often under a path like <span class="tt">build/bin/qb/source/&lt;module&gt;/tests/&lt;type&gt;/</span> (e.g., <span class="tt">build/bin/qb/source/core/tests/system/qb-core-gtest-system-test-actor-event</span>).</p>
+<h2>Running the Tests</h2>
+<p>Once built, you have two primary ways to run the tests:</p>
+<ol type="1">
+<li><b>Using CTest (Recommended for CI and Full Test Suite Execution):</b> CTest is CMake's testing tool and is the preferred way to run all or a subset of tests. ```bash <h1>Navigate to your build directory first</h1>
+</li>
+</ol>
+<p>cd build</p>
+<h1>Run all discovered tests</h1>
+<p>ctest</p>
+<h1>Run tests with verbose output (shows individual test case results)</h1>
+<p>ctest -V</p>
+<h1>Run only tests whose names match a regular expression (e.g., all actor event tests)</h1>
+<p>ctest -R test-actor-event</p>
+<h1>Run tests in parallel (if supported by your CTest version and test properties)</h1>
+<h1>ctest -jN</h1>
+<p>```</p>
+<ol type="1">
+<li><b>Running Individual Test Executables Directly:</b> You can also navigate to the directory containing a specific test executable and run it directly. This allows you to use Google Test-specific command-line flags. ```bash <h1>Example for a specific core system test</h1>
+</li>
+</ol>
+<p>cd build/bin/qb/source/core/tests/system/ ./qb-core-gtest-system-test-actor-add &ndash;gtest_color=yes</p>
+<h1>Example: Run only specific tests within that executable using a filter</h1>
+<p>./qb-core-gtest-system-test-actor-add &ndash;gtest_filter=ActorAddTestSuite.SpecificAddTest ``` Refer to the Google Test documentation for a full list of its command-line options.</p>
+<h2>Test Structure &amp; Conventions</h2>
+<ul>
+<li><b>Location:</b> Test source files (<span class="tt">test-*.cpp</span>) reside within the <span class="tt">qb/source/&lt;module&gt;/tests/unit/</span> or <span class="tt">qb/source/&lt;module&gt;/tests/system/</span> directories.</li>
+<li><b>Naming:</b> Test files are generally named <span class="tt">test-&lt;feature_or_component&gt;.cpp</span> (e.g., <span class="tt">test-actor-event.cpp</span>, <span class="tt">test-uri.cpp</span>).</li>
+<li><b>Framework:</b> Google Test (<span class="tt">gtest/gtest.h</span>) is used. Tests are defined using <span class="tt">TEST(TestSuiteName, TestName)</span> or, if using a test fixture, <span class="tt">TEST_F(TestFixtureClassName, TestName)</span>.</li>
+<li><b>System Test Approach:</b> Many system tests involve:<ul>
+<li>Instantiating <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">qb::Main</a></span>.</li>
+<li>Adding specific test actor configurations to one or more cores.</li>
+<li>Running the engine synchronously for test determinism: <span class="tt">engine.start(false); engine.join();</span>.</li>
+<li>Using <span class="tt">std::atomic</span> variables, shared counters (protected by mutexes if accessed outside actor context during assertions), or specific response events to gather results or state from actors for assertion.</li>
+<li>Asserting expected outcomes using Google Test macros (<span class="tt">EXPECT_EQ</span>, <span class="tt">ASSERT_TRUE</span>, etc.), often also checking <span class="tt">engine.hasError()</span>.</li>
+</ul>
+</li>
+</ul>
+<h2>Writing New Tests</h2>
+<p>Contributions of new tests are highly encouraged!</p>
+<ol type="1">
+<li><b>Determine Scope:</b> Decide if it's a unit test (isolating a class/function) or a system/integration test (multiple components, actors).</li>
+<li><b>Choose Location:</b> Place your new <span class="tt">test-myfeature.cpp</span> file in the appropriate <span class="tt">unit</span> or <span class="tt">system</span> subdirectory under the relevant module (e.g., <span class="tt">qb/source/core/tests/system/</span>).</li>
+<li><b>Include Headers:</b> Always include <span class="tt">&lt;gtest/gtest.h&gt;</span>. Include necessary QB framework headers and any standard C++ headers your test requires.</li>
+<li><b>Test Fixtures (Optional):</b> For tests requiring common setup/teardown logic, create a test fixture class inheriting from <span class="tt">public ::testing::Test</span>. Use <span class="tt">SetUp()</span> and <span class="tt">TearDown()</span> virtual methods.</li>
+<li><b>Define Test Cases:</b> Use <span class="tt">TEST(MyFeatureTestSuite, DescriptiveTestName)</span> or <span class="tt">TEST_F(MyFixtureClass, DescriptiveTestName)</span>.</li>
+<li><b>System Test Specifics:</b><ul>
+<li>Instantiate <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">qb::Main</a> engine;</span>.</li>
+<li>Add your test actors using <span class="tt">engine.addActor&lt;MyTestActor&gt;(core_id, ...)</span> or <span class="tt">engine.core(core_id).builder()...</span>.</li>
+<li>If your test requires actors to perform a sequence of actions or wait for certain conditions, use <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> within your test actors to schedule subsequent steps or self-terminating events.</li>
+<li>For verifying state across actors or after the engine run, <span class="tt">std::atomic</span> variables (declared globally or as static members of a test fixture) are often useful for safe communication of results from actors back to the main test thread for assertions. Use mutexes only if absolutely necessary for more complex shared state between the test and actors.</li>
+<li>Run the engine synchronously for deterministic system tests: <span class="tt">engine.start(false); engine.join();</span>.</li>
+</ul>
+</li>
+<li><b>Assert Outcomes:</b> Use Google Test assertions (<span class="tt">EXPECT_TRUE</span>, <span class="tt">ASSERT_EQ</span>, <span class="tt">EXPECT_FALSE</span>, <span class="tt">ASSERT_NE</span>, <span class="tt">EXPECT_THROW</span>, etc.) to verify the behavior and state of your components or the overall system.</li>
+<li><b>Update CMake:</b> Add your new <span class="tt">.cpp</span> file to the list of sources in the relevant <span class="tt">CMakeLists.txt</span> file (e.g., in <span class="tt">qb/source/core/tests/system/CMakeLists.txt</span>). The target names are usually derived from the filename. Follow the existing patterns in those files.</li>
+</ol>
+<p>By following these guidelines, you can contribute effective tests that help maintain the quality and reliability of the QB Actor Framework.</p>
+<p><b>(Next:</b> Consult the QB Actor Framework: Frequently Asked Questions (FAQ) or the QB Actor Framework: Glossary of Terms for more framework information.**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

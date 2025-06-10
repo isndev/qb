@@ -1,0 +1,5 @@
+<map id="qb::is_inserter&lt; T, U &gt;" name="qb::is_inserter&lt; T, U &gt;">
+<area shape="rect" id="Node000001" title="Type trait to check if a type T is an inserter iterator (e.g., std::back_inserter)." alt="" coords="5,79,157,105"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="27,5,135,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="84,46,84,79,78,79,78,46"/>
+</map>

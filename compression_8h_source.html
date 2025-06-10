@@ -1,0 +1,735 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/compression.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/compression.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('compression_8h_source.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">compression.h</div></div>
+</div><!--header-->
+<div class="contents">
+<a href="compression_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span> </div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span><span class="preprocessor">#include &lt;functional&gt;</span></div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span><span class="preprocessor">#include &lt;limits&gt;</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span><span class="preprocessor">#include &lt;stdexcept&gt;</span></div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span><span class="preprocessor">#include &lt;string&gt;</span></div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span> </div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span><span class="preprocessor">#ifndef QB_IO_COMPRESSION_H</span></div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span><span class="preprocessor">#define QB_IO_COMPRESSION_H</span></div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span> </div>
+<div class="line"><a id="l00037" name="l00037"></a><span class="lineno">   37</span><span class="preprocessor">#ifndef QB_IO_WITH_ZLIB</span></div>
+<div class="line"><a id="l00038" name="l00038"></a><span class="lineno">   38</span><span class="preprocessor">#error &quot;missing Z Library&quot;</span></div>
+<div class="line"><a id="l00039" name="l00039"></a><span class="lineno">   39</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00040" name="l00040"></a><span class="lineno">   40</span> </div>
+<div class="line"><a id="l00041" name="l00041"></a><span class="lineno">   41</span><span class="preprocessor">#include &lt;zlib.h&gt;</span></div>
+<div class="line"><a id="l00042" name="l00042"></a><span class="lineno">   42</span><span class="preprocessor">#include &quot;<a class="code" href="system_2allocator_2_pipe_8h.html">qb/system/allocator/pipe.h</a>&quot;</span></div>
+<div class="line"><a id="l00043" name="l00043"></a><span class="lineno">   43</span> </div>
+<div class="line"><a id="l00044" name="l00044"></a><span class="lineno">   44</span><span class="keyword">namespace </span>qb {</div>
+<div class="line"><a id="l00045" name="l00045"></a><span class="lineno">   45</span><span class="keyword">namespace </span>compression {</div>
+<div class="line"><a id="l00046" name="l00046"></a><span class="lineno">   46</span></div>
+<div class="foldopen" id="foldopen00056" data-start="{" data-end="};">
+<div class="line"><a id="l00056" name="l00056"></a><span class="lineno"><a class="line" href="group___compression.html#ga595180ab2e290075433bd021f96690f7">   56</a></span><span class="keyword">enum</span> <a class="code hl_enumeration" href="group___compression.html#ga595180ab2e290075433bd021f96690f7">operation_hint</a> {</div>
+<div class="line"><a id="l00057" name="l00057"></a><span class="lineno"><a class="line" href="compression_8h.html#ga595180ab2e290075433bd021f96690f7a13931a8ceafb96190f2b56c89e1ecd16">   57</a></span>    <a class="code hl_enumvalue" href="compression_8h.html#ga595180ab2e290075433bd021f96690f7a13931a8ceafb96190f2b56c89e1ecd16">is_last</a>, </div>
+<div class="line"><a id="l00059" name="l00059"></a><span class="lineno"><a class="line" href="compression_8h.html#ga595180ab2e290075433bd021f96690f7ab90e2646b6905887deae39c071ea273e">   59</a></span>    <a class="code hl_enumvalue" href="compression_8h.html#ga595180ab2e290075433bd021f96690f7ab90e2646b6905887deae39c071ea273e">has_more</a> </div>
+<div class="line"><a id="l00061" name="l00061"></a><span class="lineno">   61</span>};</div>
+</div>
+<div class="line"><a id="l00062" name="l00062"></a><span class="lineno">   62</span></div>
+<div class="foldopen" id="foldopen00072" data-start="{" data-end="};">
+<div class="line"><a id="l00072" name="l00072"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1operation__result.html">   72</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1compression_1_1operation__result.html">operation_result</a> {</div>
+<div class="line"><a id="l00073" name="l00073"></a><span class="lineno">   73</span>    std::size_t</div>
+<div class="line"><a id="l00074" name="l00074"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1operation__result.html#ad409759bfa4e17ff94222433bda6b11a">   74</a></span>        <a class="code hl_variable" href="structqb_1_1compression_1_1operation__result.html#ad409759bfa4e17ff94222433bda6b11a">input_bytes_processed</a>; </div>
+<div class="line"><a id="l00075" name="l00075"></a><span class="lineno">   75</span>    std::size_t</div>
+<div class="line"><a id="l00076" name="l00076"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1operation__result.html#ab2a7bbd0617cf8f2d3a6b5ef6a27a311">   76</a></span>         <a class="code hl_variable" href="structqb_1_1compression_1_1operation__result.html#ab2a7bbd0617cf8f2d3a6b5ef6a27a311">output_bytes_produced</a>; </div>
+<div class="line"><a id="l00077" name="l00077"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1operation__result.html#ad42022d207eef6e62d283a65544864c8">   77</a></span>    <span class="keywordtype">bool</span> <a class="code hl_variable" href="structqb_1_1compression_1_1operation__result.html#ad42022d207eef6e62d283a65544864c8">done</a>; </div>
+<div class="line"><a id="l00080" name="l00080"></a><span class="lineno">   80</span>};</div>
+</div>
+<div class="line"><a id="l00081" name="l00081"></a><span class="lineno">   81</span></div>
+<div class="foldopen" id="foldopen00091" data-start="{" data-end="};">
+<div class="line"><a id="l00091" name="l00091"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1compress__provider.html">   91</a></span><span class="keyword">class </span><a class="code hl_class" href="classqb_1_1compression_1_1compress__provider.html">compress_provider</a> {</div>
+<div class="line"><a id="l00092" name="l00092"></a><span class="lineno">   92</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00097" name="l00097"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1compress__provider.html#aa7648c84d939d4241c63493fb5a1cdee">   97</a></span>    <span class="keyword">virtual</span> <span class="keyword">const</span> std::string &amp;<a class="code hl_function" href="classqb_1_1compression_1_1compress__provider.html#aa7648c84d939d4241c63493fb5a1cdee">algorithm</a>() <span class="keyword">const</span> = 0;</div>
+<div class="line"><a id="l00098" name="l00098"></a><span class="lineno">   98</span></div>
+<div class="line"><a id="l00111" name="l00111"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1compress__provider.html#a77917698679e1305c66e4574dbcde7a1">  111</a></span>    <span class="keyword">virtual</span> std::size_t <a class="code hl_function" href="classqb_1_1compression_1_1compress__provider.html#a77917698679e1305c66e4574dbcde7a1">compress</a>(<span class="keyword">const</span> uint8_t *input, std::size_t input_size,</div>
+<div class="line"><a id="l00112" name="l00112"></a><span class="lineno">  112</span>                                 uint8_t *output, std::size_t output_size,</div>
+<div class="line"><a id="l00113" name="l00113"></a><span class="lineno">  113</span>                                 <a class="code hl_enumeration" href="group___compression.html#ga595180ab2e290075433bd021f96690f7">operation_hint</a> hint, std::size_t &amp;input_bytes_processed,</div>
+<div class="line"><a id="l00114" name="l00114"></a><span class="lineno">  114</span>                                 <span class="keywordtype">bool</span> &amp;done) = 0;</div>
+<div class="line"><a id="l00115" name="l00115"></a><span class="lineno">  115</span></div>
+<div class="line"><a id="l00122" name="l00122"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1compress__provider.html#ac0f153090dbd4e3df927c38117cc4d38">  122</a></span>    <span class="keyword">virtual</span> <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1compression_1_1compress__provider.html#ac0f153090dbd4e3df927c38117cc4d38">reset</a>() = 0;</div>
+<div class="line"><a id="l00123" name="l00123"></a><span class="lineno">  123</span></div>
+<div class="line"><a id="l00127" name="l00127"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1compress__provider.html#a3e2f57c1e717e35f787e59cf53958ef1">  127</a></span>    <span class="keyword">virtual</span> <a class="code hl_function" href="classqb_1_1compression_1_1compress__provider.html#a3e2f57c1e717e35f787e59cf53958ef1">~compress_provider</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00128" name="l00128"></a><span class="lineno">  128</span>};</div>
+</div>
+<div class="line"><a id="l00129" name="l00129"></a><span class="lineno">  129</span></div>
+<div class="foldopen" id="foldopen00139" data-start="{" data-end="};">
+<div class="line"><a id="l00139" name="l00139"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1decompress__provider.html">  139</a></span><span class="keyword">class </span><a class="code hl_class" href="classqb_1_1compression_1_1decompress__provider.html">decompress_provider</a> {</div>
+<div class="line"><a id="l00140" name="l00140"></a><span class="lineno">  140</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00145" name="l00145"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1decompress__provider.html#a311ff17e27df5871915c86435d5c59af">  145</a></span>    <span class="keyword">virtual</span> <span class="keyword">const</span> std::string &amp;<a class="code hl_function" href="classqb_1_1compression_1_1decompress__provider.html#a311ff17e27df5871915c86435d5c59af">algorithm</a>() <span class="keyword">const</span> = 0;</div>
+<div class="line"><a id="l00146" name="l00146"></a><span class="lineno">  146</span></div>
+<div class="line"><a id="l00159" name="l00159"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1decompress__provider.html#a847e937dad736c6e33b8a7d8bd8dc72e">  159</a></span>    <span class="keyword">virtual</span> std::size_t <a class="code hl_function" href="classqb_1_1compression_1_1decompress__provider.html#a847e937dad736c6e33b8a7d8bd8dc72e">decompress</a>(<span class="keyword">const</span> uint8_t *input, std::size_t input_size,</div>
+<div class="line"><a id="l00160" name="l00160"></a><span class="lineno">  160</span>                                   uint8_t *output, std::size_t output_size,</div>
+<div class="line"><a id="l00161" name="l00161"></a><span class="lineno">  161</span>                                   <a class="code hl_enumeration" href="group___compression.html#ga595180ab2e290075433bd021f96690f7">operation_hint</a> hint,</div>
+<div class="line"><a id="l00162" name="l00162"></a><span class="lineno">  162</span>                                   std::size_t &amp;input_bytes_processed, <span class="keywordtype">bool</span> &amp;done) = 0;</div>
+<div class="line"><a id="l00163" name="l00163"></a><span class="lineno">  163</span></div>
+<div class="line"><a id="l00170" name="l00170"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1decompress__provider.html#a6215737e9b1bd7c008217de562dce7ed">  170</a></span>    <span class="keyword">virtual</span> <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1compression_1_1decompress__provider.html#a6215737e9b1bd7c008217de562dce7ed">reset</a>() = 0;</div>
+<div class="line"><a id="l00171" name="l00171"></a><span class="lineno">  171</span></div>
+<div class="line"><a id="l00175" name="l00175"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1decompress__provider.html#a28bc1a45b466d31ded39d8d83cbf10e4">  175</a></span>    <span class="keyword">virtual</span> <a class="code hl_function" href="classqb_1_1compression_1_1decompress__provider.html#a28bc1a45b466d31ded39d8d83cbf10e4">~decompress_provider</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00176" name="l00176"></a><span class="lineno">  176</span>};</div>
+</div>
+<div class="line"><a id="l00177" name="l00177"></a><span class="lineno">  177</span></div>
+<div class="foldopen" id="foldopen00187" data-start="{" data-end="};">
+<div class="line"><a id="l00187" name="l00187"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1compress__factory.html">  187</a></span><span class="keyword">class </span><a class="code hl_class" href="classqb_1_1compression_1_1compress__factory.html">compress_factory</a> {</div>
+<div class="line"><a id="l00188" name="l00188"></a><span class="lineno">  188</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00193" name="l00193"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1compress__factory.html#a73bef826ecdeff95124753ea88ef78e5">  193</a></span>    <span class="keyword">virtual</span> <span class="keyword">const</span> std::string &amp;<a class="code hl_function" href="classqb_1_1compression_1_1compress__factory.html#a73bef826ecdeff95124753ea88ef78e5">algorithm</a>() <span class="keyword">const</span> = 0;</div>
+<div class="line"><a id="l00194" name="l00194"></a><span class="lineno">  194</span></div>
+<div class="line"><a id="l00199" name="l00199"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1compress__factory.html#a3cf26a1738c2f34ce567c55453bd7566">  199</a></span>    <span class="keyword">virtual</span> std::unique_ptr&lt;compress_provider&gt; <a class="code hl_function" href="classqb_1_1compression_1_1compress__factory.html#a3cf26a1738c2f34ce567c55453bd7566">make_compressor</a>() <span class="keyword">const</span> = 0;</div>
+<div class="line"><a id="l00200" name="l00200"></a><span class="lineno">  200</span></div>
+<div class="line"><a id="l00204" name="l00204"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1compress__factory.html#a813204a1a3d50b81b79e4e93b76b4139">  204</a></span>    <span class="keyword">virtual</span> <a class="code hl_function" href="classqb_1_1compression_1_1compress__factory.html#a813204a1a3d50b81b79e4e93b76b4139">~compress_factory</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00205" name="l00205"></a><span class="lineno">  205</span>};</div>
+</div>
+<div class="line"><a id="l00206" name="l00206"></a><span class="lineno">  206</span></div>
+<div class="foldopen" id="foldopen00216" data-start="{" data-end="};">
+<div class="line"><a id="l00216" name="l00216"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1decompress__factory.html">  216</a></span><span class="keyword">class </span><a class="code hl_class" href="classqb_1_1compression_1_1decompress__factory.html">decompress_factory</a> {</div>
+<div class="line"><a id="l00217" name="l00217"></a><span class="lineno">  217</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00222" name="l00222"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1decompress__factory.html#ae9d04d2805b9aff833caf6a48a3a068d">  222</a></span>    <span class="keyword">virtual</span> <span class="keyword">const</span> std::string &amp;<a class="code hl_function" href="classqb_1_1compression_1_1decompress__factory.html#ae9d04d2805b9aff833caf6a48a3a068d">algorithm</a>() <span class="keyword">const</span> = 0;</div>
+<div class="line"><a id="l00223" name="l00223"></a><span class="lineno">  223</span></div>
+<div class="line"><a id="l00232" name="l00232"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1decompress__factory.html#a67971dfc13d98fe13172f055852a673b">  232</a></span>    <span class="keyword">virtual</span> uint16_t <a class="code hl_function" href="classqb_1_1compression_1_1decompress__factory.html#a67971dfc13d98fe13172f055852a673b">weight</a>() <span class="keyword">const</span> = 0;</div>
+<div class="line"><a id="l00233" name="l00233"></a><span class="lineno">  233</span></div>
+<div class="line"><a id="l00238" name="l00238"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1decompress__factory.html#a683a1f6f461d94df6c0a99ef73f52bdd">  238</a></span>    <span class="keyword">virtual</span> std::unique_ptr&lt;decompress_provider&gt; <a class="code hl_function" href="classqb_1_1compression_1_1decompress__factory.html#a683a1f6f461d94df6c0a99ef73f52bdd">make_decompressor</a>() <span class="keyword">const</span> = 0;</div>
+<div class="line"><a id="l00239" name="l00239"></a><span class="lineno">  239</span></div>
+<div class="line"><a id="l00243" name="l00243"></a><span class="lineno"><a class="line" href="classqb_1_1compression_1_1decompress__factory.html#a0f1e9c2ba8f80d035cf957627735cc27">  243</a></span>    <span class="keyword">virtual</span> <a class="code hl_function" href="classqb_1_1compression_1_1decompress__factory.html#a0f1e9c2ba8f80d035cf957627735cc27">~decompress_factory</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00244" name="l00244"></a><span class="lineno">  244</span>};</div>
+</div>
+<div class="line"><a id="l00245" name="l00245"></a><span class="lineno">  245</span></div>
+<div class="line"><a id="l00254" name="l00254"></a><span class="lineno">  254</span><span class="keyword">namespace </span><a class="code hl_namespace" href="namespacebuiltin.html">builtin</a> {</div>
+<div class="line"><a id="l00255" name="l00255"></a><span class="lineno">  255</span></div>
+<div class="line"><a id="l00260" name="l00260"></a><span class="lineno"><a class="line" href="compression_8h.html#aa173a31868cad6a07bc273283dcdbab4">  260</a></span><span class="keywordtype">bool</span> <a class="code hl_function" href="compression_8h.html#aa173a31868cad6a07bc273283dcdbab4">supported</a>();</div>
+<div class="line"><a id="l00261" name="l00261"></a><span class="lineno">  261</span></div>
+<div class="line"><a id="l00266" name="l00266"></a><span class="lineno">  266</span><span class="keyword">namespace </span><a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a> {</div>
+<div class="line"><a id="l00267" name="l00267"></a><span class="lineno">  267</span></div>
+<div class="line"><a id="l00271" name="l00271"></a><span class="lineno"><a class="line" href="compression_8h.html#aa684469d165cbbb683ee1c0627799f6d">  271</a></span><span class="keyword">constexpr</span> <span class="keyword">const</span> <span class="keywordtype">char</span> *<span class="keyword">const</span> <a class="code hl_variable" href="compression_8h.html#aa684469d165cbbb683ee1c0627799f6d">GZIP</a> = <span class="stringliteral">&quot;gzip&quot;</span>;</div>
+<div class="line"><a id="l00272" name="l00272"></a><span class="lineno">  272</span></div>
+<div class="line"><a id="l00276" name="l00276"></a><span class="lineno"><a class="line" href="compression_8h.html#a7ede6da9b5e3b958a6e68b9ff364be57">  276</a></span><span class="keyword">constexpr</span> <span class="keyword">const</span> <span class="keywordtype">char</span> *<span class="keyword">const</span> <a class="code hl_variable" href="compression_8h.html#a7ede6da9b5e3b958a6e68b9ff364be57">DEFLATE</a> = <span class="stringliteral">&quot;deflate&quot;</span>;</div>
+<div class="line"><a id="l00277" name="l00277"></a><span class="lineno">  277</span></div>
+<div class="line"><a id="l00283" name="l00283"></a><span class="lineno"><a class="line" href="compression_8h.html#a9b0f016e7fba8c9e5ae9b06ce52bb28a">  283</a></span><span class="keywordtype">bool</span> <a class="code hl_function" href="compression_8h.html#a9b0f016e7fba8c9e5ae9b06ce52bb28a">supported</a>(<span class="keyword">const</span> std::string &amp;<a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>);</div>
+<div class="line"><a id="l00284" name="l00284"></a><span class="lineno">  284</span>} <span class="comment">// namespace algorithm</span></div>
+<div class="line"><a id="l00285" name="l00285"></a><span class="lineno">  285</span></div>
+<div class="line"><a id="l00292" name="l00292"></a><span class="lineno"><a class="line" href="compression_8h.html#a0729b3901ba2da230d709ad5f0bede21">  292</a></span>std::unique_ptr&lt;compress_provider&gt; <a class="code hl_function" href="compression_8h.html#a0729b3901ba2da230d709ad5f0bede21">make_compressor</a>(<span class="keyword">const</span> std::string &amp;<a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>);</div>
+<div class="line"><a id="l00293" name="l00293"></a><span class="lineno">  293</span></div>
+<div class="line"><a id="l00300" name="l00300"></a><span class="lineno"><a class="line" href="compression_8h.html#a3817a47a63a9126acfa689255fa640e9">  300</a></span>std::unique_ptr&lt;decompress_provider&gt; <a class="code hl_function" href="compression_8h.html#a3817a47a63a9126acfa689255fa640e9">make_decompressor</a>(<span class="keyword">const</span> std::string &amp;<a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>);</div>
+<div class="line"><a id="l00301" name="l00301"></a><span class="lineno">  301</span></div>
+<div class="line"><a id="l00306" name="l00306"></a><span class="lineno"><a class="line" href="compression_8h.html#acdedc8b7e5d60f90c967bc31d76166e7">  306</a></span><span class="keyword">const</span> std::vector&lt;std::shared_ptr&lt;compress_factory&gt;&gt; <a class="code hl_function" href="compression_8h.html#acdedc8b7e5d60f90c967bc31d76166e7">get_compress_factories</a>();</div>
+<div class="line"><a id="l00307" name="l00307"></a><span class="lineno">  307</span></div>
+<div class="line"><a id="l00313" name="l00313"></a><span class="lineno"><a class="line" href="compression_8h.html#a94010f5e6327498dfde5f7dae07035ea">  313</a></span>std::shared_ptr&lt;compress_factory&gt; <a class="code hl_function" href="compression_8h.html#a94010f5e6327498dfde5f7dae07035ea">get_compress_factory</a>(<span class="keyword">const</span> std::string &amp;<a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>);</div>
+<div class="line"><a id="l00314" name="l00314"></a><span class="lineno">  314</span></div>
+<div class="line"><a id="l00319" name="l00319"></a><span class="lineno"><a class="line" href="compression_8h.html#ab2973d434ac498c8455ff133f3015a67">  319</a></span><span class="keyword">const</span> std::vector&lt;std::shared_ptr&lt;decompress_factory&gt;&gt; <a class="code hl_function" href="compression_8h.html#ab2973d434ac498c8455ff133f3015a67">get_decompress_factories</a>();</div>
+<div class="line"><a id="l00320" name="l00320"></a><span class="lineno">  320</span></div>
+<div class="line"><a id="l00326" name="l00326"></a><span class="lineno"><a class="line" href="compression_8h.html#ae9e21d528d2010deeb80ae69e4e47115">  326</a></span>std::shared_ptr&lt;decompress_factory&gt; <a class="code hl_function" href="compression_8h.html#ae9e21d528d2010deeb80ae69e4e47115">get_decompress_factory</a>(<span class="keyword">const</span> std::string &amp;<a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>);</div>
+<div class="line"><a id="l00327" name="l00327"></a><span class="lineno">  327</span></div>
+<div class="line"><a id="l00337" name="l00337"></a><span class="lineno"><a class="line" href="compression_8h.html#a368d7a3fc591ac6d928fff8914135377">  337</a></span>std::unique_ptr&lt;compress_provider&gt; <a class="code hl_function" href="compression_8h.html#a368d7a3fc591ac6d928fff8914135377">make_gzip_compressor</a>(<span class="keywordtype">int</span> compressionLevel, <span class="keywordtype">int</span> method,</div>
+<div class="line"><a id="l00338" name="l00338"></a><span class="lineno">  338</span>                                                        <span class="keywordtype">int</span> strategy, <span class="keywordtype">int</span> memLevel);</div>
+<div class="line"><a id="l00339" name="l00339"></a><span class="lineno">  339</span></div>
+<div class="line"><a id="l00349" name="l00349"></a><span class="lineno">  349</span>std::unique_ptr&lt;compress_provider&gt;</div>
+<div class="line"><a id="l00350" name="l00350"></a><span class="lineno"><a class="line" href="compression_8h.html#a9b9ffb5f9e04b7cf482f3a50fe9ca6e6">  350</a></span><a class="code hl_function" href="compression_8h.html#a9b9ffb5f9e04b7cf482f3a50fe9ca6e6">make_deflate_compressor</a>(<span class="keywordtype">int</span> compressionLevel, <span class="keywordtype">int</span> method, <span class="keywordtype">int</span> strategy, <span class="keywordtype">int</span> memLevel);</div>
+<div class="line"><a id="l00351" name="l00351"></a><span class="lineno">  351</span> </div>
+<div class="line"><a id="l00352" name="l00352"></a><span class="lineno">  352</span>} <span class="comment">// namespace builtin</span></div>
+<div class="line"><a id="l00353" name="l00353"></a><span class="lineno">  353</span></div>
+<div class="line"><a id="l00361" name="l00361"></a><span class="lineno"><a class="line" href="compression_8h.html#a7744f156d244325c13cc1c0b5c9b1dc9">  361</a></span>std::shared_ptr&lt;compress_factory&gt; <a class="code hl_function" href="compression_8h.html#a7744f156d244325c13cc1c0b5c9b1dc9">make_compress_factory</a>(</div>
+<div class="line"><a id="l00362" name="l00362"></a><span class="lineno">  362</span>    <span class="keyword">const</span> std::string                                  &amp;<a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>,</div>
+<div class="line"><a id="l00363" name="l00363"></a><span class="lineno">  363</span>    std::function&lt;std::unique_ptr&lt;compress_provider&gt;()&gt; make_compressor);</div>
+<div class="line"><a id="l00364" name="l00364"></a><span class="lineno">  364</span></div>
+<div class="line"><a id="l00373" name="l00373"></a><span class="lineno"><a class="line" href="compression_8h.html#a2554e58cf429efc1296a895d2d76928f">  373</a></span>std::shared_ptr&lt;decompress_factory&gt; <a class="code hl_function" href="compression_8h.html#a2554e58cf429efc1296a895d2d76928f">make_decompress_factory</a>(</div>
+<div class="line"><a id="l00374" name="l00374"></a><span class="lineno">  374</span>    <span class="keyword">const</span> std::string &amp;<a class="code hl_namespace" href="namespacealgorithm.html">algorithm</a>, uint16_t weight,</div>
+<div class="line"><a id="l00375" name="l00375"></a><span class="lineno">  375</span>    std::function&lt;std::unique_ptr&lt;decompress_provider&gt;()&gt; make_decompressor);</div>
+<div class="line"><a id="l00376" name="l00376"></a><span class="lineno">  376</span></div>
+<div class="line"><a id="l00393" name="l00393"></a><span class="lineno">  393</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Output&gt;</div>
+<div class="line"><a id="l00394" name="l00394"></a><span class="lineno">  394</span><span class="keywordtype">size_t</span></div>
+<div class="foldopen" id="foldopen00395" data-start="{" data-end="}">
+<div class="line"><a id="l00395" name="l00395"></a><span class="lineno"><a class="line" href="compression_8h.html#a8c6bb76605443259d382240f3dbcde0c">  395</a></span><a class="code hl_function" href="compression_8h.html#a8c6bb76605443259d382240f3dbcde0c">compress</a>(Output &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size, <span class="keywordtype">int</span> level,</div>
+<div class="line"><a id="l00396" name="l00396"></a><span class="lineno">  396</span>         <span class="keywordtype">int</span> window_bits) {</div>
+<div class="line"><a id="l00397" name="l00397"></a><span class="lineno">  397</span><span class="preprocessor">#ifdef DEBUG</span></div>
+<div class="line"><a id="l00398" name="l00398"></a><span class="lineno">  398</span>    <span class="comment">// Verify if size input will fit into unsigned int, type used for zlib&#39;s avail_in</span></div>
+<div class="line"><a id="l00399" name="l00399"></a><span class="lineno">  399</span>    <span class="keywordflow">if</span> (size &gt; std::numeric_limits&lt;unsigned int&gt;::max()) {</div>
+<div class="line"><a id="l00400" name="l00400"></a><span class="lineno">  400</span>        <span class="keywordflow">throw</span> std::runtime_error(<span class="stringliteral">&quot;size arg is too large to fit into unsigned int type&quot;</span>);</div>
+<div class="line"><a id="l00401" name="l00401"></a><span class="lineno">  401</span>    }</div>
+<div class="line"><a id="l00402" name="l00402"></a><span class="lineno">  402</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00403" name="l00403"></a><span class="lineno">  403</span> </div>
+<div class="line"><a id="l00404" name="l00404"></a><span class="lineno">  404</span>    z_stream deflate_s;</div>
+<div class="line"><a id="l00405" name="l00405"></a><span class="lineno">  405</span>    deflate_s.zalloc   = Z_NULL;</div>
+<div class="line"><a id="l00406" name="l00406"></a><span class="lineno">  406</span>    deflate_s.zfree    = Z_NULL;</div>
+<div class="line"><a id="l00407" name="l00407"></a><span class="lineno">  407</span>    deflate_s.opaque   = Z_NULL;</div>
+<div class="line"><a id="l00408" name="l00408"></a><span class="lineno">  408</span>    deflate_s.avail_in = 0;</div>
+<div class="line"><a id="l00409" name="l00409"></a><span class="lineno">  409</span>    deflate_s.next_in  = Z_NULL;</div>
+<div class="line"><a id="l00410" name="l00410"></a><span class="lineno">  410</span> </div>
+<div class="line"><a id="l00411" name="l00411"></a><span class="lineno">  411</span>    <span class="comment">// The windowBits parameter is the base two logarithm of the window size (the size of</span></div>
+<div class="line"><a id="l00412" name="l00412"></a><span class="lineno">  412</span>    <span class="comment">// the history buffer). It should be in the range 8..15 for this version of the</span></div>
+<div class="line"><a id="l00413" name="l00413"></a><span class="lineno">  413</span>    <span class="comment">// library. Larger values of this parameter result in better compression at the</span></div>
+<div class="line"><a id="l00414" name="l00414"></a><span class="lineno">  414</span>    <span class="comment">// expense of memory usage. This range of values also changes the decoding type:</span></div>
+<div class="line"><a id="l00415" name="l00415"></a><span class="lineno">  415</span>    <span class="comment">//  -8 to -15 for raw deflate</span></div>
+<div class="line"><a id="l00416" name="l00416"></a><span class="lineno">  416</span>    <span class="comment">//  8 to 15 for zlib</span></div>
+<div class="line"><a id="l00417" name="l00417"></a><span class="lineno">  417</span>    <span class="comment">// (8 to 15) + 16 for gzip</span></div>
+<div class="line"><a id="l00418" name="l00418"></a><span class="lineno">  418</span>    <span class="comment">// (8 to 15) + 32 to automatically detect gzip/zlib header</span></div>
+<div class="line"><a id="l00419" name="l00419"></a><span class="lineno">  419</span>    <span class="keyword">constexpr</span> <span class="keywordtype">int</span> mem_level = 8;</div>
+<div class="line"><a id="l00420" name="l00420"></a><span class="lineno">  420</span>    <span class="comment">// The memory requirements for deflate are (in bytes):</span></div>
+<div class="line"><a id="l00421" name="l00421"></a><span class="lineno">  421</span>    <span class="comment">// (1 &lt;&lt; (window_bits+2)) +  (1 &lt;&lt; (mem_level+9))</span></div>
+<div class="line"><a id="l00422" name="l00422"></a><span class="lineno">  422</span>    <span class="comment">// with a default value of 8 for mem_level and our window_bits of 15</span></div>
+<div class="line"><a id="l00423" name="l00423"></a><span class="lineno">  423</span>    <span class="comment">// this is 128Kb</span></div>
+<div class="line"><a id="l00424" name="l00424"></a><span class="lineno">  424</span> </div>
+<div class="line"><a id="l00425" name="l00425"></a><span class="lineno">  425</span>    DISABLE_WARNING_PUSH</div>
+<div class="line"><a id="l00426" name="l00426"></a><span class="lineno">  426</span>    DISABLE_WARNING_OLD_STYLE_CAST</div>
+<div class="line"><a id="l00427" name="l00427"></a><span class="lineno">  427</span>    <span class="keywordflow">if</span> (deflateInit2(&amp;deflate_s, level, Z_DEFLATED, window_bits, mem_level,</div>
+<div class="line"><a id="l00428" name="l00428"></a><span class="lineno">  428</span>                     Z_DEFAULT_STRATEGY) != Z_OK) {</div>
+<div class="line"><a id="l00429" name="l00429"></a><span class="lineno">  429</span>        <span class="keywordflow">throw</span> std::runtime_error(<span class="stringliteral">&quot;deflate init failed&quot;</span>);</div>
+<div class="line"><a id="l00430" name="l00430"></a><span class="lineno">  430</span>    }</div>
+<div class="line"><a id="l00431" name="l00431"></a><span class="lineno">  431</span>    DISABLE_WARNING_POP</div>
+<div class="line"><a id="l00432" name="l00432"></a><span class="lineno">  432</span> </div>
+<div class="line"><a id="l00433" name="l00433"></a><span class="lineno">  433</span>    deflate_s.next_in  = <span class="keyword">const_cast&lt;</span>Bytef *<span class="keyword">&gt;</span>(<span class="keyword">reinterpret_cast&lt;</span><span class="keyword">const </span>Bytef *<span class="keyword">&gt;</span>(data));</div>
+<div class="line"><a id="l00434" name="l00434"></a><span class="lineno">  434</span>    deflate_s.avail_in = <span class="keyword">static_cast&lt;</span><span class="keywordtype">unsigned</span> <span class="keywordtype">int</span><span class="keyword">&gt;</span>(size);</div>
+<div class="line"><a id="l00435" name="l00435"></a><span class="lineno">  435</span> </div>
+<div class="line"><a id="l00436" name="l00436"></a><span class="lineno">  436</span>    std::size_t size_compressed = 0;</div>
+<div class="line"><a id="l00437" name="l00437"></a><span class="lineno">  437</span>    <span class="keywordflow">do</span> {</div>
+<div class="line"><a id="l00438" name="l00438"></a><span class="lineno">  438</span>        <span class="keywordtype">size_t</span> increase = size / 2 + 1024;</div>
+<div class="line"><a id="l00439" name="l00439"></a><span class="lineno">  439</span>        <span class="keywordflow">if</span> (output.size() &lt; (size_compressed + increase)) {</div>
+<div class="line"><a id="l00440" name="l00440"></a><span class="lineno">  440</span>            output.resize(size_compressed + increase);</div>
+<div class="line"><a id="l00441" name="l00441"></a><span class="lineno">  441</span>        }</div>
+<div class="line"><a id="l00442" name="l00442"></a><span class="lineno">  442</span>        <span class="comment">// There is no way we see that &quot;increase&quot; would not fit in an unsigned int,</span></div>
+<div class="line"><a id="l00443" name="l00443"></a><span class="lineno">  443</span>        <span class="comment">// hence we use static cast here to avoid -Wshorten-64-to-32 error</span></div>
+<div class="line"><a id="l00444" name="l00444"></a><span class="lineno">  444</span>        deflate_s.avail_out = <span class="keyword">static_cast&lt;</span><span class="keywordtype">unsigned</span> <span class="keywordtype">int</span><span class="keyword">&gt;</span>(increase);</div>
+<div class="line"><a id="l00445" name="l00445"></a><span class="lineno">  445</span>        deflate_s.next_out  = <span class="keyword">reinterpret_cast&lt;</span>Bytef *<span class="keyword">&gt;</span>((&amp;output[0] + size_compressed));</div>
+<div class="line"><a id="l00446" name="l00446"></a><span class="lineno">  446</span>        <span class="comment">// From http://www.zlib.net/zlib_how.html</span></div>
+<div class="line"><a id="l00447" name="l00447"></a><span class="lineno">  447</span>        <span class="comment">// &quot;deflate() has a return value that can indicate errors, yet we do not check it</span></div>
+<div class="line"><a id="l00448" name="l00448"></a><span class="lineno">  448</span>        <span class="comment">// here. Why not? Well, it turns out that deflate() can do no wrong here.&quot;</span></div>
+<div class="line"><a id="l00449" name="l00449"></a><span class="lineno">  449</span>        <span class="comment">// Basically only possible error is from deflateInit not working properly</span></div>
+<div class="line"><a id="l00450" name="l00450"></a><span class="lineno">  450</span>        ::deflate(&amp;deflate_s, Z_FINISH);</div>
+<div class="line"><a id="l00451" name="l00451"></a><span class="lineno">  451</span>        size_compressed += (increase - deflate_s.avail_out);</div>
+<div class="line"><a id="l00452" name="l00452"></a><span class="lineno">  452</span>    } <span class="keywordflow">while</span> (deflate_s.avail_out == 0);</div>
+<div class="line"><a id="l00453" name="l00453"></a><span class="lineno">  453</span> </div>
+<div class="line"><a id="l00454" name="l00454"></a><span class="lineno">  454</span>    deflateEnd(&amp;deflate_s);</div>
+<div class="line"><a id="l00455" name="l00455"></a><span class="lineno">  455</span>    output.resize(size_compressed);</div>
+<div class="line"><a id="l00456" name="l00456"></a><span class="lineno">  456</span>    <span class="keywordflow">return</span> size_compressed;</div>
+<div class="line"><a id="l00457" name="l00457"></a><span class="lineno">  457</span>}</div>
+</div>
+<div class="line"><a id="l00458" name="l00458"></a><span class="lineno">  458</span></div>
+<div class="line"><a id="l00469" name="l00469"></a><span class="lineno">  469</span><span class="keyword">template</span> &lt;&gt;</div>
+<div class="line"><a id="l00470" name="l00470"></a><span class="lineno"><a class="line" href="compression_8h.html#aa626fe30f8123ab5e91d04dec6f31dde">  470</a></span><span class="keywordtype">size_t</span> <a class="code hl_function" href="compression_8h.html#a8c6bb76605443259d382240f3dbcde0c">compress</a>(<a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe&lt;char&gt;</a> &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size,</div>
+<div class="line"><a id="l00471" name="l00471"></a><span class="lineno">  471</span>                <span class="keywordtype">int</span> level, <span class="keywordtype">int</span> window_bits);</div>
+<div class="line"><a id="l00472" name="l00472"></a><span class="lineno">  472</span></div>
+<div class="line"><a id="l00490" name="l00490"></a><span class="lineno">  490</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Output&gt;</div>
+<div class="line"><a id="l00491" name="l00491"></a><span class="lineno">  491</span>std::size_t</div>
+<div class="foldopen" id="foldopen00492" data-start="{" data-end="}">
+<div class="line"><a id="l00492" name="l00492"></a><span class="lineno"><a class="line" href="compression_8h.html#a33e52f56dd83e568a6d0cc2f5a828c1f">  492</a></span><a class="code hl_function" href="compression_8h.html#a33e52f56dd83e568a6d0cc2f5a828c1f">uncompress</a>(Output &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size, std::size_t max,</div>
+<div class="line"><a id="l00493" name="l00493"></a><span class="lineno">  493</span>           <span class="keywordtype">int</span> window_bits) {</div>
+<div class="line"><a id="l00494" name="l00494"></a><span class="lineno">  494</span>    z_stream inflate_s;</div>
+<div class="line"><a id="l00495" name="l00495"></a><span class="lineno">  495</span> </div>
+<div class="line"><a id="l00496" name="l00496"></a><span class="lineno">  496</span>    inflate_s.zalloc   = Z_NULL;</div>
+<div class="line"><a id="l00497" name="l00497"></a><span class="lineno">  497</span>    inflate_s.zfree    = Z_NULL;</div>
+<div class="line"><a id="l00498" name="l00498"></a><span class="lineno">  498</span>    inflate_s.opaque   = Z_NULL;</div>
+<div class="line"><a id="l00499" name="l00499"></a><span class="lineno">  499</span>    inflate_s.avail_in = 0;</div>
+<div class="line"><a id="l00500" name="l00500"></a><span class="lineno">  500</span>    inflate_s.next_in  = Z_NULL;</div>
+<div class="line"><a id="l00501" name="l00501"></a><span class="lineno">  501</span> </div>
+<div class="line"><a id="l00502" name="l00502"></a><span class="lineno">  502</span>    <span class="comment">// The windowBits parameter is the base two logarithm of the window size (the size of</span></div>
+<div class="line"><a id="l00503" name="l00503"></a><span class="lineno">  503</span>    <span class="comment">// the history buffer). It should be in the range 8..15 for this version of the</span></div>
+<div class="line"><a id="l00504" name="l00504"></a><span class="lineno">  504</span>    <span class="comment">// library. Larger values of this parameter result in better compression at the</span></div>
+<div class="line"><a id="l00505" name="l00505"></a><span class="lineno">  505</span>    <span class="comment">// expense of memory usage. This range of values also changes the decoding type:</span></div>
+<div class="line"><a id="l00506" name="l00506"></a><span class="lineno">  506</span>    <span class="comment">//  -8 to -15 for raw deflate</span></div>
+<div class="line"><a id="l00507" name="l00507"></a><span class="lineno">  507</span>    <span class="comment">//  8 to 15 for zlib</span></div>
+<div class="line"><a id="l00508" name="l00508"></a><span class="lineno">  508</span>    <span class="comment">// (8 to 15) + 16 for gzip</span></div>
+<div class="line"><a id="l00509" name="l00509"></a><span class="lineno">  509</span>    <span class="comment">// (8 to 15) + 32 to automatically detect gzip/zlib header</span></div>
+<div class="line"><a id="l00510" name="l00510"></a><span class="lineno">  510</span> </div>
+<div class="line"><a id="l00511" name="l00511"></a><span class="lineno">  511</span>    DISABLE_WARNING_PUSH</div>
+<div class="line"><a id="l00512" name="l00512"></a><span class="lineno">  512</span>    DISABLE_WARNING_OLD_STYLE_CAST</div>
+<div class="line"><a id="l00513" name="l00513"></a><span class="lineno">  513</span>    <span class="keywordflow">if</span> (inflateInit2(&amp;inflate_s, window_bits) != Z_OK) {</div>
+<div class="line"><a id="l00514" name="l00514"></a><span class="lineno">  514</span>        <span class="keywordflow">throw</span> std::runtime_error(<span class="stringliteral">&quot;inflate init failed&quot;</span>);</div>
+<div class="line"><a id="l00515" name="l00515"></a><span class="lineno">  515</span>    }</div>
+<div class="line"><a id="l00516" name="l00516"></a><span class="lineno">  516</span>    DISABLE_WARNING_POP</div>
+<div class="line"><a id="l00517" name="l00517"></a><span class="lineno">  517</span>    inflate_s.next_in = <span class="keyword">const_cast&lt;</span>Bytef *<span class="keyword">&gt;</span>(<span class="keyword">reinterpret_cast&lt;</span><span class="keyword">const </span>Bytef *<span class="keyword">&gt;</span>(data));</div>
+<div class="line"><a id="l00518" name="l00518"></a><span class="lineno">  518</span> </div>
+<div class="line"><a id="l00519" name="l00519"></a><span class="lineno">  519</span><span class="preprocessor">#ifdef DEBUG</span></div>
+<div class="line"><a id="l00520" name="l00520"></a><span class="lineno">  520</span>    <span class="comment">// Verify if size (long type) input will fit into unsigned int, type used for zlib&#39;s</span></div>
+<div class="line"><a id="l00521" name="l00521"></a><span class="lineno">  521</span>    <span class="comment">// avail_in</span></div>
+<div class="line"><a id="l00522" name="l00522"></a><span class="lineno">  522</span>    std::uint64_t size_64 = size * 2;</div>
+<div class="line"><a id="l00523" name="l00523"></a><span class="lineno">  523</span>    <span class="keywordflow">if</span> (size_64 &gt; std::numeric_limits&lt;unsigned int&gt;::max()) {</div>
+<div class="line"><a id="l00524" name="l00524"></a><span class="lineno">  524</span>        inflateEnd(&amp;inflate_s);</div>
+<div class="line"><a id="l00525" name="l00525"></a><span class="lineno">  525</span>        <span class="keywordflow">throw</span> std::runtime_error(</div>
+<div class="line"><a id="l00526" name="l00526"></a><span class="lineno">  526</span>            <span class="stringliteral">&quot;size arg is too large to fit into unsigned int type x2&quot;</span>);</div>
+<div class="line"><a id="l00527" name="l00527"></a><span class="lineno">  527</span>    }</div>
+<div class="line"><a id="l00528" name="l00528"></a><span class="lineno">  528</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00529" name="l00529"></a><span class="lineno">  529</span>    <span class="keywordflow">if</span> (max &amp;&amp; (size &gt; max || (size * 2) &gt; max)) {</div>
+<div class="line"><a id="l00530" name="l00530"></a><span class="lineno">  530</span>        inflateEnd(&amp;inflate_s);</div>
+<div class="line"><a id="l00531" name="l00531"></a><span class="lineno">  531</span>        <span class="keywordflow">throw</span> std::runtime_error(</div>
+<div class="line"><a id="l00532" name="l00532"></a><span class="lineno">  532</span>            <span class="stringliteral">&quot;size may use more memory than intended when decompressing&quot;</span>);</div>
+<div class="line"><a id="l00533" name="l00533"></a><span class="lineno">  533</span>    }</div>
+<div class="line"><a id="l00534" name="l00534"></a><span class="lineno">  534</span>    inflate_s.avail_in            = <span class="keyword">static_cast&lt;</span><span class="keywordtype">unsigned</span> <span class="keywordtype">int</span><span class="keyword">&gt;</span>(size);</div>
+<div class="line"><a id="l00535" name="l00535"></a><span class="lineno">  535</span>    std::size_t size_uncompressed = 0;</div>
+<div class="line"><a id="l00536" name="l00536"></a><span class="lineno">  536</span>    <span class="keywordflow">do</span> {</div>
+<div class="line"><a id="l00537" name="l00537"></a><span class="lineno">  537</span>        std::size_t resize_to = size_uncompressed + 2 * size;</div>
+<div class="line"><a id="l00538" name="l00538"></a><span class="lineno">  538</span>        <span class="keywordflow">if</span> (max &amp;&amp; resize_to &gt; max) {</div>
+<div class="line"><a id="l00539" name="l00539"></a><span class="lineno">  539</span>            inflateEnd(&amp;inflate_s);</div>
+<div class="line"><a id="l00540" name="l00540"></a><span class="lineno">  540</span>            <span class="keywordflow">throw</span> std::runtime_error(<span class="stringliteral">&quot;size of output string will use more memory then &quot;</span></div>
+<div class="line"><a id="l00541" name="l00541"></a><span class="lineno">  541</span>                                     <span class="stringliteral">&quot;intended when decompressing&quot;</span>);</div>
+<div class="line"><a id="l00542" name="l00542"></a><span class="lineno">  542</span>        }</div>
+<div class="line"><a id="l00543" name="l00543"></a><span class="lineno">  543</span>        output.resize(resize_to);</div>
+<div class="line"><a id="l00544" name="l00544"></a><span class="lineno">  544</span>        inflate_s.avail_out = <span class="keyword">static_cast&lt;</span><span class="keywordtype">unsigned</span> <span class="keywordtype">int</span><span class="keyword">&gt;</span>(2 * size);</div>
+<div class="line"><a id="l00545" name="l00545"></a><span class="lineno">  545</span>        inflate_s.next_out  = <span class="keyword">reinterpret_cast&lt;</span>Bytef *<span class="keyword">&gt;</span>(&amp;output[0] + size_uncompressed);</div>
+<div class="line"><a id="l00546" name="l00546"></a><span class="lineno">  546</span>        <span class="keywordtype">int</span> ret             = inflate(&amp;inflate_s, Z_FINISH);</div>
+<div class="line"><a id="l00547" name="l00547"></a><span class="lineno">  547</span>        <span class="keywordflow">if</span> (ret != Z_STREAM_END &amp;&amp; ret != Z_OK &amp;&amp; ret != Z_BUF_ERROR) {</div>
+<div class="line"><a id="l00548" name="l00548"></a><span class="lineno">  548</span>            std::string error_msg = inflate_s.msg;</div>
+<div class="line"><a id="l00549" name="l00549"></a><span class="lineno">  549</span>            inflateEnd(&amp;inflate_s);</div>
+<div class="line"><a id="l00550" name="l00550"></a><span class="lineno">  550</span>            <span class="keywordflow">throw</span> std::runtime_error(error_msg);</div>
+<div class="line"><a id="l00551" name="l00551"></a><span class="lineno">  551</span>        }</div>
+<div class="line"><a id="l00552" name="l00552"></a><span class="lineno">  552</span> </div>
+<div class="line"><a id="l00553" name="l00553"></a><span class="lineno">  553</span>        size_uncompressed += (2 * size - inflate_s.avail_out);</div>
+<div class="line"><a id="l00554" name="l00554"></a><span class="lineno">  554</span>    } <span class="keywordflow">while</span> (inflate_s.avail_out == 0);</div>
+<div class="line"><a id="l00555" name="l00555"></a><span class="lineno">  555</span>    inflateEnd(&amp;inflate_s);</div>
+<div class="line"><a id="l00556" name="l00556"></a><span class="lineno">  556</span>    output.resize(size_uncompressed);</div>
+<div class="line"><a id="l00557" name="l00557"></a><span class="lineno">  557</span>    <span class="keywordflow">return</span> size_uncompressed;</div>
+<div class="line"><a id="l00558" name="l00558"></a><span class="lineno">  558</span>}</div>
+</div>
+<div class="line"><a id="l00559" name="l00559"></a><span class="lineno">  559</span></div>
+<div class="line"><a id="l00570" name="l00570"></a><span class="lineno">  570</span><span class="keyword">template</span> &lt;&gt;</div>
+<div class="line"><a id="l00571" name="l00571"></a><span class="lineno"><a class="line" href="compression_8h.html#aec9cab61761cfd0e1816fe7c0123b435">  571</a></span><span class="keywordtype">size_t</span> <a class="code hl_function" href="compression_8h.html#a33e52f56dd83e568a6d0cc2f5a828c1f">uncompress</a>(<a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe&lt;char&gt;</a> &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size,</div>
+<div class="line"><a id="l00572" name="l00572"></a><span class="lineno">  572</span>                  std::size_t max, <span class="keywordtype">int</span> window_bits);</div>
+<div class="line"><a id="l00573" name="l00573"></a><span class="lineno">  573</span></div>
+<div class="line"><a id="l00582" name="l00582"></a><span class="lineno">  582</span><span class="keyword">namespace </span><a class="code hl_namespace" href="namespacedeflate.html">deflate</a> {</div>
+<div class="line"><a id="l00583" name="l00583"></a><span class="lineno">  583</span></div>
+<div class="line"><a id="l00594" name="l00594"></a><span class="lineno">  594</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Output&gt;</div>
+<div class="line"><a id="l00595" name="l00595"></a><span class="lineno">  595</span><span class="keywordtype">size_t</span></div>
+<div class="foldopen" id="foldopen00596" data-start="{" data-end="}">
+<div class="line"><a id="l00596" name="l00596"></a><span class="lineno"><a class="line" href="compression_8h.html#a2a2bd63c23defac5c078d6e44611d7ef">  596</a></span><a class="code hl_function" href="compression_8h.html#a2a2bd63c23defac5c078d6e44611d7ef">compress</a>(Output &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size,</div>
+<div class="line"><a id="l00597" name="l00597"></a><span class="lineno">  597</span>         <span class="keywordtype">int</span> level = Z_DEFAULT_COMPRESSION) {</div>
+<div class="line"><a id="l00598" name="l00598"></a><span class="lineno">  598</span>    <span class="keyword">constexpr</span> <span class="keywordtype">int</span> window_bits = 15; <span class="comment">// gzip with windowbits of 15</span></div>
+<div class="line"><a id="l00599" name="l00599"></a><span class="lineno">  599</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="compression_8h.html#a8c6bb76605443259d382240f3dbcde0c">compression::compress</a>(output, data, size, level, window_bits);</div>
+<div class="line"><a id="l00600" name="l00600"></a><span class="lineno">  600</span>}</div>
+</div>
+<div class="line"><a id="l00601" name="l00601"></a><span class="lineno">  601</span></div>
+<div class="line"><a id="l00611" name="l00611"></a><span class="lineno">  611</span><span class="keyword">template</span> &lt;&gt;</div>
+<div class="line"><a id="l00612" name="l00612"></a><span class="lineno"><a class="line" href="compression_8h.html#ab00642bc6981adb2258df17fafc6f630">  612</a></span><span class="keywordtype">size_t</span> <a class="code hl_function" href="compression_8h.html#a2a2bd63c23defac5c078d6e44611d7ef">compress</a>(<a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe&lt;char&gt;</a> &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size,</div>
+<div class="line"><a id="l00613" name="l00613"></a><span class="lineno">  613</span>                <span class="keywordtype">int</span> level);</div>
+<div class="line"><a id="l00614" name="l00614"></a><span class="lineno">  614</span></div>
+<div class="foldopen" id="foldopen00623" data-start="{" data-end="};">
+<div class="line"><a id="l00623" name="l00623"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1deflate_1_1to__compress.html">  623</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1compression_1_1deflate_1_1to__compress.html">to_compress</a> {</div>
+<div class="line"><a id="l00624" name="l00624"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a7bce503f207f79da95cfa801a5c2dda6">  624</a></span>    <span class="keyword">const</span> <span class="keywordtype">char</span> *<a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a7bce503f207f79da95cfa801a5c2dda6">data</a>;                          </div>
+<div class="line"><a id="l00625" name="l00625"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#abe5af93b55a314ff20d739dd69940aaf">  625</a></span>    std::size_t <a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#abe5af93b55a314ff20d739dd69940aaf">size</a>;                          </div>
+<div class="line"><a id="l00626" name="l00626"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a91a9eb50d56b828e1c11309ece5751ef">  626</a></span>    <span class="keywordtype">int</span>         <a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a91a9eb50d56b828e1c11309ece5751ef">level</a> = Z_DEFAULT_COMPRESSION; </div>
+<div class="line"><a id="l00627" name="l00627"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a383fc7acb726180567bb8bb10bfc89c5">  627</a></span>    <span class="keywordtype">size_t</span>      <a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a383fc7acb726180567bb8bb10bfc89c5">size_compressed</a>;               </div>
+<div class="line"><a id="l00628" name="l00628"></a><span class="lineno">  628</span>};</div>
+</div>
+<div class="line"><a id="l00629" name="l00629"></a><span class="lineno">  629</span></div>
+<div class="line"><a id="l00638" name="l00638"></a><span class="lineno">  638</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Output&gt;</div>
+<div class="line"><a id="l00639" name="l00639"></a><span class="lineno">  639</span>Output &amp;</div>
+<div class="foldopen" id="foldopen00640" data-start="{" data-end="}">
+<div class="line"><a id="l00640" name="l00640"></a><span class="lineno"><a class="line" href="compression_8h.html#a7b9de303e2ede1d1eef7cb4bd586a3de">  640</a></span><a class="code hl_function" href="compression_8h.html#a2a2bd63c23defac5c078d6e44611d7ef">compress</a>(Output &amp;output, <a class="code hl_struct" href="structqb_1_1compression_1_1deflate_1_1to__compress.html">to_compress</a> &amp;info) {</div>
+<div class="line"><a id="l00641" name="l00641"></a><span class="lineno">  641</span>    info.<a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a383fc7acb726180567bb8bb10bfc89c5">size_compressed</a> = <a class="code hl_function" href="compression_8h.html#a2a2bd63c23defac5c078d6e44611d7ef">compress&lt;Output&gt;</a>(output, info.<a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a7bce503f207f79da95cfa801a5c2dda6">data</a>, info.<a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#abe5af93b55a314ff20d739dd69940aaf">size</a>, info.<a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a91a9eb50d56b828e1c11309ece5751ef">level</a>);</div>
+<div class="line"><a id="l00642" name="l00642"></a><span class="lineno">  642</span>    <span class="keywordflow">return</span> output;</div>
+<div class="line"><a id="l00643" name="l00643"></a><span class="lineno">  643</span>}</div>
+</div>
+<div class="line"><a id="l00644" name="l00644"></a><span class="lineno">  644</span></div>
+<div class="line"><a id="l00653" name="l00653"></a><span class="lineno"><a class="line" href="compression_8h.html#a4abf94ac793b01a5910af97f3d1bb5e2">  653</a></span>std::string <a class="code hl_function" href="compression_8h.html#a2a2bd63c23defac5c078d6e44611d7ef">compress</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size,</div>
+<div class="line"><a id="l00654" name="l00654"></a><span class="lineno">  654</span>                     <span class="keywordtype">int</span> level = Z_DEFAULT_COMPRESSION);</div>
+<div class="line"><a id="l00655" name="l00655"></a><span class="lineno">  655</span></div>
+<div class="line"><a id="l00666" name="l00666"></a><span class="lineno">  666</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Output&gt;</div>
+<div class="line"><a id="l00667" name="l00667"></a><span class="lineno">  667</span>std::size_t</div>
+<div class="foldopen" id="foldopen00668" data-start="{" data-end="}">
+<div class="line"><a id="l00668" name="l00668"></a><span class="lineno"><a class="line" href="compression_8h.html#a8ba1a21ce39cd89932e5dd718249d888">  668</a></span><a class="code hl_function" href="compression_8h.html#a8ba1a21ce39cd89932e5dd718249d888">uncompress</a>(Output &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size, std::size_t max = 0) {</div>
+<div class="line"><a id="l00669" name="l00669"></a><span class="lineno">  669</span>    <span class="keyword">constexpr</span> <span class="keywordtype">int</span> window_bits = 0; <span class="comment">// deflate</span></div>
+<div class="line"><a id="l00670" name="l00670"></a><span class="lineno">  670</span> </div>
+<div class="line"><a id="l00671" name="l00671"></a><span class="lineno">  671</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="compression_8h.html#a33e52f56dd83e568a6d0cc2f5a828c1f">compression::uncompress</a>(output, data, size, max, window_bits);</div>
+<div class="line"><a id="l00672" name="l00672"></a><span class="lineno">  672</span>}</div>
+</div>
+<div class="line"><a id="l00673" name="l00673"></a><span class="lineno">  673</span></div>
+<div class="line"><a id="l00683" name="l00683"></a><span class="lineno">  683</span><span class="keyword">template</span> &lt;&gt;</div>
+<div class="line"><a id="l00684" name="l00684"></a><span class="lineno"><a class="line" href="compression_8h.html#a95dae98d61b2728db6f75c852fbdec71">  684</a></span><span class="keywordtype">size_t</span> <a class="code hl_function" href="compression_8h.html#a8ba1a21ce39cd89932e5dd718249d888">uncompress</a>(<a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe&lt;char&gt;</a> &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size,</div>
+<div class="line"><a id="l00685" name="l00685"></a><span class="lineno">  685</span>                  std::size_t level);</div>
+<div class="line"><a id="l00686" name="l00686"></a><span class="lineno">  686</span></div>
+<div class="foldopen" id="foldopen00695" data-start="{" data-end="};">
+<div class="line"><a id="l00695" name="l00695"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html">  695</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html">to_uncompress</a> {</div>
+<div class="line"><a id="l00696" name="l00696"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a895e8833bd0459ef7087d6f3a127ad22">  696</a></span>    <span class="keyword">const</span> <span class="keywordtype">char</span> *<a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a895e8833bd0459ef7087d6f3a127ad22">data</a>;              </div>
+<div class="line"><a id="l00697" name="l00697"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a4507e2b01b93aa9c4e35d663dbec3941">  697</a></span>    std::size_t <a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a4507e2b01b93aa9c4e35d663dbec3941">size</a>;              </div>
+<div class="line"><a id="l00698" name="l00698"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a729bdd0c16b093379688398046fc1fcc">  698</a></span>    std::size_t <a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a729bdd0c16b093379688398046fc1fcc">max</a> = 0;           </div>
+<div class="line"><a id="l00699" name="l00699"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a51dcff17ca1a80ede14fd9b7217faf67">  699</a></span>    std::size_t <a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a51dcff17ca1a80ede14fd9b7217faf67">size_uncompressed</a>; </div>
+<div class="line"><a id="l00700" name="l00700"></a><span class="lineno">  700</span>};</div>
+</div>
+<div class="line"><a id="l00701" name="l00701"></a><span class="lineno">  701</span></div>
+<div class="line"><a id="l00710" name="l00710"></a><span class="lineno">  710</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Output&gt;</div>
+<div class="line"><a id="l00711" name="l00711"></a><span class="lineno">  711</span>Output &amp;</div>
+<div class="foldopen" id="foldopen00712" data-start="{" data-end="}">
+<div class="line"><a id="l00712" name="l00712"></a><span class="lineno"><a class="line" href="compression_8h.html#abe945c06e8b97940adeebc7b01f441cb">  712</a></span><a class="code hl_function" href="compression_8h.html#a8ba1a21ce39cd89932e5dd718249d888">uncompress</a>(Output &amp;output, <a class="code hl_struct" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html">to_uncompress</a> &amp;info) {</div>
+<div class="line"><a id="l00713" name="l00713"></a><span class="lineno">  713</span>    info.<a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a51dcff17ca1a80ede14fd9b7217faf67">size_uncompressed</a> = <a class="code hl_function" href="compression_8h.html#a8ba1a21ce39cd89932e5dd718249d888">uncompress&lt;Output&gt;</a>(output, info.<a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a895e8833bd0459ef7087d6f3a127ad22">data</a>, info.<a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a4507e2b01b93aa9c4e35d663dbec3941">size</a>, info.<a class="code hl_variable" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a729bdd0c16b093379688398046fc1fcc">max</a>);</div>
+<div class="line"><a id="l00714" name="l00714"></a><span class="lineno">  714</span>    <span class="keywordflow">return</span> output;</div>
+<div class="line"><a id="l00715" name="l00715"></a><span class="lineno">  715</span>}</div>
+</div>
+<div class="line"><a id="l00716" name="l00716"></a><span class="lineno">  716</span></div>
+<div class="line"><a id="l00724" name="l00724"></a><span class="lineno"><a class="line" href="compression_8h.html#a2470cdb85721c0a0925b6362dfb080d6">  724</a></span>std::string <a class="code hl_function" href="compression_8h.html#a8ba1a21ce39cd89932e5dd718249d888">uncompress</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size);</div>
+<div class="line"><a id="l00725" name="l00725"></a><span class="lineno">  725</span>} <span class="comment">// namespace deflate</span></div>
+<div class="line"><a id="l00726" name="l00726"></a><span class="lineno">  726</span></div>
+<div class="line"><a id="l00735" name="l00735"></a><span class="lineno">  735</span><span class="keyword">namespace </span><a class="code hl_namespace" href="namespacegzip.html">gzip</a> {</div>
+<div class="line"><a id="l00746" name="l00746"></a><span class="lineno">  746</span><span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00747" data-start="{" data-end="}">
+<div class="line"><a id="l00747" name="l00747"></a><span class="lineno"><a class="line" href="group___compression.html#ga4a8ef5ad8f1be15598a482b0f5929c3f">  747</a></span><a class="code hl_function" href="group___compression.html#ga4a8ef5ad8f1be15598a482b0f5929c3f">is_compressed</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size) {</div>
+<div class="line"><a id="l00748" name="l00748"></a><span class="lineno">  748</span>    <span class="keywordflow">return</span> size &gt; 2 &amp;&amp; (</div>
+<div class="line"><a id="l00749" name="l00749"></a><span class="lineno">  749</span>                           <span class="comment">// zlib</span></div>
+<div class="line"><a id="l00750" name="l00750"></a><span class="lineno">  750</span>                           (<span class="keyword">static_cast&lt;</span>uint8_t<span class="keyword">&gt;</span>(data[0]) == 0x78 &amp;&amp;</div>
+<div class="line"><a id="l00751" name="l00751"></a><span class="lineno">  751</span>                            (<span class="keyword">static_cast&lt;</span>uint8_t<span class="keyword">&gt;</span>(data[1]) == 0x9C ||</div>
+<div class="line"><a id="l00752" name="l00752"></a><span class="lineno">  752</span>                             <span class="keyword">static_cast&lt;</span>uint8_t<span class="keyword">&gt;</span>(data[1]) == 0x01 ||</div>
+<div class="line"><a id="l00753" name="l00753"></a><span class="lineno">  753</span>                             <span class="keyword">static_cast&lt;</span>uint8_t<span class="keyword">&gt;</span>(data[1]) == 0xDA ||</div>
+<div class="line"><a id="l00754" name="l00754"></a><span class="lineno">  754</span>                             <span class="keyword">static_cast&lt;</span>uint8_t<span class="keyword">&gt;</span>(data[1]) == 0x5E)) ||</div>
+<div class="line"><a id="l00755" name="l00755"></a><span class="lineno">  755</span>                           <span class="comment">// gzip</span></div>
+<div class="line"><a id="l00756" name="l00756"></a><span class="lineno">  756</span>                           (<span class="keyword">static_cast&lt;</span>uint8_t<span class="keyword">&gt;</span>(data[0]) == 0x1F &amp;&amp;</div>
+<div class="line"><a id="l00757" name="l00757"></a><span class="lineno">  757</span>                            <span class="keyword">static_cast&lt;</span>uint8_t<span class="keyword">&gt;</span>(data[1]) == 0x8B));</div>
+<div class="line"><a id="l00758" name="l00758"></a><span class="lineno">  758</span>}</div>
+</div>
+<div class="line"><a id="l00759" name="l00759"></a><span class="lineno">  759</span></div>
+<div class="line"><a id="l00770" name="l00770"></a><span class="lineno">  770</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Output&gt;</div>
+<div class="line"><a id="l00771" name="l00771"></a><span class="lineno">  771</span><span class="keywordtype">size_t</span></div>
+<div class="foldopen" id="foldopen00772" data-start="{" data-end="}">
+<div class="line"><a id="l00772" name="l00772"></a><span class="lineno"><a class="line" href="compression_8h.html#a9d2c26c59cb39c364c62b3f4f95b5bc6">  772</a></span><a class="code hl_function" href="compression_8h.html#a9d2c26c59cb39c364c62b3f4f95b5bc6">compress</a>(Output &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size,</div>
+<div class="line"><a id="l00773" name="l00773"></a><span class="lineno">  773</span>         <span class="keywordtype">int</span> level = Z_DEFAULT_COMPRESSION) {</div>
+<div class="line"><a id="l00774" name="l00774"></a><span class="lineno">  774</span>    <span class="keyword">constexpr</span> <span class="keywordtype">int</span> window_bits = 15 + 16; <span class="comment">// gzip with windowbits of 15</span></div>
+<div class="line"><a id="l00775" name="l00775"></a><span class="lineno">  775</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="compression_8h.html#a8c6bb76605443259d382240f3dbcde0c">compression::compress</a>(output, data, size, level, window_bits);</div>
+<div class="line"><a id="l00776" name="l00776"></a><span class="lineno">  776</span>}</div>
+</div>
+<div class="line"><a id="l00777" name="l00777"></a><span class="lineno">  777</span></div>
+<div class="line"><a id="l00787" name="l00787"></a><span class="lineno">  787</span><span class="keyword">template</span> &lt;&gt;</div>
+<div class="line"><a id="l00788" name="l00788"></a><span class="lineno"><a class="line" href="compression_8h.html#af8bfc93fd1e5e2d782ee037991332bfb">  788</a></span><span class="keywordtype">size_t</span> <a class="code hl_function" href="compression_8h.html#a9d2c26c59cb39c364c62b3f4f95b5bc6">compress</a>(<a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe&lt;char&gt;</a> &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size,</div>
+<div class="line"><a id="l00789" name="l00789"></a><span class="lineno">  789</span>                <span class="keywordtype">int</span> level);</div>
+<div class="line"><a id="l00790" name="l00790"></a><span class="lineno">  790</span></div>
+<div class="foldopen" id="foldopen00799" data-start="{" data-end="};">
+<div class="line"><a id="l00799" name="l00799"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1gzip_1_1to__compress.html">  799</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1compression_1_1gzip_1_1to__compress.html">to_compress</a> {</div>
+<div class="line"><a id="l00800" name="l00800"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#a26e6d67caa27dc2401abbea634e80d04">  800</a></span>    <span class="keyword">const</span> <span class="keywordtype">char</span> *<a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#a26e6d67caa27dc2401abbea634e80d04">data</a>;                          </div>
+<div class="line"><a id="l00801" name="l00801"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#adc9bb80a4541e019a0e56e2b3e69dc77">  801</a></span>    std::size_t <a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#adc9bb80a4541e019a0e56e2b3e69dc77">size</a>;                          </div>
+<div class="line"><a id="l00802" name="l00802"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#a15cd1c8dbb73b1d8fac655d22966dede">  802</a></span>    <span class="keywordtype">int</span>         <a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#a15cd1c8dbb73b1d8fac655d22966dede">level</a> = Z_DEFAULT_COMPRESSION; </div>
+<div class="line"><a id="l00803" name="l00803"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#ae7c09be09004e350a669a85b4732334f">  803</a></span>    <span class="keywordtype">size_t</span>      <a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#ae7c09be09004e350a669a85b4732334f">size_compressed</a>;               </div>
+<div class="line"><a id="l00804" name="l00804"></a><span class="lineno">  804</span>};</div>
+</div>
+<div class="line"><a id="l00805" name="l00805"></a><span class="lineno">  805</span></div>
+<div class="line"><a id="l00814" name="l00814"></a><span class="lineno">  814</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Output&gt;</div>
+<div class="line"><a id="l00815" name="l00815"></a><span class="lineno">  815</span>Output &amp;</div>
+<div class="foldopen" id="foldopen00816" data-start="{" data-end="}">
+<div class="line"><a id="l00816" name="l00816"></a><span class="lineno"><a class="line" href="compression_8h.html#a849f05a53f6b5b5b58d13de96ccc72c3">  816</a></span><a class="code hl_function" href="compression_8h.html#a9d2c26c59cb39c364c62b3f4f95b5bc6">compress</a>(Output &amp;output, <a class="code hl_struct" href="structqb_1_1compression_1_1gzip_1_1to__compress.html">to_compress</a> &amp;info) {</div>
+<div class="line"><a id="l00817" name="l00817"></a><span class="lineno">  817</span>    info.<a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#ae7c09be09004e350a669a85b4732334f">size_compressed</a> = <a class="code hl_function" href="compression_8h.html#a9d2c26c59cb39c364c62b3f4f95b5bc6">compress&lt;Output&gt;</a>(output, info.<a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#a26e6d67caa27dc2401abbea634e80d04">data</a>, info.<a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#adc9bb80a4541e019a0e56e2b3e69dc77">size</a>, info.<a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__compress.html#a15cd1c8dbb73b1d8fac655d22966dede">level</a>);</div>
+<div class="line"><a id="l00818" name="l00818"></a><span class="lineno">  818</span>    <span class="keywordflow">return</span> output;</div>
+<div class="line"><a id="l00819" name="l00819"></a><span class="lineno">  819</span>}</div>
+</div>
+<div class="line"><a id="l00820" name="l00820"></a><span class="lineno">  820</span></div>
+<div class="line"><a id="l00829" name="l00829"></a><span class="lineno"><a class="line" href="compression_8h.html#acfcf428d559047edf7c5ed0aeba52c8a">  829</a></span>std::string <a class="code hl_function" href="compression_8h.html#a9d2c26c59cb39c364c62b3f4f95b5bc6">compress</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size,</div>
+<div class="line"><a id="l00830" name="l00830"></a><span class="lineno">  830</span>                     <span class="keywordtype">int</span> level = Z_DEFAULT_COMPRESSION);</div>
+<div class="line"><a id="l00831" name="l00831"></a><span class="lineno">  831</span></div>
+<div class="line"><a id="l00842" name="l00842"></a><span class="lineno">  842</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Output&gt;</div>
+<div class="line"><a id="l00843" name="l00843"></a><span class="lineno">  843</span>std::size_t</div>
+<div class="foldopen" id="foldopen00844" data-start="{" data-end="}">
+<div class="line"><a id="l00844" name="l00844"></a><span class="lineno"><a class="line" href="compression_8h.html#ad25c65e7491eab2097e36a1d091c97d1">  844</a></span><a class="code hl_function" href="compression_8h.html#ad25c65e7491eab2097e36a1d091c97d1">uncompress</a>(Output &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size, std::size_t max = 0) {</div>
+<div class="line"><a id="l00845" name="l00845"></a><span class="lineno">  845</span>    <span class="keyword">constexpr</span> <span class="keywordtype">int</span> window_bits = 15 + 32; <span class="comment">// auto with windowbits of 15</span></div>
+<div class="line"><a id="l00846" name="l00846"></a><span class="lineno">  846</span> </div>
+<div class="line"><a id="l00847" name="l00847"></a><span class="lineno">  847</span>    <span class="keywordflow">return</span> <a class="code hl_function" href="compression_8h.html#a33e52f56dd83e568a6d0cc2f5a828c1f">compression::uncompress</a>(output, data, size, max, window_bits);</div>
+<div class="line"><a id="l00848" name="l00848"></a><span class="lineno">  848</span>}</div>
+</div>
+<div class="line"><a id="l00849" name="l00849"></a><span class="lineno">  849</span></div>
+<div class="line"><a id="l00859" name="l00859"></a><span class="lineno">  859</span><span class="keyword">template</span> &lt;&gt;</div>
+<div class="line"><a id="l00860" name="l00860"></a><span class="lineno"><a class="line" href="compression_8h.html#ab5b0c03b80aeb8fd7bfdeb50e11cf475">  860</a></span><span class="keywordtype">size_t</span> <a class="code hl_function" href="compression_8h.html#ad25c65e7491eab2097e36a1d091c97d1">uncompress</a>(<a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe&lt;char&gt;</a> &amp;output, <span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size,</div>
+<div class="line"><a id="l00861" name="l00861"></a><span class="lineno">  861</span>                  std::size_t level);</div>
+<div class="line"><a id="l00862" name="l00862"></a><span class="lineno">  862</span></div>
+<div class="foldopen" id="foldopen00871" data-start="{" data-end="};">
+<div class="line"><a id="l00871" name="l00871"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html">  871</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html">to_uncompress</a> {</div>
+<div class="line"><a id="l00872" name="l00872"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#a3bf735ab1cbd29c823a96719eddeff9d">  872</a></span>    <span class="keyword">const</span> <span class="keywordtype">char</span> *<a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#a3bf735ab1cbd29c823a96719eddeff9d">data</a>;              </div>
+<div class="line"><a id="l00873" name="l00873"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#ae346d656364f3a30cb244a77e8c93a6e">  873</a></span>    std::size_t <a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#ae346d656364f3a30cb244a77e8c93a6e">size</a>;              </div>
+<div class="line"><a id="l00874" name="l00874"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#aa9657fa8fca8fd5af3b27fc6964f4db5">  874</a></span>    std::size_t <a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#aa9657fa8fca8fd5af3b27fc6964f4db5">max</a> = 0;           </div>
+<div class="line"><a id="l00875" name="l00875"></a><span class="lineno"><a class="line" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#ac1dab0d2140c95de45d4f216d5696f3c">  875</a></span>    std::size_t <a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#ac1dab0d2140c95de45d4f216d5696f3c">size_uncompressed</a>; </div>
+<div class="line"><a id="l00876" name="l00876"></a><span class="lineno">  876</span>};</div>
+</div>
+<div class="line"><a id="l00877" name="l00877"></a><span class="lineno">  877</span></div>
+<div class="line"><a id="l00886" name="l00886"></a><span class="lineno">  886</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> Output&gt;</div>
+<div class="line"><a id="l00887" name="l00887"></a><span class="lineno">  887</span>Output &amp;</div>
+<div class="foldopen" id="foldopen00888" data-start="{" data-end="}">
+<div class="line"><a id="l00888" name="l00888"></a><span class="lineno"><a class="line" href="compression_8h.html#a2b4ad690a92b28f69dade6b23f9af7ef">  888</a></span><a class="code hl_function" href="compression_8h.html#ad25c65e7491eab2097e36a1d091c97d1">uncompress</a>(Output &amp;output, <a class="code hl_struct" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html">to_uncompress</a> &amp;info) {</div>
+<div class="line"><a id="l00889" name="l00889"></a><span class="lineno">  889</span>    info.<a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#ac1dab0d2140c95de45d4f216d5696f3c">size_uncompressed</a> = <a class="code hl_function" href="compression_8h.html#ad25c65e7491eab2097e36a1d091c97d1">uncompress&lt;Output&gt;</a>(output, info.<a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#a3bf735ab1cbd29c823a96719eddeff9d">data</a>, info.<a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#ae346d656364f3a30cb244a77e8c93a6e">size</a>, info.<a class="code hl_variable" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#aa9657fa8fca8fd5af3b27fc6964f4db5">max</a>);</div>
+<div class="line"><a id="l00890" name="l00890"></a><span class="lineno">  890</span>    <span class="keywordflow">return</span> output;</div>
+<div class="line"><a id="l00891" name="l00891"></a><span class="lineno">  891</span>}</div>
+</div>
+<div class="line"><a id="l00892" name="l00892"></a><span class="lineno">  892</span></div>
+<div class="line"><a id="l00900" name="l00900"></a><span class="lineno"><a class="line" href="compression_8h.html#a35361c95a3f22d248c9492b85007a479">  900</a></span>std::string <a class="code hl_function" href="compression_8h.html#ad25c65e7491eab2097e36a1d091c97d1">uncompress</a>(<span class="keyword">const</span> <span class="keywordtype">char</span> *data, std::size_t size);</div>
+<div class="line"><a id="l00901" name="l00901"></a><span class="lineno">  901</span>} <span class="comment">// namespace gzip</span></div>
+<div class="line"><a id="l00902" name="l00902"></a><span class="lineno">  902</span> </div>
+<div class="line"><a id="l00903" name="l00903"></a><span class="lineno">  903</span>} <span class="comment">// namespace compression</span></div>
+<div class="line"><a id="l00904" name="l00904"></a><span class="lineno">  904</span>} <span class="comment">// namespace qb</span></div>
+<div class="line"><a id="l00905" name="l00905"></a><span class="lineno">  905</span> </div>
+<div class="line"><a id="l00906" name="l00906"></a><span class="lineno">  906</span><span class="keyword">namespace </span>qb::allocator {</div>
+<div class="line"><a id="l00907" name="l00907"></a><span class="lineno">  907</span></div>
+<div class="line"><a id="l00917" name="l00917"></a><span class="lineno">  917</span><span class="keyword">template</span> &lt;&gt;</div>
+<div class="line"><a id="l00918" name="l00918"></a><span class="lineno"><a class="line" href="classqb_1_1allocator_1_1pipe.html#a6557f3224879e9b58104cfc2ae932ead">  918</a></span><a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">pipe&lt;char&gt;</a> &amp;<a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">pipe&lt;char&gt;::put</a>(<a class="code hl_struct" href="structqb_1_1compression_1_1deflate_1_1to__compress.html">qb::compression::deflate::to_compress</a> &amp;);</div>
+<div class="line"><a id="l00919" name="l00919"></a><span class="lineno">  919</span></div>
+<div class="line"><a id="l00929" name="l00929"></a><span class="lineno">  929</span><span class="keyword">template</span> &lt;&gt;</div>
+<div class="line"><a id="l00930" name="l00930"></a><span class="lineno"><a class="line" href="classqb_1_1allocator_1_1pipe.html#a0ef522da948c63f50fc929c62fa9af40">  930</a></span><a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">pipe&lt;char&gt;</a> &amp;<a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">pipe&lt;char&gt;::put</a>(<a class="code hl_struct" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html">qb::compression::deflate::to_uncompress</a> &amp;);</div>
+<div class="line"><a id="l00931" name="l00931"></a><span class="lineno">  931</span></div>
+<div class="line"><a id="l00941" name="l00941"></a><span class="lineno">  941</span><span class="keyword">template</span> &lt;&gt;</div>
+<div class="line"><a id="l00942" name="l00942"></a><span class="lineno"><a class="line" href="classqb_1_1allocator_1_1pipe.html#ab956f45d1bc554d38ffa7ea06f9a6439">  942</a></span><a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">pipe&lt;char&gt;</a> &amp;<a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">pipe&lt;char&gt;::put</a>(<a class="code hl_struct" href="structqb_1_1compression_1_1gzip_1_1to__compress.html">qb::compression::gzip::to_compress</a> &amp;);</div>
+<div class="line"><a id="l00943" name="l00943"></a><span class="lineno">  943</span></div>
+<div class="line"><a id="l00954" name="l00954"></a><span class="lineno">  954</span><span class="keyword">template</span> &lt;&gt;</div>
+<div class="line"><a id="l00955" name="l00955"></a><span class="lineno"><a class="line" href="classqb_1_1allocator_1_1pipe.html#ae5f03a0679cf73d6f3fac6dbd80ca014">  955</a></span><a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">pipe&lt;char&gt;</a> &amp;<a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">pipe&lt;char&gt;::put</a>(<a class="code hl_struct" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html">qb::compression::gzip::to_uncompress</a> &amp;);</div>
+<div class="line"><a id="l00956" name="l00956"></a><span class="lineno">  956</span> </div>
+<div class="line"><a id="l00957" name="l00957"></a><span class="lineno">  957</span>} <span class="comment">// namespace qb::allocator</span></div>
+<div class="line"><a id="l00958" name="l00958"></a><span class="lineno">  958</span></div>
+<div class="line"><a id="l00966" name="l00966"></a><span class="lineno">  966</span><span class="keyword">namespace </span><a class="code hl_namespace" href="namespaceqb_1_1gzip.html">qb::gzip</a> {</div>
+<div class="line"><a id="l00967" name="l00967"></a><span class="lineno">  967</span><span class="keyword">using namespace </span>qb::compression::gzip;</div>
+<div class="line"><a id="l00968" name="l00968"></a><span class="lineno">  968</span>}</div>
+<div class="line"><a id="l00969" name="l00969"></a><span class="lineno">  969</span></div>
+<div class="line"><a id="l00977" name="l00977"></a><span class="lineno">  977</span><span class="keyword">namespace </span><a class="code hl_namespace" href="namespaceqb_1_1deflate.html">qb::deflate</a> {</div>
+<div class="line"><a id="l00978" name="l00978"></a><span class="lineno">  978</span><span class="keyword">using namespace </span>qb::compression::deflate;</div>
+<div class="line"><a id="l00979" name="l00979"></a><span class="lineno">  979</span>}</div>
+<div class="line"><a id="l00980" name="l00980"></a><span class="lineno">  980</span> </div>
+<div class="line"><a id="l00981" name="l00981"></a><span class="lineno">  981</span><span class="preprocessor">#endif </span><span class="comment">// QB_IO_COMPRESSION_H</span></div>
+<div class="ttc" id="aclassqb_1_1allocator_1_1pipe_html"><div class="ttname"><a href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a></div><div class="ttdoc">Extensible buffer optimized for performance.</div><div class="ttdef"><b>Definition</b> pipe.h:552</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1compress__factory_html"><div class="ttname"><a href="classqb_1_1compression_1_1compress__factory.html">qb::compression::compress_factory</a></div><div class="ttdoc">Factory interface for creating compression providers.</div><div class="ttdef"><b>Definition</b> compression.h:187</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1compress__factory_html_a3cf26a1738c2f34ce567c55453bd7566"><div class="ttname"><a href="classqb_1_1compression_1_1compress__factory.html#a3cf26a1738c2f34ce567c55453bd7566">qb::compression::compress_factory::make_compressor</a></div><div class="ttdeci">virtual std::unique_ptr&lt; compress_provider &gt; make_compressor() const =0</div><div class="ttdoc">Create a new compressor instance.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1compress__factory_html_a73bef826ecdeff95124753ea88ef78e5"><div class="ttname"><a href="classqb_1_1compression_1_1compress__factory.html#a73bef826ecdeff95124753ea88ef78e5">qb::compression::compress_factory::algorithm</a></div><div class="ttdeci">virtual const std::string &amp; algorithm() const =0</div><div class="ttdoc">Get the name of the compression algorithm.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1compress__factory_html_a813204a1a3d50b81b79e4e93b76b4139"><div class="ttname"><a href="classqb_1_1compression_1_1compress__factory.html#a813204a1a3d50b81b79e4e93b76b4139">qb::compression::compress_factory::~compress_factory</a></div><div class="ttdeci">virtual ~compress_factory()=default</div><div class="ttdoc">Virtual destructor.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1compress__provider_html"><div class="ttname"><a href="classqb_1_1compression_1_1compress__provider.html">qb::compression::compress_provider</a></div><div class="ttdoc">Abstract interface for compression algorithm providers.</div><div class="ttdef"><b>Definition</b> compression.h:91</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1compress__provider_html_a3e2f57c1e717e35f787e59cf53958ef1"><div class="ttname"><a href="classqb_1_1compression_1_1compress__provider.html#a3e2f57c1e717e35f787e59cf53958ef1">qb::compression::compress_provider::~compress_provider</a></div><div class="ttdeci">virtual ~compress_provider()=default</div><div class="ttdoc">Virtual destructor.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1compress__provider_html_a77917698679e1305c66e4574dbcde7a1"><div class="ttname"><a href="classqb_1_1compression_1_1compress__provider.html#a77917698679e1305c66e4574dbcde7a1">qb::compression::compress_provider::compress</a></div><div class="ttdeci">virtual std::size_t compress(const uint8_t *input, std::size_t input_size, uint8_t *output, std::size_t output_size, operation_hint hint, std::size_t &amp;input_bytes_processed, bool &amp;done)=0</div><div class="ttdoc">Compress a block of data.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1compress__provider_html_aa7648c84d939d4241c63493fb5a1cdee"><div class="ttname"><a href="classqb_1_1compression_1_1compress__provider.html#aa7648c84d939d4241c63493fb5a1cdee">qb::compression::compress_provider::algorithm</a></div><div class="ttdeci">virtual const std::string &amp; algorithm() const =0</div><div class="ttdoc">Get the name of the compression algorithm.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1compress__provider_html_ac0f153090dbd4e3df927c38117cc4d38"><div class="ttname"><a href="classqb_1_1compression_1_1compress__provider.html#ac0f153090dbd4e3df927c38117cc4d38">qb::compression::compress_provider::reset</a></div><div class="ttdeci">virtual void reset()=0</div><div class="ttdoc">Reset the compressor to its initial state.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1decompress__factory_html"><div class="ttname"><a href="classqb_1_1compression_1_1decompress__factory.html">qb::compression::decompress_factory</a></div><div class="ttdoc">Factory interface for creating decompression providers.</div><div class="ttdef"><b>Definition</b> compression.h:216</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1decompress__factory_html_a0f1e9c2ba8f80d035cf957627735cc27"><div class="ttname"><a href="classqb_1_1compression_1_1decompress__factory.html#a0f1e9c2ba8f80d035cf957627735cc27">qb::compression::decompress_factory::~decompress_factory</a></div><div class="ttdeci">virtual ~decompress_factory()=default</div><div class="ttdoc">Virtual destructor.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1decompress__factory_html_a67971dfc13d98fe13172f055852a673b"><div class="ttname"><a href="classqb_1_1compression_1_1decompress__factory.html#a67971dfc13d98fe13172f055852a673b">qb::compression::decompress_factory::weight</a></div><div class="ttdeci">virtual uint16_t weight() const =0</div><div class="ttdoc">Get the weight of this decompression algorithm.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1decompress__factory_html_a683a1f6f461d94df6c0a99ef73f52bdd"><div class="ttname"><a href="classqb_1_1compression_1_1decompress__factory.html#a683a1f6f461d94df6c0a99ef73f52bdd">qb::compression::decompress_factory::make_decompressor</a></div><div class="ttdeci">virtual std::unique_ptr&lt; decompress_provider &gt; make_decompressor() const =0</div><div class="ttdoc">Create a new decompressor instance.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1decompress__factory_html_ae9d04d2805b9aff833caf6a48a3a068d"><div class="ttname"><a href="classqb_1_1compression_1_1decompress__factory.html#ae9d04d2805b9aff833caf6a48a3a068d">qb::compression::decompress_factory::algorithm</a></div><div class="ttdeci">virtual const std::string &amp; algorithm() const =0</div><div class="ttdoc">Get the name of the decompression algorithm.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1decompress__provider_html"><div class="ttname"><a href="classqb_1_1compression_1_1decompress__provider.html">qb::compression::decompress_provider</a></div><div class="ttdoc">Abstract interface for decompression algorithm providers.</div><div class="ttdef"><b>Definition</b> compression.h:139</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1decompress__provider_html_a28bc1a45b466d31ded39d8d83cbf10e4"><div class="ttname"><a href="classqb_1_1compression_1_1decompress__provider.html#a28bc1a45b466d31ded39d8d83cbf10e4">qb::compression::decompress_provider::~decompress_provider</a></div><div class="ttdeci">virtual ~decompress_provider()=default</div><div class="ttdoc">Virtual destructor.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1decompress__provider_html_a311ff17e27df5871915c86435d5c59af"><div class="ttname"><a href="classqb_1_1compression_1_1decompress__provider.html#a311ff17e27df5871915c86435d5c59af">qb::compression::decompress_provider::algorithm</a></div><div class="ttdeci">virtual const std::string &amp; algorithm() const =0</div><div class="ttdoc">Get the name of the decompression algorithm.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1decompress__provider_html_a6215737e9b1bd7c008217de562dce7ed"><div class="ttname"><a href="classqb_1_1compression_1_1decompress__provider.html#a6215737e9b1bd7c008217de562dce7ed">qb::compression::decompress_provider::reset</a></div><div class="ttdeci">virtual void reset()=0</div><div class="ttdoc">Reset the decompressor to its initial state.</div></div>
+<div class="ttc" id="aclassqb_1_1compression_1_1decompress__provider_html_a847e937dad736c6e33b8a7d8bd8dc72e"><div class="ttname"><a href="classqb_1_1compression_1_1decompress__provider.html#a847e937dad736c6e33b8a7d8bd8dc72e">qb::compression::decompress_provider::decompress</a></div><div class="ttdeci">virtual std::size_t decompress(const uint8_t *input, std::size_t input_size, uint8_t *output, std::size_t output_size, operation_hint hint, std::size_t &amp;input_bytes_processed, bool &amp;done)=0</div><div class="ttdoc">Decompress a block of data.</div></div>
+<div class="ttc" id="acompression_8h_html_a0729b3901ba2da230d709ad5f0bede21"><div class="ttname"><a href="compression_8h.html#a0729b3901ba2da230d709ad5f0bede21">qb::compression::builtin::make_compressor</a></div><div class="ttdeci">std::unique_ptr&lt; compress_provider &gt; make_compressor(const std::string &amp;algorithm)</div><div class="ttdoc">Create a compressor for the specified algorithm.</div></div>
+<div class="ttc" id="acompression_8h_html_a2554e58cf429efc1296a895d2d76928f"><div class="ttname"><a href="compression_8h.html#a2554e58cf429efc1296a895d2d76928f">qb::compression::make_decompress_factory</a></div><div class="ttdeci">std::shared_ptr&lt; decompress_factory &gt; make_decompress_factory(const std::string &amp;algorithm, uint16_t weight, std::function&lt; std::unique_ptr&lt; decompress_provider &gt;()&gt; make_decompressor)</div><div class="ttdoc">Create a custom decompression factory.</div></div>
+<div class="ttc" id="acompression_8h_html_a2a2bd63c23defac5c078d6e44611d7ef"><div class="ttname"><a href="compression_8h.html#a2a2bd63c23defac5c078d6e44611d7ef">qb::compression::deflate::compress</a></div><div class="ttdeci">size_t compress(Output &amp;output, const char *data, std::size_t size, int level=Z_DEFAULT_COMPRESSION)</div><div class="ttdoc">Compress data using deflate algorithm with a generic output container.</div><div class="ttdef"><b>Definition</b> compression.h:596</div></div>
+<div class="ttc" id="acompression_8h_html_a33e52f56dd83e568a6d0cc2f5a828c1f"><div class="ttname"><a href="compression_8h.html#a33e52f56dd83e568a6d0cc2f5a828c1f">qb::compression::uncompress</a></div><div class="ttdeci">std::size_t uncompress(Output &amp;output, const char *data, std::size_t size, std::size_t max, int window_bits)</div><div class="ttdoc">Uncompress data using a generic output container.</div><div class="ttdef"><b>Definition</b> compression.h:492</div></div>
+<div class="ttc" id="acompression_8h_html_a368d7a3fc591ac6d928fff8914135377"><div class="ttname"><a href="compression_8h.html#a368d7a3fc591ac6d928fff8914135377">qb::compression::builtin::make_gzip_compressor</a></div><div class="ttdeci">std::unique_ptr&lt; compress_provider &gt; make_gzip_compressor(int compressionLevel, int method, int strategy, int memLevel)</div><div class="ttdoc">Create a gzip compressor with custom parameters.</div></div>
+<div class="ttc" id="acompression_8h_html_a3817a47a63a9126acfa689255fa640e9"><div class="ttname"><a href="compression_8h.html#a3817a47a63a9126acfa689255fa640e9">qb::compression::builtin::make_decompressor</a></div><div class="ttdeci">std::unique_ptr&lt; decompress_provider &gt; make_decompressor(const std::string &amp;algorithm)</div><div class="ttdoc">Create a decompressor for the specified algorithm.</div></div>
+<div class="ttc" id="acompression_8h_html_a7744f156d244325c13cc1c0b5c9b1dc9"><div class="ttname"><a href="compression_8h.html#a7744f156d244325c13cc1c0b5c9b1dc9">qb::compression::make_compress_factory</a></div><div class="ttdeci">std::shared_ptr&lt; compress_factory &gt; make_compress_factory(const std::string &amp;algorithm, std::function&lt; std::unique_ptr&lt; compress_provider &gt;()&gt; make_compressor)</div><div class="ttdoc">Create a custom compression factory.</div></div>
+<div class="ttc" id="acompression_8h_html_a7ede6da9b5e3b958a6e68b9ff364be57"><div class="ttname"><a href="compression_8h.html#a7ede6da9b5e3b958a6e68b9ff364be57">qb::compression::builtin::algorithm::DEFLATE</a></div><div class="ttdeci">constexpr const char *const DEFLATE</div><div class="ttdoc">Identifier for the deflate compression algorithm.</div><div class="ttdef"><b>Definition</b> compression.h:276</div></div>
+<div class="ttc" id="acompression_8h_html_a8ba1a21ce39cd89932e5dd718249d888"><div class="ttname"><a href="compression_8h.html#a8ba1a21ce39cd89932e5dd718249d888">qb::compression::deflate::uncompress</a></div><div class="ttdeci">std::size_t uncompress(Output &amp;output, const char *data, std::size_t size, std::size_t max=0)</div><div class="ttdoc">Uncompress data using deflate algorithm with a generic output container.</div><div class="ttdef"><b>Definition</b> compression.h:668</div></div>
+<div class="ttc" id="acompression_8h_html_a8c6bb76605443259d382240f3dbcde0c"><div class="ttname"><a href="compression_8h.html#a8c6bb76605443259d382240f3dbcde0c">qb::compression::compress</a></div><div class="ttdeci">size_t compress(Output &amp;output, const char *data, std::size_t size, int level, int window_bits)</div><div class="ttdoc">Compress data using a generic output container.</div><div class="ttdef"><b>Definition</b> compression.h:395</div></div>
+<div class="ttc" id="acompression_8h_html_a94010f5e6327498dfde5f7dae07035ea"><div class="ttname"><a href="compression_8h.html#a94010f5e6327498dfde5f7dae07035ea">qb::compression::builtin::get_compress_factory</a></div><div class="ttdeci">std::shared_ptr&lt; compress_factory &gt; get_compress_factory(const std::string &amp;algorithm)</div><div class="ttdoc">Get a specific compression factory by algorithm name.</div></div>
+<div class="ttc" id="acompression_8h_html_a9b0f016e7fba8c9e5ae9b06ce52bb28a"><div class="ttname"><a href="compression_8h.html#a9b0f016e7fba8c9e5ae9b06ce52bb28a">qb::compression::builtin::algorithm::supported</a></div><div class="ttdeci">bool supported(const std::string &amp;algorithm)</div><div class="ttdoc">Check if a specific compression algorithm is supported.</div></div>
+<div class="ttc" id="acompression_8h_html_a9b9ffb5f9e04b7cf482f3a50fe9ca6e6"><div class="ttname"><a href="compression_8h.html#a9b9ffb5f9e04b7cf482f3a50fe9ca6e6">qb::compression::builtin::make_deflate_compressor</a></div><div class="ttdeci">std::unique_ptr&lt; compress_provider &gt; make_deflate_compressor(int compressionLevel, int method, int strategy, int memLevel)</div><div class="ttdoc">Create a deflate compressor with custom parameters.</div></div>
+<div class="ttc" id="acompression_8h_html_a9d2c26c59cb39c364c62b3f4f95b5bc6"><div class="ttname"><a href="compression_8h.html#a9d2c26c59cb39c364c62b3f4f95b5bc6">qb::compression::gzip::compress</a></div><div class="ttdeci">size_t compress(Output &amp;output, const char *data, std::size_t size, int level=Z_DEFAULT_COMPRESSION)</div><div class="ttdoc">Compress data using gzip algorithm with a generic output container.</div><div class="ttdef"><b>Definition</b> compression.h:772</div></div>
+<div class="ttc" id="acompression_8h_html_aa173a31868cad6a07bc273283dcdbab4"><div class="ttname"><a href="compression_8h.html#aa173a31868cad6a07bc273283dcdbab4">qb::compression::builtin::supported</a></div><div class="ttdeci">bool supported()</div><div class="ttdoc">Check if compression support is available.</div></div>
+<div class="ttc" id="acompression_8h_html_aa684469d165cbbb683ee1c0627799f6d"><div class="ttname"><a href="compression_8h.html#aa684469d165cbbb683ee1c0627799f6d">qb::compression::builtin::algorithm::GZIP</a></div><div class="ttdeci">constexpr const char *const GZIP</div><div class="ttdoc">Identifier for the gzip compression algorithm.</div><div class="ttdef"><b>Definition</b> compression.h:271</div></div>
+<div class="ttc" id="acompression_8h_html_ab2973d434ac498c8455ff133f3015a67"><div class="ttname"><a href="compression_8h.html#ab2973d434ac498c8455ff133f3015a67">qb::compression::builtin::get_decompress_factories</a></div><div class="ttdeci">const std::vector&lt; std::shared_ptr&lt; decompress_factory &gt; &gt; get_decompress_factories()</div><div class="ttdoc">Get all available decompression factories.</div></div>
+<div class="ttc" id="acompression_8h_html_acdedc8b7e5d60f90c967bc31d76166e7"><div class="ttname"><a href="compression_8h.html#acdedc8b7e5d60f90c967bc31d76166e7">qb::compression::builtin::get_compress_factories</a></div><div class="ttdeci">const std::vector&lt; std::shared_ptr&lt; compress_factory &gt; &gt; get_compress_factories()</div><div class="ttdoc">Get all available compression factories.</div></div>
+<div class="ttc" id="acompression_8h_html_ad25c65e7491eab2097e36a1d091c97d1"><div class="ttname"><a href="compression_8h.html#ad25c65e7491eab2097e36a1d091c97d1">qb::compression::gzip::uncompress</a></div><div class="ttdeci">std::size_t uncompress(Output &amp;output, const char *data, std::size_t size, std::size_t max=0)</div><div class="ttdoc">Uncompress data using gzip algorithm with a generic output container.</div><div class="ttdef"><b>Definition</b> compression.h:844</div></div>
+<div class="ttc" id="acompression_8h_html_ae9e21d528d2010deeb80ae69e4e47115"><div class="ttname"><a href="compression_8h.html#ae9e21d528d2010deeb80ae69e4e47115">qb::compression::builtin::get_decompress_factory</a></div><div class="ttdeci">std::shared_ptr&lt; decompress_factory &gt; get_decompress_factory(const std::string &amp;algorithm)</div><div class="ttdoc">Get a specific decompression factory by algorithm name.</div></div>
+<div class="ttc" id="acompression_8h_html_ga595180ab2e290075433bd021f96690f7a13931a8ceafb96190f2b56c89e1ecd16"><div class="ttname"><a href="compression_8h.html#ga595180ab2e290075433bd021f96690f7a13931a8ceafb96190f2b56c89e1ecd16">qb::compression::is_last</a></div><div class="ttdeci">@ is_last</div><div class="ttdoc">Used for the expected last compress() call, or for an expected single decompress() call.</div><div class="ttdef"><b>Definition</b> compression.h:57</div></div>
+<div class="ttc" id="acompression_8h_html_ga595180ab2e290075433bd021f96690f7ab90e2646b6905887deae39c071ea273e"><div class="ttname"><a href="compression_8h.html#ga595180ab2e290075433bd021f96690f7ab90e2646b6905887deae39c071ea273e">qb::compression::has_more</a></div><div class="ttdeci">@ has_more</div><div class="ttdoc">Used when further compress() calls will be made, or when multiple decompress() calls may be required.</div><div class="ttdef"><b>Definition</b> compression.h:59</div></div>
+<div class="ttc" id="agroup___compression_html_ga4a8ef5ad8f1be15598a482b0f5929c3f"><div class="ttname"><a href="group___compression.html#ga4a8ef5ad8f1be15598a482b0f5929c3f">qb::compression::gzip::is_compressed</a></div><div class="ttdeci">bool is_compressed(const char *data, std::size_t size)</div><div class="ttdoc">Check if data is compressed using gzip or zlib format.</div><div class="ttdef"><b>Definition</b> compression.h:747</div></div>
+<div class="ttc" id="agroup___compression_html_ga595180ab2e290075433bd021f96690f7"><div class="ttname"><a href="group___compression.html#ga595180ab2e290075433bd021f96690f7">qb::compression::operation_hint</a></div><div class="ttdeci">operation_hint</div><div class="ttdoc">Hints for compression/decompression operations.</div><div class="ttdef"><b>Definition</b> compression.h:56</div></div>
+<div class="ttc" id="anamespacealgorithm_html"><div class="ttname"><a href="namespacealgorithm.html">algorithm</a></div><div class="ttdoc">Namespace containing algorithm constants and utilities.</div></div>
+<div class="ttc" id="anamespacebuiltin_html"><div class="ttname"><a href="namespacebuiltin.html">builtin</a></div><div class="ttdoc">Namespace containing built-in compression implementations.</div></div>
+<div class="ttc" id="anamespacedeflate_html"><div class="ttname"><a href="namespacedeflate.html">deflate</a></div><div class="ttdoc">Namespace containing deflate compression utilities.</div></div>
+<div class="ttc" id="anamespacegzip_html"><div class="ttname"><a href="namespacegzip.html">gzip</a></div><div class="ttdoc">Namespace containing gzip compression utilities.</div></div>
+<div class="ttc" id="anamespaceqb_1_1deflate_html"><div class="ttname"><a href="namespaceqb_1_1deflate.html">qb::deflate</a></div><div class="ttdoc">Namespace alias for deflate compression utilities.</div></div>
+<div class="ttc" id="anamespaceqb_1_1gzip_html"><div class="ttname"><a href="namespaceqb_1_1gzip.html">qb::gzip</a></div><div class="ttdoc">Namespace alias for gzip compression utilities.</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1deflate_1_1to__compress_html"><div class="ttname"><a href="structqb_1_1compression_1_1deflate_1_1to__compress.html">qb::compression::deflate::to_compress</a></div><div class="ttdoc">Structure for passing compression parameters for deflate.</div><div class="ttdef"><b>Definition</b> compression.h:623</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1deflate_1_1to__compress_html_a383fc7acb726180567bb8bb10bfc89c5"><div class="ttname"><a href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a383fc7acb726180567bb8bb10bfc89c5">qb::compression::deflate::to_compress::size_compressed</a></div><div class="ttdeci">size_t size_compressed</div><div class="ttdoc">[out] Size of the compressed data</div><div class="ttdef"><b>Definition</b> compression.h:627</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1deflate_1_1to__compress_html_a7bce503f207f79da95cfa801a5c2dda6"><div class="ttname"><a href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a7bce503f207f79da95cfa801a5c2dda6">qb::compression::deflate::to_compress::data</a></div><div class="ttdeci">const char * data</div><div class="ttdoc">Pointer to the data to compress.</div><div class="ttdef"><b>Definition</b> compression.h:624</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1deflate_1_1to__compress_html_a91a9eb50d56b828e1c11309ece5751ef"><div class="ttname"><a href="structqb_1_1compression_1_1deflate_1_1to__compress.html#a91a9eb50d56b828e1c11309ece5751ef">qb::compression::deflate::to_compress::level</a></div><div class="ttdeci">int level</div><div class="ttdoc">Compression level.</div><div class="ttdef"><b>Definition</b> compression.h:626</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1deflate_1_1to__compress_html_abe5af93b55a314ff20d739dd69940aaf"><div class="ttname"><a href="structqb_1_1compression_1_1deflate_1_1to__compress.html#abe5af93b55a314ff20d739dd69940aaf">qb::compression::deflate::to_compress::size</a></div><div class="ttdeci">std::size_t size</div><div class="ttdoc">Size of the data in bytes.</div><div class="ttdef"><b>Definition</b> compression.h:625</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1deflate_1_1to__uncompress_html"><div class="ttname"><a href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html">qb::compression::deflate::to_uncompress</a></div><div class="ttdoc">Structure for passing decompression parameters for deflate.</div><div class="ttdef"><b>Definition</b> compression.h:695</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1deflate_1_1to__uncompress_html_a4507e2b01b93aa9c4e35d663dbec3941"><div class="ttname"><a href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a4507e2b01b93aa9c4e35d663dbec3941">qb::compression::deflate::to_uncompress::size</a></div><div class="ttdeci">std::size_t size</div><div class="ttdoc">Size of the compressed data in bytes.</div><div class="ttdef"><b>Definition</b> compression.h:697</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1deflate_1_1to__uncompress_html_a51dcff17ca1a80ede14fd9b7217faf67"><div class="ttname"><a href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a51dcff17ca1a80ede14fd9b7217faf67">qb::compression::deflate::to_uncompress::size_uncompressed</a></div><div class="ttdeci">std::size_t size_uncompressed</div><div class="ttdoc">[out] Size of the uncompressed data</div><div class="ttdef"><b>Definition</b> compression.h:699</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1deflate_1_1to__uncompress_html_a729bdd0c16b093379688398046fc1fcc"><div class="ttname"><a href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a729bdd0c16b093379688398046fc1fcc">qb::compression::deflate::to_uncompress::max</a></div><div class="ttdeci">std::size_t max</div><div class="ttdoc">Maximum allowed output size (0 for unlimited)</div><div class="ttdef"><b>Definition</b> compression.h:698</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1deflate_1_1to__uncompress_html_a895e8833bd0459ef7087d6f3a127ad22"><div class="ttname"><a href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#a895e8833bd0459ef7087d6f3a127ad22">qb::compression::deflate::to_uncompress::data</a></div><div class="ttdeci">const char * data</div><div class="ttdoc">Pointer to the compressed data.</div><div class="ttdef"><b>Definition</b> compression.h:696</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1gzip_1_1to__compress_html"><div class="ttname"><a href="structqb_1_1compression_1_1gzip_1_1to__compress.html">qb::compression::gzip::to_compress</a></div><div class="ttdoc">Structure for passing gzip compression parameters.</div><div class="ttdef"><b>Definition</b> compression.h:799</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1gzip_1_1to__compress_html_a15cd1c8dbb73b1d8fac655d22966dede"><div class="ttname"><a href="structqb_1_1compression_1_1gzip_1_1to__compress.html#a15cd1c8dbb73b1d8fac655d22966dede">qb::compression::gzip::to_compress::level</a></div><div class="ttdeci">int level</div><div class="ttdoc">Compression level.</div><div class="ttdef"><b>Definition</b> compression.h:802</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1gzip_1_1to__compress_html_a26e6d67caa27dc2401abbea634e80d04"><div class="ttname"><a href="structqb_1_1compression_1_1gzip_1_1to__compress.html#a26e6d67caa27dc2401abbea634e80d04">qb::compression::gzip::to_compress::data</a></div><div class="ttdeci">const char * data</div><div class="ttdoc">Pointer to the data to compress.</div><div class="ttdef"><b>Definition</b> compression.h:800</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1gzip_1_1to__compress_html_adc9bb80a4541e019a0e56e2b3e69dc77"><div class="ttname"><a href="structqb_1_1compression_1_1gzip_1_1to__compress.html#adc9bb80a4541e019a0e56e2b3e69dc77">qb::compression::gzip::to_compress::size</a></div><div class="ttdeci">std::size_t size</div><div class="ttdoc">Size of the data in bytes.</div><div class="ttdef"><b>Definition</b> compression.h:801</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1gzip_1_1to__compress_html_ae7c09be09004e350a669a85b4732334f"><div class="ttname"><a href="structqb_1_1compression_1_1gzip_1_1to__compress.html#ae7c09be09004e350a669a85b4732334f">qb::compression::gzip::to_compress::size_compressed</a></div><div class="ttdeci">size_t size_compressed</div><div class="ttdoc">[out] Size of the compressed data</div><div class="ttdef"><b>Definition</b> compression.h:803</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1gzip_1_1to__uncompress_html"><div class="ttname"><a href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html">qb::compression::gzip::to_uncompress</a></div><div class="ttdoc">Structure for passing gzip decompression parameters.</div><div class="ttdef"><b>Definition</b> compression.h:871</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1gzip_1_1to__uncompress_html_a3bf735ab1cbd29c823a96719eddeff9d"><div class="ttname"><a href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#a3bf735ab1cbd29c823a96719eddeff9d">qb::compression::gzip::to_uncompress::data</a></div><div class="ttdeci">const char * data</div><div class="ttdoc">Pointer to the compressed data.</div><div class="ttdef"><b>Definition</b> compression.h:872</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1gzip_1_1to__uncompress_html_aa9657fa8fca8fd5af3b27fc6964f4db5"><div class="ttname"><a href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#aa9657fa8fca8fd5af3b27fc6964f4db5">qb::compression::gzip::to_uncompress::max</a></div><div class="ttdeci">std::size_t max</div><div class="ttdoc">Maximum allowed output size (0 for unlimited)</div><div class="ttdef"><b>Definition</b> compression.h:874</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1gzip_1_1to__uncompress_html_ac1dab0d2140c95de45d4f216d5696f3c"><div class="ttname"><a href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#ac1dab0d2140c95de45d4f216d5696f3c">qb::compression::gzip::to_uncompress::size_uncompressed</a></div><div class="ttdeci">std::size_t size_uncompressed</div><div class="ttdoc">[out] Size of the uncompressed data</div><div class="ttdef"><b>Definition</b> compression.h:875</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1gzip_1_1to__uncompress_html_ae346d656364f3a30cb244a77e8c93a6e"><div class="ttname"><a href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#ae346d656364f3a30cb244a77e8c93a6e">qb::compression::gzip::to_uncompress::size</a></div><div class="ttdeci">std::size_t size</div><div class="ttdoc">Size of the compressed data in bytes.</div><div class="ttdef"><b>Definition</b> compression.h:873</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1operation__result_html"><div class="ttname"><a href="structqb_1_1compression_1_1operation__result.html">qb::compression::operation_result</a></div><div class="ttdoc">Result of a compression/decompression operation.</div><div class="ttdef"><b>Definition</b> compression.h:72</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1operation__result_html_ab2a7bbd0617cf8f2d3a6b5ef6a27a311"><div class="ttname"><a href="structqb_1_1compression_1_1operation__result.html#ab2a7bbd0617cf8f2d3a6b5ef6a27a311">qb::compression::operation_result::output_bytes_produced</a></div><div class="ttdeci">std::size_t output_bytes_produced</div><div class="ttdoc">Number of bytes written to the output buffer.</div><div class="ttdef"><b>Definition</b> compression.h:76</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1operation__result_html_ad409759bfa4e17ff94222433bda6b11a"><div class="ttname"><a href="structqb_1_1compression_1_1operation__result.html#ad409759bfa4e17ff94222433bda6b11a">qb::compression::operation_result::input_bytes_processed</a></div><div class="ttdeci">std::size_t input_bytes_processed</div><div class="ttdoc">Number of bytes processed from the input buffer.</div><div class="ttdef"><b>Definition</b> compression.h:74</div></div>
+<div class="ttc" id="astructqb_1_1compression_1_1operation__result_html_ad42022d207eef6e62d283a65544864c8"><div class="ttname"><a href="structqb_1_1compression_1_1operation__result.html#ad42022d207eef6e62d283a65544864c8">qb::compression::operation_result::done</a></div><div class="ttdeci">bool done</div><div class="ttdoc">For compress, set when &#39;last&#39; is true and there was enough space to complete compression; for decompr...</div><div class="ttdef"><b>Definition</b> compression.h:77</div></div>
+<div class="ttc" id="asystem_2allocator_2_pipe_8h_html"><div class="ttname"><a href="system_2allocator_2_pipe_8h.html">pipe.h</a></div><div class="ttdoc">Implementation of a dynamic extensible buffer.</div></div>
+</div><!-- fragment --></div><!-- contents -->
+</div><!-- doc-content -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="compression_8h.html">compression.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

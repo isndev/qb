@@ -1,0 +1,14 @@
+<map id="qb::router::internal::EventPolicy" name="qb::router::internal::EventPolicy">
+<area shape="rect" id="Node000001" title="Base policy for event handling." alt="" coords="5,136,132,177"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1router_1_1semh.html" title=" " alt="" coords="193,5,328,46"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="98,123,135,89,178,57,202,44,204,49,181,61,138,93,102,127"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1router_1_1semh.html" title=" " alt="" coords="196,71,324,111"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="143,128,198,109,199,114,145,133"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1router_1_1semh_3_01___raw_event_00_01void_01_4.html" title="Single&#45;Event Multiple&#45;Handler router (heterogeneous version)" alt="" coords="194,136,327,177"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="147,163,193,162,193,168,147,168"/>
+<area shape="poly" id="edge5_Node000001_Node000004" title=" " alt="" coords="147,145,193,145,193,150,147,150"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1router_1_1semh.html" title="Single&#45;Event Multiple&#45;Handler router (generic version)" alt="" coords="180,201,341,242"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="145,180,199,198,198,203,143,185"/>
+<area shape="rect" id="Node000006" href="$classqb_1_1router_1_1sesh.html" title="Single&#45;Event Single&#45;Handler router." alt="" coords="180,267,341,307"/>
+<area shape="poly" id="edge6_Node000001_Node000006" title=" " alt="" coords="102,186,138,220,181,251,204,264,202,268,178,256,135,224,98,190"/>
+</map>

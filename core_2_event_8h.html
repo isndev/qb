@@ -1,0 +1,382 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/core/Event.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/core/Event.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('core_2_event_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">Event.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___core.html">Core Actor System</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Event system for the QB Actor Framework.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &lt;bitset&gt;</code><br />
+<code>#include &lt;<a class="el" href="system_2allocator_2_pipe_8h_source.html">qb/system/allocator/pipe.h</a>&gt;</code><br />
+<code>#include &lt;utility&gt;</code><br />
+<code>#include &quot;<a class="el" href="core_2_actor_id_8h_source.html">ActorId.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="core_2_i_callback_8h_source.html">ICallback.h</a>&quot;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for Event.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="core_2_event_8h__incl.png" border="0" usemap="#ainclude_2qb_2core_2_event_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2core_2_event_8h" id="ainclude_2qb_2core_2_event_8h">
+<area shape="rect" title="Event system for the QB Actor Framework." alt="" coords="1112,5,1271,31"/>
+<area shape="rect" title=" " alt="" coords="1025,175,1078,201"/>
+<area shape="poly" title=" " alt="" coords="1183,33,1073,165,1069,162,1179,30"/>
+<area shape="rect" href="system_2allocator_2_pipe_8h.html" title="Implementation of a dynamic extensible buffer." alt="" coords="538,79,674,120"/>
+<area shape="poly" title=" " alt="" coords="1112,33,689,90,689,84,1112,28"/>
+<area shape="rect" title=" " alt="" coords="1584,264,1636,290"/>
+<area shape="poly" title=" " alt="" coords="1213,29,1579,253,1576,258,1210,34"/>
+<area shape="rect" href="core_2_actor_id_8h.html" title="Actor and core identification for the QB Actor Framework." alt="" coords="1154,86,1229,112"/>
+<area shape="poly" title=" " alt="" coords="1194,31,1194,71,1189,71,1189,31"/>
+<area shape="rect" href="core_2_i_callback_8h.html" title="Callback interface for the QB Actor Framework." alt="" coords="1452,86,1539,112"/>
+<area shape="poly" title=" " alt="" coords="1245,29,1434,76,1443,79,1441,84,1432,82,1243,34"/>
+<area shape="rect" title=" " alt="" coords="542,264,593,290"/>
+<area shape="poly" title=" " alt="" coords="604,121,576,249,571,248,599,119"/>
+<area shape="rect" title=" " alt="" coords="457,264,518,290"/>
+<area shape="poly" title=" " alt="" coords="595,122,506,252,502,249,591,119"/>
+<area shape="rect" title=" " alt="" coords="1158,264,1230,290"/>
+<area shape="poly" title=" " alt="" coords="651,118,740,165,764,188,775,197,790,206,841,224,885,234,926,238,965,238,1046,238,1093,243,1147,254,1153,256,1152,261,1146,259,1092,248,1046,243,965,244,926,243,885,239,839,229,788,211,772,202,761,192,737,170,649,123"/>
+<area shape="rect" title=" " alt="" coords="5,175,74,201"/>
+<area shape="poly" title=" " alt="" coords="538,106,447,113,334,124,209,143,85,170,80,172,78,167,84,165,208,138,333,119,447,107,538,101"/>
+<area shape="rect" href="string_8h.html" title="Fixed&#45;size string implementation optimized for performance." alt="" coords="644,175,726,201"/>
+<area shape="poly" title=" " alt="" coords="626,118,666,162,662,165,622,122"/>
+<area shape="rect" href="branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="97,175,256,201"/>
+<area shape="poly" title=" " alt="" coords="539,117,269,170,251,174,249,169,268,165,538,111"/>
+<area shape="rect" href="nocopy_8h.html" title="Defines a base class to make derived classes non&#45;copyable." alt="" coords="281,175,406,201"/>
+<area shape="poly" title=" " alt="" coords="547,123,396,172,394,167,546,118"/>
+<area shape="rect" href="prefix_8h.html" title="Platform&#45;specific alignment macros, cache&#45;line definitions, and related utilities." alt="" coords="801,175,918,201"/>
+<area shape="poly" title=" " alt="" coords="665,118,811,167,809,172,663,123"/>
+<area shape="rect" title=" " alt="" coords="430,175,518,201"/>
+<area shape="poly" title=" " alt="" coords="578,122,506,169,503,164,575,118"/>
+<area shape="rect" title=" " alt="" coords="943,175,1000,201"/>
+<area shape="poly" title=" " alt="" coords="675,108,795,130,864,146,931,165,935,166,933,172,929,170,862,151,794,135,674,113"/>
+<area shape="poly" title=" " alt="" coords="670,203,598,256,595,252,667,199"/>
+<area shape="poly" title=" " alt="" coords="658,204,531,259,529,260,527,255,529,254,656,199"/>
+<area shape="poly" title=" " alt="" coords="719,199,745,206,806,217,857,223,946,227,1035,233,1087,241,1147,254,1153,256,1152,261,1146,259,1086,246,1034,238,946,233,857,228,805,222,744,211,718,204"/>
+<area shape="rect" title=" " alt="" coords="796,264,870,290"/>
+<area shape="poly" title=" " alt="" coords="707,199,800,253,798,258,704,204"/>
+<area shape="rect" title=" " alt="" coords="895,264,947,290"/>
+<area shape="poly" title=" " alt="" coords="723,199,883,254,885,254,883,259,881,259,722,204"/>
+<area shape="rect" href="build__macros_8h.html" title="Platform, compiler, and C++ feature detection macros for the QB Framework." alt="" coords="972,264,1134,290"/>
+<area shape="poly" title=" " alt="" coords="722,199,745,206,980,258,979,263,744,211,720,204"/>
+<area shape="rect" title=" " alt="" coords="718,264,772,290"/>
+<area shape="poly" title=" " alt="" coords="695,200,730,250,726,253,691,203"/>
+<area shape="rect" title=" " alt="" coords="616,264,695,290"/>
+<area shape="poly" title=" " alt="" coords="683,202,667,250,662,248,678,200"/>
+<area shape="rect" title=" " alt="" coords="1024,345,1082,371"/>
+<area shape="poly" title=" " alt="" coords="1056,290,1056,329,1050,329,1050,290"/>
+<area shape="rect" title=" " alt="" coords="1171,345,1231,371"/>
+<area shape="poly" title=" " alt="" coords="1077,288,1166,335,1164,340,1074,292"/>
+<area shape="poly" title=" " alt="" coords="1173,115,1085,169,1083,164,1171,110"/>
+<area shape="poly" title=" " alt="" coords="1183,114,1133,170,1092,210,1062,225,1036,234,990,242,942,246,883,259,877,261,876,256,881,254,941,241,989,237,1035,229,1060,220,1089,206,1129,166,1179,111"/>
+<area shape="poly" title=" " alt="" coords="1191,114,1173,161,1157,187,1136,210,1113,226,1092,236,1052,243,1010,246,960,259,958,260,956,255,959,254,1009,241,1051,238,1090,230,1110,221,1132,206,1153,184,1169,158,1186,112"/>
+<area shape="poly" title=" " alt="" coords="1197,112,1201,157,1198,184,1187,210,1173,227,1156,241,1118,260,1116,256,1153,236,1169,223,1183,207,1193,183,1196,157,1192,113"/>
+<area shape="poly" title=" " alt="" coords="1202,111,1219,144,1238,190,1250,243,1250,271,1245,298,1236,317,1224,334,1220,331,1231,315,1240,296,1245,270,1245,244,1233,191,1215,146,1197,114"/>
+<area shape="poly" title=" " alt="" coords="1155,113,932,170,920,173,919,168,931,165,1153,108"/>
+<area shape="poly" title=" " alt="" coords="1158,115,1014,170,1012,171,1010,166,1012,165,1156,110"/>
+<area shape="rect" title=" " alt="" coords="1660,264,1763,290"/>
+<area shape="poly" title=" " alt="" coords="1229,110,1662,256,1660,261,1227,115"/>
+<area shape="rect" href="io_8h.html" title="Core I/O and logging utilities for the qb framework." alt="" coords="1316,175,1376,201"/>
+<area shape="poly" title=" " alt="" coords="1214,110,1312,165,1310,169,1212,115"/>
+<area shape="rect" href="unordered__set_8h.html" title="Optimized unordered set implementations." alt="" coords="1690,168,1829,208"/>
+<area shape="poly" title=" " alt="" coords="1230,104,1675,171,1674,176,1229,109"/>
+<area shape="poly" title=" " alt="" coords="1326,204,1230,258,1227,253,1324,199"/>
+<area shape="poly" title=" " alt="" coords="1377,199,1396,206,1446,220,1485,228,1525,237,1574,254,1576,255,1574,260,1572,259,1523,243,1484,233,1445,225,1395,211,1375,204"/>
+<area shape="rect" title=" " alt="" coords="1411,264,1468,290"/>
+<area shape="poly" title=" " alt="" coords="1361,199,1418,252,1414,256,1357,203"/>
+<area shape="rect" title=" " alt="" coords="1492,264,1560,290"/>
+<area shape="poly" title=" " alt="" coords="1373,199,1489,254,1486,259,1370,204"/>
+<area shape="rect" title=" " alt="" coords="1305,264,1387,290"/>
+<area shape="poly" title=" " alt="" coords="1349,201,1349,248,1344,248,1344,201"/>
+<area shape="poly" title=" " alt="" coords="1751,210,1728,251,1723,249,1746,208"/>
+<area shape="rect" title=" " alt="" coords="1788,264,1827,290"/>
+<area shape="poly" title=" " alt="" coords="1773,208,1796,249,1791,251,1768,210"/>
+<area shape="rect" title=" " alt="" coords="1852,256,1990,297"/>
+<area shape="poly" title=" " alt="" coords="1797,206,1872,246,1870,251,1795,211"/>
+</map>
+</div>
+</div><div class="textblock"><div class="dynheader">
+This graph shows which files directly or indirectly include this file:</div>
+<div class="dyncontent">
+<div class="center"><img src="core_2_event_8h__dep__incl.png" border="0" usemap="#ainclude_2qb_2core_2_event_8hdep" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2core_2_event_8hdep" id="ainclude_2qb_2core_2_event_8hdep">
+<area shape="rect" title="Event system for the QB Actor Framework." alt="" coords="228,5,386,31"/>
+<area shape="rect" href="core_2_actor_8h.html" title="Actor base class and core actor model implementation." alt="" coords="316,153,471,178"/>
+<area shape="poly" title=" " alt="" coords="353,37,377,54,396,78,402,97,404,118,399,153,394,152,399,118,397,98,391,80,373,58,350,41"/>
+<area shape="rect" href="_virtual_core_8h.html" title="Defines the VirtualCore class, representing a worker thread in the QB Actor Framework." alt="" coords="159,226,348,252"/>
+<area shape="poly" title=" " alt="" coords="264,41,240,58,222,80,216,99,213,119,220,160,234,197,248,225,244,227,229,200,214,162,208,119,210,98,218,78,237,54,261,37"/>
+<area shape="rect" href="core_2main_8h.html" title="Main control for the QB Actor Framework." alt="" coords="5,153,158,178"/>
+<area shape="poly" title=" " alt="" coords="260,39,219,58,178,81,130,119,94,154,90,151,126,115,175,77,217,53,258,35"/>
+<area shape="rect" href="core_2_pipe_8h.html" title="Actor communication channel for the QB Actor Framework." alt="" coords="232,79,382,105"/>
+<area shape="poly" title=" " alt="" coords="310,46,310,79,304,79,304,46"/>
+<area shape="rect" href="_event_8h.html" title="Convenience header for the QB Event system." alt="" coords="456,79,584,105"/>
+<area shape="poly" title=" " alt="" coords="358,34,485,76,483,81,356,39"/>
+<area shape="rect" href="_actor_8h.html" title="Convenience header for the core QB Actor components." alt="" coords="372,226,495,252"/>
+<area shape="poly" title=" " alt="" coords="410,191,429,225,424,227,405,193"/>
+<area shape="poly" title=" " alt="" coords="358,188,279,228,276,223,355,183"/>
+<area shape="rect" href="cube_8h.html" title="Main include file for the QB Actor Framework." alt="" coords="201,300,306,326"/>
+<area shape="poly" title=" " alt="" coords="390,261,285,302,283,297,388,256"/>
+<area shape="poly" title=" " alt="" coords="126,182,225,223,223,228,124,187"/>
+<area shape="rect" href="main_8h.html" title="Convenience header for the QB Main engine controller." alt="" coords="12,226,135,252"/>
+<area shape="poly" title=" " alt="" coords="81,194,77,226,72,226,76,193"/>
+<area shape="poly" title=" " alt="" coords="119,256,224,297,222,302,117,261"/>
+<area shape="poly" title=" " alt="" coords="335,113,381,150,377,154,332,117"/>
+<area shape="poly" title=" " alt="" coords="300,120,260,227,255,225,295,118"/>
+</map>
+</div>
+</div>
+<p><a href="core_2_event_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3Atype_3C_20T_20_3E" id="r_qb_3A_3Atype_3C_20T_20_3E"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1type.html">qb::type&lt; T &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Template struct used for type identification in the event system.  <a href="structqb_1_1type.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AEvent" id="r_qb_3A_3AEvent"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_event.html">qb::Event</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Base class for all events in the actor system.  <a href="classqb_1_1_event.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AEventQOS0" id="r_qb_3A_3AEventQOS0"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1_event_q_o_s0.html">qb::EventQOS0</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> with lowest quality of service level.  <a href="structqb_1_1_event_q_o_s0.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AServiceEvent" id="r_qb_3A_3AServiceEvent"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1_service_event.html">qb::ServiceEvent</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> type for service-to-service communication.  <a href="structqb_1_1_service_event.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AKillEvent" id="r_qb_3A_3AKillEvent"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1_kill_event.html">qb::KillEvent</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> used to terminate an actor.  <a href="structqb_1_1_kill_event.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AUnregisterCallbackEvent" id="r_qb_3A_3AUnregisterCallbackEvent"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1_unregister_callback_event.html">qb::UnregisterCallbackEvent</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> used to unregister an actor's callback.  <a href="structqb_1_1_unregister_callback_event.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3ASignalEvent" id="r_qb_3A_3ASignalEvent"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1_signal_event.html">qb::SignalEvent</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> used to handle system signals.  <a href="structqb_1_1_signal_event.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3APingEvent" id="r_qb_3A_3APingEvent"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1_ping_event.html">qb::PingEvent</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> used for actor health checks.  <a href="structqb_1_1_ping_event.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3ARequireEvent" id="r_qb_3A_3ARequireEvent"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1_require_event.html">qb::RequireEvent</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> used to query actor status.  <a href="structqb_1_1_require_event.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AWithData_3C_20_5FArgs_20_3E" id="r_qb_3A_3AWithData_3C_20_5FArgs_20_3E"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1_with_data.html">qb::WithData&lt; _Args &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> template that includes data payload.  <a href="structqb_1_1_with_data.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AWithoutData_3C_20_5FArgs_20_3E" id="r_qb_3A_3AWithoutData_3C_20_5FArgs_20_3E"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_without_data.html">qb::WithoutData&lt; _Args &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> template without data payload.  <a href="classqb_1_1_without_data.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AAskData_3C_20_5FArgs_20_3E" id="r_qb_3A_3AAskData_3C_20_5FArgs_20_3E"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1_ask_data.html">qb::AskData&lt; _Args &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> template for requesting data, typically without carrying data itself.  <a href="structqb_1_1_ask_data.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AFillEvent_3C_20_5FArgs_20_3E" id="r_qb_3A_3AFillEvent_3C_20_5FArgs_20_3E"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1_fill_event.html">qb::FillEvent&lt; _Args &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> template for events that carry and "fill" data.  <a href="structqb_1_1_fill_event.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-typedef-members" class="groupheader"><a id="typedef-members" name="typedef-members"></a>
+Typedefs</h2></td></tr>
+<tr class="memitem:ga72b097e7035cac0e67b22a39e7954470" id="r_ga72b097e7035cac0e67b22a39e7954470"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___event_core.html#ga72b097e7035cac0e67b22a39e7954470">qb::EventQOS2</a> = <a class="el" href="classqb_1_1_event.html">Event</a></td></tr>
+<tr class="memdesc:ga72b097e7035cac0e67b22a39e7954470"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> with highest quality of service (priority level 2)  <br /></td></tr>
+<tr class="memitem:gab1e84868f5300f59af8958a6a8cca021" id="r_gab1e84868f5300f59af8958a6a8cca021"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___event_core.html#gab1e84868f5300f59af8958a6a8cca021">qb::EventQOS1</a> = <a class="el" href="classqb_1_1_event.html">Event</a></td></tr>
+<tr class="memdesc:gab1e84868f5300f59af8958a6a8cca021"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> with medium quality of service (priority level 1)  <br /></td></tr>
+<tr class="memitem:ga8f5ee8be3686b355eab04de1d5aeb498" id="r_ga8f5ee8be3686b355eab04de1d5aeb498"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___event_core.html#ga8f5ee8be3686b355eab04de1d5aeb498">qb::VirtualPipe</a> = <a class="el" href="classqb_1_1allocator_1_1pipe.html">allocator::pipe</a>&lt;<a class="el" href="struct_event_bucket.html">EventBucket</a>&gt;</td></tr>
+<tr class="memdesc:ga8f5ee8be3686b355eab04de1d5aeb498"><td class="mdescLeft">&#160;</td><td class="mdescRight"><a class="el" href="classqb_1_1_pipe.html" title="Represents a communication channel between actors.">Pipe</a> for event transmission in the actor system.  <br /></td></tr>
+<tr class="memitem:ga3296038c4343f22626c6595a222c0d95" id="r_ga3296038c4343f22626c6595a222c0d95"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">qb::event</a> = <a class="el" href="classqb_1_1_event.html">Event</a></td></tr>
+<tr class="memdesc:ga3296038c4343f22626c6595a222c0d95"><td class="mdescLeft">&#160;</td><td class="mdescRight">Alias for the base <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">Event</a> class.  <br /></td></tr>
+<tr class="memitem:gafcd9e3bfad97d1aad2eac66da38408ec" id="r_gafcd9e3bfad97d1aad2eac66da38408ec"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___event_core.html#gafcd9e3bfad97d1aad2eac66da38408ec">qb::service_event</a> = <a class="el" href="structqb_1_1_service_event.html">ServiceEvent</a></td></tr>
+<tr class="memdesc:gafcd9e3bfad97d1aad2eac66da38408ec"><td class="mdescLeft">&#160;</td><td class="mdescRight">Alias for the <a class="el" href="structqb_1_1_service_event.html" title="Event type for service-to-service communication.">ServiceEvent</a> class.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-enum-members" class="groupheader"><a id="enum-members" name="enum-members"></a>
+Enumerations</h2></td></tr>
+<tr class="memitem:gaa22d3309e028be849695a6bce167b19f" id="r_gaa22d3309e028be849695a6bce167b19f"><td class="memItemLeft" align="right" valign="top">enum class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___event_core.html#gaa22d3309e028be849695a6bce167b19f">qb::ActorStatus</a> : uint32_t { <a class="el" href="group___event_core.html#ggaa22d3309e028be849695a6bce167b19fabd9f7c5d6ab4201b138a3e51dab7056f">ActorStatus::Alive</a>
+, <a class="el" href="group___event_core.html#ggaa22d3309e028be849695a6bce167b19fa183b62c7f067711f9c5a54913c054617">ActorStatus::Dead</a>
+ }</td></tr>
+<tr class="memdesc:gaa22d3309e028be849695a6bce167b19f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Represents the current status of an actor in the system.  <a href="group___event_core.html#gaa22d3309e028be849695a6bce167b19f">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-func-members" class="groupheader"><a id="func-members" name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:ga451cbf351ccabd9a0bade0069afad19e" id="r_ga451cbf351ccabd9a0bade0069afad19e"><td class="memTemplParams" colspan="2">template&lt;typename T&gt; </td></tr>
+<tr class="memitem:ga451cbf351ccabd9a0bade0069afad19e template"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="group___core.html#ga1b0b30803a6fe2511f9adc1240dc325c">TypeId</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___event_core.html#ga451cbf351ccabd9a0bade0069afad19e">qb::type_id</a> ()</td></tr>
+<tr class="memdesc:ga451cbf351ccabd9a0bade0069afad19e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Function to get a unique type identifier for a given type.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Event system for the QB Actor Framework. </p>
+<p>This file defines the event system used by the QB Actor Framework for communication between actors. It includes the base Event class and several specialized event types for different purposes, including quality of service levels, service events, and system events like kill and signal events.</p>
+<p>Events are the primary means of communication between actors, ensuring isolation and thread safety in the actor system.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div></div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_aca413fbbe053f647c2f74881aaff796.html">core</a></li><li class="navelem"><a href="core_2_event_8h.html">Event.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

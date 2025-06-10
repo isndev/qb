@@ -1,50 +1,115 @@
-<!-- HTML header for doxygen 1.8.14-->
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-    <meta http-equiv="cache-control" content="max-age=86400"/>
-    <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=9"/>
-    <meta name="generator" content="Doxygen 1.8.15"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <title>qb: qb::lockfree::SpinLock Class Reference</title>
-    <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
-    <meta name="keywords" content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, git">
-    <meta name="author" content="isndev">
-    <link href="tabs.css" rel="stylesheet" type="text/css"/>
-    <script type="text/javascript" src="jquery.js"></script>
-    <script type="text/javascript" src="dynsections.js"></script>
-    <link href="navtree.css" rel="stylesheet" type="text/css"/>
-<script type="text/javascript" src="resize.js"></script>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::lockfree::SpinLock Class Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::lockfree::SpinLock Class Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="navtreedata.js"></script>
 <script type="text/javascript" src="navtree.js"></script>
-<script type="text/javascript">
-/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
-  $(document).ready(initResizable);
-/* @license-end */</script>
-    <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="search/searchdata.js"></script>
 <script type="text/javascript" src="search/search.js"></script>
-<script type="text/javascript">
-/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
-  $(document).ready(function() { init_search(); });
-/* @license-end */
-</script>
-    <link href="doxygen.css" rel="stylesheet" type="text/css" />
-    <link href='https://fonts.googleapis.com/css?family=Roboto+Slab' rel='stylesheet' type='text/css'>
-    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
-    <link href="style.css" rel="stylesheet" type="text/css"/>
-    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
-    <script src="style.js"></script>
-    <script async defer src="git-buttons.js"></script>
-</head>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
 <body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
 <div id="top"><!-- do not remove this div, it is closed by doxygen! -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
-        <a class="navbar-brand" href="/">
-            <img src="logo.png" width="80px" alt="qb">
-            <span>C++ Actor Framework</span>
-        </a>
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
         <a class="navbar-brand" href="https://github.com/isndev/qb">
             <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
         </a>
@@ -53,54 +118,24 @@
         <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
         <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
         <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
-        <div>        <div id="MSearchBox" class="MSearchBoxInactive">
-        <span class="left">
-          <img id="MSearchSelect" src="search/mag_sel.png"
-               onmouseover="return searchBox.OnSearchSelectShow()"
-               onmouseout="return searchBox.OnSearchSelectHide()"
-               alt=""/>
-          <input type="text" id="MSearchField" value="Search" accesskey="S"
-               onfocus="searchBox.OnSearchFieldFocus(true)" 
-               onblur="searchBox.OnSearchFieldFocus(false)" 
-               onkeyup="searchBox.OnSearchFieldChange(event)"/>
-          </span><span class="right">
-            <a id="MSearchClose" href="javascript:searchBox.CloseResultsWindow()"><img id="MSearchCloseImg" border="0" src="search/close.png" alt=""/></a>
-          </span>
-        </div>
-</div>
-    </nav>
-    <!--<div id="titlearea">-->
-        <!--<table cellspacing="0" cellpadding="0">-->
-            <!--<tbody>-->
-            <!--<tr style="height: 56px;">-->
-                <!--&lt;!&ndash;BEGIN PROJECT_LOGO&ndash;&gt;-->
-                <!--<td id="projectlogo"><a href="https://github.com/isndev/qb"><img alt="Logo" style="height: 56px;" src="logo.png"/></a></td>-->
-                <!--&lt;!&ndash;END PROJECT_LOGO&ndash;&gt;-->
-                <!--&lt;!&ndash;BEGIN PROJECT_NAME&ndash;&gt;-->
-                <!--<td id="projectalign" style="padding-left: 0.5em;">-->
-                    <!--<div id="projectname">qb-->
-                        <!--&lt;!&ndash;BEGIN PROJECT_NUMBER&ndash;&gt;&#160;<span id="projectnumber">0.9.0.0</span>&lt;!&ndash;END PROJECT_NUMBER&ndash;&gt;-->
-                    <!--</div>>-->
-                <!--</td>-->
-                <!--&lt;!&ndash;END PROJECT_NAME&ndash;&gt;-->
-                <!--&lt;!&ndash;BEGIN !PROJECT_NAME&ndash;&gt;-->
-                <!--&lt;!&ndash;BEGIN PROJECT_BRIEF&ndash;&gt;-->
-                <!--<td style="padding-left: 0.5em;">-->
-                    <!--<div id="projectbrief">C++17 Actor Framework</div>-->
-                <!--</td>-->
-                <!--&lt;!&ndash;END PROJECT_BRIEF&ndash;&gt;-->
-                <!--&lt;!&ndash;END !PROJECT_NAME&ndash;&gt;-->
-            <!--</tr>-->
-            <!--</tbody>-->
-        <!--</table>-->
-    <!--</div>-->
+    </div>
     <!-- end header part -->
-<!-- Generated by Doxygen 1.8.15 -->
+<!-- Generated by Doxygen 1.14.0 -->
 <script type="text/javascript">
-/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
-var searchBox = new SearchBox("searchBox", "search",false,'Search');
-/* @license-end */
+var searchBox = new SearchBox("searchBox", "search/",'.html');
 </script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
 </div><!-- top -->
 <div id="side-nav" class="ui-resizable side-nav-resizable">
   <div id="nav-tree">
@@ -113,10 +148,9 @@ var searchBox = new SearchBox("searchBox", "search",false,'Search');
   </div>
 </div>
 <script type="text/javascript">
-/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
-$(document).ready(function(){initNavTree('classqb_1_1lockfree_1_1_spin_lock.html','');});
-/* @license-end */
+$(function(){initNavTree('classqb_1_1lockfree_1_1_spin_lock.html','','classqb_1_1lockfree_1_1_spin_lock-members'); });
 </script>
+<div id="container">
 <div id="doc-content">
 <!-- window showing the filter options -->
 <div id="MSearchSelectWindow"
@@ -127,61 +161,301 @@ $(document).ready(function(){initNavTree('classqb_1_1lockfree_1_1_spin_lock.html
 
 <!-- iframe showing the search results (closed by default) -->
 <div id="MSearchResultsWindow">
-<iframe src="javascript:void(0)" frameborder="0" 
-        name="MSearchResults" id="MSearchResults">
-</iframe>
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
 </div>
 
 <div class="header">
-  <div class="summary">
-<a href="#pub-methods">Public Member Functions</a> &#124;
-<a href="classqb_1_1lockfree_1_1_spin_lock-members.html">List of all members</a>  </div>
-  <div class="headertitle">
-<div class="title">qb::lockfree::SpinLock Class Reference</div>  </div>
+  <div class="headertitle"><div class="title">qb::lockfree::SpinLock Class Reference</div></div>
 </div><!--header-->
 <div class="contents">
+
+<p>A spinlock implementation for lightweight thread synchronization.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="spinlock_8h_source.html">spinlock.h</a>&gt;</code></p>
 <table class="memberdecls">
-<tr class="heading"><td colspan="2"><h2 class="groupheader"><a name="pub-methods"></a>
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
 Public Member Functions</h2></td></tr>
-<tr class="memitem:a92a13b50f95717b297ea2929208a37e4"><td class="memItemLeft" align="right" valign="top"><a id="a92a13b50f95717b297ea2929208a37e4"></a>
+<tr class="memitem:a299b83fff4f3d549ae6bec35c51c595b" id="r_a299b83fff4f3d549ae6bec35c51c595b"><td class="memItemLeft" align="right" valign="top"><a id="a299b83fff4f3d549ae6bec35c51c595b" name="a299b83fff4f3d549ae6bec35c51c595b"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>SpinLock</b> () noexcept</td></tr>
+<tr class="memdesc:a299b83fff4f3d549ae6bec35c51c595b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default constructor that initializes the lock to unlocked state. <br /></td></tr>
+<tr class="memitem:a92a13b50f95717b297ea2929208a37e4" id="r_a92a13b50f95717b297ea2929208a37e4"><td class="memItemLeft" align="right" valign="top"><a id="a92a13b50f95717b297ea2929208a37e4" name="a92a13b50f95717b297ea2929208a37e4"></a>
 &#160;</td><td class="memItemRight" valign="bottom"><b>SpinLock</b> (const <a class="el" href="classqb_1_1lockfree_1_1_spin_lock.html">SpinLock</a> &amp;)=delete</td></tr>
-<tr class="separator:a92a13b50f95717b297ea2929208a37e4"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a72209d0ba9e05dec235c67776bb6842e"><td class="memItemLeft" align="right" valign="top"><a id="a72209d0ba9e05dec235c67776bb6842e"></a>
-&#160;</td><td class="memItemRight" valign="bottom"><b>SpinLock</b> (<a class="el" href="classqb_1_1lockfree_1_1_spin_lock.html">SpinLock</a> &amp;&amp;)=default</td></tr>
-<tr class="separator:a72209d0ba9e05dec235c67776bb6842e"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ad1071d93ac224053c04c89a33bb6d0d2"><td class="memItemLeft" align="right" valign="top"><a id="ad1071d93ac224053c04c89a33bb6d0d2"></a>
+<tr class="memdesc:a92a13b50f95717b297ea2929208a37e4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Copy constructor is deleted to prevent copying of locks. <br /></td></tr>
+<tr class="memitem:a4727e0edf5145a017d98d3ffe9c6296b" id="r_a4727e0edf5145a017d98d3ffe9c6296b"><td class="memItemLeft" align="right" valign="top"><a id="a4727e0edf5145a017d98d3ffe9c6296b" name="a4727e0edf5145a017d98d3ffe9c6296b"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>SpinLock</b> (<a class="el" href="classqb_1_1lockfree_1_1_spin_lock.html">SpinLock</a> &amp;&amp;)=delete</td></tr>
+<tr class="memdesc:a4727e0edf5145a017d98d3ffe9c6296b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Move constructor is deleted to prevent moving of locks. <br /></td></tr>
+<tr class="memitem:aac6440e45845ca9dd104d60c9cbed0d8" id="r_aac6440e45845ca9dd104d60c9cbed0d8"><td class="memItemLeft" align="right" valign="top"><a id="aac6440e45845ca9dd104d60c9cbed0d8" name="aac6440e45845ca9dd104d60c9cbed0d8"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>~SpinLock</b> ()=default</td></tr>
+<tr class="memdesc:aac6440e45845ca9dd104d60c9cbed0d8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default destructor. <br /></td></tr>
+<tr class="memitem:a08314627ed957d36c2897c2cb46c8d8a" id="r_a08314627ed957d36c2897c2cb46c8d8a"><td class="memItemLeft" align="right" valign="top"><a id="a08314627ed957d36c2897c2cb46c8d8a" name="a08314627ed957d36c2897c2cb46c8d8a"></a>
 <a class="el" href="classqb_1_1lockfree_1_1_spin_lock.html">SpinLock</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator=</b> (const <a class="el" href="classqb_1_1lockfree_1_1_spin_lock.html">SpinLock</a> &amp;)=delete</td></tr>
-<tr class="separator:ad1071d93ac224053c04c89a33bb6d0d2"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ad24d1da389c6c2df1a9491e7d1a0e9fc"><td class="memItemLeft" align="right" valign="top"><a id="ad24d1da389c6c2df1a9491e7d1a0e9fc"></a>
-<a class="el" href="classqb_1_1lockfree_1_1_spin_lock.html">SpinLock</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator=</b> (<a class="el" href="classqb_1_1lockfree_1_1_spin_lock.html">SpinLock</a> &amp;&amp;)=default</td></tr>
-<tr class="separator:ad24d1da389c6c2df1a9491e7d1a0e9fc"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:aaf22e244a8a7e79cb346007ccd2f7f01"><td class="memItemLeft" align="right" valign="top"><a id="aaf22e244a8a7e79cb346007ccd2f7f01"></a>
-bool&#160;</td><td class="memItemRight" valign="bottom"><b>locked</b> () noexcept</td></tr>
-<tr class="separator:aaf22e244a8a7e79cb346007ccd2f7f01"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a00b5b477e08b6b39a1f120438dd891aa"><td class="memItemLeft" align="right" valign="top"><a id="a00b5b477e08b6b39a1f120438dd891aa"></a>
-bool&#160;</td><td class="memItemRight" valign="bottom"><b>trylock</b> () noexcept</td></tr>
-<tr class="separator:a00b5b477e08b6b39a1f120438dd891aa"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a5bef22a2ef1876307eaa711bb7b9740d"><td class="memItemLeft" align="right" valign="top"><a id="a5bef22a2ef1876307eaa711bb7b9740d"></a>
-bool&#160;</td><td class="memItemRight" valign="bottom"><b>trylock</b> (int64_t spin) noexcept</td></tr>
-<tr class="separator:a5bef22a2ef1876307eaa711bb7b9740d"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a6684fa5e881dca448754160e8fcf8214"><td class="memItemLeft" align="right" valign="top"><a id="a6684fa5e881dca448754160e8fcf8214"></a>
-bool&#160;</td><td class="memItemRight" valign="bottom"><b>trylock_for</b> (const <a class="el" href="classqb_1_1_timespan.html">Timespan</a> &amp;timespan) noexcept</td></tr>
-<tr class="separator:a6684fa5e881dca448754160e8fcf8214"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:ac709d0afd9865014022483e66254ac07"><td class="memItemLeft" align="right" valign="top"><a id="ac709d0afd9865014022483e66254ac07"></a>
-bool&#160;</td><td class="memItemRight" valign="bottom"><b>trylock_until</b> (const <a class="el" href="classqb_1_1_utc_timestamp.html">UtcTimestamp</a> &amp;timestamp) noexcept</td></tr>
-<tr class="separator:ac709d0afd9865014022483e66254ac07"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a041e2d2fe5c2b72a0928faa333a8165a"><td class="memItemLeft" align="right" valign="top"><a id="a041e2d2fe5c2b72a0928faa333a8165a"></a>
-void&#160;</td><td class="memItemRight" valign="bottom"><b>lock</b> () noexcept</td></tr>
-<tr class="separator:a041e2d2fe5c2b72a0928faa333a8165a"><td class="memSeparator" colspan="2">&#160;</td></tr>
-<tr class="memitem:a8094bd3b0bd6a2a5031416b1cae620d8"><td class="memItemLeft" align="right" valign="top"><a id="a8094bd3b0bd6a2a5031416b1cae620d8"></a>
-void&#160;</td><td class="memItemRight" valign="bottom"><b>unlock</b> () noexcept</td></tr>
-<tr class="separator:a8094bd3b0bd6a2a5031416b1cae620d8"><td class="memSeparator" colspan="2">&#160;</td></tr>
+<tr class="memdesc:a08314627ed957d36c2897c2cb46c8d8a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Copy assignment operator is deleted to prevent copying of locks. <br /></td></tr>
+<tr class="memitem:a6b35c9bb995ab567b3889f7b5895a9da" id="r_a6b35c9bb995ab567b3889f7b5895a9da"><td class="memItemLeft" align="right" valign="top"><a id="a6b35c9bb995ab567b3889f7b5895a9da" name="a6b35c9bb995ab567b3889f7b5895a9da"></a>
+<a class="el" href="classqb_1_1lockfree_1_1_spin_lock.html">SpinLock</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator=</b> (<a class="el" href="classqb_1_1lockfree_1_1_spin_lock.html">SpinLock</a> &amp;&amp;)=delete</td></tr>
+<tr class="memdesc:a6b35c9bb995ab567b3889f7b5895a9da"><td class="mdescLeft">&#160;</td><td class="mdescRight">Move assignment operator is deleted to prevent moving of locks. <br /></td></tr>
+<tr class="memitem:aaf22e244a8a7e79cb346007ccd2f7f01" id="r_aaf22e244a8a7e79cb346007ccd2f7f01"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aaf22e244a8a7e79cb346007ccd2f7f01">locked</a> () noexcept</td></tr>
+<tr class="memdesc:aaf22e244a8a7e79cb346007ccd2f7f01"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check if the spinlock is currently locked.  <br /></td></tr>
+<tr class="memitem:a00b5b477e08b6b39a1f120438dd891aa" id="r_a00b5b477e08b6b39a1f120438dd891aa"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a00b5b477e08b6b39a1f120438dd891aa">trylock</a> () noexcept</td></tr>
+<tr class="memdesc:a00b5b477e08b6b39a1f120438dd891aa"><td class="mdescLeft">&#160;</td><td class="mdescRight">Try to acquire the lock without spinning.  <br /></td></tr>
+<tr class="memitem:a5bef22a2ef1876307eaa711bb7b9740d" id="r_a5bef22a2ef1876307eaa711bb7b9740d"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a5bef22a2ef1876307eaa711bb7b9740d">trylock</a> (int64_t spin) noexcept</td></tr>
+<tr class="memdesc:a5bef22a2ef1876307eaa711bb7b9740d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Try to acquire the lock with a maximum number of spin attempts.  <br /></td></tr>
+<tr class="memitem:a6684fa5e881dca448754160e8fcf8214" id="r_a6684fa5e881dca448754160e8fcf8214"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a6684fa5e881dca448754160e8fcf8214">trylock_for</a> (const <a class="el" href="group___time.html#gae78c5c6234d6e18e0806f0a2a4132b24">Timespan</a> &amp;timespan) noexcept</td></tr>
+<tr class="memdesc:a6684fa5e881dca448754160e8fcf8214"><td class="mdescLeft">&#160;</td><td class="mdescRight">Try to acquire the lock for a specified time duration.  <br /></td></tr>
+<tr class="memitem:ac709d0afd9865014022483e66254ac07" id="r_ac709d0afd9865014022483e66254ac07"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ac709d0afd9865014022483e66254ac07">trylock_until</a> (const <a class="el" href="group___time.html#ga7c1a7973573e3ff49700b6f4df0b381d">UtcTimestamp</a> &amp;timestamp) noexcept</td></tr>
+<tr class="memdesc:ac709d0afd9865014022483e66254ac07"><td class="mdescLeft">&#160;</td><td class="mdescRight">Try to acquire the lock until a specified point in time.  <br /></td></tr>
+<tr class="memitem:a041e2d2fe5c2b72a0928faa333a8165a" id="r_a041e2d2fe5c2b72a0928faa333a8165a"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a041e2d2fe5c2b72a0928faa333a8165a">lock</a> () noexcept</td></tr>
+<tr class="memdesc:a041e2d2fe5c2b72a0928faa333a8165a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Acquire the lock, waiting indefinitely if necessary.  <br /></td></tr>
+<tr class="memitem:a8094bd3b0bd6a2a5031416b1cae620d8" id="r_a8094bd3b0bd6a2a5031416b1cae620d8"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a8094bd3b0bd6a2a5031416b1cae620d8">unlock</a> () noexcept</td></tr>
+<tr class="memdesc:a8094bd3b0bd6a2a5031416b1cae620d8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Release the lock.  <br /></td></tr>
 </table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>A spinlock implementation for lightweight thread synchronization. </p>
+<p>A spinlock is a lock that causes a thread trying to acquire it to wait in a loop ("spin") while repeatedly checking if the lock is available. This implementation provides methods to acquire the lock with various strategies such as trying for a specific duration or spin count. </p>
+</div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="aaf22e244a8a7e79cb346007ccd2f7f01" name="aaf22e244a8a7e79cb346007ccd2f7f01"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aaf22e244a8a7e79cb346007ccd2f7f01">&#9670;&#160;</a></span>locked()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::lockfree::SpinLock::locked </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Check if the spinlock is currently locked. </p>
+<dl class="section return"><dt>Returns</dt><dd>true if the lock is held, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="a00b5b477e08b6b39a1f120438dd891aa" name="a00b5b477e08b6b39a1f120438dd891aa"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a00b5b477e08b6b39a1f120438dd891aa">&#9670;&#160;</a></span>trylock() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::lockfree::SpinLock::trylock </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Try to acquire the lock without spinning. </p>
+<p>This method attempts to acquire the lock once and returns immediately regardless of success.</p>
+<dl class="section return"><dt>Returns</dt><dd>true if the lock was acquired, false if it was already locked </dd></dl>
+
+</div>
+</div>
+<a id="a5bef22a2ef1876307eaa711bb7b9740d" name="a5bef22a2ef1876307eaa711bb7b9740d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5bef22a2ef1876307eaa711bb7b9740d">&#9670;&#160;</a></span>trylock() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::lockfree::SpinLock::trylock </td>
+          <td>(</td>
+          <td class="paramtype">int64_t</td>          <td class="paramname"><span class="paramname"><em>spin</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Try to acquire the lock with a maximum number of spin attempts. </p>
+<p>This method attempts to acquire the lock, spinning for up to 'spin' iterations if necessary.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">spin</td><td>Maximum number of spin iterations </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the lock was acquired, false if maximum spins exceeded </dd></dl>
+
+</div>
+</div>
+<a id="a6684fa5e881dca448754160e8fcf8214" name="a6684fa5e881dca448754160e8fcf8214"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6684fa5e881dca448754160e8fcf8214">&#9670;&#160;</a></span>trylock_for()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::lockfree::SpinLock::trylock_for </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="group___time.html#gae78c5c6234d6e18e0806f0a2a4132b24">Timespan</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>timespan</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Try to acquire the lock for a specified time duration. </p>
+<p>This method attempts to acquire the lock, spinning until either the lock is acquired or the specified duration has elapsed.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">timespan</td><td>Maximum duration to try acquiring the lock </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the lock was acquired, false if the timeout expired </dd></dl>
+
+</div>
+</div>
+<a id="ac709d0afd9865014022483e66254ac07" name="ac709d0afd9865014022483e66254ac07"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ac709d0afd9865014022483e66254ac07">&#9670;&#160;</a></span>trylock_until()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::lockfree::SpinLock::trylock_until </td>
+          <td>(</td>
+          <td class="paramtype">const <a class="el" href="group___time.html#ga7c1a7973573e3ff49700b6f4df0b381d">UtcTimestamp</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>timestamp</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Try to acquire the lock until a specified point in time. </p>
+<p>This method attempts to acquire the lock, spinning until either the lock is acquired or the specified timestamp is reached.</p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">timestamp</td><td>Point in time until which to try acquiring the lock </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the lock was acquired, false if the timeout expired </dd></dl>
+
+</div>
+</div>
+<a id="a041e2d2fe5c2b72a0928faa333a8165a" name="a041e2d2fe5c2b72a0928faa333a8165a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a041e2d2fe5c2b72a0928faa333a8165a">&#9670;&#160;</a></span>lock()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::lockfree::SpinLock::lock </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Acquire the lock, waiting indefinitely if necessary. </p>
+<p>This method spins until the lock is acquired, with no timeout. It should be used with caution as it can potentially cause deadlocks or waste <a class="el" href="classqb_1_1_c_p_u.html" title="Provides platform-independent access to CPU information.">CPU</a> resources if the lock is held for a long time. </p>
+
+</div>
+</div>
+<a id="a8094bd3b0bd6a2a5031416b1cae620d8" name="a8094bd3b0bd6a2a5031416b1cae620d8"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8094bd3b0bd6a2a5031416b1cae620d8">&#9670;&#160;</a></span>unlock()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::lockfree::SpinLock::unlock </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Release the lock. </p>
+<p>This method releases the lock, allowing other threads to acquire it. </p>
+
+</div>
+</div>
 </div><!-- contents -->
 </div><!-- doc-content -->
-<!-- HTML footer for doxygen 1.8.14-->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><b>lockfree</b></li><li class="navelem"><a href="classqb_1_1lockfree_1_1_spin_lock.html">SpinLock</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
 </div>
 </body>
 </html>

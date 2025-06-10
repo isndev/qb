@@ -1,0 +1,1660 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/compression.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/compression.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('compression_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">compression.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___compression.html">Compression Utilities</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Data compression utilities for the QB IO library.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &lt;functional&gt;</code><br />
+<code>#include &lt;limits&gt;</code><br />
+<code>#include &lt;stdexcept&gt;</code><br />
+<code>#include &lt;string&gt;</code><br />
+<code>#include &lt;zlib.h&gt;</code><br />
+<code>#include &quot;<a class="el" href="system_2allocator_2_pipe_8h_source.html">qb/system/allocator/pipe.h</a>&quot;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for compression.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="compression_8h__incl.png" border="0" usemap="#ainclude_2qb_2io_2compression_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2compression_8h" id="ainclude_2qb_2io_2compression_8h">
+<area shape="rect" title="Data compression utilities for the QB IO library." alt="" coords="104,5,288,31"/>
+<area shape="rect" title=" " alt="" coords="5,86,83,112"/>
+<area shape="poly" title=" " alt="" coords="174,34,82,81,80,77,172,29"/>
+<area shape="rect" title=" " alt="" coords="75,241,128,267"/>
+<area shape="poly" title=" " alt="" coords="194,32,114,228,110,225,189,30"/>
+<area shape="rect" title=" " alt="" coords="152,241,230,267"/>
+<area shape="poly" title=" " alt="" coords="198,31,194,226,189,226,193,31"/>
+<area shape="rect" title=" " alt="" coords="253,241,307,267"/>
+<area shape="poly" title=" " alt="" coords="201,31,218,101,249,192,267,227,262,229,244,194,213,102,196,32"/>
+<area shape="rect" title=" " alt="" coords="259,86,312,112"/>
+<area shape="poly" title=" " alt="" coords="211,29,262,74,258,78,208,33"/>
+<area shape="rect" href="system_2allocator_2_pipe_8h.html" title="Implementation of a dynamic extensible buffer." alt="" coords="783,79,918,120"/>
+<area shape="poly" title=" " alt="" coords="288,28,768,85,767,91,288,33"/>
+<area shape="rect" title=" " alt="" coords="831,241,881,267"/>
+<area shape="poly" title=" " alt="" coords="919,106,976,115,1035,128,1085,144,1104,155,1117,166,1123,181,1117,195,1102,207,1080,218,1021,234,955,245,897,252,896,247,955,240,1020,229,1078,213,1099,203,1113,192,1117,181,1112,169,1101,159,1083,149,1033,133,975,120,918,111"/>
+<area shape="rect" title=" " alt="" coords="1014,241,1074,267"/>
+<area shape="poly" title=" " alt="" coords="919,104,981,113,1046,125,1103,143,1124,154,1138,166,1144,177,1144,187,1134,206,1114,223,1090,237,1087,232,1111,219,1130,203,1139,186,1139,178,1134,169,1121,158,1100,148,1045,131,981,118,919,110"/>
+<area shape="rect" title=" " alt="" coords="1151,241,1222,267"/>
+<area shape="poly" title=" " alt="" coords="919,105,1055,127,1117,144,1142,154,1159,166,1170,179,1178,194,1187,225,1182,227,1173,196,1166,182,1156,170,1139,159,1116,149,1054,132,918,110"/>
+<area shape="rect" title=" " alt="" coords="259,168,328,193"/>
+<area shape="poly" title=" " alt="" coords="783,110,589,132,343,170,342,165,589,127,782,105"/>
+<area shape="rect" href="string_8h.html" title="Fixed&#45;size string implementation optimized for performance." alt="" coords="352,168,434,193"/>
+<area shape="poly" title=" " alt="" coords="783,114,450,170,449,165,782,108"/>
+<area shape="rect" href="branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="459,168,618,193"/>
+<area shape="poly" title=" " alt="" coords="783,120,602,166,601,161,782,115"/>
+<area shape="rect" href="nocopy_8h.html" title="Defines a base class to make derived classes non&#45;copyable." alt="" coords="643,168,768,193"/>
+<area shape="poly" title=" " alt="" coords="816,123,742,162,739,158,813,118"/>
+<area shape="rect" href="prefix_8h.html" title="Platform&#45;specific alignment macros, cache&#45;line definitions, and related utilities." alt="" coords="792,168,909,193"/>
+<area shape="poly" title=" " alt="" coords="853,120,853,152,848,152,848,120"/>
+<area shape="rect" title=" " alt="" coords="934,168,1021,193"/>
+<area shape="poly" title=" " alt="" coords="883,118,946,157,943,161,881,122"/>
+<area shape="rect" title=" " alt="" coords="1045,168,1102,193"/>
+<area shape="poly" title=" " alt="" coords="907,118,1031,161,1029,166,905,123"/>
+<area shape="poly" title=" " alt="" coords="353,193,143,243,142,238,351,188"/>
+<area shape="poly" title=" " alt="" coords="360,196,241,238,239,233,358,191"/>
+<area shape="poly" title=" " alt="" coords="376,196,314,235,311,230,373,192"/>
+<area shape="poly" title=" " alt="" coords="435,188,447,191,654,224,816,245,815,250,653,229,446,196,434,194"/>
+<area shape="poly" title=" " alt="" coords="435,189,447,191,718,221,999,246,998,252,717,226,446,196,434,194"/>
+<area shape="poly" title=" " alt="" coords="436,189,447,191,626,212,766,220,907,226,1087,239,1136,244,1135,249,1086,244,906,231,766,225,626,217,446,196,435,194"/>
+<area shape="rect" title=" " alt="" coords="518,241,592,267"/>
+<area shape="poly" title=" " alt="" coords="422,191,514,232,512,237,420,196"/>
+<area shape="rect" href="build__macros_8h.html" title="Platform, compiler, and C++ feature detection macros for the QB Framework." alt="" coords="331,241,493,267"/>
+<area shape="poly" title=" " alt="" coords="399,193,408,226,402,227,394,194"/>
+<area shape="rect" title=" " alt="" coords="342,315,399,341"/>
+<area shape="poly" title=" " alt="" coords="407,269,388,303,383,300,403,266"/>
+<area shape="rect" title=" " alt="" coords="423,315,484,341"/>
+<area shape="poly" title=" " alt="" coords="421,266,441,300,436,303,417,269"/>
+</map>
+</div>
+</div>
+<p><a href="compression_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3Acompression_3A_3Aoperation_5Fresult" id="r_qb_3A_3Acompression_3A_3Aoperation_5Fresult"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1compression_1_1operation__result.html">qb::compression::operation_result</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Result of a compression/decompression operation.  <a href="structqb_1_1compression_1_1operation__result.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Acompression_3A_3Acompress_5Fprovider" id="r_qb_3A_3Acompression_3A_3Acompress_5Fprovider"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1compression_1_1compress__provider.html">qb::compression::compress_provider</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Abstract interface for compression algorithm providers.  <a href="classqb_1_1compression_1_1compress__provider.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Acompression_3A_3Adecompress_5Fprovider" id="r_qb_3A_3Acompression_3A_3Adecompress_5Fprovider"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1compression_1_1decompress__provider.html">qb::compression::decompress_provider</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Abstract interface for decompression algorithm providers.  <a href="classqb_1_1compression_1_1decompress__provider.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Acompression_3A_3Acompress_5Ffactory" id="r_qb_3A_3Acompression_3A_3Acompress_5Ffactory"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1compression_1_1compress__factory.html">qb::compression::compress_factory</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory interface for creating compression providers.  <a href="classqb_1_1compression_1_1compress__factory.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Acompression_3A_3Adecompress_5Ffactory" id="r_qb_3A_3Acompression_3A_3Adecompress_5Ffactory"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1compression_1_1decompress__factory.html">qb::compression::decompress_factory</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Factory interface for creating decompression providers.  <a href="classqb_1_1compression_1_1decompress__factory.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Acompression_3A_3Adeflate_3A_3Ato_5Fcompress" id="r_qb_3A_3Acompression_3A_3Adeflate_3A_3Ato_5Fcompress"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1compression_1_1deflate_1_1to__compress.html">qb::compression::deflate::to_compress</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Structure for passing compression parameters for deflate.  <a href="structqb_1_1compression_1_1deflate_1_1to__compress.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Acompression_3A_3Adeflate_3A_3Ato_5Funcompress" id="r_qb_3A_3Acompression_3A_3Adeflate_3A_3Ato_5Funcompress"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html">qb::compression::deflate::to_uncompress</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Structure for passing decompression parameters for deflate.  <a href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Acompression_3A_3Agzip_3A_3Ato_5Fcompress" id="r_qb_3A_3Acompression_3A_3Agzip_3A_3Ato_5Fcompress"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1compression_1_1gzip_1_1to__compress.html">qb::compression::gzip::to_compress</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Structure for passing gzip compression parameters.  <a href="structqb_1_1compression_1_1gzip_1_1to__compress.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Acompression_3A_3Agzip_3A_3Ato_5Funcompress" id="r_qb_3A_3Acompression_3A_3Agzip_3A_3Ato_5Funcompress"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html">qb::compression::gzip::to_uncompress</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Structure for passing gzip decompression parameters.  <a href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-namespaces" class="groupheader"><a id="namespaces" name="namespaces"></a>
+Namespaces</h2></td></tr>
+<tr class="memitem:builtin" id="r_builtin"><td class="memItemLeft" align="right" valign="top">namespace &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacebuiltin.html">builtin</a></td></tr>
+<tr class="memdesc:namespacebuiltin"><td class="mdescLeft">&#160;</td><td class="mdescRight">Namespace containing built-in compression implementations. <br /></td></tr>
+<tr class="memitem:algorithm" id="r_algorithm"><td class="memItemLeft" align="right" valign="top">namespace &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacealgorithm.html">algorithm</a></td></tr>
+<tr class="memdesc:namespacealgorithm"><td class="mdescLeft">&#160;</td><td class="mdescRight">Namespace containing algorithm constants and utilities. <br /></td></tr>
+<tr class="memitem:deflate" id="r_deflate"><td class="memItemLeft" align="right" valign="top">namespace &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacedeflate.html">deflate</a></td></tr>
+<tr class="memdesc:namespacedeflate"><td class="mdescLeft">&#160;</td><td class="mdescRight">Namespace containing deflate compression utilities. <br /></td></tr>
+<tr class="memitem:gzip" id="r_gzip"><td class="memItemLeft" align="right" valign="top">namespace &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespacegzip.html">gzip</a></td></tr>
+<tr class="memdesc:namespacegzip"><td class="mdescLeft">&#160;</td><td class="mdescRight">Namespace containing gzip compression utilities. <br /></td></tr>
+<tr class="memitem:qb_3A_3Agzip" id="r_qb_3A_3Agzip"><td class="memItemLeft" align="right" valign="top">namespace &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespaceqb_1_1gzip.html">qb::gzip</a></td></tr>
+<tr class="memdesc:namespaceqb_1_1gzip"><td class="mdescLeft">&#160;</td><td class="mdescRight">Namespace alias for gzip compression utilities. <br /></td></tr>
+<tr class="memitem:qb_3A_3Adeflate" id="r_qb_3A_3Adeflate"><td class="memItemLeft" align="right" valign="top">namespace &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="namespaceqb_1_1deflate.html">qb::deflate</a></td></tr>
+<tr class="memdesc:namespaceqb_1_1deflate"><td class="mdescLeft">&#160;</td><td class="mdescRight">Namespace alias for deflate compression utilities. <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-enum-members" class="groupheader"><a id="enum-members" name="enum-members"></a>
+Enumerations</h2></td></tr>
+<tr class="memitem:ga595180ab2e290075433bd021f96690f7" id="r_ga595180ab2e290075433bd021f96690f7"><td class="memItemLeft" align="right" valign="top">enum &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___compression.html#ga595180ab2e290075433bd021f96690f7">qb::compression::operation_hint</a> { <a class="el" href="group___compression.html#ga595180ab2e290075433bd021f96690f7a13931a8ceafb96190f2b56c89e1ecd16">qb::compression::is_last</a>
+, <a class="el" href="group___compression.html#ga595180ab2e290075433bd021f96690f7ab90e2646b6905887deae39c071ea273e">qb::compression::has_more</a>
+ }</td></tr>
+<tr class="memdesc:ga595180ab2e290075433bd021f96690f7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Hints for compression/decompression operations.  <a href="group___compression.html#ga595180ab2e290075433bd021f96690f7">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-func-members" class="groupheader"><a id="func-members" name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:aa173a31868cad6a07bc273283dcdbab4" id="r_aa173a31868cad6a07bc273283dcdbab4"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aa173a31868cad6a07bc273283dcdbab4">qb::compression::builtin::supported</a> ()</td></tr>
+<tr class="memdesc:aa173a31868cad6a07bc273283dcdbab4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check if compression support is available.  <br /></td></tr>
+<tr class="memitem:a9b0f016e7fba8c9e5ae9b06ce52bb28a" id="r_a9b0f016e7fba8c9e5ae9b06ce52bb28a"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a9b0f016e7fba8c9e5ae9b06ce52bb28a">qb::compression::builtin::algorithm::supported</a> (const std::string &amp;algorithm)</td></tr>
+<tr class="memdesc:a9b0f016e7fba8c9e5ae9b06ce52bb28a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check if a specific compression algorithm is supported.  <br /></td></tr>
+<tr class="memitem:a0729b3901ba2da230d709ad5f0bede21" id="r_a0729b3901ba2da230d709ad5f0bede21"><td class="memItemLeft" align="right" valign="top">std::unique_ptr&lt; <a class="el" href="classqb_1_1compression_1_1compress__provider.html">compress_provider</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a0729b3901ba2da230d709ad5f0bede21">qb::compression::builtin::make_compressor</a> (const std::string &amp;algorithm)</td></tr>
+<tr class="memdesc:a0729b3901ba2da230d709ad5f0bede21"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create a compressor for the specified algorithm.  <br /></td></tr>
+<tr class="memitem:a3817a47a63a9126acfa689255fa640e9" id="r_a3817a47a63a9126acfa689255fa640e9"><td class="memItemLeft" align="right" valign="top">std::unique_ptr&lt; <a class="el" href="classqb_1_1compression_1_1decompress__provider.html">decompress_provider</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a3817a47a63a9126acfa689255fa640e9">qb::compression::builtin::make_decompressor</a> (const std::string &amp;algorithm)</td></tr>
+<tr class="memdesc:a3817a47a63a9126acfa689255fa640e9"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create a decompressor for the specified algorithm.  <br /></td></tr>
+<tr class="memitem:acdedc8b7e5d60f90c967bc31d76166e7" id="r_acdedc8b7e5d60f90c967bc31d76166e7"><td class="memItemLeft" align="right" valign="top">const std::vector&lt; std::shared_ptr&lt; <a class="el" href="classqb_1_1compression_1_1compress__factory.html">compress_factory</a> &gt; &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#acdedc8b7e5d60f90c967bc31d76166e7">qb::compression::builtin::get_compress_factories</a> ()</td></tr>
+<tr class="memdesc:acdedc8b7e5d60f90c967bc31d76166e7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get all available compression factories.  <br /></td></tr>
+<tr class="memitem:a94010f5e6327498dfde5f7dae07035ea" id="r_a94010f5e6327498dfde5f7dae07035ea"><td class="memItemLeft" align="right" valign="top">std::shared_ptr&lt; <a class="el" href="classqb_1_1compression_1_1compress__factory.html">compress_factory</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a94010f5e6327498dfde5f7dae07035ea">qb::compression::builtin::get_compress_factory</a> (const std::string &amp;algorithm)</td></tr>
+<tr class="memdesc:a94010f5e6327498dfde5f7dae07035ea"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get a specific compression factory by algorithm name.  <br /></td></tr>
+<tr class="memitem:ab2973d434ac498c8455ff133f3015a67" id="r_ab2973d434ac498c8455ff133f3015a67"><td class="memItemLeft" align="right" valign="top">const std::vector&lt; std::shared_ptr&lt; <a class="el" href="classqb_1_1compression_1_1decompress__factory.html">decompress_factory</a> &gt; &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab2973d434ac498c8455ff133f3015a67">qb::compression::builtin::get_decompress_factories</a> ()</td></tr>
+<tr class="memdesc:ab2973d434ac498c8455ff133f3015a67"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get all available decompression factories.  <br /></td></tr>
+<tr class="memitem:ae9e21d528d2010deeb80ae69e4e47115" id="r_ae9e21d528d2010deeb80ae69e4e47115"><td class="memItemLeft" align="right" valign="top">std::shared_ptr&lt; <a class="el" href="classqb_1_1compression_1_1decompress__factory.html">decompress_factory</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae9e21d528d2010deeb80ae69e4e47115">qb::compression::builtin::get_decompress_factory</a> (const std::string &amp;algorithm)</td></tr>
+<tr class="memdesc:ae9e21d528d2010deeb80ae69e4e47115"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get a specific decompression factory by algorithm name.  <br /></td></tr>
+<tr class="memitem:a368d7a3fc591ac6d928fff8914135377" id="r_a368d7a3fc591ac6d928fff8914135377"><td class="memItemLeft" align="right" valign="top">std::unique_ptr&lt; <a class="el" href="classqb_1_1compression_1_1compress__provider.html">compress_provider</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a368d7a3fc591ac6d928fff8914135377">qb::compression::builtin::make_gzip_compressor</a> (int compressionLevel, int method, int strategy, int memLevel)</td></tr>
+<tr class="memdesc:a368d7a3fc591ac6d928fff8914135377"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create a gzip compressor with custom parameters.  <br /></td></tr>
+<tr class="memitem:a9b9ffb5f9e04b7cf482f3a50fe9ca6e6" id="r_a9b9ffb5f9e04b7cf482f3a50fe9ca6e6"><td class="memItemLeft" align="right" valign="top">std::unique_ptr&lt; <a class="el" href="classqb_1_1compression_1_1compress__provider.html">compress_provider</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a9b9ffb5f9e04b7cf482f3a50fe9ca6e6">qb::compression::builtin::make_deflate_compressor</a> (int compressionLevel, int method, int strategy, int memLevel)</td></tr>
+<tr class="memdesc:a9b9ffb5f9e04b7cf482f3a50fe9ca6e6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create a deflate compressor with custom parameters.  <br /></td></tr>
+<tr class="memitem:a7744f156d244325c13cc1c0b5c9b1dc9" id="r_a7744f156d244325c13cc1c0b5c9b1dc9"><td class="memItemLeft" align="right" valign="top">std::shared_ptr&lt; <a class="el" href="classqb_1_1compression_1_1compress__factory.html">compress_factory</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7744f156d244325c13cc1c0b5c9b1dc9">qb::compression::make_compress_factory</a> (const std::string &amp;algorithm, std::function&lt; std::unique_ptr&lt; <a class="el" href="classqb_1_1compression_1_1compress__provider.html">compress_provider</a> &gt;()&gt; make_compressor)</td></tr>
+<tr class="memdesc:a7744f156d244325c13cc1c0b5c9b1dc9"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create a custom compression factory.  <br /></td></tr>
+<tr class="memitem:a2554e58cf429efc1296a895d2d76928f" id="r_a2554e58cf429efc1296a895d2d76928f"><td class="memItemLeft" align="right" valign="top">std::shared_ptr&lt; <a class="el" href="classqb_1_1compression_1_1decompress__factory.html">decompress_factory</a> &gt;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2554e58cf429efc1296a895d2d76928f">qb::compression::make_decompress_factory</a> (const std::string &amp;algorithm, uint16_t weight, std::function&lt; std::unique_ptr&lt; <a class="el" href="classqb_1_1compression_1_1decompress__provider.html">decompress_provider</a> &gt;()&gt; make_decompressor)</td></tr>
+<tr class="memdesc:a2554e58cf429efc1296a895d2d76928f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Create a custom decompression factory.  <br /></td></tr>
+<tr class="memitem:a8c6bb76605443259d382240f3dbcde0c" id="r_a8c6bb76605443259d382240f3dbcde0c"><td class="memTemplParams" colspan="2">template&lt;typename Output&gt; </td></tr>
+<tr class="memitem:a8c6bb76605443259d382240f3dbcde0c template"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a8c6bb76605443259d382240f3dbcde0c">qb::compression::compress</a> (Output &amp;output, const char *data, std::size_t size, int level, int window_bits)</td></tr>
+<tr class="memdesc:a8c6bb76605443259d382240f3dbcde0c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compress data using a generic output container.  <br /></td></tr>
+<tr class="memitem:aa626fe30f8123ab5e91d04dec6f31dde" id="r_aa626fe30f8123ab5e91d04dec6f31dde"><td class="memItemLeft" align="right" valign="top">template&lt;&gt; </td></tr>
+<tr class="memitem:aa626fe30f8123ab5e91d04dec6f31dde template"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aa626fe30f8123ab5e91d04dec6f31dde">qb::compression::compress</a> (<a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;output, const char *data, std::size_t size, int level, int window_bits)</td></tr>
+<tr class="memdesc:aa626fe30f8123ab5e91d04dec6f31dde"><td class="mdescLeft">&#160;</td><td class="mdescRight">Specialization of compress for pipe allocator.  <br /></td></tr>
+<tr class="memitem:a33e52f56dd83e568a6d0cc2f5a828c1f" id="r_a33e52f56dd83e568a6d0cc2f5a828c1f"><td class="memTemplParams" colspan="2">template&lt;typename Output&gt; </td></tr>
+<tr class="memitem:a33e52f56dd83e568a6d0cc2f5a828c1f template"><td class="memItemLeft" align="right" valign="top">std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a33e52f56dd83e568a6d0cc2f5a828c1f">qb::compression::uncompress</a> (Output &amp;output, const char *data, std::size_t size, std::size_t max, int window_bits)</td></tr>
+<tr class="memdesc:a33e52f56dd83e568a6d0cc2f5a828c1f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Uncompress data using a generic output container.  <br /></td></tr>
+<tr class="memitem:aec9cab61761cfd0e1816fe7c0123b435" id="r_aec9cab61761cfd0e1816fe7c0123b435"><td class="memItemLeft" align="right" valign="top">template&lt;&gt; </td></tr>
+<tr class="memitem:aec9cab61761cfd0e1816fe7c0123b435 template"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aec9cab61761cfd0e1816fe7c0123b435">qb::compression::uncompress</a> (<a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;output, const char *data, std::size_t size, std::size_t max, int window_bits)</td></tr>
+<tr class="memdesc:aec9cab61761cfd0e1816fe7c0123b435"><td class="mdescLeft">&#160;</td><td class="mdescRight">Specialization of uncompress for pipe allocator.  <br /></td></tr>
+<tr class="memitem:a2a2bd63c23defac5c078d6e44611d7ef" id="r_a2a2bd63c23defac5c078d6e44611d7ef"><td class="memTemplParams" colspan="2">template&lt;typename Output&gt; </td></tr>
+<tr class="memitem:a2a2bd63c23defac5c078d6e44611d7ef template"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2a2bd63c23defac5c078d6e44611d7ef">qb::compression::deflate::compress</a> (Output &amp;output, const char *data, std::size_t size, int level=Z_DEFAULT_COMPRESSION)</td></tr>
+<tr class="memdesc:a2a2bd63c23defac5c078d6e44611d7ef"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compress data using deflate algorithm with a generic output container.  <br /></td></tr>
+<tr class="memitem:ab00642bc6981adb2258df17fafc6f630" id="r_ab00642bc6981adb2258df17fafc6f630"><td class="memItemLeft" align="right" valign="top">template&lt;&gt; </td></tr>
+<tr class="memitem:ab00642bc6981adb2258df17fafc6f630 template"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab00642bc6981adb2258df17fafc6f630">qb::compression::deflate::compress</a> (<a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;output, const char *data, std::size_t size, int level)</td></tr>
+<tr class="memdesc:ab00642bc6981adb2258df17fafc6f630"><td class="mdescLeft">&#160;</td><td class="mdescRight">Specialization of deflate compress for pipe allocator.  <br /></td></tr>
+<tr class="memitem:a7b9de303e2ede1d1eef7cb4bd586a3de" id="r_a7b9de303e2ede1d1eef7cb4bd586a3de"><td class="memTemplParams" colspan="2">template&lt;typename Output&gt; </td></tr>
+<tr class="memitem:a7b9de303e2ede1d1eef7cb4bd586a3de template"><td class="memItemLeft" align="right" valign="top">Output &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a7b9de303e2ede1d1eef7cb4bd586a3de">qb::compression::deflate::compress</a> (Output &amp;output, <a class="el" href="structqb_1_1compression_1_1deflate_1_1to__compress.html">to_compress</a> &amp;info)</td></tr>
+<tr class="memdesc:a7b9de303e2ede1d1eef7cb4bd586a3de"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compress data using the parameters in a <a class="el" href="structqb_1_1compression_1_1deflate_1_1to__compress.html" title="Structure for passing compression parameters for deflate.">to_compress</a> structure.  <br /></td></tr>
+<tr class="memitem:a4abf94ac793b01a5910af97f3d1bb5e2" id="r_a4abf94ac793b01a5910af97f3d1bb5e2"><td class="memItemLeft" align="right" valign="top">std::string&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a4abf94ac793b01a5910af97f3d1bb5e2">qb::compression::deflate::compress</a> (const char *data, std::size_t size, int level=Z_DEFAULT_COMPRESSION)</td></tr>
+<tr class="memdesc:a4abf94ac793b01a5910af97f3d1bb5e2"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compress data to a string.  <br /></td></tr>
+<tr class="memitem:a8ba1a21ce39cd89932e5dd718249d888" id="r_a8ba1a21ce39cd89932e5dd718249d888"><td class="memTemplParams" colspan="2">template&lt;typename Output&gt; </td></tr>
+<tr class="memitem:a8ba1a21ce39cd89932e5dd718249d888 template"><td class="memItemLeft" align="right" valign="top">std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a8ba1a21ce39cd89932e5dd718249d888">qb::compression::deflate::uncompress</a> (Output &amp;output, const char *data, std::size_t size, std::size_t max=0)</td></tr>
+<tr class="memdesc:a8ba1a21ce39cd89932e5dd718249d888"><td class="mdescLeft">&#160;</td><td class="mdescRight">Uncompress data using deflate algorithm with a generic output container.  <br /></td></tr>
+<tr class="memitem:a95dae98d61b2728db6f75c852fbdec71" id="r_a95dae98d61b2728db6f75c852fbdec71"><td class="memItemLeft" align="right" valign="top">template&lt;&gt; </td></tr>
+<tr class="memitem:a95dae98d61b2728db6f75c852fbdec71 template"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a95dae98d61b2728db6f75c852fbdec71">qb::compression::deflate::uncompress</a> (<a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;output, const char *data, std::size_t size, std::size_t level)</td></tr>
+<tr class="memdesc:a95dae98d61b2728db6f75c852fbdec71"><td class="mdescLeft">&#160;</td><td class="mdescRight">Specialization of deflate uncompress for pipe allocator.  <br /></td></tr>
+<tr class="memitem:abe945c06e8b97940adeebc7b01f441cb" id="r_abe945c06e8b97940adeebc7b01f441cb"><td class="memTemplParams" colspan="2">template&lt;typename Output&gt; </td></tr>
+<tr class="memitem:abe945c06e8b97940adeebc7b01f441cb template"><td class="memItemLeft" align="right" valign="top">Output &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#abe945c06e8b97940adeebc7b01f441cb">qb::compression::deflate::uncompress</a> (Output &amp;output, <a class="el" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html">to_uncompress</a> &amp;info)</td></tr>
+<tr class="memdesc:abe945c06e8b97940adeebc7b01f441cb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Uncompress data using the parameters in a <a class="el" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html" title="Structure for passing decompression parameters for deflate.">to_uncompress</a> structure.  <br /></td></tr>
+<tr class="memitem:a2470cdb85721c0a0925b6362dfb080d6" id="r_a2470cdb85721c0a0925b6362dfb080d6"><td class="memItemLeft" align="right" valign="top">std::string&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2470cdb85721c0a0925b6362dfb080d6">qb::compression::deflate::uncompress</a> (const char *data, std::size_t size)</td></tr>
+<tr class="memdesc:a2470cdb85721c0a0925b6362dfb080d6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Uncompress data to a string.  <br /></td></tr>
+<tr class="memitem:ga4a8ef5ad8f1be15598a482b0f5929c3f" id="r_ga4a8ef5ad8f1be15598a482b0f5929c3f"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___compression.html#ga4a8ef5ad8f1be15598a482b0f5929c3f">qb::compression::gzip::is_compressed</a> (const char *data, std::size_t size)</td></tr>
+<tr class="memdesc:ga4a8ef5ad8f1be15598a482b0f5929c3f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Check if data is compressed using gzip or zlib format.  <br /></td></tr>
+<tr class="memitem:a9d2c26c59cb39c364c62b3f4f95b5bc6" id="r_a9d2c26c59cb39c364c62b3f4f95b5bc6"><td class="memTemplParams" colspan="2">template&lt;typename Output&gt; </td></tr>
+<tr class="memitem:a9d2c26c59cb39c364c62b3f4f95b5bc6 template"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a9d2c26c59cb39c364c62b3f4f95b5bc6">qb::compression::gzip::compress</a> (Output &amp;output, const char *data, std::size_t size, int level=Z_DEFAULT_COMPRESSION)</td></tr>
+<tr class="memdesc:a9d2c26c59cb39c364c62b3f4f95b5bc6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compress data using gzip algorithm with a generic output container.  <br /></td></tr>
+<tr class="memitem:af8bfc93fd1e5e2d782ee037991332bfb" id="r_af8bfc93fd1e5e2d782ee037991332bfb"><td class="memItemLeft" align="right" valign="top">template&lt;&gt; </td></tr>
+<tr class="memitem:af8bfc93fd1e5e2d782ee037991332bfb template"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#af8bfc93fd1e5e2d782ee037991332bfb">qb::compression::gzip::compress</a> (<a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;output, const char *data, std::size_t size, int level)</td></tr>
+<tr class="memdesc:af8bfc93fd1e5e2d782ee037991332bfb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Specialization of gzip compress for pipe allocator.  <br /></td></tr>
+<tr class="memitem:a849f05a53f6b5b5b58d13de96ccc72c3" id="r_a849f05a53f6b5b5b58d13de96ccc72c3"><td class="memTemplParams" colspan="2">template&lt;typename Output&gt; </td></tr>
+<tr class="memitem:a849f05a53f6b5b5b58d13de96ccc72c3 template"><td class="memItemLeft" align="right" valign="top">Output &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a849f05a53f6b5b5b58d13de96ccc72c3">qb::compression::gzip::compress</a> (Output &amp;output, <a class="el" href="structqb_1_1compression_1_1gzip_1_1to__compress.html">to_compress</a> &amp;info)</td></tr>
+<tr class="memdesc:a849f05a53f6b5b5b58d13de96ccc72c3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compress data using the parameters in a <a class="el" href="structqb_1_1compression_1_1gzip_1_1to__compress.html" title="Structure for passing gzip compression parameters.">to_compress</a> structure.  <br /></td></tr>
+<tr class="memitem:acfcf428d559047edf7c5ed0aeba52c8a" id="r_acfcf428d559047edf7c5ed0aeba52c8a"><td class="memItemLeft" align="right" valign="top">std::string&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#acfcf428d559047edf7c5ed0aeba52c8a">qb::compression::gzip::compress</a> (const char *data, std::size_t size, int level=Z_DEFAULT_COMPRESSION)</td></tr>
+<tr class="memdesc:acfcf428d559047edf7c5ed0aeba52c8a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Compress data to a string using gzip.  <br /></td></tr>
+<tr class="memitem:ad25c65e7491eab2097e36a1d091c97d1" id="r_ad25c65e7491eab2097e36a1d091c97d1"><td class="memTemplParams" colspan="2">template&lt;typename Output&gt; </td></tr>
+<tr class="memitem:ad25c65e7491eab2097e36a1d091c97d1 template"><td class="memItemLeft" align="right" valign="top">std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ad25c65e7491eab2097e36a1d091c97d1">qb::compression::gzip::uncompress</a> (Output &amp;output, const char *data, std::size_t size, std::size_t max=0)</td></tr>
+<tr class="memdesc:ad25c65e7491eab2097e36a1d091c97d1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Uncompress data using gzip algorithm with a generic output container.  <br /></td></tr>
+<tr class="memitem:ab5b0c03b80aeb8fd7bfdeb50e11cf475" id="r_ab5b0c03b80aeb8fd7bfdeb50e11cf475"><td class="memItemLeft" align="right" valign="top">template&lt;&gt; </td></tr>
+<tr class="memitem:ab5b0c03b80aeb8fd7bfdeb50e11cf475 template"><td class="memItemLeft" align="right" valign="top">size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ab5b0c03b80aeb8fd7bfdeb50e11cf475">qb::compression::gzip::uncompress</a> (<a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;output, const char *data, std::size_t size, std::size_t level)</td></tr>
+<tr class="memdesc:ab5b0c03b80aeb8fd7bfdeb50e11cf475"><td class="mdescLeft">&#160;</td><td class="mdescRight">Specialization of gzip uncompress for pipe allocator.  <br /></td></tr>
+<tr class="memitem:a2b4ad690a92b28f69dade6b23f9af7ef" id="r_a2b4ad690a92b28f69dade6b23f9af7ef"><td class="memTemplParams" colspan="2">template&lt;typename Output&gt; </td></tr>
+<tr class="memitem:a2b4ad690a92b28f69dade6b23f9af7ef template"><td class="memItemLeft" align="right" valign="top">Output &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a2b4ad690a92b28f69dade6b23f9af7ef">qb::compression::gzip::uncompress</a> (Output &amp;output, <a class="el" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html">to_uncompress</a> &amp;info)</td></tr>
+<tr class="memdesc:a2b4ad690a92b28f69dade6b23f9af7ef"><td class="mdescLeft">&#160;</td><td class="mdescRight">Uncompress data using the parameters in a <a class="el" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html" title="Structure for passing gzip decompression parameters.">to_uncompress</a> structure.  <br /></td></tr>
+<tr class="memitem:a35361c95a3f22d248c9492b85007a479" id="r_a35361c95a3f22d248c9492b85007a479"><td class="memItemLeft" align="right" valign="top">std::string&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a35361c95a3f22d248c9492b85007a479">qb::compression::gzip::uncompress</a> (const char *data, std::size_t size)</td></tr>
+<tr class="memdesc:a35361c95a3f22d248c9492b85007a479"><td class="mdescLeft">&#160;</td><td class="mdescRight">Uncompress gzip data to a string.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-var-members" class="groupheader"><a id="var-members" name="var-members"></a>
+Variables</h2></td></tr>
+<tr class="memitem:aa684469d165cbbb683ee1c0627799f6d" id="r_aa684469d165cbbb683ee1c0627799f6d"><td class="memItemLeft" align="right" valign="top"><a id="aa684469d165cbbb683ee1c0627799f6d" name="aa684469d165cbbb683ee1c0627799f6d"></a>
+constexpr const char *const&#160;</td><td class="memItemRight" valign="bottom"><b>qb::compression::builtin::algorithm::GZIP</b> = &quot;gzip&quot;</td></tr>
+<tr class="memdesc:aa684469d165cbbb683ee1c0627799f6d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Identifier for the gzip compression algorithm. <br /></td></tr>
+<tr class="memitem:a7ede6da9b5e3b958a6e68b9ff364be57" id="r_a7ede6da9b5e3b958a6e68b9ff364be57"><td class="memItemLeft" align="right" valign="top"><a id="a7ede6da9b5e3b958a6e68b9ff364be57" name="a7ede6da9b5e3b958a6e68b9ff364be57"></a>
+constexpr const char *const&#160;</td><td class="memItemRight" valign="bottom"><b>qb::compression::builtin::algorithm::DEFLATE</b> = &quot;deflate&quot;</td></tr>
+<tr class="memdesc:a7ede6da9b5e3b958a6e68b9ff364be57"><td class="mdescLeft">&#160;</td><td class="mdescRight">Identifier for the deflate compression algorithm. <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Data compression utilities for the QB IO library. </p>
+<p>This file provides data compression and decompression functionality using the zlib library. It includes support for both deflate and gzip algorithms, with comprehensive interfaces for encoding and decoding data streams.</p>
+<p>The implementation includes templated functions for flexible buffer management, provider classes for algorithm abstraction, and utility functions for common compression operations.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Function Documentation</h2>
+<a id="aa173a31868cad6a07bc273283dcdbab4" name="aa173a31868cad6a07bc273283dcdbab4"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa173a31868cad6a07bc273283dcdbab4">&#9670;&#160;</a></span>supported() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::compression::builtin::supported </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Check if compression support is available. </p>
+<dl class="section return"><dt>Returns</dt><dd>true if compression is supported, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="a9b0f016e7fba8c9e5ae9b06ce52bb28a" name="a9b0f016e7fba8c9e5ae9b06ce52bb28a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9b0f016e7fba8c9e5ae9b06ce52bb28a">&#9670;&#160;</a></span>supported() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::compression::builtin::algorithm::supported </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>algorithm</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Check if a specific compression algorithm is supported. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">algorithm</td><td>Name of the algorithm to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the algorithm is supported, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="a0729b3901ba2da230d709ad5f0bede21" name="a0729b3901ba2da230d709ad5f0bede21"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a0729b3901ba2da230d709ad5f0bede21">&#9670;&#160;</a></span>make_compressor()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::unique_ptr&lt; compress_provider &gt; qb::compression::builtin::make_compressor </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>algorithm</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Create a compressor for the specified algorithm. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">algorithm</td><td>Name of the compression algorithm </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Unique pointer to a compressor provider, or nullptr if the algorithm is not supported </dd></dl>
+
+</div>
+</div>
+<a id="a3817a47a63a9126acfa689255fa640e9" name="a3817a47a63a9126acfa689255fa640e9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a3817a47a63a9126acfa689255fa640e9">&#9670;&#160;</a></span>make_decompressor()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::unique_ptr&lt; decompress_provider &gt; qb::compression::builtin::make_decompressor </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>algorithm</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Create a decompressor for the specified algorithm. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">algorithm</td><td>Name of the decompression algorithm </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Unique pointer to a decompressor provider, or nullptr if the algorithm is not supported </dd></dl>
+
+</div>
+</div>
+<a id="acdedc8b7e5d60f90c967bc31d76166e7" name="acdedc8b7e5d60f90c967bc31d76166e7"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acdedc8b7e5d60f90c967bc31d76166e7">&#9670;&#160;</a></span>get_compress_factories()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">const std::vector&lt; std::shared_ptr&lt; compress_factory &gt; &gt; qb::compression::builtin::get_compress_factories </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Get all available compression factories. </p>
+<dl class="section return"><dt>Returns</dt><dd>Vector of shared pointers to compression factories </dd></dl>
+
+</div>
+</div>
+<a id="a94010f5e6327498dfde5f7dae07035ea" name="a94010f5e6327498dfde5f7dae07035ea"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a94010f5e6327498dfde5f7dae07035ea">&#9670;&#160;</a></span>get_compress_factory()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::shared_ptr&lt; compress_factory &gt; qb::compression::builtin::get_compress_factory </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>algorithm</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Get a specific compression factory by algorithm name. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">algorithm</td><td>Name of the compression algorithm </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Shared pointer to the compression factory, or nullptr if not found </dd></dl>
+
+</div>
+</div>
+<a id="ab2973d434ac498c8455ff133f3015a67" name="ab2973d434ac498c8455ff133f3015a67"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab2973d434ac498c8455ff133f3015a67">&#9670;&#160;</a></span>get_decompress_factories()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">const std::vector&lt; std::shared_ptr&lt; decompress_factory &gt; &gt; qb::compression::builtin::get_decompress_factories </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Get all available decompression factories. </p>
+<dl class="section return"><dt>Returns</dt><dd>Vector of shared pointers to decompression factories </dd></dl>
+
+</div>
+</div>
+<a id="ae9e21d528d2010deeb80ae69e4e47115" name="ae9e21d528d2010deeb80ae69e4e47115"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae9e21d528d2010deeb80ae69e4e47115">&#9670;&#160;</a></span>get_decompress_factory()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::shared_ptr&lt; decompress_factory &gt; qb::compression::builtin::get_decompress_factory </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>algorithm</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Get a specific decompression factory by algorithm name. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">algorithm</td><td>Name of the decompression algorithm </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Shared pointer to the decompression factory, or nullptr if not found </dd></dl>
+
+</div>
+</div>
+<a id="a368d7a3fc591ac6d928fff8914135377" name="a368d7a3fc591ac6d928fff8914135377"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a368d7a3fc591ac6d928fff8914135377">&#9670;&#160;</a></span>make_gzip_compressor()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::unique_ptr&lt; compress_provider &gt; qb::compression::builtin::make_gzip_compressor </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>compressionLevel</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>method</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>strategy</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>memLevel</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Create a gzip compressor with custom parameters. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">compressionLevel</td><td>Compression level (1-9, where 9 is max compression) </td></tr>
+    <tr><td class="paramname">method</td><td>Compression method (usually Z_DEFLATED) </td></tr>
+    <tr><td class="paramname">strategy</td><td>Compression strategy (e.g., Z_DEFAULT_STRATEGY) </td></tr>
+    <tr><td class="paramname">memLevel</td><td>Memory usage level (1-9, where 9 uses most memory) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Unique pointer to a gzip compressor provider </dd></dl>
+
+</div>
+</div>
+<a id="a9b9ffb5f9e04b7cf482f3a50fe9ca6e6" name="a9b9ffb5f9e04b7cf482f3a50fe9ca6e6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9b9ffb5f9e04b7cf482f3a50fe9ca6e6">&#9670;&#160;</a></span>make_deflate_compressor()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::unique_ptr&lt; compress_provider &gt; qb::compression::builtin::make_deflate_compressor </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>compressionLevel</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>method</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>strategy</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>memLevel</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Create a deflate compressor with custom parameters. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">compressionLevel</td><td>Compression level (1-9, where 9 is max compression) </td></tr>
+    <tr><td class="paramname">method</td><td>Compression method (usually Z_DEFLATED) </td></tr>
+    <tr><td class="paramname">strategy</td><td>Compression strategy (e.g., Z_DEFAULT_STRATEGY) </td></tr>
+    <tr><td class="paramname">memLevel</td><td>Memory usage level (1-9, where 9 uses most memory) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Unique pointer to a deflate compressor provider </dd></dl>
+
+</div>
+</div>
+<a id="a7744f156d244325c13cc1c0b5c9b1dc9" name="a7744f156d244325c13cc1c0b5c9b1dc9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7744f156d244325c13cc1c0b5c9b1dc9">&#9670;&#160;</a></span>make_compress_factory()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::shared_ptr&lt; compress_factory &gt; qb::compression::make_compress_factory </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>algorithm</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::function&lt; std::unique_ptr&lt; <a class="el" href="classqb_1_1compression_1_1compress__provider.html">compress_provider</a> &gt;()&gt;</td>          <td class="paramname"><span class="paramname"><em>make_compressor</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Create a custom compression factory. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">algorithm</td><td>Name of the compression algorithm </td></tr>
+    <tr><td class="paramname">make_compressor</td><td>Function that creates compressor instances </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Shared pointer to the created compression factory </dd></dl>
+
+</div>
+</div>
+<a id="a2554e58cf429efc1296a895d2d76928f" name="a2554e58cf429efc1296a895d2d76928f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2554e58cf429efc1296a895d2d76928f">&#9670;&#160;</a></span>make_decompress_factory()</h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::shared_ptr&lt; decompress_factory &gt; qb::compression::make_decompress_factory </td>
+          <td>(</td>
+          <td class="paramtype">const std::string &amp;</td>          <td class="paramname"><span class="paramname"><em>algorithm</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">uint16_t</td>          <td class="paramname"><span class="paramname"><em>weight</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::function&lt; std::unique_ptr&lt; <a class="el" href="classqb_1_1compression_1_1decompress__provider.html">decompress_provider</a> &gt;()&gt;</td>          <td class="paramname"><span class="paramname"><em>make_decompressor</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Create a custom decompression factory. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">algorithm</td><td>Name of the decompression algorithm </td></tr>
+    <tr><td class="paramname">weight</td><td>Priority weight for the algorithm </td></tr>
+    <tr><td class="paramname">make_decompressor</td><td>Function that creates decompressor instances </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Shared pointer to the created decompression factory </dd></dl>
+
+</div>
+</div>
+<a id="a8c6bb76605443259d382240f3dbcde0c" name="a8c6bb76605443259d382240f3dbcde0c"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8c6bb76605443259d382240f3dbcde0c">&#9670;&#160;</a></span>compress() <span class="overload">[1/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Output&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">size_t qb::compression::compress </td>
+          <td>(</td>
+          <td class="paramtype">Output &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>level</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>window_bits</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Compress data using a generic output container. </p>
+<p>This template function compresses the provided data using the zlib library and stores the result in an output container that supports resize() and size() operations.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Output</td><td>Type of the output container </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Container for the compressed data (will be resized as needed) </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the data to compress </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the data in bytes </td></tr>
+    <tr><td class="paramname">level</td><td>Compression level (1-9, where 9 is max compression) </td></tr>
+    <tr><td class="paramname">window_bits</td><td>Window size bits with encoding format flag </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the compressed data in bytes </dd></dl>
+<dl class="exception"><dt>Exceptions</dt><dd>
+  <table class="exception">
+    <tr><td class="paramname">std::runtime_error</td><td>If initialization fails or input is too large </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="aa626fe30f8123ab5e91d04dec6f31dde" name="aa626fe30f8123ab5e91d04dec6f31dde"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa626fe30f8123ab5e91d04dec6f31dde">&#9670;&#160;</a></span>compress() <span class="overload">[2/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">size_t qb::compression::compress </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>level</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>window_bits</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Specialization of compress for pipe allocator. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Pipe allocator for the compressed data </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the data to compress </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the data in bytes </td></tr>
+    <tr><td class="paramname">level</td><td>Compression level (1-9, where 9 is max compression) </td></tr>
+    <tr><td class="paramname">window_bits</td><td>Window size bits with encoding format flag </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the compressed data in bytes </dd></dl>
+
+</div>
+</div>
+<a id="a33e52f56dd83e568a6d0cc2f5a828c1f" name="a33e52f56dd83e568a6d0cc2f5a828c1f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a33e52f56dd83e568a6d0cc2f5a828c1f">&#9670;&#160;</a></span>uncompress() <span class="overload">[1/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Output&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">std::size_t qb::compression::uncompress </td>
+          <td>(</td>
+          <td class="paramtype">Output &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>max</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>window_bits</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Uncompress data using a generic output container. </p>
+<p>This template function uncompresses the provided data using the zlib library and stores the result in an output container that supports resize() and size() operations.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Output</td><td>Type of the output container </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Container for the uncompressed data (will be resized as needed) </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the compressed data </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the compressed data in bytes </td></tr>
+    <tr><td class="paramname">max</td><td>Maximum allowed output size (0 for unlimited) </td></tr>
+    <tr><td class="paramname">window_bits</td><td>Window size bits with encoding format flag </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the uncompressed data in bytes </dd></dl>
+<dl class="exception"><dt>Exceptions</dt><dd>
+  <table class="exception">
+    <tr><td class="paramname">std::runtime_error</td><td>If initialization fails, input is too large, or max size exceeded </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="aec9cab61761cfd0e1816fe7c0123b435" name="aec9cab61761cfd0e1816fe7c0123b435"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aec9cab61761cfd0e1816fe7c0123b435">&#9670;&#160;</a></span>uncompress() <span class="overload">[2/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">size_t qb::compression::uncompress </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>max</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>window_bits</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Specialization of uncompress for pipe allocator. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Pipe allocator for the uncompressed data </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the compressed data </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the compressed data in bytes </td></tr>
+    <tr><td class="paramname">max</td><td>Maximum allowed output size (0 for unlimited) </td></tr>
+    <tr><td class="paramname">window_bits</td><td>Window size bits with encoding format flag </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the uncompressed data in bytes </dd></dl>
+
+</div>
+</div>
+<a id="a2a2bd63c23defac5c078d6e44611d7ef" name="a2a2bd63c23defac5c078d6e44611d7ef"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2a2bd63c23defac5c078d6e44611d7ef">&#9670;&#160;</a></span>compress() <span class="overload">[3/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Output&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">size_t qb::compression::deflate::compress </td>
+          <td>(</td>
+          <td class="paramtype">Output &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>level</em></span><span class="paramdefsep"> = </span><span class="paramdefval">Z_DEFAULT_COMPRESSION</span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Compress data using deflate algorithm with a generic output container. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Output</td><td>Type of the output container </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Container for the compressed data (will be resized as needed) </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the data to compress </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the data in bytes </td></tr>
+    <tr><td class="paramname">level</td><td>Compression level (1-9, where 9 is max compression) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the compressed data in bytes </dd></dl>
+
+</div>
+</div>
+<a id="ab00642bc6981adb2258df17fafc6f630" name="ab00642bc6981adb2258df17fafc6f630"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab00642bc6981adb2258df17fafc6f630">&#9670;&#160;</a></span>compress() <span class="overload">[4/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">size_t qb::compression::deflate::compress </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>level</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Specialization of deflate compress for pipe allocator. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Pipe allocator for the compressed data </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the data to compress </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the data in bytes </td></tr>
+    <tr><td class="paramname">level</td><td>Compression level (1-9, where 9 is max compression) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the compressed data in bytes </dd></dl>
+
+</div>
+</div>
+<a id="a7b9de303e2ede1d1eef7cb4bd586a3de" name="a7b9de303e2ede1d1eef7cb4bd586a3de"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a7b9de303e2ede1d1eef7cb4bd586a3de">&#9670;&#160;</a></span>compress() <span class="overload">[5/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Output&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">Output &amp; qb::compression::deflate::compress </td>
+          <td>(</td>
+          <td class="paramtype">Output &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structqb_1_1compression_1_1deflate_1_1to__compress.html">to_compress</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>info</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Compress data using the parameters in a to_compress structure. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Output</td><td>Type of the output container </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Container for the compressed data </td></tr>
+    <tr><td class="paramname">info</td><td>Structure containing compression parameters and results </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Reference to the output container </dd></dl>
+
+</div>
+</div>
+<a id="a4abf94ac793b01a5910af97f3d1bb5e2" name="a4abf94ac793b01a5910af97f3d1bb5e2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a4abf94ac793b01a5910af97f3d1bb5e2">&#9670;&#160;</a></span>compress() <span class="overload">[6/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::string qb::compression::deflate::compress </td>
+          <td>(</td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>level</em></span><span class="paramdefsep"> = </span><span class="paramdefval">Z_DEFAULT_COMPRESSION</span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Compress data to a string. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">data</td><td>Pointer to the data to compress </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the data in bytes </td></tr>
+    <tr><td class="paramname">level</td><td>Compression level (1-9, where 9 is max compression) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>String containing the compressed data </dd></dl>
+
+</div>
+</div>
+<a id="a8ba1a21ce39cd89932e5dd718249d888" name="a8ba1a21ce39cd89932e5dd718249d888"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8ba1a21ce39cd89932e5dd718249d888">&#9670;&#160;</a></span>uncompress() <span class="overload">[3/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Output&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">std::size_t qb::compression::deflate::uncompress </td>
+          <td>(</td>
+          <td class="paramtype">Output &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>max</em></span><span class="paramdefsep"> = </span><span class="paramdefval">0</span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Uncompress data using deflate algorithm with a generic output container. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Output</td><td>Type of the output container </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Container for the uncompressed data </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the compressed data </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the compressed data in bytes </td></tr>
+    <tr><td class="paramname">max</td><td>Maximum allowed output size (0 for unlimited) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the uncompressed data in bytes </dd></dl>
+
+</div>
+</div>
+<a id="a95dae98d61b2728db6f75c852fbdec71" name="a95dae98d61b2728db6f75c852fbdec71"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a95dae98d61b2728db6f75c852fbdec71">&#9670;&#160;</a></span>uncompress() <span class="overload">[4/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">size_t qb::compression::deflate::uncompress </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>level</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Specialization of deflate uncompress for pipe allocator. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Pipe allocator for the uncompressed data </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the compressed data </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the compressed data in bytes </td></tr>
+    <tr><td class="paramname">level</td><td>Maximum allowed output size (0 for unlimited) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the uncompressed data in bytes </dd></dl>
+
+</div>
+</div>
+<a id="abe945c06e8b97940adeebc7b01f441cb" name="abe945c06e8b97940adeebc7b01f441cb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abe945c06e8b97940adeebc7b01f441cb">&#9670;&#160;</a></span>uncompress() <span class="overload">[5/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Output&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">Output &amp; qb::compression::deflate::uncompress </td>
+          <td>(</td>
+          <td class="paramtype">Output &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structqb_1_1compression_1_1deflate_1_1to__uncompress.html">to_uncompress</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>info</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Uncompress data using the parameters in a to_uncompress structure. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Output</td><td>Type of the output container </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Container for the uncompressed data </td></tr>
+    <tr><td class="paramname">info</td><td>Structure containing decompression parameters and results </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Reference to the output container </dd></dl>
+
+</div>
+</div>
+<a id="a2470cdb85721c0a0925b6362dfb080d6" name="a2470cdb85721c0a0925b6362dfb080d6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2470cdb85721c0a0925b6362dfb080d6">&#9670;&#160;</a></span>uncompress() <span class="overload">[6/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::string qb::compression::deflate::uncompress </td>
+          <td>(</td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Uncompress data to a string. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">data</td><td>Pointer to the compressed data </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the compressed data in bytes </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>String containing the uncompressed data </dd></dl>
+
+</div>
+</div>
+<a id="a9d2c26c59cb39c364c62b3f4f95b5bc6" name="a9d2c26c59cb39c364c62b3f4f95b5bc6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a9d2c26c59cb39c364c62b3f4f95b5bc6">&#9670;&#160;</a></span>compress() <span class="overload">[7/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Output&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">size_t qb::compression::gzip::compress </td>
+          <td>(</td>
+          <td class="paramtype">Output &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>level</em></span><span class="paramdefsep"> = </span><span class="paramdefval">Z_DEFAULT_COMPRESSION</span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Compress data using gzip algorithm with a generic output container. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Output</td><td>Type of the output container </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Container for the compressed data (will be resized as needed) </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the data to compress </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the data in bytes </td></tr>
+    <tr><td class="paramname">level</td><td>Compression level (1-9, where 9 is max compression) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the compressed data in bytes </dd></dl>
+
+</div>
+</div>
+<a id="af8bfc93fd1e5e2d782ee037991332bfb" name="af8bfc93fd1e5e2d782ee037991332bfb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#af8bfc93fd1e5e2d782ee037991332bfb">&#9670;&#160;</a></span>compress() <span class="overload">[8/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">size_t qb::compression::gzip::compress </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>level</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Specialization of gzip compress for pipe allocator. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Pipe allocator for the compressed data </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the data to compress </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the data in bytes </td></tr>
+    <tr><td class="paramname">level</td><td>Compression level (1-9, where 9 is max compression) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the compressed data in bytes </dd></dl>
+
+</div>
+</div>
+<a id="a849f05a53f6b5b5b58d13de96ccc72c3" name="a849f05a53f6b5b5b58d13de96ccc72c3"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a849f05a53f6b5b5b58d13de96ccc72c3">&#9670;&#160;</a></span>compress() <span class="overload">[9/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Output&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">Output &amp; qb::compression::gzip::compress </td>
+          <td>(</td>
+          <td class="paramtype">Output &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structqb_1_1compression_1_1gzip_1_1to__compress.html">to_compress</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>info</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Compress data using the parameters in a to_compress structure. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Output</td><td>Type of the output container </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Container for the compressed data </td></tr>
+    <tr><td class="paramname">info</td><td>Structure containing compression parameters and results </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Reference to the output container </dd></dl>
+
+</div>
+</div>
+<a id="acfcf428d559047edf7c5ed0aeba52c8a" name="acfcf428d559047edf7c5ed0aeba52c8a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acfcf428d559047edf7c5ed0aeba52c8a">&#9670;&#160;</a></span>compress() <span class="overload">[10/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::string qb::compression::gzip::compress </td>
+          <td>(</td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>level</em></span><span class="paramdefsep"> = </span><span class="paramdefval">Z_DEFAULT_COMPRESSION</span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Compress data to a string using gzip. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">data</td><td>Pointer to the data to compress </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the data in bytes </td></tr>
+    <tr><td class="paramname">level</td><td>Compression level (1-9, where 9 is max compression) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>String containing the compressed data </dd></dl>
+
+</div>
+</div>
+<a id="ad25c65e7491eab2097e36a1d091c97d1" name="ad25c65e7491eab2097e36a1d091c97d1"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad25c65e7491eab2097e36a1d091c97d1">&#9670;&#160;</a></span>uncompress() <span class="overload">[7/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Output&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">std::size_t qb::compression::gzip::uncompress </td>
+          <td>(</td>
+          <td class="paramtype">Output &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>max</em></span><span class="paramdefsep"> = </span><span class="paramdefval">0</span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Uncompress data using gzip algorithm with a generic output container. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Output</td><td>Type of the output container </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Container for the uncompressed data </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the compressed data </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the compressed data in bytes </td></tr>
+    <tr><td class="paramname">max</td><td>Maximum allowed output size (0 for unlimited) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the uncompressed data in bytes </dd></dl>
+
+</div>
+</div>
+<a id="ab5b0c03b80aeb8fd7bfdeb50e11cf475" name="ab5b0c03b80aeb8fd7bfdeb50e11cf475"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ab5b0c03b80aeb8fd7bfdeb50e11cf475">&#9670;&#160;</a></span>uncompress() <span class="overload">[8/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">size_t qb::compression::gzip::uncompress </td>
+          <td>(</td>
+          <td class="paramtype"><a class="el" href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a>&lt; char &gt; &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>level</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Specialization of gzip uncompress for pipe allocator. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Pipe allocator for the uncompressed data </td></tr>
+    <tr><td class="paramname">data</td><td>Pointer to the compressed data </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the compressed data in bytes </td></tr>
+    <tr><td class="paramname">level</td><td>Maximum allowed output size (0 for unlimited) </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Size of the uncompressed data in bytes </dd></dl>
+
+</div>
+</div>
+<a id="a2b4ad690a92b28f69dade6b23f9af7ef" name="a2b4ad690a92b28f69dade6b23f9af7ef"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a2b4ad690a92b28f69dade6b23f9af7ef">&#9670;&#160;</a></span>uncompress() <span class="overload">[9/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename Output&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">Output &amp; qb::compression::gzip::uncompress </td>
+          <td>(</td>
+          <td class="paramtype">Output &amp;</td>          <td class="paramname"><span class="paramname"><em>output</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype"><a class="el" href="structqb_1_1compression_1_1gzip_1_1to__uncompress.html">to_uncompress</a> &amp;</td>          <td class="paramname"><span class="paramname"><em>info</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Uncompress data using the parameters in a to_uncompress structure. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">Output</td><td>Type of the output container </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">output</td><td>Container for the uncompressed data </td></tr>
+    <tr><td class="paramname">info</td><td>Structure containing decompression parameters and results </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>Reference to the output container </dd></dl>
+
+</div>
+</div>
+<a id="a35361c95a3f22d248c9492b85007a479" name="a35361c95a3f22d248c9492b85007a479"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a35361c95a3f22d248c9492b85007a479">&#9670;&#160;</a></span>uncompress() <span class="overload">[10/10]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::string qb::compression::gzip::uncompress </td>
+          <td>(</td>
+          <td class="paramtype">const char *</td>          <td class="paramname"><span class="paramname"><em>data</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em>size</em></span>&#160;)</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Uncompress gzip data to a string. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">data</td><td>Pointer to the compressed data </td></tr>
+    <tr><td class="paramname">size</td><td>Size of the compressed data in bytes </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>String containing the uncompressed data </dd></dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="compression_8h.html">compression.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

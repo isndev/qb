@@ -1,0 +1,27 @@
+<map id="include/qb/system/event/router.h" name="include/qb/system/event/router.h">
+<area shape="rect" id="Node000001" title="Event routing system." alt="" coords="226,5,390,46"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="70,102,127,127"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="258,49,141,96,139,97,137,92,139,92,256,44"/>
+<area shape="rect" id="Node000003" href="$unordered__map_8h.html" title="Optimized unordered map implementations." alt="" coords="152,94,291,135"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="290,48,253,85,250,81,286,45"/>
+<area shape="rect" id="Node000008" href="$branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="315,102,474,127"/>
+<area shape="poly" id="edge7_Node000001_Node000008" title=" " alt="" coords="330,45,374,89,370,93,326,48"/>
+<area shape="rect" id="Node000009" href="$type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="528,102,674,127"/>
+<area shape="poly" id="edge8_Node000001_Node000009" title=" " alt="" coords="376,44,546,94,545,99,374,49"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="5,190,59,216"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="177,138,72,185,71,185,69,181,70,180,175,133"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="82,190,128,216"/>
+<area shape="poly" id="edge4_Node000003_Node000005" title=" " alt="" coords="197,137,135,183,132,179,193,133"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="152,183,290,223"/>
+<area shape="poly" id="edge5_Node000003_Node000006" title=" " alt="" coords="224,135,224,167,219,167,219,135"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="314,190,424,216"/>
+<area shape="poly" id="edge6_Node000003_Node000007" title=" " alt="" coords="256,133,337,180,334,184,254,137"/>
+<area shape="rect" id="Node000010" title=" " alt="" coords="448,190,536,216"/>
+<area shape="poly" id="edge9_Node000009_Node000010" title=" " alt="" coords="588,130,521,182,518,178,584,126"/>
+<area shape="rect" id="Node000011" title=" " alt="" coords="560,190,642,216"/>
+<area shape="poly" id="edge10_Node000009_Node000011" title=" " alt="" coords="604,128,604,174,599,174,599,128"/>
+<area shape="rect" id="Node000012" title=" " alt="" coords="667,190,720,216"/>
+<area shape="poly" id="edge11_Node000009_Node000012" title=" " alt="" coords="616,126,671,177,668,181,612,130"/>
+<area shape="rect" id="Node000013" title=" " alt="" coords="744,190,811,216"/>
+<area shape="poly" id="edge12_Node000009_Node000013" title=" " alt="" coords="627,125,740,181,738,185,625,130"/>
+</map>

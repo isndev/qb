@@ -1,0 +1,7 @@
+<map id="qb::detail::is_mappish_impl&lt; T, std::void_t&lt; typename T::key_type, typename T::mapped_type, decltype(std::declval&lt; T &amp; &gt;()[std::declval&lt; const typename T::key_type &amp; &gt;()])&gt; &gt;" name="qb::detail::is_mappish_impl&lt; T, std::void_t&lt; typename T::key_type, typename T::mapped_type, decltype(std::declval&lt; T &amp; &gt;()[std::declval&lt; const typename T::key_type &amp; &gt;()])&gt; &gt;">
+<area shape="rect" id="Node000001" title="Specialization for types that have key_type, mapped_type, and operator[]." alt="" coords="16,79,230,195"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,5,113,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="75,44,94,77,89,80,71,46"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="136,5,238,31"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="175,46,157,80,152,77,171,44"/>
+</map>

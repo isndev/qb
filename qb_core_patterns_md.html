@@ -1,0 +1,481 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: QB-Core: Common Actor Patterns &amp; Utilities</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: QB-Core: Common Actor Patterns &amp; Utilities</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('qb_core_patterns_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">QB-Core: Common Actor Patterns &amp; Utilities </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>Discover and implement common actor design patterns and utilities within the QB Framework for robust application structure.</p>
+<h1>QB-Core: Common Actor Patterns &amp; Utilities</h1>
+<p>Beyond the fundamental actor and event mechanisms, <span class="tt">qb-core</span> supports and simplifies several common design patterns that are highly useful in building robust and maintainable actor-based systems. This guide explores some key patterns and utilities available to your <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span> implementations.</p>
+<h2>1. Finite State Machine (FSM) with Actors</h2>
+<p>Actors are an excellent way to model entities that have distinct states and transition between them based on incoming events.</p>
+<ul>
+<li><b>Concept:</b> An actor's internal member variables represent its current state. Its event handlers (<span class="tt">on(Event&amp;)</span> methods) contain the logic to process events, perform actions, and transition to new states.</li>
+<li><b>Implementation Strategy:</b><ol type="1">
+<li><b>Define States:</b> Use an <span class="tt">enum class</span> for clarity: <span class="tt">enum class MyFsmState { INITIAL, PROCESSING, COMPLETED, ERROR };</span></li>
+<li><b>Store Current State:</b> Add a member variable to your actor: <span class="tt">MyFsmState _current_state = MyFsmState::INITIAL;</span></li>
+<li><b>Define Events as FSM Inputs:</b> Events trigger state transitions or actions within a state.</li>
+<li><b>Implement State Logic in Handlers:</b> Inside your <span class="tt">on(SpecificEvent&amp;)</span> handlers, use <span class="tt">if</span> or <span class="tt">switch</span> statements based on <span class="tt">_current_state</span> to define behavior specific to that state and event.</li>
+<li><b>Transition State:</b> Update <span class="tt">_current_state</span> when a transition occurs.</li>
+<li><b>Actions:</b> Perform entry/exit actions for states, or actions during transitions, directly within the event handlers or dedicated private methods.</li>
+<li><b>Timed Transitions/Actions:</b> Use <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> to schedule events that trigger future state changes or actions (e.g., a timeout moving an FSM to an error state).</li>
+</ol>
+</li>
+<li><p class="startli"><b>Conceptual Example:</b> ```cpp #include &lt;<a class="el" href="_actor_8h.html" title="Convenience header for the core QB Actor components.">qb/actor.h</a>&gt; #include &lt;<a class="el" href="io_8h.html" title="Core I/O and logging utilities for the qb framework.">qb/io.h</a>&gt; // For <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout</a> #include &lt;<a class="el" href="async_8h.html" title="Main include file for the QB asynchronous I/O library.">qb/io/async.h</a>&gt; // For <a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a> #include &lt;<a class="el" href="string_8h.html" title="Fixed-size string implementation optimized for performance.">qb/string.h</a>&gt; // For <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a></p>
+<p class="startli">enum class OrderState { PENDING_PAYMENT, PROCESSING, SHIPPED, CANCELLED }; struct PlaceOrderEvent : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;128&gt;</a> order_details; }; struct PaymentReceivedEvent : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;64&gt;</a> payment_info; }; struct ShipOrderEvent : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> {}; // Internal event from a callback</p>
+<p class="startli">class OrderActor : public <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a> { private: OrderState _state = OrderState::PENDING_PAYMENT; <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;128&gt;</a> _order_data;</p>
+<p class="startli">public: bool onInit() override { registerEvent&lt;PlaceOrderEvent&gt;(*this); registerEvent&lt;PaymentReceivedEvent&gt;(*this); registerEvent&lt;ShipOrderEvent&gt;(*this); registerEvent&lt;qb::KillEvent&gt;(*this); return true; }</p>
+<p class="startli">void on(const PlaceOrderEvent&amp; event) { _order_data = event.order_details; _state = OrderState::PENDING_PAYMENT; <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Order [" &lt;&lt; id() &lt;&lt; "]: Placed. Details: " &lt;&lt; _order_data.c_str() &lt;&lt; ". Awaiting payment.\n"; }</p>
+<p class="startli">void on(const PaymentReceivedEvent&amp; event) { if (_state == OrderState::PENDING_PAYMENT) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Order [" &lt;&lt; id() &lt;&lt; "]: Payment received (info: " &lt;&lt; event.payment_info.c_str() &lt;&lt; "). Transitioning to PROCESSING.\n"; _state = OrderState::PROCESSING; // Simulate processing delay then ship <a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a>([this](){ if (this-&gt;is_alive()) this-&gt;push&lt;ShipOrderEvent&gt;(this-&gt;id()); }, 2.0 /* 2 seconds processing */); } }</p>
+<p class="startli">void on(const ShipOrderEvent&amp; /*event*/) { if (_state == OrderState::PROCESSING) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Order [" &lt;&lt; id() &lt;&lt; "]: Processing complete. Transitioning to SHIPPED.\n"; _state = OrderState::SHIPPED; // Notify customer, etc. } } // ... other handlers for cancellation, KillEvent etc. ... void on(const qb::KillEvent&amp; ke) { kill(); } }; ``<span class="tt"></span></p>
+</li>
+<li><span class="tt">  **(Full Example:** </span>example/core/example8_state_machine.cpp` provides a detailed coffee machine FSM.)**</li>
+</ul>
+<h2>2. Service Actors: Core-Local Singletons</h2>
+<ul>
+<li><b>Header:</b> <span class="tt"><a class="el" href="core_2_actor_8h.html" title="Actor base class and core actor model implementation.">qb/core/Actor.h</a></span></li>
+<li><b>Purpose:</b> To implement actors that should exist as a single instance per <span class="tt">VirtualCore</span>. This is ideal for managing core-local resources, providing centralized services within a core (like logging, metrics aggregation, or specialized computation), or acting as a well-known entry point for actors on that core.</li>
+<li><b>Defining a Service Actor:</b><ol type="1">
+<li><b>Create a Unique Tag:</b> Define an empty struct to serve as a unique identifier for your service type. <span class="tt">cpp
+        struct MyCoreLoggerTag {}; // Unique tag for the logger service
+        </span></li>
+<li><p class="startli"><b>Inherit from <span class="tt"><a class="el" href="classqb_1_1_service_actor.html" title="SingletonActor base class, ensuring one instance per VirtualCore per Tag.">qb::ServiceActor</a>&lt;Tag&gt;</span>:</b> Your service actor class inherits from <span class="tt"><a class="el" href="classqb_1_1_service_actor.html" title="SingletonActor base class, ensuring one instance per VirtualCore per Tag.">qb::ServiceActor</a>&lt;YourTagType&gt;</span>. ```cpp #include &lt;<a class="el" href="_actor_8h.html" title="Convenience header for the core QB Actor components.">qb/actor.h</a>&gt; #include &lt;<a class="el" href="_event_8h.html" title="Convenience header for the QB Event system.">qb/event.h</a>&gt; #include &lt;<a class="el" href="io_8h.html" title="Core I/O and logging utilities for the qb framework.">qb/io.h</a>&gt; // For <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout</a> #include &lt;<a class="el" href="string_8h.html" title="Fixed-size string implementation optimized for performance.">qb/string.h</a>&gt;</p>
+<p class="startli">struct LogEvent : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;128&gt;</a> message; LogEvent(const char* msg) : message(msg) {} };</p>
+<p class="startli">class CoreLoggerService : public <a class="el" href="classqb_1_1_service_actor.html" title="SingletonActor base class, ensuring one instance per VirtualCore per Tag.">qb::ServiceActor&lt;MyCoreLoggerTag&gt;</a> { public: bool onInit() override { registerEvent&lt;LogEvent&gt;(*this); registerEvent&lt;qb::KillEvent&gt;(*this); <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "CoreLoggerService [" &lt;&lt; id() &lt;&lt; "] initialized on core " &lt;&lt; getIndex() &lt;&lt; ".\n"; return true; }</p>
+<p class="startli">void on(const LogEvent&amp; event) { <a class="el" href="classqb_1_1io_1_1cout.html" title="Thread-safe console output class.">qb::io::cout()</a> &lt;&lt; "Core [" &lt;&lt; getIndex() &lt;&lt; "] Log: " &lt;&lt; event.message.c_str() &lt;&lt; " (from " &lt;&lt; event.getSource() &lt;&lt; ")\n"; } void on(const qb::KillEvent&amp; ke) { kill(); } }; <span class="tt"></span></p>
+</li>
+</ol>
+</li>
+<li><span class="tt">  **Adding to the Engine:** Add a `ServiceActor` like any other actor using `main.addActor&lt;MyServiceActorType&gt;(core_id, constructor_args...);`. The framework ensures that only one instance per tag can be added to each core; subsequent attempts on the same core with the same tag will fail during `addActor`.</span></li>
+<li><span class="tt">  **Accessing a Service Actor:**<ul>
+<li>**From any actor (potentially inter-core):** Use `qb::Actor::getServiceId&lt;ServiceTag&gt;(target_core_id)` to get the `qb::ActorId` of the service on a specific core. Then, send events to this ID.
+        </li>
+</ul>
+</span>cpp // Inside AnotherActor // <a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> logger_service_id = getServiceId&lt;MyCoreLoggerTag&gt;(relevant_core_id); // if (logger_service_id.is_valid()) { // push&lt;LogEvent&gt;(logger_service_id, "Message from AnotherActor"); // } <span class="tt"><ul>
+<li>**From an actor on the *same* `VirtualCore`:** Use `getService&lt;ServiceActorType&gt;()` to get a direct raw pointer to the service actor instance. This allows for direct method calls (use with caution as it bypasses the mailbox) or for sending events via `service_ptr-&gt;id()`.
+        </li>
+</ul>
+</span>cpp // Inside SameCoreActor, assuming CoreLoggerService is on this core // CoreLoggerService* logger = getService&lt;CoreLoggerService&gt;(); // if (logger) { // // Option 1: Send event (recommended for actor model purity) // logger-&gt;push&lt;LogEvent&gt;(logger-&gt;id(), "Direct log from SameCoreActor"); // // Option 2: Direct call (use cautiously!) // // logger-&gt;somePublicMethod(); // } ``<span class="tt"></span></li>
+<li><span class="tt">  **(Reference:** </span>test-actor-add.cpp<span class="tt">, </span>test-actor-service-event.cpp`**)</li>
+</ul>
+<h2>3. Periodic Callbacks: <span class="tt"><a class="el" href="classqb_1_1_i_callback.html" title="Interface for actor callbacks.">qb::ICallback</a></span></h2>
+<ul>
+<li><b>Header:</b> <span class="tt"><a class="el" href="core_2_i_callback_8h.html" title="Callback interface for the QB Actor Framework.">qb/core/ICallback.h</a></span></li>
+<li><b>Purpose:</b> Enables an actor to execute a piece of code (<span class="tt">onCallback()</span>) on every iteration of its <span class="tt">VirtualCore</span>'s main processing loop. This typically happens after all queued events for that loop iteration have been processed.</li>
+<li><b>How to Use:</b><ol type="1">
+<li><b>Multiple Inheritance:</b> Your actor must inherit from both <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span> and <span class="tt"><a class="el" href="classqb_1_1_i_callback.html" title="Interface for actor callbacks.">qb::ICallback</a></span>. <span class="tt">class MyPeriodicActor : public <a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a>, public <a class="el" href="classqb_1_1_i_callback.html" title="Interface for actor callbacks.">qb::ICallback</a> { ... };</span></li>
+<li><b>Implement <span class="tt">onCallback()</span>:</b> Override the pure virtual method <span class="tt">virtual void onCallback() override;</span> This method will contain the logic to be executed periodically.</li>
+<li><b>Register/Unregister:</b><ul>
+<li>Call <span class="tt">registerCallback(*this);</span> (usually within <span class="tt">onInit()</span>) to start receiving callbacks.</li>
+<li>Call <span class="tt">unregisterCallback(*this);</span> (or just <span class="tt">unregisterCallback();</span> from within the actor) to stop receiving callbacks. This can be done from <span class="tt">onCallback()</span> itself or any event handler.</li>
+</ul>
+</li>
+</ol>
+</li>
+<li><b>Critical Note:</b> The <span class="tt">onCallback()</span> method <b>must be very fast and strictly non-blocking</b>. Any delay or blocking operation within <span class="tt">onCallback()</span> will directly stall the <span class="tt">VirtualCore</span>'s event loop, affecting all other actors on that core.</li>
+<li><b>Use Cases:</b> Polling external non-event-driven systems, performing periodic checks or maintenance tasks, driving simulations, implementing game loops.</li>
+</ul>
+<div class="fragment"><div class="line"><span class="preprocessor">#include &lt;<a class="code" href="_actor_8h.html">qb/actor.h</a>&gt;</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="_i_callback_8h.html">qb/icallback.h</a>&gt;</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="io_8h.html">qb/io.h</a>&gt;</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="_event_8h.html">qb/event.h</a>&gt;</span></div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">struct </span>TickEvent : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> { <span class="keywordtype">int</span> tick_count; };</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">class </span>HeartbeatActor : <span class="keyword">public</span> <a class="code hl_class" href="classqb_1_1_actor.html">qb::Actor</a>, <span class="keyword">public</span> <a class="code hl_interface" href="classqb_1_1_i_callback.html">qb::ICallback</a> {</div>
+<div class="line"><span class="keyword">private</span>:</div>
+<div class="line">    <span class="keywordtype">int</span> _heartbeat_count = 0;</div>
+<div class="line">    <span class="keyword">const</span> <span class="keywordtype">int</span> _max_heartbeats = 5;</div>
+<div class="line"><span class="keyword">public</span>:</div>
+<div class="line">    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">onInit</a>()<span class="keyword"> override </span>{</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;qb::KillEvent&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a84ac3bd992b62dc8db9509529d1e01ec">registerCallback</a>(*<span class="keyword">this</span>); <span class="comment">// Start receiving periodic callbacks</span></div>
+<div class="line">        <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;HeartbeatActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] registered for callbacks.\n&quot;</span>;</div>
+<div class="line">        <span class="keywordflow">return</span> <span class="keyword">true</span>;</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_i_callback.html#abaccc7c519a89b821bc142b078166d56">onCallback</a>()<span class="keyword"> override </span>{</div>
+<div class="line">        _heartbeat_count++;</div>
+<div class="line">        <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;HeartbeatActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] onCallback: Tick #&quot;</span> &lt;&lt; _heartbeat_count &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line">        <span class="comment">// Example: broadcast a tick event every few callbacks</span></div>
+<div class="line">        <span class="keywordflow">if</span> (_heartbeat_count % 2 == 0) {</div>
+<div class="line">            <a class="code hl_function" href="classqb_1_1_actor.html#ab229da5c0fdd23b494427e5de43bb394">broadcast&lt;TickEvent&gt;</a>(_heartbeat_count);</div>
+<div class="line">        }</div>
+<div class="line">        <span class="keywordflow">if</span> (_heartbeat_count &gt;= _max_heartbeats) {</div>
+<div class="line">            qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;HeartbeatActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] reached max heartbeats, unregistering callback and stopping.\n&quot;</span>;</div>
+<div class="line">            <a class="code hl_function" href="classqb_1_1_actor.html#a23b8e60367d2a59e087e225e4a4df1c8">unregisterCallback</a>(); <span class="comment">// Stop receiving callbacks</span></div>
+<div class="line">            <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>();               <span class="comment">// Terminate the actor</span></div>
+<div class="line">        }</div>
+<div class="line">    }</div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> qb::KillEvent&amp; ke) { <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>(); }</div>
+<div class="line">};</div>
+<div class="ttc" id="a_actor_8h_html"><div class="ttname"><a href="_actor_8h.html">actor.h</a></div><div class="ttdoc">Convenience header for the core QB Actor components.</div></div>
+<div class="ttc" id="a_event_8h_html"><div class="ttname"><a href="_event_8h.html">event.h</a></div><div class="ttdoc">Convenience header for the QB Event system.</div></div>
+<div class="ttc" id="a_i_callback_8h_html"><div class="ttname"><a href="_i_callback_8h.html">icallback.h</a></div><div class="ttdoc">Convenience header for the QB ICallback interface.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html"><div class="ttname"><a href="classqb_1_1_actor.html">qb::Actor</a></div><div class="ttdoc">Base class for all actors in the qb framework.</div><div class="ttdef"><b>Definition</b> Actor.h:106</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a0b7ee1d2a9d94988860df5ba5f19072c"><div class="ttname"><a href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">qb::Actor::registerEvent</a></div><div class="ttdeci">void registerEvent(_Actor &amp;actor) const noexcept</div><div class="ttdoc">Subscribe this actor to listen for a specific event type.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a23b8e60367d2a59e087e225e4a4df1c8"><div class="ttname"><a href="classqb_1_1_actor.html#a23b8e60367d2a59e087e225e4a4df1c8">qb::Actor::unregisterCallback</a></div><div class="ttdeci">void unregisterCallback(_Actor &amp;actor) const noexcept</div><div class="ttdoc">Unregister a previously registered looped callback for this actor.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a245a2b7be6e086bf622d2acb78b9bded"><div class="ttname"><a href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">qb::Actor::on</a></div><div class="ttdeci">void on(KillEvent const &amp;event) noexcept</div><div class="ttdoc">Handler for KillEvent.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a84ac3bd992b62dc8db9509529d1e01ec"><div class="ttname"><a href="classqb_1_1_actor.html#a84ac3bd992b62dc8db9509529d1e01ec">qb::Actor::registerCallback</a></div><div class="ttdeci">void registerCallback(_Actor &amp;actor) const noexcept</div><div class="ttdoc">Register a looped callback for this actor.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a9999e9e7f937bbcf96a20127fe993092"><div class="ttname"><a href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">qb::Actor::id</a></div><div class="ttdeci">ActorId id() const noexcept</div><div class="ttdoc">Get ActorId.</div><div class="ttdef"><b>Definition</b> Actor.h:368</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_ab229da5c0fdd23b494427e5de43bb394"><div class="ttname"><a href="classqb_1_1_actor.html#ab229da5c0fdd23b494427e5de43bb394">qb::Actor::broadcast</a></div><div class="ttdeci">void broadcast(_Args &amp;&amp;...args) const noexcept</div><div class="ttdoc">Broadcast an event to all actors on all cores.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_ad097f332e8617029cbd8031c1f8fdf84"><div class="ttname"><a href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">qb::Actor::kill</a></div><div class="ttdeci">void kill() const noexcept</div><div class="ttdoc">Terminate this actor and mark it for removal from the system.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_ae61217d6ef37d4658b41cec6d2f6719f"><div class="ttname"><a href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">qb::Actor::onInit</a></div><div class="ttdeci">virtual bool onInit()</div><div class="ttdoc">Initialization callback, called once after construction and ID assignment.</div><div class="ttdef"><b>Definition</b> Actor.h:198</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html"><div class="ttname"><a href="classqb_1_1_event.html">qb::Event</a></div><div class="ttdoc">Base class for all events in the actor system.</div><div class="ttdef"><b>Definition</b> Event.h:85</div></div>
+<div class="ttc" id="aclassqb_1_1_i_callback_html"><div class="ttname"><a href="classqb_1_1_i_callback.html">qb::ICallback</a></div><div class="ttdoc">Interface for actor callbacks.</div><div class="ttdef"><b>Definition</b> ICallback.h:49</div></div>
+<div class="ttc" id="aclassqb_1_1_i_callback_html_abaccc7c519a89b821bc142b078166d56"><div class="ttname"><a href="classqb_1_1_i_callback.html#abaccc7c519a89b821bc142b078166d56">qb::ICallback::onCallback</a></div><div class="ttdeci">virtual void onCallback()=0</div><div class="ttdoc">Callback function executed during each VirtualCore loop iteration.</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1cout_html"><div class="ttname"><a href="classqb_1_1io_1_1cout.html">qb::io::cout</a></div><div class="ttdoc">Thread-safe console output class.</div><div class="ttdef"><b>Definition</b> io.h:100</div></div>
+<div class="ttc" id="aio_8h_html"><div class="ttname"><a href="io_8h.html">io.h</a></div><div class="ttdoc">Core I/O and logging utilities for the qb framework.</div></div>
+</div><!-- fragment --><ul>
+<li><b>(Reference:</b> <span class="tt">test-actor-callback.cpp</span>, <span class="tt">example1_basic_actors.cpp</span> (SenderActor), <span class="tt">example10_distributed_computing.cpp</span> (TaskGeneratorActor, WorkerNodeActor for heartbeats).**)</li>
+</ul>
+<h2>4. Referenced Actors: <span class="tt">addRefActor</span></h2>
+<ul>
+<li><b>Header:</b> <span class="tt"><a class="el" href="core_2_actor_8h.html" title="Actor base class and core actor model implementation.">qb/core/Actor.h</a></span></li>
+<li><b>Purpose:</b> Allows an actor (the "parent") to create another actor (the "child") that resides <b>on the same <span class="tt">VirtualCore</span></b> and to obtain a direct raw pointer to this child actor. This enables direct method calls from the parent to the child, bypassing the event mailbox for those specific interactions.</li>
+<li><b>Creation:</b> From within a parent actor, call <span class="tt">ChildActorType* child_ptr = addRefActor&lt;ChildActorType&gt;(constructor_args...);</span></li>
+<li><b>Return Value:</b> Returns a raw pointer to the successfully created and initialized child actor. If the child's <span class="tt">onInit()</span> returns <span class="tt">false</span>, <span class="tt">addRefActor</span> returns <span class="tt">nullptr</span>.</li>
+<li><b>Lifecycle &amp; Ownership:</b><ul>
+<li>The parent actor <b>does not own</b> the referenced child actor in terms of C++ object lifetime managed by <span class="tt">delete</span>. The child actor, like any other actor, manages its own lifecycle and must call <span class="tt">kill()</span> on itself (or be killed via an event) to terminate.</li>
+<li>The parent must be aware that the raw pointer can become dangling if the child actor terminates independently. There's no automatic notification to the parent if the child pointer becomes invalid (unless a custom protocol is implemented).</li>
+</ul>
+</li>
+<li><b>Communication:</b><ul>
+<li><b>Parent -&gt; Child:</b><ul>
+<li><b>Via Events (Recommended):</b> <span class="tt">push&lt;MyEvent&gt;(child_ptr-&gt;id(), ...);</span> This respects the actor model and uses the child's mailbox.</li>
+<li><b>Direct Method Call (Use with EXTREME CAUTION):</b> <span class="tt">child_ptr-&gt;somePublicMethod();</span>. This bypasses the child's event queue and executes the method synchronously within the parent's current event processing context. This can break actor isolation guarantees and lead to complex state management issues if not handled very carefully. It should only be considered for highly performance-sensitive, simple interactions where the child is tightly controlled by the parent.</li>
+</ul>
+</li>
+<li><b>Child -&gt; Parent:</b> The child needs the parent's <span class="tt"><a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a></span> (e.g., passed via the child's constructor) to send events back.</li>
+</ul>
+</li>
+<li><b>Use Cases:</b> Tightly coupled helper actors that are logically part of the parent and reside on the same core, where direct method calls offer a <em>significant, measured</em> performance benefit for very frequent, simple operations that don't naturally fit the event-passing model.</li>
+</ul>
+<div class="fragment"><div class="line"><span class="comment">// Forward declarations for events and child actor</span></div>
+<div class="line"><span class="keyword">struct </span>HelperTask : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> { <span class="keywordtype">int</span> a, b; };</div>
+<div class="line"><span class="keyword">struct </span>HelperResult : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> { <span class="keywordtype">int</span> result; };</div>
+<div class="line"><span class="keyword">class </span>ChildHelperActor;</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">class </span>ParentActor : <span class="keyword">public</span> <a class="code hl_class" href="classqb_1_1_actor.html">qb::Actor</a> {</div>
+<div class="line"><span class="keyword">private</span>:</div>
+<div class="line">    ChildHelperActor* _helper = <span class="keyword">nullptr</span>;</div>
+<div class="line"><span class="keyword">public</span>:</div>
+<div class="line">    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">onInit</a>()<span class="keyword"> override </span>{</div>
+<div class="line">        _helper = <a class="code hl_function" href="classqb_1_1_actor.html#a3137f7dedde694d2bc3cdb1a074485f2">addRefActor&lt;ChildHelperActor&gt;</a>(<span class="keywordtype">id</span>()); <span class="comment">// Pass my ID to child</span></div>
+<div class="line">        <span class="keywordflow">if</span> (!_helper) {</div>
+<div class="line">            <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;ParentActor: Failed to create ChildHelperActor!\n&quot;</span>;</div>
+<div class="line">            <span class="keywordflow">return</span> <span class="keyword">false</span>;</div>
+<div class="line">        }</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;HelperResult&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;qb::KillEvent&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line">        <span class="keywordflow">return</span> <span class="keyword">true</span>;</div>
+<div class="line">    }</div>
+<div class="line">    <span class="keywordtype">void</span> doWorkViaHelper(<span class="keywordtype">int</span> val_a, <span class="keywordtype">int</span> val_b) {</div>
+<div class="line">        <span class="keywordflow">if</span> (_helper &amp;&amp; _helper-&gt;is_alive()) { <span class="comment">// Check if helper is still valid</span></div>
+<div class="line">            <a class="code hl_function" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">push&lt;HelperTask&gt;</a>(_helper-&gt;id(), val_a, val_b);</div>
+<div class="line">        }</div>
+<div class="line">    }</div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> HelperResult&amp; event) {</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;ParentActor: Received result from helper: &quot;</span> &lt;&lt; <span class="keyword">event</span>.result &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line">    }</div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> qb::KillEvent&amp; ke) { </div>
+<div class="line">        <span class="keywordflow">if</span> (_helper &amp;&amp; _helper-&gt;is_alive()) <a class="code hl_function" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">push&lt;qb::KillEvent&gt;</a>(_helper-&gt;id());</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>(); </div>
+<div class="line">    }</div>
+<div class="line">};</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">class </span>ChildHelperActor : <span class="keyword">public</span> <a class="code hl_class" href="classqb_1_1_actor.html">qb::Actor</a> {</div>
+<div class="line"><span class="keyword">private</span>:</div>
+<div class="line">    qb::ActorId _parent_id;</div>
+<div class="line"><span class="keyword">public</span>:</div>
+<div class="line">    <span class="keyword">explicit</span> ChildHelperActor(qb::ActorId parent_id) : _parent_id(parent_id) {}</div>
+<div class="line">    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">onInit</a>()<span class="keyword"> override </span>{ </div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;HelperTask&gt;</a>(*<span class="keyword">this</span>); </div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;qb::KillEvent&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line">        <span class="keywordflow">return</span> <span class="keyword">true</span>; </div>
+<div class="line">    }</div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> HelperTask&amp; event) { </div>
+<div class="line">        <span class="keywordtype">int</span> res = <span class="keyword">event</span>.a + <span class="keyword">event</span>.b; </div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">push&lt;HelperResult&gt;</a>(_parent_id, res); </div>
+<div class="line">    }</div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> qb::KillEvent&amp; ke) { <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>(); }</div>
+<div class="line">};</div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a3137f7dedde694d2bc3cdb1a074485f2"><div class="ttname"><a href="classqb_1_1_actor.html#a3137f7dedde694d2bc3cdb1a074485f2">qb::Actor::addRefActor</a></div><div class="ttdeci">_Actor * addRefActor(_Args &amp;&amp;...args) const</div><div class="ttdoc">Create and initialize a new referenced actor on the same VirtualCore.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a45e94c367d5877e6406bf356c145a529"><div class="ttname"><a href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">qb::Actor::push</a></div><div class="ttdeci">_Event &amp; push(ActorId const &amp;dest, _Args &amp;&amp;...args) const noexcept</div><div class="ttdoc">Send a new event in an ordered fashion to a destination actor, returning a reference to it.</div></div>
+</div><!-- fragment --><ul>
+<li><b>(Reference:</b> <span class="tt">test-actor-add.cpp::TestRefActor</span>, <span class="tt">test-actor-state-persistence.cpp</span> uses it for a mock storage actor.**)</li>
+</ul>
+<h2>5. Actor Dependency Resolution: <span class="tt">require&lt;T&gt;</span> &amp; <span class="tt">RequireEvent</span></h2>
+<ul>
+<li><b>Headers:</b> <span class="tt"><a class="el" href="core_2_actor_8h.html" title="Actor base class and core actor model implementation.">qb/core/Actor.h</a></span>, <span class="tt"><a class="el" href="core_2_event_8h.html" title="Event system for the QB Actor Framework.">qb/core/Event.h</a></span></li>
+<li><b>Purpose:</b> Allows an actor to dynamically discover other running actors of a specific type (or types) within the system. This is particularly useful for locating <span class="tt">ServiceActor</span> instances or other key collaborators without needing their <span class="tt">ActorId</span>s at construction time.</li>
+<li><b>Mechanism:</b><ol type="1">
+<li><b>Requester Actor:</b> Calls <span class="tt">require&lt;TargetActorTypeOne, TargetActorTypeTwo, ...&gt;();</span> (usually in its <span class="tt">onInit()</span> method). This broadcasts an internal <span class="tt">PingEvent</span> tagged with the type(s) being sought.</li>
+<li><b>Target Actors:</b> Live actors of the <span class="tt">TargetActorType</span> automatically respond to this specific <span class="tt">PingEvent</span> by sending a <span class="tt"><a class="el" href="structqb_1_1_require_event.html" title="Event used to query actor status.">qb::RequireEvent</a></span> back to the original requester.</li>
+<li><b>Requester Actor Handles <span class="tt">RequireEvent</span>:</b> The requester must register for and implement <span class="tt">void on(const <a class="el" href="structqb_1_1_require_event.html" title="Event used to query actor status.">qb::RequireEvent</a>&amp; event)</span>. Inside this handler:<ul>
+<li>Use <span class="tt">is&lt;TargetActorType&gt;(event)</span> to check if the response pertains to the <span class="tt">TargetActorType</span> you're interested in.</li>
+<li>Check <span class="tt">event.status == <a class="el" href="group___event_core.html#ggaa22d3309e028be849695a6bce167b19fabd9f7c5d6ab4201b138a3e51dab7056f" title="The actor is active and operational.">qb::ActorStatus::Alive</a></span>.</li>
+<li>If both are true, then <span class="tt">event.getSource()</span> provides the <span class="tt"><a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a></span> of a live instance of <span class="tt">TargetActorType</span>.</li>
+</ul>
+</li>
+</ol>
+</li>
+</ul>
+<div class="fragment"><div class="line"><span class="comment">// Actor needing to find a LoggerService</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="string_8h.html">qb/string.h</a>&gt;</span> <span class="comment">// For qb::string in LogEvent</span></div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// Assume LogEvent and CoreLoggerService are defined as in the Service Actor example earlier</span></div>
+<div class="line"><span class="comment">// struct LogEvent : qb::Event { qb::string&lt;128&gt; message; ... };</span></div>
+<div class="line"><span class="comment">// struct MyCoreLoggerTag {};</span></div>
+<div class="line"><span class="comment">// class CoreLoggerService : public qb::ServiceActor&lt;MyCoreLoggerTag&gt; { ... };</span></div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">struct </span>MyMessageToLog : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> { <a class="code hl_class" href="classqb_1_1string.html">qb::string&lt;64&gt;</a> content; };</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">class </span>ClientWithDynamicLogger : <span class="keyword">public</span> <a class="code hl_class" href="classqb_1_1_actor.html">qb::Actor</a> {</div>
+<div class="line"><span class="keyword">private</span>:</div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1_actor_id.html">qb::ActorId</a> _logger_service_id; <span class="comment">// Will store the found logger ID</span></div>
+<div class="line">    <span class="keywordtype">bool</span> _logger_found = <span class="keyword">false</span>;</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">public</span>:</div>
+<div class="line">    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">onInit</a>()<span class="keyword"> override </span>{</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;qb::RequireEvent&gt;</a>(*<span class="keyword">this</span>); <span class="comment">// Must handle RequireEvent</span></div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;MyMessageToLog&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;qb::KillEvent&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line"> </div>
+<div class="line">        <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;Client [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Sending require for CoreLoggerService.\n&quot;</span>;</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#afdd14b09a2e5dfe93f4851f08b7c5591">require&lt;CoreLoggerService&gt;</a>(); <span class="comment">// Request to find CoreLoggerService instances</span></div>
+<div class="line">        <span class="keywordflow">return</span> <span class="keyword">true</span>;</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> <a class="code hl_struct" href="structqb_1_1_require_event.html">qb::RequireEvent</a>&amp; event) {</div>
+<div class="line">        <span class="keywordflow">if</span> (is&lt;CoreLoggerService&gt;(event)) { <span class="comment">// Check if this RequireEvent is for CoreLoggerService</span></div>
+<div class="line">            <span class="keywordflow">if</span> (event.status == <a class="code hl_enumvalue" href="group___event_core.html#ggaa22d3309e028be849695a6bce167b19fabd9f7c5d6ab4201b138a3e51dab7056f">qb::ActorStatus::Alive</a>) {</div>
+<div class="line">                _logger_service_id = <span class="keyword">event</span>.getSource();</div>
+<div class="line">                _logger_found = <span class="keyword">true</span>;</div>
+<div class="line">                <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;Client [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Found CoreLoggerService at &quot;</span> &lt;&lt; _logger_service_id &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line">                <span class="comment">// Now we can use it</span></div>
+<div class="line">                <a class="code hl_function" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">push&lt;LogEvent&gt;</a>(_logger_service_id, <span class="stringliteral">&quot;Client successfully found logger!&quot;</span>);</div>
+<div class="line">                <span class="comment">// Optional: If you only need one, you might unregister from further RequireEvents</span></div>
+<div class="line">                <span class="comment">// unregisterEvent&lt;qb::RequireEvent&gt;(*this);</span></div>
+<div class="line">            } <span class="keywordflow">else</span> {</div>
+<div class="line">                qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;Client [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: CoreLoggerService at &quot;</span> &lt;&lt; <span class="keyword">event</span>.getSource() &lt;&lt; <span class="stringliteral">&quot; reported not alive.\n&quot;</span>;</div>
+<div class="line">            }</div>
+<div class="line">        }</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> MyMessageToLog&amp; event) {</div>
+<div class="line">        <span class="keywordflow">if</span> (_logger_found &amp;&amp; _logger_service_id.<a class="code hl_function" href="classqb_1_1_actor_id.html#ad8a503934d9079696333e16433daf0b1">is_valid</a>()) {</div>
+<div class="line">            <a class="code hl_function" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">push&lt;LogEvent&gt;</a>(_logger_service_id, <a class="code hl_typedef" href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">event</a>.content.c_str());</div>
+<div class="line">        } <span class="keywordflow">else</span> {</div>
+<div class="line">            qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;Client [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Logger not yet found. Cannot log: &quot;</span> &lt;&lt; <span class="keyword">event</span>.content.c_str() &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line">        }</div>
+<div class="line">    }</div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> qb::KillEvent&amp; ke) { <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>(); }</div>
+<div class="line">};</div>
+<div class="ttc" id="aclassqb_1_1_actor_html_afdd14b09a2e5dfe93f4851f08b7c5591"><div class="ttname"><a href="classqb_1_1_actor.html#afdd14b09a2e5dfe93f4851f08b7c5591">qb::Actor::require</a></div><div class="ttdeci">bool require() const noexcept</div><div class="ttdoc">Request discovery of other actors of specified types.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html"><div class="ttname"><a href="classqb_1_1_actor_id.html">qb::ActorId</a></div><div class="ttdoc">Unique identifier for actors.</div><div class="ttdef"><b>Definition</b> ActorId.h:374</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html_ad8a503934d9079696333e16433daf0b1"><div class="ttname"><a href="classqb_1_1_actor_id.html#ad8a503934d9079696333e16433daf0b1">qb::ActorId::is_valid</a></div><div class="ttdeci">bool is_valid() const noexcept</div><div class="ttdoc">Check if this ActorId is valid (not NotFound)</div></div>
+<div class="ttc" id="aclassqb_1_1string_html"><div class="ttname"><a href="classqb_1_1string.html">qb::string</a></div><div class="ttdoc">Fixed-size string with optimized storage.</div><div class="ttdef"><b>Definition</b> string.h:86</div></div>
+<div class="ttc" id="agroup___event_core_html_ga3296038c4343f22626c6595a222c0d95"><div class="ttname"><a href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">qb::event</a></div><div class="ttdeci">Event event</div><div class="ttdoc">Alias for the base Event class.</div><div class="ttdef"><b>Definition</b> Event.h:385</div></div>
+<div class="ttc" id="agroup___event_core_html_ggaa22d3309e028be849695a6bce167b19fabd9f7c5d6ab4201b138a3e51dab7056f"><div class="ttname"><a href="group___event_core.html#ggaa22d3309e028be849695a6bce167b19fabd9f7c5d6ab4201b138a3e51dab7056f">qb::ActorStatus::Alive</a></div><div class="ttdeci">@ Alive</div><div class="ttdoc">The actor is active and operational.</div><div class="ttdef"><b>Definition</b> Event.h:288</div></div>
+<div class="ttc" id="astring_8h_html"><div class="ttname"><a href="string_8h.html">string.h</a></div><div class="ttdoc">Fixed-size string implementation optimized for performance.</div></div>
+<div class="ttc" id="astructqb_1_1_require_event_html"><div class="ttname"><a href="structqb_1_1_require_event.html">qb::RequireEvent</a></div><div class="ttdoc">Event used to query actor status.</div><div class="ttdef"><b>Definition</b> Event.h:310</div></div>
+</div><!-- fragment --><ul>
+<li><b>Note:</b> An actor might receive multiple <span class="tt">RequireEvent</span>s if multiple instances of the target type exist across different cores, or if <span class="tt">require</span> is called multiple times.</li>
+<li><b>(Reference:</b> <span class="tt">test-actor-dependency.cpp</span>**)</li>
+</ul>
+<p>These patterns and utilities provide flexible and powerful ways to structure your actor-based applications in QB, promoting separation of concerns, managing dependencies, and enabling common concurrent behaviors.</p>
+<p><b>(Next:</b> Review Developer Guides for more high-level application patterns and best practices.**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

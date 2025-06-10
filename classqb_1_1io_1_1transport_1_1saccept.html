@@ -1,0 +1,412 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::io::transport::saccept Class Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::io::transport::saccept Class Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('classqb_1_1io_1_1transport_1_1saccept.html','','classqb_1_1io_1_1transport_1_1saccept-members'); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">qb::io::transport::saccept Class Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___transport.html">Transport Layer</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Secure connection acceptance transport for SSL/TLS TCP connections.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="saccept_8h_source.html">saccept.h</a>&gt;</code></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-types" class="groupheader"><a id="pub-types" name="pub-types"></a>
+Public Types</h2></td></tr>
+<tr class="memitem:a5407f0798732faf2ede0efc65a720690" id="r_a5407f0798732faf2ede0efc65a720690"><td class="memItemLeft" align="right" valign="top"><a id="a5407f0798732faf2ede0efc65a720690" name="a5407f0798732faf2ede0efc65a720690"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>transport_io_type</b> = <a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html">io::tcp::ssl::listener</a></td></tr>
+<tr class="memdesc:a5407f0798732faf2ede0efc65a720690"><td class="mdescLeft">&#160;</td><td class="mdescRight">Type of the underlying transport I/O. <br /></td></tr>
+<tr class="memitem:a2643bea861792b89f52c4b667cc8c508" id="r_a2643bea861792b89f52c4b667cc8c508"><td class="memItemLeft" align="right" valign="top"><a id="a2643bea861792b89f52c4b667cc8c508" name="a2643bea861792b89f52c4b667cc8c508"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>socket_type</b> = <a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html">io::tcp::ssl::socket</a></td></tr>
+<tr class="memdesc:a2643bea861792b89f52c4b667cc8c508"><td class="mdescLeft">&#160;</td><td class="mdescRight">Type of the accepted socket. <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:a5d3180d29f036cd65de1f431bd63efdb" id="r_a5d3180d29f036cd65de1f431bd63efdb"><td class="memItemLeft" align="right" valign="top"><a id="a5d3180d29f036cd65de1f431bd63efdb" name="a5d3180d29f036cd65de1f431bd63efdb"></a>
+constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><b>is_secure</b> () const noexcept</td></tr>
+<tr class="memdesc:a5d3180d29f036cd65de1f431bd63efdb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Indicates that this transport implementation is secure. <br /></td></tr>
+<tr class="memitem:aeefdf9b775973a63620a71dabf8c37e0" id="r_aeefdf9b775973a63620a71dabf8c37e0"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html">io::tcp::ssl::listener</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aeefdf9b775973a63620a71dabf8c37e0">transport</a> () noexcept</td></tr>
+<tr class="memdesc:aeefdf9b775973a63620a71dabf8c37e0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the underlying SSL TCP listener.  <br /></td></tr>
+<tr class="memitem:aca431ef66d8c89e861cc76c04c4b73b6" id="r_aca431ef66d8c89e861cc76c04c4b73b6"><td class="memItemLeft" align="right" valign="top">std::size_t&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aca431ef66d8c89e861cc76c04c4b73b6">read</a> () noexcept</td></tr>
+<tr class="memdesc:aca431ef66d8c89e861cc76c04c4b73b6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Accept a new secure connection.  <br /></td></tr>
+<tr class="memitem:ae66f0b7956d05aedb9209193deaf84e5" id="r_ae66f0b7956d05aedb9209193deaf84e5"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae66f0b7956d05aedb9209193deaf84e5">flush</a> (std::size_t) noexcept</td></tr>
+<tr class="memdesc:ae66f0b7956d05aedb9209193deaf84e5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Reset the accepted socket.  <br /></td></tr>
+<tr class="memitem:a8bdf3d2c253d4108427aa36f35ffa3ac" id="r_a8bdf3d2c253d4108427aa36f35ffa3ac"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a8bdf3d2c253d4108427aa36f35ffa3ac">eof</a> () const noexcept</td></tr>
+<tr class="memdesc:a8bdf3d2c253d4108427aa36f35ffa3ac"><td class="mdescLeft">&#160;</td><td class="mdescRight">End-of-file handling (no-op)  <br /></td></tr>
+<tr class="memitem:aab096dc33ed016e6716d08b4a4df6f37" id="r_aab096dc33ed016e6716d08b4a4df6f37"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aab096dc33ed016e6716d08b4a4df6f37">close</a> () noexcept</td></tr>
+<tr class="memdesc:aab096dc33ed016e6716d08b4a4df6f37"><td class="mdescLeft">&#160;</td><td class="mdescRight">Close the listener.  <br /></td></tr>
+<tr class="memitem:ae6f66632188c4baf5936b6858e9e233a" id="r_ae6f66632188c4baf5936b6858e9e233a"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html">io::tcp::ssl::socket</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ae6f66632188c4baf5936b6858e9e233a">getAccepted</a> ()</td></tr>
+<tr class="memdesc:ae6f66632188c4baf5936b6858e9e233a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the accepted secure socket.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>Secure connection acceptance transport for SSL/TLS TCP connections. </p>
+<p>This class implements a transport layer for accepting incoming secure (SSL/TLS) TCP connections. It wraps a <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html" title="Class implementing a secure SSL/TLS TCP listener for accepting encrypted connections.">qb::io::tcp::ssl::listener</a></span> and is used similarly to <span class="tt"><a class="el" href="classqb_1_1io_1_1transport_1_1accept.html" title="Connection acceptance transport for TCP connections.">qb::io::transport::accept</a></span>, but for encrypted connections.</p>
+<p>Its <span class="tt"><a class="el" href="#aca431ef66d8c89e861cc76c04c4b73b6" title="Accept a new secure connection.">read()</a></span> method attempts to accept a new secure connection, performing the SSL handshake, and <span class="tt"><a class="el" href="#ae6f66632188c4baf5936b6858e9e233a" title="Get the accepted secure socket.">getAccepted()</a></span> provides access to the newly established <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html" title="Class implementing secure SSL/TLS TCP socket functionality.">qb::io::tcp::ssl::socket</a></span>. </p>
+</div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="aeefdf9b775973a63620a71dabf8c37e0" name="aeefdf9b775973a63620a71dabf8c37e0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aeefdf9b775973a63620a71dabf8c37e0">&#9670;&#160;</a></span>transport()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1listener.html">io::tcp::ssl::listener</a> &amp; qb::io::transport::saccept::transport </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the underlying SSL TCP listener. </p>
+<dl class="section return"><dt>Returns</dt><dd>Reference to the SSL TCP listener </dd></dl>
+
+</div>
+</div>
+<a id="aca431ef66d8c89e861cc76c04c4b73b6" name="aca431ef66d8c89e861cc76c04c4b73b6"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aca431ef66d8c89e861cc76c04c4b73b6">&#9670;&#160;</a></span>read()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">std::size_t qb::io::transport::saccept::read </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Accept a new secure connection. </p>
+<dl class="section return"><dt>Returns</dt><dd>Native handle of the accepted socket, or -1 on failure</dd></dl>
+<p>Attempts to accept a new secure connection. If successful, returns the native handle of the accepted socket which can be used for further secure communication. </p>
+
+</div>
+</div>
+<a id="ae66f0b7956d05aedb9209193deaf84e5" name="ae66f0b7956d05aedb9209193deaf84e5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae66f0b7956d05aedb9209193deaf84e5">&#9670;&#160;</a></span>flush()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::io::transport::saccept::flush </td>
+          <td>(</td>
+          <td class="paramtype">std::size_t</td>          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Reset the accepted socket. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">Unused</td><td>parameter</td></tr>
+  </table>
+  </dd>
+</dl>
+<p>Resets the last accepted socket by replacing it with a new default-constructed socket, effectively releasing the previous connection. </p>
+
+</div>
+</div>
+<a id="a8bdf3d2c253d4108427aa36f35ffa3ac" name="a8bdf3d2c253d4108427aa36f35ffa3ac"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a8bdf3d2c253d4108427aa36f35ffa3ac">&#9670;&#160;</a></span>eof()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::io::transport::saccept::eof </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>End-of-file handling (no-op) </p>
+<p>This is a placeholder method with no implementation as connection acceptance doesn't have an EOF concept. </p>
+
+</div>
+</div>
+<a id="aab096dc33ed016e6716d08b4a4df6f37" name="aab096dc33ed016e6716d08b4a4df6f37"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aab096dc33ed016e6716d08b4a4df6f37">&#9670;&#160;</a></span>close()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">void qb::io::transport::saccept::close </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Close the listener. </p>
+<p>Closes the underlying SSL TCP listener, stopping the acceptance of new secure connections. </p>
+
+</div>
+</div>
+<a id="ae6f66632188c4baf5936b6858e9e233a" name="ae6f66632188c4baf5936b6858e9e233a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ae6f66632188c4baf5936b6858e9e233a">&#9670;&#160;</a></span>getAccepted()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1io_1_1tcp_1_1ssl_1_1socket.html">io::tcp::ssl::socket</a> &amp; qb::io::transport::saccept::getAccepted </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the accepted secure socket. </p>
+<dl class="section return"><dt>Returns</dt><dd>Reference to the last accepted secure socket</dd></dl>
+<p>Returns a reference to the SSL socket object representing the last accepted secure connection. </p>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><b>io</b></li><li class="navelem"><b>transport</b></li><li class="navelem"><a href="classqb_1_1io_1_1transport_1_1saccept.html">saccept</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

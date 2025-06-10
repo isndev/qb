@@ -1,0 +1,734 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/io/uri.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/io/uri.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('uri_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">uri.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>URI parsing and manipulation utilities.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &lt;charconv&gt;</code><br />
+<code>#include &lt;<a class="el" href="io_2config_8h_source.html">qb/io/config.h</a>&gt;</code><br />
+<code>#include &lt;<a class="el" href="unordered__map_8h_source.html">qb/system/container/unordered_map.h</a>&gt;</code><br />
+<code>#include &lt;<a class="el" href="build__macros_8h_source.html">qb/utility/build_macros.h</a>&gt;</code><br />
+<code>#include &lt;regex&gt;</code><br />
+<code>#include &lt;string&gt;</code><br />
+<code>#include &lt;string_view&gt;</code><br />
+<code>#include &lt;vector&gt;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for uri.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="uri_8h__incl.png" border="0" usemap="#ainclude_2qb_2io_2uri_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2uri_8h" id="ainclude_2qb_2io_2uri_8h">
+<area shape="rect" title="URI parsing and manipulation utilities." alt="" coords="1564,5,1687,31"/>
+<area shape="rect" title=" " alt="" coords="721,86,796,112"/>
+<area shape="poly" title=" " alt="" coords="1563,21,1427,23,1241,30,1028,49,920,63,815,82,805,84,803,79,814,76,920,58,1028,43,1240,25,1427,17,1563,16"/>
+<area shape="rect" href="io_2config_8h.html" title="Configuration and platform&#45;specific definitions for the QB IO library." alt="" coords="870,86,970,112"/>
+<area shape="poly" title=" " alt="" coords="1563,29,985,93,985,88,1563,24"/>
+<area shape="rect" href="build__macros_8h.html" title="Platform, compiler, and C++ feature detection macros for the QB Framework." alt="" coords="5,175,168,201"/>
+<area shape="poly" title=" " alt="" coords="1563,22,1404,25,1199,33,1000,51,919,65,860,81,845,90,835,101,825,112,809,122,750,138,675,149,497,158,318,162,241,165,180,170,155,174,155,169,179,165,241,160,318,157,497,153,674,143,749,133,807,117,822,108,831,98,841,86,857,77,918,59,1000,46,1199,28,1404,20,1563,17"/>
+<area shape="rect" href="unordered__map_8h.html" title="Optimized unordered map implementations." alt="" coords="1609,79,1748,120"/>
+<area shape="poly" title=" " alt="" coords="1635,30,1659,64,1655,67,1631,33"/>
+<area shape="rect" title=" " alt="" coords="1616,175,1669,201"/>
+<area shape="poly" title=" " alt="" coords="1620,32,1602,71,1597,95,1600,119,1610,141,1624,161,1619,164,1605,144,1595,120,1592,95,1597,70,1615,30"/>
+<area shape="rect" title=" " alt="" coords="1772,86,1825,112"/>
+<area shape="poly" title=" " alt="" coords="1654,29,1761,77,1762,77,1760,82,1759,81,1652,34"/>
+<area shape="rect" title=" " alt="" coords="1850,86,1937,112"/>
+<area shape="poly" title=" " alt="" coords="1672,29,1838,76,1845,79,1844,84,1836,82,1670,34"/>
+<area shape="rect" title=" " alt="" coords="1960,86,2018,112"/>
+<area shape="poly" title=" " alt="" coords="1688,23,1810,42,1881,57,1950,76,1953,78,1952,83,1948,82,1879,62,1809,47,1687,29"/>
+<area shape="poly" title=" " alt="" coords="882,115,852,122,751,137,664,146,517,150,369,153,282,159,180,170,155,174,155,169,179,165,282,153,368,148,516,145,664,140,750,132,851,117,881,110"/>
+<area shape="rect" title=" " alt="" coords="192,175,256,201"/>
+<area shape="poly" title=" " alt="" coords="882,115,852,122,764,135,688,140,558,140,496,140,430,143,355,152,268,170,263,172,261,167,267,165,355,147,429,137,496,134,558,135,688,135,763,130,851,117,881,110"/>
+<area shape="rect" href="signal_8h.html" title="System signal event handler for asynchronous I/O." alt="" coords="280,175,346,201"/>
+<area shape="poly" title=" " alt="" coords="882,115,852,122,777,134,713,139,603,141,494,145,431,154,358,170,352,172,351,167,357,165,430,149,494,140,603,136,713,134,777,128,851,117,880,110"/>
+<area shape="rect" title=" " alt="" coords="370,175,451,201"/>
+<area shape="poly" title=" " alt="" coords="881,115,852,122,743,139,658,144,572,151,464,170,456,173,454,167,463,165,571,145,657,139,743,133,851,117,880,110"/>
+<area shape="rect" title=" " alt="" coords="476,175,553,201"/>
+<area shape="poly" title=" " alt="" coords="880,115,852,122,772,137,708,144,645,153,566,170,559,172,557,167,565,165,644,147,708,139,771,132,851,117,878,110"/>
+<area shape="rect" title=" " alt="" coords="578,175,667,201"/>
+<area shape="poly" title=" " alt="" coords="877,115,853,122,681,170,674,172,672,167,679,165,851,117,876,110"/>
+<area shape="rect" title=" " alt="" coords="692,175,759,201"/>
+<area shape="poly" title=" " alt="" coords="893,115,767,171,765,166,891,110"/>
+<area shape="rect" title=" " alt="" coords="783,175,865,201"/>
+<area shape="poly" title=" " alt="" coords="908,115,850,167,846,163,905,111"/>
+<area shape="rect" title=" " alt="" coords="889,175,950,201"/>
+<area shape="poly" title=" " alt="" coords="922,113,922,159,917,159,917,113"/>
+<area shape="rect" title=" " alt="" coords="974,175,1060,201"/>
+<area shape="poly" title=" " alt="" coords="935,111,994,163,991,167,932,115"/>
+<area shape="rect" title=" " alt="" coords="1084,175,1177,201"/>
+<area shape="poly" title=" " alt="" coords="951,110,1088,166,1086,171,949,115"/>
+<area shape="rect" title=" " alt="" coords="1202,175,1294,201"/>
+<area shape="poly" title=" " alt="" coords="970,109,1190,165,1198,168,1197,173,1188,170,969,115"/>
+<area shape="rect" title=" " alt="" coords="1318,175,1415,201"/>
+<area shape="poly" title=" " alt="" coords="970,104,1122,128,1307,165,1317,168,1316,173,1306,170,1121,133,969,110"/>
+<area shape="rect" title=" " alt="" coords="1439,175,1510,201"/>
+<area shape="poly" title=" " alt="" coords="970,101,1172,119,1299,138,1427,165,1434,167,1432,172,1426,170,1298,143,1171,124,970,106"/>
+<area shape="rect" title=" " alt="" coords="1534,175,1591,201"/>
+<area shape="poly" title=" " alt="" coords="970,98,1073,101,1211,111,1367,131,1447,146,1523,165,1527,166,1526,171,1522,170,1445,151,1367,136,1211,116,1073,106,970,103"/>
+<area shape="rect" title=" " alt="" coords="16,256,74,282"/>
+<area shape="poly" title=" " alt="" coords="83,202,61,243,56,241,78,200"/>
+<area shape="rect" title=" " alt="" coords="98,256,158,282"/>
+<area shape="poly" title=" " alt="" coords="95,200,117,241,112,243,90,202"/>
+<area shape="rect" href="async_2event_2base_8h.html" title="Base class for asynchronous events in the QB IO library." alt="" coords="283,256,343,282"/>
+<area shape="poly" title=" " alt="" coords="316,201,316,240,310,240,310,201"/>
+<area shape="rect" title=" " alt="" coords="273,330,353,356"/>
+<area shape="poly" title=" " alt="" coords="316,282,316,314,310,314,310,282"/>
+<area shape="poly" title=" " alt="" coords="1673,121,1656,162,1651,160,1668,119"/>
+<area shape="rect" title=" " alt="" coords="1693,175,1739,201"/>
+<area shape="poly" title=" " alt="" coords="1689,119,1707,160,1702,162,1685,121"/>
+<area shape="rect" title=" " alt="" coords="1763,168,1901,208"/>
+<area shape="poly" title=" " alt="" coords="1715,118,1786,158,1783,162,1712,123"/>
+<area shape="rect" title=" " alt="" coords="1925,175,2035,201"/>
+<area shape="poly" title=" " alt="" coords="1748,118,1923,168,1922,173,1747,123"/>
+</map>
+</div>
+</div><div class="textblock"><div class="dynheader">
+This graph shows which files directly or indirectly include this file:</div>
+<div class="dyncontent">
+<div class="center"><img src="uri_8h__dep__incl.png" border="0" usemap="#ainclude_2qb_2io_2uri_8hdep" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2io_2uri_8hdep" id="ainclude_2qb_2io_2uri_8hdep">
+<area shape="rect" title="URI parsing and manipulation utilities." alt="" coords="192,5,315,31"/>
+<area shape="rect" href="connector_8h.html" title="Asynchronous TCP connection establishment utilities." alt="" coords="5,79,139,120"/>
+<area shape="poly" title=" " alt="" coords="213,40,118,81,116,76,211,35"/>
+<area shape="rect" href="tcp_2socket_8h.html" title="Implementation of TCP sockets for the QB IO library." alt="" coords="446,86,616,112"/>
+<area shape="poly" title=" " alt="" coords="311,33,489,83,487,88,310,38"/>
+<area shape="rect" href="udp_2socket_8h.html" title="Implementation of UDP sockets for datagram communication in the QB IO library." alt="" coords="167,86,340,112"/>
+<area shape="poly" title=" " alt="" coords="256,47,256,86,251,86,251,47"/>
+<area shape="rect" href="async_8h.html" title="Main include file for the QB asynchronous I/O library." alt="" coords="254,352,399,378"/>
+<area shape="poly" title=" " alt="" coords="67,135,63,172,63,215,72,258,81,277,93,295,118,312,158,327,255,350,254,355,156,333,115,317,89,299,76,280,67,259,58,215,58,172,62,135"/>
+<area shape="rect" href="tcp_2listener_8h.html" title="Implementation of a TCP listener for the QB IO library." alt="" coords="527,175,700,201"/>
+<area shape="poly" title=" " alt="" coords="555,122,604,173,600,177,551,125"/>
+<area shape="rect" href="tcp_2ssl_2socket_8h.html" title="Implementation of SSL/TLS sockets for secure TCP communication in the QB IO library." alt="" coords="723,168,861,208"/>
+<area shape="poly" title=" " alt="" coords="583,115,733,165,732,170,581,120"/>
+<area shape="rect" href="tcp_8h.html" title="TCP stream transport implementation for the QB IO library." alt="" coords="353,168,503,208"/>
+<area shape="poly" title=" " alt="" coords="507,124,453,169,450,165,503,120"/>
+<area shape="rect" href="tcp_2ssl_2listener_8h.html" title="Implementation of a secure SSL/TLS listener for the QB IO library." alt="" coords="642,256,779,297"/>
+<area shape="poly" title=" " alt="" coords="640,209,690,254,687,258,636,213"/>
+<area shape="rect" href="transport_2accept_8h.html" title="TCP connection acceptance transport implementation for the QB IO library." alt="" coords="468,256,617,297"/>
+<area shape="poly" title=" " alt="" coords="596,215,560,258,556,255,592,211"/>
+<area shape="rect" href="saccept_8h.html" title="Secure (SSL/TLS) TCP connection acceptance transport for the QB IO library." alt="" coords="636,345,785,386"/>
+<area shape="poly" title=" " alt="" coords="713,313,713,345,708,345,708,313"/>
+<area shape="poly" title=" " alt="" coords="481,306,358,354,356,350,479,301"/>
+<area shape="poly" title=" " alt="" coords="765,222,731,258,727,254,761,218"/>
+<area shape="rect" href="stcp_8h.html" title="Secure TCP (SSL/TLS) stream transport for the QB IO library." alt="" coords="804,256,953,297"/>
+<area shape="poly" title=" " alt="" coords="824,218,861,254,857,258,820,221"/>
+<area shape="poly" title=" " alt="" coords="429,224,423,261,408,298,380,331,349,354,346,350,376,327,403,296,417,260,424,223"/>
+<area shape="rect" href="udp_8h.html" title="UDP datagram transport implementation for the QB IO library." alt="" coords="179,168,328,208"/>
+<area shape="poly" title=" " alt="" coords="256,128,256,168,251,168,251,128"/>
+<area shape="rect" href="udp_2client_8h.html" title="Asynchronous UDP client implementation." alt="" coords="260,256,393,297"/>
+<area shape="poly" title=" " alt="" coords="282,218,312,254,308,258,278,222"/>
+<area shape="rect" href="udp_2server_8h.html" title="Asynchronous UDP server implementation." alt="" coords="103,256,236,297"/>
+<area shape="poly" title=" " alt="" coords="225,222,190,258,186,254,222,218"/>
+<area shape="poly" title=" " alt="" coords="329,313,329,352,324,352,324,313"/>
+<area shape="poly" title=" " alt="" coords="220,302,306,350,303,354,217,307"/>
+</map>
+</div>
+</div>
+<p><a href="uri_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Auri" id="r_qb_3A_3Aio_3A_3Auri"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1uri.html">qb::io::uri</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Class for parsing, manipulating, and representing URIs.  <a href="classqb_1_1io_1_1uri.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-func-members" class="groupheader"><a id="func-members" name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:a546efd68a2f4ac82f02124eb86179b84" id="r_a546efd68a2f4ac82f02124eb86179b84"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a546efd68a2f4ac82f02124eb86179b84">qb::io::is_alnum</a> (int c)</td></tr>
+<tr class="memdesc:a546efd68a2f4ac82f02124eb86179b84"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if a character is alphanumeric.  <br /></td></tr>
+<tr class="memitem:a6e3fa1a0209ff3484f2e2dc9f1ea0b16" id="r_a6e3fa1a0209ff3484f2e2dc9f1ea0b16"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a6e3fa1a0209ff3484f2e2dc9f1ea0b16">qb::io::is_unreserved</a> (int c)</td></tr>
+<tr class="memdesc:a6e3fa1a0209ff3484f2e2dc9f1ea0b16"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if a character is unreserved according to RFC 3986.  <br /></td></tr>
+<tr class="memitem:acd678b97802b8d6bae4700e86b571993" id="r_acd678b97802b8d6bae4700e86b571993"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#acd678b97802b8d6bae4700e86b571993">qb::io::is_gen_delim</a> (int c)</td></tr>
+<tr class="memdesc:acd678b97802b8d6bae4700e86b571993"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if a character is a general delimiter according to RFC 3986.  <br /></td></tr>
+<tr class="memitem:a56be6cd3ba132b03248427c2e98bda95" id="r_a56be6cd3ba132b03248427c2e98bda95"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a56be6cd3ba132b03248427c2e98bda95">qb::io::is_sub_delim</a> (int c)</td></tr>
+<tr class="memdesc:a56be6cd3ba132b03248427c2e98bda95"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if a character is a subdelimiter according to RFC 3986.  <br /></td></tr>
+<tr class="memitem:abf67eb3022bfcd766c2e5b1ed040d62e" id="r_abf67eb3022bfcd766c2e5b1ed040d62e"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#abf67eb3022bfcd766c2e5b1ed040d62e">qb::io::is_reserved</a> (int c)</td></tr>
+<tr class="memdesc:abf67eb3022bfcd766c2e5b1ed040d62e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if a character is reserved according to RFC 3986.  <br /></td></tr>
+<tr class="memitem:a6443a0f3d393e4e667ed6d5b717249ca" id="r_a6443a0f3d393e4e667ed6d5b717249ca"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a6443a0f3d393e4e667ed6d5b717249ca">qb::io::is_scheme_character</a> (int c)</td></tr>
+<tr class="memdesc:a6443a0f3d393e4e667ed6d5b717249ca"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if a character is valid for a URI scheme.  <br /></td></tr>
+<tr class="memitem:a01f6f5452d982504b8bf4ee3ade22e00" id="r_a01f6f5452d982504b8bf4ee3ade22e00"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a01f6f5452d982504b8bf4ee3ade22e00">qb::io::is_user_info_character</a> (int c)</td></tr>
+<tr class="memdesc:a01f6f5452d982504b8bf4ee3ade22e00"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if a character is valid for URI user information.  <br /></td></tr>
+<tr class="memitem:a18420e29d242eb1610f8c039837f2a6b" id="r_a18420e29d242eb1610f8c039837f2a6b"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a18420e29d242eb1610f8c039837f2a6b">qb::io::is_authority_character</a> (int c)</td></tr>
+<tr class="memdesc:a18420e29d242eb1610f8c039837f2a6b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if a character is valid for the authority part of a URI.  <br /></td></tr>
+<tr class="memitem:adea142e8070ead0e185427bf8a8109b1" id="r_adea142e8070ead0e185427bf8a8109b1"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#adea142e8070ead0e185427bf8a8109b1">qb::io::is_path_character</a> (int c)</td></tr>
+<tr class="memdesc:adea142e8070ead0e185427bf8a8109b1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if a character is valid for the path part of a URI.  <br /></td></tr>
+<tr class="memitem:ad91e7c9b58739893592b9d39de46eecc" id="r_ad91e7c9b58739893592b9d39de46eecc"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ad91e7c9b58739893592b9d39de46eecc">qb::io::is_query_character</a> (int c)</td></tr>
+<tr class="memdesc:ad91e7c9b58739893592b9d39de46eecc"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if a character is valid for the query part of a URI.  <br /></td></tr>
+<tr class="memitem:a461fc1b2353a45f4352069b79dddac4f" id="r_a461fc1b2353a45f4352069b79dddac4f"><td class="memItemLeft" align="right" valign="top">bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a461fc1b2353a45f4352069b79dddac4f">qb::io::is_fragment_character</a> (int c)</td></tr>
+<tr class="memdesc:a461fc1b2353a45f4352069b79dddac4f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Checks if a character is valid for the fragment part of a URI.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>URI parsing and manipulation utilities. </p>
+<p>This file provides a comprehensive URI (Uniform Resource Identifier) implementation that follows RFC 3986 standards. It includes functionality for parsing, encoding, decoding, and manipulating URIs with support for schemes, authority components, paths, queries, and fragments.</p>
+<p>The implementation supports both IPv4 and IPv6 addressing formats and provides utility functions for character classification according to URI specifications.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div><a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Function Documentation</h2>
+<a id="a546efd68a2f4ac82f02124eb86179b84" name="a546efd68a2f4ac82f02124eb86179b84"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a546efd68a2f4ac82f02124eb86179b84">&#9670;&#160;</a></span>is_alnum()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::is_alnum </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if a character is alphanumeric. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">c</td><td>The character to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the character is alphanumeric, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="a6e3fa1a0209ff3484f2e2dc9f1ea0b16" name="a6e3fa1a0209ff3484f2e2dc9f1ea0b16"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6e3fa1a0209ff3484f2e2dc9f1ea0b16">&#9670;&#160;</a></span>is_unreserved()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::is_unreserved </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if a character is unreserved according to RFC 3986. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">c</td><td>The character to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the character is unreserved, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="acd678b97802b8d6bae4700e86b571993" name="acd678b97802b8d6bae4700e86b571993"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#acd678b97802b8d6bae4700e86b571993">&#9670;&#160;</a></span>is_gen_delim()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::is_gen_delim </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if a character is a general delimiter according to RFC 3986. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">c</td><td>The character to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the character is a general delimiter, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="a56be6cd3ba132b03248427c2e98bda95" name="a56be6cd3ba132b03248427c2e98bda95"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a56be6cd3ba132b03248427c2e98bda95">&#9670;&#160;</a></span>is_sub_delim()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::is_sub_delim </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if a character is a subdelimiter according to RFC 3986. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">c</td><td>The character to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the character is a subdelimiter, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="abf67eb3022bfcd766c2e5b1ed040d62e" name="abf67eb3022bfcd766c2e5b1ed040d62e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#abf67eb3022bfcd766c2e5b1ed040d62e">&#9670;&#160;</a></span>is_reserved()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::is_reserved </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if a character is reserved according to RFC 3986. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">c</td><td>The character to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the character is reserved, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="a6443a0f3d393e4e667ed6d5b717249ca" name="a6443a0f3d393e4e667ed6d5b717249ca"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a6443a0f3d393e4e667ed6d5b717249ca">&#9670;&#160;</a></span>is_scheme_character()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::is_scheme_character </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if a character is valid for a URI scheme. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">c</td><td>The character to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the character is valid for a scheme, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="a01f6f5452d982504b8bf4ee3ade22e00" name="a01f6f5452d982504b8bf4ee3ade22e00"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a01f6f5452d982504b8bf4ee3ade22e00">&#9670;&#160;</a></span>is_user_info_character()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::is_user_info_character </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if a character is valid for URI user information. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">c</td><td>The character to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the character is valid for user information, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="a18420e29d242eb1610f8c039837f2a6b" name="a18420e29d242eb1610f8c039837f2a6b"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a18420e29d242eb1610f8c039837f2a6b">&#9670;&#160;</a></span>is_authority_character()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::is_authority_character </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if a character is valid for the authority part of a URI. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">c</td><td>The character to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the character is valid for authority, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="adea142e8070ead0e185427bf8a8109b1" name="adea142e8070ead0e185427bf8a8109b1"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#adea142e8070ead0e185427bf8a8109b1">&#9670;&#160;</a></span>is_path_character()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::is_path_character </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if a character is valid for the path part of a URI. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">c</td><td>The character to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the character is valid for path, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="ad91e7c9b58739893592b9d39de46eecc" name="ad91e7c9b58739893592b9d39de46eecc"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad91e7c9b58739893592b9d39de46eecc">&#9670;&#160;</a></span>is_query_character()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::is_query_character </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if a character is valid for the query part of a URI. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">c</td><td>The character to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the character is valid for query, false otherwise </dd></dl>
+
+</div>
+</div>
+<a id="a461fc1b2353a45f4352069b79dddac4f" name="a461fc1b2353a45f4352069b79dddac4f"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a461fc1b2353a45f4352069b79dddac4f">&#9670;&#160;</a></span>is_fragment_character()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">bool qb::io::is_fragment_character </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em>c</em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Checks if a character is valid for the fragment part of a URI. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">c</td><td>The character to check </td></tr>
+  </table>
+  </dd>
+</dl>
+<dl class="section return"><dt>Returns</dt><dd>true if the character is valid for fragment, false otherwise </dd></dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_3dee0cd2c20979c1e1de0592baabe51d.html">io</a></li><li class="navelem"><a href="uri_8h.html">uri.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

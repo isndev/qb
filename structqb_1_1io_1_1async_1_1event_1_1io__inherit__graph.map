@@ -1,0 +1,7 @@
+<map id="qb::io::async::event::io" name="qb::io::async::event::io">
+<area shape="rect" id="Node000001" title="Event for file descriptor I/O readiness notifications (read/write)." alt="" coords="5,168,160,193"/>
+<area shape="rect" id="Node000002" href="$structqb_1_1io_1_1async_1_1event_1_1base.html" title=" " alt="" coords="14,79,151,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="85,135,85,167,80,167,80,135"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="56,5,109,31"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="85,46,85,79,80,79,80,46"/>
+</map>

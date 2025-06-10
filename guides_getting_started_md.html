@@ -1,0 +1,444 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: Getting Started with the QB Actor Framework</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: Getting Started with the QB Actor Framework</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('guides_getting_started_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">Getting Started with the QB Actor Framework </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>Your first steps to building high-performance concurrent applications with QB.</p>
+<h1>Getting Started with the QB Actor Framework</h1>
+<p>Welcome to the QB Actor Framework! This guide will walk you through setting up your environment, building the framework, and running your first simple actor-based application. Our goal is to get you from zero to a running QB application quickly.</p>
+<h2>1. What You'll Need (Prerequisites)</h2>
+<p>Before you begin, ensure your development environment meets these requirements:</p>
+<ul>
+<li><b>C++17 Compliant Compiler:</b> GCC 7+, Clang 5+, or MSVC 2017+.</li>
+<li><b>CMake:</b> Version 3.14 or higher.</li>
+<li><b>Git:</b> For cloning the QB Framework repository.</li>
+<li><b>(Optional but Recommended for Full Features)</b><ul>
+<li><b>OpenSSL Development Libraries:</b> If you plan to use SSL/TLS for secure networking or QB's cryptography features (<span class="tt"><a class="el" href="classqb_1_1crypto.html" title="Provides cryptographic operations and utilities.">qb::crypto</a></span>, <span class="tt"><a class="el" href="classqb_1_1jwt.html" title="Comprehensive JWT implementation for the QB IO library.">qb::jwt</a></span>).</li>
+<li><b>Zlib Development Libraries:</b> If you intend to use data compression features (<span class="tt">qb::compression</span>).</li>
+</ul>
+</li>
+</ul>
+<h2>2. Obtain the QB Framework Code</h2>
+<p>First, clone the QB Actor Framework repository to your local machine:</p>
+<div class="fragment"><div class="line">git clone &lt;your_repository_url&gt; qb-framework</div>
+<div class="line">cd qb-framework</div>
+</div><!-- fragment --><p>If the QB framework uses Git submodules for dependencies (check for a <span class="tt">.gitmodules</span> file), initialize and update them:</p>
+<div class="fragment"><div class="line"># If submodules are present:</div>
+<div class="line">git submodule update --init --recursive</div>
+</div><!-- fragment --><h2>3. Build the QB Framework Libraries</h2>
+<p>QB uses CMake for its build system. Here's a typical out-of-source build process:</p>
+<div class="fragment"><div class="line"># From the root of the qb-framework directory</div>
+<div class="line"> </div>
+<div class="line"># 1. Create a build directory</div>
+<div class="line">mkdir build</div>
+<div class="line">cd build</div>
+<div class="line"> </div>
+<div class="line"># 2. Configure the build (from within the &#39;build&#39; directory)</div>
+<div class="line">#    This example creates a Release build and enables tests.</div>
+<div class="line">#    Adjust QB_IO_WITH_SSL and QB_IO_WITH_ZLIB if you have OpenSSL/Zlib and need those features.</div>
+<div class="line">cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TEST=ON -DQB_IO_WITH_SSL=OFF -DQB_IO_WITH_ZLIB=OFF</div>
+<div class="line"> </div>
+<div class="line"># 3. Build the framework (libraries, examples, tests)</div>
+<div class="line">cmake --build . --config Release</div>
+<div class="line"># On Linux/macOS, you can often speed this up with: make -j$(nproc) or make -j&lt;number_of_cores&gt;</div>
+</div><!-- fragment --><p>This process compiles the <span class="tt">qb-io</span> and <span class="tt">qb-core</span> libraries. For more detailed build options and installation instructions, please refer to the Reference: Building the QB Framework.</p>
+<h2>4. Your First QB Application: "PingPongActor"</h2>
+<p>Let's create a minimal application with two actors: one sends a "Ping", and the other replies with a "Pong".</p>
+<p><b>a) Create a Project Directory:</b></p>
+<p>Outside the <span class="tt">qb-framework</span> directory, create a new directory for your project, for example, <span class="tt">my_qb_app</span>.</p>
+<div class="fragment"><div class="line">mkdir my_qb_app</div>
+<div class="line">cd my_qb_app</div>
+</div><!-- fragment --><p><b>b) <span class="tt">ping_pong_main.cpp</span>:</b></p>
+<p>Create a file named <span class="tt">ping_pong_main.cpp</span> in your <span class="tt">my_qb_app</span> directory with the following content:</p>
+<div class="fragment"><div class="line"><span class="preprocessor">#include &lt;<a class="code" href="main_8h.html">qb/main.h</a>&gt;</span>     <span class="comment">// QB Engine: qb::Main</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="_actor_8h.html">qb/actor.h</a>&gt;</span>    <span class="comment">// Actor base class: qb::Actor, qb::ActorId</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="_event_8h.html">qb/event.h</a>&gt;</span>    <span class="comment">// Event base class: qb::Event</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="io_8h.html">qb/io.h</a>&gt;</span>       <span class="comment">// For qb::io::cout (thread-safe console output)</span></div>
+<div class="line"><span class="preprocessor">#include &lt;iostream&gt;</span>      <span class="comment">// For std::endl</span></div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// --- 1. Define Events ---</span></div>
+<div class="line"><span class="comment">// Event sent from Pinger to Ponger</span></div>
+<div class="line"><span class="keyword">struct </span>PingEvent : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> {</div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1_actor_id.html">qb::ActorId</a> pinger_id; <span class="comment">// So Ponger knows who to reply to</span></div>
+<div class="line">    <span class="keywordtype">int</span> ping_value;</div>
+<div class="line"> </div>
+<div class="line">    PingEvent(<a class="code hl_class" href="classqb_1_1_actor_id.html">qb::ActorId</a> sender, <span class="keywordtype">int</span> val) : pinger_id(sender), ping_value(val) {}</div>
+<div class="line">};</div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// Event sent from Ponger back to Pinger</span></div>
+<div class="line"><span class="keyword">struct </span>PongEvent : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> {</div>
+<div class="line">    <span class="keywordtype">int</span> pong_value;</div>
+<div class="line"> </div>
+<div class="line">    <span class="keyword">explicit</span> PongEvent(<span class="keywordtype">int</span> val) : pong_value(val) {}</div>
+<div class="line">};</div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// --- 2. Define Pinger Actor ---</span></div>
+<div class="line"><span class="keyword">class </span>PingerActor : <span class="keyword">public</span> <a class="code hl_class" href="classqb_1_1_actor.html">qb::Actor</a> {</div>
+<div class="line"><span class="keyword">private</span>:</div>
+<div class="line">    qb::ActorId _ponger_actor_id;</div>
+<div class="line">    <span class="keywordtype">int</span> _pings_sent = 0;</div>
+<div class="line">    <span class="keyword">const</span> <span class="keywordtype">int</span> _max_pings = 3;</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">public</span>:</div>
+<div class="line">    <span class="comment">// Constructor: Takes the ID of the Ponger actor</span></div>
+<div class="line">    <span class="keyword">explicit</span> PingerActor(qb::ActorId ponger_id) : _ponger_actor_id(ponger_id) {}</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">onInit</a>()<span class="keyword"> override </span>{</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;PingerActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] initialized. Target Ponger: &quot;</span> &lt;&lt; _ponger_actor_id &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;PongEvent&gt;</a>(*<span class="keyword">this</span>); <span class="comment">// Pinger needs to handle Pong replies</span></div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;qb::KillEvent&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line"> </div>
+<div class="line">        <span class="comment">// Send the first Ping</span></div>
+<div class="line">        sendNextPing();</div>
+<div class="line">        <span class="keywordflow">return</span> <span class="keyword">true</span>;</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> PongEvent&amp; event) {</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;PingerActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] received Pong with value: &quot;</span> &lt;&lt; <span class="keyword">event</span>.pong_value &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line">        <span class="keywordflow">if</span> (_pings_sent &lt; _max_pings) {</div>
+<div class="line">            sendNextPing();</div>
+<div class="line">        } <span class="keywordflow">else</span> {</div>
+<div class="line">            qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;PingerActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] finished sending pings. Requesting Ponger to stop.\n&quot;</span>;</div>
+<div class="line">            <a class="code hl_function" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">push&lt;qb::KillEvent&gt;</a>(_ponger_actor_id); <span class="comment">// Tell Ponger to stop</span></div>
+<div class="line">            <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>(); <span class="comment">// Pinger stops itself</span></div>
+<div class="line">        }</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> qb::KillEvent&amp; <span class="comment">/*event*/</span>) {</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;PingerActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] shutting down.\n&quot;</span>;</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>();</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line"><span class="keyword">private</span>:</div>
+<div class="line">    <span class="keywordtype">void</span> sendNextPing() {</div>
+<div class="line">        _pings_sent++;</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;PingerActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] sending Ping #&quot;</span> &lt;&lt; _pings_sent &lt;&lt; <span class="stringliteral">&quot; to &quot;</span> &lt;&lt; _ponger_actor_id &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">push&lt;PingEvent&gt;</a>(_ponger_actor_id, <span class="keywordtype">id</span>(), _pings_sent); <span class="comment">// Send my ID and ping value</span></div>
+<div class="line">    }</div>
+<div class="line">};</div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// --- 3. Define Ponger Actor ---</span></div>
+<div class="line"><span class="keyword">class </span>PongerActor : <span class="keyword">public</span> <a class="code hl_class" href="classqb_1_1_actor.html">qb::Actor</a> {</div>
+<div class="line"><span class="keyword">public</span>:</div>
+<div class="line">    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">onInit</a>()<span class="keyword"> override </span>{</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;PongerActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] initialized and ready for Pings.\n&quot;</span>;</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;PingEvent&gt;</a>(*<span class="keyword">this</span>); <span class="comment">// Ponger handles Ping requests</span></div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;qb::KillEvent&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line">        <span class="keywordflow">return</span> <span class="keyword">true</span>;</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> PingEvent&amp; event) {</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;PongerActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] received Ping #&quot;</span> &lt;&lt; <span class="keyword">event</span>.ping_value &lt;&lt; <span class="stringliteral">&quot; from &quot;</span> &lt;&lt; <span class="keyword">event</span>.pinger_id &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line">        <span class="comment">// Reply with a Pong, echoing the ping value</span></div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">push&lt;PongEvent&gt;</a>(<a class="code hl_typedef" href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">event</a>.pinger_id, <a class="code hl_typedef" href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">event</a>.ping_value);</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> qb::KillEvent&amp; <span class="comment">/*event*/</span>) {</div>
+<div class="line">        qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;PongerActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;] shutting down.\n&quot;</span>;</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>();</div>
+<div class="line">    }</div>
+<div class="line">};</div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// --- 4. Main Application Logic ---</span></div>
+<div class="line"><span class="keywordtype">int</span> main() {</div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;--- QB Ping-Pong Actor Example ---\n&quot;</span>;</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Create the QB Engine instance</span></div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1_main.html">qb::Main</a> <a class="code hl_typedef" href="group___engine.html#ga5bf44c35a039fc85fc694b7883c6197f">engine</a>;</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Add the PongerActor to core 0. We need its ID to pass to PingerActor.</span></div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1_actor_id.html">qb::ActorId</a> ponger_id = <a class="code hl_typedef" href="group___engine.html#ga5bf44c35a039fc85fc694b7883c6197f">engine</a>.<a class="code hl_function" href="group___engine.html#ga84dff5faea16cfa7108cd9ff209fbc24">addActor</a>&lt;PongerActor&gt;(0);</div>
+<div class="line">    <span class="keywordflow">if</span> (!ponger_id.<a class="code hl_function" href="classqb_1_1_actor_id.html#ad8a503934d9079696333e16433daf0b1">is_valid</a>()) {</div>
+<div class="line">        <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;Error: Failed to add PongerActor!\n&quot;</span>;</div>
+<div class="line">        <span class="keywordflow">return</span> 1;</div>
+<div class="line">    }</div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;PongerActor created on core 0 with ID: &quot;</span> &lt;&lt; ponger_id &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Add the PingerActor to core 0, providing it with the PongerActor&#39;s ID.</span></div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1_actor_id.html">qb::ActorId</a> pinger_id = <a class="code hl_typedef" href="group___engine.html#ga5bf44c35a039fc85fc694b7883c6197f">engine</a>.<a class="code hl_function" href="group___engine.html#ga84dff5faea16cfa7108cd9ff209fbc24">addActor</a>&lt;PingerActor&gt;(0, ponger_id);</div>
+<div class="line">    <span class="keywordflow">if</span> (!pinger_id.<a class="code hl_function" href="classqb_1_1_actor_id.html#ad8a503934d9079696333e16433daf0b1">is_valid</a>()) {</div>
+<div class="line">        <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;Error: Failed to add PingerActor!\n&quot;</span>;</div>
+<div class="line">        <span class="keywordflow">return</span> 1;</div>
+<div class="line">    }</div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;PingerActor created on core 0 with ID: &quot;</span> &lt;&lt; pinger_id &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Start the engine. This call will block until all actors have terminated.</span></div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;Starting QB engine...\n&quot;</span>;</div>
+<div class="line">    <a class="code hl_typedef" href="group___engine.html#ga5bf44c35a039fc85fc694b7883c6197f">engine</a>.<a class="code hl_function" href="group___engine.html#ga0990bde9edb018a122be3dfe30069181">start</a>(<span class="keyword">false</span>); <span class="comment">// false = run synchronously in this thread</span></div>
+<div class="line"> </div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;QB engine has stopped.\n&quot;</span>;</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Check if any VirtualCore encountered an error during execution</span></div>
+<div class="line">    <span class="keywordflow">if</span> (<a class="code hl_typedef" href="group___engine.html#ga5bf44c35a039fc85fc694b7883c6197f">engine</a>.<a class="code hl_function" href="group___engine.html#gad337df7d61e82fe2d32c0cc328c44835">hasError</a>()) {</div>
+<div class="line">        <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;Error: Engine stopped due to an error in a VirtualCore!\n&quot;</span>;</div>
+<div class="line">        <span class="keywordflow">return</span> 1;</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;--- Ping-Pong Example Finished Successfully ---\n&quot;</span>;</div>
+<div class="line">    <span class="keywordflow">return</span> 0;</div>
+<div class="line">}</div>
+<div class="ttc" id="a_actor_8h_html"><div class="ttname"><a href="_actor_8h.html">actor.h</a></div><div class="ttdoc">Convenience header for the core QB Actor components.</div></div>
+<div class="ttc" id="a_event_8h_html"><div class="ttname"><a href="_event_8h.html">event.h</a></div><div class="ttdoc">Convenience header for the QB Event system.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html"><div class="ttname"><a href="classqb_1_1_actor.html">qb::Actor</a></div><div class="ttdoc">Base class for all actors in the qb framework.</div><div class="ttdef"><b>Definition</b> Actor.h:106</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a0b7ee1d2a9d94988860df5ba5f19072c"><div class="ttname"><a href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">qb::Actor::registerEvent</a></div><div class="ttdeci">void registerEvent(_Actor &amp;actor) const noexcept</div><div class="ttdoc">Subscribe this actor to listen for a specific event type.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a245a2b7be6e086bf622d2acb78b9bded"><div class="ttname"><a href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">qb::Actor::on</a></div><div class="ttdeci">void on(KillEvent const &amp;event) noexcept</div><div class="ttdoc">Handler for KillEvent.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a45e94c367d5877e6406bf356c145a529"><div class="ttname"><a href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529">qb::Actor::push</a></div><div class="ttdeci">_Event &amp; push(ActorId const &amp;dest, _Args &amp;&amp;...args) const noexcept</div><div class="ttdoc">Send a new event in an ordered fashion to a destination actor, returning a reference to it.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a9999e9e7f937bbcf96a20127fe993092"><div class="ttname"><a href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">qb::Actor::id</a></div><div class="ttdeci">ActorId id() const noexcept</div><div class="ttdoc">Get ActorId.</div><div class="ttdef"><b>Definition</b> Actor.h:368</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_ad097f332e8617029cbd8031c1f8fdf84"><div class="ttname"><a href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">qb::Actor::kill</a></div><div class="ttdeci">void kill() const noexcept</div><div class="ttdoc">Terminate this actor and mark it for removal from the system.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_ae61217d6ef37d4658b41cec6d2f6719f"><div class="ttname"><a href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">qb::Actor::onInit</a></div><div class="ttdeci">virtual bool onInit()</div><div class="ttdoc">Initialization callback, called once after construction and ID assignment.</div><div class="ttdef"><b>Definition</b> Actor.h:198</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html"><div class="ttname"><a href="classqb_1_1_actor_id.html">qb::ActorId</a></div><div class="ttdoc">Unique identifier for actors.</div><div class="ttdef"><b>Definition</b> ActorId.h:374</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html_ad8a503934d9079696333e16433daf0b1"><div class="ttname"><a href="classqb_1_1_actor_id.html#ad8a503934d9079696333e16433daf0b1">qb::ActorId::is_valid</a></div><div class="ttdeci">bool is_valid() const noexcept</div><div class="ttdoc">Check if this ActorId is valid (not NotFound)</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html"><div class="ttname"><a href="classqb_1_1_event.html">qb::Event</a></div><div class="ttdoc">Base class for all events in the actor system.</div><div class="ttdef"><b>Definition</b> Event.h:85</div></div>
+<div class="ttc" id="aclassqb_1_1_main_html"><div class="ttname"><a href="classqb_1_1_main.html">qb::Main</a></div><div class="ttdoc">The main controller for the QB Actor Framework engine.</div><div class="ttdef"><b>Definition</b> Main.h:408</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1cout_html"><div class="ttname"><a href="classqb_1_1io_1_1cout.html">qb::io::cout</a></div><div class="ttdoc">Thread-safe console output class.</div><div class="ttdef"><b>Definition</b> io.h:100</div></div>
+<div class="ttc" id="agroup___engine_html_ga0990bde9edb018a122be3dfe30069181"><div class="ttname"><a href="group___engine.html#ga0990bde9edb018a122be3dfe30069181">qb::Main::start</a></div><div class="ttdeci">void start(bool async=true) noexcept</div><div class="ttdoc">Start the engine and its VirtualCore worker threads.</div></div>
+<div class="ttc" id="agroup___engine_html_ga5bf44c35a039fc85fc694b7883c6197f"><div class="ttname"><a href="group___engine.html#ga5bf44c35a039fc85fc694b7883c6197f">qb::engine</a></div><div class="ttdeci">Main engine</div><div class="ttdoc">Alias for the Main class.</div><div class="ttdef"><b>Definition</b> Main.h:570</div></div>
+<div class="ttc" id="agroup___engine_html_ga84dff5faea16cfa7108cd9ff209fbc24"><div class="ttname"><a href="group___engine.html#ga84dff5faea16cfa7108cd9ff209fbc24">qb::Main::addActor</a></div><div class="ttdeci">ActorId addActor(CoreId index, _Args &amp;&amp;...args)</div><div class="ttdoc">Add a new actor to a specified VirtualCore before the engine starts.</div></div>
+<div class="ttc" id="agroup___engine_html_gad337df7d61e82fe2d32c0cc328c44835"><div class="ttname"><a href="group___engine.html#gad337df7d61e82fe2d32c0cc328c44835">qb::Main::hasError</a></div><div class="ttdeci">bool hasError() const noexcept</div><div class="ttdoc">Check if any VirtualCore encountered an error and terminated prematurely.</div></div>
+<div class="ttc" id="agroup___event_core_html_ga3296038c4343f22626c6595a222c0d95"><div class="ttname"><a href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">qb::event</a></div><div class="ttdeci">Event event</div><div class="ttdoc">Alias for the base Event class.</div><div class="ttdef"><b>Definition</b> Event.h:385</div></div>
+<div class="ttc" id="aio_8h_html"><div class="ttname"><a href="io_8h.html">io.h</a></div><div class="ttdoc">Core I/O and logging utilities for the qb framework.</div></div>
+<div class="ttc" id="amain_8h_html"><div class="ttname"><a href="main_8h.html">main.h</a></div><div class="ttdoc">Convenience header for the QB Main engine controller.</div></div>
+</div><!-- fragment --><p><b>c) <span class="tt">CMakeLists.txt</span> for Your Application:</b></p>
+<p>Create a <span class="tt">CMakeLists.txt</span> file in your <span class="tt">my_qb_app</span> directory:</p>
+<div class="fragment"><div class="line">cmake_minimum_required(VERSION 3.14)</div>
+<div class="line">project(MyQBApp CXX)</div>
+<div class="line"> </div>
+<div class="line">set(CMAKE_CXX_STANDARD 17)</div>
+<div class="line">set(CMAKE_CXX_STANDARD_REQUIRED ON)</div>
+<div class="line"> </div>
+<div class="line"># Find the QB package. </div>
+<div class="line"># You might need to adjust CMAKE_PREFIX_PATH if QB was installed to a custom location,</div>
+<div class="line"># or if you are building QB alongside your project using add_subdirectory.</div>
+<div class="line"># Example for an installed QB:</div>
+<div class="line"># list(APPEND CMAKE_PREFIX_PATH &quot;/path/to/your/qb-framework/build&quot; &quot;/path/to/your/qb-install-dir&quot;)</div>
+<div class="line">find_package(qb REQUIRED CONFIG)</div>
+<div class="line"> </div>
+<div class="line"># If QB was built as part of the same CMake project (e.g. via add_subdirectory)</div>
+<div class="line"># ensure you link to the targets directly (qb::qb-core, qb::qb-io)</div>
+<div class="line"> </div>
+<div class="line">add_executable(ping_pong_app ping_pong_main.cpp)</div>
+<div class="line"> </div>
+<div class="line"># Link your application against the qb-core library (which includes qb-io)</div>
+<div class="line">target_link_libraries(ping_pong_app PRIVATE qb::core)</div>
+</div><!-- fragment --><p><b>d) Build and Run Your Application:</b></p>
+<p>Navigate to your <span class="tt">my_qb_app</span> directory, then create a build directory, configure, and build:</p>
+<div class="fragment"><div class="line"># From within my_qb_app directory</div>
+<div class="line">mkdir build</div>
+<div class="line">cd build</div>
+<div class="line"> </div>
+<div class="line"># Configure - Point to your QB build or install directory if needed</div>
+<div class="line"># If QB was installed to /usr/local, CMake should find it.</div>
+<div class="line"># If QB was built in ../qb-framework/build, you might use:</div>
+<div class="line"># cmake .. -DCMAKE_PREFIX_PATH=../../qb-framework/build</div>
+<div class="line">cmake .. </div>
+<div class="line"> </div>
+<div class="line"># Build</div>
+<div class="line">cmake --build . --config Release</div>
+<div class="line"> </div>
+<div class="line"># Run</div>
+<div class="line">./ping_pong_app </div>
+<div class="line"># On Windows, the executable might be in a subdirectory like ./Release/ping_pong_app.exe</div>
+</div><!-- fragment --><p>You should see output from both actors, demonstrating the ping-pong message exchange!</p>
+<h2>5. Exploring Further</h2>
+<p>Congratulations on running your first QB application!</p>
+<ul>
+<li><b>Included Examples:</b> The QB framework comes with many more examples in its <span class="tt">example/</span> directory (e.g., <span class="tt">example/core/</span>, <span class="tt">example/io/</span>, <span class="tt">example/core_io/</span>). Build them as part of the main QB build and explore their code to see various features in action.</li>
+<li><b>Core Concepts:</b> Dive deeper into the Core Concepts to solidify your understanding of actors, events, and asynchronous I/O.</li>
+<li><b>Module Documentation:</b> Explore the detailed documentation for QB-IO Module and QB-Core Module.</li>
+<li><b>Other Guides:</b> Check out other guides for patterns, performance tuning, and error handling.</li>
+</ul>
+<p>Happy coding with the QB Actor Framework! </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

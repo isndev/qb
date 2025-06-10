@@ -1,0 +1,12 @@
+<map id="include/qb/system/lockfree/mpsc.h" name="include/qb/system/lockfree/mpsc.h">
+<area shape="rect" id="Node000001" title="Multiple&#45;Producer Single&#45;Consumer lockfree queue." alt="" coords="67,5,245,46"/>
+<area shape="rect" id="Node000002" href="$core_2main_8h.html" title="Main control for the QB Actor Framework." alt="" coords="137,94,290,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="181,57,207,92,202,95,177,60"/>
+<area shape="rect" id="Node000003" href="$_virtual_core_8h.html" title="Defines the VirtualCore class, representing a worker thread in the QB Actor Framework." alt="" coords="5,168,195,193"/>
+<area shape="poly" id="edge5_Node000001_Node000003" title=" " alt="" coords="142,61,128,95,105,168,100,167,123,93,137,59"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="183,131,121,169,118,165,180,126"/>
+<area shape="rect" id="Node000004" href="$main_8h.html" title="Convenience header for the QB Main engine controller." alt="" coords="218,168,342,193"/>
+<area shape="poly" id="edge3_Node000002_Node000004" title=" " alt="" coords="237,129,271,165,267,169,233,133"/>
+<area shape="rect" id="Node000005" href="$cube_8h.html" title="Main include file for the QB Actor Framework." alt="" coords="227,241,333,267"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="283,209,283,241,277,241,277,209"/>
+</map>

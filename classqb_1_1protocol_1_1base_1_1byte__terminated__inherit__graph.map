@@ -1,0 +1,15 @@
+<map id="qb::protocol::base::byte_terminated&lt; _IO_, _EndByte &gt;" name="qb::protocol::base::byte_terminated&lt; _IO_, _EndByte &gt;">
+<area shape="rect" id="Node000001" title="Protocol for messages delimited by a specific single byte character." alt="" coords="419,129,553,185"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="612,5,746,61"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="533,118,600,71,620,59,623,64,603,75,536,122"/>
+<area shape="rect" id="Node000005" href="$classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="612,85,746,141"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="568,136,611,126,612,131,569,141"/>
+<area shape="rect" id="Node000006" href="$classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="601,164,757,235"/>
+<area shape="poly" id="edge5_Node000001_Node000006" title=" " alt="" coords="569,173,601,180,600,185,568,178"/>
+<area shape="rect" id="Node000007" href="$classqb_1_1protocol_1_1text_1_1basic__text.html" title=" " alt="" coords="601,259,757,330"/>
+<area shape="poly" id="edge6_Node000001_Node000007" title=" " alt="" coords="534,193,603,246,619,256,616,261,600,250,530,197"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1async_1_1_a_protocol.html" title="Abstract base class for I/O&#45;component&#45;aware protocols (CRTP)." alt="" coords="210,137,371,178"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="387,154,419,154,419,160,387,160"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1io_1_1async_1_1_i_protocol.html" title="Base interface for all message processing protocols." alt="" coords="5,144,162,170"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="177,154,209,154,209,160,177,160"/>
+</map>

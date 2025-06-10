@@ -1,0 +1,9 @@
+<map id="qb::allocator::base_pipe&lt; T &gt;" name="qb::allocator::base_pipe&lt; T &gt;">
+<area shape="rect" id="Node000001" title="Base class for the extensible buffer." alt="" coords="85,79,213,120"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1allocator_1_1pipe.html" title=" " alt="" coords="5,168,130,208"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="122,133,88,169,84,165,118,129"/>
+<area shape="rect" id="Node000004" href="$classqb_1_1allocator_1_1pipe.html" title="Extensible buffer optimized for performance." alt="" coords="153,175,310,201"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="180,129,222,173,218,177,176,133"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="85,5,213,31"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="152,46,152,79,146,79,146,46"/>
+</map>

@@ -1,0 +1,570 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/core/ActorId.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/core/ActorId.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('core_2_actor_id_8h_source.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">ActorId.h</div></div>
+</div><!--header-->
+<div class="contents">
+<a href="core_2_actor_id_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span> </div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span><span class="preprocessor">#ifndef QB_ACTORID_H</span></div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span><span class="preprocessor">#define QB_ACTORID_H</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span><span class="preprocessor">#include &lt;algorithm&gt;</span></div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span><span class="preprocessor">#include &lt;bitset&gt;</span></div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span><span class="preprocessor">#include &lt;cstdint&gt;</span></div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span><span class="preprocessor">#include &lt;limits&gt;</span></div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span><span class="preprocessor">#include &lt;unordered_set&gt;</span></div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span><span class="preprocessor">#include &lt;vector&gt;</span></div>
+<div class="line"><a id="l00037" name="l00037"></a><span class="lineno">   37</span><span class="comment">// include from qb</span></div>
+<div class="line"><a id="l00038" name="l00038"></a><span class="lineno">   38</span><span class="preprocessor">#include &lt;<a class="code" href="io_8h.html">qb/io.h</a>&gt;</span></div>
+<div class="line"><a id="l00039" name="l00039"></a><span class="lineno">   39</span><span class="preprocessor">#include &lt;<a class="code" href="unordered__set_8h.html">qb/system/container/unordered_set.h</a>&gt;</span></div>
+<div class="line"><a id="l00040" name="l00040"></a><span class="lineno">   40</span><span class="preprocessor">#include &lt;<a class="code" href="build__macros_8h.html">qb/utility/build_macros.h</a>&gt;</span></div>
+<div class="line"><a id="l00041" name="l00041"></a><span class="lineno">   41</span><span class="preprocessor">#include &lt;<a class="code" href="prefix_8h.html">qb/utility/prefix.h</a>&gt;</span></div>
+<div class="line"><a id="l00042" name="l00042"></a><span class="lineno">   42</span> </div>
+<div class="line"><a id="l00043" name="l00043"></a><span class="lineno">   43</span><span class="keyword">namespace </span>qb {</div>
+<div class="line"><a id="l00044" name="l00044"></a><span class="lineno">   44</span></div>
+<div class="line"><a id="l00051" name="l00051"></a><span class="lineno"><a class="line" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">   51</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>    = uint16_t;</div>
+<div class="line"><a id="l00052" name="l00052"></a><span class="lineno">   52</span></div>
+<div class="line"><a id="l00059" name="l00059"></a><span class="lineno"><a class="line" href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30">   59</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30">ServiceId</a> = uint16_t;</div>
+<div class="line"><a id="l00060" name="l00060"></a><span class="lineno">   60</span></div>
+<div class="line"><a id="l00067" name="l00067"></a><span class="lineno"><a class="line" href="group___core.html#ga1b0b30803a6fe2511f9adc1240dc325c">   67</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#ga1b0b30803a6fe2511f9adc1240dc325c">TypeId</a>    = uint16_t;</div>
+<div class="line"><a id="l00068" name="l00068"></a><span class="lineno">   68</span></div>
+<div class="line"><a id="l00075" name="l00075"></a><span class="lineno"><a class="line" href="group___core.html#gaf683acbb340cfc58aa37ce6bbbe5ebbd">   75</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#gaf683acbb340cfc58aa37ce6bbbe5ebbd">EventId</a>   = <a class="code hl_typedef" href="group___core.html#ga1b0b30803a6fe2511f9adc1240dc325c">TypeId</a>;</div>
+<div class="line"><a id="l00076" name="l00076"></a><span class="lineno">   76</span></div>
+<div class="line"><a id="l00080" name="l00080"></a><span class="lineno"><a class="line" href="core_2_actor_id_8h.html#abb6cb84fd80e5d72d9fec6dac5b5f676">   80</a></span><span class="keyword">constexpr</span> <span class="keywordtype">size_t</span> <a class="code hl_variable" href="core_2_actor_id_8h.html#abb6cb84fd80e5d72d9fec6dac5b5f676">MaxCores</a> = 256;</div>
+<div class="line"><a id="l00081" name="l00081"></a><span class="lineno">   81</span></div>
+<div class="foldopen" id="foldopen00089" data-start="{" data-end="};">
+<div class="line"><a id="l00089" name="l00089"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html">   89</a></span><span class="keyword">class </span><a class="code hl_function" href="group___actor.html#ga0c5819d2f74f42ae84cc9e11cb84788f">CoreIdBitSet</a> {</div>
+<div class="line"><a id="l00090" name="l00090"></a><span class="lineno">   90</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00091" name="l00091"></a><span class="lineno">   91</span>    std::bitset&lt;MaxCores&gt; _bits;</div>
+<div class="line"><a id="l00092" name="l00092"></a><span class="lineno">   92</span> </div>
+<div class="line"><a id="l00093" name="l00093"></a><span class="lineno">   93</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00098" name="l00098"></a><span class="lineno"><a class="line" href="group___actor.html#ga0c5819d2f74f42ae84cc9e11cb84788f">   98</a></span>    <a class="code hl_function" href="group___actor.html#ga0c5819d2f74f42ae84cc9e11cb84788f">CoreIdBitSet</a>() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00099" name="l00099"></a><span class="lineno">   99</span></div>
+<div class="foldopen" id="foldopen00105" data-start="{" data-end="}">
+<div class="line"><a id="l00105" name="l00105"></a><span class="lineno"><a class="line" href="group___actor.html#gae25da361d5f73641fe4788908ef499b4">  105</a></span>    <span class="keyword">explicit</span> <a class="code hl_function" href="group___actor.html#gae25da361d5f73641fe4788908ef499b4">CoreIdBitSet</a>(<span class="keyword">const</span> <a class="code hl_typedef" href="group___container.html#gac11145579ece76182257112fd457faba">qb::unordered_set&lt;CoreId&gt;</a> &amp;coreIds) {</div>
+<div class="line"><a id="l00106" name="l00106"></a><span class="lineno">  106</span>        <span class="keywordflow">for</span> (<span class="keyword">const</span> <span class="keyword">auto</span> <span class="keywordtype">id</span> : coreIds) {</div>
+<div class="line"><a id="l00107" name="l00107"></a><span class="lineno">  107</span>            _bits.set(<span class="keywordtype">id</span>);</div>
+<div class="line"><a id="l00108" name="l00108"></a><span class="lineno">  108</span>        }</div>
+<div class="line"><a id="l00109" name="l00109"></a><span class="lineno">  109</span>    }</div>
+</div>
+<div class="line"><a id="l00110" name="l00110"></a><span class="lineno">  110</span></div>
+<div class="foldopen" id="foldopen00116" data-start="{" data-end="}">
+<div class="line"><a id="l00116" name="l00116"></a><span class="lineno"><a class="line" href="group___actor.html#gab58b46678b9a140b8125d4704bfad0ca">  116</a></span>    <a class="code hl_function" href="group___actor.html#gab58b46678b9a140b8125d4704bfad0ca">CoreIdBitSet</a>(std::initializer_list&lt;CoreId&gt; ids) {</div>
+<div class="line"><a id="l00117" name="l00117"></a><span class="lineno">  117</span>        <span class="keywordflow">for</span> (<span class="keyword">const</span> <span class="keyword">auto</span> <span class="keywordtype">id</span> : ids) {</div>
+<div class="line"><a id="l00118" name="l00118"></a><span class="lineno">  118</span>            _bits.set(<span class="keywordtype">id</span>);</div>
+<div class="line"><a id="l00119" name="l00119"></a><span class="lineno">  119</span>        }</div>
+<div class="line"><a id="l00120" name="l00120"></a><span class="lineno">  120</span>    }</div>
+</div>
+<div class="line"><a id="l00121" name="l00121"></a><span class="lineno">  121</span></div>
+<div class="line"><a id="l00126" name="l00126"></a><span class="lineno">  126</span>    [[nodiscard]] <span class="keyword">const</span> std::bitset&lt;MaxCores&gt; &amp;</div>
+<div class="foldopen" id="foldopen00127" data-start="{" data-end="}">
+<div class="line"><a id="l00127" name="l00127"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#a184afd129c6750cc24655ce24344643c">  127</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#a184afd129c6750cc24655ce24344643c">bits</a>() const noexcept {</div>
+<div class="line"><a id="l00128" name="l00128"></a><span class="lineno">  128</span>        <span class="keywordflow">return</span> _bits;</div>
+<div class="line"><a id="l00129" name="l00129"></a><span class="lineno">  129</span>    }</div>
+</div>
+<div class="line"><a id="l00130" name="l00130"></a><span class="lineno">  130</span></div>
+<div class="line"><a id="l00136" name="l00136"></a><span class="lineno">  136</span>    [[nodiscard]] <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00137" data-start="{" data-end="}">
+<div class="line"><a id="l00137" name="l00137"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#ab96a33711b585d2b721c41f6c419cd47">  137</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#ab96a33711b585d2b721c41f6c419cd47">contains</a>(<a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> <span class="keywordtype">id</span>) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00138" name="l00138"></a><span class="lineno">  138</span>        <span class="keywordflow">return</span> <span class="keywordtype">id</span> &lt; <a class="code hl_variable" href="core_2_actor_id_8h.html#abb6cb84fd80e5d72d9fec6dac5b5f676">MaxCores</a> &amp;&amp; _bits.test(<span class="keywordtype">id</span>);</div>
+<div class="line"><a id="l00139" name="l00139"></a><span class="lineno">  139</span>    }</div>
+</div>
+<div class="line"><a id="l00140" name="l00140"></a><span class="lineno">  140</span></div>
+<div class="line"><a id="l00145" name="l00145"></a><span class="lineno">  145</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00146" data-start="{" data-end="}">
+<div class="line"><a id="l00146" name="l00146"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#ab930461cba46e649e005d6320acae943">  146</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#ab930461cba46e649e005d6320acae943">insert</a>(<a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> <span class="keywordtype">id</span>) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00147" name="l00147"></a><span class="lineno">  147</span>        <span class="keywordflow">if</span> (<span class="keywordtype">id</span> &lt; <a class="code hl_variable" href="core_2_actor_id_8h.html#abb6cb84fd80e5d72d9fec6dac5b5f676">MaxCores</a>) {</div>
+<div class="line"><a id="l00148" name="l00148"></a><span class="lineno">  148</span>            _bits.set(<span class="keywordtype">id</span>);</div>
+<div class="line"><a id="l00149" name="l00149"></a><span class="lineno">  149</span>        }</div>
+<div class="line"><a id="l00150" name="l00150"></a><span class="lineno">  150</span>    }</div>
+</div>
+<div class="line"><a id="l00151" name="l00151"></a><span class="lineno">  151</span></div>
+<div class="line"><a id="l00156" name="l00156"></a><span class="lineno">  156</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00157" data-start="{" data-end="}">
+<div class="line"><a id="l00157" name="l00157"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#a64bf00cb7d3a620e84422ace6456f4be">  157</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#a64bf00cb7d3a620e84422ace6456f4be">emplace</a>(<a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> <span class="keywordtype">id</span>) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00158" name="l00158"></a><span class="lineno">  158</span>        <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#ab930461cba46e649e005d6320acae943">insert</a>(<span class="keywordtype">id</span>);</div>
+<div class="line"><a id="l00159" name="l00159"></a><span class="lineno">  159</span>    }</div>
+</div>
+<div class="line"><a id="l00160" name="l00160"></a><span class="lineno">  160</span></div>
+<div class="line"><a id="l00165" name="l00165"></a><span class="lineno">  165</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00166" data-start="{" data-end="}">
+<div class="line"><a id="l00166" name="l00166"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#a34bc816264b6335d3ea8a624885b8f38">  166</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#a34bc816264b6335d3ea8a624885b8f38">remove</a>(<a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> <span class="keywordtype">id</span>) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00167" name="l00167"></a><span class="lineno">  167</span>        <span class="keywordflow">if</span> (<span class="keywordtype">id</span> &lt; <a class="code hl_variable" href="core_2_actor_id_8h.html#abb6cb84fd80e5d72d9fec6dac5b5f676">MaxCores</a>) {</div>
+<div class="line"><a id="l00168" name="l00168"></a><span class="lineno">  168</span>            _bits.reset(<span class="keywordtype">id</span>);</div>
+<div class="line"><a id="l00169" name="l00169"></a><span class="lineno">  169</span>        }</div>
+<div class="line"><a id="l00170" name="l00170"></a><span class="lineno">  170</span>    }</div>
+</div>
+<div class="line"><a id="l00171" name="l00171"></a><span class="lineno">  171</span></div>
+<div class="line"><a id="l00175" name="l00175"></a><span class="lineno">  175</span>    <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00176" data-start="{" data-end="}">
+<div class="line"><a id="l00176" name="l00176"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#a78f5cc26863cb4c8ba41d9fc38f7c83a">  176</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#a78f5cc26863cb4c8ba41d9fc38f7c83a">clear</a>() noexcept {</div>
+<div class="line"><a id="l00177" name="l00177"></a><span class="lineno">  177</span>        _bits.reset();</div>
+<div class="line"><a id="l00178" name="l00178"></a><span class="lineno">  178</span>    }</div>
+</div>
+<div class="line"><a id="l00179" name="l00179"></a><span class="lineno">  179</span></div>
+<div class="line"><a id="l00184" name="l00184"></a><span class="lineno">  184</span>    [[nodiscard]] <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00185" data-start="{" data-end="}">
+<div class="line"><a id="l00185" name="l00185"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#a82277302a5581d630af29b3e80f11510">  185</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#a82277302a5581d630af29b3e80f11510">empty</a>() const noexcept {</div>
+<div class="line"><a id="l00186" name="l00186"></a><span class="lineno">  186</span>        <span class="keywordflow">return</span> _bits.none();</div>
+<div class="line"><a id="l00187" name="l00187"></a><span class="lineno">  187</span>    }</div>
+</div>
+<div class="line"><a id="l00188" name="l00188"></a><span class="lineno">  188</span></div>
+<div class="line"><a id="l00193" name="l00193"></a><span class="lineno">  193</span>    [[nodiscard]] <span class="keywordtype">size_t</span></div>
+<div class="foldopen" id="foldopen00194" data-start="{" data-end="}">
+<div class="line"><a id="l00194" name="l00194"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#a5c2ac4c1daf331c57d4e962790a970d9">  194</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#a5c2ac4c1daf331c57d4e962790a970d9">size</a>() const noexcept {</div>
+<div class="line"><a id="l00195" name="l00195"></a><span class="lineno">  195</span>        <span class="keywordflow">return</span> _bits.count();</div>
+<div class="line"><a id="l00196" name="l00196"></a><span class="lineno">  196</span>    }</div>
+</div>
+<div class="line"><a id="l00197" name="l00197"></a><span class="lineno">  197</span></div>
+<div class="line"><a id="l00202" name="l00202"></a><span class="lineno">  202</span>    [[nodiscard]] std::vector&lt;CoreId&gt;</div>
+<div class="foldopen" id="foldopen00203" data-start="{" data-end="}">
+<div class="line"><a id="l00203" name="l00203"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#ac35ab9f6d349e83423c578a6c8adaa27">  203</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#ac35ab9f6d349e83423c578a6c8adaa27">to_vector</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00204" name="l00204"></a><span class="lineno">  204</span>        std::vector&lt;CoreId&gt; result;</div>
+<div class="line"><a id="l00205" name="l00205"></a><span class="lineno">  205</span>        result.reserve(_bits.count());</div>
+<div class="line"><a id="l00206" name="l00206"></a><span class="lineno">  206</span> </div>
+<div class="line"><a id="l00207" name="l00207"></a><span class="lineno">  207</span>        <span class="keywordflow">for</span> (<span class="keywordtype">size_t</span> i = 0; i &lt; <a class="code hl_variable" href="core_2_actor_id_8h.html#abb6cb84fd80e5d72d9fec6dac5b5f676">MaxCores</a>; ++i) {</div>
+<div class="line"><a id="l00208" name="l00208"></a><span class="lineno">  208</span>            <span class="keywordflow">if</span> (_bits.test(i)) {</div>
+<div class="line"><a id="l00209" name="l00209"></a><span class="lineno">  209</span>                result.push_back(<span class="keyword">static_cast&lt;</span><a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a><span class="keyword">&gt;</span>(i));</div>
+<div class="line"><a id="l00210" name="l00210"></a><span class="lineno">  210</span>            }</div>
+<div class="line"><a id="l00211" name="l00211"></a><span class="lineno">  211</span>        }</div>
+<div class="line"><a id="l00212" name="l00212"></a><span class="lineno">  212</span> </div>
+<div class="line"><a id="l00213" name="l00213"></a><span class="lineno">  213</span>        <span class="keywordflow">return</span> result;</div>
+<div class="line"><a id="l00214" name="l00214"></a><span class="lineno">  214</span>    }</div>
+</div>
+<div class="line"><a id="l00215" name="l00215"></a><span class="lineno">  215</span></div>
+<div class="line"><a id="l00220" name="l00220"></a><span class="lineno">  220</span>    [[nodiscard]] <a class="code hl_typedef" href="group___container.html#gac11145579ece76182257112fd457faba">qb::unordered_set&lt;CoreId&gt;</a></div>
+<div class="foldopen" id="foldopen00221" data-start="{" data-end="}">
+<div class="line"><a id="l00221" name="l00221"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#a10d3546a5087da2bef065c4c85d8ca3f">  221</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#a10d3546a5087da2bef065c4c85d8ca3f">to_unordered_set</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00222" name="l00222"></a><span class="lineno">  222</span>        <a class="code hl_typedef" href="group___container.html#gac11145579ece76182257112fd457faba">qb::unordered_set&lt;CoreId&gt;</a> result;</div>
+<div class="line"><a id="l00223" name="l00223"></a><span class="lineno">  223</span> </div>
+<div class="line"><a id="l00224" name="l00224"></a><span class="lineno">  224</span>        <span class="keywordflow">for</span> (<span class="keywordtype">size_t</span> i = 0; i &lt; <a class="code hl_variable" href="core_2_actor_id_8h.html#abb6cb84fd80e5d72d9fec6dac5b5f676">MaxCores</a>; ++i) {</div>
+<div class="line"><a id="l00225" name="l00225"></a><span class="lineno">  225</span>            <span class="keywordflow">if</span> (_bits.test(i)) {</div>
+<div class="line"><a id="l00226" name="l00226"></a><span class="lineno">  226</span>                result.insert(<span class="keyword">static_cast&lt;</span><a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a><span class="keyword">&gt;</span>(i));</div>
+<div class="line"><a id="l00227" name="l00227"></a><span class="lineno">  227</span>            }</div>
+<div class="line"><a id="l00228" name="l00228"></a><span class="lineno">  228</span>        }</div>
+<div class="line"><a id="l00229" name="l00229"></a><span class="lineno">  229</span> </div>
+<div class="line"><a id="l00230" name="l00230"></a><span class="lineno">  230</span>        <span class="keywordflow">return</span> result;</div>
+<div class="line"><a id="l00231" name="l00231"></a><span class="lineno">  231</span>    }</div>
+</div>
+<div class="line"><a id="l00232" name="l00232"></a><span class="lineno">  232</span></div>
+<div class="line"><a id="l00237" name="l00237"></a><span class="lineno">  237</span>    [[nodiscard]] <a class="code hl_typedef" href="group___container.html#gac11145579ece76182257112fd457faba">qb::unordered_set&lt;CoreId&gt;</a></div>
+<div class="foldopen" id="foldopen00238" data-start="{" data-end="}">
+<div class="line"><a id="l00238" name="l00238"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#a56a1e319d78b12ee077d8ace7c75bbd9">  238</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#a56a1e319d78b12ee077d8ace7c75bbd9">raw</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00239" name="l00239"></a><span class="lineno">  239</span>        <span class="keywordflow">return</span> <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#a10d3546a5087da2bef065c4c85d8ca3f">to_unordered_set</a>();</div>
+<div class="line"><a id="l00240" name="l00240"></a><span class="lineno">  240</span>    }</div>
+</div>
+<div class="line"><a id="l00241" name="l00241"></a><span class="lineno">  241</span> </div>
+<div class="line"><a id="l00242" name="l00242"></a><span class="lineno">  242</span>    <span class="comment">// Iteration support</span></div>
+<div class="foldopen" id="foldopen00252" data-start="{" data-end="};">
+<div class="line"><a id="l00252" name="l00252"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set_1_1iterator.html">  252</a></span>    <span class="keyword">class </span><a class="code hl_function" href="classqb_1_1_core_id_bit_set_1_1iterator.html#a212ecac449dba3d3e805004d57e2d3d5">iterator</a> {</div>
+<div class="line"><a id="l00253" name="l00253"></a><span class="lineno">  253</span>    <span class="keyword">private</span>:</div>
+<div class="line"><a id="l00254" name="l00254"></a><span class="lineno">  254</span>        <span class="keyword">const</span> <a class="code hl_function" href="group___actor.html#ga0c5819d2f74f42ae84cc9e11cb84788f">CoreIdBitSet</a> &amp;_set;</div>
+<div class="line"><a id="l00255" name="l00255"></a><span class="lineno">  255</span>        <span class="keywordtype">size_t</span>              _pos;</div>
+<div class="line"><a id="l00256" name="l00256"></a><span class="lineno">  256</span> </div>
+<div class="line"><a id="l00257" name="l00257"></a><span class="lineno">  257</span>        <span class="comment">// Advance to the next set bit</span></div>
+<div class="line"><a id="l00258" name="l00258"></a><span class="lineno">  258</span>        <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00259" name="l00259"></a><span class="lineno">  259</span>        advance() {</div>
+<div class="line"><a id="l00260" name="l00260"></a><span class="lineno">  260</span>            <span class="keywordflow">while</span> (_pos &lt; <a class="code hl_variable" href="core_2_actor_id_8h.html#abb6cb84fd80e5d72d9fec6dac5b5f676">MaxCores</a> &amp;&amp; !_set._bits.test(_pos)) {</div>
+<div class="line"><a id="l00261" name="l00261"></a><span class="lineno">  261</span>                ++_pos;</div>
+<div class="line"><a id="l00262" name="l00262"></a><span class="lineno">  262</span>            }</div>
+<div class="line"><a id="l00263" name="l00263"></a><span class="lineno">  263</span>        }</div>
+<div class="line"><a id="l00264" name="l00264"></a><span class="lineno">  264</span> </div>
+<div class="line"><a id="l00265" name="l00265"></a><span class="lineno">  265</span>    <span class="keyword">public</span>:</div>
+<div class="line"><a id="l00266" name="l00266"></a><span class="lineno">  266</span>        <span class="keyword">using </span>iterator_category = std::forward_iterator_tag;</div>
+<div class="line"><a id="l00267" name="l00267"></a><span class="lineno">  267</span>        <span class="keyword">using </span>value_type        = <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>;</div>
+<div class="line"><a id="l00268" name="l00268"></a><span class="lineno">  268</span>        <span class="keyword">using </span>difference_type   = std::ptrdiff_t;</div>
+<div class="line"><a id="l00269" name="l00269"></a><span class="lineno">  269</span>        <span class="keyword">using </span>pointer           = <span class="keyword">const</span> <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> *;</div>
+<div class="line"><a id="l00270" name="l00270"></a><span class="lineno">  270</span>        <span class="keyword">using </span>reference         = <span class="keyword">const</span> <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> &amp;;</div>
+<div class="line"><a id="l00271" name="l00271"></a><span class="lineno">  271</span></div>
+<div class="foldopen" id="foldopen00277" data-start="{" data-end="}">
+<div class="line"><a id="l00277" name="l00277"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set_1_1iterator.html#a212ecac449dba3d3e805004d57e2d3d5">  277</a></span>        <a class="code hl_function" href="classqb_1_1_core_id_bit_set_1_1iterator.html#a212ecac449dba3d3e805004d57e2d3d5">iterator</a>(<span class="keyword">const</span> <a class="code hl_function" href="group___actor.html#ga0c5819d2f74f42ae84cc9e11cb84788f">CoreIdBitSet</a> &amp;set, <span class="keywordtype">size_t</span> pos)</div>
+<div class="line"><a id="l00278" name="l00278"></a><span class="lineno">  278</span>            : _set(set)</div>
+<div class="line"><a id="l00279" name="l00279"></a><span class="lineno">  279</span>            , _pos(pos) {</div>
+<div class="line"><a id="l00280" name="l00280"></a><span class="lineno">  280</span>            advance();</div>
+<div class="line"><a id="l00281" name="l00281"></a><span class="lineno">  281</span>        }</div>
+</div>
+<div class="line"><a id="l00282" name="l00282"></a><span class="lineno">  282</span></div>
+<div class="line"><a id="l00287" name="l00287"></a><span class="lineno">  287</span>        <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a></div>
+<div class="foldopen" id="foldopen00288" data-start="{" data-end="}">
+<div class="line"><a id="l00288" name="l00288"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set_1_1iterator.html#a5615d06de29dbda8c396f33fdf9f7662">  288</a></span>        <a class="code hl_function" href="classqb_1_1_core_id_bit_set_1_1iterator.html#a5615d06de29dbda8c396f33fdf9f7662">operator*</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00289" name="l00289"></a><span class="lineno">  289</span>            <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span><a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a><span class="keyword">&gt;</span>(_pos);</div>
+<div class="line"><a id="l00290" name="l00290"></a><span class="lineno">  290</span>        }</div>
+</div>
+<div class="line"><a id="l00291" name="l00291"></a><span class="lineno">  291</span></div>
+<div class="line"><a id="l00296" name="l00296"></a><span class="lineno">  296</span>        <a class="code hl_class" href="classqb_1_1_core_id_bit_set_1_1iterator.html">iterator</a> &amp;</div>
+<div class="foldopen" id="foldopen00297" data-start="{" data-end="}">
+<div class="line"><a id="l00297" name="l00297"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set_1_1iterator.html#afd88497b1997e6c0878513b48a0fbe1b">  297</a></span>        <a class="code hl_function" href="classqb_1_1_core_id_bit_set_1_1iterator.html#afd88497b1997e6c0878513b48a0fbe1b">operator++</a>() {</div>
+<div class="line"><a id="l00298" name="l00298"></a><span class="lineno">  298</span>            ++_pos;</div>
+<div class="line"><a id="l00299" name="l00299"></a><span class="lineno">  299</span>            advance();</div>
+<div class="line"><a id="l00300" name="l00300"></a><span class="lineno">  300</span>            <span class="keywordflow">return</span> *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00301" name="l00301"></a><span class="lineno">  301</span>        }</div>
+</div>
+<div class="line"><a id="l00302" name="l00302"></a><span class="lineno">  302</span></div>
+<div class="line"><a id="l00307" name="l00307"></a><span class="lineno">  307</span>        <a class="code hl_class" href="classqb_1_1_core_id_bit_set_1_1iterator.html">iterator</a></div>
+<div class="foldopen" id="foldopen00308" data-start="{" data-end="}">
+<div class="line"><a id="l00308" name="l00308"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set_1_1iterator.html#a0d1f90323e0de13d7cdfb84d09b10f7f">  308</a></span>        <a class="code hl_function" href="classqb_1_1_core_id_bit_set_1_1iterator.html#a0d1f90323e0de13d7cdfb84d09b10f7f">operator++</a>(<span class="keywordtype">int</span>) {</div>
+<div class="line"><a id="l00309" name="l00309"></a><span class="lineno">  309</span>            <a class="code hl_function" href="classqb_1_1_core_id_bit_set_1_1iterator.html#a212ecac449dba3d3e805004d57e2d3d5">iterator</a> tmp = *<span class="keyword">this</span>;</div>
+<div class="line"><a id="l00310" name="l00310"></a><span class="lineno">  310</span>            ++(*this);</div>
+<div class="line"><a id="l00311" name="l00311"></a><span class="lineno">  311</span>            <span class="keywordflow">return</span> tmp;</div>
+<div class="line"><a id="l00312" name="l00312"></a><span class="lineno">  312</span>        }</div>
+</div>
+<div class="line"><a id="l00313" name="l00313"></a><span class="lineno">  313</span></div>
+<div class="line"><a id="l00319" name="l00319"></a><span class="lineno">  319</span>        <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00320" data-start="{" data-end="}">
+<div class="line"><a id="l00320" name="l00320"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set_1_1iterator.html#ac5acbe2171826fad9843bf61059c7c98">  320</a></span>        <a class="code hl_function" href="classqb_1_1_core_id_bit_set_1_1iterator.html#ac5acbe2171826fad9843bf61059c7c98">operator==</a>(<span class="keyword">const</span> <a class="code hl_function" href="classqb_1_1_core_id_bit_set_1_1iterator.html#a212ecac449dba3d3e805004d57e2d3d5">iterator</a> &amp;other)<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00321" name="l00321"></a><span class="lineno">  321</span>            <span class="keywordflow">return</span> &amp;_set == &amp;other._set &amp;&amp; _pos == other._pos;</div>
+<div class="line"><a id="l00322" name="l00322"></a><span class="lineno">  322</span>        }</div>
+</div>
+<div class="line"><a id="l00323" name="l00323"></a><span class="lineno">  323</span></div>
+<div class="line"><a id="l00329" name="l00329"></a><span class="lineno">  329</span>        <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00330" data-start="{" data-end="}">
+<div class="line"><a id="l00330" name="l00330"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set_1_1iterator.html#ac08a77b50e1fc77017ecc1304797d88d">  330</a></span>        <a class="code hl_function" href="classqb_1_1_core_id_bit_set_1_1iterator.html#ac08a77b50e1fc77017ecc1304797d88d">operator!=</a>(<span class="keyword">const</span> <a class="code hl_function" href="classqb_1_1_core_id_bit_set_1_1iterator.html#a212ecac449dba3d3e805004d57e2d3d5">iterator</a> &amp;other)<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00331" name="l00331"></a><span class="lineno">  331</span>            <span class="keywordflow">return</span> !(*<span class="keyword">this</span> == other);</div>
+<div class="line"><a id="l00332" name="l00332"></a><span class="lineno">  332</span>        }</div>
+</div>
+<div class="line"><a id="l00333" name="l00333"></a><span class="lineno">  333</span>    };</div>
+</div>
+<div class="line"><a id="l00334" name="l00334"></a><span class="lineno">  334</span></div>
+<div class="line"><a id="l00339" name="l00339"></a><span class="lineno">  339</span>    [[nodiscard]] iterator</div>
+<div class="foldopen" id="foldopen00340" data-start="{" data-end="}">
+<div class="line"><a id="l00340" name="l00340"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#a3cca4e7e5a8f2eb10d219d4074f21a74">  340</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#a3cca4e7e5a8f2eb10d219d4074f21a74">begin</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00341" name="l00341"></a><span class="lineno">  341</span>        <span class="keywordflow">return</span> <a class="code hl_class" href="classqb_1_1_core_id_bit_set_1_1iterator.html">iterator</a>(*<span class="keyword">this</span>, 0);</div>
+<div class="line"><a id="l00342" name="l00342"></a><span class="lineno">  342</span>    }</div>
+</div>
+<div class="line"><a id="l00343" name="l00343"></a><span class="lineno">  343</span></div>
+<div class="line"><a id="l00348" name="l00348"></a><span class="lineno">  348</span>    [[nodiscard]] iterator</div>
+<div class="foldopen" id="foldopen00349" data-start="{" data-end="}">
+<div class="line"><a id="l00349" name="l00349"></a><span class="lineno"><a class="line" href="classqb_1_1_core_id_bit_set.html#a6b05b9ec48bfb4ef6de4190da64888c8">  349</a></span>    <a class="code hl_function" href="classqb_1_1_core_id_bit_set.html#a6b05b9ec48bfb4ef6de4190da64888c8">end</a>()<span class="keyword"> const </span>{</div>
+<div class="line"><a id="l00350" name="l00350"></a><span class="lineno">  350</span>        <span class="keywordflow">return</span> <a class="code hl_class" href="classqb_1_1_core_id_bit_set_1_1iterator.html">iterator</a>(*<span class="keyword">this</span>, <a class="code hl_variable" href="core_2_actor_id_8h.html#abb6cb84fd80e5d72d9fec6dac5b5f676">MaxCores</a>);</div>
+<div class="line"><a id="l00351" name="l00351"></a><span class="lineno">  351</span>    }</div>
+</div>
+<div class="line"><a id="l00352" name="l00352"></a><span class="lineno">  352</span>};</div>
+</div>
+<div class="line"><a id="l00353" name="l00353"></a><span class="lineno">  353</span> </div>
+<div class="line"><a id="l00354" name="l00354"></a><span class="lineno">  354</span><span class="comment">// Define CoreIdSet as our new efficient implementation</span></div>
+<div class="line"><a id="l00363" name="l00363"></a><span class="lineno"><a class="line" href="group___core.html#gaf938afc2318277511d1b20184c0c1152">  363</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#gaf938afc2318277511d1b20184c0c1152">CoreIdSet</a> = <a class="code hl_class" href="classqb_1_1_core_id_bit_set.html">CoreIdBitSet</a>;</div>
+<div class="line"><a id="l00364" name="l00364"></a><span class="lineno">  364</span></div>
+<div class="foldopen" id="foldopen00374" data-start="{" data-end="};">
+<div class="line"><a id="l00374" name="l00374"></a><span class="lineno"><a class="line" href="classqb_1_1_actor_id.html">  374</a></span><span class="keyword">class </span>ActorId {</div>
+<div class="line"><a id="l00375" name="l00375"></a><span class="lineno">  375</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00376" name="l00376"></a><span class="lineno">  376</span>    <span class="keyword">friend</span> <span class="keyword">struct </span>std::hash;</div>
+<div class="line"><a id="l00377" name="l00377"></a><span class="lineno">  377</span> </div>
+<div class="line"><a id="l00378" name="l00378"></a><span class="lineno">  378</span>    <span class="keyword">friend</span> <span class="keyword">class </span>CoreInitializer;</div>
+<div class="line"><a id="l00379" name="l00379"></a><span class="lineno">  379</span>    <span class="keyword">friend</span> <span class="keyword">class </span>SharedCoreCommunication;</div>
+<div class="line"><a id="l00380" name="l00380"></a><span class="lineno">  380</span>    <span class="keyword">friend</span> <span class="keyword">class </span>VirtualCore;</div>
+<div class="line"><a id="l00381" name="l00381"></a><span class="lineno">  381</span>    <span class="keyword">friend</span> <span class="keyword">class </span>Actor;</div>
+<div class="line"><a id="l00382" name="l00382"></a><span class="lineno">  382</span>    <span class="keyword">friend</span> <span class="keyword">class </span>Service;</div>
+<div class="line"><a id="l00383" name="l00383"></a><span class="lineno">  383</span> </div>
+<div class="line"><a id="l00384" name="l00384"></a><span class="lineno">  384</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00385" name="l00385"></a><span class="lineno">  385</span>    <a class="code hl_typedef" href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30">ServiceId</a> _service_id;</div>
+<div class="line"><a id="l00386" name="l00386"></a><span class="lineno">  386</span>    <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>    _core_id;</div>
+<div class="line"><a id="l00387" name="l00387"></a><span class="lineno">  387</span> </div>
+<div class="line"><a id="l00388" name="l00388"></a><span class="lineno">  388</span><span class="keyword">protected</span>:</div>
+<div class="line"><a id="l00389" name="l00389"></a><span class="lineno">  389</span>    <a class="code hl_function" href="classqb_1_1_actor_id.html#a3eabbc06a409293a814ff2c623cb29a8">ActorId</a>(<a class="code hl_typedef" href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30">ServiceId</a> <span class="keywordtype">id</span>, <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> <a class="code hl_function" href="classqb_1_1_actor_id.html#a1b791757fef5470674732c1a9b1c5e28">index</a>) <span class="keyword">noexcept</span>;</div>
+<div class="line"><a id="l00390" name="l00390"></a><span class="lineno">  390</span> </div>
+<div class="line"><a id="l00391" name="l00391"></a><span class="lineno">  391</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00392" name="l00392"></a><span class="lineno">  392</span>    <span class="keyword">static</span> <span class="keyword">constexpr</span> uint32_t  NotFound     = 0;</div>
+<div class="line"><a id="l00393" name="l00393"></a><span class="lineno">  393</span>    <span class="keyword">static</span> <span class="keyword">constexpr</span> <a class="code hl_typedef" href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30">ServiceId</a> BroadcastSid = (std::numeric_limits&lt;ServiceId&gt;::max)();</div>
+<div class="line"><a id="l00394" name="l00394"></a><span class="lineno">  394</span></div>
+<div class="line"><a id="l00398" name="l00398"></a><span class="lineno"><a class="line" href="classqb_1_1_actor_id.html#a3eabbc06a409293a814ff2c623cb29a8">  398</a></span>    <a class="code hl_function" href="classqb_1_1_actor_id.html#a3eabbc06a409293a814ff2c623cb29a8">ActorId</a>() noexcept;</div>
+<div class="line"><a id="l00403" name="l00403"></a><span class="lineno">  403</span>    ActorId(uint32_t <span class="keywordtype">id</span>) noexcept;</div>
+<div class="line"><a id="l00404" name="l00404"></a><span class="lineno">  404</span></div>
+<div class="line"><a id="l00409" name="l00409"></a><span class="lineno"><a class="line" href="classqb_1_1_actor_id.html#ae47107b167fdf4af91210b1710f6551c">  409</a></span>    [[nodiscard]] operator uint32_t() const noexcept;</div>
+<div class="line"><a id="l00410" name="l00410"></a><span class="lineno">  410</span></div>
+<div class="line"><a id="l00415" name="l00415"></a><span class="lineno"><a class="line" href="classqb_1_1_actor_id.html#a32a58025191d103a3952f5f5ffb74c21">  415</a></span>    [[nodiscard]] <a class="code hl_typedef" href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30">ServiceId</a> <a class="code hl_function" href="classqb_1_1_actor_id.html#a32a58025191d103a3952f5f5ffb74c21">sid</a>() const noexcept;</div>
+<div class="line"><a id="l00416" name="l00416"></a><span class="lineno">  416</span></div>
+<div class="line"><a id="l00421" name="l00421"></a><span class="lineno"><a class="line" href="classqb_1_1_actor_id.html#a1b791757fef5470674732c1a9b1c5e28">  421</a></span>    [[nodiscard]] <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a> <a class="code hl_function" href="classqb_1_1_actor_id.html#a1b791757fef5470674732c1a9b1c5e28">index</a>() const noexcept;</div>
+<div class="line"><a id="l00422" name="l00422"></a><span class="lineno">  422</span></div>
+<div class="line"><a id="l00427" name="l00427"></a><span class="lineno"><a class="line" href="classqb_1_1_actor_id.html#ad8aec1c0195638cec9879667b3717c30">  427</a></span>    [[nodiscard]] <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_actor_id.html#ad8aec1c0195638cec9879667b3717c30">is_broadcast</a>() const noexcept;</div>
+<div class="line"><a id="l00428" name="l00428"></a><span class="lineno">  428</span></div>
+<div class="line"><a id="l00433" name="l00433"></a><span class="lineno"><a class="line" href="classqb_1_1_actor_id.html#ad8a503934d9079696333e16433daf0b1">  433</a></span>    [[nodiscard]] <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_actor_id.html#ad8a503934d9079696333e16433daf0b1">is_valid</a>() const noexcept;</div>
+<div class="line"><a id="l00434" name="l00434"></a><span class="lineno">  434</span>};</div>
+</div>
+<div class="line"><a id="l00435" name="l00435"></a><span class="lineno">  435</span></div>
+<div class="foldopen" id="foldopen00445" data-start="{" data-end="};">
+<div class="line"><a id="l00445" name="l00445"></a><span class="lineno"><a class="line" href="classqb_1_1_broadcast_id.html">  445</a></span>class BroadcastId : public ActorId {</div>
+<div class="line"><a id="l00446" name="l00446"></a><span class="lineno">  446</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00447" name="l00447"></a><span class="lineno">  447</span>    BroadcastId() = <span class="keyword">delete</span>;</div>
+<div class="foldopen" id="foldopen00453" data-start="{" data-end="}">
+<div class="line"><a id="l00453" name="l00453"></a><span class="lineno"><a class="line" href="group___actor.html#ga59aa92ee05bf4aef7f4c6d0e6a525e1e">  453</a></span>    <span class="keyword">explicit</span> <a class="code hl_function" href="group___actor.html#ga59aa92ee05bf4aef7f4c6d0e6a525e1e">BroadcastId</a>(uint32_t <span class="keyword">const</span> <a class="code hl_typedef" href="group___core.html#ga1b5fd42650786668943857893d92d766">core_id</a>) noexcept</div>
+<div class="line"><a id="l00454" name="l00454"></a><span class="lineno">  454</span>        : <a class="code hl_function" href="classqb_1_1_actor_id.html#a3eabbc06a409293a814ff2c623cb29a8">ActorId</a>(BroadcastSid, <span class="keyword">static_cast&lt;</span><a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a><span class="keyword">&gt;</span>(<a class="code hl_typedef" href="group___core.html#ga1b5fd42650786668943857893d92d766">core_id</a>)) {}</div>
+</div>
+<div class="line"><a id="l00455" name="l00455"></a><span class="lineno">  455</span>};</div>
+</div>
+<div class="line"><a id="l00456" name="l00456"></a><span class="lineno">  456</span></div>
+<div class="line"><a id="l00463" name="l00463"></a><span class="lineno"><a class="line" href="group___core.html#ga00b6a66f12346e8cca5e71716b971582">  463</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#ga00b6a66f12346e8cca5e71716b971582">ActorIdList</a>   = std::vector&lt;ActorId&gt;;</div>
+<div class="line"><a id="l00464" name="l00464"></a><span class="lineno">  464</span></div>
+<div class="line"><a id="l00471" name="l00471"></a><span class="lineno"><a class="line" href="group___core.html#ga3311c26acd08272511f170b9594345ce">  471</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#ga3311c26acd08272511f170b9594345ce">ActorIdSet</a>    = std::unordered_set&lt;ActorId&gt;;</div>
+<div class="line"><a id="l00472" name="l00472"></a><span class="lineno">  472</span></div>
+<div class="line"><a id="l00479" name="l00479"></a><span class="lineno"><a class="line" href="group___core.html#ga1b5fd42650786668943857893d92d766">  479</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#ga1b5fd42650786668943857893d92d766">core_id</a>       = <a class="code hl_typedef" href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">CoreId</a>;</div>
+<div class="line"><a id="l00480" name="l00480"></a><span class="lineno">  480</span></div>
+<div class="line"><a id="l00487" name="l00487"></a><span class="lineno"><a class="line" href="group___core.html#gaafde4d47c2c5695029034e971ed58171">  487</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#gaafde4d47c2c5695029034e971ed58171">service_id</a>    = <a class="code hl_typedef" href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30">ServiceId</a>;</div>
+<div class="line"><a id="l00488" name="l00488"></a><span class="lineno">  488</span></div>
+<div class="line"><a id="l00495" name="l00495"></a><span class="lineno"><a class="line" href="group___core.html#ga577f0efb6b04ea39f9e8330f13dddeaa">  495</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#ga577f0efb6b04ea39f9e8330f13dddeaa">actor_id</a>      = <a class="code hl_class" href="classqb_1_1_actor_id.html">ActorId</a>;</div>
+<div class="line"><a id="l00496" name="l00496"></a><span class="lineno">  496</span></div>
+<div class="line"><a id="l00503" name="l00503"></a><span class="lineno"><a class="line" href="group___core.html#ga6f7d5a9e5aae7d6024589716c3784a93">  503</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#ga6f7d5a9e5aae7d6024589716c3784a93">broadcast_id</a>  = <a class="code hl_class" href="classqb_1_1_broadcast_id.html">BroadcastId</a>;</div>
+<div class="line"><a id="l00504" name="l00504"></a><span class="lineno">  504</span></div>
+<div class="line"><a id="l00511" name="l00511"></a><span class="lineno"><a class="line" href="group___core.html#gaf8003f11a74691bac6156c65aad3ebc8">  511</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#gaf8003f11a74691bac6156c65aad3ebc8">actor_id_list</a> = <a class="code hl_typedef" href="group___core.html#ga00b6a66f12346e8cca5e71716b971582">ActorIdList</a>;</div>
+<div class="line"><a id="l00512" name="l00512"></a><span class="lineno">  512</span></div>
+<div class="line"><a id="l00519" name="l00519"></a><span class="lineno"><a class="line" href="group___core.html#gad0e1842d1961619ae44e34acef6a4068">  519</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#gad0e1842d1961619ae44e34acef6a4068">actor_is_set</a>  = <a class="code hl_typedef" href="group___core.html#ga3311c26acd08272511f170b9594345ce">ActorIdSet</a>;</div>
+<div class="line"><a id="l00520" name="l00520"></a><span class="lineno">  520</span></div>
+<div class="line"><a id="l00527" name="l00527"></a><span class="lineno"><a class="line" href="group___core.html#ga4db3315ac18edf0066c2c0201ca3c749">  527</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___core.html#ga4db3315ac18edf0066c2c0201ca3c749">core_id_set</a>   = <a class="code hl_typedef" href="group___core.html#gaf938afc2318277511d1b20184c0c1152">CoreIdSet</a>;</div>
+<div class="line"><a id="l00528" name="l00528"></a><span class="lineno">  528</span><span class="preprocessor">#ifdef QB_LOGGER</span></div>
+<div class="line"><a id="l00529" name="l00529"></a><span class="lineno">  529</span>qb::io::log::stream &amp;<a class="code hl_function" href="group___actor.html#gae1d1d0200c731c329d48e02177661660">operator&lt;&lt;</a>(qb::io::log::stream &amp;os, <a class="code hl_class" href="classqb_1_1_actor_id.html">qb::ActorId</a> <span class="keyword">const</span> &amp;<span class="keywordtype">id</span>);</div>
+<div class="line"><a id="l00530" name="l00530"></a><span class="lineno">  530</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00531" name="l00531"></a><span class="lineno">  531</span>} <span class="comment">// namespace qb</span></div>
+<div class="line"><a id="l00532" name="l00532"></a><span class="lineno">  532</span> </div>
+<div class="line"><a id="l00533" name="l00533"></a><span class="lineno">  533</span><span class="keyword">namespace </span>std {</div>
+<div class="line"><a id="l00543" name="l00543"></a><span class="lineno">  543</span><span class="keyword">template</span> &lt;&gt;</div>
+<div class="foldopen" id="foldopen00544" data-start="{" data-end="};">
+<div class="line"><a id="l00544" name="l00544"></a><span class="lineno"><a class="line" href="structstd_1_1hash_3_01qb_1_1_actor_id_01_4.html">  544</a></span><span class="keyword">struct </span>hash&lt;qb::ActorId&gt; {</div>
+<div class="line"><a id="l00550" name="l00550"></a><span class="lineno">  550</span>    std::size_t</div>
+<div class="foldopen" id="foldopen00551" data-start="{" data-end="}">
+<div class="line"><a id="l00551" name="l00551"></a><span class="lineno"><a class="line" href="structstd_1_1hash_3_01qb_1_1_actor_id_01_4.html#a3b3839c765aaeb34d5bc0e442629b348">  551</a></span>    <a class="code hl_function" href="structstd_1_1hash_3_01qb_1_1_actor_id_01_4.html#a3b3839c765aaeb34d5bc0e442629b348">operator()</a>(<a class="code hl_class" href="classqb_1_1_actor_id.html">qb::ActorId</a> <span class="keyword">const</span> &amp;val) <span class="keyword">const</span> <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00552" name="l00552"></a><span class="lineno">  552</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>uint32_t<span class="keyword">&gt;</span>(val);</div>
+<div class="line"><a id="l00553" name="l00553"></a><span class="lineno">  553</span>    }</div>
+</div>
+<div class="line"><a id="l00554" name="l00554"></a><span class="lineno">  554</span>};</div>
+</div>
+<div class="line"><a id="l00555" name="l00555"></a><span class="lineno">  555</span>} <span class="comment">// namespace std</span></div>
+<div class="line"><a id="l00556" name="l00556"></a><span class="lineno">  556</span> </div>
+<div class="line"><a id="l00557" name="l00557"></a><span class="lineno">  557</span><span class="preprocessor">#endif </span><span class="comment">// QB_ACTORID_H</span></div>
+<div class="ttc" id="abuild__macros_8h_html"><div class="ttname"><a href="build__macros_8h.html">build_macros.h</a></div><div class="ttdoc">Platform, compiler, and C++ feature detection macros for the QB Framework.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html"><div class="ttname"><a href="classqb_1_1_actor_id.html">qb::ActorId</a></div><div class="ttdoc">Unique identifier for actors.</div><div class="ttdef"><b>Definition</b> ActorId.h:374</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html_a1b791757fef5470674732c1a9b1c5e28"><div class="ttname"><a href="classqb_1_1_actor_id.html#a1b791757fef5470674732c1a9b1c5e28">qb::ActorId::index</a></div><div class="ttdeci">CoreId index() const noexcept</div><div class="ttdoc">Get the core identifier component of this ActorId.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html_a32a58025191d103a3952f5f5ffb74c21"><div class="ttname"><a href="classqb_1_1_actor_id.html#a32a58025191d103a3952f5f5ffb74c21">qb::ActorId::sid</a></div><div class="ttdeci">ServiceId sid() const noexcept</div><div class="ttdoc">Get the service identifier component of this ActorId.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html_a3eabbc06a409293a814ff2c623cb29a8"><div class="ttname"><a href="classqb_1_1_actor_id.html#a3eabbc06a409293a814ff2c623cb29a8">qb::ActorId::ActorId</a></div><div class="ttdeci">ActorId() noexcept</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html_ad8a503934d9079696333e16433daf0b1"><div class="ttname"><a href="classqb_1_1_actor_id.html#ad8a503934d9079696333e16433daf0b1">qb::ActorId::is_valid</a></div><div class="ttdeci">bool is_valid() const noexcept</div><div class="ttdoc">Check if this ActorId is valid (not NotFound)</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html_ad8aec1c0195638cec9879667b3717c30"><div class="ttname"><a href="classqb_1_1_actor_id.html#ad8aec1c0195638cec9879667b3717c30">qb::ActorId::is_broadcast</a></div><div class="ttdeci">bool is_broadcast() const noexcept</div><div class="ttdoc">Check if this ActorId represents a broadcast identifier.</div></div>
+<div class="ttc" id="aclassqb_1_1_broadcast_id_html"><div class="ttname"><a href="classqb_1_1_broadcast_id.html">qb::BroadcastId</a></div><div class="ttdoc">Specialized ActorId for broadcasting messages to all actors on a core.</div><div class="ttdef"><b>Definition</b> ActorId.h:445</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_1_1iterator_html"><div class="ttname"><a href="classqb_1_1_core_id_bit_set_1_1iterator.html">qb::CoreIdBitSet::iterator</a></div><div class="ttdoc">Iterator for traversing set bits in a CoreIdBitSet.</div><div class="ttdef"><b>Definition</b> ActorId.h:252</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_1_1iterator_html_a0d1f90323e0de13d7cdfb84d09b10f7f"><div class="ttname"><a href="classqb_1_1_core_id_bit_set_1_1iterator.html#a0d1f90323e0de13d7cdfb84d09b10f7f">qb::CoreIdBitSet::iterator::operator++</a></div><div class="ttdeci">iterator operator++(int)</div><div class="ttdoc">Post-increment operator.</div><div class="ttdef"><b>Definition</b> ActorId.h:308</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_1_1iterator_html_a212ecac449dba3d3e805004d57e2d3d5"><div class="ttname"><a href="classqb_1_1_core_id_bit_set_1_1iterator.html#a212ecac449dba3d3e805004d57e2d3d5">qb::CoreIdBitSet::iterator::iterator</a></div><div class="ttdeci">iterator(const CoreIdBitSet &amp;set, size_t pos)</div><div class="ttdoc">Constructs an iterator for a CoreIdBitSet.</div><div class="ttdef"><b>Definition</b> ActorId.h:277</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_1_1iterator_html_a5615d06de29dbda8c396f33fdf9f7662"><div class="ttname"><a href="classqb_1_1_core_id_bit_set_1_1iterator.html#a5615d06de29dbda8c396f33fdf9f7662">qb::CoreIdBitSet::iterator::operator*</a></div><div class="ttdeci">CoreId operator*() const</div><div class="ttdoc">Dereference operator.</div><div class="ttdef"><b>Definition</b> ActorId.h:288</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_1_1iterator_html_ac08a77b50e1fc77017ecc1304797d88d"><div class="ttname"><a href="classqb_1_1_core_id_bit_set_1_1iterator.html#ac08a77b50e1fc77017ecc1304797d88d">qb::CoreIdBitSet::iterator::operator!=</a></div><div class="ttdeci">bool operator!=(const iterator &amp;other) const</div><div class="ttdoc">Inequality comparison operator.</div><div class="ttdef"><b>Definition</b> ActorId.h:330</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_1_1iterator_html_ac5acbe2171826fad9843bf61059c7c98"><div class="ttname"><a href="classqb_1_1_core_id_bit_set_1_1iterator.html#ac5acbe2171826fad9843bf61059c7c98">qb::CoreIdBitSet::iterator::operator==</a></div><div class="ttdeci">bool operator==(const iterator &amp;other) const</div><div class="ttdoc">Equality comparison operator.</div><div class="ttdef"><b>Definition</b> ActorId.h:320</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_1_1iterator_html_afd88497b1997e6c0878513b48a0fbe1b"><div class="ttname"><a href="classqb_1_1_core_id_bit_set_1_1iterator.html#afd88497b1997e6c0878513b48a0fbe1b">qb::CoreIdBitSet::iterator::operator++</a></div><div class="ttdeci">iterator &amp; operator++()</div><div class="ttdoc">Pre-increment operator.</div><div class="ttdef"><b>Definition</b> ActorId.h:297</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html">qb::CoreIdBitSet</a></div><div class="ttdoc">Efficient representation of a set of core IDs using a bitset.</div><div class="ttdef"><b>Definition</b> ActorId.h:89</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_a10d3546a5087da2bef065c4c85d8ca3f"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#a10d3546a5087da2bef065c4c85d8ca3f">qb::CoreIdBitSet::to_unordered_set</a></div><div class="ttdeci">qb::unordered_set&lt; CoreId &gt; to_unordered_set() const</div><div class="ttdoc">Get an unordered_set of the core IDs.</div><div class="ttdef"><b>Definition</b> ActorId.h:221</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_a184afd129c6750cc24655ce24344643c"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#a184afd129c6750cc24655ce24344643c">qb::CoreIdBitSet::bits</a></div><div class="ttdeci">const std::bitset&lt; MaxCores &gt; &amp; bits() const noexcept</div><div class="ttdoc">Get the raw bitset.</div><div class="ttdef"><b>Definition</b> ActorId.h:127</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_a34bc816264b6335d3ea8a624885b8f38"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#a34bc816264b6335d3ea8a624885b8f38">qb::CoreIdBitSet::remove</a></div><div class="ttdeci">void remove(CoreId id) noexcept</div><div class="ttdoc">Remove a core ID from the set.</div><div class="ttdef"><b>Definition</b> ActorId.h:166</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_a3cca4e7e5a8f2eb10d219d4074f21a74"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#a3cca4e7e5a8f2eb10d219d4074f21a74">qb::CoreIdBitSet::begin</a></div><div class="ttdeci">iterator begin() const</div><div class="ttdoc">Get an iterator to the beginning of the set.</div><div class="ttdef"><b>Definition</b> ActorId.h:340</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_a56a1e319d78b12ee077d8ace7c75bbd9"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#a56a1e319d78b12ee077d8ace7c75bbd9">qb::CoreIdBitSet::raw</a></div><div class="ttdeci">qb::unordered_set&lt; CoreId &gt; raw() const</div><div class="ttdoc">Get a reference to the raw set for internal use.</div><div class="ttdef"><b>Definition</b> ActorId.h:238</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_a5c2ac4c1daf331c57d4e962790a970d9"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#a5c2ac4c1daf331c57d4e962790a970d9">qb::CoreIdBitSet::size</a></div><div class="ttdeci">size_t size() const noexcept</div><div class="ttdoc">Get the number of core IDs in the set.</div><div class="ttdef"><b>Definition</b> ActorId.h:194</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_a64bf00cb7d3a620e84422ace6456f4be"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#a64bf00cb7d3a620e84422ace6456f4be">qb::CoreIdBitSet::emplace</a></div><div class="ttdeci">void emplace(CoreId id) noexcept</div><div class="ttdoc">Add a core ID to the set (emplace version)</div><div class="ttdef"><b>Definition</b> ActorId.h:157</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_a6b05b9ec48bfb4ef6de4190da64888c8"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#a6b05b9ec48bfb4ef6de4190da64888c8">qb::CoreIdBitSet::end</a></div><div class="ttdeci">iterator end() const</div><div class="ttdoc">Get an iterator to the end of the set.</div><div class="ttdef"><b>Definition</b> ActorId.h:349</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_a78f5cc26863cb4c8ba41d9fc38f7c83a"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#a78f5cc26863cb4c8ba41d9fc38f7c83a">qb::CoreIdBitSet::clear</a></div><div class="ttdeci">void clear() noexcept</div><div class="ttdoc">Clear all core IDs from the set.</div><div class="ttdef"><b>Definition</b> ActorId.h:176</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_a82277302a5581d630af29b3e80f11510"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#a82277302a5581d630af29b3e80f11510">qb::CoreIdBitSet::empty</a></div><div class="ttdeci">bool empty() const noexcept</div><div class="ttdoc">Check if the set is empty.</div><div class="ttdef"><b>Definition</b> ActorId.h:185</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_ab930461cba46e649e005d6320acae943"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#ab930461cba46e649e005d6320acae943">qb::CoreIdBitSet::insert</a></div><div class="ttdeci">void insert(CoreId id) noexcept</div><div class="ttdoc">Add a core ID to the set.</div><div class="ttdef"><b>Definition</b> ActorId.h:146</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_ab96a33711b585d2b721c41f6c419cd47"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#ab96a33711b585d2b721c41f6c419cd47">qb::CoreIdBitSet::contains</a></div><div class="ttdeci">bool contains(CoreId id) const noexcept</div><div class="ttdoc">Check if a core ID is in the set.</div><div class="ttdef"><b>Definition</b> ActorId.h:137</div></div>
+<div class="ttc" id="aclassqb_1_1_core_id_bit_set_html_ac35ab9f6d349e83423c578a6c8adaa27"><div class="ttname"><a href="classqb_1_1_core_id_bit_set.html#ac35ab9f6d349e83423c578a6c8adaa27">qb::CoreIdBitSet::to_vector</a></div><div class="ttdeci">std::vector&lt; CoreId &gt; to_vector() const</div><div class="ttdoc">Convert the set to a vector of core IDs.</div><div class="ttdef"><b>Definition</b> ActorId.h:203</div></div>
+<div class="ttc" id="acore_2_actor_id_8h_html_abb6cb84fd80e5d72d9fec6dac5b5f676"><div class="ttname"><a href="core_2_actor_id_8h.html#abb6cb84fd80e5d72d9fec6dac5b5f676">qb::MaxCores</a></div><div class="ttdeci">constexpr size_t MaxCores</div><div class="ttdoc">Maximum number of cores supported in a system.</div><div class="ttdef"><b>Definition</b> ActorId.h:80</div></div>
+<div class="ttc" id="agroup___actor_html_ga0c5819d2f74f42ae84cc9e11cb84788f"><div class="ttname"><a href="group___actor.html#ga0c5819d2f74f42ae84cc9e11cb84788f">qb::CoreIdBitSet::CoreIdBitSet</a></div><div class="ttdeci">CoreIdBitSet()=default</div><div class="ttdoc">Default constructor - creates an empty set.</div></div>
+<div class="ttc" id="agroup___actor_html_ga59aa92ee05bf4aef7f4c6d0e6a525e1e"><div class="ttname"><a href="group___actor.html#ga59aa92ee05bf4aef7f4c6d0e6a525e1e">qb::BroadcastId::BroadcastId</a></div><div class="ttdeci">BroadcastId(uint32_t const core_id) noexcept</div><div class="ttdoc">Constructor for BroadcastId.</div><div class="ttdef"><b>Definition</b> ActorId.h:453</div></div>
+<div class="ttc" id="agroup___actor_html_gab58b46678b9a140b8125d4704bfad0ca"><div class="ttname"><a href="group___actor.html#gab58b46678b9a140b8125d4704bfad0ca">qb::CoreIdBitSet::CoreIdBitSet</a></div><div class="ttdeci">CoreIdBitSet(std::initializer_list&lt; CoreId &gt; ids)</div><div class="ttdoc">Constructor from an initializer list.</div><div class="ttdef"><b>Definition</b> ActorId.h:116</div></div>
+<div class="ttc" id="agroup___actor_html_gae1d1d0200c731c329d48e02177661660"><div class="ttname"><a href="group___actor.html#gae1d1d0200c731c329d48e02177661660">qb::operator&lt;&lt;</a></div><div class="ttdeci">std::ostream &amp; operator&lt;&lt;(std::ostream &amp;os, qb::Actor const &amp;actor)</div><div class="ttdoc">Stream output operator for Actor objects.</div></div>
+<div class="ttc" id="agroup___actor_html_gae25da361d5f73641fe4788908ef499b4"><div class="ttname"><a href="group___actor.html#gae25da361d5f73641fe4788908ef499b4">qb::CoreIdBitSet::CoreIdBitSet</a></div><div class="ttdeci">CoreIdBitSet(const qb::unordered_set&lt; CoreId &gt; &amp;coreIds)</div><div class="ttdoc">Constructor from a set of core IDs.</div><div class="ttdef"><b>Definition</b> ActorId.h:105</div></div>
+<div class="ttc" id="agroup___container_html_gac11145579ece76182257112fd457faba"><div class="ttname"><a href="group___container.html#gac11145579ece76182257112fd457faba">qb::unordered_set</a></div><div class="ttdeci">std::unordered_set&lt; K, H, E, A &gt; unordered_set</div><div class="ttdoc">The primary unordered set implementation.</div><div class="ttdef"><b>Definition</b> unordered_set.h:81</div></div>
+<div class="ttc" id="agroup___core_html_ga00b6a66f12346e8cca5e71716b971582"><div class="ttname"><a href="group___core.html#ga00b6a66f12346e8cca5e71716b971582">qb::ActorIdList</a></div><div class="ttdeci">std::vector&lt; ActorId &gt; ActorIdList</div><div class="ttdoc">List of actor identifiers.</div><div class="ttdef"><b>Definition</b> ActorId.h:463</div></div>
+<div class="ttc" id="agroup___core_html_ga12fea0af12c10133b833eb488e52a9d1"><div class="ttname"><a href="group___core.html#ga12fea0af12c10133b833eb488e52a9d1">qb::CoreId</a></div><div class="ttdeci">uint16_t CoreId</div><div class="ttdoc">Type definition for core identifiers.</div><div class="ttdef"><b>Definition</b> ActorId.h:51</div></div>
+<div class="ttc" id="agroup___core_html_ga1b0b30803a6fe2511f9adc1240dc325c"><div class="ttname"><a href="group___core.html#ga1b0b30803a6fe2511f9adc1240dc325c">qb::TypeId</a></div><div class="ttdeci">uint16_t TypeId</div><div class="ttdoc">Type definition for type identifiers.</div><div class="ttdef"><b>Definition</b> ActorId.h:67</div></div>
+<div class="ttc" id="agroup___core_html_ga1b5fd42650786668943857893d92d766"><div class="ttname"><a href="group___core.html#ga1b5fd42650786668943857893d92d766">qb::core_id</a></div><div class="ttdeci">CoreId core_id</div><div class="ttdoc">Alias for CoreId.</div><div class="ttdef"><b>Definition</b> ActorId.h:479</div></div>
+<div class="ttc" id="agroup___core_html_ga30a997493a8f1e59d99cf0fc82efbf30"><div class="ttname"><a href="group___core.html#ga30a997493a8f1e59d99cf0fc82efbf30">qb::ServiceId</a></div><div class="ttdeci">uint16_t ServiceId</div><div class="ttdoc">Type definition for service identifiers.</div><div class="ttdef"><b>Definition</b> ActorId.h:59</div></div>
+<div class="ttc" id="agroup___core_html_ga3311c26acd08272511f170b9594345ce"><div class="ttname"><a href="group___core.html#ga3311c26acd08272511f170b9594345ce">qb::ActorIdSet</a></div><div class="ttdeci">std::unordered_set&lt; ActorId &gt; ActorIdSet</div><div class="ttdoc">Set of unique actor identifiers.</div><div class="ttdef"><b>Definition</b> ActorId.h:471</div></div>
+<div class="ttc" id="agroup___core_html_ga4db3315ac18edf0066c2c0201ca3c749"><div class="ttname"><a href="group___core.html#ga4db3315ac18edf0066c2c0201ca3c749">qb::core_id_set</a></div><div class="ttdeci">CoreIdSet core_id_set</div><div class="ttdoc">Alias for CoreIdSet.</div><div class="ttdef"><b>Definition</b> ActorId.h:527</div></div>
+<div class="ttc" id="agroup___core_html_ga577f0efb6b04ea39f9e8330f13dddeaa"><div class="ttname"><a href="group___core.html#ga577f0efb6b04ea39f9e8330f13dddeaa">qb::actor_id</a></div><div class="ttdeci">ActorId actor_id</div><div class="ttdoc">Alias for ActorId.</div><div class="ttdef"><b>Definition</b> ActorId.h:495</div></div>
+<div class="ttc" id="agroup___core_html_ga6f7d5a9e5aae7d6024589716c3784a93"><div class="ttname"><a href="group___core.html#ga6f7d5a9e5aae7d6024589716c3784a93">qb::broadcast_id</a></div><div class="ttdeci">BroadcastId broadcast_id</div><div class="ttdoc">Alias for BroadcastId.</div><div class="ttdef"><b>Definition</b> ActorId.h:503</div></div>
+<div class="ttc" id="agroup___core_html_gaafde4d47c2c5695029034e971ed58171"><div class="ttname"><a href="group___core.html#gaafde4d47c2c5695029034e971ed58171">qb::service_id</a></div><div class="ttdeci">ServiceId service_id</div><div class="ttdoc">Alias for ServiceId.</div><div class="ttdef"><b>Definition</b> ActorId.h:487</div></div>
+<div class="ttc" id="agroup___core_html_gad0e1842d1961619ae44e34acef6a4068"><div class="ttname"><a href="group___core.html#gad0e1842d1961619ae44e34acef6a4068">qb::actor_is_set</a></div><div class="ttdeci">ActorIdSet actor_is_set</div><div class="ttdoc">Alias for ActorIdSet.</div><div class="ttdef"><b>Definition</b> ActorId.h:519</div></div>
+<div class="ttc" id="agroup___core_html_gaf683acbb340cfc58aa37ce6bbbe5ebbd"><div class="ttname"><a href="group___core.html#gaf683acbb340cfc58aa37ce6bbbe5ebbd">qb::EventId</a></div><div class="ttdeci">TypeId EventId</div><div class="ttdoc">Type definition for event identifiers.</div><div class="ttdef"><b>Definition</b> ActorId.h:75</div></div>
+<div class="ttc" id="agroup___core_html_gaf8003f11a74691bac6156c65aad3ebc8"><div class="ttname"><a href="group___core.html#gaf8003f11a74691bac6156c65aad3ebc8">qb::actor_id_list</a></div><div class="ttdeci">ActorIdList actor_id_list</div><div class="ttdoc">Alias for ActorIdList.</div><div class="ttdef"><b>Definition</b> ActorId.h:511</div></div>
+<div class="ttc" id="agroup___core_html_gaf938afc2318277511d1b20184c0c1152"><div class="ttname"><a href="group___core.html#gaf938afc2318277511d1b20184c0c1152">qb::CoreIdSet</a></div><div class="ttdeci">CoreIdBitSet CoreIdSet</div><div class="ttdoc">Efficient set implementation for storing CoreId values.</div><div class="ttdef"><b>Definition</b> ActorId.h:363</div></div>
+<div class="ttc" id="aio_8h_html"><div class="ttname"><a href="io_8h.html">io.h</a></div><div class="ttdoc">Core I/O and logging utilities for the qb framework.</div></div>
+<div class="ttc" id="aprefix_8h_html"><div class="ttname"><a href="prefix_8h.html">prefix.h</a></div><div class="ttdoc">Platform-specific alignment macros, cache-line definitions, and related utilities.</div></div>
+<div class="ttc" id="astructstd_1_1hash_3_01qb_1_1_actor_id_01_4_html_a3b3839c765aaeb34d5bc0e442629b348"><div class="ttname"><a href="structstd_1_1hash_3_01qb_1_1_actor_id_01_4.html#a3b3839c765aaeb34d5bc0e442629b348">std::hash&lt; qb::ActorId &gt;::operator()</a></div><div class="ttdeci">std::size_t operator()(qb::ActorId const &amp;val) const noexcept</div><div class="ttdoc">Hash function operator for ActorId.</div><div class="ttdef"><b>Definition</b> ActorId.h:551</div></div>
+<div class="ttc" id="aunordered__set_8h_html"><div class="ttname"><a href="unordered__set_8h.html">unordered_set.h</a></div><div class="ttdoc">Optimized unordered set implementations.</div></div>
+</div><!-- fragment --></div><!-- contents -->
+</div><!-- doc-content -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_aca413fbbe053f647c2f74881aaff796.html">core</a></li><li class="navelem"><a href="core_2_actor_id_8h.html">ActorId.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

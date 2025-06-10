@@ -1,0 +1,19 @@
+<map id="include/qb/io/protocol/handshake.h" name="include/qb/io/protocol/handshake.h">
+<area shape="rect" id="Node000001" title="Protocol for handling the handshake of a new connection." alt="" coords="132,5,276,46"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="37,94,114,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="173,49,109,88,107,83,171,44"/>
+<area shape="rect" id="Node000003" href="$protocol_8h.html" title="Protocol interfaces for message processing in the asynchronous IO framework." alt="" coords="139,94,268,120"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="206,46,206,78,201,78,201,46"/>
+<area shape="rect" id="Node000009" href="$async_2event_2handshake_8h.html" title="Handshake event for asynchronous input streams." alt="" coords="292,94,475,120"/>
+<area shape="poly" id="edge8_Node000001_Node000009" title=" " alt="" coords="250,44,343,85,341,90,248,49"/>
+<area shape="rect" id="Node000004" href="$type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="130,168,277,193"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="206,120,206,152,201,152,201,120"/>
+<area shape="rect" id="Node000005" title=" " alt="" coords="5,241,93,267"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="179,196,90,237,88,232,176,191"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="117,241,200,267"/>
+<area shape="poly" id="edge5_Node000004_Node000006" title=" " alt="" coords="198,195,176,230,172,227,194,192"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="224,241,276,267"/>
+<area shape="poly" id="edge6_Node000004_Node000007" title=" " alt="" coords="214,192,236,227,232,230,209,195"/>
+<area shape="rect" id="Node000008" title=" " alt="" coords="301,241,368,267"/>
+<area shape="poly" id="edge7_Node000004_Node000008" title=" " alt="" coords="227,192,300,231,298,236,225,196"/>
+</map>

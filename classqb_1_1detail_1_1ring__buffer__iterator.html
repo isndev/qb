@@ -1,0 +1,570 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: qb::detail::ring_buffer_iterator&lt; T, N, C, Overwrite &gt; Class Template Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: qb::detail::ring_buffer_iterator&lt; T, N, C, Overwrite &gt; Class Template Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('classqb_1_1detail_1_1ring__buffer__iterator.html','','classqb_1_1detail_1_1ring__buffer__iterator-members'); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">qb::detail::ring_buffer_iterator&lt; T, N, C, Overwrite &gt; Class Template Reference</div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Iterator for <a class="el" href="classqb_1_1ring__buffer.html" title="A fixed-size ring buffer (circular buffer) implementation.">ring_buffer</a>.  
+ <a href="#details">More...</a></p>
+
+<p><code>#include &lt;<a class="el" href="ring__buffer_8h_source.html">ring_buffer.h</a>&gt;</code></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-types" class="groupheader"><a id="pub-types" name="pub-types"></a>
+Public Types</h2></td></tr>
+<tr class="memitem:aece74313f5e17d8b6ad6610016fffc23" id="r_aece74313f5e17d8b6ad6610016fffc23"><td class="memItemLeft" align="right" valign="top"><a id="aece74313f5e17d8b6ad6610016fffc23" name="aece74313f5e17d8b6ad6610016fffc23"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>self_type</b> = <a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">ring_buffer_iterator</a>&lt;T, N, C, Overwrite&gt;</td></tr>
+<tr class="memitem:a8613897ac3725171e6ebe3cd0aeb7dbb" id="r_a8613897ac3725171e6ebe3cd0aeb7dbb"><td class="memItemLeft" align="right" valign="top"><a id="a8613897ac3725171e6ebe3cd0aeb7dbb" name="a8613897ac3725171e6ebe3cd0aeb7dbb"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>value_type</b> = T</td></tr>
+<tr class="memitem:ab8454fe24ff8fc0dfc7f629eb73150ec" id="r_ab8454fe24ff8fc0dfc7f629eb73150ec"><td class="memItemLeft" align="right" valign="top"><a id="ab8454fe24ff8fc0dfc7f629eb73150ec" name="ab8454fe24ff8fc0dfc7f629eb73150ec"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>reference</b> = T &amp;</td></tr>
+<tr class="memitem:ad0b6d7134c35984bb54960f478998a99" id="r_ad0b6d7134c35984bb54960f478998a99"><td class="memItemLeft" align="right" valign="top"><a id="ad0b6d7134c35984bb54960f478998a99" name="ad0b6d7134c35984bb54960f478998a99"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>const_reference</b> = T const &amp;</td></tr>
+<tr class="memitem:a283f1d83771ba6fa2a5dd4c2461d9a60" id="r_a283f1d83771ba6fa2a5dd4c2461d9a60"><td class="memItemLeft" align="right" valign="top"><a id="a283f1d83771ba6fa2a5dd4c2461d9a60" name="a283f1d83771ba6fa2a5dd4c2461d9a60"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>pointer</b> = T *</td></tr>
+<tr class="memitem:abf3e5f59588ed032fc27e346548863b1" id="r_abf3e5f59588ed032fc27e346548863b1"><td class="memItemLeft" align="right" valign="top"><a id="abf3e5f59588ed032fc27e346548863b1" name="abf3e5f59588ed032fc27e346548863b1"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>const_pointer</b> = T const *</td></tr>
+<tr class="memitem:ab2bb87ef9b4c2645d78d57f9d0b4159b" id="r_ab2bb87ef9b4c2645d78d57f9d0b4159b"><td class="memItemLeft" align="right" valign="top"><a id="ab2bb87ef9b4c2645d78d57f9d0b4159b" name="ab2bb87ef9b4c2645d78d57f9d0b4159b"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>size_type</b> = size_t</td></tr>
+<tr class="memitem:a0c45334c526d3939b492868a59477fd9" id="r_a0c45334c526d3939b492868a59477fd9"><td class="memItemLeft" align="right" valign="top"><a id="a0c45334c526d3939b492868a59477fd9" name="a0c45334c526d3939b492868a59477fd9"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>difference_type</b> = ptrdiff_t</td></tr>
+<tr class="memitem:a0f2da4360a4562c9248f98802f6fe57f" id="r_a0f2da4360a4562c9248f98802f6fe57f"><td class="memItemLeft" align="right" valign="top"><a id="a0f2da4360a4562c9248f98802f6fe57f" name="a0f2da4360a4562c9248f98802f6fe57f"></a>
+using&#160;</td><td class="memItemRight" valign="bottom"><b>iterator_category</b> = std::forward_iterator_tag</td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-pub-methods" class="groupheader"><a id="pub-methods" name="pub-methods"></a>
+Public Member Functions</h2></td></tr>
+<tr class="memitem:af876a59bedb6686eacdae7864a02e3ca" id="r_af876a59bedb6686eacdae7864a02e3ca"><td class="memItemLeft" align="right" valign="top"><a id="af876a59bedb6686eacdae7864a02e3ca" name="af876a59bedb6686eacdae7864a02e3ca"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>ring_buffer_iterator</b> () noexcept=default</td></tr>
+<tr class="memdesc:af876a59bedb6686eacdae7864a02e3ca"><td class="mdescLeft">&#160;</td><td class="mdescRight">Default constructor. <br /></td></tr>
+<tr class="memitem:aea5ba488cd1a1c520677d2216f978300" id="r_aea5ba488cd1a1c520677d2216f978300"><td class="memItemLeft" align="right" valign="top">&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aea5ba488cd1a1c520677d2216f978300">ring_buffer_iterator</a> (buffer_t source, size_type <a class="el" href="#aa9574bcf76706030aa92a2cdcf0dbcc5">index</a>, size_type <a class="el" href="#aa65fff589d22741285d54234b4a946c9">count</a>) noexcept</td></tr>
+<tr class="memdesc:aea5ba488cd1a1c520677d2216f978300"><td class="mdescLeft">&#160;</td><td class="mdescRight">Constructor with source buffer, current index, and count.  <br /></td></tr>
+<tr class="memitem:af5806402e1899ac47001e67e184b1c2c" id="r_af5806402e1899ac47001e67e184b1c2c"><td class="memItemLeft" align="right" valign="top"><a id="af5806402e1899ac47001e67e184b1c2c" name="af5806402e1899ac47001e67e184b1c2c"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>ring_buffer_iterator</b> (<a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">ring_buffer_iterator</a> const &amp;) noexcept=default</td></tr>
+<tr class="memdesc:af5806402e1899ac47001e67e184b1c2c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Copy constructor. <br /></td></tr>
+<tr class="memitem:a502c5cdebf5ef2bb42238f397a7ac688" id="r_a502c5cdebf5ef2bb42238f397a7ac688"><td class="memItemLeft" align="right" valign="top"><a id="a502c5cdebf5ef2bb42238f397a7ac688" name="a502c5cdebf5ef2bb42238f397a7ac688"></a>
+<a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">ring_buffer_iterator</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><b>operator=</b> (<a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">ring_buffer_iterator</a> const &amp;) noexcept=default</td></tr>
+<tr class="memdesc:a502c5cdebf5ef2bb42238f397a7ac688"><td class="mdescLeft">&#160;</td><td class="mdescRight">Copy assignment operator. <br /></td></tr>
+<tr class="memitem:a79c57fe13a64cd23dc2c6fe3e8321dd9" id="r_a79c57fe13a64cd23dc2c6fe3e8321dd9"><td class="memTemplParams" colspan="2">template&lt;bool Z = C, typename std::enable_if&lt;(!Z), int &gt;::type * = nullptr&gt; </td></tr>
+<tr class="memitem:a79c57fe13a64cd23dc2c6fe3e8321dd9 template"><td class="memItemLeft" align="right" valign="top">reference&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a79c57fe13a64cd23dc2c6fe3e8321dd9">operator*</a> () noexcept</td></tr>
+<tr class="memdesc:a79c57fe13a64cd23dc2c6fe3e8321dd9"><td class="mdescLeft">&#160;</td><td class="mdescRight">Dereference operator (non-const version)  <br /></td></tr>
+<tr class="memitem:a5815a4ec3e7e7753229be5e496802646" id="r_a5815a4ec3e7e7753229be5e496802646"><td class="memTemplParams" colspan="2">template&lt;bool Z = C, typename std::enable_if&lt;(Z), int &gt;::type * = nullptr&gt; </td></tr>
+<tr class="memitem:a5815a4ec3e7e7753229be5e496802646 template"><td class="memItemLeft" align="right" valign="top">const_reference&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a5815a4ec3e7e7753229be5e496802646">operator*</a> () const noexcept</td></tr>
+<tr class="memdesc:a5815a4ec3e7e7753229be5e496802646"><td class="mdescLeft">&#160;</td><td class="mdescRight">Dereference operator (const version)  <br /></td></tr>
+<tr class="memitem:adb4e7e54b7c163d79c02d571354facb2" id="r_adb4e7e54b7c163d79c02d571354facb2"><td class="memTemplParams" colspan="2">template&lt;bool Z = C, typename std::enable_if&lt;(!Z), int &gt;::type * = nullptr&gt; </td></tr>
+<tr class="memitem:adb4e7e54b7c163d79c02d571354facb2 template"><td class="memItemLeft" align="right" valign="top">reference&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#adb4e7e54b7c163d79c02d571354facb2">operator-&gt;</a> () noexcept</td></tr>
+<tr class="memdesc:adb4e7e54b7c163d79c02d571354facb2"><td class="mdescLeft">&#160;</td><td class="mdescRight">Arrow operator (non-const version)  <br /></td></tr>
+<tr class="memitem:a98d2ff79c5e59c86e001bcf7315bd1b0" id="r_a98d2ff79c5e59c86e001bcf7315bd1b0"><td class="memTemplParams" colspan="2">template&lt;bool Z = C, typename std::enable_if&lt;(Z), int &gt;::type * = nullptr&gt; </td></tr>
+<tr class="memitem:a98d2ff79c5e59c86e001bcf7315bd1b0 template"><td class="memItemLeft" align="right" valign="top">const_reference&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a98d2ff79c5e59c86e001bcf7315bd1b0">operator-&gt;</a> () const noexcept</td></tr>
+<tr class="memdesc:a98d2ff79c5e59c86e001bcf7315bd1b0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Arrow operator (const version)  <br /></td></tr>
+<tr class="memitem:ad65f25bd8b445fb3dd82190096e1c844" id="r_ad65f25bd8b445fb3dd82190096e1c844"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">self_type</a> &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ad65f25bd8b445fb3dd82190096e1c844">operator++</a> () noexcept</td></tr>
+<tr class="memdesc:ad65f25bd8b445fb3dd82190096e1c844"><td class="mdescLeft">&#160;</td><td class="mdescRight">Pre-increment operator.  <br /></td></tr>
+<tr class="memitem:a871480d39e3ebc7fb28c83a6a7e03d0a" id="r_a871480d39e3ebc7fb28c83a6a7e03d0a"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">self_type</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#a871480d39e3ebc7fb28c83a6a7e03d0a">operator++</a> (int) noexcept</td></tr>
+<tr class="memdesc:a871480d39e3ebc7fb28c83a6a7e03d0a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Post-increment operator.  <br /></td></tr>
+<tr class="memitem:aa9574bcf76706030aa92a2cdcf0dbcc5" id="r_aa9574bcf76706030aa92a2cdcf0dbcc5"><td class="memItemLeft" align="right" valign="top">size_type&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aa9574bcf76706030aa92a2cdcf0dbcc5">index</a> () const noexcept</td></tr>
+<tr class="memdesc:aa9574bcf76706030aa92a2cdcf0dbcc5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the current index in the buffer.  <br /></td></tr>
+<tr class="memitem:aa65fff589d22741285d54234b4a946c9" id="r_aa65fff589d22741285d54234b4a946c9"><td class="memItemLeft" align="right" valign="top">size_type&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#aa65fff589d22741285d54234b4a946c9">count</a> () const noexcept</td></tr>
+<tr class="memdesc:aa65fff589d22741285d54234b4a946c9"><td class="mdescLeft">&#160;</td><td class="mdescRight">Get the current count of accessed elements.  <br /></td></tr>
+<tr class="memitem:ac947268d7ce8b0b37cf65fdf9ff8bd56" id="r_ac947268d7ce8b0b37cf65fdf9ff8bd56"><td class="memItemLeft" align="right" valign="top"><a id="ac947268d7ce8b0b37cf65fdf9ff8bd56" name="ac947268d7ce8b0b37cf65fdf9ff8bd56"></a>
+&#160;</td><td class="memItemRight" valign="bottom"><b>~ring_buffer_iterator</b> ()=default</td></tr>
+<tr class="memdesc:ac947268d7ce8b0b37cf65fdf9ff8bd56"><td class="mdescLeft">&#160;</td><td class="mdescRight">Destructor. <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><div class="compoundTemplParams">template&lt;typename T, size_t N, bool C, bool Overwrite&gt;<br />
+class qb::detail::ring_buffer_iterator&lt; T, N, C, Overwrite &gt;</div><p>Iterator for <a class="el" href="classqb_1_1ring__buffer.html" title="A fixed-size ring buffer (circular buffer) implementation.">ring_buffer</a>. </p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">T</td><td>The type of elements in the buffer </td></tr>
+    <tr><td class="paramname">N</td><td>The capacity of the buffer </td></tr>
+    <tr><td class="paramname">C</td><td>Whether this is a const iterator (true) or non-const iterator (false) </td></tr>
+    <tr><td class="paramname">Overwrite</td><td>Whether to overwrite old elements when the buffer is full </td></tr>
+  </table>
+  </dd>
+</dl>
+</div><a name="doc-constructors" id="doc-constructors"></a><h2 id="header-doc-constructors" class="groupheader">Constructor &amp; Destructor Documentation</h2>
+<a id="aea5ba488cd1a1c520677d2216f978300" name="aea5ba488cd1a1c520677d2216f978300"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aea5ba488cd1a1c520677d2216f978300">&#9670;&#160;</a></span>ring_buffer_iterator()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T, size_t N, bool C, bool Overwrite&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">qb::detail::ring_buffer_iterator</a>&lt; T, N, C, Overwrite &gt;::ring_buffer_iterator </td>
+          <td>(</td>
+          <td class="paramtype">buffer_t</td>          <td class="paramname"><span class="paramname"><em>source</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">size_type</td>          <td class="paramname"><span class="paramname"><em>index</em></span>, </td>
+        </tr>
+        <tr>
+          <td class="paramkey"></td>
+          <td></td>
+          <td class="paramtype">size_type</td>          <td class="paramname"><span class="paramname"><em>count</em></span>&#160;)</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Constructor with source buffer, current index, and count. </p>
+<dl class="params"><dt>Parameters</dt><dd>
+  <table class="params">
+    <tr><td class="paramname">source</td><td>The source ring buffer </td></tr>
+    <tr><td class="paramname">index</td><td>Current index in the buffer </td></tr>
+    <tr><td class="paramname">count</td><td>Current element count </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a name="doc-func-members" id="doc-func-members"></a><h2 id="header-doc-func-members" class="groupheader">Member Function Documentation</h2>
+<a id="a79c57fe13a64cd23dc2c6fe3e8321dd9" name="a79c57fe13a64cd23dc2c6fe3e8321dd9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a79c57fe13a64cd23dc2c6fe3e8321dd9">&#9670;&#160;</a></span>operator*() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T, size_t N, bool C, bool Overwrite&gt; </div>
+<div class="memtemplate">
+template&lt;bool Z = C, typename std::enable_if&lt;(!Z), int &gt;::type * = nullptr&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">reference <a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">qb::detail::ring_buffer_iterator</a>&lt; T, N, C, Overwrite &gt;::operator* </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Dereference operator (non-const version) </p>
+<dl class="section return"><dt>Returns</dt><dd>Reference to the current element </dd></dl>
+
+</div>
+</div>
+<a id="a5815a4ec3e7e7753229be5e496802646" name="a5815a4ec3e7e7753229be5e496802646"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a5815a4ec3e7e7753229be5e496802646">&#9670;&#160;</a></span>operator*() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T, size_t N, bool C, bool Overwrite&gt; </div>
+<div class="memtemplate">
+template&lt;bool Z = C, typename std::enable_if&lt;(Z), int &gt;::type * = nullptr&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">const_reference <a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">qb::detail::ring_buffer_iterator</a>&lt; T, N, C, Overwrite &gt;::operator* </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Dereference operator (const version) </p>
+<dl class="section return"><dt>Returns</dt><dd>Const reference to the current element </dd></dl>
+
+</div>
+</div>
+<a id="adb4e7e54b7c163d79c02d571354facb2" name="adb4e7e54b7c163d79c02d571354facb2"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#adb4e7e54b7c163d79c02d571354facb2">&#9670;&#160;</a></span>operator-&gt;() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T, size_t N, bool C, bool Overwrite&gt; </div>
+<div class="memtemplate">
+template&lt;bool Z = C, typename std::enable_if&lt;(!Z), int &gt;::type * = nullptr&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">reference <a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">qb::detail::ring_buffer_iterator</a>&lt; T, N, C, Overwrite &gt;::operator-&gt; </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Arrow operator (non-const version) </p>
+<dl class="section return"><dt>Returns</dt><dd>Pointer to the current element </dd></dl>
+
+</div>
+</div>
+<a id="a98d2ff79c5e59c86e001bcf7315bd1b0" name="a98d2ff79c5e59c86e001bcf7315bd1b0"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a98d2ff79c5e59c86e001bcf7315bd1b0">&#9670;&#160;</a></span>operator-&gt;() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T, size_t N, bool C, bool Overwrite&gt; </div>
+<div class="memtemplate">
+template&lt;bool Z = C, typename std::enable_if&lt;(Z), int &gt;::type * = nullptr&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">const_reference <a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">qb::detail::ring_buffer_iterator</a>&lt; T, N, C, Overwrite &gt;::operator-&gt; </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Arrow operator (const version) </p>
+<dl class="section return"><dt>Returns</dt><dd>Const pointer to the current element </dd></dl>
+
+</div>
+</div>
+<a id="ad65f25bd8b445fb3dd82190096e1c844" name="ad65f25bd8b445fb3dd82190096e1c844"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ad65f25bd8b445fb3dd82190096e1c844">&#9670;&#160;</a></span>operator++() <span class="overload">[1/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T, size_t N, bool C, bool Overwrite&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">self_type</a> &amp; <a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">qb::detail::ring_buffer_iterator</a>&lt; T, N, C, Overwrite &gt;::operator++ </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Pre-increment operator. </p>
+<dl class="section return"><dt>Returns</dt><dd>Reference to this iterator after incrementing </dd></dl>
+
+</div>
+</div>
+<a id="a871480d39e3ebc7fb28c83a6a7e03d0a" name="a871480d39e3ebc7fb28c83a6a7e03d0a"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#a871480d39e3ebc7fb28c83a6a7e03d0a">&#9670;&#160;</a></span>operator++() <span class="overload">[2/2]</span></h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T, size_t N, bool C, bool Overwrite&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname"><a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">self_type</a> <a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">qb::detail::ring_buffer_iterator</a>&lt; T, N, C, Overwrite &gt;::operator++ </td>
+          <td>(</td>
+          <td class="paramtype">int</td>          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td></td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Post-increment operator. </p>
+<dl class="section return"><dt>Returns</dt><dd>Copy of this iterator before incrementing </dd></dl>
+
+</div>
+</div>
+<a id="aa9574bcf76706030aa92a2cdcf0dbcc5" name="aa9574bcf76706030aa92a2cdcf0dbcc5"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa9574bcf76706030aa92a2cdcf0dbcc5">&#9670;&#160;</a></span>index()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T, size_t N, bool C, bool Overwrite&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">size_type <a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">qb::detail::ring_buffer_iterator</a>&lt; T, N, C, Overwrite &gt;::index </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the current index in the buffer. </p>
+<dl class="section return"><dt>Returns</dt><dd>The current index </dd></dl>
+
+</div>
+</div>
+<a id="aa65fff589d22741285d54234b4a946c9" name="aa65fff589d22741285d54234b4a946c9"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#aa65fff589d22741285d54234b4a946c9">&#9670;&#160;</a></span>count()</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename T, size_t N, bool C, bool Overwrite&gt; </div>
+<table class="mlabels">
+  <tr>
+  <td class="mlabels-left">
+      <table class="memname">
+        <tr>
+          <td class="memname">size_type <a class="el" href="classqb_1_1detail_1_1ring__buffer__iterator.html">qb::detail::ring_buffer_iterator</a>&lt; T, N, C, Overwrite &gt;::count </td>
+          <td>(</td>
+          <td class="paramname"><span class="paramname"><em></em></span></td><td>)</td>
+          <td> const</td>
+        </tr>
+      </table>
+  </td>
+  <td class="mlabels-right">
+<span class="mlabels"><span class="mlabel inline">inline</span><span class="mlabel nodiscard">nodiscard</span><span class="mlabel noexcept">noexcept</span></span>  </td>
+  </tr>
+</table>
+</div><div class="memdoc">
+
+<p>Get the current count of accessed elements. </p>
+<dl class="section return"><dt>Returns</dt><dd>The current count </dd></dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><b>qb</b></li><li class="navelem"><b>detail</b></li><li class="navelem"><a href="classqb_1_1detail_1_1ring__buffer__iterator.html">ring_buffer_iterator</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

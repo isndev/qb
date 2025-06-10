@@ -1,0 +1,75 @@
+<map id="include/qb/io/async/tcp/acceptor.h" name="include/qb/io/async/tcp/acceptor.h">
+<area shape="rect" id="Node000001" title="Asynchronous TCP connection acceptor implementation." alt="" coords="585,5,718,46"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="474,94,555,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="619,49,550,88,547,84,616,44"/>
+<area shape="rect" id="Node000003" href="$protocol_2accept_8h.html" title="Protocol for accepting new connections in asynchronous I/O." alt="" coords="579,94,724,120"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="654,46,654,78,649,78,649,46"/>
+<area shape="rect" id="Node000004" href="$io_2async_2io_8h.html" title="Core asynchronous I/O class templates for event&#45;driven operations." alt="" coords="748,94,803,120"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="684,44,745,83,742,88,681,49"/>
+<area shape="rect" id="Node000005" href="$type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="130,249,277,274"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="749,119,738,122,267,247,265,242,736,117,748,114"/>
+<area shape="rect" id="Node000010" href="$all_8h.html" title="Aggregation of all event types for the asynchronous I/O system." alt="" coords="850,168,931,193"/>
+<area shape="poly" id="edge9_Node000004_Node000010" title=" " alt="" coords="797,118,859,157,856,161,794,122"/>
+<area shape="rect" id="Node000025" href="$async_2listener_8h.html" title="Core event loop manager for the asynchronous IO framework." alt="" coords="1623,168,1696,193"/>
+<area shape="poly" id="edge27_Node000004_Node000025" title=" " alt="" coords="803,108,1608,172,1608,178,803,113"/>
+<area shape="rect" id="Node000034" href="$protocol_8h.html" title="Protocol interfaces for message processing in the asynchronous IO framework." alt="" coords="620,168,699,193"/>
+<area shape="poly" id="edge38_Node000004_Node000034" title=" " alt="" coords="757,122,693,162,691,157,755,118"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="5,338,93,363"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="183,277,85,332,83,327,181,273"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="117,338,200,363"/>
+<area shape="poly" id="edge6_Node000005_Node000007" title=" " alt="" coords="200,276,174,325,169,323,195,274"/>
+<area shape="rect" id="Node000008" title=" " alt="" coords="224,338,276,363"/>
+<area shape="poly" id="edge7_Node000005_Node000008" title=" " alt="" coords="212,274,239,323,234,325,208,276"/>
+<area shape="rect" id="Node000009" title=" " alt="" coords="301,338,368,363"/>
+<area shape="poly" id="edge8_Node000005_Node000009" title=" " alt="" coords="223,273,305,326,302,331,220,277"/>
+<area shape="rect" id="Node000011" href="$disconnected_8h.html" title="Disconnection event for asynchronous I/O operations." alt="" coords="714,249,824,274"/>
+<area shape="poly" id="edge10_Node000010_Node000011" title=" " alt="" coords="873,196,801,243,799,238,870,192"/>
+<area shape="rect" id="Node000012" href="$extracted_8h.html" title="Extracted event for asynchronous I/O operations." alt="" coords="847,249,934,274"/>
+<area shape="poly" id="edge11_Node000010_Node000012" title=" " alt="" coords="893,194,893,233,888,233,888,194"/>
+<area shape="rect" id="Node000013" href="$dispose_8h.html" title="Resource disposal event for asynchronous I/O components." alt="" coords="957,249,1034,274"/>
+<area shape="poly" id="edge12_Node000010_Node000013" title=" " alt="" coords="908,192,969,237,966,242,905,196"/>
+<area shape="rect" id="Node000014" href="$eof_8h.html" title="End&#45;of&#45;file event for asynchronous input streams." alt="" coords="1125,249,1176,274"/>
+<area shape="poly" id="edge13_Node000010_Node000014" title=" " alt="" coords="932,187,1017,208,1114,239,1116,240,1114,245,1112,244,1015,213,931,193"/>
+<area shape="rect" id="Node000015" href="$eos_8h.html" title="End&#45;of&#45;stream event for asynchronous output streams." alt="" coords="1200,249,1253,274"/>
+<area shape="poly" id="edge14_Node000010_Node000015" title=" " alt="" coords="932,184,1049,203,1119,219,1188,239,1191,240,1189,245,1187,244,1118,224,1048,208,931,189"/>
+<area shape="rect" id="Node000016" href="$async_2event_2file_8h.html" title="File system monitoring event for asynchronous I/O." alt="" coords="640,249,690,274"/>
+<area shape="poly" id="edge15_Node000010_Node000016" title=" " alt="" coords="850,195,781,216,703,244,702,244,700,239,701,239,779,211,849,190"/>
+<area shape="rect" id="Node000019" href="$io_2async_2event_2io_8h.html" title="Low&#45;level I/O notification event for asynchronous operations." alt="" coords="1058,249,1101,274"/>
+<area shape="poly" id="edge18_Node000010_Node000019" title=" " alt="" coords="928,191,981,211,1047,239,1045,244,979,216,926,197"/>
+<area shape="rect" id="Node000020" href="$pending__read_8h.html" title="Event for notifying about pending (unprocessed) read data in asynchronous I/O." alt="" coords="1277,249,1386,274"/>
+<area shape="poly" id="edge20_Node000010_Node000020" title=" " alt="" coords="932,184,1080,205,1266,239,1278,242,1277,247,1264,244,1079,210,931,189"/>
+<area shape="rect" id="Node000021" href="$pending__write_8h.html" title="Event for notifying about pending (unsent) write data in asynchronous I/O." alt="" coords="301,249,413,274"/>
+<area shape="poly" id="edge21_Node000010_Node000021" title=" " alt="" coords="850,188,665,207,546,223,426,244,412,247,411,242,424,239,545,218,665,201,849,182"/>
+<area shape="rect" id="Node000022" href="$signal_8h.html" title="System signal event handler for asynchronous I/O." alt="" coords="1410,249,1477,274"/>
+<area shape="poly" id="edge22_Node000010_Node000022" title=" " alt="" coords="931,180,1017,184,1134,194,1266,211,1399,239,1405,240,1403,246,1398,244,1266,216,1134,199,1017,189,931,185"/>
+<area shape="rect" id="Node000023" href="$timer_8h.html" title="Timer event for asynchronous I/O and timed operations." alt="" coords="556,249,616,274"/>
+<area shape="poly" id="edge24_Node000010_Node000023" title=" " alt="" coords="850,191,749,211,630,244,626,245,624,240,628,239,748,206,849,186"/>
+<area shape="rect" id="Node000024" href="$async_2event_2handshake_8h.html" title="Handshake event for asynchronous input streams." alt="" coords="437,249,533,274"/>
+<area shape="poly" id="edge26_Node000010_Node000024" title=" " alt="" coords="850,190,713,210,544,244,535,247,533,241,543,239,713,205,849,184"/>
+<area shape="rect" id="Node000017" href="$async_2event_2base_8h.html" title="Base class for asynchronous events in the QB IO library." alt="" coords="1050,338,1110,363"/>
+<area shape="poly" id="edge16_Node000016_Node000017" title=" " alt="" coords="687,273,703,279,794,305,885,323,1034,343,1034,348,884,328,792,310,701,285,685,277"/>
+<area shape="rect" id="Node000018" title=" " alt="" coords="1040,419,1120,444"/>
+<area shape="poly" id="edge17_Node000017_Node000018" title=" " alt="" coords="1082,364,1082,403,1077,403,1077,364"/>
+<area shape="poly" id="edge19_Node000019_Node000017" title=" " alt="" coords="1082,275,1082,322,1077,322,1077,275"/>
+<area shape="poly" id="edge23_Node000022_Node000017" title=" " alt="" coords="1418,278,1399,285,1325,305,1250,322,1126,345,1125,340,1249,317,1324,300,1398,279,1416,273"/>
+<area shape="poly" id="edge25_Node000023_Node000017" title=" " alt="" coords="611,273,630,279,742,306,855,325,1034,344,1034,349,854,330,741,312,628,285,609,278"/>
+<area shape="poly" id="edge34_Node000025_Node000005" title=" " alt="" coords="1623,185,985,203,584,220,416,231,289,244,266,248,265,243,289,239,415,226,584,215,985,197,1622,180"/>
+<area shape="poly" id="edge37_Node000025_Node000017" title=" " alt="" coords="1632,196,1588,217,1541,244,1517,265,1506,275,1490,284,1442,303,1392,318,1291,338,1198,348,1125,352,1125,346,1197,343,1290,333,1390,313,1440,298,1488,280,1503,271,1513,261,1538,239,1586,212,1630,191"/>
+<area shape="rect" id="Node000026" title=" " alt="" coords="1552,249,1626,274"/>
+<area shape="poly" id="edge28_Node000025_Node000026" title=" " alt="" coords="1651,196,1612,239,1608,235,1647,192"/>
+<area shape="rect" id="Node000027" href="$unordered__set_8h.html" title="Optimized unordered set implementations." alt="" coords="1997,241,2136,282"/>
+<area shape="poly" id="edge29_Node000025_Node000027" title=" " alt="" coords="1697,185,1982,238,1981,243,1696,191"/>
+<area shape="rect" id="Node000031" href="$branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="1651,249,1810,274"/>
+<area shape="poly" id="edge33_Node000025_Node000031" title=" " alt="" coords="1672,192,1711,235,1707,239,1668,196"/>
+<area shape="rect" id="Node000032" title=" " alt="" coords="1834,249,1891,274"/>
+<area shape="poly" id="edge35_Node000025_Node000032" title=" " alt="" coords="1697,191,1823,239,1825,240,1823,245,1821,244,1695,196"/>
+<area shape="rect" id="Node000033" title=" " alt="" coords="1915,249,1972,274"/>
+<area shape="poly" id="edge36_Node000025_Node000033" title=" " alt="" coords="1697,186,1792,206,1904,239,1907,240,1905,245,1903,244,1791,211,1696,191"/>
+<area shape="rect" id="Node000028" title=" " alt="" coords="1933,338,1973,363"/>
+<area shape="poly" id="edge30_Node000027_Node000028" title=" " alt="" coords="2042,285,1982,330,1979,326,2039,280"/>
+<area shape="rect" id="Node000029" title=" " alt="" coords="1997,330,2136,371"/>
+<area shape="poly" id="edge31_Node000027_Node000029" title=" " alt="" coords="2069,283,2069,314,2064,314,2064,283"/>
+<area shape="rect" id="Node000030" title=" " alt="" coords="2160,338,2263,363"/>
+<area shape="poly" id="edge32_Node000027_Node000030" title=" " alt="" coords="2101,280,2180,327,2177,332,2098,285"/>
+<area shape="poly" id="edge39_Node000034_Node000005" title=" " alt="" coords="620,190,474,212,289,244,271,248,270,242,289,239,474,207,620,185"/>
+</map>

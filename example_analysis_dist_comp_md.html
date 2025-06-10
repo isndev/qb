@@ -1,0 +1,341 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: Case Study: Simulating Distributed Computing with QB Actors</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: Case Study: Simulating Distributed Computing with QB Actors</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('example_analysis_dist_comp_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">Case Study: Simulating Distributed Computing with QB Actors </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>An in-depth look at the <span class="tt">distributed_computing</span> example, showcasing task distribution, parallel processing, load balancing, and monitoring in a multi-actor QB system.</p>
+<h1>Case Study: Simulating Distributed Computing with QB Actors</h1>
+<ul>
+<li><b>Location:</b> <span class="tt">example/core/example10_distributed_computing.cpp</span></li>
+<li><b>Objective:</b> This example constructs a simulation of a distributed computing environment. It effectively demonstrates how multiple QB actors can collaborate to manage a workflow involving task generation, intelligent scheduling, parallel execution by worker nodes, result aggregation, and overall system monitoring. It's a valuable case study for understanding more complex, multi-stage actor interactions and asynchronous process simulation.</li>
+</ul>
+<p>Through this analysis, you will see how QB facilitates:</p><ul>
+<li>Complex, multi-actor workflows.</li>
+<li>Dynamic task scheduling and basic load balancing concepts.</li>
+<li>Simulation of work and delays using asynchronous callbacks.</li>
+<li>Centralized coordination and state management by dedicated actors.</li>
+<li>System-wide monitoring and statistics gathering.</li>
+</ul>
+<h2>Architectural Overview: A Distributed Workflow</h2>
+<p>The simulation is orchestrated by several types of actors, each with distinct responsibilities, potentially running across multiple <span class="tt">VirtualCore</span>s:</p>
+<h3>1. <span class="tt">TaskGeneratorActor</span></h3>
+<ul>
+<li><b>Role:</b> Periodically creates new computational <span class="tt">Task</span> objects (defined in the example with properties like type, priority, complexity, and data).</li>
+<li><b>QB Integration:</b> Standard <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span>.</li>
+<li><b>Functionality:</b><ul>
+<li>Uses <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> to trigger <span class="tt">generateTask()</span> at intervals determined by a <span class="tt">TASKS_PER_SECOND</span> constant.</li>
+<li><span class="tt">generateTask()</span>: Constructs a <span class="tt">Task</span> object with randomized attributes.</li>
+<li>Encapsulates the <span class="tt">Task</span> within a <span class="tt">TaskMessage</span> event and <span class="tt">push</span>es it to the <span class="tt">TaskSchedulerActor</span>.</li>
+<li>Ceases generation upon receiving a <span class="tt">ShutdownMessage</span>.</li>
+</ul>
+</li>
+</ul>
+<h3>2. <span class="tt">TaskSchedulerActor</span>: The Central Dispatcher &amp; Load Balancer</h3>
+<ul>
+<li><b>Role:</b> Receives tasks, queues them, and dispatches them to available <span class="tt">WorkerNodeActor</span>s based on a scheduling strategy (prioritization and basic load awareness).</li>
+<li><b>QB Integration:</b> Standard <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span>.</li>
+<li><b>State Management:</b><ul>
+<li><span class="tt">_worker_ids</span>: A list of available <span class="tt">WorkerNodeActor</span> IDs.</li>
+<li><span class="tt">_worker_metrics</span>: A map (<span class="tt"><a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a></span> to <span class="tt">WorkerMetrics</span>) storing the last known status (heartbeat, utilization) of each worker.</li>
+<li><span class="tt">_task_queue</span>: A <span class="tt">std::deque</span> of <span class="tt">std::shared_ptr&lt;Task&gt;</span>, acting as the pending task buffer.</li>
+<li><span class="tt">_active_tasks</span>: A map (<span class="tt">task_id</span> to <span class="tt">std::shared_ptr&lt;Task&gt;</span>) tracking tasks currently assigned to workers.</li>
+</ul>
+</li>
+<li><b>Event Handling &amp; Logic:</b><ul>
+<li><span class="tt">on(TaskMessage&amp;)</span>: Adds the new task to <span class="tt">_task_queue</span> and attempts to schedule it immediately via <span class="tt">scheduleTasks()</span>.</li>
+<li><span class="tt">on(WorkerHeartbeatMessage&amp;)</span>: Updates the <span class="tt">last_heartbeat</span> timestamp for the reporting worker in <span class="tt">_worker_metrics</span>.</li>
+<li><span class="tt">on(WorkerStatusMessage&amp;)</span>: Updates the full <span class="tt">WorkerMetrics</span> (including utilization) for the reporting worker.</li>
+<li><span class="tt">on(ResultMessage&amp;)</span>: Receives <span class="tt">TaskResult</span> from a <span class="tt">ResultCollectorActor</span> (indirectly signaling task completion by a worker), removes the task from <span class="tt">_active_tasks</span>, and attempts to <span class="tt">scheduleTasks()</span> to dispatch new work if workers are free.</li>
+<li><span class="tt">on(UpdateWorkersMessage&amp;)</span>: Receives the initial list of <span class="tt">WorkerNodeActor</span> IDs from the <span class="tt">SystemMonitorActor</span>.</li>
+</ul>
+</li>
+<li><b>Scheduling (<span class="tt">scheduleTasks()</span>):<ol type="1">
+<li>Sorts <span class="tt">_task_queue</span> by <span class="tt">Task::priority</span> (higher priority first).</li>
+<li>Iterates through known <span class="tt">_worker_ids</span>.</li>
+<li>For each worker, calls <span class="tt">isWorkerAvailable()</span> to check its status.</li>
+<li>If a worker is available and tasks are pending, dequeues the highest priority task, moves it to <span class="tt">_active_tasks</span>, and <span class="tt">push</span>es a <span class="tt">TaskAssignmentMessage</span> (containing the <span class="tt">Task</span>) to that worker.</li>
+</ol>
+</b></li>
+<li><b> **Worker Availability (<span class="tt">isWorkerAvailable()</span>):</b> Checks if metrics for the worker exist, if its <span class="tt">last_heartbeat</span> is recent (within <span class="tt">HEARTBEAT_TIMEOUT</span>), and if its reported <span class="tt">utilization</span> is below a defined threshold (e.g., 80%), indicating it has capacity.</li>
+<li><b>Load Assessment (<span class="tt">assessLoadBalance()</span>):</b> Periodically scheduled via <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span>. Calculates and logs average worker utilization and current task queue sizes for monitoring purposes.</li>
+</ul>
+<h3>3. <span class="tt">WorkerNodeActor</span>: The Task Executor</h3>
+<ul>
+<li><b>Role:</b> Receives <span class="tt">TaskAssignmentMessage</span>s and simulates the execution of the assigned <span class="tt">Task</span>.</li>
+<li><b>QB Integration:</b> Standard <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span>.</li>
+<li><b>State Management:</b> <span class="tt">_current_task</span>, <span class="tt">_metrics</span> (its own <span class="tt">WorkerMetrics</span>), <span class="tt">_is_busy</span> flag, <span class="tt">_simulation_start_time</span>, <span class="tt">_busy_start_time</span>.</li>
+<li><b>Initialization &amp; Reporting (<span class="tt">onInit()</span>, <span class="tt">scheduleHeartbeat()</span>, <span class="tt">scheduleMetricsUpdate()</span>):<ul>
+<li>In <span class="tt">onInit()</span>, after receiving <span class="tt">InitializeMessage</span>, it starts two recurring <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> chains:<ul>
+<li><span class="tt">scheduleHeartbeat()</span>: Periodically sends a <span class="tt">WorkerHeartbeatMessage</span> (containing its ID, current time, and busy status) to the <span class="tt">TaskSchedulerActor</span>.</li>
+<li><span class="tt">scheduleMetricsUpdate()</span>: Periodically calculates its own utilization and other metrics, then sends a <span class="tt">WorkerStatusMessage</span> to the <span class="tt">TaskSchedulerActor</span>.</li>
+</ul>
+</li>
+</ul>
+</b></li>
+<li><b> **Task Execution (<span class="tt">on(TaskAssignmentMessage&amp;)</span>):<ol type="1">
+<li>If not already <span class="tt">_is_busy</span>, accepts the task.</li>
+<li>Sets <span class="tt">_is_busy = true</span>, stores <span class="tt">_current_task</span>, updates the task's status to <span class="tt">IN_PROGRESS</span>.</li>
+<li><span class="tt">push</span>es a <span class="tt">TaskStatusUpdateMessage</span> back to the <span class="tt">TaskSchedulerActor</span>.</li>
+<li>**Simulates Work:</li>
+</ol>
+</b> Schedules a call to its own <span class="tt">completeCurrentTask()</span> method using <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span>. The delay for this callback is determined by the <span class="tt">task-&gt;complexity</span> (using <span class="tt">generateProcessingTime()</span>).</li>
+<li>**Task Completion (<span class="tt">completeCurrentTask()</span> - invoked by the scheduled callback):<ol type="1">
+<li>Calculates simulated processing time.</li>
+<li>Randomly determines if the task succeeded or failed.</li>
+<li>Updates its internal <span class="tt">_metrics</span> (total tasks processed, processing time, success/failure count).</li>
+<li>Creates a <span class="tt">TaskResult</span> object.</li>
+<li><span class="tt">push</span>es a <span class="tt">ResultMessage</span> (containing the <span class="tt">TaskResult</span>) to the <span class="tt">ResultCollectorActor</span>.</li>
+<li><span class="tt">push</span>es a final <span class="tt">TaskStatusUpdateMessage</span> (COMPLETED or FAILED) to the <span class="tt">TaskSchedulerActor</span>.</li>
+<li>Sets <span class="tt">_is_busy = false</span>, making itself available for new tasks.</li>
+</ol>
+</li>
+</ul>
+<h3>4. <span class="tt">ResultCollectorActor</span>: The Aggregator</h3>
+<ul>
+<li><b>Role:</b> Receives <span class="tt">ResultMessage</span>s from <span class="tt">WorkerNodeActor</span>s and stores/logs the outcomes of completed tasks.</li>
+<li><b>QB Integration:</b> Standard <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span>.</li>
+<li><b>State Management:</b> <span class="tt">_results</span> (a map from <span class="tt">task_id</span> to <span class="tt">TaskResult</span>).</li>
+<li><b>Event Handling:</b><ul>
+<li><span class="tt">on(InitializeMessage&amp;)</span>: Activates the actor.</li>
+<li><span class="tt">on(ResultMessage&amp;)</span>: Stores the received <span class="tt">result</span> in its <span class="tt">_results</span> map and logs the result to the console.</li>
+<li><span class="tt">on(ShutdownMessage&amp;)</span>: Calculates and prints final statistics (overall success rate, average processing time across all tasks) based on the collected <span class="tt">_results</span>.</li>
+</ul>
+</li>
+</ul>
+<h3>5. <span class="tt">SystemMonitorActor</span>: The Orchestrator &amp; Overseer</h3>
+<ul>
+<li><b>Role:</b> Sets up the entire simulation, starts the actors, monitors overall system performance, and initiates a graceful shutdown.</li>
+<li><b>QB Integration:</b> Standard <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span>.</li>
+<li>**Initialization (<span class="tt">onInit()</span> and <span class="tt">on(InitializeMessage&amp;)</span>):<ul>
+<li>Creates instances of all other actor types (<span class="tt">TaskGeneratorActor</span>, <span class="tt">TaskSchedulerActor</span>, <span class="tt">ResultCollectorActor</span>, and a pool of <span class="tt">WorkerNodeActor</span>s), assigning them to different cores (<span class="tt"><a class="el" href="group___engine.html#ga84dff5faea16cfa7108cd9ff209fbc24" title="Add a new actor to a specified VirtualCore before the engine starts.">qb::Main::addActor</a></span>).</li>
+<li>Stores their <span class="tt">ActorId</span>s.</li>
+<li><span class="tt">push</span>es an <span class="tt">InitializeMessage</span> to all created actors to kickstart their operations.</li>
+<li>Sends an initial <span class="tt">UpdateWorkersMessage</span> (containing all worker IDs) to the <span class="tt">TaskSchedulerActor</span>.</li>
+</ul>
+</li>
+<li>**Performance Monitoring (<span class="tt">schedulePerformanceReport()</span>):<ul>
+<li>Uses <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> to periodically call itself (by pushing a <span class="tt">SystemStatsMessage</span> to its own ID after calculation).</li>
+<li>Calculates system-wide statistics (e.g., total tasks generated, completed, failed; overall throughput) using global <span class="tt">std::atomic</span> counters (which are incremented by other actors like <span class="tt">TaskGeneratorActor</span> and <span class="tt">WorkerNodeActor</span>).</li>
+<li>Logs these system-wide stats.</li>
+</ul>
+</li>
+<li>**Simulation Shutdown (<span class="tt">shutdownSystem()</span>):<ul>
+<li>Scheduled via <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> to run after <span class="tt">SIMULATION_DURATION_SECONDS</span>.</li>
+<li>Performs a final performance report.</li>
+<li><span class="tt">broadcast&lt;ShutdownMessage&gt;()</span> to all actors to signal them to stop their activities and terminate gracefully.</li>
+<li>Finally, calls <span class="tt"><a class="el" href="group___engine.html#ga17196adf7b7ab867d25074f78f048658" title="Stop the engine and all its VirtualCores gracefully.">qb::Main::stop()</a></span> to stop the entire engine.</li>
+</ul>
+</li>
+</ul>
+<h2>Key QB Concepts &amp; Patterns Demonstrated</h2>
+<ul>
+<li><b>Complex Multi-Actor Workflow:</b> Illustrates a sophisticated pipeline with clear separation of concerns: generation, scheduling, execution, collection, and system-level monitoring.</li>
+<li><b>Asynchronous Simulation of Work:</b> Extensive use of <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span> to simulate task processing times and to schedule periodic actions (heartbeats, metrics updates, report generation) without blocking any <span class="tt">VirtualCore</span>.</li>
+<li><b>Centralized Coordination &amp; State:</b><ul>
+<li><span class="tt">TaskSchedulerActor</span>: Manages the central task queue and worker availability.</li>
+<li><span class="tt">ResultCollectorActor</span>: Aggregates all final task outcomes.</li>
+<li><span class="tt">SystemMonitorActor</span>: Orchestrates the setup and shutdown of the entire simulation.</li>
+</ul>
+</li>
+<li><b>Dynamic Task Scheduling &amp; Basic Load Balancing:</b> The <span class="tt">TaskSchedulerActor</span> uses worker heartbeats and reported metrics (utilization) to make decisions about which worker should receive the next task, also prioritizing tasks from its queue.</li>
+<li><b>Worker Self-Monitoring and Reporting:</b> <span class="tt">WorkerNodeActor</span>s proactively send heartbeats and status updates to the scheduler, enabling the scheduler to make informed decisions.</li>
+<li><b>Inter-Actor Event Design:</b> Shows various custom event types (<span class="tt">TaskMessage</span>, <span class="tt">WorkerStatusMessage</span>, <span class="tt">ResultMessage</span>, <span class="tt">ShutdownMessage</span>, etc.) designed to carry specific information between collaborating actors.</li>
+<li><b>Graceful Shutdown:</b> A coordinated shutdown process initiated by the <span class="tt">SystemMonitorActor</span> via a <span class="tt">ShutdownMessage</span>, allowing other actors to finalize their work and report statistics before the engine stops.</li>
+<li><b>Global Atomics for High-Level Stats:</b> Use of <span class="tt">std::atomic</span> global counters demonstrates a simple way to aggregate high-level system statistics from multiple concurrent actors with thread safety (though for more complex stats, a dedicated statistics actor would be preferable).</li>
+</ul>
+<p>This <span class="tt">distributed_computing</span> example serves as a rich template for understanding how to structure larger, more intricate applications using the QB Actor Framework, particularly those involving distributed workflows and resource management.</p>
+<p><b>(Next Example Analysis:</b> file_monitor Example Analysis**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

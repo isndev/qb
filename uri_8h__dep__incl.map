@@ -1,0 +1,36 @@
+<map id="include/qb/io/uri.h" name="include/qb/io/uri.h">
+<area shape="rect" id="Node000001" title="URI parsing and manipulation utilities." alt="" coords="192,5,315,31"/>
+<area shape="rect" id="Node000002" href="$connector_8h.html" title="Asynchronous TCP connection establishment utilities." alt="" coords="5,79,139,120"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="213,40,118,81,116,76,211,35"/>
+<area shape="rect" id="Node000004" href="$tcp_2socket_8h.html" title="Implementation of TCP sockets for the QB IO library." alt="" coords="446,86,616,112"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="311,33,489,83,487,88,310,38"/>
+<area shape="rect" id="Node000012" href="$udp_2socket_8h.html" title="Implementation of UDP sockets for datagram communication in the QB IO library." alt="" coords="167,86,340,112"/>
+<area shape="poly" id="edge14_Node000001_Node000012" title=" " alt="" coords="256,47,256,86,251,86,251,47"/>
+<area shape="rect" id="Node000003" href="$async_8h.html" title="Main include file for the QB asynchronous I/O library." alt="" coords="254,352,399,378"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="67,135,63,172,63,215,72,258,81,277,93,295,118,312,158,327,255,350,254,355,156,333,115,317,89,299,76,280,67,259,58,215,58,172,62,135"/>
+<area shape="rect" id="Node000005" href="$tcp_2listener_8h.html" title="Implementation of a TCP listener for the QB IO library." alt="" coords="527,175,700,201"/>
+<area shape="poly" id="edge4_Node000004_Node000005" title=" " alt="" coords="555,122,604,173,600,177,551,125"/>
+<area shape="rect" id="Node000009" href="$tcp_2ssl_2socket_8h.html" title="Implementation of SSL/TLS sockets for secure TCP communication in the QB IO library." alt="" coords="723,168,861,208"/>
+<area shape="poly" id="edge9_Node000004_Node000009" title=" " alt="" coords="583,115,733,165,732,170,581,120"/>
+<area shape="rect" id="Node000011" href="$tcp_8h.html" title="TCP stream transport implementation for the QB IO library." alt="" coords="353,168,503,208"/>
+<area shape="poly" id="edge12_Node000004_Node000011" title=" " alt="" coords="507,124,453,169,450,165,503,120"/>
+<area shape="rect" id="Node000006" href="$tcp_2ssl_2listener_8h.html" title="Implementation of a secure SSL/TLS listener for the QB IO library." alt="" coords="642,256,779,297"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="640,209,690,254,687,258,636,213"/>
+<area shape="rect" id="Node000008" href="$transport_2accept_8h.html" title="TCP connection acceptance transport implementation for the QB IO library." alt="" coords="468,256,617,297"/>
+<area shape="poly" id="edge7_Node000005_Node000008" title=" " alt="" coords="596,215,560,258,556,255,592,211"/>
+<area shape="rect" id="Node000007" href="$saccept_8h.html" title="Secure (SSL/TLS) TCP connection acceptance transport for the QB IO library." alt="" coords="636,345,785,386"/>
+<area shape="poly" id="edge6_Node000006_Node000007" title=" " alt="" coords="713,313,713,345,708,345,708,313"/>
+<area shape="poly" id="edge8_Node000008_Node000003" title=" " alt="" coords="481,306,358,354,356,350,479,301"/>
+<area shape="poly" id="edge10_Node000009_Node000006" title=" " alt="" coords="765,222,731,258,727,254,761,218"/>
+<area shape="rect" id="Node000010" href="$stcp_8h.html" title="Secure TCP (SSL/TLS) stream transport for the QB IO library." alt="" coords="804,256,953,297"/>
+<area shape="poly" id="edge11_Node000009_Node000010" title=" " alt="" coords="824,218,861,254,857,258,820,221"/>
+<area shape="poly" id="edge13_Node000011_Node000003" title=" " alt="" coords="429,224,423,261,408,298,380,331,349,354,346,350,376,327,403,296,417,260,424,223"/>
+<area shape="rect" id="Node000013" href="$udp_8h.html" title="UDP datagram transport implementation for the QB IO library." alt="" coords="179,168,328,208"/>
+<area shape="poly" id="edge15_Node000012_Node000013" title=" " alt="" coords="256,128,256,168,251,168,251,128"/>
+<area shape="rect" id="Node000014" href="$udp_2client_8h.html" title="Asynchronous UDP client implementation." alt="" coords="260,256,393,297"/>
+<area shape="poly" id="edge16_Node000013_Node000014" title=" " alt="" coords="282,218,312,254,308,258,278,222"/>
+<area shape="rect" id="Node000015" href="$udp_2server_8h.html" title="Asynchronous UDP server implementation." alt="" coords="103,256,236,297"/>
+<area shape="poly" id="edge18_Node000013_Node000015" title=" " alt="" coords="225,222,190,258,186,254,222,218"/>
+<area shape="poly" id="edge17_Node000014_Node000003" title=" " alt="" coords="329,313,329,352,324,352,324,313"/>
+<area shape="poly" id="edge19_Node000015_Node000003" title=" " alt="" coords="220,302,306,350,303,354,217,307"/>
+</map>

@@ -1,50 +1,115 @@
-<!-- HTML header for doxygen 1.8.14-->
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-    <meta http-equiv="cache-control" content="max-age=86400"/>
-    <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
-    <meta http-equiv="X-UA-Compatible" content="IE=9"/>
-    <meta name="generator" content="Doxygen 1.8.15"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <title>qb: C:/repo/isndev/qb/include/qb/core/Event.h Source File</title>
-    <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
-    <meta name="keywords" content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, git">
-    <meta name="author" content="isndev">
-    <link href="tabs.css" rel="stylesheet" type="text/css"/>
-    <script type="text/javascript" src="jquery.js"></script>
-    <script type="text/javascript" src="dynsections.js"></script>
-    <link href="navtree.css" rel="stylesheet" type="text/css"/>
-<script type="text/javascript" src="resize.js"></script>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/core/Event.h Source File</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/core/Event.h Source File</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="navtreedata.js"></script>
 <script type="text/javascript" src="navtree.js"></script>
-<script type="text/javascript">
-/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
-  $(document).ready(initResizable);
-/* @license-end */</script>
-    <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
 <script type="text/javascript" src="search/searchdata.js"></script>
 <script type="text/javascript" src="search/search.js"></script>
-<script type="text/javascript">
-/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
-  $(document).ready(function() { init_search(); });
-/* @license-end */
-</script>
-    <link href="doxygen.css" rel="stylesheet" type="text/css" />
-    <link href='https://fonts.googleapis.com/css?family=Roboto+Slab' rel='stylesheet' type='text/css'>
-    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
-    <link href="style.css" rel="stylesheet" type="text/css"/>
-    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png">
-    <script src="style.js"></script>
-    <script async defer src="git-buttons.js"></script>
-</head>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
 <body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
 <div id="top"><!-- do not remove this div, it is closed by doxygen! -->
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
-        <a class="navbar-brand" href="/">
-            <img src="logo.png" width="80px" alt="qb">
-            <span>C++ Actor Framework</span>
-        </a>
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
         <a class="navbar-brand" href="https://github.com/isndev/qb">
             <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
         </a>
@@ -53,54 +118,24 @@
         <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
         <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
         <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
-        <div>        <div id="MSearchBox" class="MSearchBoxInactive">
-        <span class="left">
-          <img id="MSearchSelect" src="search/mag_sel.png"
-               onmouseover="return searchBox.OnSearchSelectShow()"
-               onmouseout="return searchBox.OnSearchSelectHide()"
-               alt=""/>
-          <input type="text" id="MSearchField" value="Search" accesskey="S"
-               onfocus="searchBox.OnSearchFieldFocus(true)" 
-               onblur="searchBox.OnSearchFieldFocus(false)" 
-               onkeyup="searchBox.OnSearchFieldChange(event)"/>
-          </span><span class="right">
-            <a id="MSearchClose" href="javascript:searchBox.CloseResultsWindow()"><img id="MSearchCloseImg" border="0" src="search/close.png" alt=""/></a>
-          </span>
-        </div>
-</div>
-    </nav>
-    <!--<div id="titlearea">-->
-        <!--<table cellspacing="0" cellpadding="0">-->
-            <!--<tbody>-->
-            <!--<tr style="height: 56px;">-->
-                <!--&lt;!&ndash;BEGIN PROJECT_LOGO&ndash;&gt;-->
-                <!--<td id="projectlogo"><a href="https://github.com/isndev/qb"><img alt="Logo" style="height: 56px;" src="logo.png"/></a></td>-->
-                <!--&lt;!&ndash;END PROJECT_LOGO&ndash;&gt;-->
-                <!--&lt;!&ndash;BEGIN PROJECT_NAME&ndash;&gt;-->
-                <!--<td id="projectalign" style="padding-left: 0.5em;">-->
-                    <!--<div id="projectname">qb-->
-                        <!--&lt;!&ndash;BEGIN PROJECT_NUMBER&ndash;&gt;&#160;<span id="projectnumber">0.9.0.0</span>&lt;!&ndash;END PROJECT_NUMBER&ndash;&gt;-->
-                    <!--</div>>-->
-                <!--</td>-->
-                <!--&lt;!&ndash;END PROJECT_NAME&ndash;&gt;-->
-                <!--&lt;!&ndash;BEGIN !PROJECT_NAME&ndash;&gt;-->
-                <!--&lt;!&ndash;BEGIN PROJECT_BRIEF&ndash;&gt;-->
-                <!--<td style="padding-left: 0.5em;">-->
-                    <!--<div id="projectbrief">C++17 Actor Framework</div>-->
-                <!--</td>-->
-                <!--&lt;!&ndash;END PROJECT_BRIEF&ndash;&gt;-->
-                <!--&lt;!&ndash;END !PROJECT_NAME&ndash;&gt;-->
-            <!--</tr>-->
-            <!--</tbody>-->
-        <!--</table>-->
-    <!--</div>-->
+    </div>
     <!-- end header part -->
-<!-- Generated by Doxygen 1.8.15 -->
+<!-- Generated by Doxygen 1.14.0 -->
 <script type="text/javascript">
-/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
-var searchBox = new SearchBox("searchBox", "search",false,'Search');
-/* @license-end */
+var searchBox = new SearchBox("searchBox", "search/",'.html');
 </script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
 </div><!-- top -->
 <div id="side-nav" class="ui-resizable side-nav-resizable">
   <div id="nav-tree">
@@ -113,10 +148,9 @@ var searchBox = new SearchBox("searchBox", "search",false,'Search');
   </div>
 </div>
 <script type="text/javascript">
-/* @license magnet:?xt=urn:btih:cf05388f2679ee054f2beb29a391d25f4e673ac3&amp;dn=gpl-2.0.txt GPL-v2 */
-$(document).ready(function(){initNavTree('core_2_event_8h_source.html','');});
-/* @license-end */
+$(function(){initNavTree('core_2_event_8h_source.html','',''); });
 </script>
+<div id="container">
 <div id="doc-content">
 <!-- window showing the filter options -->
 <div id="MSearchSelectWindow"
@@ -127,30 +161,292 @@ $(document).ready(function(){initNavTree('core_2_event_8h_source.html','');});
 
 <!-- iframe showing the search results (closed by default) -->
 <div id="MSearchResultsWindow">
-<iframe src="javascript:void(0)" frameborder="0" 
-        name="MSearchResults" id="MSearchResults">
-</iframe>
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
 </div>
 
 <div class="header">
-  <div class="headertitle">
-<div class="title">Event.h</div>  </div>
+  <div class="headertitle"><div class="title">Event.h</div></div>
 </div><!--header-->
 <div class="contents">
-<div class="fragment"><div class="line"><a name="l00001"></a><span class="lineno">    1</span>&#160;<span class="comment">/*</span></div><div class="line"><a name="l00002"></a><span class="lineno">    2</span>&#160;<span class="comment"> * qb - C++ Actor Framework</span></div><div class="line"><a name="l00003"></a><span class="lineno">    3</span>&#160;<span class="comment"> * Copyright (C) 2011-2019 isndev (www.qbaf.io). All rights reserved.</span></div><div class="line"><a name="l00004"></a><span class="lineno">    4</span>&#160;<span class="comment"> *</span></div><div class="line"><a name="l00005"></a><span class="lineno">    5</span>&#160;<span class="comment"> * Licensed under the Apache License, Version 2.0 (the &quot;License&quot;);</span></div><div class="line"><a name="l00006"></a><span class="lineno">    6</span>&#160;<span class="comment"> * you may not use this file except in compliance with the License.</span></div><div class="line"><a name="l00007"></a><span class="lineno">    7</span>&#160;<span class="comment"> * You may obtain a copy of the License at</span></div><div class="line"><a name="l00008"></a><span class="lineno">    8</span>&#160;<span class="comment"> *</span></div><div class="line"><a name="l00009"></a><span class="lineno">    9</span>&#160;<span class="comment"> *         http://www.apache.org/licenses/LICENSE-2.0</span></div><div class="line"><a name="l00010"></a><span class="lineno">   10</span>&#160;<span class="comment"> *</span></div><div class="line"><a name="l00011"></a><span class="lineno">   11</span>&#160;<span class="comment"> * Unless required by applicable law or agreed to in writing, software</span></div><div class="line"><a name="l00012"></a><span class="lineno">   12</span>&#160;<span class="comment"> * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,</span></div><div class="line"><a name="l00013"></a><span class="lineno">   13</span>&#160;<span class="comment"> * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.</span></div><div class="line"><a name="l00014"></a><span class="lineno">   14</span>&#160;<span class="comment"> * See the License for the specific language governing permissions and</span></div><div class="line"><a name="l00015"></a><span class="lineno">   15</span>&#160;<span class="comment"> *         limitations under the License.</span></div><div class="line"><a name="l00016"></a><span class="lineno">   16</span>&#160;<span class="comment"> */</span></div><div class="line"><a name="l00017"></a><span class="lineno">   17</span>&#160;</div><div class="line"><a name="l00018"></a><span class="lineno">   18</span>&#160;<span class="preprocessor">#ifndef QB_EVENT_H</span></div><div class="line"><a name="l00019"></a><span class="lineno">   19</span>&#160;<span class="preprocessor"># define QB_EVENT_H</span></div><div class="line"><a name="l00020"></a><span class="lineno">   20</span>&#160;<span class="preprocessor"># include &lt;utility&gt;</span></div><div class="line"><a name="l00021"></a><span class="lineno">   21</span>&#160;<span class="preprocessor"># include &lt;bitset&gt;</span></div><div class="line"><a name="l00022"></a><span class="lineno">   22</span>&#160;<span class="comment">// include from qb</span></div><div class="line"><a name="l00023"></a><span class="lineno">   23</span>&#160;<span class="preprocessor"># include &quot;ActorId.h&quot;</span></div><div class="line"><a name="l00024"></a><span class="lineno">   24</span>&#160;</div><div class="line"><a name="l00025"></a><span class="lineno">   25</span>&#160;<span class="keyword">namespace </span>qb {</div><div class="line"><a name="l00026"></a><span class="lineno">   26</span>&#160;</div><div class="line"><a name="l00027"></a><span class="lineno">   27</span>&#160;    <span class="keyword">template</span>&lt;<span class="keyword">typename</span> T&gt;</div><div class="line"><a name="l00028"></a><span class="lineno"><a class="line" href="structqb_1_1type.html">   28</a></span>&#160;    <span class="keyword">struct </span><a class="code" href="structqb_1_1type.html">type</a> {</div><div class="line"><a name="l00029"></a><span class="lineno">   29</span>&#160;        constexpr <span class="keyword">static</span> <span class="keywordtype">void</span> id() {}</div><div class="line"><a name="l00030"></a><span class="lineno">   30</span>&#160;    };</div><div class="line"><a name="l00031"></a><span class="lineno">   31</span>&#160;</div><div class="line"><a name="l00032"></a><span class="lineno">   32</span>&#160;    <span class="keyword">template</span>&lt;<span class="keyword">typename</span> T&gt;</div><div class="line"><a name="l00033"></a><span class="lineno">   33</span>&#160;    constexpr uint16_t type_id() { <span class="keywordflow">return</span> static_cast&lt;uint16_t&gt;(reinterpret_cast&lt;std::size_t&gt;(&amp;<a class="code" href="structqb_1_1type.html">type&lt;T&gt;::id</a>)); }</div><div class="line"><a name="l00034"></a><span class="lineno">   34</span>&#160;</div><div class="line"><a name="l00040"></a><span class="lineno"><a class="line" href="classqb_1_1_event.html">   40</a></span>&#160;    <span class="keyword">class </span><a class="code" href="classqb_1_1_event.html">Event</a> {</div><div class="line"><a name="l00041"></a><span class="lineno">   41</span>&#160;        <span class="keyword">friend</span> <span class="keyword">class </span><a class="code" href="classqb_1_1_main.html">Main</a>;</div><div class="line"><a name="l00042"></a><span class="lineno">   42</span>&#160;        <span class="keyword">friend</span> <span class="keyword">class </span><a class="code" href="classqb_1_1_virtual_core.html">VirtualCore</a>;</div><div class="line"><a name="l00043"></a><span class="lineno">   43</span>&#160;        <span class="keyword">friend</span> <span class="keyword">class </span><a class="code" href="classqb_1_1_actor.html">Actor</a>;</div><div class="line"><a name="l00044"></a><span class="lineno">   44</span>&#160;        <span class="keyword">friend</span> <span class="keyword">class </span><a class="code" href="classqb_1_1_proxy_pipe.html">ProxyPipe</a>;</div><div class="line"><a name="l00045"></a><span class="lineno">   45</span>&#160;        <span class="keyword">friend</span> <span class="keyword">struct </span><a class="code" href="structqb_1_1_service_event.html">ServiceEvent</a>;</div><div class="line"><a name="l00046"></a><span class="lineno">   46</span>&#160;</div><div class="line"><a name="l00047"></a><span class="lineno">   47</span>&#160;        uint16_t id;</div><div class="line"><a name="l00048"></a><span class="lineno">   48</span>&#160;        uint16_t bucket_size;</div><div class="line"><a name="l00049"></a><span class="lineno">   49</span>&#160;        std::bitset&lt;32&gt; state;</div><div class="line"><a name="l00050"></a><span class="lineno">   50</span>&#160;        <span class="comment">// for users</span></div><div class="line"><a name="l00051"></a><span class="lineno">   51</span>&#160;        <a class="code" href="classqb_1_1_actor_id.html">ActorId</a> dest;</div><div class="line"><a name="l00052"></a><span class="lineno">   52</span>&#160;        <a class="code" href="classqb_1_1_actor_id.html">ActorId</a> source;</div><div class="line"><a name="l00053"></a><span class="lineno">   53</span>&#160;</div><div class="line"><a name="l00054"></a><span class="lineno">   54</span>&#160;    <span class="keyword">public</span>:</div><div class="line"><a name="l00055"></a><span class="lineno">   55</span>&#160;        <a class="code" href="classqb_1_1_event.html">Event</a>() = <span class="keywordflow">default</span>;</div><div class="line"><a name="l00056"></a><span class="lineno">   56</span>&#160;</div><div class="line"><a name="l00057"></a><span class="lineno">   57</span>&#160;        <span class="keyword">inline</span> <a class="code" href="classqb_1_1_actor_id.html">ActorId</a> getDestination()<span class="keyword"> const </span>{ <span class="keywordflow">return</span> dest; }</div><div class="line"><a name="l00058"></a><span class="lineno">   58</span>&#160;        <span class="keyword">inline</span> <a class="code" href="classqb_1_1_actor_id.html">ActorId</a> getSource()<span class="keyword"> const </span>{ <span class="keywordflow">return</span> source; }</div><div class="line"><a name="l00059"></a><span class="lineno">   59</span>&#160;    };</div><div class="line"><a name="l00060"></a><span class="lineno">   60</span>&#160;</div><div class="line"><a name="l00068"></a><span class="lineno"><a class="line" href="structqb_1_1_service_event.html">   68</a></span>&#160;    <span class="keyword">struct </span><a class="code" href="structqb_1_1_service_event.html">ServiceEvent</a> : <span class="keyword">public</span> <a class="code" href="classqb_1_1_event.html">Event</a> {</div><div class="line"><a name="l00069"></a><span class="lineno">   69</span>&#160;        <a class="code" href="classqb_1_1_actor_id.html">ActorId</a> forward;</div><div class="line"><a name="l00070"></a><span class="lineno">   70</span>&#160;        uint16_t service_event_id;</div><div class="line"><a name="l00071"></a><span class="lineno">   71</span>&#160;</div><div class="line"><a name="l00072"></a><span class="lineno">   72</span>&#160;        <span class="keyword">inline</span> <span class="keywordtype">void</span> received() {</div><div class="line"><a name="l00073"></a><span class="lineno">   73</span>&#160;            std::swap(dest, forward);</div><div class="line"><a name="l00074"></a><span class="lineno">   74</span>&#160;            std::swap(<span class="keywordtype">id</span>, service_event_id);</div><div class="line"><a name="l00075"></a><span class="lineno">   75</span>&#160;            live(<span class="keyword">true</span>);</div><div class="line"><a name="l00076"></a><span class="lineno">   76</span>&#160;        }</div><div class="line"><a name="l00077"></a><span class="lineno">   77</span>&#160;</div><div class="line"><a name="l00078"></a><span class="lineno">   78</span>&#160;        <span class="keyword">inline</span> <span class="keywordtype">void</span> live(<span class="keywordtype">bool</span> flag) {</div><div class="line"><a name="l00079"></a><span class="lineno">   79</span>&#160;            state[0] = flag;</div><div class="line"><a name="l00080"></a><span class="lineno">   80</span>&#160;        }</div><div class="line"><a name="l00081"></a><span class="lineno">   81</span>&#160;</div><div class="line"><a name="l00082"></a><span class="lineno">   82</span>&#160;        <span class="keyword">inline</span> <span class="keywordtype">bool</span> isLive() { <span class="keywordflow">return</span> state[0]; }</div><div class="line"><a name="l00083"></a><span class="lineno">   83</span>&#160;</div><div class="line"><a name="l00084"></a><span class="lineno">   84</span>&#160;        <span class="keyword">inline</span> uint16_t bucketSize()<span class="keyword"> const </span>{</div><div class="line"><a name="l00085"></a><span class="lineno">   85</span>&#160;            <span class="keywordflow">return</span> bucket_size;</div><div class="line"><a name="l00086"></a><span class="lineno">   86</span>&#160;        }</div><div class="line"><a name="l00087"></a><span class="lineno">   87</span>&#160;    };</div><div class="line"><a name="l00088"></a><span class="lineno">   88</span>&#160;</div><div class="line"><a name="l00093"></a><span class="lineno"><a class="line" href="structqb_1_1_kill_event.html">   93</a></span>&#160;    <span class="keyword">struct </span><a class="code" href="structqb_1_1_kill_event.html">KillEvent</a> : <span class="keyword">public</span> <a class="code" href="classqb_1_1_event.html">Event</a> {};</div><div class="line"><a name="l00094"></a><span class="lineno">   94</span>&#160;</div><div class="line"><a name="l00095"></a><span class="lineno">   95</span>&#160;} <span class="comment">// namespace qb</span></div><div class="line"><a name="l00096"></a><span class="lineno">   96</span>&#160;</div><div class="line"><a name="l00097"></a><span class="lineno">   97</span>&#160;<span class="preprocessor">#endif //QB_EVENT_H</span></div><div class="ttc" id="structqb_1_1type_html"><div class="ttname"><a href="structqb_1_1type.html">qb::type</a></div><div class="ttdef"><b>Definition:</b> Event.h:28</div></div>
-<div class="ttc" id="classqb_1_1_event_html"><div class="ttname"><a href="classqb_1_1_event.html">qb::Event</a></div><div class="ttdoc">Event base class.</div><div class="ttdef"><b>Definition:</b> Event.h:40</div></div>
-<div class="ttc" id="classqb_1_1_actor_html"><div class="ttname"><a href="classqb_1_1_actor.html">qb::Actor</a></div><div class="ttdoc">Actor base class.</div><div class="ttdef"><b>Definition:</b> Actor.h:41</div></div>
-<div class="ttc" id="classqb_1_1_virtual_core_html"><div class="ttname"><a href="classqb_1_1_virtual_core.html">qb::VirtualCore</a></div><div class="ttdef"><b>Definition:</b> VirtualCore.h:50</div></div>
-<div class="ttc" id="classqb_1_1_proxy_pipe_html"><div class="ttname"><a href="classqb_1_1_proxy_pipe.html">qb::ProxyPipe</a></div><div class="ttdoc">Object returned by Actor::getPipe()</div><div class="ttdef"><b>Definition:</b> ProxyPipe.h:33</div></div>
-<div class="ttc" id="classqb_1_1_actor_id_html"><div class="ttname"><a href="classqb_1_1_actor_id.html">qb::ActorId</a></div><div class="ttdoc">Actor unique identifier.</div><div class="ttdef"><b>Definition:</b> ActorId.h:35</div></div>
-<div class="ttc" id="classqb_1_1_main_html"><div class="ttname"><a href="classqb_1_1_main.html">qb::Main</a></div><div class="ttdoc">Core main class.</div><div class="ttdef"><b>Definition:</b> Main.h:39</div></div>
-<div class="ttc" id="structqb_1_1_service_event_html"><div class="ttname"><a href="structqb_1_1_service_event.html">qb::ServiceEvent</a></div><div class="ttdoc">More flexible Event.</div><div class="ttdef"><b>Definition:</b> Event.h:68</div></div>
-<div class="ttc" id="structqb_1_1_kill_event_html"><div class="ttname"><a href="structqb_1_1_kill_event.html">qb::KillEvent</a></div><div class="ttdef"><b>Definition:</b> Event.h:93</div></div>
+<a href="core_2_event_8h.html">Go to the documentation of this file.</a><div class="fragment"><div class="line"><a id="l00001" name="l00001"></a><span class="lineno">    1</span></div>
+<div class="line"><a id="l00028" name="l00028"></a><span class="lineno">   28</span> </div>
+<div class="line"><a id="l00029" name="l00029"></a><span class="lineno">   29</span><span class="preprocessor">#ifndef QB_EVENT_H</span></div>
+<div class="line"><a id="l00030" name="l00030"></a><span class="lineno">   30</span><span class="preprocessor">#define QB_EVENT_H</span></div>
+<div class="line"><a id="l00031" name="l00031"></a><span class="lineno">   31</span><span class="preprocessor">#include &lt;bitset&gt;</span></div>
+<div class="line"><a id="l00032" name="l00032"></a><span class="lineno">   32</span><span class="preprocessor">#include &lt;<a class="code" href="system_2allocator_2_pipe_8h.html">qb/system/allocator/pipe.h</a>&gt;</span></div>
+<div class="line"><a id="l00033" name="l00033"></a><span class="lineno">   33</span><span class="preprocessor">#include &lt;utility&gt;</span></div>
+<div class="line"><a id="l00034" name="l00034"></a><span class="lineno">   34</span><span class="comment">// include from qb</span></div>
+<div class="line"><a id="l00035" name="l00035"></a><span class="lineno">   35</span><span class="preprocessor">#include &quot;<a class="code" href="core_2_actor_id_8h.html">ActorId.h</a>&quot;</span></div>
+<div class="line"><a id="l00036" name="l00036"></a><span class="lineno">   36</span><span class="preprocessor">#include &quot;<a class="code" href="core_2_i_callback_8h.html">ICallback.h</a>&quot;</span></div>
+<div class="line"><a id="l00037" name="l00037"></a><span class="lineno">   37</span> </div>
+<div class="line"><a id="l00038" name="l00038"></a><span class="lineno">   38</span><span class="keyword">namespace </span>qb {</div>
+<div class="line"><a id="l00039" name="l00039"></a><span class="lineno">   39</span></div>
+<div class="line"><a id="l00052" name="l00052"></a><span class="lineno">   52</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="foldopen" id="foldopen00053" data-start="{" data-end="};">
+<div class="line"><a id="l00053" name="l00053"></a><span class="lineno"><a class="line" href="structqb_1_1type.html">   53</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1type.html">type</a> {</div>
+<div class="line"><a id="l00054" name="l00054"></a><span class="lineno">   54</span>    <span class="keyword">constexpr</span> <span class="keyword">static</span> <span class="keywordtype">void</span></div>
+<div class="line"><a id="l00055" name="l00055"></a><span class="lineno">   55</span>    id() {}</div>
+<div class="line"><a id="l00056" name="l00056"></a><span class="lineno">   56</span>};</div>
+</div>
+<div class="line"><a id="l00057" name="l00057"></a><span class="lineno">   57</span></div>
+<div class="line"><a id="l00070" name="l00070"></a><span class="lineno">   70</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00071" name="l00071"></a><span class="lineno">   71</span><span class="keyword">constexpr</span> <a class="code hl_typedef" href="group___core.html#ga1b0b30803a6fe2511f9adc1240dc325c">TypeId</a></div>
+<div class="foldopen" id="foldopen00072" data-start="{" data-end="}">
+<div class="line"><a id="l00072" name="l00072"></a><span class="lineno"><a class="line" href="group___event_core.html#ga451cbf351ccabd9a0bade0069afad19e">   72</a></span><a class="code hl_function" href="group___event_core.html#ga451cbf351ccabd9a0bade0069afad19e">type_id</a>() {</div>
+<div class="line"><a id="l00073" name="l00073"></a><span class="lineno">   73</span>    <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span><a class="code hl_typedef" href="group___core.html#ga1b0b30803a6fe2511f9adc1240dc325c">TypeId</a><span class="keyword">&gt;</span>(<span class="keyword">reinterpret_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(&amp;type&lt;T&gt;::id));</div>
+<div class="line"><a id="l00074" name="l00074"></a><span class="lineno">   74</span>}</div>
+</div>
+<div class="line"><a id="l00075" name="l00075"></a><span class="lineno">   75</span></div>
+<div class="foldopen" id="foldopen00085" data-start="{" data-end="};">
+<div class="line"><a id="l00085" name="l00085"></a><span class="lineno"><a class="line" href="classqb_1_1_event.html">   85</a></span><span class="keyword">class </span>QB_LOCKFREE_CACHELINE_ALIGNMENT Event {</div>
+<div class="line"><a id="l00086" name="l00086"></a><span class="lineno">   86</span>    <span class="keyword">friend</span> <span class="keyword">class </span>SharedCoreCommunication;</div>
+<div class="line"><a id="l00087" name="l00087"></a><span class="lineno">   87</span>    <span class="keyword">friend</span> <span class="keyword">class </span>VirtualCore;</div>
+<div class="line"><a id="l00088" name="l00088"></a><span class="lineno">   88</span>    <span class="keyword">friend</span> <span class="keyword">class </span>Actor;</div>
+<div class="line"><a id="l00089" name="l00089"></a><span class="lineno">   89</span>    <span class="keyword">friend</span> <span class="keyword">class </span>Pipe;</div>
+<div class="line"><a id="l00090" name="l00090"></a><span class="lineno">   90</span>    <span class="keyword">friend</span> <span class="keyword">struct </span>EventQOS0;</div>
+<div class="line"><a id="l00091" name="l00091"></a><span class="lineno">   91</span>    <span class="keyword">friend</span> <span class="keyword">struct </span>ServiceEvent;</div>
+<div class="line"><a id="l00092" name="l00092"></a><span class="lineno">   92</span> </div>
+<div class="line"><a id="l00093" name="l00093"></a><span class="lineno">   93</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00094" name="l00094"></a><span class="lineno">   94</span>    <span class="keyword">using </span>id_handler_type = <a class="code hl_class" href="classqb_1_1_actor_id.html">ActorId</a>;</div>
+<div class="line"><a id="l00095" name="l00095"></a><span class="lineno">   95</span> </div>
+<div class="line"><a id="l00096" name="l00096"></a><span class="lineno">   96</span><span class="preprocessor">#ifdef NDEBUG</span></div>
+<div class="line"><a id="l00097" name="l00097"></a><span class="lineno">   97</span>    <span class="keyword">using </span>id_type = <a class="code hl_typedef" href="group___core.html#gaf683acbb340cfc58aa37ce6bbbe5ebbd">EventId</a>;</div>
+<div class="line"><a id="l00103" name="l00103"></a><span class="lineno">  103</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00104" name="l00104"></a><span class="lineno">  104</span>    [[nodiscard]] <span class="keyword">constexpr</span> <span class="keyword">static</span> id_type</div>
+<div class="line"><a id="l00105" name="l00105"></a><span class="lineno">  105</span>    <a class="code hl_function" href="classqb_1_1_event.html#a29b9e5343b8aed620e9ccebede70f687">type_to_id</a>() {</div>
+<div class="line"><a id="l00106" name="l00106"></a><span class="lineno">  106</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>id_type<span class="keyword">&gt;</span>(<span class="keyword">reinterpret_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(&amp;qb::type&lt;T&gt;::id));</div>
+<div class="line"><a id="l00107" name="l00107"></a><span class="lineno">  107</span>    }</div>
+<div class="line"><a id="l00108" name="l00108"></a><span class="lineno">  108</span><span class="preprocessor">#else</span></div>
+<div class="line"><a id="l00109" name="l00109"></a><span class="lineno">  109</span>    <span class="keyword">using </span>id_type = <span class="keyword">const</span> <span class="keywordtype">char</span> *;</div>
+<div class="line"><a id="l00115" name="l00115"></a><span class="lineno">  115</span>    <span class="keyword">template</span> &lt;<span class="keyword">typename</span> T&gt;</div>
+<div class="line"><a id="l00116" name="l00116"></a><span class="lineno">  116</span>    [[nodiscard]] <span class="keyword">constexpr</span> <span class="keyword">static</span> id_type</div>
+<div class="foldopen" id="foldopen00117" data-start="{" data-end="}">
+<div class="line"><a id="l00117" name="l00117"></a><span class="lineno"><a class="line" href="classqb_1_1_event.html#a29b9e5343b8aed620e9ccebede70f687">  117</a></span>    <a class="code hl_function" href="classqb_1_1_event.html#a29b9e5343b8aed620e9ccebede70f687">type_to_id</a>() {</div>
+<div class="line"><a id="l00118" name="l00118"></a><span class="lineno">  118</span>        <span class="keywordflow">return</span> <span class="keyword">typeid</span>(T).name();</div>
+<div class="line"><a id="l00119" name="l00119"></a><span class="lineno">  119</span>    }</div>
+</div>
+<div class="line"><a id="l00120" name="l00120"></a><span class="lineno">  120</span><span class="preprocessor">#endif</span></div>
+<div class="line"><a id="l00121" name="l00121"></a><span class="lineno">  121</span> </div>
+<div class="line"><a id="l00122" name="l00122"></a><span class="lineno">  122</span><span class="keyword">private</span>:</div>
+<div class="line"><a id="l00123" name="l00123"></a><span class="lineno">  123</span>    <span class="keyword">union </span>Header {</div>
+<div class="line"><a id="l00124" name="l00124"></a><span class="lineno">  124</span>        uint32_t : 16, : 8, alive : 1, qos : 2, factor : 5;</div>
+<div class="line"><a id="l00125" name="l00125"></a><span class="lineno">  125</span>        uint8_t prot[4] = {<span class="charliteral">&#39;q&#39;</span>, <span class="charliteral">&#39;b&#39;</span>, <span class="charliteral">&#39;\0&#39;</span>,</div>
+<div class="line"><a id="l00126" name="l00126"></a><span class="lineno">  126</span>                           4 | ((QB_LOCKFREE_EVENT_BUCKET_BYTES / 16) &lt;&lt; 3)};</div>
+<div class="line"><a id="l00127" name="l00127"></a><span class="lineno">  127</span>    } state;</div>
+<div class="line"><a id="l00128" name="l00128"></a><span class="lineno">  128</span>    uint16_t bucket_size;</div>
+<div class="line"><a id="l00129" name="l00129"></a><span class="lineno">  129</span>    id_type  id;</div>
+<div class="line"><a id="l00130" name="l00130"></a><span class="lineno">  130</span>    <span class="comment">// for users</span></div>
+<div class="line"><a id="l00131" name="l00131"></a><span class="lineno">  131</span>    id_handler_type dest;</div>
+<div class="line"><a id="l00132" name="l00132"></a><span class="lineno">  132</span>    id_handler_type source;</div>
+<div class="line"><a id="l00133" name="l00133"></a><span class="lineno">  133</span> </div>
+<div class="line"><a id="l00134" name="l00134"></a><span class="lineno">  134</span>    <span class="comment">//    Event &amp;operator=(Event const &amp;) = default;</span></div>
+<div class="line"><a id="l00135" name="l00135"></a><span class="lineno">  135</span> </div>
+<div class="line"><a id="l00136" name="l00136"></a><span class="lineno">  136</span><span class="keyword">public</span>:</div>
+<div class="line"><a id="l00137" name="l00137"></a><span class="lineno">  137</span>    Event() = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00138" name="l00138"></a><span class="lineno">  138</span></div>
+<div class="line"><a id="l00143" name="l00143"></a><span class="lineno">  143</span>    [[nodiscard]] <span class="keyword">inline</span> <span class="keywordtype">bool</span></div>
+<div class="foldopen" id="foldopen00144" data-start="{" data-end="}">
+<div class="line"><a id="l00144" name="l00144"></a><span class="lineno"><a class="line" href="classqb_1_1_event.html#aea66059921e17a87715c8fb7937a3aa9">  144</a></span>    <a class="code hl_function" href="classqb_1_1_event.html#aea66059921e17a87715c8fb7937a3aa9">is_alive</a>() const noexcept {</div>
+<div class="line"><a id="l00145" name="l00145"></a><span class="lineno">  145</span>        <span class="keywordflow">return</span> state.alive;</div>
+<div class="line"><a id="l00146" name="l00146"></a><span class="lineno">  146</span>    }</div>
+</div>
+<div class="line"><a id="l00147" name="l00147"></a><span class="lineno">  147</span></div>
+<div class="line"><a id="l00151" name="l00151"></a><span class="lineno">  151</span>    [[nodiscard]] <span class="keyword">inline</span> id_type</div>
+<div class="foldopen" id="foldopen00152" data-start="{" data-end="}">
+<div class="line"><a id="l00152" name="l00152"></a><span class="lineno"><a class="line" href="classqb_1_1_event.html#a7a126a3e958503fc443e7c5329d2ec2e">  152</a></span>    <a class="code hl_function" href="classqb_1_1_event.html#a7a126a3e958503fc443e7c5329d2ec2e">getID</a>() const noexcept {</div>
+<div class="line"><a id="l00153" name="l00153"></a><span class="lineno">  153</span>        <span class="keywordflow">return</span> id;</div>
+<div class="line"><a id="l00154" name="l00154"></a><span class="lineno">  154</span>    }</div>
+</div>
+<div class="line"><a id="l00155" name="l00155"></a><span class="lineno">  155</span></div>
+<div class="line"><a id="l00159" name="l00159"></a><span class="lineno">  159</span>    [[nodiscard]] <span class="keyword">inline</span> uint8_t</div>
+<div class="foldopen" id="foldopen00160" data-start="{" data-end="}">
+<div class="line"><a id="l00160" name="l00160"></a><span class="lineno"><a class="line" href="classqb_1_1_event.html#ad5f360b29f883dfab7a7c522a299f4fc">  160</a></span>    <a class="code hl_function" href="classqb_1_1_event.html#ad5f360b29f883dfab7a7c522a299f4fc">getQOS</a>() const noexcept {</div>
+<div class="line"><a id="l00161" name="l00161"></a><span class="lineno">  161</span>        <span class="keywordflow">return</span> state.qos;</div>
+<div class="line"><a id="l00162" name="l00162"></a><span class="lineno">  162</span>    }</div>
+</div>
+<div class="line"><a id="l00163" name="l00163"></a><span class="lineno">  163</span></div>
+<div class="line"><a id="l00167" name="l00167"></a><span class="lineno">  167</span>    [[nodiscard]] <span class="keyword">inline</span> id_handler_type</div>
+<div class="foldopen" id="foldopen00168" data-start="{" data-end="}">
+<div class="line"><a id="l00168" name="l00168"></a><span class="lineno"><a class="line" href="classqb_1_1_event.html#a301244b225e7ff7d26026c58d2f3698a">  168</a></span>    <a class="code hl_function" href="classqb_1_1_event.html#a301244b225e7ff7d26026c58d2f3698a">getDestination</a>() const noexcept {</div>
+<div class="line"><a id="l00169" name="l00169"></a><span class="lineno">  169</span>        <span class="keywordflow">return</span> dest;</div>
+<div class="line"><a id="l00170" name="l00170"></a><span class="lineno">  170</span>    }</div>
+</div>
+<div class="line"><a id="l00171" name="l00171"></a><span class="lineno">  171</span></div>
+<div class="line"><a id="l00175" name="l00175"></a><span class="lineno">  175</span>    [[nodiscard]] <span class="keyword">inline</span> id_handler_type</div>
+<div class="foldopen" id="foldopen00176" data-start="{" data-end="}">
+<div class="line"><a id="l00176" name="l00176"></a><span class="lineno"><a class="line" href="classqb_1_1_event.html#a288e3439e709307a8d67e8b9cb2415d4">  176</a></span>    <a class="code hl_function" href="classqb_1_1_event.html#a288e3439e709307a8d67e8b9cb2415d4">getSource</a>() const noexcept {</div>
+<div class="line"><a id="l00177" name="l00177"></a><span class="lineno">  177</span>        <span class="keywordflow">return</span> source;</div>
+<div class="line"><a id="l00178" name="l00178"></a><span class="lineno">  178</span>    }</div>
+</div>
+<div class="line"><a id="l00179" name="l00179"></a><span class="lineno">  179</span></div>
+<div class="line"><a id="l00183" name="l00183"></a><span class="lineno">  183</span>    [[nodiscard]] <span class="keyword">inline</span> std::size_t</div>
+<div class="foldopen" id="foldopen00184" data-start="{" data-end="}">
+<div class="line"><a id="l00184" name="l00184"></a><span class="lineno"><a class="line" href="classqb_1_1_event.html#a1d3e28a2ffb19246d50b65e20c82152f">  184</a></span>    <a class="code hl_function" href="classqb_1_1_event.html#a1d3e28a2ffb19246d50b65e20c82152f">getSize</a>() const noexcept {</div>
+<div class="line"><a id="l00185" name="l00185"></a><span class="lineno">  185</span>        <span class="keywordflow">return</span> <span class="keyword">static_cast&lt;</span>std::size_t<span class="keyword">&gt;</span>(bucket_size) * QB_LOCKFREE_EVENT_BUCKET_BYTES;</div>
+<div class="line"><a id="l00186" name="l00186"></a><span class="lineno">  186</span>    }</div>
+</div>
+<div class="line"><a id="l00187" name="l00187"></a><span class="lineno">  187</span>};</div>
+</div>
+<div class="line"><a id="l00188" name="l00188"></a><span class="lineno">  188</span></div>
+<div class="line"><a id="l00197" name="l00197"></a><span class="lineno"><a class="line" href="group___event_core.html#ga72b097e7035cac0e67b22a39e7954470">  197</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___event_core.html#ga72b097e7035cac0e67b22a39e7954470">EventQOS2</a> = <a class="code hl_class" href="classqb_1_1_event.html">Event</a>;</div>
+<div class="line"><a id="l00198" name="l00198"></a><span class="lineno">  198</span></div>
+<div class="line"><a id="l00207" name="l00207"></a><span class="lineno"><a class="line" href="group___event_core.html#gab1e84868f5300f59af8958a6a8cca021">  207</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___event_core.html#gab1e84868f5300f59af8958a6a8cca021">EventQOS1</a> = <a class="code hl_class" href="classqb_1_1_event.html">Event</a>;</div>
+<div class="line"><a id="l00208" name="l00208"></a><span class="lineno">  208</span></div>
+<div class="foldopen" id="foldopen00214" data-start="{" data-end="};">
+<div class="line"><a id="l00214" name="l00214"></a><span class="lineno"><a class="line" href="structqb_1_1_event_q_o_s0.html">  214</a></span><span class="keyword">struct </span>EventQOS0 : <span class="keyword">public</span> Event {</div>
+<div class="line"><a id="l00215" name="l00215"></a><span class="lineno">  215</span>    EventQOS0() {</div>
+<div class="line"><a id="l00216" name="l00216"></a><span class="lineno">  216</span>        state.qos = 0;</div>
+<div class="line"><a id="l00217" name="l00217"></a><span class="lineno">  217</span>    }</div>
+<div class="line"><a id="l00218" name="l00218"></a><span class="lineno">  218</span>};</div>
+</div>
+<div class="line"><a id="l00219" name="l00219"></a><span class="lineno">  219</span></div>
+<div class="foldopen" id="foldopen00229" data-start="{" data-end="};">
+<div class="line"><a id="l00229" name="l00229"></a><span class="lineno"><a class="line" href="structqb_1_1_service_event.html">  229</a></span><span class="keyword">struct </span>ServiceEvent : <span class="keyword">public</span> Event {</div>
+<div class="line"><a id="l00230" name="l00230"></a><span class="lineno">  230</span>    id_handler_type forward;</div>
+<div class="line"><a id="l00231" name="l00231"></a><span class="lineno">  231</span>    id_type         service_event_id;</div>
+<div class="line"><a id="l00232" name="l00232"></a><span class="lineno">  232</span></div>
+<div class="line"><a id="l00236" name="l00236"></a><span class="lineno">  236</span>    <span class="keyword">inline</span> <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00237" data-start="{" data-end="}">
+<div class="line"><a id="l00237" name="l00237"></a><span class="lineno"><a class="line" href="structqb_1_1_service_event.html#ae4bdacac37c79a0f4092f44bc7187745">  237</a></span>    <a class="code hl_function" href="structqb_1_1_service_event.html#ae4bdacac37c79a0f4092f44bc7187745">received</a>() noexcept {</div>
+<div class="line"><a id="l00238" name="l00238"></a><span class="lineno">  238</span>        std::swap(dest, forward);</div>
+<div class="line"><a id="l00239" name="l00239"></a><span class="lineno">  239</span>        std::swap(<span class="keywordtype">id</span>, service_event_id);</div>
+<div class="line"><a id="l00240" name="l00240"></a><span class="lineno">  240</span>        <a class="code hl_function" href="structqb_1_1_service_event.html#aec40b1e8236b6051772494d429e9b823">live</a>(<span class="keyword">true</span>);</div>
+<div class="line"><a id="l00241" name="l00241"></a><span class="lineno">  241</span>    }</div>
+</div>
+<div class="line"><a id="l00242" name="l00242"></a><span class="lineno">  242</span></div>
+<div class="line"><a id="l00247" name="l00247"></a><span class="lineno">  247</span>    <span class="keyword">inline</span> <span class="keywordtype">void</span></div>
+<div class="foldopen" id="foldopen00248" data-start="{" data-end="}">
+<div class="line"><a id="l00248" name="l00248"></a><span class="lineno"><a class="line" href="structqb_1_1_service_event.html#aec40b1e8236b6051772494d429e9b823">  248</a></span>    <a class="code hl_function" href="structqb_1_1_service_event.html#aec40b1e8236b6051772494d429e9b823">live</a>(<span class="keywordtype">bool</span> flag) <span class="keyword">noexcept</span> {</div>
+<div class="line"><a id="l00249" name="l00249"></a><span class="lineno">  249</span>        state.alive = flag;</div>
+<div class="line"><a id="l00250" name="l00250"></a><span class="lineno">  250</span>    }</div>
+</div>
+<div class="line"><a id="l00251" name="l00251"></a><span class="lineno">  251</span>};</div>
+</div>
+<div class="line"><a id="l00252" name="l00252"></a><span class="lineno">  252</span></div>
+<div class="line"><a id="l00258" name="l00258"></a><span class="lineno"><a class="line" href="structqb_1_1_kill_event.html">  258</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1_kill_event.html">KillEvent</a> : <span class="keyword">public</span> Event {};</div>
+<div class="line"><a id="l00259" name="l00259"></a><span class="lineno">  259</span></div>
+<div class="line"><a id="l00265" name="l00265"></a><span class="lineno"><a class="line" href="structqb_1_1_unregister_callback_event.html">  265</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1_unregister_callback_event.html">UnregisterCallbackEvent</a> : <span class="keyword">public</span> Event {};</div>
+<div class="line"><a id="l00266" name="l00266"></a><span class="lineno">  266</span></div>
+<div class="foldopen" id="foldopen00272" data-start="{" data-end="};">
+<div class="line"><a id="l00272" name="l00272"></a><span class="lineno"><a class="line" href="structqb_1_1_signal_event.html">  272</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1_signal_event.html">SignalEvent</a> : <span class="keyword">public</span> Event {</div>
+<div class="line"><a id="l00273" name="l00273"></a><span class="lineno">  273</span>    <span class="keywordtype">int</span> signum;</div>
+<div class="line"><a id="l00274" name="l00274"></a><span class="lineno">  274</span>};</div>
+</div>
+<div class="line"><a id="l00275" name="l00275"></a><span class="lineno">  275</span></div>
+<div class="foldopen" id="foldopen00286" data-start="{" data-end="};">
+<div class="line"><a id="l00286" name="l00286"></a><span class="lineno"><a class="line" href="group___event_core.html#gaa22d3309e028be849695a6bce167b19f">  286</a></span><span class="keyword">enum class</span> <a class="code hl_enumeration" href="group___event_core.html#gaa22d3309e028be849695a6bce167b19f">ActorStatus</a> : uint32_t { </div>
+<div class="line"><a id="l00288" name="l00288"></a><span class="lineno"><a class="line" href="group___event_core.html#ggaa22d3309e028be849695a6bce167b19fabd9f7c5d6ab4201b138a3e51dab7056f">  288</a></span>    <a class="code hl_enumvalue" href="group___event_core.html#ggaa22d3309e028be849695a6bce167b19fabd9f7c5d6ab4201b138a3e51dab7056f">Alive</a>, </div>
+<div class="line"><a id="l00290" name="l00290"></a><span class="lineno"><a class="line" href="group___event_core.html#ggaa22d3309e028be849695a6bce167b19fa183b62c7f067711f9c5a54913c054617">  290</a></span>    <a class="code hl_enumvalue" href="group___event_core.html#ggaa22d3309e028be849695a6bce167b19fa183b62c7f067711f9c5a54913c054617">Dead</a> </div>
+<div class="line"><a id="l00291" name="l00291"></a><span class="lineno">  291</span>};</div>
+</div>
+<div class="line"><a id="l00292" name="l00292"></a><span class="lineno">  292</span></div>
+<div class="foldopen" id="foldopen00298" data-start="{" data-end="};">
+<div class="line"><a id="l00298" name="l00298"></a><span class="lineno"><a class="line" href="structqb_1_1_ping_event.html">  298</a></span><span class="keyword">struct </span>PingEvent : <span class="keyword">public</span> Event {</div>
+<div class="line"><a id="l00299" name="l00299"></a><span class="lineno">  299</span>    <span class="keyword">const</span> uint32_t type;</div>
+<div class="line"><a id="l00300" name="l00300"></a><span class="lineno">  300</span> </div>
+<div class="line"><a id="l00301" name="l00301"></a><span class="lineno">  301</span>    <span class="keyword">explicit</span> PingEvent(uint32_t <span class="keyword">const</span> actor_type) noexcept</div>
+<div class="line"><a id="l00302" name="l00302"></a><span class="lineno">  302</span>        : type(actor_type) {}</div>
+<div class="line"><a id="l00303" name="l00303"></a><span class="lineno">  303</span>};</div>
+</div>
+<div class="line"><a id="l00304" name="l00304"></a><span class="lineno">  304</span></div>
+<div class="foldopen" id="foldopen00310" data-start="{" data-end="};">
+<div class="line"><a id="l00310" name="l00310"></a><span class="lineno"><a class="line" href="structqb_1_1_require_event.html">  310</a></span><span class="keyword">struct </span>RequireEvent : <span class="keyword">public</span> Event {</div>
+<div class="line"><a id="l00311" name="l00311"></a><span class="lineno">  311</span>    <span class="keyword">const</span> uint32_t    type;</div>
+<div class="line"><a id="l00312" name="l00312"></a><span class="lineno">  312</span>    <span class="keyword">const</span> <a class="code hl_enumeration" href="group___event_core.html#gaa22d3309e028be849695a6bce167b19f">ActorStatus</a> status;</div>
+<div class="line"><a id="l00313" name="l00313"></a><span class="lineno">  313</span> </div>
+<div class="line"><a id="l00314" name="l00314"></a><span class="lineno">  314</span>    <span class="keyword">explicit</span> RequireEvent(uint32_t <span class="keyword">const</span>    actor_type,</div>
+<div class="line"><a id="l00315" name="l00315"></a><span class="lineno">  315</span>                          <a class="code hl_enumeration" href="group___event_core.html#gaa22d3309e028be849695a6bce167b19f">ActorStatus</a> <span class="keyword">const</span> actor_status) noexcept</div>
+<div class="line"><a id="l00316" name="l00316"></a><span class="lineno">  316</span>        : type(actor_type)</div>
+<div class="line"><a id="l00317" name="l00317"></a><span class="lineno">  317</span>        , status(actor_status) {}</div>
+<div class="line"><a id="l00318" name="l00318"></a><span class="lineno">  318</span>};</div>
+</div>
+<div class="line"><a id="l00319" name="l00319"></a><span class="lineno">  319</span></div>
+<div class="line"><a id="l00326" name="l00326"></a><span class="lineno">  326</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span>... _Args&gt;</div>
+<div class="foldopen" id="foldopen00327" data-start="{" data-end="};">
+<div class="line"><a id="l00327" name="l00327"></a><span class="lineno"><a class="line" href="structqb_1_1_with_data.html">  327</a></span><span class="keyword">struct </span>WithData : <span class="keyword">public</span> Event {</div>
+<div class="line"><a id="l00328" name="l00328"></a><span class="lineno">  328</span>    std::tuple&lt;_Args...&gt; data;</div>
+<div class="line"><a id="l00329" name="l00329"></a><span class="lineno">  329</span> </div>
+<div class="line"><a id="l00330" name="l00330"></a><span class="lineno">  330</span>    <span class="keyword">explicit</span> WithData(_Args &amp;&amp;...args)</div>
+<div class="line"><a id="l00331" name="l00331"></a><span class="lineno">  331</span>        : data(std::forward&lt;_Args&gt;(args)...) {}</div>
+<div class="line"><a id="l00332" name="l00332"></a><span class="lineno">  332</span>};</div>
+</div>
+<div class="line"><a id="l00333" name="l00333"></a><span class="lineno">  333</span></div>
+<div class="line"><a id="l00340" name="l00340"></a><span class="lineno">  340</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span>... _Args&gt;</div>
+<div class="line"><a id="l00341" name="l00341"></a><span class="lineno"><a class="line" href="classqb_1_1_without_data.html">  341</a></span><span class="keyword">class </span><a class="code hl_struct" href="classqb_1_1_without_data.html">WithoutData</a> : <span class="keyword">public</span> Event {};</div>
+<div class="line"><a id="l00342" name="l00342"></a><span class="lineno">  342</span></div>
+<div class="line"><a id="l00349" name="l00349"></a><span class="lineno">  349</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span>... _Args&gt;</div>
+<div class="line"><a id="l00350" name="l00350"></a><span class="lineno"><a class="line" href="structqb_1_1_ask_data.html">  350</a></span><span class="keyword">struct </span><a class="code hl_struct" href="structqb_1_1_ask_data.html">AskData</a> : <span class="keyword">public</span> <a class="code hl_struct" href="classqb_1_1_without_data.html">WithoutData</a>&lt;_Args...&gt; {};</div>
+<div class="line"><a id="l00351" name="l00351"></a><span class="lineno">  351</span></div>
+<div class="line"><a id="l00358" name="l00358"></a><span class="lineno">  358</span><span class="keyword">template</span> &lt;<span class="keyword">typename</span>... _Args&gt;</div>
+<div class="foldopen" id="foldopen00359" data-start="{" data-end="};">
+<div class="line"><a id="l00359" name="l00359"></a><span class="lineno"><a class="line" href="structqb_1_1_fill_event.html">  359</a></span><span class="keyword">struct </span>FillEvent : <span class="keyword">public</span> WithData&lt;_Args...&gt; {</div>
+<div class="line"><a id="l00360" name="l00360"></a><span class="lineno">  360</span>    <span class="keyword">using </span>base_t = WithData&lt;_Args...&gt;;</div>
+<div class="line"><a id="l00361" name="l00361"></a><span class="lineno">  361</span>    FillEvent()  = <span class="keywordflow">default</span>;</div>
+<div class="line"><a id="l00362" name="l00362"></a><span class="lineno">  362</span>    <span class="keyword">explicit</span> FillEvent(_Args &amp;&amp;...args)</div>
+<div class="line"><a id="l00363" name="l00363"></a><span class="lineno">  363</span>        : base_t(std::forward&lt;_Args&gt;(args)...) {}</div>
+<div class="line"><a id="l00364" name="l00364"></a><span class="lineno">  364</span>};</div>
+</div>
+<div class="line"><a id="l00365" name="l00365"></a><span class="lineno">  365</span></div>
+<div class="line"><a id="l00375" name="l00375"></a><span class="lineno"><a class="line" href="group___event_core.html#ga8f5ee8be3686b355eab04de1d5aeb498">  375</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___event_core.html#ga8f5ee8be3686b355eab04de1d5aeb498">VirtualPipe</a>   = <a class="code hl_class" href="classqb_1_1allocator_1_1pipe.html">allocator::pipe&lt;EventBucket&gt;</a>;</div>
+<div class="line"><a id="l00376" name="l00376"></a><span class="lineno">  376</span></div>
+<div class="line"><a id="l00385" name="l00385"></a><span class="lineno"><a class="line" href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">  385</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">event</a>         = <a class="code hl_class" href="classqb_1_1_event.html">Event</a>;</div>
+<div class="line"><a id="l00386" name="l00386"></a><span class="lineno">  386</span></div>
+<div class="line"><a id="l00395" name="l00395"></a><span class="lineno"><a class="line" href="group___event_core.html#gafcd9e3bfad97d1aad2eac66da38408ec">  395</a></span><span class="keyword">using </span><a class="code hl_typedef" href="group___event_core.html#gafcd9e3bfad97d1aad2eac66da38408ec">service_event</a> = <a class="code hl_class" href="structqb_1_1_service_event.html">ServiceEvent</a>;</div>
+<div class="line"><a id="l00396" name="l00396"></a><span class="lineno">  396</span> </div>
+<div class="line"><a id="l00397" name="l00397"></a><span class="lineno">  397</span>} <span class="comment">// namespace qb</span></div>
+<div class="line"><a id="l00398" name="l00398"></a><span class="lineno">  398</span> </div>
+<div class="line"><a id="l00399" name="l00399"></a><span class="lineno">  399</span><span class="preprocessor">#endif </span><span class="comment">// QB_EVENT_H</span></div>
+<div class="ttc" id="aclassqb_1_1_actor_id_html"><div class="ttname"><a href="classqb_1_1_actor_id.html">qb::ActorId</a></div><div class="ttdoc">Unique identifier for actors.</div><div class="ttdef"><b>Definition</b> ActorId.h:374</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html"><div class="ttname"><a href="classqb_1_1_event.html">qb::Event</a></div><div class="ttdoc">Base class for all events in the actor system.</div><div class="ttdef"><b>Definition</b> Event.h:85</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html_a1d3e28a2ffb19246d50b65e20c82152f"><div class="ttname"><a href="classqb_1_1_event.html#a1d3e28a2ffb19246d50b65e20c82152f">qb::Event::getSize</a></div><div class="ttdeci">std::size_t getSize() const noexcept</div><div class="ttdoc">Get the size of the event in bytes.</div><div class="ttdef"><b>Definition</b> Event.h:184</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html_a288e3439e709307a8d67e8b9cb2415d4"><div class="ttname"><a href="classqb_1_1_event.html#a288e3439e709307a8d67e8b9cb2415d4">qb::Event::getSource</a></div><div class="ttdeci">id_handler_type getSource() const noexcept</div><div class="ttdoc">Get the source actor ID.</div><div class="ttdef"><b>Definition</b> Event.h:176</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html_a29b9e5343b8aed620e9ccebede70f687"><div class="ttname"><a href="classqb_1_1_event.html#a29b9e5343b8aed620e9ccebede70f687">qb::Event::type_to_id</a></div><div class="ttdeci">static constexpr id_type type_to_id()</div><div class="ttdoc">Get the type identifier at runtime.</div><div class="ttdef"><b>Definition</b> Event.h:117</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html_a301244b225e7ff7d26026c58d2f3698a"><div class="ttname"><a href="classqb_1_1_event.html#a301244b225e7ff7d26026c58d2f3698a">qb::Event::getDestination</a></div><div class="ttdeci">id_handler_type getDestination() const noexcept</div><div class="ttdoc">Get the destination actor ID.</div><div class="ttdef"><b>Definition</b> Event.h:168</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html_a7a126a3e958503fc443e7c5329d2ec2e"><div class="ttname"><a href="classqb_1_1_event.html#a7a126a3e958503fc443e7c5329d2ec2e">qb::Event::getID</a></div><div class="ttdeci">id_type getID() const noexcept</div><div class="ttdoc">Get the event&#39;s type ID for event routing and handling.</div><div class="ttdef"><b>Definition</b> Event.h:152</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html_ad5f360b29f883dfab7a7c522a299f4fc"><div class="ttname"><a href="classqb_1_1_event.html#ad5f360b29f883dfab7a7c522a299f4fc">qb::Event::getQOS</a></div><div class="ttdeci">uint8_t getQOS() const noexcept</div><div class="ttdoc">Get the event&#39;s quality of service level.</div><div class="ttdef"><b>Definition</b> Event.h:160</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html_aea66059921e17a87715c8fb7937a3aa9"><div class="ttname"><a href="classqb_1_1_event.html#aea66059921e17a87715c8fb7937a3aa9">qb::Event::is_alive</a></div><div class="ttdeci">bool is_alive() const noexcept</div><div class="ttdoc">Check if the event is still alive and can be processed.</div><div class="ttdef"><b>Definition</b> Event.h:144</div></div>
+<div class="ttc" id="aclassqb_1_1_without_data_html"><div class="ttname"><a href="classqb_1_1_without_data.html">qb::WithoutData</a></div><div class="ttdoc">Event template without data payload.</div><div class="ttdef"><b>Definition</b> Event.h:341</div></div>
+<div class="ttc" id="aclassqb_1_1allocator_1_1pipe_html"><div class="ttname"><a href="classqb_1_1allocator_1_1pipe.html">qb::allocator::pipe</a></div><div class="ttdoc">Extensible buffer optimized for performance.</div><div class="ttdef"><b>Definition</b> pipe.h:552</div></div>
+<div class="ttc" id="acore_2_actor_id_8h_html"><div class="ttname"><a href="core_2_actor_id_8h.html">ActorId.h</a></div><div class="ttdoc">Actor and core identification for the QB Actor Framework.</div></div>
+<div class="ttc" id="acore_2_i_callback_8h_html"><div class="ttname"><a href="core_2_i_callback_8h.html">ICallback.h</a></div><div class="ttdoc">Callback interface for the QB Actor Framework.</div></div>
+<div class="ttc" id="agroup___core_html_ga1b0b30803a6fe2511f9adc1240dc325c"><div class="ttname"><a href="group___core.html#ga1b0b30803a6fe2511f9adc1240dc325c">qb::TypeId</a></div><div class="ttdeci">uint16_t TypeId</div><div class="ttdoc">Type definition for type identifiers.</div><div class="ttdef"><b>Definition</b> ActorId.h:67</div></div>
+<div class="ttc" id="agroup___core_html_gaf683acbb340cfc58aa37ce6bbbe5ebbd"><div class="ttname"><a href="group___core.html#gaf683acbb340cfc58aa37ce6bbbe5ebbd">qb::EventId</a></div><div class="ttdeci">TypeId EventId</div><div class="ttdoc">Type definition for event identifiers.</div><div class="ttdef"><b>Definition</b> ActorId.h:75</div></div>
+<div class="ttc" id="agroup___event_core_html_ga3296038c4343f22626c6595a222c0d95"><div class="ttname"><a href="group___event_core.html#ga3296038c4343f22626c6595a222c0d95">qb::event</a></div><div class="ttdeci">Event event</div><div class="ttdoc">Alias for the base Event class.</div><div class="ttdef"><b>Definition</b> Event.h:385</div></div>
+<div class="ttc" id="agroup___event_core_html_ga451cbf351ccabd9a0bade0069afad19e"><div class="ttname"><a href="group___event_core.html#ga451cbf351ccabd9a0bade0069afad19e">qb::type_id</a></div><div class="ttdeci">constexpr TypeId type_id()</div><div class="ttdoc">Function to get a unique type identifier for a given type.</div><div class="ttdef"><b>Definition</b> Event.h:72</div></div>
+<div class="ttc" id="agroup___event_core_html_ga72b097e7035cac0e67b22a39e7954470"><div class="ttname"><a href="group___event_core.html#ga72b097e7035cac0e67b22a39e7954470">qb::EventQOS2</a></div><div class="ttdeci">Event EventQOS2</div><div class="ttdoc">Event with highest quality of service (priority level 2)</div><div class="ttdef"><b>Definition</b> Event.h:197</div></div>
+<div class="ttc" id="agroup___event_core_html_ga8f5ee8be3686b355eab04de1d5aeb498"><div class="ttname"><a href="group___event_core.html#ga8f5ee8be3686b355eab04de1d5aeb498">qb::VirtualPipe</a></div><div class="ttdeci">allocator::pipe&lt; EventBucket &gt; VirtualPipe</div><div class="ttdoc">Pipe for event transmission in the actor system.</div><div class="ttdef"><b>Definition</b> Event.h:375</div></div>
+<div class="ttc" id="agroup___event_core_html_gaa22d3309e028be849695a6bce167b19f"><div class="ttname"><a href="group___event_core.html#gaa22d3309e028be849695a6bce167b19f">qb::ActorStatus</a></div><div class="ttdeci">ActorStatus</div><div class="ttdoc">Represents the current status of an actor in the system.</div><div class="ttdef"><b>Definition</b> Event.h:286</div></div>
+<div class="ttc" id="agroup___event_core_html_gab1e84868f5300f59af8958a6a8cca021"><div class="ttname"><a href="group___event_core.html#gab1e84868f5300f59af8958a6a8cca021">qb::EventQOS1</a></div><div class="ttdeci">Event EventQOS1</div><div class="ttdoc">Event with medium quality of service (priority level 1)</div><div class="ttdef"><b>Definition</b> Event.h:207</div></div>
+<div class="ttc" id="agroup___event_core_html_gafcd9e3bfad97d1aad2eac66da38408ec"><div class="ttname"><a href="group___event_core.html#gafcd9e3bfad97d1aad2eac66da38408ec">qb::service_event</a></div><div class="ttdeci">ServiceEvent service_event</div><div class="ttdoc">Alias for the ServiceEvent class.</div><div class="ttdef"><b>Definition</b> Event.h:395</div></div>
+<div class="ttc" id="agroup___event_core_html_ggaa22d3309e028be849695a6bce167b19fa183b62c7f067711f9c5a54913c054617"><div class="ttname"><a href="group___event_core.html#ggaa22d3309e028be849695a6bce167b19fa183b62c7f067711f9c5a54913c054617">qb::ActorStatus::Dead</a></div><div class="ttdeci">@ Dead</div><div class="ttdoc">The actor has been terminated or removed from the system.</div><div class="ttdef"><b>Definition</b> Event.h:290</div></div>
+<div class="ttc" id="agroup___event_core_html_ggaa22d3309e028be849695a6bce167b19fabd9f7c5d6ab4201b138a3e51dab7056f"><div class="ttname"><a href="group___event_core.html#ggaa22d3309e028be849695a6bce167b19fabd9f7c5d6ab4201b138a3e51dab7056f">qb::ActorStatus::Alive</a></div><div class="ttdeci">@ Alive</div><div class="ttdoc">The actor is active and operational.</div><div class="ttdef"><b>Definition</b> Event.h:288</div></div>
+<div class="ttc" id="astructqb_1_1_ask_data_html"><div class="ttname"><a href="structqb_1_1_ask_data.html">qb::AskData</a></div><div class="ttdoc">Event template for requesting data, typically without carrying data itself.</div><div class="ttdef"><b>Definition</b> Event.h:350</div></div>
+<div class="ttc" id="astructqb_1_1_kill_event_html"><div class="ttname"><a href="structqb_1_1_kill_event.html">qb::KillEvent</a></div><div class="ttdoc">Event used to terminate an actor.</div><div class="ttdef"><b>Definition</b> Event.h:258</div></div>
+<div class="ttc" id="astructqb_1_1_service_event_html"><div class="ttname"><a href="structqb_1_1_service_event.html">qb::ServiceEvent</a></div><div class="ttdoc">Event type for service-to-service communication.</div><div class="ttdef"><b>Definition</b> Event.h:229</div></div>
+<div class="ttc" id="astructqb_1_1_service_event_html_ae4bdacac37c79a0f4092f44bc7187745"><div class="ttname"><a href="structqb_1_1_service_event.html#ae4bdacac37c79a0f4092f44bc7187745">qb::ServiceEvent::received</a></div><div class="ttdeci">void received() noexcept</div><div class="ttdoc">Mark the event as received and swap source/destination.</div><div class="ttdef"><b>Definition</b> Event.h:237</div></div>
+<div class="ttc" id="astructqb_1_1_service_event_html_aec40b1e8236b6051772494d429e9b823"><div class="ttname"><a href="structqb_1_1_service_event.html#aec40b1e8236b6051772494d429e9b823">qb::ServiceEvent::live</a></div><div class="ttdeci">void live(bool flag) noexcept</div><div class="ttdoc">Set the event&#39;s alive status.</div><div class="ttdef"><b>Definition</b> Event.h:248</div></div>
+<div class="ttc" id="astructqb_1_1_signal_event_html"><div class="ttname"><a href="structqb_1_1_signal_event.html">qb::SignalEvent</a></div><div class="ttdoc">Event used to handle system signals.</div><div class="ttdef"><b>Definition</b> Event.h:272</div></div>
+<div class="ttc" id="astructqb_1_1_unregister_callback_event_html"><div class="ttname"><a href="structqb_1_1_unregister_callback_event.html">qb::UnregisterCallbackEvent</a></div><div class="ttdoc">Event used to unregister an actor&#39;s callback.</div><div class="ttdef"><b>Definition</b> Event.h:265</div></div>
+<div class="ttc" id="astructqb_1_1type_html"><div class="ttname"><a href="structqb_1_1type.html">qb::type</a></div><div class="ttdoc">Template struct used for type identification in the event system.</div><div class="ttdef"><b>Definition</b> Event.h:53</div></div>
+<div class="ttc" id="asystem_2allocator_2_pipe_8h_html"><div class="ttname"><a href="system_2allocator_2_pipe_8h.html">pipe.h</a></div><div class="ttdoc">Implementation of a dynamic extensible buffer.</div></div>
 </div><!-- fragment --></div><!-- contents -->
 </div><!-- doc-content -->
-<!-- HTML footer for doxygen 1.8.14-->
+</div><!-- container -->
 <!-- start footer part -->
 <div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_aca413fbbe053f647c2f74881aaff796.html">core</a></li><li class="navelem"><a href="core_2_event_8h.html">Event.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
 </div>
 </body>
 </html>

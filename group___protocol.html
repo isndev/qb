@@ -1,0 +1,438 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: Protocol Handling</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: Protocol Handling</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('group___protocol.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">Protocol Handling <div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>Message framing and parsing implementations.  
+<a href="#details">More...</a></p>
+<div class="dynheader">
+Collaboration diagram for Protocol Handling:</div>
+<div class="dyncontent">
+<div class="center"><img src="group___protocol.png" border="0" usemap="#agroup______protocol" loading="lazy" alt=""/></div>
+<map name="agroup______protocol" id="agroup______protocol">
+<area shape="rect" href="group___i_o.html" title="Asynchronous I/O operations, networking, and related utilities." alt="" coords="5,5,90,31"/>
+<area shape="rect" title="Message framing and parsing implementations." alt="" coords="138,5,262,31"/>
+</map>
+</div>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3AIProtocol" id="r_qb_3A_3Aio_3A_3Aasync_3A_3AIProtocol"><td class="memItemLeft" align="right" valign="top">interface &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1_i_protocol.html">qb::io::async::IProtocol</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Base interface for all message processing protocols.  <a href="classqb_1_1io_1_1async_1_1_i_protocol.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aasync_3A_3AAProtocol_3C_20_5FIO_5F_20_3E" id="r_qb_3A_3Aio_3A_3Aasync_3A_3AAProtocol_3C_20_5FIO_5F_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1async_1_1_a_protocol.html">qb::io::async::AProtocol&lt; _IO_ &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Abstract base class for I/O-component-aware protocols (CRTP).  <a href="classqb_1_1io_1_1async_1_1_a_protocol.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aprotocol_3A_3Aaccept_3C_20_5FIO_5F_2C_20_5FSocket_20_3E" id="r_qb_3A_3Aio_3A_3Aprotocol_3A_3Aaccept_3C_20_5FIO_5F_2C_20_5FSocket_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1protocol_1_1accept.html">qb::io::protocol::accept&lt; _IO_, _Socket &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for handling the acceptance of new network connections.  <a href="classqb_1_1io_1_1protocol_1_1accept.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aprotocol_3A_3Abase_3A_3Abyte_5Fterminated_3C_20_5FIO_5F_2C_20_5FEndByte_20_3E" id="r_qb_3A_3Aprotocol_3A_3Abase_3A_3Abyte_5Fterminated_3C_20_5FIO_5F_2C_20_5FEndByte_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1protocol_1_1base_1_1byte__terminated.html">qb::protocol::base::byte_terminated&lt; _IO_, _EndByte &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for messages delimited by a specific single byte character.  <a href="classqb_1_1protocol_1_1base_1_1byte__terminated.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aprotocol_3A_3Abase_3A_3Abytes_5Fterminated_3C_20_5FIO_5F_2C_20_5FTrait_20_3E" id="r_qb_3A_3Aprotocol_3A_3Abase_3A_3Abytes_5Fterminated_3C_20_5FIO_5F_2C_20_5FTrait_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1protocol_1_1base_1_1bytes__terminated.html">qb::protocol::base::bytes_terminated&lt; _IO_, _Trait &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for messages delimited by a specific sequence of bytes (a string literal).  <a href="classqb_1_1protocol_1_1base_1_1bytes__terminated.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aprotocol_3A_3Abase_3A_3Asize_5Fas_5Fheader_3C_20_5FIO_5F_2C_20_5FSize_20_3E" id="r_qb_3A_3Aprotocol_3A_3Abase_3A_3Asize_5Fas_5Fheader_3C_20_5FIO_5F_2C_20_5FSize_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1protocol_1_1base_1_1size__as__header.html">qb::protocol::base::size_as_header&lt; _IO_, _Size &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for messages where the payload is preceded by a fixed-size header indicating its length.  <a href="classqb_1_1protocol_1_1base_1_1size__as__header.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aio_3A_3Aprotocol_3A_3Ahandshake_3C_20_5FIO_5F_20_3E" id="r_qb_3A_3Aio_3A_3Aprotocol_3A_3Ahandshake_3C_20_5FIO_5F_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1io_1_1protocol_1_1handshake.html">qb::io::protocol::handshake&lt; _IO_ &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for handling the handshake of a new connection.  <a href="classqb_1_1io_1_1protocol_1_1handshake.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aprotocol_3A_3Ajson_3C_20IO_5F_20_3E" id="r_qb_3A_3Aprotocol_3A_3Ajson_3C_20IO_5F_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1protocol_1_1json.html">qb::protocol::json&lt; IO_ &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for parsing null-terminated JSON messages.  <a href="classqb_1_1protocol_1_1json.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aprotocol_3A_3Ajson_5Fpacked_3C_20IO_5F_20_3E" id="r_qb_3A_3Aprotocol_3A_3Ajson_5Fpacked_3C_20IO_5F_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1protocol_1_1json__packed.html">qb::protocol::json_packed&lt; IO_ &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for parsing null-terminated, MessagePack encoded JSON messages.  <a href="classqb_1_1protocol_1_1json__packed.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aprotocol_3A_3Atext_3A_3Abasic_5Ftext_3C_20_5FIO_5F_2C_20_5FStringTrait_2C_20_5FSep_20_3E" id="r_qb_3A_3Aprotocol_3A_3Atext_3A_3Abasic_5Ftext_3C_20_5FIO_5F_2C_20_5FStringTrait_2C_20_5FSep_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html">qb::protocol::text::basic_text&lt; _IO_, _StringTrait, _Sep &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for text messages delimited by a specific character, yielding a specified string type.  <a href="classqb_1_1protocol_1_1text_1_1basic__text.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3Aprotocol_3A_3Atext_3A_3Abasic_5Fbinary_3C_20_5FIO_5F_2C_20_5FSizeHeader_20_3E" id="r_qb_3A_3Aprotocol_3A_3Atext_3A_3Abasic_5Fbinary_3C_20_5FIO_5F_2C_20_5FSizeHeader_20_3E"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1protocol_1_1text_1_1basic__binary.html">qb::protocol::text::basic_binary&lt; _IO_, _SizeHeader &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for binary messages where the payload is preceded by a fixed-size header indicating its length.  <a href="classqb_1_1protocol_1_1text_1_1basic__binary.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-typedef-members" class="groupheader"><a id="typedef-members" name="typedef-members"></a>
+Typedefs</h2></td></tr>
+<tr class="memitem:ga9eb0011ad590c9ae3906f9f067557836" id="r_ga9eb0011ad590c9ae3906f9f067557836"><td class="memTemplParams" colspan="2">template&lt;typename _IO_&gt; </td></tr>
+<tr class="memitem:ga9eb0011ad590c9ae3906f9f067557836 template"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga9eb0011ad590c9ae3906f9f067557836">qb::protocol::text::binary8</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__binary.html">basic_binary</a>&lt;_IO_, uint8_t&gt;</td></tr>
+<tr class="memdesc:ga9eb0011ad590c9ae3906f9f067557836"><td class="mdescLeft">&#160;</td><td class="mdescRight">Binary protocol with an 8-bit (uint8_t) size header.  <br /></td></tr>
+<tr class="memitem:ga44ca6db9f77b2ce6c857197b286e2c4d" id="r_ga44ca6db9f77b2ce6c857197b286e2c4d"><td class="memTemplParams" colspan="2">template&lt;typename _IO_&gt; </td></tr>
+<tr class="memitem:ga44ca6db9f77b2ce6c857197b286e2c4d template"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga44ca6db9f77b2ce6c857197b286e2c4d">qb::protocol::text::binary16</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__binary.html">basic_binary</a>&lt;_IO_, uint16_t&gt;</td></tr>
+<tr class="memdesc:ga44ca6db9f77b2ce6c857197b286e2c4d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Binary protocol with a 16-bit (uint16_t) size header.  <br /></td></tr>
+<tr class="memitem:ga401af6534b1189eacbbf84ad22aec4ac" id="r_ga401af6534b1189eacbbf84ad22aec4ac"><td class="memTemplParams" colspan="2">template&lt;typename _IO_&gt; </td></tr>
+<tr class="memitem:ga401af6534b1189eacbbf84ad22aec4ac template"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga401af6534b1189eacbbf84ad22aec4ac">qb::protocol::text::binary32</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__binary.html">basic_binary</a>&lt;_IO_, uint32_t&gt;</td></tr>
+<tr class="memdesc:ga401af6534b1189eacbbf84ad22aec4ac"><td class="mdescLeft">&#160;</td><td class="mdescRight">Binary protocol with a 32-bit (uint32_t) size header.  <br /></td></tr>
+<tr class="memitem:gaf0a00482187c4312144ea6a3cc27d756" id="r_gaf0a00482187c4312144ea6a3cc27d756"><td class="memTemplParams" colspan="2">template&lt;typename _IO_&gt; </td></tr>
+<tr class="memitem:gaf0a00482187c4312144ea6a3cc27d756 template"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gaf0a00482187c4312144ea6a3cc27d756">qb::protocol::text::string</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html">basic_text</a>&lt;_IO_, std::string, '\0'&gt;</td></tr>
+<tr class="memdesc:gaf0a00482187c4312144ea6a3cc27d756"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for NULL-terminated (<span class="tt">\0</span>) strings, yielding <span class="tt">std::string</span>.  <br /></td></tr>
+<tr class="memitem:ga0120c970b4d50b4d782cc1c6d215d371" id="r_ga0120c970b4d50b4d782cc1c6d215d371"><td class="memTemplParams" colspan="2">template&lt;typename _IO_&gt; </td></tr>
+<tr class="memitem:ga0120c970b4d50b4d782cc1c6d215d371 template"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga0120c970b4d50b4d782cc1c6d215d371">qb::protocol::text::command</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html">basic_text</a>&lt;_IO_, std::string, '\n'&gt;</td></tr>
+<tr class="memdesc:ga0120c970b4d50b4d782cc1c6d215d371"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for newline-terminated (<span class="tt">\n</span>) commands, yielding <span class="tt">std::string</span>.  <br /></td></tr>
+<tr class="memitem:gabefd3b510e73063acdc9d187b465c03e" id="r_gabefd3b510e73063acdc9d187b465c03e"><td class="memTemplParams" colspan="2">template&lt;typename _IO_&gt; </td></tr>
+<tr class="memitem:gabefd3b510e73063acdc9d187b465c03e template"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#gabefd3b510e73063acdc9d187b465c03e">qb::protocol::text::string_view</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html">basic_text</a>&lt;_IO_, const std::string_view, '\0'&gt;</td></tr>
+<tr class="memdesc:gabefd3b510e73063acdc9d187b465c03e"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for NULL-terminated (<span class="tt">\0</span>) strings, yielding <span class="tt">std::string_view</span> (zero-copy read).  <br /></td></tr>
+<tr class="memitem:ga1a0d68a2ad61e7a37ac6df9d073544cb" id="r_ga1a0d68a2ad61e7a37ac6df9d073544cb"><td class="memTemplParams" colspan="2">template&lt;typename _IO_&gt; </td></tr>
+<tr class="memitem:ga1a0d68a2ad61e7a37ac6df9d073544cb template"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="#ga1a0d68a2ad61e7a37ac6df9d073544cb">qb::protocol::text::command_view</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html">basic_text</a>&lt;_IO_, const std::string_view, '\n'&gt;</td></tr>
+<tr class="memdesc:ga1a0d68a2ad61e7a37ac6df9d073544cb"><td class="mdescLeft">&#160;</td><td class="mdescRight">Protocol for newline-terminated (<span class="tt">\n</span>) commands, yielding <span class="tt">std::string_view</span> (zero-copy read).  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<p>Message framing and parsing implementations. </p>
+<p>Defines `qb::io::async::AProtocol` and built-in protocols like text-based, binary, and JSON. </p>
+<a name="doc-typedef-members" id="doc-typedef-members"></a><h2 id="header-doc-typedef-members" class="groupheader">Typedef Documentation</h2>
+<a id="ga9eb0011ad590c9ae3906f9f067557836" name="ga9eb0011ad590c9ae3906f9f067557836"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga9eb0011ad590c9ae3906f9f067557836">&#9670;&#160;</a></span>binary8</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _IO_&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">using <a class="el" href="#ga9eb0011ad590c9ae3906f9f067557836">qb::protocol::text::binary8</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__binary.html">basic_binary</a>&lt;_IO_, uint8_t&gt;</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Binary protocol with an 8-bit (uint8_t) size header. </p>
+<p>Specialization of <span class="tt"><a class="el" href="classqb_1_1protocol_1_1text_1_1basic__binary.html" title="Protocol for binary messages where the payload is preceded by a fixed-size header indicating its leng...">basic_binary</a></span> using a <span class="tt">uint8_t</span> size header, suitable for messages with payloads up to 255 bytes.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_IO_</td><td>The I/O component type that will use this protocol. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="ga44ca6db9f77b2ce6c857197b286e2c4d" name="ga44ca6db9f77b2ce6c857197b286e2c4d"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga44ca6db9f77b2ce6c857197b286e2c4d">&#9670;&#160;</a></span>binary16</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _IO_&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">using <a class="el" href="#ga44ca6db9f77b2ce6c857197b286e2c4d">qb::protocol::text::binary16</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__binary.html">basic_binary</a>&lt;_IO_, uint16_t&gt;</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Binary protocol with a 16-bit (uint16_t) size header. </p>
+<p>Specialization of <span class="tt"><a class="el" href="classqb_1_1protocol_1_1text_1_1basic__binary.html" title="Protocol for binary messages where the payload is preceded by a fixed-size header indicating its leng...">basic_binary</a></span> using a <span class="tt">uint16_t</span> size header, suitable for messages with payloads up to 65535 bytes. Handles network byte order for the header.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_IO_</td><td>The I/O component type that will use this protocol. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="ga401af6534b1189eacbbf84ad22aec4ac" name="ga401af6534b1189eacbbf84ad22aec4ac"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga401af6534b1189eacbbf84ad22aec4ac">&#9670;&#160;</a></span>binary32</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _IO_&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">using <a class="el" href="#ga401af6534b1189eacbbf84ad22aec4ac">qb::protocol::text::binary32</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__binary.html">basic_binary</a>&lt;_IO_, uint32_t&gt;</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Binary protocol with a 32-bit (uint32_t) size header. </p>
+<p>Specialization of <span class="tt"><a class="el" href="classqb_1_1protocol_1_1text_1_1basic__binary.html" title="Protocol for binary messages where the payload is preceded by a fixed-size header indicating its leng...">basic_binary</a></span> using a <span class="tt">uint32_t</span> size header, suitable for messages with payloads up to 4GB. Handles network byte order for the header.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_IO_</td><td>The I/O component type that will use this protocol. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="gaf0a00482187c4312144ea6a3cc27d756" name="gaf0a00482187c4312144ea6a3cc27d756"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gaf0a00482187c4312144ea6a3cc27d756">&#9670;&#160;</a></span>string</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _IO_&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">using <a class="el" href="#gaf0a00482187c4312144ea6a3cc27d756">qb::protocol::text::string</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html">basic_text</a>&lt;_IO_, std::string, '\0'&gt;</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Protocol for NULL-terminated (<span class="tt">\0</span>) strings, yielding <span class="tt">std::string</span>. </p>
+<p>Specialization of <span class="tt"><a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html" title="Protocol for text messages delimited by a specific character, yielding a specified string type.">basic_text</a></span> for handling standard C-style null-terminated strings. The received message payload (excluding the terminator) is provided as <span class="tt">std::string</span>.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_IO_</td><td>The I/O component type that will use this protocol. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="ga0120c970b4d50b4d782cc1c6d215d371" name="ga0120c970b4d50b4d782cc1c6d215d371"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga0120c970b4d50b4d782cc1c6d215d371">&#9670;&#160;</a></span>command</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _IO_&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">using <a class="el" href="#ga0120c970b4d50b4d782cc1c6d215d371">qb::protocol::text::command</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html">basic_text</a>&lt;_IO_, std::string, '\n'&gt;</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Protocol for newline-terminated (<span class="tt">\n</span>) commands, yielding <span class="tt">std::string</span>. </p>
+<p>Specialization of <span class="tt"><a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html" title="Protocol for text messages delimited by a specific character, yielding a specified string type.">basic_text</a></span> for handling line-based commands or messages where each message is terminated by a newline character. The received message payload (excluding the newline) is provided as <span class="tt">std::string</span>.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_IO_</td><td>The I/O component type that will use this protocol. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="gabefd3b510e73063acdc9d187b465c03e" name="gabefd3b510e73063acdc9d187b465c03e"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#gabefd3b510e73063acdc9d187b465c03e">&#9670;&#160;</a></span>string_view</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _IO_&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">using <a class="el" href="#gabefd3b510e73063acdc9d187b465c03e">qb::protocol::text::string_view</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html">basic_text</a>&lt;_IO_, const std::string_view, '\0'&gt;</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Protocol for NULL-terminated (<span class="tt">\0</span>) strings, yielding <span class="tt">std::string_view</span> (zero-copy read). </p>
+<p>Specialization of <span class="tt"><a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html" title="Protocol for text messages delimited by a specific character, yielding a specified string type.">basic_text</a></span> for handling null-terminated strings where the payload is provided as a <span class="tt">std::string_view</span>. This allows for reading the string data without an additional copy, provided the underlying buffer remains valid during the view's lifetime.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_IO_</td><td>The I/O component type that will use this protocol. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+<a id="ga1a0d68a2ad61e7a37ac6df9d073544cb" name="ga1a0d68a2ad61e7a37ac6df9d073544cb"></a>
+<h2 class="memtitle"><span class="permalink"><a href="#ga1a0d68a2ad61e7a37ac6df9d073544cb">&#9670;&#160;</a></span>command_view</h2>
+
+<div class="memitem">
+<div class="memproto">
+<div class="memtemplate">
+template&lt;typename _IO_&gt; </div>
+      <table class="memname">
+        <tr>
+          <td class="memname">using <a class="el" href="#ga1a0d68a2ad61e7a37ac6df9d073544cb">qb::protocol::text::command_view</a> = <a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html">basic_text</a>&lt;_IO_, const std::string_view, '\n'&gt;</td>
+        </tr>
+      </table>
+</div><div class="memdoc">
+
+<p>Protocol for newline-terminated (<span class="tt">\n</span>) commands, yielding <span class="tt">std::string_view</span> (zero-copy read). </p>
+<p>Specialization of <span class="tt"><a class="el" href="classqb_1_1protocol_1_1text_1_1basic__text.html" title="Protocol for text messages delimited by a specific character, yielding a specified string type.">basic_text</a></span> for handling newline-terminated messages where the payload is provided as a <span class="tt">std::string_view</span>. This offers zero-copy reading of line-based commands.</p>
+<dl class="tparams"><dt>Template Parameters</dt><dd>
+  <table class="tparams">
+    <tr><td class="paramname">_IO_</td><td>The I/O component type that will use this protocol. </td></tr>
+  </table>
+  </dd>
+</dl>
+
+</div>
+</div>
+</div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

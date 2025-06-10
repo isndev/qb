@@ -1,0 +1,463 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: QB-Core: Event Messaging Between Actors</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: QB-Core: Event Messaging Between Actors</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('qb_core_messaging_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">QB-Core: Event Messaging Between Actors </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>A comprehensive guide to defining, sending, and handling events—the core communication mechanism in QB.</p>
+<h1>QB-Core: Event Messaging Between Actors</h1>
+<p>In the QB Actor Framework, actors live in isolation and communicate <em>exclusively</em> by exchanging asynchronous messages. These messages are called <b>Events</b>. Mastering the event system is fundamental to building robust and scalable actor-based applications.</p>
+<p>This guide covers how to define events, the various ways actors can send them, and how they are received and processed.</p>
+<h2>Defining Events: The Structure of Actor Communication</h2>
+<p>All messages exchanged between actors must be C++ structs or classes that publicly inherit from the base <span class="tt"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a></span> class (defined in <span class="tt"><a class="el" href="core_2_event_8h.html" title="Event system for the QB Actor Framework.">qb/core/Event.h</a></span>).</p>
+<p><b>Key Principles for Event Design:</b></p>
+<ul>
+<li><b>Data Carriers:</b> Events are primarily containers for data. They should encapsulate the information necessary for the receiving actor to understand the request or notification and act accordingly. Avoid embedding complex processing logic within the event objects themselves.</li>
+<li><b>Immutability (Conventionally):</b> Once an event is sent, it's best to treat its payload as immutable. If an actor needs to modify data and send it onward, it should typically create a new event. The exceptions are <span class="tt">reply()</span> and <span class="tt">forward()</span>, which are designed for efficient reuse of the event object.</li>
+</ul>
+<p><b>The <span class="tt"><a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a></span> Base Class Provides:</b></p>
+<ul>
+<li><span class="tt">id</span> (<span class="tt"><a class="el" href="group___core.html#gaf683acbb340cfc58aa37ce6bbbe5ebbd" title="Type definition for event identifiers.">qb::EventId</a></span>): An internal type identifier for the event (e.g., <span class="tt"><a class="el" href="group___event_core.html#ga451cbf351ccabd9a0bade0069afad19e" title="Function to get a unique type identifier for a given type.">qb::type_id</a>&lt;MyEventType&gt;()</span>). Used by the framework for dispatching to the correct handler.</li>
+<li><span class="tt">dest</span> (<span class="tt"><a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a></span>): The ID of the actor intended to receive the event.</li>
+<li><span class="tt">source</span> (<span class="tt"><a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a></span>): The ID of the actor that sent the event.</li>
+<li>Internal flags and size information (<span class="tt">is_alive()</span>, <span class="tt">getQOS()</span>, <span class="tt">getSize()</span>).</li>
+</ul>
+<p><b>Creating Custom Events:</b></p>
+<p>Add member variables to your derived event struct/class to carry application-specific data.</p>
+<div class="fragment"><div class="line"><span class="preprocessor">#include &lt;<a class="code" href="_event_8h.html">qb/event.h</a>&gt;</span>   <span class="comment">// For qb::Event</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="_actor_id_8h.html">qb/actorid.h</a>&gt;</span> <span class="comment">// For qb::ActorId</span></div>
+<div class="line"><span class="preprocessor">#include &lt;<a class="code" href="string_8h.html">qb/string.h</a>&gt;</span>  <span class="comment">// For qb::string (efficient fixed-size string)</span></div>
+<div class="line"><span class="preprocessor">#include &lt;string&gt;</span>       <span class="comment">// For std::string</span></div>
+<div class="line"><span class="preprocessor">#include &lt;vector&gt;</span>       <span class="comment">// For std::vector</span></div>
+<div class="line"><span class="preprocessor">#include &lt;memory&gt;</span>       <span class="comment">// For std::shared_ptr</span></div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// 1. A simple signal event (no data, just the type matters)</span></div>
+<div class="line"><span class="keyword">struct </span>SystemReadySignal : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> {};</div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// 2. Event with basic data members and qb::string (recommended for strings)</span></div>
+<div class="line"><span class="keyword">struct </span>UpdateConfiguration : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> {</div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1string.html">qb::string&lt;64&gt;</a> config_key;    <span class="comment">// Max 64 chars for key</span></div>
+<div class="line">    <a class="code hl_class" href="classqb_1_1string.html">qb::string&lt;256&gt;</a> new_value;  <span class="comment">// Max 256 chars for value</span></div>
+<div class="line">    <span class="keywordtype">int</span> priority_level;</div>
+<div class="line"> </div>
+<div class="line">    UpdateConfiguration(<span class="keyword">const</span> <span class="keywordtype">char</span>* key, <span class="keyword">const</span> <span class="keywordtype">char</span>* val, <span class="keywordtype">int</span> priority)</div>
+<div class="line">        : config_key(key), new_value(val), priority_level(priority) {}</div>
+<div class="line">};</div>
+<div class="line"> </div>
+<div class="line"><span class="comment">// 3. Event carrying a large or shared payload efficiently</span></div>
+<div class="line"><span class="keyword">struct </span>DataAnalysisTask : <a class="code hl_class" href="classqb_1_1_event.html">qb::Event</a> {</div>
+<div class="line">    std::shared_ptr&lt;std::vector&lt;double&gt;&gt; data_points;</div>
+<div class="line">    <a class="code hl_typedef" href="group___j_s_o_n.html#ga48637f6b3ae62ec4f5a634ce178099e1">qb::string&lt;32&gt;</a> task_description;</div>
+<div class="line"> </div>
+<div class="line">    DataAnalysisTask(std::shared_ptr&lt;std::vector&lt;double&gt;&gt; points, <span class="keyword">const</span> <span class="keywordtype">char</span>* desc)</div>
+<div class="line">        : data_points(std::move(points)), task_description(desc) {}</div>
+<div class="line">};</div>
+<div class="ttc" id="a_actor_id_8h_html"><div class="ttname"><a href="_actor_id_8h.html">actorid.h</a></div><div class="ttdoc">Convenience header for QB ActorId and related identifiers.</div></div>
+<div class="ttc" id="a_event_8h_html"><div class="ttname"><a href="_event_8h.html">event.h</a></div><div class="ttdoc">Convenience header for the QB Event system.</div></div>
+<div class="ttc" id="aclassqb_1_1_event_html"><div class="ttname"><a href="classqb_1_1_event.html">qb::Event</a></div><div class="ttdoc">Base class for all events in the actor system.</div><div class="ttdef"><b>Definition</b> Event.h:85</div></div>
+<div class="ttc" id="aclassqb_1_1string_html"><div class="ttname"><a href="classqb_1_1string.html">qb::string</a></div><div class="ttdoc">Fixed-size string with optimized storage.</div><div class="ttdef"><b>Definition</b> string.h:86</div></div>
+<div class="ttc" id="agroup___j_s_o_n_html_ga48637f6b3ae62ec4f5a634ce178099e1"><div class="ttname"><a href="group___j_s_o_n.html#ga48637f6b3ae62ec4f5a634ce178099e1">nlohmann::string</a></div><div class="ttdeci">json::string_t string</div><div class="ttdoc">JSON string type from nlohmann::json.</div><div class="ttdef"><b>Definition</b> json.h:67</div></div>
+<div class="ttc" id="astring_8h_html"><div class="ttname"><a href="string_8h.html">string.h</a></div><div class="ttdoc">Fixed-size string implementation optimized for performance.</div></div>
+</div><!-- fragment --><p><b>Performance &amp; Data Handling in Events:</b></p>
+<ul>
+<li><b>Small, POD-like Data:</b> For simple data, direct members are fine.</li>
+<li><b><span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span> (Strongly Recommended for Direct String Members in Events):</b><ul>
+<li><b>Purpose:</b> Use <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span> when you need string data <em>directly as a member</em> of your event. <span class="tt">N</span> is the fixed maximum character capacity.</li>
+<li><b>Benefits:</b> <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span> stores its data directly within its own structure. This avoids heap allocations for small-to-medium strings and, critically, <b>circumvents potential ABI (Application Binary Interface) stability issues that can arise with <span class="tt">std::string</span> as a direct member.</b> The C++ standard does not guarantee ABI compatibility for <span class="tt">std::string</span> across different compilers or even different versions of the same compiler or standard library. This means that the internal layout of a <span class="tt">std::string</span> (like where it stores its pointer to heap data, its size, and capacity, especially with Small String Optimization - SSO) can vary. If QB's event system were to perform low-level copies of events containing <span class="tt">std::string</span> members, and these events cross such ABI boundaries (e.g. different shared libraries compiled differently, or even just complex internal buffering by QB), the receiving side might misinterpret the <span class="tt">std::string</span>'s internal state, leading to crashes or corrupted data. <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span> avoids this by having a fully self-contained, predictable layout.</li>
+<li><b>Transparency:</b> Offers implicit conversion to <span class="tt">std::string_view</span> and explicit conversion to <span class="tt">std::string</span> (e.g., <span class="tt">std::string(my_qb_string)</span>).</li>
+<li><b>Example:</b> <span class="tt">cpp
+        struct UserLoginEvent : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> {
+            <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;64&gt; username;
+            <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;128&gt; session_token;
+            // ... constructor ...
+        };
+        </span></li>
+</ul>
+</li>
+<li><b><span class="tt">std::string</span> as a Direct Member (Use with Extreme Caution / Generally Avoid):</b><ul>
+<li><b>With <span class="tt"><a class="el" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529" title="Send a new event in an ordered fashion to a destination actor, returning a reference to it.">qb::Actor::push()</a></span>:</b> While <span class="tt">push()</span> <em>can</em> manage the lifecycle of <span class="tt">std::string</span> direct members in events within a consistent compilation environment, <b>its use as a direct event member is strongly discouraged due to the ABI stability concerns mentioned above.</b></li>
+<li><b>Recommendation:</b> <b>For direct string members, ALWAYS prefer <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span>.</b></li>
+</ul>
+</li>
+<li><b>Other STL Containers (e.g., <span class="tt">std::vector&lt;T&gt;</span>, <span class="tt">std::map&lt;K,V&gt;</span>):</b><ul>
+<li><b>With <span class="tt"><a class="el" href="classqb_1_1_actor.html#a45e94c367d5877e6406bf356c145a529" title="Send a new event in an ordered fashion to a destination actor, returning a reference to it.">qb::Actor::push()</a></span>:</b> These containers, when direct members of an event sent via <span class="tt">push()</span>, will have their copy/move constructors and destructors correctly invoked by the framework as C++ objects. The primary concern here is <b>performance</b>: copying large vectors or maps by value in events can be very expensive.</li>
+<li><b>Recommendation for Large Collections:</b> For any sizeable or dynamically growing collections, pass them via <span class="tt">std::shared_ptr</span> (e.g., <span class="tt">std::shared_ptr&lt;std::vector&lt;MyData&gt;&gt;</span>) to avoid deep copies during event transmission.</li>
+<li><b>With <span class="tt"><a class="el" href="classqb_1_1_actor.html#ac739dafd53101a1d03ddd368ea890a8c" title="Send a new event in an unordered fashion to a destination actor.">qb::Actor::send()</a></span>:</b> These containers are typically non-trivially destructible and thus <b>not permitted</b> as direct members of events sent via <span class="tt">send()</span>.</li>
+</ul>
+</li>
+<li><b>Smart Pointers for Large, Shared, or Owned Data (Recommended for <span class="tt">push()</span>):</b><ul>
+<li>To pass large data payloads (binary blobs, extensive collections, complex objects) without incurring significant copying overhead, or to clearly transfer ownership, wrap the data in a smart pointer:<ul>
+<li><b><span class="tt">std::shared_ptr&lt;T&gt;</span>:</b> Use when the data might be referenced by multiple actors after the event is sent, or when the lifetime is co-managed.</li>
+<li><b><span class="tt">std::unique_ptr&lt;T&gt;</span>:</b> Use when the sending actor wishes to transfer exclusive ownership of the data to the receiving actor. The data will be moved, and the sender relinquishes access. This is very efficient.</li>
+</ul>
+</li>
+<li>This ensures only the smart pointer (which is small and typically trivially copyable/movable itself) is involved in QB's internal event transfer mechanisms, while the underlying data is managed appropriately.</li>
+<li><b>Using <span class="tt">std::string</span> with Smart Pointers:</b> If you are passing string data via <span class="tt">std::shared_ptr&lt;std::string&gt;</span> or <span class="tt">std::unique_ptr&lt;std::string&gt;</span>, then using <span class="tt">std::string</span> (instead of <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span>) for the heap-allocated string data is acceptable and often more convenient for dynamically sized text. The smart pointer manages the <span class="tt">std::string</span>'s lifecycle correctly, and QB interacts primarily with the smart pointer object itself.</li>
+<li><p class="startli"><b>Example with <span class="tt">std::unique_ptr&lt;std::string&gt;</span>:</b> ```cpp struct LargeTextMessageEvent : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { std::unique_ptr&lt;std::string&gt; message_content;</p>
+<p class="startli">explicit LargeTextMessageEvent(std::unique_ptr&lt;std::string&gt; content) : message_content(std::move(content)) {} };</p>
+<p class="startli">// In sender actor: auto large_log_entry = std::make_unique&lt;std::string&gt;(GenerateVeryLongLog()); push&lt;LargeTextMessageEvent&gt;(logger_actor_id, std::move(large_log_entry)); // large_log_entry is now nullptr in sender. ```</p>
+</li>
+</ul>
+</li>
+<li><b>Trivial Destructibility (Strictly Required for <span class="tt"><a class="el" href="classqb_1_1_actor.html#ac739dafd53101a1d03ddd368ea890a8c" title="Send a new event in an unordered fashion to a destination actor.">qb::Actor::send()</a></span>):</b><ul>
+<li>Events sent via <span class="tt">send()</span> <b>must</b> be trivially destructible. This typically means they contain only POD types or other trivially destructible types like <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span>. Members like <span class="tt">std::string</span>, <span class="tt">std::vector</span>, or smart pointers (<span class="tt">std::shared_ptr</span>, <span class="tt">std::unique_ptr</span>) (which manage a non-trivial resource or have non-trivial destructors) are <b>not allowed</b> for events sent via <span class="tt">send()</span>.</li>
+</ul>
+</li>
+</ul>
+<p><b>(See also:</b> Core Concepts: QB Event System**)**</p>
+<h2>Sending Events: Actor Communication Methods</h2>
+<p>Actors use methods inherited from <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span> to dispatch events.</p>
+<h3>1. <span class="tt">push&lt;EventType&gt;(destination_actor_id, constructor_args...) const noexcept -&gt; EventType&amp;</span></h3>
+<ul>
+<li><b>Primary Choice:</b> This is the <b>default and recommended</b> method for sending events.</li>
+<li><b>Ordered Delivery:</b> Guarantees that events sent from a specific source actor to a specific destination actor are processed by the destination in the order they were <span class="tt">push</span>ed by the source.</li>
+<li><b>Asynchronous:</b> The call returns immediately; the event is queued and processed by the destination actor's <span class="tt">VirtualCore</span> later.</li>
+<li><b>Return Value:</b> Returns a non-const reference to the constructed event <em>before</em> it's actually sent. This allows you to modify its members if needed just after construction.</li>
+<li><b>Data Types:</b> Handles non-trivially destructible events (but see strong recommendation for <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span> over <span class="tt">std::string</span> as direct members).</li>
+<li><b>Example:</b> <span class="tt">cpp
+    // Inside an actor
+    <a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> target_id = get_target_actor_id();
+    auto&amp; cmd = push&lt;UpdateConfiguration&gt;(target_id, "timeout_ms", "500", 1);
+    // cmd.priority_level = 2; // Optionally modify before it's sent
+    </span></li>
+<li><b>(Ref:</b> <span class="tt">test-actor-event.cpp::BasicPushActor</span>**)</li>
+</ul>
+<h3>2. <span class="tt">send&lt;EventType&gt;(destination_actor_id, constructor_args...) const noexcept</span></h3>
+<ul>
+<li><b>Specialized Use:</b> For scenarios where event order is not critical and the event type is simple and trivially destructible.</li>
+<li><b>Unordered Delivery:</b> Provides no guarantee about the order of arrival relative to other events (even other <span class="tt">send</span> calls from the same source to the same destination).</li>
+<li><b>Potentially Lower Latency (Same Core):</b> May offer slightly reduced latency for same-core communication, as it might bypass some queueing steps.</li>
+<li><b>Requirement:</b> <span class="tt">EventType</span> <b>must be trivially destructible</b>. (e.g. contains only POD types or <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;N&gt;</span>).</li>
+<li><b>Caution:</b> Use sparingly and only when the trade-offs are well understood. Incorrect use can lead to hard-to-debug issues.</li>
+<li><b>Example:</b> <span class="tt">cpp
+    // Inside an actor, for a simple, order-agnostic notification
+    struct FireForgetSignal : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> {}; // Must be trivially destructible
+    send&lt;FireForgetSignal&gt;(monitor_actor_id);
+    </span></li>
+<li><b>(Ref:</b> <span class="tt">test-actor-event.cpp::BasicSendActor</span>**)</li>
+</ul>
+<h3>3. Broadcasting Events</h3>
+<ul>
+<li><b><span class="tt">broadcast&lt;EventType&gt;(constructor_args...) const noexcept</span></b><ul>
+<li>Sends the event to <b>all actors on all active <span class="tt">VirtualCore</span>s</b> within the <span class="tt"><a class="el" href="classqb_1_1_main.html" title="The main controller for the QB Actor Framework engine.">qb::Main</a></span> instance.</li>
+<li>Use for system-wide announcements or signals.</li>
+<li>Example: <span class="tt">broadcast&lt;SystemShutdownNotice&gt;();</span></li>
+</ul>
+</li>
+<li><b><span class="tt">push&lt;EventType&gt;(<a class="el" href="classqb_1_1_broadcast_id.html" title="Specialized ActorId for broadcasting messages to all actors on a core.">qb::BroadcastId(core_id)</a>, constructor_args...)</span></b><ul>
+<li>Sends the event (ordered relative to other pushes from the sender) to <b>all actors currently running on the specified <span class="tt">core_id</span></b>.</li>
+<li>Useful for core-specific group notifications.</li>
+<li>Example: <span class="tt">push&lt;CacheFlushCommand&gt;(<a class="el" href="classqb_1_1_broadcast_id.html" title="Specialized ActorId for broadcasting messages to all actors on a core.">qb::BroadcastId(1)</a>, "users_cache");</span></li>
+</ul>
+</li>
+<li><b>(Ref:</b> <span class="tt">test-actor-broadcast.cpp</span>**)</li>
+</ul>
+<h3>4. <span class="tt">reply(Event&amp; original_event) const noexcept</span></h3>
+<ul>
+<li><b>Efficient Response:</b> The most efficient way to send a response back to the actor that sent <span class="tt">original_event</span>.</li>
+<li><b>Mechanism:</b> Reuses the <span class="tt">original_event</span> object. It swaps the <span class="tt">source</span> and <span class="tt">dest</span> fields and resends it.</li>
+<li><b>Handler Requirement:</b> The <span class="tt">on(EventType&amp; event)</span> handler that calls <span class="tt">reply(event)</span> <b>must take its event parameter by non-const reference</b> (<span class="tt">EventType&amp; event</span>) to allow modification.</li>
+<li><b>Event Consumption:</b> After <span class="tt">reply(event)</span> is called, the <span class="tt">event</span> object in the handler is considered "consumed" and should not be accessed further by that handler.</li>
+<li><b>Example:</b> <span class="tt">cpp
+    // Inside ResponderActor
+    struct MyRequest : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;64&gt; query; <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;128&gt; response_data; };
+    void on(MyRequest&amp; request_event) { // Note: non-const reference
+        <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a>&lt;128&gt; temp_response = "Processed: ";
+        // temp_response.append(request_event.query.c_str()); // Assuming <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a> has append or similar
+        request_event.response_data = temp_response; // Assign back
+        reply(request_event); // Sends the modified MyRequest back to the original sender
+    }
+    </span></li>
+<li><b>(Ref:</b> <span class="tt">test-actor-event.cpp::TestReceiveReply</span>**)</li>
+</ul>
+<h3>5. <span class="tt">forward(ActorId new_destination, Event&amp; original_event) const noexcept</span></h3>
+<ul>
+<li><b>Efficient Redirection:</b> An efficient way to delegate an event to another actor without creating a new event object.</li>
+<li><b>Mechanism:</b> Reuses the <span class="tt">original_event</span> object, changing its <span class="tt">dest</span> to <span class="tt">new_destination</span> but preserving the <span class="tt">original_event.source</span>.</li>
+<li><b>Handler Requirement:</b> Similar to <span class="tt">reply()</span>, the <span class="tt">on()</span> handler must take a non-const event reference (<span class="tt">EventType&amp; event</span>).</li>
+<li><b>Event Consumption:</b> The <span class="tt">event</span> object is consumed after <span class="tt">forward()</span>.</li>
+<li><b>Example:</b> <span class="tt">cpp
+    // Inside RouterActor
+    struct WorkOrder : <a class="el" href="classqb_1_1_event.html" title="Base class for all events in the actor system.">qb::Event</a> { /* ... */ };
+    void on(WorkOrder&amp; work_event) { // Note: non-const reference
+        <a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> worker_node_id = find_available_worker_for(work_event);
+        forward(worker_node_id, work_event); // Delegate to a specific worker
+    }
+    </span></li>
+<li><b>(Ref:</b> <span class="tt">test-actor-event.cpp::TestReceiveReply</span> uses forward in one of its tests**)</li>
+</ul>
+<h3>6. Advanced Sending: <span class="tt">EventBuilder</span> and <span class="tt">Pipe</span></h3>
+<p>For fine-tuned control or performance-critical scenarios, especially when sending multiple events or large events:</p>
+<ul>
+<li><b><span class="tt">to(destination_id).push&lt;EventType&gt;(...)</span> -&gt; <span class="tt">Actor::EventBuilder&amp;</span></b><ul>
+<li>Returns an <span class="tt">EventBuilder</span> object.</li>
+<li>Allows chaining multiple <span class="tt">push&lt;EventType&gt;()</span> calls to the <em>same destination</em> more fluently. This can offer a minor performance benefit by avoiding repeated lookups for the communication pipe to the destination.</li>
+<li>Example: <span class="tt">cpp
+        to(stats_service_id)
+            .push&lt;CounterIncrementEvent&gt;("login_attempts")
+            .push&lt;TimerStartEvent&gt;("user_session_" + user_id);
+        </span></li>
+</ul>
+</li>
+<li><b><span class="tt">getPipe(destination_id) const noexcept -&gt; <a class="el" href="classqb_1_1_pipe.html" title="Represents a communication channel between actors.">qb::Pipe</a></span></b><ul>
+<li>Provides direct access to the underlying <span class="tt"><a class="el" href="classqb_1_1_pipe.html" title="Represents a communication channel between actors.">qb::Pipe</a></span> object, which is the communication channel to the <span class="tt">destination_id</span>.</li>
+<li>The <span class="tt"><a class="el" href="classqb_1_1_pipe.html" title="Represents a communication channel between actors.">qb::Pipe</a></span> object itself has <span class="tt">push&lt;EventType&gt;(...)</span> methods.</li>
+<li><b><span class="tt">pipe.allocated_push&lt;MyLargeEvent&gt;(payload_size_hint, constructor_args...)</span>:</b> This is particularly useful for events that carry large, dynamically sized payloads (e.g., data in a <span class="tt">std::vector</span> passed via <span class="tt">std::shared_ptr</span>). By providing a <span class="tt">payload_size_hint</span> (approximate size of the event struct <em>plus</em> its dynamic payload), you can help the framework pre-allocate sufficient space in the pipe, avoiding potentially costly reallocations and memory copies during event construction and enqueuing.</li>
+<li><p class="startli">Example with <span class="tt">allocated_push</span>: ```cpp // Assume LargeDataEvent contains a std::shared_ptr&lt;std::vector&lt;char&gt;&gt; data; auto my_large_data_vec = std::make_shared&lt;std::vector&lt;char&gt;&gt;(1024 * 1024); // 1MB // ... fill my_large_data_vec ... <a class="el" href="classqb_1_1_pipe.html" title="Represents a communication channel between actors.">qb::Pipe</a> data_pipe = getPipe(data_processing_actor_id); size_t estimated_size = sizeof(LargeDataEvent) + my_large_data_vec-&gt;size();</p>
+<p class="startli">auto&amp; ev = data_pipe.allocated_push&lt;LargeDataEvent&gt;(estimated_size, my_large_data_vec); // ev is a reference to the event in the pipe's buffer ```</p>
+</li>
+</ul>
+</li>
+</ul>
+<p><b>(Reference:</b> <span class="tt">test-actor-event.cpp</span> demonstrates various sender actor implementations using these methods.**)</p>
+<h2>Receiving and Handling Events in Actors</h2>
+<p>Actors process events by:</p>
+<ol type="1">
+<li><b>Registering Event Handlers:</b> This is done <b>exclusively within the actor's <span class="tt">onInit()</span> method</b> by calling <span class="tt">registerEvent&lt;EventType&gt;(*this);</span> for each specific <span class="tt">EventType</span> the actor is designed to handle.</li>
+<li><b>Implementing Handler Methods:</b> For each registered <span class="tt">EventType</span>, the actor must provide a corresponding <span class="tt">public</span> method with one of the following signatures:<ul>
+<li><span class="tt">void on(const EventType&amp; event)</span>: If the handler only needs to read the event's data.</li>
+<li><span class="tt">void on(EventType&amp; event)</span>: If the handler intends to modify the event (e.g., add a result) and then use <span class="tt">reply(event)</span> or <span class="tt">forward(destination, event)</span>. Note that modifications are only relevant for these reuse patterns; the original event in the sender or other potential recipients (for broadcasts) is not affected.</li>
+</ul>
+</li>
+</ol>
+<div class="fragment"><div class="line"><span class="comment">// In MyActor.h or .cpp</span></div>
+<div class="line"><span class="keyword">class </span>MyActor : <span class="keyword">public</span> <a class="code hl_class" href="classqb_1_1_actor.html">qb::Actor</a> {</div>
+<div class="line"><span class="keyword">public</span>:</div>
+<div class="line">    <span class="keywordtype">bool</span> <a class="code hl_function" href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">onInit</a>()<span class="keyword"> override </span>{</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;UpdateConfiguration&gt;</a>(*<span class="keyword">this</span>); <span class="comment">// From example above</span></div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;DataAnalysisTask&gt;</a>(*<span class="keyword">this</span>);  <span class="comment">// From example above</span></div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">registerEvent&lt;qb::KillEvent&gt;</a>(*<span class="keyword">this</span>);</div>
+<div class="line">        <span class="keywordflow">return</span> <span class="keyword">true</span>;</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Handler for UpdateConfiguration (can be const&amp; if not replying/forwarding)</span></div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> UpdateConfiguration&amp; event) {</div>
+<div class="line">        <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;MyActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Received config update for key &#39;&quot;</span></div>
+<div class="line">                       &lt;&lt; <span class="keyword">event</span>.config_key.c_str() &lt;&lt; <span class="stringliteral">&quot;&#39; to value &#39;&quot;</span> &lt;&lt; <span class="keyword">event</span>.new_value.c_str() </div>
+<div class="line">                       &lt;&lt; <span class="stringliteral">&quot;&#39; with priority &quot;</span> &lt;&lt; <span class="keyword">event</span>.priority_level &lt;&lt; <span class="stringliteral">&quot;.\n&quot;</span>;</div>
+<div class="line">        <span class="comment">// Apply configuration change...</span></div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="comment">// Handler for DataAnalysisTask (non-const&amp; if we might reply/forward)</span></div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(DataAnalysisTask&amp; event) { </div>
+<div class="line">        <span class="keywordflow">if</span> (event.data_points) {</div>
+<div class="line">            <a class="code hl_class" href="classqb_1_1io_1_1cout.html">qb::io::cout</a>() &lt;&lt; <span class="stringliteral">&quot;MyActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Received data task &#39;&quot;</span></div>
+<div class="line">                           &lt;&lt; <span class="keyword">event</span>.task_description.c_str() &lt;&lt; <span class="stringliteral">&quot;&#39; with &quot;</span> </div>
+<div class="line">                           &lt;&lt; <span class="keyword">event</span>.data_points-&gt;size() &lt;&lt; <span class="stringliteral">&quot; data points.\n&quot;</span>;</div>
+<div class="line">            <span class="comment">// Perform analysis...</span></div>
+<div class="line">            <span class="comment">// Example: push&lt;AnalysisCompleteEvent&gt;(event.getSource(), task_id, result);</span></div>
+<div class="line">        } <span class="keywordflow">else</span> {</div>
+<div class="line">            qb::io::cout() &lt;&lt; <span class="stringliteral">&quot;MyActor [&quot;</span> &lt;&lt; <a class="code hl_function" href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">id</a>() &lt;&lt; <span class="stringliteral">&quot;]: Received empty data task.\n&quot;</span>;</div>
+<div class="line">        }</div>
+<div class="line">    }</div>
+<div class="line"> </div>
+<div class="line">    <span class="keywordtype">void</span> <a class="code hl_function" href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">on</a>(<span class="keyword">const</span> qb::KillEvent&amp; <span class="comment">/*event*/</span>) {</div>
+<div class="line">        <a class="code hl_function" href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">kill</a>();</div>
+<div class="line">    }</div>
+<div class="line">};</div>
+<div class="ttc" id="aclassqb_1_1_actor_html"><div class="ttname"><a href="classqb_1_1_actor.html">qb::Actor</a></div><div class="ttdoc">Base class for all actors in the qb framework.</div><div class="ttdef"><b>Definition</b> Actor.h:106</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a0b7ee1d2a9d94988860df5ba5f19072c"><div class="ttname"><a href="classqb_1_1_actor.html#a0b7ee1d2a9d94988860df5ba5f19072c">qb::Actor::registerEvent</a></div><div class="ttdeci">void registerEvent(_Actor &amp;actor) const noexcept</div><div class="ttdoc">Subscribe this actor to listen for a specific event type.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a245a2b7be6e086bf622d2acb78b9bded"><div class="ttname"><a href="classqb_1_1_actor.html#a245a2b7be6e086bf622d2acb78b9bded">qb::Actor::on</a></div><div class="ttdeci">void on(KillEvent const &amp;event) noexcept</div><div class="ttdoc">Handler for KillEvent.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_a9999e9e7f937bbcf96a20127fe993092"><div class="ttname"><a href="classqb_1_1_actor.html#a9999e9e7f937bbcf96a20127fe993092">qb::Actor::id</a></div><div class="ttdeci">ActorId id() const noexcept</div><div class="ttdoc">Get ActorId.</div><div class="ttdef"><b>Definition</b> Actor.h:368</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_ad097f332e8617029cbd8031c1f8fdf84"><div class="ttname"><a href="classqb_1_1_actor.html#ad097f332e8617029cbd8031c1f8fdf84">qb::Actor::kill</a></div><div class="ttdeci">void kill() const noexcept</div><div class="ttdoc">Terminate this actor and mark it for removal from the system.</div></div>
+<div class="ttc" id="aclassqb_1_1_actor_html_ae61217d6ef37d4658b41cec6d2f6719f"><div class="ttname"><a href="classqb_1_1_actor.html#ae61217d6ef37d4658b41cec6d2f6719f">qb::Actor::onInit</a></div><div class="ttdeci">virtual bool onInit()</div><div class="ttdoc">Initialization callback, called once after construction and ID assignment.</div><div class="ttdef"><b>Definition</b> Actor.h:198</div></div>
+<div class="ttc" id="aclassqb_1_1io_1_1cout_html"><div class="ttname"><a href="classqb_1_1io_1_1cout.html">qb::io::cout</a></div><div class="ttdoc">Thread-safe console output class.</div><div class="ttdef"><b>Definition</b> io.h:100</div></div>
+</div><!-- fragment --><ul>
+<li><b>Dispatch Mechanism:</b> The <span class="tt">VirtualCore</span> responsible for an actor uses the event's type ID (<span class="tt">event.getID()</span>) and its destination actor ID (<span class="tt">event.getDestination()</span>) to route the event. An internal router (<span class="tt"><a class="el" href="classqb_1_1router_1_1memh.html" title="Multiple-Event Multiple-Handler router (generic version)">qb::router::memh</a></span>) then invokes the specific <span class="tt">on()</span> handler in the target actor that matches the event's type.</li>
+<li><b>Sequential Processing Guarantee:</b> An actor processes events from its mailbox one at a time. One <span class="tt">on()</span> handler must complete before the next one for that same actor instance can begin.</li>
+</ul>
+<p>This event-driven, message-passing architecture is central to how QB achieves concurrency and simplifies the development of complex, stateful systems.</p>
+<p><b>(Next:</b> QB-Core: Engine (<span class="tt">qb::Main</span>, <span class="tt">VirtualCore</span>) to understand how actors and their events are managed and scheduled.**) <b>(See also:</b> Core Concepts: QB Event System, QB-Core: Mastering qb::Actor**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

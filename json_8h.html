@@ -1,0 +1,315 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/json.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/json.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('json_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">json.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___i_o.html">IO System</a> &raquo; <a class="el" href="group___j_s_o_n.html">JSON Utilities</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>JSON utility functions and types for the qb framework.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &quot;<a class="el" href="io_2protocol_2json_8h_source.html">qb/io/protocol/json.h</a>&quot;</code><br />
+<code>#include &quot;<a class="el" href="uuid_8h_source.html">uuid.h</a>&quot;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for json.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="json_8h__incl.png" border="0" usemap="#ainclude_2qb_2json_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2json_8h" id="ainclude_2qb_2json_8h">
+<area shape="rect" title="JSON utility functions and types for the qb framework." alt="" coords="533,5,652,31"/>
+<area shape="rect" href="io_2protocol_2json_8h.html" title="JSON protocol implementations for the QB IO system." alt="" coords="464,79,602,105"/>
+<area shape="poly" title=" " alt="" coords="585,33,555,69,551,65,581,30"/>
+<area shape="rect" href="uuid_8h.html" title="Universally Unique Identifier (UUID) support." alt="" coords="626,79,682,105"/>
+<area shape="poly" title=" " alt="" coords="605,29,636,65,632,69,601,33"/>
+<area shape="rect" href="protocol_2base_8h.html" title="Base protocol implementations for message framing in the QB IO system." alt="" coords="504,153,564,178"/>
+<area shape="poly" title=" " alt="" coords="536,105,536,137,531,137,530,105"/>
+<area shape="rect" title=" " alt="" coords="349,153,479,178"/>
+<area shape="poly" title=" " alt="" coords="514,107,449,147,446,142,511,103"/>
+<area shape="rect" title=" " alt="" coords="5,389,66,414"/>
+<area shape="poly" title=" " alt="" coords="504,178,254,253,128,293,68,317,50,344,41,375,36,373,45,342,64,313,126,288,252,248,503,173"/>
+<area shape="rect" href="system_2allocator_2_pipe_8h.html" title="Implementation of a dynamic extensible buffer." alt="" coords="466,226,602,267"/>
+<area shape="poly" title=" " alt="" coords="537,179,537,211,532,211,532,179"/>
+<area shape="rect" href="protocol_8h.html" title="Protocol interfaces for message processing in the asynchronous IO framework." alt="" coords="863,234,992,260"/>
+<area shape="poly" title=" " alt="" coords="565,173,579,176,848,229,847,234,578,181,564,178"/>
+<area shape="poly" title=" " alt="" coords="466,255,373,263,266,276,168,294,129,305,101,317,85,330,71,345,50,377,45,374,67,341,81,326,98,313,127,300,167,288,265,270,372,258,466,250"/>
+<area shape="rect" title=" " alt="" coords="866,389,917,414"/>
+<area shape="poly" title=" " alt="" coords="602,251,675,259,753,272,822,289,849,300,868,313,879,326,886,342,893,373,888,374,881,344,874,329,864,317,846,305,820,294,752,277,674,264,602,256"/>
+<area shape="rect" title=" " alt="" coords="160,389,231,414"/>
+<area shape="poly" title=" " alt="" coords="466,251,371,255,265,266,215,274,171,285,136,300,113,317,109,325,108,333,116,349,134,365,156,379,153,383,130,369,112,352,103,333,104,323,110,313,134,295,170,280,214,269,265,260,371,250,466,246"/>
+<area shape="rect" title=" " alt="" coords="124,315,192,341"/>
+<area shape="poly" title=" " alt="" coords="467,263,208,317,207,312,466,258"/>
+<area shape="rect" href="string_8h.html" title="Fixed&#45;size string implementation optimized for performance." alt="" coords="690,315,773,341"/>
+<area shape="poly" title=" " alt="" coords="584,265,688,306,686,311,582,270"/>
+<area shape="rect" href="branch__hints_8h.html" title="Branch prediction hint utilities for performance optimization." alt="" coords="216,315,375,341"/>
+<area shape="poly" title=" " alt="" coords="475,270,347,312,346,307,474,265"/>
+<area shape="rect" href="nocopy_8h.html" title="Defines a base class to make derived classes non&#45;copyable." alt="" coords="400,315,525,341"/>
+<area shape="poly" title=" " alt="" coords="518,269,486,305,482,301,514,266"/>
+<area shape="rect" href="prefix_8h.html" title="Platform&#45;specific alignment macros, cache&#45;line definitions, and related utilities." alt="" coords="549,315,666,341"/>
+<area shape="poly" title=" " alt="" coords="554,266,588,302,584,305,550,269"/>
+<area shape="rect" title=" " alt="" coords="941,389,1028,414"/>
+<area shape="poly" title=" " alt="" coords="602,247,666,252,741,264,819,283,894,313,936,342,968,374,964,378,932,346,892,317,818,288,740,269,666,258,602,252"/>
+<area shape="rect" title=" " alt="" coords="796,315,854,341"/>
+<area shape="poly" title=" " alt="" coords="603,263,782,311,780,317,602,268"/>
+<area shape="poly" title=" " alt="" coords="691,341,679,343,530,363,414,372,297,379,148,391,81,398,80,393,147,386,297,374,413,367,529,357,678,338,690,336"/>
+<area shape="poly" title=" " alt="" coords="760,339,853,380,851,385,758,344"/>
+<area shape="poly" title=" " alt="" coords="691,341,679,343,472,371,247,397,246,392,471,366,678,338,690,336"/>
+<area shape="rect" title=" " alt="" coords="426,389,501,414"/>
+<area shape="poly" title=" " alt="" coords="691,343,516,389,515,384,690,338"/>
+<area shape="rect" title=" " alt="" coords="525,389,578,414"/>
+<area shape="poly" title=" " alt="" coords="702,344,593,387,591,382,700,339"/>
+<area shape="rect" href="build__macros_8h.html" title="Platform, compiler, and C++ feature detection macros for the QB Framework." alt="" coords="602,389,765,414"/>
+<area shape="poly" title=" " alt="" coords="726,342,702,377,698,374,721,339"/>
+<area shape="rect" title=" " alt="" coords="789,389,842,414"/>
+<area shape="poly" title=" " alt="" coords="747,339,791,376,788,380,744,343"/>
+<area shape="rect" title=" " alt="" coords="324,389,403,414"/>
+<area shape="poly" title=" " alt="" coords="691,341,679,343,419,391,418,385,678,338,690,336"/>
+<area shape="rect" title=" " alt="" coords="614,462,671,488"/>
+<area shape="poly" title=" " alt="" coords="679,416,659,450,654,447,674,413"/>
+<area shape="rect" title=" " alt="" coords="695,462,755,488"/>
+<area shape="poly" title=" " alt="" coords="693,413,713,447,708,450,688,416"/>
+<area shape="rect" href="type__traits_8h.html" title="Advanced type traits and metaprogramming utilities for the QB Framework." alt="" coords="1021,315,1167,341"/>
+<area shape="poly" title=" " alt="" coords="954,258,1056,306,1054,311,952,263"/>
+<area shape="poly" title=" " alt="" coords="1077,343,1017,382,1014,378,1074,339"/>
+<area shape="rect" title=" " alt="" coords="1053,389,1135,414"/>
+<area shape="poly" title=" " alt="" coords="1097,341,1097,373,1092,373,1092,341"/>
+<area shape="rect" title=" " alt="" coords="1160,389,1212,414"/>
+<area shape="poly" title=" " alt="" coords="1111,339,1161,377,1157,381,1108,343"/>
+<area shape="rect" title=" " alt="" coords="1236,389,1304,414"/>
+<area shape="poly" title=" " alt="" coords="1125,339,1227,380,1225,385,1123,344"/>
+<area shape="rect" title=" " alt="" coords="590,153,719,178"/>
+<area shape="poly" title=" " alt="" coords="657,105,657,137,652,137,652,105"/>
+</map>
+</div>
+</div>
+<p><a href="json_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:nlohmann_3A_3Ajsonb" id="r_nlohmann_3A_3Ajsonb"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structnlohmann_1_1jsonb.html">nlohmann::jsonb</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">A wrapper around <span class="tt">nlohmann::json</span> providing a <span class="tt"><a class="el" href="structnlohmann_1_1jsonb.html" title="A wrapper around nlohmann::json providing a qb::jsonb type, often used for binary JSON (BSON) or simi...">qb::jsonb</a></span> type, often used for binary JSON (BSON) or similar dense representations.  <a href="structnlohmann_1_1jsonb.html#details">More...</a><br /></td></tr>
+<tr class="memitem:std_3A_3Ahash_3C_20qb_3A_3Ajsonb_20_3E" id="r_std_3A_3Ahash_3C_20qb_3A_3Ajsonb_20_3E"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structstd_1_1hash_3_01qb_1_1jsonb_01_4.html">std::hash&lt; qb::jsonb &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Specialization of <span class="tt">std::hash</span> for <span class="tt"><a class="el" href="structnlohmann_1_1jsonb.html" title="A wrapper around nlohmann::json providing a qb::jsonb type, often used for binary JSON (BSON) or simi...">qb::jsonb</a></span>.  <a href="structstd_1_1hash_3_01qb_1_1jsonb_01_4.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-typedef-members" class="groupheader"><a id="typedef-members" name="typedef-members"></a>
+Typedefs</h2></td></tr>
+<tr class="memitem:ga7f8ecff0b001b7dc109f79bbe70e85e7" id="r_ga7f8ecff0b001b7dc109f79bbe70e85e7"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___j_s_o_n.html#ga7f8ecff0b001b7dc109f79bbe70e85e7">nlohmann::pointer</a> = json::pointer</td></tr>
+<tr class="memdesc:ga7f8ecff0b001b7dc109f79bbe70e85e7"><td class="mdescLeft">&#160;</td><td class="mdescRight">JSON pointer type from nlohmann::json library.  <br /></td></tr>
+<tr class="memitem:ga4328cf2e9d2381b901c4e72845b18b73" id="r_ga4328cf2e9d2381b901c4e72845b18b73"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___j_s_o_n.html#ga4328cf2e9d2381b901c4e72845b18b73">nlohmann::object</a> = json</td></tr>
+<tr class="memdesc:ga4328cf2e9d2381b901c4e72845b18b73"><td class="mdescLeft">&#160;</td><td class="mdescRight">Alias for the main JSON type from nlohmann::json.  <br /></td></tr>
+<tr class="memitem:ga62594285b65450e1f7a94a498bca4c5d" id="r_ga62594285b65450e1f7a94a498bca4c5d"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___j_s_o_n.html#ga62594285b65450e1f7a94a498bca4c5d">nlohmann::array</a> = json::array_t</td></tr>
+<tr class="memdesc:ga62594285b65450e1f7a94a498bca4c5d"><td class="mdescLeft">&#160;</td><td class="mdescRight">JSON array type from nlohmann::json.  <br /></td></tr>
+<tr class="memitem:ga48637f6b3ae62ec4f5a634ce178099e1" id="r_ga48637f6b3ae62ec4f5a634ce178099e1"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___j_s_o_n.html#ga48637f6b3ae62ec4f5a634ce178099e1">nlohmann::string</a> = json::string_t</td></tr>
+<tr class="memdesc:ga48637f6b3ae62ec4f5a634ce178099e1"><td class="mdescLeft">&#160;</td><td class="mdescRight">JSON string type from nlohmann::json.  <br /></td></tr>
+<tr class="memitem:ga8898b7c80422717e0140b60295c27a37" id="r_ga8898b7c80422717e0140b60295c27a37"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___j_s_o_n.html#ga8898b7c80422717e0140b60295c27a37">nlohmann::number</a> = json::number_integer_t</td></tr>
+<tr class="memdesc:ga8898b7c80422717e0140b60295c27a37"><td class="mdescLeft">&#160;</td><td class="mdescRight">JSON integer number type from nlohmann::json.  <br /></td></tr>
+<tr class="memitem:ga0089cf54b79f8a86392025270591cf81" id="r_ga0089cf54b79f8a86392025270591cf81"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___j_s_o_n.html#ga0089cf54b79f8a86392025270591cf81">nlohmann::floating</a> = json::number_float_t</td></tr>
+<tr class="memdesc:ga0089cf54b79f8a86392025270591cf81"><td class="mdescLeft">&#160;</td><td class="mdescRight">JSON floating-point number type from nlohmann::json.  <br /></td></tr>
+<tr class="memitem:ga3ef38fa9633d5feae4a0a76a4b9fd587" id="r_ga3ef38fa9633d5feae4a0a76a4b9fd587"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___j_s_o_n.html#ga3ef38fa9633d5feae4a0a76a4b9fd587">nlohmann::boolean</a> = json::boolean_t</td></tr>
+<tr class="memdesc:ga3ef38fa9633d5feae4a0a76a4b9fd587"><td class="mdescLeft">&#160;</td><td class="mdescRight">JSON boolean type from nlohmann::json.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-func-members" class="groupheader"><a id="func-members" name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:gae5c0ada4225449f8d47b86a362f60e57" id="r_gae5c0ada4225449f8d47b86a362f60e57"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___j_s_o_n.html#gae5c0ada4225449f8d47b86a362f60e57">uuids::to_json</a> (qb::json &amp;obj, <a class="el" href="uuid_8h.html#acd92a3e374d3cbc05094c4f6a8b547a1">qb::uuid</a> const &amp;id)</td></tr>
+<tr class="memdesc:gae5c0ada4225449f8d47b86a362f60e57"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts a UUID to a JSON object.  <br /></td></tr>
+<tr class="memitem:gaba1ae668afd132e49475a7c19cefc2d0" id="r_gaba1ae668afd132e49475a7c19cefc2d0"><td class="memItemLeft" align="right" valign="top">void&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___j_s_o_n.html#gaba1ae668afd132e49475a7c19cefc2d0">uuids::from_json</a> (qb::json const &amp;obj, <a class="el" href="uuid_8h.html#acd92a3e374d3cbc05094c4f6a8b547a1">qb::uuid</a> &amp;id)</td></tr>
+<tr class="memdesc:gaba1ae668afd132e49475a7c19cefc2d0"><td class="mdescLeft">&#160;</td><td class="mdescRight">Converts a JSON object to a UUID.  <br /></td></tr>
+<tr class="memitem:ga2aa67ddc5a5909a0a8ac3d8efdb85f80" id="r_ga2aa67ddc5a5909a0a8ac3d8efdb85f80"><td class="memItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___j_s_o_n.html#ga2aa67ddc5a5909a0a8ac3d8efdb85f80">operator&lt;&lt;</a> (std::ostream &amp;os, const <a class="el" href="structnlohmann_1_1jsonb.html">qb::jsonb</a> &amp;j)</td></tr>
+<tr class="memdesc:ga2aa67ddc5a5909a0a8ac3d8efdb85f80"><td class="mdescLeft">&#160;</td><td class="mdescRight">Stream output operator for <span class="tt"><a class="el" href="structnlohmann_1_1jsonb.html" title="A wrapper around nlohmann::json providing a qb::jsonb type, often used for binary JSON (BSON) or simi...">qb::jsonb</a></span>.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>JSON utility functions and types for the qb framework. </p>
+<p>This file provides a simple JSON utility using the nlohmann/json library. It includes a namespace alias for the json type and a simple JSON utility function for parsing JSON strings.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div></div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="json_8h.html">json.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

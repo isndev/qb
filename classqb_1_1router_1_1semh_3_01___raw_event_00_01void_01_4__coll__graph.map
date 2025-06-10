@@ -1,0 +1,6 @@
+<map id="qb::router::semh&lt; _RawEvent, void &gt;" name="qb::router::semh&lt; _RawEvent, void &gt;">
+<area shape="rect" id="Node000001" title="Single&#45;Event Multiple&#45;Handler router (heterogeneous version)" alt="" coords="5,94,139,135"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1router_1_1internal_1_1_event_policy.html" title="Base policy for event handling." alt="" coords="9,5,135,46"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="66,61,67,93,62,94,60,62"/>
+<area shape="poly" id="edge2_Node000001_Node000002" title=" " alt="" coords="84,62,82,94,77,93,78,61"/>
+</map>

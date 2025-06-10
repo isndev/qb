@@ -1,0 +1,10 @@
+<map id="qb::io::ostream&lt; _IO_ &gt;" name="qb::io::ostream&lt; _IO_ &gt;">
+<area shape="rect" id="Node000001" title="Output stream template class." alt="" coords="5,282,166,308"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="23,170,148,211"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="88,227,88,282,83,282,83,227"/>
+<area shape="rect" id="Node000003" href="$classqb_1_1allocator_1_1base__pipe.html" title=" " alt="" coords="21,80,150,121"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="79,136,81,170,75,170,74,137"/>
+<area shape="poly" id="edge4_Node000002_Node000003" title=" " alt="" coords="97,137,96,170,90,170,92,136"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="13,5,158,31"/>
+<area shape="poly" id="edge3_Node000003_Node000004" title=" " alt="" coords="88,47,88,80,83,80,83,47"/>
+</map>

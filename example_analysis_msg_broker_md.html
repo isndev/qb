@@ -1,0 +1,321 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: Case Study: A Publish/Subscribe Message Broker with QB Actors</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: Case Study: A Publish/Subscribe Message Broker with QB Actors</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('example_analysis_msg_broker_md.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div><div class="header">
+  <div class="headertitle"><div class="title">Case Study: A Publish/Subscribe Message Broker with QB Actors </div></div>
+</div><!--header-->
+<div class="contents">
+<div class="textblock"><p>A walkthrough of the <span class="tt">message_broker</span> example, highlighting efficient message fan-out and topic management using QB actors and TCP.</p>
+<h1>Case Study: A Publish/Subscribe Message Broker with QB Actors</h1>
+<ul>
+<li><b>Location:</b> <span class="tt">example/core_io/message_broker/</span></li>
+<li><b>Objective:</b> This example implements a fully functional, topic-based Publish/Subscribe (Pub/Sub) message broker. It demonstrates how QB actors can be used to build a robust messaging system with TCP-based client-server communication, custom protocol handling, and efficient message distribution to multiple subscribers.</li>
+</ul>
+<p>Key learning points from this example include:</p><ul>
+<li>Implementing a classic Pub/Sub architecture with actors.</li>
+<li>Efficiently fanning out messages to numerous subscribers using shared message payloads (<span class="tt">MessageContainer</span>).</li>
+<li>Designing a custom binary protocol for diverse message types (<span class="tt">BrokerProtocol</span>).</li>
+<li>Managing distributed state for topics and subscriptions in a central actor.</li>
+<li>Leveraging <span class="tt">qb::string_view</span> for zero-copy string processing during internal event forwarding.</li>
+</ul>
+<h2>Architectural Overview: Client-Broker-Client</h2>
+<p>The <span class="tt">message_broker</span> system comprises a server (the broker) and multiple clients that can publish messages to topics or subscribe to receive messages from topics.</p>
+<h3>Server-Side Broker Architecture</h3>
+<p>The server architecture is similar in structure to the <span class="tt">chat_tcp</span> example, with distinct roles for accepting connections, managing client sessions, and handling the core broker logic.</p>
+<ol type="1">
+<li><b><span class="tt">AcceptActor</span> (<span class="tt">server/AcceptActor.h/.cpp</span>)</b><ul>
+<li><b>Core (Typical):</b> Core 0.</li>
+<li><b>Role:</b> Listens for incoming TCP connections on a configured port (e.g., 12345).</li>
+<li><b>QB Integration:</b> <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span>, <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;AcceptActor&gt;::tcp::acceptor</span>.</li>
+<li><b>Functionality:</b> When a new client connects, <span class="tt">on(accepted_socket_type&amp;&amp; new_io)</span> is called. It then round-robins the new <span class="tt"><a class="el" href="classqb_1_1io_1_1tcp_1_1socket.html" title="Class implementing TCP socket functionality for reliable, stream-oriented communication.">qb::io::tcp::socket</a></span> (wrapped in a <span class="tt">NewSessionEvent</span>) to one of the available <span class="tt">ServerActor</span> instances for session management.</li>
+</ul>
+</li>
+<li><b><span class="tt">ServerActor</span> (<span class="tt">server/ServerActor.h/.cpp</span>)</b><ul>
+<li><b>Core (Typical):</b> Core 1 (or a pool across multiple cores, e.g., 1 &amp; 2).</li>
+<li><b>Role:</b> Manages a group of active client connections, represented by <span class="tt">BrokerSession</span> instances. It acts as an intermediary, forwarding client commands to the <span class="tt">TopicManagerActor</span> and relaying messages from the <span class="tt">TopicManagerActor</span> back to the appropriate clients.</li>
+<li><b>QB Integration:</b> <span class="tt"><a class="el" href="classqb_1_1_actor.html" title="Base class for all actors in the qb framework.">qb::Actor</a></span>, <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;ServerActor&gt;::tcp::server&lt;BrokerSession&gt;</span> (which provides <span class="tt">io_handler</span> capabilities).</li>
+<li><b>Session Creation:</b> <span class="tt">on(NewSessionEvent&amp; evt)</span> calls <span class="tt">registerSession(std::move(evt.socket))</span> to create, start, and manage a new <span class="tt">BrokerSession</span>.</li>
+<li><b>Efficient Command Forwarding:</b> When a <span class="tt">BrokerSession</span> calls methods like <span class="tt">server().handleSubscribe(id(), std::move(msg))</span>, the <span class="tt">ServerActor</span> often uses <span class="tt">std::move</span> for the incoming <span class="tt">broker::Message</span>. It then creates specialized events for the <span class="tt">TopicManagerActor</span> (e.g., <span class="tt">SubscribeEvent</span>, <span class="tt">PublishEvent</span>) that can utilize <span class="tt">broker::MessageContainer</span> (for shared ownership of message payloads) and <span class="tt">std::string_view</span> (for topic/content if parsed locally before forwarding). This minimizes unnecessary string copying, especially for message content being published. <span class="tt">cpp
+        // Simplified from ServerActor::handlePublish
+        // The BrokerSession has already parsed the topic and content into string_views
+        // and put the original message into a MessageContainer.
+        void ServerActor::handlePublish(<a class="el" href="uuid_8h.html#acd92a3e374d3cbc05094c4f6a8b547a1" title="UUID type alias for the underlying implementation.">qb::uuid</a> session_id, broker::MessageContainer&amp;&amp; container, 
+                                        std::string_view topic, std::string_view content) {
+            if (_topic_manager_id.is_valid()) {
+                push&lt;PublishEvent&gt;(_topic_manager_id, session_id, id(), 
+                                   std::move(container), topic, content);
+            }
+        }
+        </span></li>
+<li><b>Delivering Messages to Clients:</b> <span class="tt">on(SendMessageEvent&amp; evt)</span> receives messages from the <span class="tt">TopicManagerActor</span>. It looks up the target <span class="tt">BrokerSession</span> using <span class="tt">evt.target_session_id</span> and sends the actual message payload (accessed via <span class="tt">evt.message_container.message().payload</span>) to the client using the session's <span class="tt">operator&lt;&lt;</span>.</li>
+</ul>
+</li>
+<li><b><span class="tt">BrokerSession</span> (<span class="tt">server/BrokerSession.h/.cpp</span>)</b><ul>
+<li><b>Context:</b> Managed by a <span class="tt">ServerActor</span>, runs on the same <span class="tt">VirtualCore</span>.</li>
+<li><b>Role:</b> Handles I/O and protocol parsing for a single connected client.</li>
+<li><b>QB Integration:</b> <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;BrokerSession&gt;::tcp::client&lt;ServerActor&gt;</span>, <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;BrokerSession&gt;::timeout</span>.</li>
+<li><b>Protocol:</b> <span class="tt">using Protocol = broker::BrokerProtocol&lt;BrokerSession&gt;;</span> (defined in <span class="tt">shared/Protocol.h</span>).</li>
+<li><b>Command Processing (<span class="tt">on(broker::Message msg)</span>):<ul>
+<li>Receives a fully parsed <span class="tt">broker::Message</span> from its <span class="tt">BrokerProtocol</span>.</li>
+<li>Crucially, it takes <span class="tt">broker::Message msg</span> <em>by value</em> to allow <span class="tt">std::move</span> for efficient forwarding.</li>
+<li>Based on <span class="tt">msg.type</span> (<span class="tt">SUBSCRIBE</span>, <span class="tt">UNSUBSCRIBE</span>, <span class="tt">PUBLISH</span>):<ul>
+<li>For <span class="tt">PUBLISH</span>, it first parses the <span class="tt">msg.payload</span> to extract <span class="tt">topic</span> and <span class="tt">content</span> as <span class="tt">std::string_view</span>s.</li>
+<li>It then calls the appropriate handler on its parent <span class="tt">ServerActor</span> (e.g., <span class="tt">server().handleSubscribe(id(), std::move(msg))</span>, or for publish: <span class="tt">server().handlePublish(id(), broker::MessageContainer(std::move(msg)), topic_view, content_view);</span>). This passes ownership of the message (or a shared container of it) efficiently.</li>
+</ul>
+</li>
+</ul>
+</b></li>
+<li><b> **Lifecycle:</b> Notifies its <span class="tt">ServerActor</span> via <span class="tt">handleDisconnect()</span> on disconnection or inactivity timeout.</li>
+</ul>
+</li>
+<li><b><span class="tt">TopicManagerActor</span> (<span class="tt">server/TopicManagerActor.h/.cpp</span>)</b><ul>
+<li><b>Core (Typical):</b> Core 2 (dedicated to core broker logic).</li>
+<li><b>Role:</b> The heart of the broker. Manages topic subscriptions and efficiently routes published messages to all relevant subscribers.</li>
+<li><b>State Management:</b><ul>
+<li><span class="tt">_sessions</span>: Maps <span class="tt"><a class="el" href="uuid_8h.html#acd92a3e374d3cbc05094c4f6a8b547a1" title="UUID type alias for the underlying implementation.">qb::uuid</a></span> (client session ID) to <span class="tt">SessionInfo { <a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> server_id }</span> (to know which <span class="tt">ServerActor</span> manages that session).</li>
+<li><span class="tt">_subscriptions</span>: Maps <span class="tt"><a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a> topic_name</span> to <span class="tt">std::set&lt;<a class="el" href="uuid_8h.html#acd92a3e374d3cbc05094c4f6a8b547a1" title="UUID type alias for the underlying implementation.">qb::uuid</a>&gt; subscriber_session_ids</span>.</li>
+<li><span class="tt">_session_topics</span>: Maps <span class="tt"><a class="el" href="uuid_8h.html#acd92a3e374d3cbc05094c4f6a8b547a1" title="UUID type alias for the underlying implementation.">qb::uuid</a> session_id</span> to <span class="tt">std::set&lt;<a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a> topic_name&gt;</span> (for cleanup on disconnect).</li>
+</ul>
+</li>
+<li><b>Event Handling:</b><ul>
+<li><span class="tt">on(SubscribeEvent&amp;)</span>: Adds <span class="tt">evt.session_id</span> to the subscriber set for <span class="tt">evt.topic_sv.data()</span>. Sends a <span class="tt">RESPONSE</span> message back to the client via its <span class="tt">ServerActor</span>.</li>
+<li><span class="tt">on(UnsubscribeEvent&amp;)</span>: Removes the session from the topic's subscriber set.</li>
+<li><span class="tt">on(PublishEvent&amp;)</span>: This is where efficient fan-out happens.<ol type="a">
+<li>Formats the message to be broadcast (e.g., "topic:publisher_id:content").</li>
+<li><b>Creates a single <span class="tt">broker::MessageContainer shared_message(...)</span></b>. This container likely holds a <span class="tt">std::shared_ptr</span> to the actual formatted message string/payload.</li>
+<li>Looks up all <span class="tt">subscriber_session_id</span>s for the given <span class="tt">evt.topic_sv.data()</span>.</li>
+<li>For each subscriber, it retrieves their managing <span class="tt">ServerActor</span>'s ID from <span class="tt">_sessions</span>.</li>
+<li><p class="startli"><span class="tt">push</span>es a <span class="tt">SendMessageEvent(subscriber_session_id, managing_server_id, shared_message)</span> to the managing <span class="tt">ServerActor</span>. Because <span class="tt">shared_message</span> is passed (likely by const-ref or by copying the <span class="tt">MessageContainer</span> which shares the underlying payload), the actual message data is not copied for each subscriber. ```cpp // Simplified from TopicManagerActor::on(PublishEvent&amp; evt) if (_subscriptions.count(topic_key)) { <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string&lt;512&gt;</a> formatted_msg_content; // Or std::string if payload is large // ... format message content using evt.publisher_id and evt.content_sv ...</p>
+<p class="startli">broker::MessageContainer shared_payload_container( broker::MessageType::MESSAGE, std::string(formatted_msg_content.c_str()) // Convert <a class="el" href="classqb_1_1string.html" title="Fixed-size string with optimized storage.">qb::string</a> to std::string for MessageContainer );</p>
+<p class="startli">for (<a class="el" href="uuid_8h.html#acd92a3e374d3cbc05094c4f6a8b547a1" title="UUID type alias for the underlying implementation.">qb::uuid</a> subscriber_session_id : _subscriptions.at(topic_key)) { if (_sessions.count(subscriber_session_id)) { <a class="el" href="classqb_1_1_actor_id.html" title="Unique identifier for actors.">qb::ActorId</a> target_server_id = _sessions.at(subscriber_session_id).server_id; push&lt;SendMessageEvent&gt;(target_server_id, subscriber_session_id, shared_payload_container); } } } ``<span class="tt"></span></p>
+</li>
+</ol>
+</li>
+<li><span class="tt">  </span>on(DisconnectEvent&amp;)<span class="tt">: Removes the disconnected session from all its topic subscriptions and from the </span>_sessions` map.</li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<h3>Client-Side (<span class="tt">broker_client</span>)</h3>
+<p>Similar to the <span class="tt">chat_tcp</span> client:</p>
+<ol type="1">
+<li><b><span class="tt">InputActor</span> (<span class="tt">client/InputActor.h/.cpp</span>):</b> Handles console input, parses basic commands (SUB, UNSUB, PUB, QUIT, HELP), and <span class="tt">push</span>es a <span class="tt">BrokerInputEvent</span> (containing the raw command string) to the <span class="tt">ClientActor</span>.</li>
+<li><b><span class="tt">ClientActor</span> (<span class="tt">client/ClientActor.h/.cpp</span>):</b><ul>
+<li>Manages the TCP connection to the broker server using <span class="tt"><a class="el" href="structqb_1_1io_1_1use.html" title="Helper template providing type aliases for integrating qb-io asynchronous components.">qb::io::use</a>&lt;ClientActor&gt;::tcp::client&lt;&gt;</span>.</li>
+<li>Uses <span class="tt">BrokerProtocol</span> for message framing: <span class="tt">using Protocol = broker::BrokerProtocol&lt;ClientActor&gt;;</span>.</li>
+<li><span class="tt">onInit()</span>: Connects to the server using <span class="tt"><a class="el" href="connector_8h.html#ad0a3210805ff5e6d0b92b7c8eb051d68" title="Initiates an asynchronous TCP connection.">qb::io::async::tcp::connect</a></span>.</li>
+<li><span class="tt">on(BrokerInputEvent&amp;)</span>: Further parses the raw command from <span class="tt">InputActor</span>. For example, for "PUB topicname message content", it extracts "topicname" and "message content".</li>
+<li>Sends <span class="tt">SUBSCRIBE</span>, <span class="tt">UNSUBSCRIBE</span>, or <span class="tt">PUBLISH</span> messages (as <span class="tt">broker::Message</span> objects) to the server using <span class="tt">*this &lt;&lt; broker_message &lt;&lt; Protocol::end;</span>.</li>
+<li><span class="tt">on(broker::Message&amp;)</span>: Handles <span class="tt">RESPONSE</span> and <span class="tt">MESSAGE</span> types from the server, printing information to the console.</li>
+<li><span class="tt">on(<a class="el" href="structqb_1_1io_1_1async_1_1event_1_1disconnected.html" title="Event triggered when a connection is closed or lost.">qb::io::async::event::disconnected</a> const&amp;)</span>: Handles disconnection and schedules reconnection attempts using <span class="tt"><a class="el" href="group___async.html#ga79acd187eb2aeb629523ebb206ee004d" title="Utility function to schedule a callable for execution after a timeout.">qb::io::async::callback</a></span>.</li>
+</ul>
+</li>
+</ol>
+<h2>Key QB Concepts &amp; Advanced Techniques Illustrated</h2>
+<ul>
+<li><b>Publish/Subscribe Architecture:</b> A full implementation of the Pub/Sub pattern using a central <span class="tt">TopicManagerActor</span>.</li>
+<li><b>Efficient Message Fan-Out (Zero/Minimal Copy for Payloads):</b><ul>
+<li>The <span class="tt">TopicManagerActor</span> demonstrates a crucial optimization: when broadcasting a published message to multiple subscribers, it creates the actual payload data (or a container for it like <span class="tt">broker::MessageContainer</span> which likely uses <span class="tt">std::shared_ptr</span>) <em>once</em>. Then, it sends events (<span class="tt">SendMessageEvent</span>) to various <span class="tt">ServerActor</span>s, each containing a reference or a shared pointer to this single payload. This avoids repeatedly copying potentially large message contents for every subscriber, which is critical for performance in systems with many subscribers to a topic.</li>
+<li>The use of <span class="tt">std::move</span> in <span class="tt">BrokerSession</span> when calling <span class="tt">server().handlePublish(...)</span> and in <span class="tt">ServerActor</span> when creating <span class="tt">PublishEvent</span> helps transfer ownership of message data efficiently towards the <span class="tt">TopicManagerActor</span>.</li>
+</ul>
+</li>
+<li><b>Custom Binary Protocol (<span class="tt">BrokerProtocol</span>):</b> The example defines <span class="tt">MessageHeader</span> and <span class="tt">MessageType</span> to structure communication, showing how to build more complex protocols than simple delimiter-based ones.</li>
+<li><b>Use of <span class="tt">std::string_view</span> for Intermediate Processing:</b> <span class="tt">BrokerSession</span> and <span class="tt">ServerActor</span> use <span class="tt">std::string_view</span> to refer to parts of the message payload (like topic and content) without copying them before the data is packaged into the <span class="tt">MessageContainer</span> or specific events for the <span class="tt">TopicManagerActor</span>.</li>
+<li><b>Multi-Core Scalability:</b> Distributing the <span class="tt">AcceptActor</span>, <span class="tt">ServerActor</span>s (potentially multiple instances on different cores), and the <span class="tt">TopicManagerActor</span> across different <span class="tt">VirtualCore</span>s allows the system to handle high connection rates and message throughput by parallelizing work.</li>
+<li><b>Layered Responsibilities:</b> Clear separation of concerns: connection acceptance, session I/O and protocol parsing, and topic/subscription management.</li>
+</ul>
+<p>This <span class="tt">message_broker</span> example is significantly more advanced than the <span class="tt">chat_tcp</span> example in its message handling and provides excellent insights into building high-performance, scalable messaging systems with QB.</p>
+<p><b>(Next Example Analysis:</b> We have covered the main <span class="tt">core_io</span> examples. Consider revisiting Developer Guides for broader patterns or the Reference Documentation section.**) </p>
+</div></div><!-- contents -->
+</div><!-- PageDoc -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="index.html">QB Actor Framework: High-Performance C++17 Concurrent Systems</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

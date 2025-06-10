@@ -1,0 +1,383 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+        "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+    <head>
+        <meta http-equiv="cache-control" content="max-age=86400"/>
+        <meta http-equiv="Content-Type" content="text/xhtml;charset=UTF-8"/>
+        <meta http-equiv="X-UA-Compatible" content="IE=9"/>
+        <meta name="generator" content="Doxygen 1.14.0"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1"/>
+        <title>qb: include/qb/system/timestamp.h File Reference</title>
+        <meta name="description" content="qb OpenSource C++17 Actor Framework Documentation, all API detailed">
+        <meta name="keywords"
+              content="qb, cube, actor, framework, actor framework, opensource, cpp, c++, cpp17, c++17, documentation, docs, git">
+        <meta name="author" content="isndev">
+        <!-- BEGIN opengraph metadata -->
+<!--        <meta property="og:title" content="Doxygen Awesome"/>-->
+<!--        <meta property="og:image"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta property="og:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+<!--        <meta property="og:url" content="https://jothepro.github.io/doxygen-awesome-css/"/>-->
+        <!-- END opengraph metadata -->
+        <!-- BEGIN twitter metadata -->
+<!--        <meta name="twitter:image:src"-->
+<!--              content="https://repository-images.githubusercontent.com/348492097/4f16df80-88fb-11eb-9d31-4015ff22c452"/>-->
+<!--        <meta name="twitter:title" content="Doxygen Awesome"/>-->
+<!--        <meta name="twitter:description"-->
+<!--              content="Custom CSS theme for doxygen html-documentation with lots of customization parameters."/>-->
+        <!-- END twitter metadata -->
+        <title>qb: include/qb/system/timestamp.h File Reference</title>
+        <link href="tabs.css" rel="stylesheet" type="text/css"/>
+        <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+        <script type="text/javascript" src="jquery.js"></script>
+        <script type="text/javascript" src="dynsections.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-darkmode-toggle.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-fragment-copy-button.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-paragraph-link.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-interactive-toc.js"></script>
+        <script type="text/javascript" src="doxygen-awesome-tabs.js"></script>
+        <script type="text/javascript" src="toggle-alternative-theme.js"></script>
+        <script type="text/javascript">
+            DoxygenAwesomeFragmentCopyButton.init()
+            DoxygenAwesomeDarkModeToggle.init()
+            DoxygenAwesomeParagraphLink.init()
+            DoxygenAwesomeInteractiveToc.init()
+            DoxygenAwesomeTabs.init()
+        </script>
+        <script async defer src="https://buttons.github.io/buttons.js"></script>
+        <link href="navtree.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="navtreedata.js"></script>
+<script type="text/javascript" src="navtree.js"></script>
+<script type="text/javascript" src="cookie.js"></script>
+        <link href="search/search.css" rel="stylesheet" type="text/css"/>
+<script type="text/javascript" src="search/searchdata.js"></script>
+<script type="text/javascript" src="search/search.js"></script>
+        <link href="doxygen.css" rel="stylesheet" type="text/css"/>
+        <link href="doxygen-awesome.css" rel="stylesheet" type="text/css"/>
+<link href="custom.css" rel="stylesheet" type="text/css"/>
+    </head>
+<body>
+<!-- https://tholman.com/github-corners/ -->
+<a href="https://github.com/isndev/qb" class="github-corner" title="View source on GitHub"
+   target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 250 250" width="40" height="40"
+         style="position: absolute; top: 0; border: 0; right: 0; z-index: 99;" aria-hidden="true">
+        <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+        <path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+              fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+        <path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z"
+              fill="currentColor" class="octo-body"></path>
+    </svg>
+</a>
+<style>.github-corner:hover .octo-arm {
+    animation: octocat-wave 560ms ease-in-out
+}
+@keyframes octocat-wave {
+    0%, 100% {
+        transform: rotate(0)
+    }
+    20%, 60% {
+        transform: rotate(-25deg)
+    }
+    40%, 80% {
+        transform: rotate(10deg)
+    }
+}
+@media (max-width: 500px) {
+    .github-corner:hover .octo-arm {
+        animation: none
+    }
+    .github-corner .octo-arm {
+        animation: octocat-wave 560ms ease-in-out
+    }
+}</style>
+<div id="top"><!-- do not remove this div, it is closed by doxygen! -->
+    <div id="titlearea">
+        <table cellspacing="0" cellpadding="0">
+            <tbody>
+            <tr style="height: 56px;">
+                <td id="projectlogo"><img alt="Logo" src="logo.svg"/></td>
+                <td id="projectalign" style="padding-left: 0.5em;">
+                    <div id="projectname">qb
+                        &#160;<span id="projectnumber">2.0.0.0</span>
+                    </div>
+                    <div id="projectbrief">C++17 Actor Framework</div>
+                </td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="padding-left: 0.5em;">
+        <a class="navbar-brand" href="https://github.com/isndev/qb">
+            <img src="GitHub-Mark-64px.png" width="32px" alt="qb">
+        </a>
+        <a class="github-button" href="https://github.com/isndev/qb/issues" data-icon="octicon-issue-opened" data-size="large" data-show-count="true" aria-label="Issue isndev/qb on GitHub">Issue</a>
+        <a class="github-button" href="https://github.com/isndev/qb/subscription" data-icon="octicon-eye" data-size="large" data-show-count="true" aria-label="Watch isndev/qb on GitHub">Watch</a>
+        <a class="github-button" href="https://github.com/isndev/qb" data-icon="octicon-star" data-size="large" data-show-count="true" aria-label="Star isndev/qb on GitHub">Star</a>
+        <a class="github-button" href="https://github.com/isndev/qb/fork" data-icon="octicon-repo-forked" data-size="large" data-show-count="true" aria-label="Fork isndev/qb on GitHub">Fork</a>
+        <a class="github-button" href="https://github.com/isndev" data-size="large" data-show-count="false" aria-label="Follow @isndev on GitHub">Follow @isndev</a>
+    </div>
+    <!-- end header part -->
+<!-- Generated by Doxygen 1.14.0 -->
+<script type="text/javascript">
+var searchBox = new SearchBox("searchBox", "search/",'.html');
+</script>
+<script type="text/javascript">
+$(function() { codefold.init(); });
+</script>
+<script type="text/javascript" src="menudata.js"></script>
+<script type="text/javascript" src="menu.js"></script>
+<script type="text/javascript">
+$(function() {
+  initMenu('',true,false,'search.php','Search',true);
+  $(function() { init_search(); });
+});
+</script>
+<div id="main-nav"></div>
+</div><!-- top -->
+<div id="side-nav" class="ui-resizable side-nav-resizable">
+  <div id="nav-tree">
+    <div id="nav-tree-contents">
+      <div id="nav-sync" class="sync"></div>
+    </div>
+  </div>
+  <div id="splitbar" style="-moz-user-select:none;" 
+       class="ui-resizable-handle">
+  </div>
+</div>
+<script type="text/javascript">
+$(function(){initNavTree('timestamp_8h.html','',''); });
+</script>
+<div id="container">
+<div id="doc-content">
+<!-- window showing the filter options -->
+<div id="MSearchSelectWindow"
+     onmouseover="return searchBox.OnSearchSelectShow()"
+     onmouseout="return searchBox.OnSearchSelectHide()"
+     onkeydown="return searchBox.OnSearchSelectKey(event)">
+</div>
+
+<!-- iframe showing the search results (closed by default) -->
+<div id="MSearchResultsWindow">
+<div id="MSearchResults">
+<div class="SRPage">
+<div id="SRIndex">
+<div id="SRResults"></div>
+<div class="SRStatus" id="Loading">Loading...</div>
+<div class="SRStatus" id="Searching">Searching...</div>
+<div class="SRStatus" id="NoMatches">No Matches</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="header">
+  <div class="headertitle"><div class="title">timestamp.h File Reference<div class="ingroups"><a class="el" href="group___q_b.html">QB Actor Framework</a> &raquo; <a class="el" href="group___system.html">System-Level Utilities</a> &raquo; <a class="el" href="group___time.html">Time Utilities</a></div></div></div>
+</div><!--header-->
+<div class="contents">
+
+<p>High-precision timing utilities.  
+<a href="#details">More...</a></p>
+<div class="textblock"><code>#include &lt;chrono&gt;</code><br />
+<code>#include &lt;cstdint&gt;</code><br />
+<code>#include &lt;ratio&gt;</code><br />
+<code>#include &lt;string&gt;</code><br />
+<code>#include &lt;string_view&gt;</code><br />
+<code>#include &lt;type_traits&gt;</code><br />
+<code>#include &lt;utility&gt;</code><br />
+<code>#include &lt;iomanip&gt;</code><br />
+<code>#include &lt;array&gt;</code><br />
+<code>#include &lt;optional&gt;</code><br />
+<code>#include &lt;functional&gt;</code><br />
+<code>#include &lt;thread&gt;</code><br />
+<code>#include &lt;<a class="el" href="io_8h_source.html">qb/io.h</a>&gt;</code><br />
+</div><div class="textblock"><div class="dynheader">
+Include dependency graph for timestamp.h:</div>
+<div class="dyncontent">
+<div class="center"><img src="timestamp_8h__incl.png" border="0" usemap="#ainclude_2qb_2system_2timestamp_8h" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2system_2timestamp_8h" id="ainclude_2qb_2system_2timestamp_8h">
+<area shape="rect" title="High&#45;precision timing utilities." alt="" coords="395,5,598,31"/>
+<area shape="rect" title=" " alt="" coords="5,79,66,105"/>
+<area shape="poly" title=" " alt="" coords="395,33,250,52,81,81,81,76,249,46,394,28"/>
+<area shape="rect" title=" " alt="" coords="89,79,150,105"/>
+<area shape="poly" title=" " alt="" coords="418,34,302,54,165,81,164,76,301,49,417,29"/>
+<area shape="rect" title=" " alt="" coords="174,79,220,105"/>
+<area shape="poly" title=" " alt="" coords="435,34,345,54,236,81,234,76,343,49,434,29"/>
+<area shape="rect" title=" " alt="" coords="244,79,297,105"/>
+<area shape="poly" title=" " alt="" coords="459,34,313,80,311,75,458,29"/>
+<area shape="rect" title=" " alt="" coords="321,79,408,105"/>
+<area shape="poly" title=" " alt="" coords="476,34,402,74,399,69,473,29"/>
+<area shape="rect" title=" " alt="" coords="364,153,446,178"/>
+<area shape="poly" title=" " alt="" coords="492,33,423,141,418,138,487,30"/>
+<area shape="rect" title=" " alt="" coords="471,153,523,178"/>
+<area shape="poly" title=" " alt="" coords="500,31,500,137,494,137,494,31"/>
+<area shape="rect" title=" " alt="" coords="620,79,686,105"/>
+<area shape="poly" title=" " alt="" coords="524,29,614,70,611,75,522,34"/>
+<area shape="rect" title=" " alt="" coords="710,79,761,105"/>
+<area shape="poly" title=" " alt="" coords="539,29,696,76,695,81,537,34"/>
+<area shape="rect" title=" " alt="" coords="785,79,851,105"/>
+<area shape="poly" title=" " alt="" coords="557,29,770,76,769,81,556,34"/>
+<area shape="rect" title=" " alt="" coords="876,79,953,105"/>
+<area shape="poly" title=" " alt="" coords="582,29,861,76,860,81,581,34"/>
+<area shape="rect" title=" " alt="" coords="978,79,1035,105"/>
+<area shape="poly" title=" " alt="" coords="599,26,766,44,962,76,962,81,765,50,599,31"/>
+<area shape="rect" href="io_8h.html" title="Core I/O and logging utilities for the qb framework." alt="" coords="535,79,595,105"/>
+<area shape="poly" title=" " alt="" coords="510,29,545,66,541,70,506,33"/>
+<area shape="poly" title=" " alt="" coords="539,108,447,148,445,144,537,103"/>
+<area shape="poly" title=" " alt="" coords="556,107,521,143,517,140,552,103"/>
+<area shape="rect" title=" " alt="" coords="546,153,618,178"/>
+<area shape="poly" title=" " alt="" coords="570,104,578,137,573,138,565,106"/>
+<area shape="rect" title=" " alt="" coords="642,153,699,178"/>
+<area shape="poly" title=" " alt="" coords="584,103,641,141,638,146,581,107"/>
+<area shape="rect" title=" " alt="" coords="723,153,791,178"/>
+<area shape="poly" title=" " alt="" coords="596,102,711,144,709,149,594,107"/>
+</map>
+</div>
+</div><div class="textblock"><div class="dynheader">
+This graph shows which files directly or indirectly include this file:</div>
+<div class="dyncontent">
+<div class="center"><img src="timestamp_8h__dep__incl.png" border="0" usemap="#ainclude_2qb_2system_2timestamp_8hdep" loading="lazy" alt=""/></div>
+<map name="ainclude_2qb_2system_2timestamp_8hdep" id="ainclude_2qb_2system_2timestamp_8hdep">
+<area shape="rect" title="High&#45;precision timing utilities." alt="" coords="36,5,239,31"/>
+<area shape="rect" href="_virtual_core_8h.html" title="Defines the VirtualCore class, representing a worker thread in the QB Actor Framework." alt="" coords="5,330,195,356"/>
+<area shape="poly" title=" " alt="" coords="121,45,104,80,91,153,90,225,95,288,101,329,95,330,89,288,85,225,86,152,99,78,116,43"/>
+<area shape="rect" href="spinlock_8h.html" title="Spinlock synchronization primitives." alt="" coords="113,79,290,120"/>
+<area shape="poly" title=" " alt="" coords="159,41,188,77,183,80,155,45"/>
+<area shape="rect" href="mpsc_8h.html" title="Multiple&#45;Producer Single&#45;Consumer lockfree queue." alt="" coords="113,168,290,208"/>
+<area shape="poly" title=" " alt="" coords="204,135,204,167,199,167,199,135"/>
+<area shape="poly" title=" " alt="" coords="178,222,153,258,109,331,104,328,148,255,174,219"/>
+<area shape="rect" href="core_2main_8h.html" title="Main control for the QB Actor Framework." alt="" coords="162,256,315,282"/>
+<area shape="poly" title=" " alt="" coords="219,221,235,255,231,257,215,224"/>
+<area shape="poly" title=" " alt="" coords="203,292,125,332,122,327,200,287"/>
+<area shape="rect" href="main_8h.html" title="Convenience header for the QB Main engine controller." alt="" coords="218,330,342,356"/>
+<area shape="poly" title=" " alt="" coords="255,294,275,328,271,331,251,297"/>
+<area shape="rect" href="cube_8h.html" title="Main include file for the QB Actor Framework." alt="" coords="227,404,333,429"/>
+<area shape="poly" title=" " alt="" coords="283,371,283,403,277,403,277,371"/>
+</map>
+</div>
+</div>
+<p><a href="timestamp_8h_source.html">Go to the source code of this file.</a></p>
+<table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-nested-classes" class="groupheader"><a id="nested-classes" name="nested-classes"></a>
+Classes</h2></td></tr>
+<tr class="memitem:qb_3A_3ADuration" id="r_qb_3A_3ADuration"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_duration.html">qb::Duration</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Represents a duration with nanosecond precision.  <a href="classqb_1_1_duration.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3ATimePoint" id="r_qb_3A_3ATimePoint"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_time_point.html">qb::TimePoint</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Represents a point in time with nanosecond precision.  <a href="classqb_1_1_time_point.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AUtcTimePoint" id="r_qb_3A_3AUtcTimePoint"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_utc_time_point.html">qb::UtcTimePoint</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Represents a UTC time point with nanosecond precision.  <a href="classqb_1_1_utc_time_point.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3ALocalTimePoint" id="r_qb_3A_3ALocalTimePoint"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_local_time_point.html">qb::LocalTimePoint</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Represents a local time point with nanosecond precision.  <a href="classqb_1_1_local_time_point.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AHighResTimePoint" id="r_qb_3A_3AHighResTimePoint"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_high_res_time_point.html">qb::HighResTimePoint</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Represents a high-resolution time point.  <a href="classqb_1_1_high_res_time_point.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3ATscTimePoint" id="r_qb_3A_3ATscTimePoint"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_tsc_time_point.html">qb::TscTimePoint</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Represents a time point based on <a class="el" href="classqb_1_1_c_p_u.html" title="Provides platform-independent access to CPU information.">CPU</a>'s timestamp counter.  <a href="classqb_1_1_tsc_time_point.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3AScopedTimer" id="r_qb_3A_3AScopedTimer"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_scoped_timer.html">qb::ScopedTimer</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Utility for measuring code block execution time.  <a href="classqb_1_1_scoped_timer.html#details">More...</a><br /></td></tr>
+<tr class="memitem:qb_3A_3ALogTimer" id="r_qb_3A_3ALogTimer"><td class="memItemLeft" align="right" valign="top">class &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="classqb_1_1_log_timer.html">qb::LogTimer</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Utility for logging execution time of code blocks.  <a href="classqb_1_1_log_timer.html#details">More...</a><br /></td></tr>
+<tr class="memitem:std_3A_3Ahash_3C_20qb_3A_3ADuration_20_3E" id="r_std_3A_3Ahash_3C_20qb_3A_3ADuration_20_3E"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structstd_1_1hash_3_01qb_1_1_duration_01_4.html">std::hash&lt; qb::Duration &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Specialization of std::hash for <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">qb::Duration</a>.  <a href="structstd_1_1hash_3_01qb_1_1_duration_01_4.html#details">More...</a><br /></td></tr>
+<tr class="memitem:std_3A_3Ahash_3C_20qb_3A_3ATimePoint_20_3E" id="r_std_3A_3Ahash_3C_20qb_3A_3ATimePoint_20_3E"><td class="memItemLeft" align="right" valign="top">struct &#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="structstd_1_1hash_3_01qb_1_1_time_point_01_4.html">std::hash&lt; qb::TimePoint &gt;</a></td></tr>
+<tr class="memdesc:"><td class="mdescLeft">&#160;</td><td class="mdescRight">Specialization of std::hash for <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">qb::TimePoint</a>.  <a href="structstd_1_1hash_3_01qb_1_1_time_point_01_4.html#details">More...</a><br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-typedef-members" class="groupheader"><a id="typedef-members" name="typedef-members"></a>
+Typedefs</h2></td></tr>
+<tr class="memitem:gae78c5c6234d6e18e0806f0a2a4132b24" id="r_gae78c5c6234d6e18e0806f0a2a4132b24"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gae78c5c6234d6e18e0806f0a2a4132b24">qb::Timespan</a> = <a class="el" href="classqb_1_1_duration.html">Duration</a></td></tr>
+<tr class="memdesc:gae78c5c6234d6e18e0806f0a2a4132b24"><td class="mdescLeft">&#160;</td><td class="mdescRight">Backward compatibility alias for <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a>.  <br /></td></tr>
+<tr class="memitem:ga44ec803d9cda3fdc961419159fb92e71" id="r_ga44ec803d9cda3fdc961419159fb92e71"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga44ec803d9cda3fdc961419159fb92e71">qb::Timestamp</a> = <a class="el" href="classqb_1_1_time_point.html">TimePoint</a></td></tr>
+<tr class="memdesc:ga44ec803d9cda3fdc961419159fb92e71"><td class="mdescLeft">&#160;</td><td class="mdescRight">Backward compatibility alias for <a class="el" href="classqb_1_1_time_point.html" title="Represents a point in time with nanosecond precision.">TimePoint</a>.  <br /></td></tr>
+<tr class="memitem:ga7c1a7973573e3ff49700b6f4df0b381d" id="r_ga7c1a7973573e3ff49700b6f4df0b381d"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga7c1a7973573e3ff49700b6f4df0b381d">qb::UtcTimestamp</a> = <a class="el" href="classqb_1_1_utc_time_point.html">UtcTimePoint</a></td></tr>
+<tr class="memdesc:ga7c1a7973573e3ff49700b6f4df0b381d"><td class="mdescLeft">&#160;</td><td class="mdescRight">Backward compatibility alias for <a class="el" href="classqb_1_1_utc_time_point.html" title="Represents a UTC time point with nanosecond precision.">UtcTimePoint</a>.  <br /></td></tr>
+<tr class="memitem:gaf326ae72761ef88deb8a010cfcb77cd7" id="r_gaf326ae72761ef88deb8a010cfcb77cd7"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gaf326ae72761ef88deb8a010cfcb77cd7">qb::LocalTimestamp</a> = <a class="el" href="classqb_1_1_local_time_point.html">LocalTimePoint</a></td></tr>
+<tr class="memdesc:gaf326ae72761ef88deb8a010cfcb77cd7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Backward compatibility alias for <a class="el" href="classqb_1_1_local_time_point.html" title="Represents a local time point with nanosecond precision.">LocalTimePoint</a>.  <br /></td></tr>
+<tr class="memitem:gaaa757fc6404580f46cc811a0c6f7b65b" id="r_gaaa757fc6404580f46cc811a0c6f7b65b"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gaaa757fc6404580f46cc811a0c6f7b65b">qb::NanoTimestamp</a> = <a class="el" href="classqb_1_1_high_res_time_point.html">HighResTimePoint</a></td></tr>
+<tr class="memdesc:gaaa757fc6404580f46cc811a0c6f7b65b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Backward compatibility alias for <a class="el" href="classqb_1_1_high_res_time_point.html" title="Represents a high-resolution time point.">HighResTimePoint</a>.  <br /></td></tr>
+<tr class="memitem:ga2a77070eaa70d960a876063c9a35a0b4" id="r_ga2a77070eaa70d960a876063c9a35a0b4"><td class="memItemLeft" align="right" valign="top">using&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga2a77070eaa70d960a876063c9a35a0b4">qb::RdtsTimestamp</a> = <a class="el" href="classqb_1_1_tsc_time_point.html">TscTimePoint</a></td></tr>
+<tr class="memdesc:ga2a77070eaa70d960a876063c9a35a0b4"><td class="mdescLeft">&#160;</td><td class="mdescRight">Backward compatibility alias for <a class="el" href="classqb_1_1_tsc_time_point.html" title="Represents a time point based on CPU&#39;s timestamp counter.">TscTimePoint</a>.  <br /></td></tr>
+</table><table class="memberdecls">
+<tr class="heading"><td colspan="2"><h2 id="header-func-members" class="groupheader"><a id="func-members" name="func-members"></a>
+Functions</h2></td></tr>
+<tr class="memitem:gac16c68772732fc8d93aed3e65800d7b3" id="r_gac16c68772732fc8d93aed3e65800d7b3"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gac16c68772732fc8d93aed3e65800d7b3">qb::operator+</a> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;lhs, const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:gac16c68772732fc8d93aed3e65800d7b3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Adds two durations.  <br /></td></tr>
+<tr class="memitem:ga3ec2ab416332f2bfb6fbe674cbae4406" id="r_ga3ec2ab416332f2bfb6fbe674cbae4406"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga3ec2ab416332f2bfb6fbe674cbae4406">qb::operator-</a> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;lhs, const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:ga3ec2ab416332f2bfb6fbe674cbae4406"><td class="mdescLeft">&#160;</td><td class="mdescRight">Subtracts second duration from first.  <br /></td></tr>
+<tr class="memitem:ga14c87ddbb146074f2dff4ac78004c3b7" id="r_ga14c87ddbb146074f2dff4ac78004c3b7"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga14c87ddbb146074f2dff4ac78004c3b7">qb::operator*</a> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;lhs, <a class="el" href="classqb_1_1_duration.html#a87c62c5ea1a51462acc98b75067da039">Duration::rep</a> rhs) noexcept</td></tr>
+<tr class="memdesc:ga14c87ddbb146074f2dff4ac78004c3b7"><td class="mdescLeft">&#160;</td><td class="mdescRight">Multiplies a duration by a scalar value.  <br /></td></tr>
+<tr class="memitem:ga386c8c69eb252a58616dd96511b81cd6" id="r_ga386c8c69eb252a58616dd96511b81cd6"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga386c8c69eb252a58616dd96511b81cd6">qb::operator*</a> (<a class="el" href="classqb_1_1_duration.html#a87c62c5ea1a51462acc98b75067da039">Duration::rep</a> lhs, const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:ga386c8c69eb252a58616dd96511b81cd6"><td class="mdescLeft">&#160;</td><td class="mdescRight">Multiplies a scalar value by a duration.  <br /></td></tr>
+<tr class="memitem:gabbe66b768125fba6ad247ba2e649bf64" id="r_gabbe66b768125fba6ad247ba2e649bf64"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gabbe66b768125fba6ad247ba2e649bf64">qb::operator/</a> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;lhs, <a class="el" href="classqb_1_1_duration.html#a87c62c5ea1a51462acc98b75067da039">Duration::rep</a> rhs) noexcept</td></tr>
+<tr class="memdesc:gabbe66b768125fba6ad247ba2e649bf64"><td class="mdescLeft">&#160;</td><td class="mdescRight">Divides a duration by a scalar value.  <br /></td></tr>
+<tr class="memitem:ga47d4657ae77b0b715959fda12d4a0d0b" id="r_ga47d4657ae77b0b715959fda12d4a0d0b"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html#a87c62c5ea1a51462acc98b75067da039">Duration::rep</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga47d4657ae77b0b715959fda12d4a0d0b">qb::operator/</a> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;lhs, const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:ga47d4657ae77b0b715959fda12d4a0d0b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Divides one duration by another.  <br /></td></tr>
+<tr class="memitem:gafbf250c41390ae6bb7e7d170be0942ee" id="r_gafbf250c41390ae6bb7e7d170be0942ee"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gafbf250c41390ae6bb7e7d170be0942ee">qb::operator%</a> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;lhs, <a class="el" href="classqb_1_1_duration.html#a87c62c5ea1a51462acc98b75067da039">Duration::rep</a> rhs) noexcept</td></tr>
+<tr class="memdesc:gafbf250c41390ae6bb7e7d170be0942ee"><td class="mdescLeft">&#160;</td><td class="mdescRight">Calculates the remainder of dividing a duration by a scalar.  <br /></td></tr>
+<tr class="memitem:ga7280105f8a63ffaaef1acd636121b6b8" id="r_ga7280105f8a63ffaaef1acd636121b6b8"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga7280105f8a63ffaaef1acd636121b6b8">qb::operator%</a> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;lhs, const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:ga7280105f8a63ffaaef1acd636121b6b8"><td class="mdescLeft">&#160;</td><td class="mdescRight">Calculates the remainder of dividing one duration by another.  <br /></td></tr>
+<tr class="memitem:ga6d113882f66808247614c964d4105a85" id="r_ga6d113882f66808247614c964d4105a85"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga6d113882f66808247614c964d4105a85">qb::literals::operator&quot;&quot;_d</a> (unsigned long long days) noexcept</td></tr>
+<tr class="memdesc:ga6d113882f66808247614c964d4105a85"><td class="mdescLeft">&#160;</td><td class="mdescRight">Creates a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from literal days.  <br /></td></tr>
+<tr class="memitem:ga2b55492a05e10ddef1980cd96ce6ac68" id="r_ga2b55492a05e10ddef1980cd96ce6ac68"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga2b55492a05e10ddef1980cd96ce6ac68">qb::literals::operator&quot;&quot;_h</a> (unsigned long long hours) noexcept</td></tr>
+<tr class="memdesc:ga2b55492a05e10ddef1980cd96ce6ac68"><td class="mdescLeft">&#160;</td><td class="mdescRight">Creates a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from literal hours.  <br /></td></tr>
+<tr class="memitem:gae4c40b47a091cee7a5d72f8e02d63f9f" id="r_gae4c40b47a091cee7a5d72f8e02d63f9f"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gae4c40b47a091cee7a5d72f8e02d63f9f">qb::literals::operator&quot;&quot;_min</a> (unsigned long long minutes) noexcept</td></tr>
+<tr class="memdesc:gae4c40b47a091cee7a5d72f8e02d63f9f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Creates a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from literal minutes.  <br /></td></tr>
+<tr class="memitem:ga3294b1b4d98f3e197f1a39d17449ded1" id="r_ga3294b1b4d98f3e197f1a39d17449ded1"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga3294b1b4d98f3e197f1a39d17449ded1">qb::literals::operator&quot;&quot;_s</a> (unsigned long long seconds) noexcept</td></tr>
+<tr class="memdesc:ga3294b1b4d98f3e197f1a39d17449ded1"><td class="mdescLeft">&#160;</td><td class="mdescRight">Creates a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from literal seconds.  <br /></td></tr>
+<tr class="memitem:gaefec15251afd448e29eb3595a205b122" id="r_gaefec15251afd448e29eb3595a205b122"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gaefec15251afd448e29eb3595a205b122">qb::literals::operator&quot;&quot;_ms</a> (unsigned long long milliseconds) noexcept</td></tr>
+<tr class="memdesc:gaefec15251afd448e29eb3595a205b122"><td class="mdescLeft">&#160;</td><td class="mdescRight">Creates a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from literal milliseconds.  <br /></td></tr>
+<tr class="memitem:gafb12c11aa70a0af8a3095cfbc6e0e342" id="r_gafb12c11aa70a0af8a3095cfbc6e0e342"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gafb12c11aa70a0af8a3095cfbc6e0e342">qb::literals::operator&quot;&quot;_us</a> (unsigned long long microseconds) noexcept</td></tr>
+<tr class="memdesc:gafb12c11aa70a0af8a3095cfbc6e0e342"><td class="mdescLeft">&#160;</td><td class="mdescRight">Creates a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from literal microseconds.  <br /></td></tr>
+<tr class="memitem:gad5ccb906dbf66c705ed6952aa14fe83f" id="r_gad5ccb906dbf66c705ed6952aa14fe83f"><td class="memItemLeft" align="right" valign="top">constexpr <a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gad5ccb906dbf66c705ed6952aa14fe83f">qb::literals::operator&quot;&quot;_ns</a> (unsigned long long nanoseconds) noexcept</td></tr>
+<tr class="memdesc:gad5ccb906dbf66c705ed6952aa14fe83f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Creates a <a class="el" href="classqb_1_1_duration.html" title="Represents a duration with nanosecond precision.">Duration</a> from literal nanoseconds.  <br /></td></tr>
+<tr class="memitem:gaa25e0da536a23edd3c1164da5a9908a3" id="r_gaa25e0da536a23edd3c1164da5a9908a3"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gaa25e0da536a23edd3c1164da5a9908a3">qb::operator+</a> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;lhs, const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:gaa25e0da536a23edd3c1164da5a9908a3"><td class="mdescLeft">&#160;</td><td class="mdescRight">Adds a duration to a time point.  <br /></td></tr>
+<tr class="memitem:gae06a266a2e8eb4da0a3026288421977c" id="r_gae06a266a2e8eb4da0a3026288421977c"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gae06a266a2e8eb4da0a3026288421977c">qb::operator+</a> (const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;lhs, const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:gae06a266a2e8eb4da0a3026288421977c"><td class="mdescLeft">&#160;</td><td class="mdescRight">Adds a time point to a duration.  <br /></td></tr>
+<tr class="memitem:gae66f12f44c8034ea09291049ae44ef27" id="r_gae66f12f44c8034ea09291049ae44ef27"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_time_point.html">TimePoint</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gae66f12f44c8034ea09291049ae44ef27">qb::operator-</a> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;lhs, const <a class="el" href="classqb_1_1_duration.html">Duration</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:gae66f12f44c8034ea09291049ae44ef27"><td class="mdescLeft">&#160;</td><td class="mdescRight">Subtracts a duration from a time point.  <br /></td></tr>
+<tr class="memitem:ga96b038baf6bee52718a4cc2c027881d5" id="r_ga96b038baf6bee52718a4cc2c027881d5"><td class="memItemLeft" align="right" valign="top"><a class="el" href="classqb_1_1_duration.html">Duration</a>&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga96b038baf6bee52718a4cc2c027881d5">qb::operator-</a> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;lhs, const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:ga96b038baf6bee52718a4cc2c027881d5"><td class="mdescLeft">&#160;</td><td class="mdescRight">Calculates the duration between two time points.  <br /></td></tr>
+<tr class="memitem:ga94c75f989f890615ba31438caddc7e4a" id="r_ga94c75f989f890615ba31438caddc7e4a"><td class="memItemLeft" align="right" valign="top">constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga94c75f989f890615ba31438caddc7e4a">qb::operator==</a> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;lhs, const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:ga94c75f989f890615ba31438caddc7e4a"><td class="mdescLeft">&#160;</td><td class="mdescRight">Equality comparison for time points.  <br /></td></tr>
+<tr class="memitem:ga87bdbf63405d8643735385b9731cbf5f" id="r_ga87bdbf63405d8643735385b9731cbf5f"><td class="memItemLeft" align="right" valign="top">constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga87bdbf63405d8643735385b9731cbf5f">qb::operator!=</a> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;lhs, const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:ga87bdbf63405d8643735385b9731cbf5f"><td class="mdescLeft">&#160;</td><td class="mdescRight">Inequality comparison for time points.  <br /></td></tr>
+<tr class="memitem:ga202b8f0df9e2016cf0daad19d948fb3b" id="r_ga202b8f0df9e2016cf0daad19d948fb3b"><td class="memItemLeft" align="right" valign="top">constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga202b8f0df9e2016cf0daad19d948fb3b">qb::operator&lt;</a> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;lhs, const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:ga202b8f0df9e2016cf0daad19d948fb3b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Less than comparison for time points.  <br /></td></tr>
+<tr class="memitem:ga27a7486f2b982216da0dea967d3e2564" id="r_ga27a7486f2b982216da0dea967d3e2564"><td class="memItemLeft" align="right" valign="top">constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga27a7486f2b982216da0dea967d3e2564">qb::operator&lt;=</a> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;lhs, const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:ga27a7486f2b982216da0dea967d3e2564"><td class="mdescLeft">&#160;</td><td class="mdescRight">Less than or equal comparison for time points.  <br /></td></tr>
+<tr class="memitem:ga92bc14ff55d74f86971cdf5840a4a745" id="r_ga92bc14ff55d74f86971cdf5840a4a745"><td class="memItemLeft" align="right" valign="top">constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga92bc14ff55d74f86971cdf5840a4a745">qb::operator&gt;</a> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;lhs, const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:ga92bc14ff55d74f86971cdf5840a4a745"><td class="mdescLeft">&#160;</td><td class="mdescRight">Greater than comparison for time points.  <br /></td></tr>
+<tr class="memitem:ga44b553bbca401aa872d299ebd420867b" id="r_ga44b553bbca401aa872d299ebd420867b"><td class="memItemLeft" align="right" valign="top">constexpr bool&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#ga44b553bbca401aa872d299ebd420867b">qb::operator&gt;=</a> (const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;lhs, const <a class="el" href="classqb_1_1_time_point.html">TimePoint</a> &amp;rhs) noexcept</td></tr>
+<tr class="memdesc:ga44b553bbca401aa872d299ebd420867b"><td class="mdescLeft">&#160;</td><td class="mdescRight">Greater than or equal comparison for time points.  <br /></td></tr>
+<tr class="memitem:gaf57e4f714b3e7db534852273640bfa33" id="r_gaf57e4f714b3e7db534852273640bfa33"><td class="memItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gaf57e4f714b3e7db534852273640bfa33">operator&lt;&lt;</a> (std::ostream &amp;os, const <a class="el" href="classqb_1_1_time_point.html">qb::TimePoint</a> &amp;tp)</td></tr>
+<tr class="memdesc:gaf57e4f714b3e7db534852273640bfa33"><td class="mdescLeft">&#160;</td><td class="mdescRight">Stream insertion operator for TimePoint.  <br /></td></tr>
+<tr class="memitem:gab9509163719f897f9af75a3da2b13360" id="r_gab9509163719f897f9af75a3da2b13360"><td class="memItemLeft" align="right" valign="top">std::ostream &amp;&#160;</td><td class="memItemRight" valign="bottom"><a class="el" href="group___time.html#gab9509163719f897f9af75a3da2b13360">operator&lt;&lt;</a> (std::ostream &amp;os, const <a class="el" href="classqb_1_1_duration.html">qb::Duration</a> &amp;d)</td></tr>
+<tr class="memdesc:gab9509163719f897f9af75a3da2b13360"><td class="mdescLeft">&#160;</td><td class="mdescRight">Stream insertion operator for Duration.  <br /></td></tr>
+</table>
+<a name="details" id="details"></a><h2 id="header-details" class="groupheader">Detailed Description</h2>
+<div class="textblock"><p>High-precision timing utilities. </p>
+<p>This file provides a set of classes for precise time handling, measurement, and representation. It includes platform-independent implementations for time spans and timestamps with nanosecond precision.</p>
+<dl class="section author"><dt>Author</dt><dd>qb - C++ Actor Framework </dd></dl>
+<dl class="section copyright"><dt>Copyright</dt><dd>Copyright (c) 2011-2025 qb - isndev (cpp.actor) Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at <pre class="fragment">    http://www.apache.org/licenses/LICENSE-2.0
+</pre></dd></dl>
+<p>Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License. </p>
+</div></div><!-- contents -->
+</div><!-- doc-content -->
+<div id="page-nav" class="page-nav-panel">
+<div id="page-nav-resize-handle"></div>
+<div id="page-nav-tree">
+<div id="page-nav-contents">
+</div><!-- page-nav-contents -->
+</div><!-- page-nav-tree -->
+</div><!-- page-nav -->
+</div><!-- container -->
+<!-- start footer part -->
+<div id="nav-path" class="navpath"><!-- id is needed for treeview function! -->
+  <ul>
+    <li class="navelem"><a href="dir_d44c64559bbebec7f509842c48db8b23.html">include</a></li><li class="navelem"><a href="dir_99176029e6245da7be482686d42cbcde.html">qb</a></li><li class="navelem"><a href="dir_c8578dc3b5a075444df510993a4b023d.html">system</a></li><li class="navelem"><a href="timestamp_8h.html">timestamp.h</a></li>
+    <li class="footer">Generated by <a href="https://www.doxygen.org/index.html"><img class="footer" src="doxygen.svg" width="104" height="31" alt="doxygen"/></a> 1.14.0 </li>
+  </ul>
+</div>
+</body>
+</html>

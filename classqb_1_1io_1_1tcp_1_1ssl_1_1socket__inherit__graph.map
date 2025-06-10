@@ -1,0 +1,7 @@
+<map id="qb::io::tcp::ssl::socket" name="qb::io::tcp::ssl::socket">
+<area shape="rect" id="Node000001" title="Class implementing secure SSL/TLS TCP socket functionality." alt="" coords="5,153,157,178"/>
+<area shape="rect" id="Node000002" href="$classqb_1_1io_1_1tcp_1_1socket.html" title="Class implementing TCP socket functionality for reliable, stream&#45;oriented communication." alt="" coords="18,79,144,105"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="84,120,84,152,78,152,78,120"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="31,5,131,31"/>
+<area shape="poly" id="edge2_Node000002_Node000003" title=" " alt="" coords="84,46,84,79,78,79,78,46"/>
+</map>
