@@ -911,4 +911,8 @@ namespace std
          return static_cast<result_type>(hasher(uuids::to_string(uuid)));
       }
    };
+
+   inline std::string to_string(const uuids::uuid &uuid) {
+      return uuids::to_string(uuid);
+   }
 }

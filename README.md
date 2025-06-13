@@ -5,6 +5,7 @@
 **Unlock the power of modern C++ for complex concurrent applications. QB is an actor-based framework meticulously engineered for developers seeking exceptional performance, scalability, and a more intuitive way to manage concurrency.**
 
 QB simplifies the art of building responsive, real-time systems, network services, and distributed computations by harmonizing the robust **Actor Model** with a high-efficiency **Asynchronous I/O Engine**. Focus on your application's logic; let QB handle the intricacies of parallelism and non-blocking I/O.
+
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17) [![CMake](https://img.shields.io/badge/CMake-3.14+-blue.svg)](https://cmake.org/) [![Cross Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](https://github.com/isndev/qb) [![Architecture](https://img.shields.io/badge/Arch-x86__64%20%7C%20ARM64-lightgrey.svg)](https://github.com/isndev/qb) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## Quick Start with QB
