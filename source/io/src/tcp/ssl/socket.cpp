@@ -597,8 +597,6 @@ socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
     const auto h_ssl = ssl_handle();
     SSL_set_quiet_shutdown(h_ssl, 1);
     SSL_set_tlsext_host_name(h_ssl, hostname.c_str());
-    unsigned char alpn[] = { 2, 'h', '2' };
-    SSL_set_alpn_protos(h_ssl, alpn, sizeof(alpn));
     SSL_set_connect_state(h_ssl);
 
     return ret;
