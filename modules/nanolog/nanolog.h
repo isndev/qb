@@ -161,7 +161,7 @@ void initialize(NonGuaranteedLogger ngl, std::string const &log_file_path,
 
 #define NANO_LOG(LEVEL) \
     nanolog::NanoLog() == nanolog::NanoLogLine(LEVEL, __FILE__, __func__, __LINE__)
-#ifdef QB_LOGGER
+#ifdef QB_WITH_LOGGING
 #    define LOG_DEBUG(X)                                       \
         (void)(nanolog::is_logged(nanolog::LogLevel::DEBUG) && \
                NANO_LOG(nanolog::LogLevel::DEBUG) << X)

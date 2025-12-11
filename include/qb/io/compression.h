@@ -34,7 +34,7 @@
 #ifndef QB_IO_COMPRESSION_H
 #define QB_IO_COMPRESSION_H
 
-#ifndef QB_IO_WITH_ZLIB
+#ifndef QB_HAS_COMPRESSION
 #error "missing Z Library"
 #endif
 

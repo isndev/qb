@@ -1055,7 +1055,7 @@ using actor = Actor;
 template <typename Tag>
 using service_actor = ServiceActor<Tag>;
 
-#ifdef QB_LOGGER
+#ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor);
 #endif
 

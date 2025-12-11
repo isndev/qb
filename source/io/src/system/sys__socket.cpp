@@ -1092,9 +1092,9 @@ struct ws2_32_gc {
         WSAStartup(0x0202, &dat);
     }
     ~ws2_32_gc(void) {
-#ifndef QB_IO_WITH_SSL
+#ifndef QB_HAS_SSL
         WSACleanup();
-#endif // QB_IO_WITH_SSL
+#endif // QB_HAS_SSL
     }
 };
 

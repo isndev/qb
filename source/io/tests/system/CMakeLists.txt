@@ -46,10 +46,10 @@ foreach (TEST_SOURCE ${CORE_TESTS})
     get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
 
     # Create test target with a descriptive name
-    cxx_gtest(
-            ${PROJECT_NAME}-gtest-${TEST_NAME}  # Target name
-            "${PROJECT_NAME}"                   # Library dependency
-            ${TEST_SOURCE}                      # Source file
+    qb_add_test(
+        NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
+        SOURCES ${TEST_SOURCE}
+        DEPENDS ${PROJECT_NAME}
     )
 
     # Set properties for the test target (optional)
@@ -63,7 +63,7 @@ endforeach ()
 # -----------------------------------------------------------------------------
 
 # Optional crypto tests (requires OpenSSL)
-if (OPENSSL_FOUND)
+if(QB_HAS_SSL)
     # List of crypto tests
     set(CRYPTO_TESTS
             test-crypto.cpp
@@ -77,10 +77,10 @@ if (OPENSSL_FOUND)
         # Extract test name from filename
         get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
 
-        cxx_gtest(
-                ${PROJECT_NAME}-gtest-${TEST_NAME}
-                "${PROJECT_NAME}"
-                ${TEST_SOURCE}
+        qb_add_test(
+            NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
+            SOURCES ${TEST_SOURCE}
+            DEPENDS ${PROJECT_NAME}
         )
 
         set_target_properties(${PROJECT_NAME}-gtest-${TEST_NAME} PROPERTIES
@@ -143,16 +143,18 @@ if (OPENSSL_FOUND)
         add_custom_target(generate_ssl_certs DEPENDS ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT})
 
         # Create a directory structure for the certificates
-        file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/bin/qb-io/tests)
+        # Note: Test binaries are in ${CMAKE_BINARY_DIR}/bin/tests (set by qb_add_test)
+        set(TEST_CERT_DIR "${CMAKE_BINARY_DIR}/bin/tests")
+        file(MAKE_DIRECTORY ${TEST_CERT_DIR})
 
-        # Copy SSL certificates to a common location
+        # Copy SSL certificates to where test binaries are located
         add_custom_command(
                 TARGET generate_ssl_certs
                 POST_BUILD
                 COMMAND ${CMAKE_COMMAND} -E copy
                 ${SSL_CERT_OUTPUT} ${SSL_KEY_OUTPUT}
-                ${CMAKE_BINARY_DIR}/bin/qb-io/tests/
-                COMMENT "Copying SSL certificates to common test directory"
+                ${TEST_CERT_DIR}/
+                COMMENT "Copying SSL certificates to test binary directory"
         )
 
         # Make ssl-dependent tests depend on certificate generation
@@ -160,16 +162,16 @@ if (OPENSSL_FOUND)
         add_dependencies(${PROJECT_NAME}-gtest-test-session-text generate_ssl_certs)
 
         # Tests using SSL will look for certificates in their runtime directory
-        message(STATUS "[IO Tests] SSL certificate generation enabled (OpenSSL ${OPENSSL_VERSION_OUTPUT})")
+        qb_status_message("SSL certificate generation enabled (OpenSSL ${OPENSSL_VERSION_OUTPUT})")
     else ()
-        message(STATUS "[IO Tests] OpenSSL executable not found, skipping certificate generation")
+        qb_status_message("OpenSSL executable not found, skipping certificate generation")
     endif ()
 
-    message(STATUS "[IO Tests] Building OpenSSL crypto tests")
+    qb_status_message("Building OpenSSL crypto tests")
 endif ()
 
 # Optional compression tests (requires ZLIB)
-if (ZLIB_FOUND)
+if(QB_HAS_COMPRESSION)
     # Liste des tests de compression
     set(COMPRESSION_TESTS
             test-compression.cpp
@@ -181,10 +183,10 @@ if (ZLIB_FOUND)
         # Extract test name from filename
         get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
 
-        cxx_gtest(
-                ${PROJECT_NAME}-gtest-${TEST_NAME}
-                "${PROJECT_NAME}"
-                ${TEST_SOURCE}
+        qb_add_test(
+            NAME ${PROJECT_NAME}-gtest-${TEST_NAME}
+            SOURCES ${TEST_SOURCE}
+            DEPENDS ${PROJECT_NAME}
         )
 
         set_target_properties(${PROJECT_NAME}-gtest-${TEST_NAME} PROPERTIES
@@ -192,15 +194,13 @@ if (ZLIB_FOUND)
         )
     endforeach ()
 
-    message(STATUS "[IO Tests] Building ZLIB compression tests")
+    qb_status_message("Building ZLIB compression tests")
 endif ()
 
 # -----------------------------------------------------------------------------
 # Test resources setup
 # -----------------------------------------------------------------------------
 
-# Copy SSL resources for tests if OpenSSL is available
-if (OPENSSL_FOUND)
-    message(STATUS "[IO Tests] Copying SSL test resources")
-    file(COPY ${QB_SSL_RESOURCES} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-endif ()
+# SSL resources are automatically copied by qb_setup_test_resources()
+# which is called in qb/CMakeLists.txt. Tests will find them in their working directory.
+# Note: Generated SSL certificates (generate_ssl_certs target) are handled separately above.

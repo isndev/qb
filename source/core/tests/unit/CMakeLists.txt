@@ -23,11 +23,22 @@
 # -----------------------------------------------------------------------------
 
 # Create unit test for the event router component
-# This uses the custom cxx_gtest macro defined in the parent project
-cxx_gtest(${PROJECT_NAME}-gtest-unit-event-router "${PROJECT_NAME}" test-event-router.cpp)
+qb_add_test(
+    NAME ${PROJECT_NAME}-gtest-unit-event-router
+    SOURCES test-event-router.cpp
+    DEPENDS ${PROJECT_NAME}
+)
 
 # Create unit test for the timestamp component
-cxx_gtest(${PROJECT_NAME}-gtest-unit-timestamp "${PROJECT_NAME}" test-timestamp.cpp)
+qb_add_test(
+    NAME ${PROJECT_NAME}-gtest-unit-timestamp
+    SOURCES test-timestamp.cpp
+    DEPENDS ${PROJECT_NAME}
+)
 
 # Create unit test for the string component
-cxx_gtest(${PROJECT_NAME}-gtest-unit-string "${PROJECT_NAME}" test-string.cpp)
+qb_add_test(
+    NAME ${PROJECT_NAME}-gtest-unit-string
+    SOURCES test-string.cpp
+    DEPENDS ${PROJECT_NAME}
+)

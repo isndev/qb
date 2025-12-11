@@ -98,7 +98,7 @@ TEST_F(CryptoAdvancedTest, HKDF) {
 
 // Tests for Argon2 key derivation
 TEST_F(CryptoAdvancedTest, Argon2KeyDerivation) {
-#if defined(QB_IO_WITH_ARGON2)
+#if defined(QB_HAS_ARGON2)
     // Test with Argon2id variant (most commonly used)
     qb::crypto::Argon2Variant variant = qb::crypto::Argon2Variant::Argon2id;
 
@@ -300,7 +300,7 @@ TEST_F(CryptoAdvancedTest, Tokens) {
 // Test for password hashing
 TEST_F(CryptoAdvancedTest, PasswordHashing) {
     try {
-#if defined(QB_IO_WITH_ARGON2)
+#if defined(QB_HAS_ARGON2)
         // Simple test of hashing and verification
         std::string password = "test_password";
         std::string hash     = qb::crypto::hash_password(password);
