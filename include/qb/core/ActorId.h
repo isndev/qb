@@ -525,7 +525,7 @@ using actor_is_set  = ActorIdSet;
  * @ingroup Core
  */
 using core_id_set   = CoreIdSet;
-#ifdef QB_LOGGER
+#ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
 #endif
 } // namespace qb

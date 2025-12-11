@@ -57,10 +57,10 @@ function(create_benchmark BENCHMARK_SOURCE CATEGORY)
     string(REPLACE "bm-" "" BENCHMARK_TARGET_NAME ${BENCHMARK_NAME})
 
     # Create benchmark target
-    cxx_benchmark(
-            ${PROJECT_NAME}-benchmark-${BENCHMARK_TARGET_NAME}  # Target name
-            "${PROJECT_NAME}"                                    # Library dependency
-            ${BENCHMARK_SOURCE}                                  # Source file
+    qb_add_benchmark(
+        NAME ${PROJECT_NAME}-benchmark-${BENCHMARK_TARGET_NAME}
+        SOURCES ${BENCHMARK_SOURCE}
+        DEPENDS ${PROJECT_NAME}
     )
 
     # Set properties for organization in IDEs
@@ -69,7 +69,7 @@ function(create_benchmark BENCHMARK_SOURCE CATEGORY)
     )
 
     # Report benchmark setup
-    message(STATUS "[Core Benchmarks] Added ${CATEGORY} benchmark: ${BENCHMARK_TARGET_NAME}")
+    qb_debug_message("Added ${CATEGORY} benchmark: ${BENCHMARK_TARGET_NAME}")
 endfunction()
 
 # Create messaging benchmark targets
@@ -87,4 +87,4 @@ endforeach ()
 #     create_benchmark(${BENCHMARK_SOURCE} "Examples")
 # endforeach()
 
-message(STATUS "[Core Benchmarks] Configured benchmarks in ${CMAKE_CURRENT_SOURCE_DIR}")
+qb_status_message("Configured benchmarks in ${CMAKE_CURRENT_SOURCE_DIR}")

@@ -23,7 +23,7 @@
  */
 
 #include <qb/io.h>
-#ifdef QB_LOGGER
+#ifdef QB_WITH_LOGGING
 void
 qb::io::log::init(std::string const &file_path, uint32_t const roll_MB) {
     nanolog::initialize(nanolog::GuaranteedLogger(), file_path, roll_MB);
@@ -48,7 +48,7 @@ qb::io::cerr::~cerr() {
     std::cerr << ss.str() << std::flush;
 }
 
-#ifdef QB_LOGGER
+#ifdef QB_WITH_LOGGING
 struct LogInitializer {
     static LogInitializer initializer;
     LogInitializer() noexcept {

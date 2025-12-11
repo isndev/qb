@@ -45,7 +45,7 @@
 #endif
 
 // Argon2 library inclusion
-#if defined(QB_IO_WITH_ARGON2)
+#if defined(QB_HAS_ARGON2)
 #include <argon2.h>
 #endif
 
@@ -109,7 +109,7 @@ crypto::argon2_kdf(const std::string &password, size_t key_length,
     // Create output buffer
     std::vector<unsigned char> output(key_length, 0);
 
-#if defined(QB_IO_WITH_ARGON2)
+#if defined(QB_HAS_ARGON2)
     // Determine the variant
     argon2_type type;
     switch (variant) {
@@ -394,7 +394,7 @@ crypto::generate_salt(size_t length) {
 // Implementation of password hashing
 std::string
 crypto::hash_password(const std::string &password, Argon2Variant variant) {
-#if defined(QB_IO_WITH_ARGON2)
+#if defined(QB_HAS_ARGON2)
     // Generate a random salt
     std::vector<unsigned char> salt = generate_salt(16);
 
@@ -476,7 +476,7 @@ crypto::hash_password(const std::string &password, Argon2Variant variant) {
 // Implementation of password verification
 bool
 crypto::verify_password(const std::string &password, const std::string &hash) {
-#if defined(QB_IO_WITH_ARGON2)
+#if defined(QB_HAS_ARGON2)
     // Verify the password against the stored hash
     int result = argon2_verify(hash.c_str(),      // Encoded hash
                                password.c_str(),  // Password

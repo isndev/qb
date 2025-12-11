@@ -23,51 +23,55 @@
 # -----------------------------------------------------------------------------
 
 # Define project with same version as parent project
-project(${QB_PREFIX}-core
+project(qb-core
         LANGUAGES CXX
-        VERSION ${QB_VERSION}
+        VERSION ${QB_FRAMEWORK_VERSION}
         DESCRIPTION "Actor system implementation for the qb framework"
 )
 
 # -----------------------------------------------------------------------------
-# Library source files
+# Library Configuration
 # -----------------------------------------------------------------------------
 set(CORE_SOURCES
-        core.cpp
+    core.cpp
 )
 
-# -----------------------------------------------------------------------------
-# Library target configuration
-# -----------------------------------------------------------------------------
-# Define the Core library using the custom cxx_library macro from parent project
 # Core depends on the IO library for networking and communication
-cxx_library(
-        NAME ${PROJECT_NAME}
-        FLAGS ${cxx_default_lib}
-        SOURCES ${CORE_SOURCES}
-        DEPENDENCIES ${QB_PREFIX}-io
+set(CORE_DEPENDENCIES qb-io)
+
+# Collect definitions
+set(CORE_DEFINITIONS)
+
+# -----------------------------------------------------------------------------
+# Feature-based definitions
+# -----------------------------------------------------------------------------
+if(QB_DEBUG_ACTOR)
+    list(APPEND CORE_DEFINITIONS QB_DEBUG_ACTOR=1)
+    qb_debug_message("Building with actor debugging")
+endif()
+
+if(QB_DEBUG_MEMORY)
+    list(APPEND CORE_DEFINITIONS QB_DEBUG_MEMORY=1)
+    qb_debug_message("Building with memory debugging")
+endif()
+
+# -----------------------------------------------------------------------------
+# Create the Core library
+# -----------------------------------------------------------------------------
+qb_add_library(
+    NAME ${PROJECT_NAME}
+    SOURCES ${CORE_SOURCES}
+    DEPENDS ${CORE_DEPENDENCIES}
+    DEFINES ${CORE_DEFINITIONS}
 )
 
 # Set the export name to core (instead of qb-core)
 set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME core)
 
-# Configure the module using our shared configuration function
-qb_configure_module(
-        NAME ${PROJECT_NAME}
-        COMPONENT CORE
-)
-
-# Add private include directories specific to this module
-target_include_directories(${PROJECT_NAME}
-        PRIVATE
-        "$<BUILD_INTERFACE:${QB_DIRECTORY}/include>"
-)
-
 # -----------------------------------------------------------------------------
 # Tests configuration
 # -----------------------------------------------------------------------------
-# Add tests if enabled in the parent project
-if (${QB_PREFIX_UPPER}_BUILD_TEST)
-    message(STATUS "[${PROJECT_NAME}] Building tests")
+if(QB_BUILD_TESTS)
+    qb_status_message("Building qb-core tests")
     add_subdirectory(tests)
-endif ()
+endif()
