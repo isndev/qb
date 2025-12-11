@@ -22,7 +22,7 @@
  * @ingroup IO
  */
 
-#ifdef QB_LOGGER
+#ifdef QB_WITH_LOGGING
 #include "nanolog/nanolog.cpp"
 #endif
 #include "logger.cpp"
@@ -53,7 +53,7 @@ generate_random_uuid() {
 } // namespace qb
 #include "json.cpp"
 
-#ifdef QB_IO_WITH_SSL
+#ifdef QB_HAS_SSL
 #include "crypto.cpp"
 #include "crypto_modern.cpp"
 #include "crypto_advanced.cpp"
@@ -63,7 +63,7 @@ generate_random_uuid() {
 #include "tcp/ssl/listener.cpp"
 #include "tcp/ssl/socket.cpp"
 #endif
-#ifdef QB_IO_WITH_ZLIB
+#ifdef QB_HAS_COMPRESSION
 #include "compression.cpp"
 #endif
 #include "async/listener.cpp"

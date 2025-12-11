@@ -43,7 +43,7 @@
 #include "transport/accept.h"
 #include "transport/tcp.h"
 
-#ifdef QB_IO_WITH_SSL
+#ifdef QB_HAS_SSL
 #include "transport/saccept.h"
 #include "transport/stcp.h"
 #endif
@@ -82,7 +82,7 @@ struct use {
         template <typename _Server = void>
         using client = async::tcp::client<_Derived, transport::tcp, _Server>;
 
-#ifdef QB_IO_WITH_SSL
+#ifdef QB_HAS_SSL
         /** @brief Provides type aliases for SSL/TLS-secured TCP asynchronous components. */
         struct ssl {
             using acceptor = async::tcp::acceptor<_Derived, transport::saccept>;
@@ -111,7 +111,7 @@ struct use {
         //                  typename _Server = void>
         //        using client = async::udp::client<_Derived, _Protocol, _Server>;
 
-#ifdef QB_IO_WITH_SSL
+#ifdef QB_HAS_SSL
         // Todo: implement dtls
 #endif
     };

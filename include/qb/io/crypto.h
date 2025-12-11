@@ -30,7 +30,7 @@
 #ifndef QB_IO_CRYPTO_H
 #define QB_IO_CRYPTO_H
 
-#ifndef QB_IO_WITH_SSL
+#ifndef QB_HAS_SSL
 #error "missing OpenSSL Library"
 #endif
 

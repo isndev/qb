@@ -62,7 +62,7 @@ ActorId::is_valid() const noexcept {
 }
 
 } // namespace qb
-#ifdef QB_LOGGER
+#ifdef QB_WITH_LOGGING
 qb::io::log::stream &
 qb::operator<<(qb::io::log::stream &os, qb::ActorId const &id) {
     std::stringstream ss;

@@ -25,7 +25,7 @@
 
 #include <qb/io/compression.h>
 
-#if defined(QB_IO_WITH_ZLIB)
+#if defined(QB_HAS_COMPRESSION)
 #include <zlib.h>
 // zconf.h may define compress
 #ifdef compress
@@ -43,7 +43,7 @@ iequals(const std::string &a, const std::string &b) {
 namespace qb {
 namespace compression {
 namespace builtin {
-#if defined(QB_IO_WITH_ZLIB)
+#if defined(QB_HAS_COMPRESSION)
 // A shared base class for the gzip and deflate compressors
 class zlib_compressor_base : public compress_provider {
 public:
@@ -248,7 +248,7 @@ public:
     {}
 };
 
-#endif // QB_IO_WITH_ZLIB
+#endif // QB_HAS_COMPRESSION
 
 // Generic internal implementation of the compress_factory API
 class generic_compress_factory : public compress_factory {
@@ -309,7 +309,7 @@ private:
 
 // "Private" algorithm-to-factory tables for namespace static helpers
 static const std::vector<std::shared_ptr<compress_factory>> g_compress_factories
-#if defined(QB_IO_WITH_ZLIB)
+#if defined(QB_HAS_COMPRESSION)
     = {std::make_shared<generic_compress_factory>(
            algorithm::GZIP,
            []() -> std::unique_ptr<compress_provider> {
@@ -319,12 +319,12 @@ static const std::vector<std::shared_ptr<compress_factory>> g_compress_factories
            algorithm::DEFLATE, []() -> std::unique_ptr<compress_provider> {
                return std::make_unique<deflate_compressor>();
            })};
-#else  // QB_IO_WITH_ZLIB
+#else  // QB_HAS_COMPRESSION
     ;
-#endif // QB_IO_WITH_ZLIB
+#endif // QB_HAS_COMPRESSION
 
 static const std::vector<std::shared_ptr<decompress_factory>> g_decompress_factories
-#if defined(QB_IO_WITH_ZLIB)
+#if defined(QB_HAS_COMPRESSION)
     = {std::make_shared<generic_decompress_factory>(
            algorithm::GZIP, 500,
            []() -> std::unique_ptr<decompress_provider> {
@@ -334,9 +334,9 @@ static const std::vector<std::shared_ptr<decompress_factory>> g_decompress_facto
            algorithm::DEFLATE, 500, []() -> std::unique_ptr<decompress_provider> {
                return std::make_unique<deflate_decompressor>();
            })};
-#else  // QB_IO_WITH_ZLIB
+#else  // QB_HAS_COMPRESSION
     ;
-#endif // QB_IO_WITH_ZLIB
+#endif // QB_HAS_COMPRESSION
 
 bool
 supported() {
@@ -422,30 +422,30 @@ get_decompress_factory(const std::string &algorithm) {
 
 std::unique_ptr<compress_provider>
 make_gzip_compressor(int compressionLevel, int method, int strategy, int memLevel) {
-#if defined(QB_IO_WITH_ZLIB)
+#if defined(QB_HAS_COMPRESSION)
     return std::make_unique<gzip_compressor>(compressionLevel, method, strategy,
                                              memLevel);
-#else  // QB_IO_WITH_ZLIB
+#else  // QB_HAS_COMPRESSION
     (void) compressionLevel;
     (void) method;
     (void) strategy;
     (void) memLevel;
     return std::unique_ptr<compress_provider>();
-#endif // QB_IO_WITH_ZLIB
+#endif // QB_HAS_COMPRESSION
 }
 
 std::unique_ptr<compress_provider>
 make_deflate_compressor(int compressionLevel, int method, int strategy, int memLevel) {
-#if defined(QB_IO_WITH_ZLIB)
+#if defined(QB_HAS_COMPRESSION)
     return std::make_unique<deflate_compressor>(compressionLevel, method, strategy,
                                                 memLevel);
-#else  // QB_IO_WITH_ZLIB
+#else  // QB_HAS_COMPRESSION
     (void) compressionLevel;
     (void) method;
     (void) strategy;
     (void) memLevel;
     return std::unique_ptr<compress_provider>();
-#endif // QB_IO_WITH_ZLIB
+#endif // QB_HAS_COMPRESSION
 }
 } // namespace builtin
 
