@@ -63,10 +63,10 @@ function(create_core_test TEST_SOURCE TEST_CATEGORY)
     get_filename_component(TEST_NAME ${TEST_SOURCE} NAME_WE)
     set(TARGET_NAME ${PROJECT_NAME}-gtest-system-${TEST_NAME})
 
-    cxx_gtest(
-            ${TARGET_NAME}
-            "${PROJECT_NAME}"
-            ${TEST_SOURCE}
+    qb_add_test(
+        NAME ${TARGET_NAME}
+        SOURCES ${TEST_SOURCE}
+        DEPENDS ${PROJECT_NAME}
     )
 
     set_target_properties(${TARGET_NAME} PROPERTIES
@@ -90,4 +90,4 @@ foreach (TEST_SOURCE ${ACTOR_SYSTEM_TESTS})
 endforeach ()
 
 # Additional test configuration if needed
-message(STATUS "[Core Tests] Configured ${CMAKE_CURRENT_SOURCE_DIR} with ${CMAKE_CURRENT_LIST_FILE}")
+qb_debug_message("Configured ${CMAKE_CURRENT_SOURCE_DIR} with ${CMAKE_CURRENT_LIST_FILE}")

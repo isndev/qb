@@ -4,7 +4,7 @@
  *
  * This file provides the implementation of a secure TCP listener using OpenSSL
  * for accepting encrypted connections. It supports SSL/TLS server-side functionality.
- * Requires OpenSSL and `QB_IO_WITH_SSL`.
+ * Requires OpenSSL and `QB_HAS_SSL`.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)

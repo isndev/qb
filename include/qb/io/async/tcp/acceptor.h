@@ -26,7 +26,7 @@
 #define QB_IO_ASYNC_TCP_ACCEPTOR_H
 
 #include <filesystem>
-#ifdef QB_IO_WITH_SSL
+#ifdef QB_HAS_SSL
 #include "../../tcp/ssl/listener.h"
 #endif
 #include "../../protocol/accept.h"
@@ -123,7 +123,7 @@ public:
                 std::filesystem::path cert_file = {},
                 std::filesystem::path key_file = {},
                 std::vector<std::string> alpn_protocols = {}) {
-#ifdef QB_IO_WITH_SSL
+#ifdef QB_HAS_SSL
         using tpt = std::decay_t<decltype(this->transport())>;
         if constexpr (tpt::is_secure()) {
             this->transport().init(qb::io::ssl::create_server_context(TLS_server_method(), cert_file, key_file));

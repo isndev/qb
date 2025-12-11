@@ -31,7 +31,7 @@
 #include <type_traits>
 #include <utility>
 
-#ifdef QB_LOGGER
+#ifdef QB_WITH_LOGGING
 #include <nanolog/nanolog.h>
 #endif
 
@@ -43,7 +43,7 @@ constexpr static bool debug = true;
 #endif
 
 namespace io {
-#ifdef QB_LOGGER
+#ifdef QB_WITH_LOGGING
 namespace log {
 using stream = nanolog::NanoLogLine;
 using Level  = nanolog::LogLevel;
@@ -180,8 +180,8 @@ public:
 } // namespace io
 } // namespace qb
 
-#ifndef QB_LOGGER
-#ifdef QB_STDOUT_LOG
+#ifndef QB_WITH_LOGGING
+#ifdef QB_STDOUT_LOGGING
 /**
  * @brief Debug-level log macro
  * @param X Message to log
@@ -209,35 +209,35 @@ public:
 #define LOG_CRIT(X) qb::io::cout() << X << std::endl;
 #else
 /**
- * @brief Debug-level log macro (no-op if QB_STDOUT_LOG is not defined)
+ * @brief Debug-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
 #define LOG_DEBUG(X) \
     do {             \
     } while (false)
 /**
- * @brief Verbose-level log macro (no-op if QB_STDOUT_LOG is not defined)
+ * @brief Verbose-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
 #define LOG_VERB(X) \
     do {            \
     } while (false)
 /**
- * @brief Info-level log macro (no-op if QB_STDOUT_LOG is not defined)
+ * @brief Info-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
 #define LOG_INFO(X) \
     do {            \
     } while (false)
 /**
- * @brief Warning-level log macro (no-op if QB_STDOUT_LOG is not defined)
+ * @brief Warning-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
 #define LOG_WARN(X) \
     do {            \
     } while (false)
 /**
- * @brief Critical-level log macro (no-op if QB_STDOUT_LOG is not defined)
+ * @brief Critical-level log macro (no-op if QB_STDOUT_LOGGING is not defined)
  * @param X Message to log
  */
 #define LOG_CRIT(X) \

@@ -46,7 +46,7 @@ template class stream<udp::socket>;
 } // namespace io
 } // namespace qb
 
-#ifdef QB_IO_WITH_SSL
+#ifdef QB_HAS_SSL
 
 #include <qb/io/tcp/ssl/socket.h>
 

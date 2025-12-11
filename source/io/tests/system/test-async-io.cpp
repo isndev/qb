@@ -590,7 +590,7 @@ TEST_F(AsyncIOTest, TextProtocolCommunication) {
     EXPECT_EQ(msg_count_client, TEXT_ITERATIONS);
 }
 
-#ifdef QB_IO_WITH_SSL
+#ifdef QB_HAS_SSL
 // Test SSL/TLS communication
 class SecureServer;
 

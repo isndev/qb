@@ -4,7 +4,7 @@
  *
  * This file provides the implementation of secure TCP sockets using OpenSSL
  * for encrypted communications, supporting both client and server-side SSL/TLS.
- * Requires OpenSSL to be linked and `QB_IO_WITH_SSL` to be defined.
+ * Requires OpenSSL to be linked and `QB_HAS_SSL` to be defined.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
