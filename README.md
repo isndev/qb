@@ -234,13 +234,13 @@ cmake --build . --parallel  # Cross-platform
 
 ### CMake Configuration Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `QB_IO_WITH_SSL` | Enable SSL/TLS support | `ON` (if found) |
-| `QB_IO_WITH_ZLIB` | Enable compression support | `ON` (if found) |
-| `QB_LOGGER` | Enable high-performance logging | `ON` |
-| `QB_BUILD_TEST` | Build unit tests | `OFF` |
-| `QB_BUILD_BENCHMARK` | Build benchmark tests | `OFF` |
+| Option                | Description | Default |
+|-----------------------|-------------|---------|
+| `QB_IO_WITH_SSL`      | Enable SSL/TLS support | `ON` (if found) |
+| `QB_IO_WITH_ZLIB`     | Enable compression support | `ON` (if found) |
+| `QB_LOGGER`           | Enable high-performance logging | `ON` |
+| `QB_BUILD_TESTS`      | Build unit tests | `OFF` |
+| `QB_BUILD_BENCHMARKS` | Build benchmark tests | `OFF` |
 
 ### Platform-Specific Notes
 

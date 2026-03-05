@@ -30,6 +30,6 @@ add_subdirectory(system)
 add_subdirectory(unit)
 
 # Add performance benchmarks if benchmarking is enabled
-if (${QB_PREFIX_UPPER}_BUILD_BENCHMARKS)
+if (QB_BUILD_BENCHMARKS)
     add_subdirectory(benchmark)
 endif ()

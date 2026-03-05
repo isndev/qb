@@ -15,8 +15,8 @@ Before you begin, ensure your development environment has the following:
 *   **Optional Dependencies (for extended features):**
     *   **OpenSSL Development Libraries:** Required if you want to enable SSL/TLS for secure networking or use QB's cryptography features. (Package names like `libssl-dev` on Debian/Ubuntu, `openssl-devel` on Fedora/CentOS, or installed via installers on Windows/macOS).
     *   **Zlib Development Libraries:** Needed for data compression features (`qb::compression`). (Package names like `zlib1g-dev` on Debian/Ubuntu, `zlib-devel` on Fedora/CentOS).
-    *   **Google Test:** If you intend to build and run the framework's unit and system tests (`QB_BUILD_TEST=ON`). QB may bundle this or fetch it via CMake's `FetchContent`.
-    *   **Google Benchmark:** If you plan to build and run performance benchmarks (`QB_BUILD_BENCHMARK=ON`).
+    *   **Google Test:** If you intend to build and run the framework's unit and system tests (`QB_BUILD_TESTS=ON`). QB may bundle this or fetch it via CMake's `FetchContent`.
+    *   **Google Benchmark:** If you plan to build and run performance benchmarks (`QB_BUILD_BENCHMARKS=ON`).
 
 ## 2. Standard Build Process
 
@@ -38,10 +38,10 @@ The recommended way to build QB is an out-of-source build:
 
     # Configure the build. Adjust options as needed.
     # Example: Release build, enable tests, disable SSL/Zlib for a minimal build
-    cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TEST=ON -DQB_IO_WITH_SSL=OFF -DQB_IO_WITH_ZLIB=OFF
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TESTS=ON -DQB_IO_WITH_SSL=OFF -DQB_IO_WITH_ZLIB=OFF
 
     # Example: Debug build with tests, SSL, and Zlib enabled
-    # cmake .. -DCMAKE_BUILD_TYPE=Debug -DQB_BUILD_TEST=ON -DQB_IO_WITH_SSL=ON -DQB_IO_WITH_ZLIB=ON
+    # cmake .. -DCMAKE_BUILD_TYPE=Debug -DQB_BUILD_TESTS=ON -DQB_IO_WITH_SSL=ON -DQB_IO_WITH_ZLIB=ON
     ```
 
 3.  **Compile the Code:**
@@ -81,8 +81,8 @@ You can customize the build by passing options to CMake during the configuration
 *   **`CMAKE_BUILD_TYPE`**: (String: `Debug`, `Release`, `RelWithDebInfo`, `MinSizeRel`) Standard CMake option to set the build configuration. Impacts optimization levels and debug information.
 *   **`BUILD_SHARED_LIBS`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Standard CMake option. If `ON`, libraries will be built as shared objects (.so, .dll, .dylib). QB might also use a custom `QB_DYNAMIC` option for this.
 *   **`QB_DYNAMIC`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Specific QB option to build `qb-io` and `qb-core` as shared/dynamic libraries rather than static ones. This is often the primary control for shared vs. static builds in QB.
-*   **`QB_BUILD_TEST`**: (Boolean: `ON`/`OFF`, Default: Often `ON`) Controls whether to build the unit and system tests (typically using Google Test).
-*   **`QB_BUILD_BENCHMARK`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Controls whether to build performance benchmarks (may require Google Benchmark).
+*   **`QB_BUILD_TESTS`**: (Boolean: `ON`/`OFF`, Default: Often `ON`) Controls whether to build the unit and system tests (typically using Google Test).
+*   **`QB_BUILD_BENCHMARKS`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Controls whether to build performance benchmarks (may require Google Benchmark).
 *   **`QB_BUILD_DOC`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Enables CMake targets related to generating Doxygen API documentation.
 *   **`QB_BUILD_EXAMPLES`**: (Boolean: `ON`/`OFF`, Default: Often `ON`) Controls whether to build the example applications provided with the framework.
 *   **`QB_INSTALL`**: (Boolean: `ON`/`OFF`, Default: `ON`) If `ON`, CMake will generate installation rules. This allows you to use `cmake --install .`.
@@ -109,7 +109,7 @@ Successfully building the framework will produce several targets:
 *   **Executables (if enabled via CMake options):**
     *   **Examples:** Located in `build/bin/example/<module_category>/<example_name>` (or similar path depending on CMake setup).
     *   **Tests:** Located in `build/bin/qb/source/<module>/tests/<test_type>/<test_name>`.
-    *   **Benchmarks:** If `QB_BUILD_BENCHMARK=ON`.
+    *   **Benchmarks:** If `QB_BUILD_BENCHMARKS=ON`.
 
 ## 6. Dependencies Overview
 
@@ -122,8 +122,8 @@ Successfully building the framework will produce several targets:
 *   **Optional External Libraries (enabled via CMake options):**
     *   OpenSSL (for `QB_IO_WITH_SSL=ON`)
     *   Zlib (for `QB_IO_WITH_ZLIB=ON`)
-    *   Google Test (for `QB_BUILD_TEST=ON` - may be fetched by CMake)
-    *   Google Benchmark (for `QB_BUILD_BENCHMARK=ON` - may be fetched by CMake)
+    *   Google Test (for `QB_BUILD_TESTS=ON` - may be fetched by CMake)
+    *   Google Benchmark (for `QB_BUILD_BENCHMARKS=ON` - may be fetched by CMake)
     *   `nanolog` (for `QB_LOGGER=ON` - may be a submodule or fetched)
 
 ## 7. Platform-Specific Notes
