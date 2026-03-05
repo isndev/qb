@@ -36,7 +36,7 @@ before_build:
       cd build
       cmake --version
       echo %generator%
-      cmake -G %generator% -DQB_BUILD_TEST=ON -DQB_BUILD_SAMPLE=ON -H..
+      cmake -G %generator% -DQB_BUILD_TESTS=ON -DQB_BUILD_SAMPLE=ON -H..
 build_script:
   - cmd: |-
       cd C:\projects\project\build

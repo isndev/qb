@@ -1044,17 +1044,22 @@ private:
                 _on_message = false;
                 return false;
             }
-            this->_protocol->onMessage(ret);
+            // Capture protocol pointer before onMessage() — onMessage() may call
+            // switch_protocol() internally (e.g. handshake → HTTP/2 upgrade).
+            // The OLD protocol's should_flush() must be used for flush(), not the new one.
+            auto *protocol = this->_protocol;
+            protocol->onMessage(ret);
             // Update statistics: message successfully processed
             ++_messages_processed;
-            // Check if protocol became invalid during message processing
+            // Check if the CURRENT (potentially new) protocol became invalid
             if (unlikely(!this->_protocol->ok())) {
                 _system_error = 0;
                 _reason = -1; // Protocol error
                 _on_message = false;
                 return false;
             }
-            if (likely(this->_protocol->should_flush()))
+            // Use the OLD protocol's should_flush() to preserve protocol-switching semantics
+            if (likely(protocol->should_flush()))
                 Derived.flush(ret);
         }
         _on_message = false;
@@ -2182,17 +2187,22 @@ private:
                 _on_message = false;
                 return false;
             }
-            this->_protocol->onMessage(ret);
+            // Capture protocol pointer before onMessage() — onMessage() may call
+            // switch_protocol() internally (e.g. handshake → HTTP/2 upgrade).
+            // The OLD protocol's should_flush() must be used for flush(), not the new one.
+            auto *protocol = this->_protocol;
+            protocol->onMessage(ret);
             // Update statistics: message successfully processed
             ++_messages_processed;
-            // Check if protocol became invalid during message processing
+            // Check if the CURRENT (potentially new) protocol became invalid
             if (unlikely(!this->_protocol->ok())) {
                 _system_error = 0;
                 _reason = -1; // Protocol error
                 _on_message = false;
                 return false;
             }
-            if (likely(this->_protocol->should_flush()))
+            // Use the OLD protocol's should_flush() to preserve protocol-switching semantics
+            if (likely(protocol->should_flush()))
                 Derived.flush(ret);
         }
         _on_message = false;

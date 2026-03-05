@@ -46,7 +46,7 @@ cd build
 # 2. Configure the build (from within the 'build' directory)
 #    This example creates a Release build and enables tests.
 #    Adjust QB_IO_WITH_SSL and QB_IO_WITH_ZLIB if you have OpenSSL/Zlib and need those features.
-cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TEST=ON -DQB_IO_WITH_SSL=OFF -DQB_IO_WITH_ZLIB=OFF
+cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TESTS=ON -DQB_IO_WITH_SSL=OFF -DQB_IO_WITH_ZLIB=OFF
 
 # 3. Build the framework (libraries, examples, tests)
 cmake --build . --config Release

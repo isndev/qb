@@ -170,30 +170,31 @@ public:
      * @param new_io The IO object for the new session
      * @param args Additional arguments for session construction
      * @return Reference to the newly created session
-     * @throws std::runtime_error if the maximum number of sessions has been reached
      * 
      * @note **Session Limit:** If `_max_sessions > 0`, this method will check if the
      *       current number of sessions is below the limit before registering a new session.
-     *       If the limit is reached, a `std::runtime_error` is thrown. This helps prevent
-     *       resource exhaustion in high-load scenarios.
+     *       If the limit is reached, the incoming connection is closed immediately and the
+     *       session is registered then immediately disconnected (it will be cleaned up by the
+     *       next event loop iteration). This prevents resource exhaustion in high-load scenarios.
      * 
      * @note **Usage:** The session limit can be configured via `set_max_sessions()` or
      *       by defining `QB_DEFAULT_MAX_SESSIONS` before including this header.
+     *       The default is 0 (unlimited) for backward compatibility.
      */
     template <typename... Args>
     _Session &
     registerSession(typename _Session::transport_io_type &&new_io, Args &&...args) {
-        // Check session limit if enabled
-        if (_max_sessions > 0 && _sessions.size() >= _max_sessions) {
-            throw std::runtime_error("Maximum number of sessions (" + 
-                                     std::to_string(_max_sessions) + 
-                                     ") reached. Cannot register new session.");
-        }
-        
         auto session = std::make_shared<_Session>(static_cast<_Derived &>(*this),
                                                   std::forward<Args>(args)...);
         sessions().emplace(session->id(), session);
         session->transport() = std::move(new_io);
+
+        // Check session limit after transport is moved in so we can close it gracefully
+        if (_max_sessions > 0 && _sessions.size() > _max_sessions) {
+            session->disconnect(0);
+            return *session;
+        }
+
         session->start();
         if constexpr (has_method_on<_Derived, void, _Session &>::value)
             static_cast<_Derived &>(*this).on(*session);

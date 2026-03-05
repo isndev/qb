@@ -21,12 +21,12 @@ Our testing strategy is divided into two main categories:
 
 ## Building the Tests
 
-Tests are compiled as part of the standard QB Framework build process if the `QB_BUILD_TEST` CMake option is enabled (it is often `ON` by default).
+Tests are compiled as part of the standard QB Framework build process if the `QB_BUILD_TESTS` CMake option is enabled (it is often `ON` by default).
 
-1.  **Ensure `QB_BUILD_TEST=ON`:** When configuring CMake:
+1.  **Ensure `QB_BUILD_TESTS=ON`:** When configuring CMake:
     ```bash
     # In your build directory
-    cmake .. -DQB_BUILD_TEST=ON # Add other options as needed (e.g., -DCMAKE_BUILD_TYPE=Debug)
+    cmake .. -DQB_BUILD_TESTS=ON # Add other options as needed (e.g., -DCMAKE_BUILD_TYPE=Debug)
     ```
 2.  **Build the Project:**
     ```bash

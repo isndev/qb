@@ -218,12 +218,14 @@
  * @def QB_DEFAULT_MAX_SESSIONS
  * @brief Default maximum number of sessions per io_handler instance.
  * @details Used by `io_handler` to limit the number of concurrent sessions to prevent
- *          resource exhaustion. Default is 10000 sessions per handler.
- *          Set to 0 to disable the limit (not recommended for production).
+ *          resource exhaustion. Default is 0 (unlimited) to preserve backward compatibility.
+ *          Set to a positive value to enable the limit (e.g., 10000 for production servers).
+ *          When the limit is reached, `registerSession()` will throw a `std::runtime_error`.
+ *          You can also set it at runtime via `set_max_sessions()`.
  * @ingroup IO
  */
 #ifndef QB_DEFAULT_MAX_SESSIONS
-#define QB_DEFAULT_MAX_SESSIONS 10000
+#define QB_DEFAULT_MAX_SESSIONS 0
 #endif
 
 /**
