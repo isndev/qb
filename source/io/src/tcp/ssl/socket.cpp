@@ -653,18 +653,26 @@ socket::read(void *data, std::size_t size) noexcept {
     auto ret = handCheck();
     if (ret == 1) {
         ret = SSL_read(ssl_handle(), data, static_cast<int>(size));
-        if (ret < 0) {
-            auto err = SSL_get_error(ssl_handle(), ret);
-            switch (err) {
-                case SSL_ERROR_WANT_WRITE:
-                case SSL_ERROR_WANT_READ:
-                    return 0;
-                default:
-                    return -1;
-            }
+        if (ret > 0)
+            return ret;
+        if (ret == 0) {
+            // SSL_ERROR_ZERO_RETURN: peer sent close_notify, clean SSL shutdown.
+            // The underlying TCP socket is now at EOF; epoll will keep reporting EV_READ
+            // indefinitely if we return 0 (which io::on() treats as "no data, no error").
+            // Return -1 to signal connection termination and trigger dispose().
+            return -1;
+        }
+        // ret < 0
+        auto err = SSL_get_error(ssl_handle(), ret);
+        switch (err) {
+            case SSL_ERROR_WANT_WRITE:
+            case SSL_ERROR_WANT_READ:
+                return 0; // Non-blocking, no data ready; not an error
+            default:
+                return -1;
         }
     }
-    return ret;
+    return ret; // handCheck() == 0 (handshake in progress) or -1 (handshake error)
 }
 
 int

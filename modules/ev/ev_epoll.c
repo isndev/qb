@@ -71,6 +71,17 @@
 
 #define EV_EMASK_EPERM 0x80
 
+/* On Windows wepoll expects a full SOCKET handle (uintptr_t), whereas libev
+ * stores file descriptors as plain int.  The ANFD.handle field (populated in
+ * ev_io_start for EV_SELECT_IS_WINSOCKET builds) holds the correct 64-bit
+ * value; fall back to zero-extending the int when the slot is unset. */
+#ifdef _WIN32
+# define EV_FD_TO_SOCK(fd) \
+    ((anfds[(fd)].handle != 0) ? anfds[(fd)].handle : (SOCKET)(unsigned int)(fd))
+#else
+# define EV_FD_TO_SOCK(fd) (fd)
+#endif
+
 static void
 epoll_modify (EV_P_ int fd, int oev, int nev)
 {
@@ -97,7 +108,7 @@ epoll_modify (EV_P_ int fd, int oev, int nev)
   ev.events   = (nev & EV_READ  ? EPOLLIN  : 0)
               | (nev & EV_WRITE ? EPOLLOUT : 0);
 
-  if (ecb_expect_true (!epoll_ctl (backend_fd, oev && oldmask != nev ? EPOLL_CTL_MOD : EPOLL_CTL_ADD, fd, &ev)))
+  if (ecb_expect_true (!epoll_ctl (backend_fd, oev && oldmask != nev ? EPOLL_CTL_MOD : EPOLL_CTL_ADD, EV_FD_TO_SOCK(fd), &ev)))
     return;
 
   if (ecb_expect_true (errno == ENOENT))
@@ -106,7 +117,7 @@ epoll_modify (EV_P_ int fd, int oev, int nev)
       if (!nev)
         goto dec_egen;
 
-      if (!epoll_ctl (backend_fd, EPOLL_CTL_ADD, fd, &ev))
+      if (!epoll_ctl (backend_fd, EPOLL_CTL_ADD, EV_FD_TO_SOCK(fd), &ev))
         return;
     }
   else if (ecb_expect_true (errno == EEXIST))
@@ -116,7 +127,7 @@ epoll_modify (EV_P_ int fd, int oev, int nev)
       if (oldmask == nev)
         goto dec_egen;
 
-      if (!epoll_ctl(backend_fd, EPOLL_CTL_MOD, fd, &ev))
+      if (!epoll_ctl(backend_fd, EPOLL_CTL_MOD, EV_FD_TO_SOCK(fd), &ev))
         return;
 //#endif
     }
@@ -210,7 +221,7 @@ epoll_poll (EV_P_ ev_tstamp timeout)
 
           /* pre-2.6.9 kernels require a non-null pointer with EPOLL_CTL_DEL, */
           /* which is fortunately easy to do for us. */
-          if (epoll_ctl (backend_fd, want ? EPOLL_CTL_MOD : EPOLL_CTL_DEL, fd, ev))
+          if (epoll_ctl (backend_fd, want ? EPOLL_CTL_MOD : EPOLL_CTL_DEL, EV_FD_TO_SOCK(fd), ev))
             {
               postfork |= 2; /* an error occurred, recreate kernel state */
               continue;

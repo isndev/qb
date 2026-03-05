@@ -154,6 +154,8 @@ public:
         const auto ret = _in.read(_in_buffer.allocate_back(bucket_read), bucket_read);
         if (ret >= 0)
             _in_buffer.free_back(bucket_read - ret);
+        else
+            _in_buffer.free_back(bucket_read); // Release entire reservation on read failure (e.g. WSAEWOULDBLOCK)
         return ret;
     }
 

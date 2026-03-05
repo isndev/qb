@@ -4339,6 +4339,11 @@ ev_io_start (EV_P_ ev_io *w) EV_NOEXCEPT
   /* common bug, apparently */
   assert (("libev: ev_io_start called with corrupted watcher", ((WL)w)->next != (WL)w));
 
+#if EV_SELECT_IS_WINSOCKET
+  /* Store the full SOCKET handle (zero-extended from int) for use by epoll_ctl/wepoll. */
+  anfds[fd].handle = (SOCKET)(unsigned int)fd;
+#endif
+
   fd_change (EV_A_ fd, w->events & EV__IOFDSET | EV_ANFD_REIFY);
   w->events &= ~EV__IOFDSET;
 
@@ -4366,10 +4371,16 @@ ev_io_stop (EV_P_ ev_io *w) EV_NOEXCEPT
   fd_change (EV_A_ w->fd, EV_ANFD_REIFY);
 
   EV_FREQUENT_CHECK;
-#ifdef _WIN32
+#if defined(_WIN32) && EV_USE_EPOLL
+  {
     struct epoll_event ev;
     memset(&ev, 0, sizeof ev);
-    epoll_ctl(backend_fd, EPOLL_CTL_DEL, (SOCKET)w->fd, &ev);
+    /* Use the stored handle to avoid narrowing-conversion artifacts on x64. */
+    SOCKET sock = (w->fd >= 0 && w->fd < anfdmax)
+                  ? anfds[w->fd].handle
+                  : (SOCKET)(unsigned int)w->fd;
+    epoll_ctl(backend_fd, EPOLL_CTL_DEL, sock, &ev);
+  }
 #endif
 }
 
