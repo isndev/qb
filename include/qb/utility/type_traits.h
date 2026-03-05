@@ -901,4 +901,21 @@ GENERATE_HAS_METHOD(on)
 GENERATE_HAS_METHOD(read)
 GENERATE_HAS_METHOD(write)
 
+/**
+ * @struct has_shared_from_this
+ * @ingroup TypeTraits
+ * @brief Detects whether T::shared_from_this() is a valid expression.
+ *
+ * Works correctly even when T inherits from std::enable_shared_from_this<Base>
+ * where Base != T (e.g. CRTP HTTP sessions that inherit from
+ * enable_shared_from_this<Derived>). The standard std::is_base_of check fails
+ * in that case because it looks for enable_shared_from_this<T> specifically.
+ */
+template<typename T, typename = void>
+struct has_shared_from_this : std::false_type {};
+
+template<typename T>
+struct has_shared_from_this<T, std::void_t<decltype(std::declval<T &>().shared_from_this())>>
+    : std::true_type {};
+
 #endif // QB_TYPE_TRAITS_H
