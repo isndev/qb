@@ -26,6 +26,7 @@
 #ifndef QB_IO_TRANSPORT_STCP_H
 #define QB_IO_TRANSPORT_STCP_H
 #include <iostream>
+#include "../config.h"
 #include "../stream.h"
 #include "../tcp/ssl/socket.h"
 namespace qb::io::transport {
@@ -56,13 +57,26 @@ public:
      */
     [[nodiscard]] int
     read() noexcept {
-        static constexpr const std::size_t bucket_read = 8192;
+        static constexpr const std::size_t bucket_read = QB_DEFAULT_READ_BUFFER_SIZE;
 
+        // Security check: prevent DoS via buffer exhaustion
+        // We only check the actual data size, not the capacity. The pipe may resize internally,
+        // but what matters is the actual number of bytes present in the buffer.
+        // If _max_read_buffer_size == SIZE_MAX (-1), the comparison will always be false (unlimited).
+        if (_in_buffer.size() + bucket_read > this->_max_read_buffer_size) {
+            return -2; // Buffer size limit exceeded
+        }
+        
         auto ret = _in.read(_in_buffer.allocate_back(bucket_read), bucket_read);
         if (ret >= 0) {
             _in_buffer.free_back(bucket_read - ret);
             const auto pending = SSL_pending(transport().ssl_handle());
             if (pending) {
+                // Security check: prevent DoS via buffer exhaustion before second allocate_back
+                if (_in_buffer.size() + pending > this->_max_read_buffer_size) {
+                    return -2; // Buffer size limit exceeded
+                }
+                
                 ret += _in.read(_in_buffer.allocate_back(pending), pending);
             }
         }

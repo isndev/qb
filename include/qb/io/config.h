@@ -160,6 +160,20 @@
 #define QB_MAX_PDU_BUFFER_SIZE static_cast<int>(1 * 1024 * 1024)
 
 /**
+ * @def QB_MAX_MESSAGE_SIZE
+ * @brief Maximum allowed message size for protocol parsing (DoS protection)
+ * @details Limits the maximum size of a single message that can be parsed by protocols.
+ * Messages exceeding this size will cause the protocol to be marked as invalid (`not_ok()`)
+ * and the connection to be closed. Default is 100MB.
+ * @note This is a safety measure against DoS attacks via oversized messages.
+ *       Individual protocols can enforce stricter limits if needed.
+ * @ingroup IO
+ */
+#ifndef QB_MAX_MESSAGE_SIZE
+#define QB_MAX_MESSAGE_SIZE static_cast<std::size_t>(100 * 1024 * 1024) // 100MB default
+#endif
+
+/**
  * @def QB_UNPACK_MAX_STRIP
  * @brief Maximum number of initial bytes that can be stripped during unpacking
  * @details Limits the number of bytes that can be removed from the beginning
@@ -167,6 +181,80 @@
  * @ingroup IO
  */
 #define QB_UNPACK_MAX_STRIP 32
+
+/**
+ * @def QB_WINDOWS_WOULDBLOCK_ERROR
+ * @brief Windows-specific error code for "would block" (WSAEWOULDBLOCK)
+ * @details This error code (10035) indicates that a non-blocking socket operation
+ *          cannot be completed immediately. In qb-io, this is treated as a non-fatal
+ *          condition that should be ignored, as the event loop will retry the operation.
+ * @note This is equivalent to EAGAIN/EWOULDBLOCK on Unix systems.
+ * @ingroup IO
+ */
+#ifdef _WIN32
+#define QB_WINDOWS_WOULDBLOCK_ERROR 10035
+#endif
+
+/**
+ * @def QB_DEFAULT_READ_BUFFER_SIZE
+ * @brief Default buffer size for read operations (8KB)
+ * @details This is the default chunk size used when reading data from streams.
+ *          A larger buffer size can improve throughput but uses more memory.
+ *          Individual transports can override this value if needed.
+ * @ingroup IO
+ */
+#define QB_DEFAULT_READ_BUFFER_SIZE 8192
+
+/**
+ * @def QB_DEFAULT_FILE_WATCHER_INTERVAL
+ * @brief Default polling interval for file watchers (0.1 seconds)
+ * @details This is the default interval at which libev checks for file changes.
+ *          A smaller interval means more responsive detection but higher CPU usage.
+ * @ingroup IO
+ */
+#define QB_DEFAULT_FILE_WATCHER_INTERVAL 0.1
+
+/**
+ * @def QB_DEFAULT_MAX_SESSIONS
+ * @brief Default maximum number of sessions per io_handler instance.
+ * @details Used by `io_handler` to limit the number of concurrent sessions to prevent
+ *          resource exhaustion. Default is 10000 sessions per handler.
+ *          Set to 0 to disable the limit (not recommended for production).
+ * @ingroup IO
+ */
+#ifndef QB_DEFAULT_MAX_SESSIONS
+#define QB_DEFAULT_MAX_SESSIONS 10000
+#endif
+
+/**
+ * @def QB_MAX_READ_BUFFER_SIZE
+ * @brief Maximum allowed size for input buffers (DoS protection)
+ * @details Limits the maximum size that an input buffer can grow to before reading is rejected.
+ * If the buffer size would exceed this limit during a read operation, the read will fail
+ * and the connection will be closed. Default is 200MB.
+ * @note This is a critical safety measure against DoS attacks where an attacker sends
+ *       data that never forms a complete message, causing the buffer to grow indefinitely.
+ *       Without this limit, an attacker could exhaust server memory by keeping connections
+ *       open and sending incomplete data.
+ * @ingroup IO
+ */
+#ifndef QB_MAX_READ_BUFFER_SIZE
+#define QB_MAX_READ_BUFFER_SIZE static_cast<std::size_t>(200 * 1024 * 1024) // 200MB default
+#endif
+
+/**
+ * @def QB_MAX_WRITE_BUFFER_SIZE
+ * @brief Maximum allowed size for output buffers (DoS protection)
+ * @details Limits the maximum size that an output buffer can grow to before writing is rejected.
+ * If the buffer size would exceed this limit during a publish operation, the publish will fail
+ * and the connection will be closed. Default is 200MB.
+ * @note This is a critical safety measure against DoS attacks where an attacker could cause
+ *       the output buffer to grow indefinitely if data cannot be written fast enough.
+ * @ingroup IO
+ */
+#ifndef QB_MAX_WRITE_BUFFER_SIZE
+#define QB_MAX_WRITE_BUFFER_SIZE static_cast<std::size_t>(200 * 1024 * 1024) // 200MB default
+#endif
 
 #ifdef _WIN32
 #if !defined(WIN32_LEAN_AND_MEAN)

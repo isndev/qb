@@ -30,6 +30,7 @@
 
 #ifndef QB_IO_STREAM_H_
 #define QB_IO_STREAM_H_
+#include <qb/io/config.h>
 #include <qb/system/allocator/pipe.h>
 #include <qb/utility/type_traits.h>
 
@@ -57,6 +58,7 @@ public:
 protected:
     _IO_              _in;        /**< The underlying IO object */
     input_buffer_type _in_buffer; /**< Buffer for incoming data */
+    std::size_t       _max_read_buffer_size = static_cast<std::size_t>(-1); /**< Maximum allowed size for the input buffer (DoS protection). -1 (SIZE_MAX) = unlimited (default). Configurable at runtime. */
 
 public:
     /**
@@ -105,18 +107,50 @@ public:
     }
 
     /**
+     * @brief Get the maximum allowed size for the input buffer
+     * @return Maximum buffer size in bytes, or SIZE_MAX (-1) if unlimited
+     */
+    [[nodiscard]] std::size_t
+    max_read_buffer_size() const noexcept {
+        return _max_read_buffer_size;
+    }
+
+    /**
+     * @brief Set the maximum allowed size for the input buffer
+     * @param size Maximum buffer size in bytes, or -1 (SIZE_MAX) for unlimited
+     * @note Setting this to -1 (SIZE_MAX) disables the limit (default).
+     *       This is a security-critical setting that prevents DoS attacks via buffer exhaustion.
+     */
+    void
+    set_max_read_buffer_size(std::size_t size) noexcept {
+        _max_read_buffer_size = size;
+    }
+
+    /**
      * @brief Read data from the transport into the input buffer
      * @return Number of bytes read on success, error code on failure
      *
      * This method is enabled only if the IO type has a compatible read method.
      * It reads data in fixed-size chunks and adjusts the buffer size based
      * on the actual number of bytes read.
+     * 
+     * @note **Security:** If the buffer size would exceed `max_read_buffer_size()` after
+     *       this read, the operation fails with error code -2 to prevent DoS attacks.
      */
     template <typename Available = void>
     [[nodiscard]] int
     read(std::enable_if_t<has_method_read<_IO_, int, char *, std::size_t>::value,
                           Available> * = nullptr) noexcept {
-        static constexpr const std::size_t bucket_read = 8192;
+        static constexpr const std::size_t bucket_read = QB_DEFAULT_READ_BUFFER_SIZE;
+        
+        // Security check: prevent DoS via buffer exhaustion
+        // We only check the actual data size, not the capacity. The pipe may resize internally,
+        // but what matters is the actual number of bytes present in the buffer.
+        // If _max_read_buffer_size == SIZE_MAX (-1), the comparison will always be false (unlimited).
+        if (_in_buffer.size() + bucket_read > _max_read_buffer_size) {
+            return -2; // Special error code for buffer size limit exceeded
+        }
+        
         const auto ret = _in.read(_in_buffer.allocate_back(bucket_read), bucket_read);
         if (ret >= 0)
             _in_buffer.free_back(bucket_read - ret);
@@ -185,6 +219,7 @@ public:
 protected:
     _IO_               _out;        /**< The underlying IO object */
     output_buffer_type _out_buffer; /**< Buffer for outgoing data */
+    std::size_t        _max_write_buffer_size = static_cast<std::size_t>(-1); /**< Maximum allowed size for the output buffer (DoS protection). -1 (SIZE_MAX) = unlimited (default). Configurable at runtime. */
 
 public:
     /**
@@ -268,6 +303,14 @@ public:
      */
     char *
     publish(char const *data, std::size_t size) noexcept {
+        // Security check: prevent DoS via buffer exhaustion
+        // We only check the actual data size, not the capacity. The pipe may resize internally,
+        // but what matters is the actual number of bytes present in the buffer.
+        // If _max_write_buffer_size == SIZE_MAX (-1), the comparison will always be false (unlimited).
+        if (_out_buffer.size() + size > _max_write_buffer_size) {
+            return nullptr; // Buffer limit would be exceeded
+        }
+        
         return static_cast<char *>(
             std::memcpy(_out_buffer.allocate_back(size), data, size));
     }
@@ -318,6 +361,7 @@ public:
 
 protected:
     output_buffer_type _out_buffer; /**< Buffer for outgoing data */
+    std::size_t        _max_write_buffer_size = static_cast<std::size_t>(-1); /**< Maximum allowed size for the output buffer (DoS protection). -1 (SIZE_MAX) = unlimited (default). Configurable at runtime. */
 
 public:
     /**
@@ -365,16 +409,48 @@ public:
     }
 
     /**
+     * @brief Get the maximum allowed size for the output buffer
+     * @return Maximum buffer size in bytes, or SIZE_MAX (-1) if unlimited
+     */
+    [[nodiscard]] std::size_t
+    max_write_buffer_size() const noexcept {
+        return _max_write_buffer_size;
+    }
+
+    /**
+     * @brief Set the maximum allowed size for the output buffer
+     * @param size Maximum buffer size in bytes, or -1 (SIZE_MAX) for unlimited
+     * @note Setting this to -1 (SIZE_MAX) disables the limit (default).
+     *       This is a security-critical setting that prevents DoS attacks via buffer exhaustion.
+     */
+    void
+    set_max_write_buffer_size(std::size_t size) noexcept {
+        _max_write_buffer_size = size;
+    }
+
+    /**
      * @brief Add data to the output buffer for later writing
      * @param data Pointer to the data to add
      * @param size Size of the data to add
-     * @return Pointer to the copied data in the output buffer
+     * @return Pointer to the copied data in the output buffer, or nullptr if buffer limit would be exceeded
      *
      * Copies the specified data to the output buffer for later
      * transmission by the write method.
+     * 
+     * @note **Security:** If the buffer size would exceed `max_write_buffer_size()` after
+     *       this operation, returns nullptr to prevent DoS attacks. The caller should
+     *       handle this case appropriately (e.g., disconnect the connection).
      */
     char *
     publish(char const *data, std::size_t size) noexcept {
+        // Security check: prevent DoS via buffer exhaustion
+        // We only check the actual data size, not the capacity. The pipe may resize internally,
+        // but what matters is the actual number of bytes present in the buffer.
+        // If _max_write_buffer_size == SIZE_MAX (-1), the comparison will always be false (unlimited).
+        if (_out_buffer.size() + size > _max_write_buffer_size) {
+            return nullptr; // Buffer limit would be exceeded
+        }
+        
         return static_cast<char *>(
             std::memcpy(_out_buffer.allocate_back(size), data, size));
     }

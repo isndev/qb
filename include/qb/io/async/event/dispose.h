@@ -37,21 +37,40 @@ namespace qb::io::async::event {
  * associated resources (like event watchers) are released. This is typically part of the
  * `dispose()` method in base classes like `qb::io::async::io`.
  *
+ * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this event is triggered
+ *       during the I/O component's cleanup phase, which occurs before the actor's destructor.
+ *       This allows actors to perform final cleanup of I/O-related resources. The sequence is:
+ *       1. `on(event::disconnected&)` is called (if connection was active)
+ *       2. `on(event::dispose&)` is called (final cleanup hook)
+ *       3. I/O component destructor runs (unregisters from listener)
+ *       4. Actor destructor runs (if actor is being destroyed)
+ *
  * Usage Example:
  * @code
- * class MyResourcefulIO : public qb::io::async::io<MyResourcefulIO> {
+ * class MyClientActor : public qb::Actor, public qb::io::use<MyClientActor>::tcp::client<MyProtocol> {
  * public:
- *   // ... constructor, other methods ...
+ *   bool onInit() override {
+ *     registerEvent<qb::io::async::event::disconnected>(*this);
+ *     registerEvent<qb::io::async::event::dispose>(*this);
+ *     registerEvent<qb::KillEvent>(*this);
+ *     // ... start connection ...
+ *     return true;
+ *   }
+ *
+ *   void on(qb::io::async::event::disconnected const& event) {
+ *     LOG_INFO("Connection lost: " << event.error_code.message());
+ *     // Optionally attempt reconnection or notify other actors
+ *   }
  *
  *   void on(qb::io::async::event::dispose &&) {
- *     LOG_INFO("MyResourcefulIO disposing: cleaning up custom resources.");
- *     // Perform final cleanup operations specific to MyResourcefulIO
+ *     LOG_INFO("I/O component disposing: cleaning up custom resources.");
+ *     // Perform final cleanup operations specific to MyClientActor
  *     // Note: Base class dispose() will handle listener unregistration.
  *   }
  *
- *   void someErrorCondition() {
- *     // ... error detected ...
- *     this->disconnect(); // This will eventually lead to dispose() being called internally.
+ *   void on(qb::KillEvent const&) {
+ *     this->disconnect(); // Gracefully close connection before termination
+ *     kill(); // Signal framework to proceed with termination
  *   }
  * };
  * @endcode

@@ -11,6 +11,17 @@
  * various asynchronous I/O components through type aliases, enabling a consistent
  * interface for different transport implementations.
  *
+ * @note **Execution Model and Thread Safety:**
+ *       - qb-io is designed for **single-threaded execution** within each VirtualCore.
+ *       - Each `VirtualCore` (in qb-core) or thread (standalone usage) has its own
+ *         `listener::current` event loop.
+ *       - All I/O objects (clients, servers, sessions) created via `use<Derived>::*`
+ *         **must not be shared between threads**. They are bound to the thread's listener.
+ *       - Event handlers (`on()` methods) are called sequentially in the same thread,
+ *         eliminating the need for mutexes or atomic operations for I/O state.
+ *       - This design provides thread safety through isolation: each VirtualCore manages
+ *         its own set of I/O objects independently.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
