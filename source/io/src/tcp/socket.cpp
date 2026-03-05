@@ -186,7 +186,20 @@ socket::n_connect_un(std::string const &path) noexcept {
 int
 socket::read(void *dest, std::size_t len) const noexcept {
     int ret = recv(dest, static_cast<int>(len));
-    return ret > 0 ? ret : -1;
+    if (ret > 0)
+        return ret;
+    if (ret == 0) {
+        // Peer closed the connection gracefully.
+        // recv() == 0 does not set errno / WSAGetLastError(), so clear it explicitly;
+        // otherwise io::on() will capture a stale error code from a previous syscall
+        // and misreport a graceful close as an error in on(event::disconnected).
+#ifdef _WIN32
+        WSASetLastError(0);
+#else
+        errno = 0;
+#endif
+    }
+    return -1;
 }
 
 int

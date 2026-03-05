@@ -1101,6 +1101,13 @@ private:
     void
     on(event::io const &event) {
         constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
+        // Keep a strong reference to prevent UAF when process_messages() triggers
+        // extractSession() (e.g. WebSocket upgrade), which removes the session from the
+        // io_handler and can drop the last shared_ptr reference, destroying *this before
+        // Derived.eof() / handle_post_read() execute.  The declaration is at function scope
+        // (above all goto targets) so C++ goto-past-initialization rules are satisfied;
+        // the assignment below is only reached in the EV_READ path.
+        std::shared_ptr<_Derived> _self_guard;
 
         if (_on_message)
             return;
@@ -1114,6 +1121,10 @@ private:
         }
 
         if (likely(event._revents & EV_READ)) {
+            if constexpr (std::is_base_of_v<std::enable_shared_from_this<_Derived>, _Derived>) {
+                try { _self_guard = Derived.shared_from_this(); } catch (...) {}
+            }
+
             auto ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret))
                 goto error;
@@ -2265,6 +2276,11 @@ private:
      */
     void
     on(event::io const &event) {
+        // Keep a strong reference to prevent UAF when process_messages() triggers
+        // extractSession() (e.g. WebSocket upgrade), which can destroy *this before
+        // Derived.eof() / handle_post_read() execute.  Declaration is at function scope
+        // (above all goto targets) to satisfy C++ goto-past-initialization rules.
+        std::shared_ptr<_Derived> _self_guard;
         bool ok = false; // Declare early to avoid goto bypassing initialization
         
         if (_on_message)
@@ -2274,6 +2290,11 @@ private:
         
         if (event._revents & EV_READ && _protocol && _protocol->ok()) {
             constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
+
+            if constexpr (std::is_base_of_v<std::enable_shared_from_this<_Derived>, _Derived>) {
+                try { _self_guard = Derived.shared_from_this(); } catch (...) {}
+            }
+
             auto ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret))
                 goto error;
