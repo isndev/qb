@@ -60,7 +60,21 @@ public:
      * @return Size of the next complete message in bytes (including any headers or delimiters
      *         that are part of the message unit). Returns `0` if no complete message is yet
      *         available in the buffer, indicating more data is needed.
-     * @note This method should not consume data from the buffer; it only inspects it.
+     * 
+     * @note **Inspection Only:** This method should not consume data from the buffer; it only inspects it.
+     *       The actual consumption happens when `onMessage()` is called with the returned size.
+     * 
+     * @note **Error Handling:** If the protocol detects an invalid message format during inspection
+     *       (e.g., malformed header, invalid size field), it should call `not_ok()` to mark itself
+     *       as invalid. The I/O component will then detect this and trigger appropriate error handling.
+     * 
+     * @note **Performance:** This method is called frequently in the hot path (potentially for every
+     *       event loop iteration when data is available). Implementations should be optimized for speed
+     *       and avoid unnecessary allocations or complex computations.
+     * 
+     * @note **Message Size Limits:** The I/O component enforces a maximum message size (`QB_MAX_MESSAGE_SIZE`)
+     *       to prevent DoS attacks. If a protocol returns a size exceeding this limit, the I/O component
+     *       will automatically mark the protocol as `not_ok()` and trigger disconnection with `reason = 3`.
      */
     virtual std::size_t getMessageSize() noexcept = 0;
 
@@ -73,8 +87,19 @@ public:
      * is usually responsible for flushing these `size` bytes from its input buffer.
      *
      * @param size The size of the complete message to process, as determined by `getMessageSize()`.
-     * @note The protocol should typically dispatch the parsed message to a handler in its associated
-     *       I/O component (e.g., by calling `_io.on(MyProtocol::message{...})`).
+     * 
+     * @note **Error Handling:** If the protocol encounters an error during message processing
+     *       (e.g., invalid message format, parsing failure), it should call `not_ok()` to mark
+     *       itself as invalid. This will cause the I/O component to detect the error and trigger
+     *       a disconnection with appropriate error reporting via `event::disconnected`.
+     * 
+     * @note **Message Dispatch:** The protocol should typically dispatch the parsed message
+     *       to a handler in its associated I/O component (e.g., by calling `_io.on(MyProtocol::message{...})`).
+     * 
+     * @note **Thread Safety:** This method is called from the event loop within a single VirtualCore
+     *       (single-threaded context), so no synchronization is needed. However, the protocol
+     *       should ensure that message processing is atomic and does not leave the protocol
+     *       in an inconsistent state if an error occurs.
      */
     virtual void onMessage(std::size_t size) noexcept = 0;
 
@@ -84,6 +109,19 @@ public:
      * This method should be called to clear any partial parsing state, preparing the protocol
      * to start parsing a new message from a fresh state. This is important after errors,
      * disconnections, or when switching protocols.
+     * 
+     * @note **Error Recovery:** After calling `reset()`, the protocol's status (`ok()`) is not
+     *       automatically restored. If the protocol was marked as `not_ok()`, it will remain
+     *       in that state. To fully recover, a new protocol instance should typically be created.
+     * 
+     * @note **Usage:** This method is typically called:
+     *       - When switching to a new protocol instance
+     *       - After a disconnection to prepare for reconnection
+     *       - When explicitly resetting the protocol state (though this is less common)
+     * 
+     * @note **Implementation:** Derived protocols should reset all internal parsing state,
+     *       including any partial message buffers, state machines, or parsing flags.
+     *       However, configuration settings (like `_should_flush`) should typically be preserved.
      */
     virtual void reset() noexcept = 0;
 
@@ -104,6 +142,21 @@ public:
      *          to indicate that it has encountered an unrecoverable parsing error or that
      *          the connection should be closed after processing any pending data.
      *          The I/O component might check this status via `ok()`.
+     * 
+     * @note **Error Handling:** When a protocol calls `not_ok()`, the I/O component will
+     *       detect this during message processing (via `protocol->ok()`) and trigger
+     *       a disconnection with `reason = 2` (Protocol error). The `event::disconnected`
+     *       event will be dispatched to the actor, allowing it to handle the error appropriately.
+     * 
+     * @note **Usage:** Protocols should call `not_ok()` when they encounter:
+     *       - Invalid message format that cannot be recovered
+     *       - Parsing errors that indicate protocol violation
+     *       - Security violations (e.g., unauthorized access attempts)
+     *       - Any condition that requires connection termination
+     * 
+     * @note **Recovery:** Once `not_ok()` is called, the protocol cannot be recovered.
+     *       The I/O component will initiate disconnection. If recovery is needed,
+     *       a new protocol instance should be created via `switch_protocol()`.
      */
     void
     not_ok() noexcept {

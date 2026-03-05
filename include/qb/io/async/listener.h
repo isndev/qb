@@ -46,6 +46,17 @@ namespace qb::io::async {
  *
  * Each thread has its own listener instance accessible via the thread_local
  * static member 'current'.
+ *
+ * @note **Thread Safety and Execution Model:**
+ *       - Each `listener` instance is **thread-local** and operates in a **single-threaded context**.
+ *       - When used with `qb-core`, each `VirtualCore` (worker thread) has its own `listener::current`.
+ *       - All I/O objects (clients, servers, sessions) registered with a listener **must not be shared**
+ *         between threads. They are designed to be used exclusively within a single VirtualCore.
+ *       - This single-threaded execution model eliminates the need for mutexes or atomic operations
+ *         for I/O objects within the same VirtualCore, providing inherent thread safety through
+ *         isolation rather than synchronization.
+ *       - If you need to use qb-io objects across different threads, each thread must have its own
+ *         listener instance (via `async::init()`) and objects must not be shared.
  */
 class listener {
 public:
@@ -117,6 +128,7 @@ private:
     qb::unordered_set<IRegisteredKernelEvent *>
                 _registeredEvents;      /**< Set of registered event handlers */
     std::size_t _nb_invoked_events = 0; /**< Counter for the number of invoked events */
+    std::size_t _total_events_processed = 0; /**< Total number of events processed since listener creation */
 
 public:
     /**
@@ -174,6 +186,7 @@ public:
         w._revents = revents;
         w._interface->invoke();
         ++_nb_invoked_events;
+        ++_total_events_processed;
     }
 
     /**
@@ -271,6 +284,17 @@ public:
     [[nodiscard]] inline std::size_t
     nb_invoked_event() const {
         return _nb_invoked_events;
+    }
+
+    /**
+     * @brief Get the total number of events processed since listener creation.
+     * @return The cumulative count of all events that have been processed by this listener.
+     * @note This counter is never reset and provides a lifetime metric for the listener.
+     *       Useful for monitoring and debugging purposes.
+     */
+    [[nodiscard]] inline std::size_t
+    total_events_processed() const {
+        return _total_events_processed;
     }
 
     /**
