@@ -316,7 +316,11 @@ public:
  */
 inline void
 init() {
-    // listener::current.clear();
+    // Reset the thread-local event loop so each test (or fresh standalone
+    // init call) starts with a clean slate. Without this, stale watchers
+    // registered by previous tests remain active and cause EVRUN_ONCE to
+    // return immediately instead of blocking until the next real event.
+    listener::current.clear();
 }
 
 /**
