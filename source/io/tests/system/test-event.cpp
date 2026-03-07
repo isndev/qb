@@ -24,6 +24,8 @@
 
 #include <chrono>
 #include <csignal>
+#include <cstdio>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <qb/io/async/event/all.h>
 #include <qb/io/async/listener.h>
@@ -95,12 +97,33 @@ TEST(KernelEvents, Timer) {
 }
 
 TEST(KernelEvents, File) {
+    // Remove any leftover file from a previous run so the watcher can
+    // detect a creation event (not a stale modification event).
+    std::remove("./test.file");
+
     qb::io::async::listener handler;
     FakeActor               actor;
 
     handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", 0).start();
 
-    std::thread t([]() { EXPECT_EQ(system("echo test > test.file"), 0); });
+    std::thread t([]() {
+#ifndef _WIN32
+        // Write atomically: produce the full content in a temporary file,
+        // close it (flushing all OS buffers), then rename it into place.
+        // rename(2) is atomic on POSIX — the stat watcher will see the file
+        // appear with its final size in a single notification, eliminating
+        // the race where ev_stat fires on creation before the write completes
+        // (which would give st_size == 0 instead of the expected 5).
+        {
+            std::ofstream ofs("./test.file.tmp", std::ios::binary);
+            ofs << "test\n"; // exactly 5 bytes — matches EXPECT_EQ below
+        }
+        EXPECT_EQ(std::rename("./test.file.tmp", "./test.file"), 0);
+#else
+        // On Windows CMD, "echo test > file" produces "test \r\n" = 7 bytes.
+        EXPECT_EQ(system("echo test > test.file"), 0);
+#endif
+    });
 
     for (auto i = 0; i < 10 && !actor.nb_events; ++i)
         handler.run(EVRUN_ONCE);
