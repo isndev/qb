@@ -19,6 +19,12 @@ namespace ska {
 namespace detailv10 {
 template <typename T, typename Allocator>
 struct sherwood_v10_entry {
+    static_assert(!std::is_reference_v<T>,
+                  "sherwood_v10_entry: T must not be a reference type. "
+                  "Use a pointer type instead — storing references in a "
+                  "hash table's union storage violates container requirements "
+                  "and produces undefined behaviour under MSVC.");
+
     sherwood_v10_entry() {}
     ~sherwood_v10_entry() {}
 

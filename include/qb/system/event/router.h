@@ -160,7 +160,7 @@ class semh : public internal::EventPolicy {
     using _EventId   = typename _RawEvent::id_type;
     using _HandlerId = typename _RawEvent::id_handler_type;
 
-    qb::unordered_map<_HandlerId, _Handler &> _subscribed_handlers;
+    qb::unordered_map<_HandlerId, _Handler *> _subscribed_handlers;
 
 public:
     semh() = default;
@@ -182,7 +182,7 @@ public:
         if constexpr (has_member_func_is_broadcast<_HandlerId>::value) {
             if (event.getDestination().is_broadcast()) {
                 for (auto &it : _subscribed_handlers)
-                    invoke(it.second, event);
+                    invoke(*it.second, event);
 
                 if constexpr (_CleanEvent)
                     dispose(event);
@@ -193,7 +193,7 @@ public:
 
         const auto &it = _subscribed_handlers.find(event.dest);
         if (likely(it != _subscribed_handlers.cend()))
-            invoke(it->second, event);
+            invoke(*it->second, event);
 
         if constexpr (_CleanEvent)
             dispose(event);
@@ -207,7 +207,7 @@ public:
     void
     subscribe(_Handler &handler) noexcept {
         _subscribed_handlers.erase(handler.id());
-        _subscribed_handlers.insert({handler.id(), handler});
+        _subscribed_handlers.insert({handler.id(), &handler});
     }
 
     /**
@@ -283,7 +283,7 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
         }
     };
 
-    qb::unordered_map<_HandlerId, IHandlerResolver &> _subscribed_handlers;
+    qb::unordered_map<_HandlerId, IHandlerResolver *> _subscribed_handlers;
 
 public:
     semh() = default;
@@ -293,7 +293,7 @@ public:
      */
     ~semh() noexcept {
         for (const auto &it : _subscribed_handlers)
-            delete &(it.second);
+            delete it.second;
     }
 
     /**
@@ -311,7 +311,7 @@ public:
         if constexpr (has_member_func_is_broadcast<_HandlerId>::value) {
             if (event.getDestination().is_broadcast()) {
                 for (const auto &it : _subscribed_handlers)
-                    it.second.resolve(event);
+                    it.second->resolve(event);
 
                 if constexpr (_CleanEvent)
                     dispose(event);
@@ -322,7 +322,7 @@ public:
 
         const auto &it = _subscribed_handlers.find(event.getDestination());
         if (likely(it != _subscribed_handlers.cend()))
-            it->second.resolve(event);
+            it->second->resolve(event);
 
         if constexpr (_CleanEvent)
             dispose(event);
@@ -341,11 +341,11 @@ public:
     subscribe(_Handler &handler) noexcept {
         const auto &it = _subscribed_handlers.find(handler.id());
         if (it != _subscribed_handlers.cend()) {
-            delete &it->second;
+            delete it->second;
             _subscribed_handlers.erase(it);
         }
         _subscribed_handlers.insert(
-            {handler.id(), *new HandlerResolver<_Handler>(handler)});
+            {handler.id(), new HandlerResolver<_Handler>(handler)});
     }
 
     /**
@@ -357,7 +357,7 @@ public:
     unsubscribe(_HandlerId const &id) noexcept {
         const auto &it = _subscribed_handlers.find(id);
         if (it != _subscribed_handlers.end()) {
-            delete &it->second;
+            delete it->second;
             _subscribed_handlers.erase(it);
         }
     }
@@ -426,7 +426,7 @@ private:
     };
 
     _Handler                                     &_handler;
-    qb::unordered_map<_EventId, IEventResolver &> _registered_events;
+    qb::unordered_map<_EventId, IEventResolver *> _registered_events;
 
 public:
     mesh() = delete;
@@ -462,7 +462,7 @@ public:
         // const auto &it = _registered_events.find(event.getID());
         // if (likely(it != _registered_events.cend()))
         //    it->second.resolve(event);
-        _registered_events.at(event.getID()).resolve(_handler, event);
+        _registered_events.at(event.getID())->resolve(_handler, event);
     }
 
     /**
@@ -479,7 +479,7 @@ public:
             _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it == _registered_events.cend()) {
             _registered_events.insert(
-                {_RawEvent::template type_to_id<_Event>(), *new EventResolver<_Event>});
+                {_RawEvent::template type_to_id<_Event>(), new EventResolver<_Event>});
         }
     }
 
@@ -496,7 +496,7 @@ public:
         const auto &it =
             _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it != _registered_events.cend()) {
-            delete &it->second;
+            delete it->second;
             _registered_events.erase(it);
         }
     }
@@ -509,7 +509,7 @@ public:
     void
     unsubscribe() {
         for (const auto &it : _registered_events)
-            delete &it.second;
+            delete it.second;
         _registered_events.clear();
     }
 };
@@ -594,7 +594,7 @@ private:
         }
     };
 
-    qb::unordered_map<_EventId, IEventResolver &> _registered_events;
+    qb::unordered_map<_EventId, IEventResolver *> _registered_events;
 
 public:
     memh() = default;
@@ -604,7 +604,7 @@ public:
      */
     ~memh() noexcept {
         for (const auto &it : _registered_events)
-            delete &it.second;
+            delete it.second;
     }
 
     /**
@@ -619,14 +619,14 @@ public:
     route(_RawEvent &event, _Func const &onError) const {
         const auto &it = _registered_events.find(event.getID());
         if (likely(it != _registered_events.cend()))
-            it->second.resolve(event);
+            it->second->resolve(event);
         else {
             // std::lock_guard lk(_disposers_mtx);
             onError(event);
             //_disposers.at(event.getID())->dispose(&event);
         };
         // /!\ Look notice in of mesh router above
-        // _registered_events.at(event.getID()).resolve(event);
+        // _registered_events.at(event.getID())->resolve(event);
     }
 
     /**
@@ -641,12 +641,12 @@ public:
         const auto &it =
             _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it == _registered_events.cend()) {
-            auto &resolver = *new EventResolver<_Event>;
-            resolver.subscribe(handler);
+            auto *resolver = new EventResolver<_Event>;
+            resolver->subscribe(handler);
             _registered_events.insert(
                 {_RawEvent::template type_to_id<_Event>(), resolver});
         } else {
-            dynamic_cast<EventResolver<_Event> &>(it->second).subscribe(handler);
+            dynamic_cast<EventResolver<_Event> *>(it->second)->subscribe(handler);
         }
     }
 
@@ -662,7 +662,7 @@ public:
         auto const &it =
             _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it != _registered_events.cend())
-            it->second.unsubscribe(handler.id());
+            it->second->unsubscribe(handler.id());
     }
 
     /**
@@ -683,7 +683,7 @@ public:
     void
     unsubscribe(_HandlerId const &id) const {
         for (auto const &it : _registered_events) {
-            it.second.unsubscribe(id);
+            it.second->unsubscribe(id);
         }
     }
 };
@@ -810,7 +810,7 @@ private:
         }
     };
 
-    qb::unordered_map<_EventId, IEventResolver &> _registered_events;
+    qb::unordered_map<_EventId, IEventResolver *> _registered_events;
 
 public:
     /**
@@ -842,7 +842,7 @@ public:
      */
     ~memh() noexcept {
         for (const auto &it : _registered_events)
-            delete &it.second;
+            delete it.second;
     }
 
     /**
@@ -857,7 +857,7 @@ public:
     route(_RawEvent &event, _Func const &onError) const {
         const auto &it = _registered_events.find(event.getID());
         if (likely(it != _registered_events.cend()))
-            it->second.resolve(event);
+            it->second->resolve(event);
         else {
             onError(event);
             if constexpr (_CleanEvent) {
@@ -882,12 +882,12 @@ public:
         const auto &it =
             _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it == _registered_events.cend()) {
-            auto &resolver = *new EventResolver<_Event>;
-            resolver.subscribe(handler);
+            auto *resolver = new EventResolver<_Event>;
+            resolver->subscribe(handler);
             _registered_events.insert(
                 {_RawEvent::template type_to_id<_Event>(), resolver});
         } else {
-            dynamic_cast<EventResolver<_Event> *>(&(it->second))->subscribe(handler);
+            dynamic_cast<EventResolver<_Event> *>(it->second)->subscribe(handler);
         }
     }
 
@@ -904,7 +904,7 @@ public:
         auto const &it =
             _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it != _registered_events.cend())
-            it->second.unsubscribe(handler.id());
+            it->second->unsubscribe(handler.id());
     }
 
     /**
@@ -927,7 +927,7 @@ public:
     void
     unsubscribe(_HandlerId const &id) const {
         for (auto const &it : _registered_events) {
-            it.second.unsubscribe(id);
+            it.second->unsubscribe(id);
         }
     }
 };
