@@ -4,20 +4,17 @@
 
 #pragma once
 
-// Check windows
-#if _WIN32 || _WIN64
-#    if _WIN64
+// Determine pointer width. Checked in priority order: MSVC/Windows first,
+// then GCC/Clang, so clang-cl (which sets both _WIN64 and __GNUC__) resolves
+// to the Windows branch. Guards prevent redefinition warnings.
+#if defined(_WIN64) || defined(__x86_64__) || defined(__ppc64__) || \
+    defined(__aarch64__) || defined(__arm64__) || defined(__LP64__) || \
+    defined(_M_X64) || defined(_M_ARM64)
+#    ifndef ENV64BIT
 #        define ENV64BIT
-#    else
-#        define ENV32BIT
 #    endif
-#endif
-
-// Check GCC
-#if __GNUC__
-#    if __x86_64__ || __ppc64__ || __aarch64__
-#        define ENV64BIT
-#    else
+#elif defined(_WIN32) || defined(__i386__) || defined(__arm__)
+#    ifndef ENV32BIT
 #        define ENV32BIT
 #    endif
 #endif
@@ -30,6 +27,7 @@
 #include <iterator>
 #include <type_traits>
 #include <utility>
+#include <stdexcept>
 
 #ifdef _MSC_VER
 #    define SKA_NOINLINE(...) __declspec(noinline) __VA_ARGS__
@@ -204,7 +202,7 @@ struct sherwood_v3_entry {
 
 inline int8_t
 log2(size_t value) {
-#ifdef ENV64BIT
+#if defined(ENV64BIT)
     static constexpr int8_t table[64] = {
         63, 0,  58, 1,  59, 47, 53, 2,  60, 39, 48, 27, 54, 33, 42, 3,
         61, 51, 37, 40, 49, 18, 28, 20, 55, 30, 34, 11, 43, 14, 22, 4,
@@ -216,19 +214,20 @@ log2(size_t value) {
     value |= value >> 8;
     value |= value >> 16;
     value |= value >> 32;
-    return table[((value - (value >> 1)) * 0x07EDD5E59A4E28C2) >> 58];
-#endif
-#ifdef ENV32BIT
+    return table[((value - (value >> 1)) * 0x07EDD5E59A4E28C2ull) >> 58];
+#elif defined(ENV32BIT)
     static constexpr int8_t table[32] = {0,  9,  1,  10, 13, 21, 2,  29, 11, 14, 16,
                                          18, 22, 25, 3,  30, 8,  12, 20, 28, 15, 17,
                                          24, 7,  19, 27, 23, 6,  26, 5,  4,  31};
-
     value |= value >> 1;
     value |= value >> 2;
     value |= value >> 4;
     value |= value >> 8;
     value |= value >> 16;
-    return table[(value * 0x07C4ACDD) >> 27];
+    return table[(value * 0x07C4ACDDu) >> 27];
+#else
+#    error "ska::flat_hash_map: unable to determine pointer width. " \
+           "Define ENV64BIT or ENV32BIT before including this header."
 #endif
 }
 

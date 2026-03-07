@@ -40,28 +40,31 @@ namespace qb {
 /**
  * @struct type
  * @brief Template struct used for type identification in the event system
- * @details 
- * This template struct is part of the type identification system used to generate
- * unique type IDs at compile time. Each instantiation of this template with a
- * different type parameter will have a unique address for its static id() method,
- * which is used to generate distinct type identifiers.
- * 
+ * @details
+ * Each specialization of this template has a unique static data member `id`.
+ * The address of that data member is used as a globally unique type identifier.
+ *
+ * Using a static DATA member (not a function) is critical for correctness under
+ * MSVC Release builds: the linker's Identical COMDAT Folding (/OPT:ICF) merges
+ * functions with identical machine code (all empty `void id(){}` bodies would
+ * collapse to one address, destroying type identity). Data members are never
+ * subject to ICF — each specialization retains its own unique address.
+ *
  * @tparam T The type to identify
  * @ingroup EventCore
  */
 template <typename T>
 struct type {
-    constexpr static void
-    id() {}
+    inline static const char id = 0;
 };
 
 /**
  * @brief Function to get a unique type identifier for a given type
  * @details
  * This function obtains a unique TypeId for the template parameter type T
- * by taking the address of the static id() method in the type<T> template
- * specialization and converting it to a TypeId. This provides a consistent
- * mechanism for generating unique compile-time type identifiers.
+ * by taking the address of the static data member `type<T>::id` and converting
+ * it to a TypeId. Each specialization has a distinct address, providing a
+ * consistent mechanism for generating unique type identifiers at link time.
  * 
  * @tparam T The type to get an identifier for
  * @return A unique TypeId corresponding to the type T
