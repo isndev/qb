@@ -289,7 +289,20 @@ function(qb_add_test)
     set_target_properties(${TEST_NAME} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${TEST_BINARY_DIR}"
     )
-    
+
+    # On Windows, copy all runtime DLLs (gtest, gmock, OpenSSL, etc.) next to the
+    # test executable so it can be launched directly without touching PATH.
+    # $<TARGET_RUNTIME_DLLS:…> enumerates every DLL the target transitively depends
+    # on — requires CMake >= 3.21 (bundled with VS 2022+ / VS 2026).
+    if(WIN32)
+        add_custom_command(TARGET ${TEST_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:${TEST_NAME}>
+                "${TEST_BINARY_DIR}"
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
+
     # Make test depend on SSL resources if they exist
     if(QB_HAS_SSL AND TARGET qb_copy_test_ssl_resources)
         add_dependencies(${TEST_NAME} qb_copy_test_ssl_resources)
@@ -369,10 +382,22 @@ function(qb_add_benchmark)
     endif()
     
     # Set benchmark output directory
+    set(BENCH_BINARY_DIR "${CMAKE_BINARY_DIR}/bin/benchmarks")
     set_target_properties(${BENCH_NAME} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/benchmarks"
+        RUNTIME_OUTPUT_DIRECTORY "${BENCH_BINARY_DIR}"
     )
-    
+
+    # On Windows, copy all runtime DLLs (benchmark, OpenSSL, etc.) next to the
+    # benchmark executable so it can be launched directly without touching PATH.
+    if(WIN32)
+        add_custom_command(TARGET ${BENCH_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:${BENCH_NAME}>
+                "${BENCH_BINARY_DIR}"
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
+
     qb_debug_message("Created benchmark: ${BENCH_NAME}")
 endfunction()
 

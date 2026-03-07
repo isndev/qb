@@ -80,7 +80,7 @@ if(QB_COMPILER_MSVC)
         "/Zc:__cplusplus"   # Enable proper __cplusplus macro
         "/utf-8"            # Use UTF-8 encoding
     )
-    
+
     # Warning configuration
     list(APPEND QB_CXX_FLAGS_BASE
         "/W4"               # Warning level 4
@@ -424,6 +424,14 @@ endfunction()
 
 # Run feature detection
 qb_check_cpp_features()
+
+# Suppress Windows.h min/max macros — added to QB_COMPILE_DEFINITIONS so they
+# propagate as PUBLIC compile definitions to every target that links against qb,
+# including third-party modules (qbm, examples, tests). This guarantees
+# NOMINMAX is on the compiler command line before any header is parsed.
+if(QB_COMPILER_MSVC)
+    list(APPEND QB_COMPILE_DEFINITIONS "NOMINMAX" "WIN32_LEAN_AND_MEAN")
+endif()
 
 # -----------------------------------------------------------------------------
 # Compiler Configuration Summary

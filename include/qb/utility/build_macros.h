@@ -32,6 +32,19 @@
 #define NOMINMAX
 #endif
 
+// POSIX compatibility shims for MSVC
+// ssize_t: signed counterpart of size_t (POSIX) — map to intptr_t (guaranteed in <cstdint>)
+#ifndef ssize_t
+typedef intptr_t ssize_t;
+#endif
+// S_ISREG / S_ISDIR: POSIX file-type test macros — MSVC uses _S_IF* names in <sys/stat.h>
+#ifndef S_ISREG
+#define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
+#endif
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+#endif
+
 #elif defined(__linux__) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
 // Linux
 #define __LINUX__SYSTEM__
