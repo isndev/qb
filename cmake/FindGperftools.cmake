@@ -1,97 +1,118 @@
-# -------------
+# FindGperftools.cmake
 #
-# Find a Google gperftools installation.
+# Find a Google gperftools installation and expose modern IMPORTED targets.
 #
-# This module finds if Google gperftools is installed and selects a default
-# configuration to use.
+# Usage:
+#   find_package(Gperftools [QUIET] [COMPONENTS TCMALLOC PROFILER ...])
 #
-#   find_package(GPERFTOOLS COMPONENTS ...)
+# Valid COMPONENTS:
+#   TCMALLOC               - full tcmalloc
+#   PROFILER               - CPU profiler
+#   TCMALLOC_MINIMAL       - lightweight tcmalloc (no heap profiler)
+#   TCMALLOC_AND_PROFILER  - combined tcmalloc + profiler
 #
-# Valid components are:
+# Result variables (set after find_package):
+#   Gperftools_FOUND          - TRUE if at least PROFILER or TCMALLOC was found
+#   GPERFTOOLS_INCLUDE_DIRS   - Include directories
+#   GPERFTOOLS_LIBRARIES      - Link libraries (only found components, no -NOTFOUND entries)
+#   GPERFTOOLS_LIBRARY_DIRS   - Library directory
 #
-#   TCMALLOC
-#   PROFILER
-#   TCMALLOC_MINIMAL
-#   TCMALLOC_AND_PROFILER
+# Imported targets (created when the corresponding library is found):
+#   Gperftools::Profiler      - CPU profiler library
+#   Gperftools::TCMalloc      - Full TCMalloc library
+#   Gperftools::TCMalloc_Minimal
+#   Gperftools::TCMalloc_And_Profiler
 #
-# The following variables control which libraries are found::
-#
-#   GPERFTOOLS_USE_STATIC_LIBS  - Set to ON to force use of static libraries.
-#
-# The following are set after the configuration is done:
-#
-# ::
-#
-#   GPERFTOOLS_FOUND            - Set to TRUE if gperftools was found
-#   GPERFTOOLS_INCLUDE_DIRS     - Include directories
-#   GPERFTOOLS_LIBRARIES        - Path to the gperftools libraries
-#   GPERFTOOLS_LIBRARY_DIRS     - Compile time link directories
-#   GPERFTOOLS_<component>      - Path to specified component
-#
-#
-# Sample usage:
-#
-# ::
-#
-#   find_package(GPERFTOOLS)
-#   if(GPERFTOOLS_FOUND)
-#     target_link_libraries(<YourTarget> ${GPERFTOOLS_LIBRARIES})
-#   endif()
+# Hints:
+#   GPERFTOOLS_USE_STATIC_LIBS - Set ON to prefer static libraries.
+#   GPERFTOOLS_ROOT_DIR        - Root of a custom gperftools installation.
 
 if(GPERFTOOLS_USE_STATIC_LIBS)
-    set(_CMAKE_FIND_LIBRARY_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
+    set(_gperf_ORIG_SUFFIXES ${CMAKE_FIND_LIBRARY_SUFFIXES})
     set(CMAKE_FIND_LIBRARY_SUFFIXES .lib .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
 endif()
 
-macro(_find_library libvar libname)
-    find_library(${libvar}
-            NAMES ${libname}
-            HINTS ENV LD_LIBRARY_PATH
-            HINTS ENV DYLD_LIBRARY_PATH
-            PATHS
+# ── Helper: find one library component ───────────────────────────────────────
+macro(_gperftools_find_lib var libname)
+    find_library(${var}
+        NAMES ${libname}
+        HINTS
+            ENV LD_LIBRARY_PATH
+            ENV DYLD_LIBRARY_PATH
+            "${GPERFTOOLS_ROOT_DIR}/lib"
+        PATHS
             /usr/lib
             /usr/local/lib
             /usr/local/homebrew/lib
+            /opt/homebrew/lib
             /opt/local/lib
-            )
-    if(NOT ${libvar}_NOTFOUND)
-        set(${libvar}_FOUND TRUE)
-    endif()
+    )
 endmacro()
 
-_find_library(GPERFTOOLS_TCMALLOC tcmalloc)
-_find_library(GPERFTOOLS_PROFILER profiler)
-_find_library(GPERFTOOLS_TCMALLOC_MINIMAL tcmalloc_minimal)
-_find_library(GPERFTOOLS_TCMALLOC_AND_PROFILER tcmalloc_and_profiler)
+_gperftools_find_lib(GPERFTOOLS_TCMALLOC               tcmalloc)
+_gperftools_find_lib(GPERFTOOLS_PROFILER                profiler)
+_gperftools_find_lib(GPERFTOOLS_TCMALLOC_MINIMAL        tcmalloc_minimal)
+_gperftools_find_lib(GPERFTOOLS_TCMALLOC_AND_PROFILER   tcmalloc_and_profiler)
 
 find_path(GPERFTOOLS_INCLUDE_DIR
-        NAMES gperftools/heap-profiler.h
-        HINTS ${GPERFTOOLS_LIBRARY}/../../include
-        PATHS
+    NAMES gperftools/heap-profiler.h
+    HINTS "${GPERFTOOLS_ROOT_DIR}/include"
+    PATHS
         /usr/include
         /usr/local/include
         /usr/local/homebrew/include
+        /opt/homebrew/include
         /opt/local/include
-        )
+)
 
-get_filename_component(GPERFTOOLS_LIBRARY_DIR ${GPERFTOOLS_TCMALLOC} DIRECTORY)
-# Set standard CMake FindPackage variables if found.
-set(GPERFTOOLS_LIBRARIES
-        ${GPERFTOOLS_TCMALLOC}
-        ${GPERFTOOLS_PROFILER}
-        )
+# ── Build clean library list (drop any -NOTFOUND entries) ────────────────────
+set(GPERFTOOLS_LIBRARIES)
+foreach(_lib
+    GPERFTOOLS_TCMALLOC
+    GPERFTOOLS_PROFILER
+    GPERFTOOLS_TCMALLOC_MINIMAL
+    GPERFTOOLS_TCMALLOC_AND_PROFILER)
+    if(${_lib} AND NOT ${_lib} MATCHES "NOTFOUND")
+        list(APPEND GPERFTOOLS_LIBRARIES ${${_lib}})
+    endif()
+endforeach()
 
 set(GPERFTOOLS_INCLUDE_DIRS ${GPERFTOOLS_INCLUDE_DIR})
-set(GPERFTOOLS_LIBRARY_DIRS ${GPERFTOOLS_LIBRARY_DIR})
 
-if(GPERFTOOLS_USE_STATIC_LIBS)
-    set(CMAKE_FIND_LIBRARY_SUFFIXES ${_CMAKE_FIND_LIBRARY_SUFFIXES})
+# Library directory (only when at least one component was found)
+if(GPERFTOOLS_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC MATCHES "NOTFOUND")
+    get_filename_component(GPERFTOOLS_LIBRARY_DIRS ${GPERFTOOLS_TCMALLOC} DIRECTORY)
+elseif(GPERFTOOLS_PROFILER AND NOT GPERFTOOLS_PROFILER MATCHES "NOTFOUND")
+    get_filename_component(GPERFTOOLS_LIBRARY_DIRS ${GPERFTOOLS_PROFILER} DIRECTORY)
 endif()
 
+if(GPERFTOOLS_USE_STATIC_LIBS)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ${_gperf_ORIG_SUFFIXES})
+endif()
+
+# ── Standard result handling ──────────────────────────────────────────────────
+# NOTE: package name MUST match what find_package() was called with so that
+# find_package_handle_standard_args sets the right <PackageName>_FOUND variable.
 include(FindPackageHandleStandardArgs)
-find_package_handle_standard_args(
-        GPERFTOOLS
-        REQUIRED_VARS
-        GPERFTOOLS_INCLUDE_DIR
-        HANDLE_COMPONENTS
+find_package_handle_standard_args(Gperftools
+    REQUIRED_VARS GPERFTOOLS_INCLUDE_DIR
+    HANDLE_COMPONENTS
 )
+
+# ── Create IMPORTED targets ───────────────────────────────────────────────────
+if(Gperftools_FOUND)
+    macro(_gperftools_make_target target lib)
+        if(${lib} AND NOT ${lib} MATCHES "NOTFOUND" AND NOT TARGET ${target})
+            add_library(${target} UNKNOWN IMPORTED)
+            set_target_properties(${target} PROPERTIES
+                IMPORTED_LOCATION             "${${lib}}"
+                INTERFACE_INCLUDE_DIRECTORIES "${GPERFTOOLS_INCLUDE_DIR}"
+            )
+        endif()
+    endmacro()
+
+    _gperftools_make_target(Gperftools::TCMalloc             GPERFTOOLS_TCMALLOC)
+    _gperftools_make_target(Gperftools::Profiler              GPERFTOOLS_PROFILER)
+    _gperftools_make_target(Gperftools::TCMalloc_Minimal      GPERFTOOLS_TCMALLOC_MINIMAL)
+    _gperftools_make_target(Gperftools::TCMalloc_And_Profiler GPERFTOOLS_TCMALLOC_AND_PROFILER)
+endif()
