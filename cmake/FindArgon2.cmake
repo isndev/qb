@@ -53,4 +53,14 @@ find_package_handle_standard_args(Argon2
 if(ARGON2_FOUND)
     set(ARGON2_INCLUDE_DIRS ${ARGON2_INCLUDE_DIR})
     set(ARGON2_LIBRARIES ${ARGON2_LIBRARY})
+
+    # Create a modern imported target so consumers automatically inherit include dirs
+    # when linked via target_link_libraries(... Argon2::Argon2).
+    if(NOT TARGET Argon2::Argon2)
+        add_library(Argon2::Argon2 UNKNOWN IMPORTED)
+        set_target_properties(Argon2::Argon2 PROPERTIES
+            IMPORTED_LOCATION             "${ARGON2_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${ARGON2_INCLUDE_DIR}"
+        )
+    endif()
 endif()
