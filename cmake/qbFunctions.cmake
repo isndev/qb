@@ -292,13 +292,15 @@ function(qb_add_test)
 
     # On Windows, copy all runtime DLLs (gtest, gmock, OpenSSL, etc.) next to the
     # test executable so it can be launched directly without touching PATH.
-    # $<TARGET_RUNTIME_DLLS:…> enumerates every DLL the target transitively depends
-    # on — requires CMake >= 3.21 (bundled with VS 2022+ / VS 2026).
+    # We delegate to a cmake -P script instead of calling copy_if_different directly:
+    # when $<TARGET_RUNTIME_DLLS:…> is empty (all deps are static), copy_if_different
+    # receives no source files and exits with code 1. The script is a safe no-op.
     if(WIN32)
         add_custom_command(TARGET ${TEST_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:${TEST_NAME}>
-                "${TEST_BINARY_DIR}"
+            COMMAND ${CMAKE_COMMAND}
+                "-DDLL_LIST=$<JOIN:$<TARGET_RUNTIME_DLLS:${TEST_NAME}>,;>"
+                "-DDEST_DIR=${TEST_BINARY_DIR}"
+                -P "${QB_CMAKE_DIR}/deploy_runtime_dlls.cmake"
             COMMAND_EXPAND_LISTS
         )
     endif()
@@ -389,11 +391,13 @@ function(qb_add_benchmark)
 
     # On Windows, copy all runtime DLLs (benchmark, OpenSSL, etc.) next to the
     # benchmark executable so it can be launched directly without touching PATH.
+    # Same rationale as for tests: use a -P script to handle the empty-list case safely.
     if(WIN32)
         add_custom_command(TARGET ${BENCH_NAME} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:${BENCH_NAME}>
-                "${BENCH_BINARY_DIR}"
+            COMMAND ${CMAKE_COMMAND}
+                "-DDLL_LIST=$<JOIN:$<TARGET_RUNTIME_DLLS:${BENCH_NAME}>,;>"
+                "-DDEST_DIR=${BENCH_BINARY_DIR}"
+                -P "${QB_CMAKE_DIR}/deploy_runtime_dlls.cmake"
             COMMAND_EXPAND_LISTS
         )
     endif()
