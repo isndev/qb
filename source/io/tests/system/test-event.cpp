@@ -78,11 +78,20 @@ TEST(KernelEvents, Signal) {
 
     handler.registerEvent<qb::io::async::event::signal<SIGINT>>(actor).start();
 
+#ifdef _WIN32
+    // On Windows, CRT signal() is per-thread: std::raise() from a background thread
+    // is never delivered to libev's ev_sig watcher registered on this (main) thread.
+    // Raise from the same thread as the event loop so the signal handler fires here.
+    std::raise(SIGINT);
+    for (auto i = 0; i < 10 && !actor.nb_events; ++i)
+        handler.run(EVRUN_ONCE);
+#else
     std::thread t([]() { std::raise(SIGINT); });
     for (auto i = 0; i < 10 && !actor.nb_events; ++i)
         handler.run(EVRUN_ONCE);
-    EXPECT_EQ(actor.nb_events, 1);
     t.join();
+#endif
+    EXPECT_EQ(actor.nb_events, 1);
 }
 
 TEST(KernelEvents, Timer) {

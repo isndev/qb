@@ -126,8 +126,12 @@ send_signal_to_self() {
 #endif
 }
 
-#if !QB_PLATFORM_MACOS
-// Test focusing only on file events - not suitable for macOS
+#if !QB_PLATFORM_MACOS && !defined(_WIN32)
+// Test focusing only on file events - not suitable for macOS or Windows.
+// On Windows, libev's ev_stat falls back to timer-based polling when no
+// inotify/kqueue equivalent is available.  With interval=0 the default poll
+// period is ~5 seconds (DEF_STAT_INTERVAL), so the 1-second test window
+// never captures an event.
 TEST(KernelEventsCombined, FileEvent) {
     reinitialize_libev();
     qb::io::async::listener handler;
