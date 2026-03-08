@@ -316,11 +316,17 @@ public:
  */
 inline void
 init() {
-    // Reset the thread-local event loop so each test (or fresh standalone
-    // init call) starts with a clean slate. Without this, stale watchers
-    // registered by previous tests remain active and cause EVRUN_ONCE to
-    // return immediately instead of blocking until the next real event.
-    listener::current.clear();
+    // No-op: listener::current is a thread_local that initialises itself
+    // automatically.  Code that needs an explicitly clean event-loop state
+    // (e.g. unit-test TearDown) should call listener::current.clear()
+    // directly instead of relying on this function.
+    //
+    // WARNING: do NOT call listener::current.clear() here.  async::init()
+    // is called from multi-threaded test fixtures that have already created
+    // server/client objects in the same thread-local listener.  Clearing the
+    // listener destroys those objects' registered kernel events (their
+    // io::base::_async_event references become dangling), which silently
+    // breaks accept sockets, I/O watchers, and timeouts.
 }
 
 /**

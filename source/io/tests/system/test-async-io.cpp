@@ -48,7 +48,12 @@ protected:
 
     void
     TearDown() override {
-        // Cleanup after each test
+        // Explicitly flush and destroy all event watchers registered by this
+        // test.  Without this, orphaned Timeout/io objects from one test
+        // accumulate in listener::current and cause the next test's
+        // EVRUN_ONCE/EVRUN_NOWAIT to fire stale events immediately, which
+        // distorts timing-sensitive tests such as TimerPrecision.
+        async::listener::current.clear();
     }
 };
 
