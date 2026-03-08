@@ -47,7 +47,11 @@ set(QB_FRAMEWORK_VERSION_PATCH 0)
 set(QB_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/.." CACHE PATH "qb framework root directory")
 get_filename_component(QB_ROOT_DIR "${QB_ROOT_DIR}" ABSOLUTE)
 set(QB_INCLUDE_DIR "${QB_ROOT_DIR}/include")
-set(QB_CMAKE_DIR "${QB_ROOT_DIR}/cmake")
+# CACHE INTERNAL so that QB_CMAKE_DIR is globally visible across all
+# add_subdirectory() scopes (e.g. qbm modules added after the qb subtree).
+# Without CACHE, the variable stays local to qb's subdirectory scope and
+# qb_add_test / qb_add_benchmark cannot find deploy_runtime_dlls.cmake.
+set(QB_CMAKE_DIR  "${QB_ROOT_DIR}/cmake"   CACHE INTERNAL "qb cmake scripts directory")
 set(QB_MODULES_DIR "${QB_ROOT_DIR}/modules")
 set(QB_SOURCE_DIR "${QB_ROOT_DIR}/source")
 

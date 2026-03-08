@@ -295,12 +295,17 @@ function(qb_add_test)
     # We delegate to a cmake -P script instead of calling copy_if_different directly:
     # when $<TARGET_RUNTIME_DLLS:…> is empty (all deps are static), copy_if_different
     # receives no source files and exits with code 1. The script is a safe no-op.
+    #
+    # Use CMAKE_CURRENT_FUNCTION_LIST_DIR (CMake 3.17+) which resolves to the
+    # directory of THIS file at function-definition time, not the calling directory.
+    # This avoids the scope issue where QB_CMAKE_DIR is undefined when qb_add_test()
+    # is called from a qbm subdirectory that was added after qb's own scope closed.
     if(WIN32)
         add_custom_command(TARGET ${TEST_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND}
                 "-DDLL_LIST=$<JOIN:$<TARGET_RUNTIME_DLLS:${TEST_NAME}>,;>"
                 "-DDEST_DIR=${TEST_BINARY_DIR}"
-                -P "${QB_CMAKE_DIR}/deploy_runtime_dlls.cmake"
+                -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/deploy_runtime_dlls.cmake"
             COMMAND_EXPAND_LISTS
         )
     endif()
@@ -392,12 +397,14 @@ function(qb_add_benchmark)
     # On Windows, copy all runtime DLLs (benchmark, OpenSSL, etc.) next to the
     # benchmark executable so it can be launched directly without touching PATH.
     # Same rationale as for tests: use a -P script to handle the empty-list case safely.
+    # CMAKE_CURRENT_FUNCTION_LIST_DIR resolves to this file's directory regardless
+    # of which scope calls qb_add_benchmark().
     if(WIN32)
         add_custom_command(TARGET ${BENCH_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND}
                 "-DDLL_LIST=$<JOIN:$<TARGET_RUNTIME_DLLS:${BENCH_NAME}>,;>"
                 "-DDEST_DIR=${BENCH_BINARY_DIR}"
-                -P "${QB_CMAKE_DIR}/deploy_runtime_dlls.cmake"
+                -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/deploy_runtime_dlls.cmake"
             COMMAND_EXPAND_LISTS
         )
     endif()

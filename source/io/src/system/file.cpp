@@ -64,6 +64,8 @@ file::open(int const fd) noexcept {
 
 int
 file::write(const char *data, std::size_t const size) const noexcept {
+    if (!is_open())
+        return -1;
 #ifdef _WIN32
     return ::_write(_handle, data, static_cast<unsigned int>(size));
 #else
@@ -73,6 +75,8 @@ file::write(const char *data, std::size_t const size) const noexcept {
 
 int
 file::read(char *data, std::size_t const size) const noexcept {
+    if (!is_open())
+        return -1;
 #ifdef _WIN32
     return ::_read(_handle, data, static_cast<unsigned int>(size));
 #else
@@ -83,16 +87,22 @@ file::read(char *data, std::size_t const size) const noexcept {
 void
 file::close() noexcept {
     if (is_open()) {
+        const int fd = _handle;
+        // Pre-invalidate the handle before calling the OS close.
+        // This prevents re-entry and, critically on Windows, avoids a second
+        // _close() call if two file objects share the same descriptor (copy
+        // semantics): the second object will see _handle == FD_INVALID and
+        // skip the call, preventing the CRT fast-fail (0xc0000409).
+        _handle = FD_INVALID;
 #ifdef _WIN32
-        auto ret = ::_close(_handle);
+        // _get_osfhandle() returns -1 without crashing for an already-closed
+        // (or otherwise invalid) descriptor, letting us skip _close() safely.
+        if (::_get_osfhandle(fd) != static_cast<intptr_t>(-1))
+            ::_close(fd);
 #else
-        auto ret = ::close(_handle);
-#endif
-
-        if (!ret)
-            _handle = FD_INVALID;
-        else
+        if (::close(fd))
             std::cerr << "Failed to close file" << std::endl;
+#endif
     }
 }
 
