@@ -388,25 +388,59 @@ endfunction()
 # Feature Detection
 # -----------------------------------------------------------------------------
 function(qb_check_cpp_features)
-    # Check for C++17 features
+    # Check for C++17 features (guaranteed in C++23)
     check_cxx_source_compiles(
         "#include <optional>
          int main() { std::optional<int> opt; return 0; }"
         QB_HAS_OPTIONAL
     )
-    
+
     check_cxx_source_compiles(
         "#include <string_view>
          int main() { std::string_view sv; return 0; }"
         QB_HAS_STRING_VIEW
     )
-    
+
     check_cxx_source_compiles(
         "#include <variant>
          int main() { std::variant<int, double> v; return 0; }"
         QB_HAS_VARIANT
     )
-    
+
+    # Check for C++20 features
+    check_cxx_source_compiles(
+        "#include <span>
+         int main() { std::span<int> s; return 0; }"
+        QB_HAS_SPAN
+    )
+
+    check_cxx_source_compiles(
+        "#include <concepts>
+         template<typename T>
+         concept Integral = std::is_integral_v<T>;
+         int main() { return 0; }"
+        QB_HAS_CONCEPTS
+    )
+
+    # Check for C++23 features
+    check_cxx_source_compiles(
+        "#include <expected>
+         int main() { std::expected<int, int> e; return 0; }"
+        QB_HAS_EXPECTED
+    )
+
+    check_cxx_source_compiles(
+        "#include <format>
+         int main() { std::format_args args; return 0; }"
+        QB_HAS_FORMAT
+    )
+
+    check_cxx_source_compiles(
+        "#include <print>
+         int main() { std::print(\"Hello\"); return 0; }"
+        QB_HAS_PRINT
+    )
+
     # Set compile definitions based on feature availability
     if(QB_HAS_OPTIONAL)
         list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_OPTIONAL=1")
@@ -417,7 +451,22 @@ function(qb_check_cpp_features)
     if(QB_HAS_VARIANT)
         list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_VARIANT=1")
     endif()
-    
+    if(QB_HAS_SPAN)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_SPAN=1")
+    endif()
+    if(QB_HAS_CONCEPTS)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_CONCEPTS=1")
+    endif()
+    if(QB_HAS_EXPECTED)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_EXPECTED=1")
+    endif()
+    if(QB_HAS_FORMAT)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_FORMAT=1")
+    endif()
+    if(QB_HAS_PRINT)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_PRINT=1")
+    endif()
+
     # Update parent scope
     set(QB_COMPILE_DEFINITIONS ${QB_COMPILE_DEFINITIONS} PARENT_SCOPE)
 endfunction()

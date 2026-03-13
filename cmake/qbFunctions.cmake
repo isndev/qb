@@ -35,7 +35,7 @@ set(QB_FUNCTIONS_INCLUDED TRUE)
 function(_qb_apply_target_properties target)
     # Set C++ standard
     set_target_properties(${target} PROPERTIES
-        CXX_STANDARD 17
+        CXX_STANDARD 23
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF
     )
