@@ -222,6 +222,24 @@ public:
     }
 
     /**
+     * @brief Generate a cryptographically secure random string
+     *
+     * Creates a random string of the specified length using OpenSSL's RAND_bytes
+     * for cryptographic security. This method is suitable for generating passwords,
+     * tokens, session IDs, and other security-critical random strings.
+     *
+     * @param len The length of the random string to generate
+     * @param range The range of characters to use (default: alphanumeric)
+     * @return A cryptographically secure random string
+     * @throws std::runtime_error if the random number generation fails
+     * @note This method uses OpenSSL's CSPRNG which is suitable for cryptographic use.
+     *       For non-cryptographic purposes (e.g., testing), use generate_random_string().
+     */
+    static std::string
+    generate_secure_random_string(std::size_t len, 
+                                   std::string_view range = range_alpha_numeric);
+
+    /**
      * @class base64
      * @brief Base64 encoding and decoding utilities
      *
@@ -563,6 +581,24 @@ public:
                                            DigestAlgorithm                   algorithm);
 
     /**
+     * @brief Compare two byte arrays in constant time to prevent timing attacks
+     *
+     * This function compares two byte arrays without short-circuit evaluation,
+     * ensuring the comparison takes the same amount of time regardless of
+     * how many bytes match. This prevents timing attacks that could leak
+     * information about the expected value (e.g., HMAC or password hashes).
+     *
+     * @param a First byte array to compare
+     * @param b Second byte array to compare
+     * @return true if the arrays are identical, false otherwise
+     * @note The execution time depends only on the length of the arrays,
+     *       not on their content. Arrays of different lengths always return false.
+     */
+    static bool
+    constant_time_compare(const std::vector<unsigned char> &a,
+                          const std::vector<unsigned char> &b) noexcept;
+
+    /**
      * @brief Generate an RSA key pair
      *
      * @param bits The key size in bits (e.g., 2048, 3072, 4096)
@@ -820,19 +856,6 @@ public:
     static std::vector<unsigned char>
     envelope_decrypt(const std::string &ciphertext, const std::string &private_key,
                      EnvelopeFormat format = EnvelopeFormat::BASE64);
-
-    /**
-     * @brief Secure string comparison (resistant to timing attacks)
-     *
-     * Compares two byte strings in constant time to avoid information leaks
-     * through execution time analysis attacks.
-     *
-     * @param a First string
-     * @param b Second string
-     * @return True if the strings are identical, false otherwise
-     */
-    static bool constant_time_compare(const std::vector<unsigned char> &a,
-                                      const std::vector<unsigned char> &b);
 
     /**
      * @brief Generate a secure token with optional TTL

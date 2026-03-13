@@ -121,7 +121,7 @@
 #if defined(UE_BUILD_DEBUG) || defined(UE_BUILD_DEVELOPMENT) || \
     defined(UE_BUILD_TEST) || defined(UE_BUILD_SHIPPING) || defined(UE_SERVER)
 #define QB_INSIDE_UNREAL 1
-#endif // Unreal Engine 4 bullshit
+#endif // Unreal Engine 4 integration detection
 
 /*
 **  The qb version macros
@@ -197,13 +197,26 @@
 
 /**
  * @def QB_DEFAULT_READ_BUFFER_SIZE
- * @brief Default buffer size for read operations (8KB)
- * @details This is the default chunk size used when reading data from streams.
- *          A larger buffer size can improve throughput but uses more memory.
- *          Individual transports can override this value if needed.
+ * @brief Default buffer size for stream read operations
+ * @details Defines the default chunk size for reading data into stream buffers.
+ *          Set to 64KB which provides good performance while remaining well below
+ *          32-bit integer limits to prevent truncation issues on 64-bit systems.
+ * @note This value is intentionally kept below INT_MAX/2 to ensure safe casts
+ *       to platform-specific socket API parameters (e.g., int on POSIX/Windows).
  * @ingroup IO
  */
-#define QB_DEFAULT_READ_BUFFER_SIZE 8192
+#define QB_DEFAULT_READ_BUFFER_SIZE static_cast<std::size_t>(65536)
+
+/**
+ * @def QB_MAX_IO_SIZE
+ * @brief Maximum safe I/O operation size
+ * @details Limits the maximum size of a single read/write operation to prevent
+ *          integer overflow when casting from size_t (64-bit) to platform APIs
+ *          that expect int or unsigned int (32-bit).
+ * @note Set to 1GB which is safely below UINT_MAX (4GB) while allowing large transfers.
+ * @ingroup IO
+ */
+#define QB_MAX_IO_SIZE (static_cast<std::size_t>(1) << 30)  // 1GB
 
 /**
  * @def QB_DEFAULT_FILE_WATCHER_INTERVAL

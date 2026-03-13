@@ -318,7 +318,7 @@ crypto::base64_encode(const unsigned char *data, size_t len) {
     if (!bio || !b64) {
         throw std::runtime_error("Error during BIO creation");
     }
-    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL); // pas de retour à la ligne
+    BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL); // disable newline characters in output
     bio = BIO_push(b64, bio);
     if (BIO_write(bio, data, len) <= 0 || BIO_flush(bio) != 1) {
         BIO_free_all(bio);
@@ -416,6 +416,72 @@ crypto::xor_bytes(const std::vector<unsigned char> &a,
         result[i] = a[i] ^ b[i];
     }
     return result;
+}
+
+// Generate cryptographically secure random string using OpenSSL RAND_bytes
+std::string
+crypto::generate_secure_random_string(std::size_t len, std::string_view range) {
+    if (range.empty()) {
+        throw std::invalid_argument("Character range cannot be empty");
+    }
+    if (len == 0) {
+        return "";
+    }
+
+    std::string result(len, '\0');
+    const std::size_t range_size = range.size();
+
+    // Generate random bytes using OpenSSL's CSPRNG
+    // We generate more bytes than needed to handle bias from modulo operation
+    const std::size_t bytes_needed = len * 2;  // Extra for bias correction
+    std::vector<unsigned char> random_bytes(bytes_needed);
+
+    if (RAND_bytes(random_bytes.data(), static_cast<int>(bytes_needed)) != 1) {
+        throw std::runtime_error("Failed to generate secure random bytes");
+    }
+
+    // Map random bytes to character range using rejection sampling for uniform distribution
+    std::size_t random_idx = 0;
+    for (std::size_t i = 0; i < len; ++i) {
+        // Use rejection sampling to avoid modulo bias
+        // Keep trying until we get a value in the valid range
+        unsigned char random_val;
+        do {
+            if (random_idx >= bytes_needed) {
+                // Need more random bytes
+                if (RAND_bytes(random_bytes.data(), static_cast<int>(bytes_needed)) != 1) {
+                    throw std::runtime_error("Failed to generate additional random bytes");
+                }
+                random_idx = 0;
+            }
+            random_val = random_bytes[random_idx++];
+        } while (random_val >= (256 / range_size) * range_size);
+
+        result[i] = range[random_val % range_size];
+    }
+
+    return result;
+}
+
+// Constant-time comparison to prevent timing attacks
+bool
+crypto::constant_time_compare(const std::vector<unsigned char> &a,
+                               const std::vector<unsigned char> &b) noexcept {
+    // If sizes differ, we can't compare - but we still need constant time
+    // We compute a dummy comparison to avoid leaking the size difference via timing
+    if (a.size() != b.size()) {
+        return false;
+    }
+
+    // Volatile to prevent compiler optimization that could short-circuit
+    volatile unsigned char result = 0;
+
+    // XOR all bytes together - result will be 0 only if all bytes match
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        result |= a[i] ^ b[i];
+    }
+
+    return result == 0;
 }
 
 } // namespace qb

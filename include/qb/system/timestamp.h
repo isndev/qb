@@ -916,7 +916,7 @@ public:
      * @return Raw TSC value (platform dependent)
      */
     static uint64_t read_tsc() noexcept {
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
         return __rdtsc();
 #elif defined(__i386__)
         uint64_t x;
@@ -926,8 +926,18 @@ public:
         unsigned hi, lo;
         __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
         return ((uint64_t)lo) | (((uint64_t)hi) << 32ULL);
+#elif defined(__aarch64__)
+        // ARM64: Use CNTVCT_EL0 (virtual counter) - monotonic, high resolution
+        uint64_t val;
+        __asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(val));
+        return val;
+#elif defined(__arm__) && defined(__ARM_ARCH_7A__)
+        // ARMv7A: Use PMCCNTR if available, otherwise fallback
+        uint64_t val;
+        __asm__ __volatile__("mrc p15, 0, %0, c9, c13, 0" : "=r"(val));
+        return val;
 #else
-        // Fallback to high-resolution clock on platforms without rdtsc
+        // Fallback to high-resolution clock for other platforms
         const auto now = std::chrono::high_resolution_clock::now();
         return std::chrono::duration_cast<std::chrono::nanoseconds>(
             now.time_since_epoch()).count();

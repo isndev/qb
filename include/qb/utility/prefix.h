@@ -74,6 +74,10 @@ cache_line_size() {
 #elif defined(_M_X64) || defined(_M_IA64)
 #define QB_LOCKFREE_PTR_COMPRESSION 1
 #define QB_LOCKFREE_DCAS_ALIGNMENT __declspec(align(16))
+#elif defined(_M_ARM64)
+// ARM64 supports 128-bit CAS (LDXP/STXP)
+#define QB_LOCKFREE_PTR_COMPRESSION 1
+#define QB_LOCKFREE_DCAS_ALIGNMENT __declspec(align(16))
 #endif
 
 #endif /* _MSC_VER */
@@ -88,6 +92,14 @@ cache_line_size() {
 #elif defined(__x86_64__)
 #define QB_LOCKFREE_PTR_COMPRESSION 1
 #define QB_LOCKFREE_DCAS_ALIGNMENT __attribute__((aligned(16)))
+#elif defined(__aarch64__)
+// ARM64: 128-bit alignment for LDXP/STXP atomic operations
+// Cache line is typically 64 bytes on ARM64
+#define QB_LOCKFREE_PTR_COMPRESSION 1
+#define QB_LOCKFREE_DCAS_ALIGNMENT __attribute__((aligned(16)))
+#elif defined(__arm__)
+// 32-bit ARM: typically no 128-bit CAS
+#define QB_LOCKFREE_DCAS_ALIGNMENT
 #elif defined(__alpha__)
 #define QB_LOCKFREE_PTR_COMPRESSION 1
 #define QB_LOCKFREE_DCAS_ALIGNMENT

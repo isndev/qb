@@ -68,11 +68,21 @@ class io_handler {
      */
     friend typename _Session::base_io_t;
 
+protected:
     /**
-     * @brief Handle a disconnected session
+     * @brief Handle a disconnected session - removes it from the sessions map.
      *
-     * This method is called when a session is disconnected. It removes
-     * the session from the sessions map.
+     * Called internally by the session's `dispose()` when a session disconnects.
+     * Derived classes that override `disconnected(uuid)` to add custom logic
+     * **MUST** call this base implementation to ensure the session is removed
+     * from `_sessions` and its shared_ptr is released.
+     *
+     * @code
+     * void disconnected(qb::uuid id) {
+     *     // custom logic...
+     *     io_handler<MyServer, MySession>::disconnected(id); // required
+     * }
+     * @endcode
      *
      * @param ident The UUID of the disconnected session
      */

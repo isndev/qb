@@ -374,14 +374,10 @@ public:
 #include <emmintrin.h>
 namespace qb {
 /**
- * @brief Executes a CPU pause instruction for spinloops
+ * @brief Executes a CPU pause instruction for spinloops (x86/x64 SSE2)
  *
- * This function helps improve performance of spin-wait loops by
- * providing a hint to the CPU that the code is in a spin-wait loop.
- * It can reduce power consumption and improve performance by avoiding
- * memory order violations and excessive bus activity.
- *
- * SSE2 implementation.
+ * Improves spin-wait loop performance by hinting to the CPU.
+ * Reduces power consumption and avoids excessive bus activity.
  */
 inline void
 spin_loop_pause() noexcept {
@@ -392,21 +388,50 @@ spin_loop_pause() noexcept {
 #include <intrin.h>
 namespace qb {
 /**
- * @brief Executes a CPU pause instruction for spinloops
- *
- * MSVC implementation for x64/x86.
+ * @brief Executes a CPU pause instruction for spinloops (MSVC x86/x64)
  */
 inline void
 spin_loop_pause() noexcept {
     _mm_pause();
 }
 } // namespace qb
+#elif defined(__aarch64__) || defined(_M_ARM64)
+namespace qb {
+/**
+ * @brief Executes CPU yield instruction for spinloops (ARM64)
+ *
+ * On ARM64, the yield instruction provides a hint that the current
+ * thread is spinning on a lock. This allows the CPU to optimize
+ * resource allocation and reduce power consumption.
+ */
+inline void
+spin_loop_pause() noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+    __asm__ volatile("yield" ::: "memory");
+#elif defined(_MSC_VER)
+    __dmb(_ARM64_BARRIER_SY);
+#endif
+}
+} // namespace qb
+#elif defined(__arm__)
+namespace qb {
+/**
+ * @brief Executes CPU yield instruction for spinloops (ARM32)
+ */
+inline void
+spin_loop_pause() noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+    __asm__ volatile("yield" ::: "memory");
+#endif
+}
+} // namespace qb
 #else
 namespace qb {
 /**
- * @brief Fallback implementation of spin_loop_pause for platforms without CPU pause
+ * @brief Fallback implementation for platforms without specific pause instruction
  *
- * Calls std::this_thread::yield() as a fallback.
+ * Uses std::this_thread::yield() which may cause context switch.
+ * Consider implementing platform-specific optimization for new architectures.
  */
 inline void
 spin_loop_pause() noexcept {

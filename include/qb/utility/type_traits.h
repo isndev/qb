@@ -95,7 +95,7 @@ struct crtp {
      */
     inline T const &
     impl() const noexcept {
-        return static_cast<T &>(*this);
+        return static_cast<T const &>(*this);
     }
 };
 
