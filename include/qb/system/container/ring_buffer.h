@@ -53,11 +53,23 @@ namespace detail {
  * @tparam C Whether this is a const iterator (true) or non-const iterator (false)
  * @tparam Overwrite Whether to overwrite old elements when the buffer is full
  */
+/**
+ * @brief Iterator for ring_buffer
+ *
+ * C++23: Modernized using explicit object parameter (deducing this) for cleaner
+ * const/non-const handling instead of SFINAE patterns.
+ *
+ * @tparam T The type of elements in the buffer
+ * @tparam N The capacity of the buffer
+ * @tparam C Whether this is a const iterator (true) or non-const iterator (false)
+ * @tparam Overwrite Whether to overwrite old elements when the buffer is full
+ */
 template <typename T, size_t N, bool C, bool Overwrite>
 class ring_buffer_iterator {
-    using buffer_t =
-        typename std::conditional<!C, ring_buffer<T, N, Overwrite> *,
-                                  ring_buffer<T, N, Overwrite> const *>::type;
+    // C++23: Use conditional_t with concepts-style approach
+    using buffer_t = std::conditional_t<!C,
+                                      ring_buffer<T, N, Overwrite> *,
+                                      ring_buffer<T, N, Overwrite> const *>;
 
 public:
     using self_type         = ring_buffer_iterator<T, N, C, Overwrite>;
@@ -98,47 +110,23 @@ public:
     ring_buffer_iterator &operator=(ring_buffer_iterator const &) noexcept = default;
 
     /**
-     * @brief Dereference operator (non-const version)
+     * @brief Dereference operator
+     * C++23: Single method handles both const and non-const using deducing this
      *
-     * @return Reference to the current element
+     * @return Reference to the current element (const or non-const based on iterator type)
      */
-    template <bool Z = C, typename std::enable_if<(!Z), int>::type * = nullptr>
-    [[nodiscard]] reference
-    operator*() noexcept {
-        return (*source_)[index_];
+    [[nodiscard]] auto &operator*(this auto &&self) noexcept {
+        return (*self.source_)[self.index_];
     }
 
     /**
-     * @brief Dereference operator (const version)
+     * @brief Arrow operator
+     * C++23: Single method handles both const and non-const using deducing this
      *
-     * @return Const reference to the current element
+     * @return Pointer to the current element (const or non-const based on iterator type)
      */
-    template <bool Z = C, typename std::enable_if<(Z), int>::type * = nullptr>
-    [[nodiscard]] const_reference
-    operator*() const noexcept {
-        return (*source_)[index_];
-    }
-
-    /**
-     * @brief Arrow operator (non-const version)
-     *
-     * @return Pointer to the current element
-     */
-    template <bool Z = C, typename std::enable_if<(!Z), int>::type * = nullptr>
-    [[nodiscard]] reference
-    operator->() noexcept {
-        return &((*source_)[index_]);
-    }
-
-    /**
-     * @brief Arrow operator (const version)
-     *
-     * @return Const pointer to the current element
-     */
-    template <bool Z = C, typename std::enable_if<(Z), int>::type * = nullptr>
-    [[nodiscard]] const_reference
-    operator->() const noexcept {
-        return &((*source_)[index_]);
+    [[nodiscard]] auto operator->(this auto &&self) noexcept {
+        return &((*self.source_)[self.index_]);
     }
 
     /**
@@ -333,8 +321,8 @@ public:
      */
     [[nodiscard]] reference
     back() noexcept {
-        return reinterpret_cast<reference>(
-            elements_[std::clamp<size_type>(head_ - 1, 0UL, N - 1)]);
+        const size_type idx = std::clamp<size_type>(head_ - 1, 0UL, N - 1);
+        return *reinterpret_cast<pointer>(elements_ + idx * sizeof(T));
     }
 
     /**
@@ -354,7 +342,7 @@ public:
      */
     [[nodiscard]] reference
     front() noexcept {
-        return reinterpret_cast<reference>(elements_[tail_]);
+        return *reinterpret_cast<pointer>(elements_ + tail_ * sizeof(T));
     }
 
     /**
@@ -375,7 +363,7 @@ public:
      */
     [[nodiscard]] reference
     operator[](size_type index) noexcept {
-        return reinterpret_cast<reference>(elements_[index]);
+        return *reinterpret_cast<pointer>(elements_ + index * sizeof(T));
     }
 
     /**
@@ -533,8 +521,10 @@ private:
         size_ = rhs.size_;
 
         try {
-            for (auto i = 0; i < size_; ++i)
-                new (elements_ + ((tail_ + i) % N)) T(rhs[tail_ + ((tail_ + i) % N)]);
+            // C++23: Using 'uz' suffix for size_t literals
+            for (auto i = 0uz; i < size_; ++i)
+                // C++23: Adjust for std::byte array indexing
+                new (elements_ + (((tail_ + i) % N) * sizeof(T))) T(rhs[tail_ + ((tail_ + i) % N)]);
         } catch (...) {
             while (!empty()) {
                 destroy(
@@ -588,7 +578,8 @@ private:
             destroy(head_,
                     std::bool_constant<std::is_trivially_destructible_v<value_type>>{});
 
-        new (elements_ + head_) T{std::forward<U>(value)};
+        // C++23: Adjust for std::byte array indexing
+        new (elements_ + head_ * sizeof(T)) T{std::forward<U>(value)};
         head_ = ++head_ % N;
 
         if (full())
@@ -619,11 +610,13 @@ private:
      */
     void
     destroy(size_type index, std::false_type) noexcept {
-        reinterpret_cast<pointer>(&elements_[index])->~T();
+        // C++23: Adjust for std::byte array indexing
+        reinterpret_cast<pointer>(elements_ + index * sizeof(T))->~T();
     }
 
     /// Storage for elements with proper alignment
-    typename std::aligned_storage<sizeof(T), alignof(T)>::type elements_[N]{};
+    /// C++23: std::aligned_storage is deprecated, using alignas with std::byte array
+    alignas(T) std::byte elements_[sizeof(T) * N]{};
     size_type head_{}; ///< Index where the next element will be inserted
     size_type tail_{}; ///< Index of the oldest element
     size_type size_{}; ///< Current number of elements in the buffer

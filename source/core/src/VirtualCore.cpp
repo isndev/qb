@@ -32,9 +32,10 @@
 #include <sys/sysctl.h>
 #include <sys/types.h>
 
-typedef struct cpu_set {
+// C++23: Use using alias instead of typedef struct
+using cpu_set_t = struct cpu_set {
     uint32_t count;
-} cpu_set_t;
+};
 
 static inline void
 CPU_ZERO(cpu_set_t *cs) {
@@ -65,7 +66,8 @@ pthread_getaffinity_np(pthread_t thread, size_t cpusetsize, cpu_set_t *cpuset) {
     CPU_ZERO(cpuset);
 
     // On macOS, no api to set affinity,
-    for (int i = 0; i < num_cores; i++) {
+    // C++23: Using auto for type deduction
+    for (auto i = 0; i < num_cores; ++i) {
         CPU_SET(i, cpuset);
     }
 
@@ -75,15 +77,17 @@ pthread_getaffinity_np(pthread_t thread, size_t cpusetsize, cpu_set_t *cpuset) {
 static int
 pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
     thread_port_t mach_thread;
-    int           core = 0;
+    // C++23: Use std::cmp_less for safe mixed-signed comparisons (or use unsigned types)
+    // Here we use size_t to match the unsigned nature of cpu_size and hardware_concurrency
+    size_t core = 0;
 
-    for (core = 0; core < 8 * cpu_size; core++) {
-        if (CPU_ISSET(core, cpu_set))
+    for (; core < 8 * cpu_size; ++core) {
+        if (CPU_ISSET(static_cast<int>(core), cpu_set))
             break;
     }
     if (core >= std::thread::hardware_concurrency())
         return -1;
-    thread_affinity_policy_data_t policy = {core};
+    thread_affinity_policy_data_t policy = {static_cast<integer_t>(core)};
     mach_thread                          = pthread_mach_thread_np(thread);
     const auto ret = thread_policy_set(mach_thread, THREAD_AFFINITY_POLICY,
                                        (thread_policy_t) &policy, 1);
@@ -134,6 +138,8 @@ void
 VirtualCore::__receive_events__(EventBucket *buffer, std::size_t const nb_events) {
     std::size_t i = 0;
     while (i < nb_events) {
+        // Safe reinterpret_cast: buffer is EventBucket array, Event is aligned within it
+        // This is a low-level event reconstruction from raw memory
         auto event = reinterpret_cast<Event *>(buffer + i);
 
         event->state.alive = 0;

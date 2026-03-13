@@ -57,7 +57,7 @@ public:
      * to the client.
      */
     client() noexcept {
-        if constexpr (has_member_Protocol<_Derived>::value) {
+        if constexpr (qb::has_type_Protocol<_Derived>) {
             if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
                 this->template switch_protocol<typename _Derived::Protocol>(
                     static_cast<_Derived &>(*this));

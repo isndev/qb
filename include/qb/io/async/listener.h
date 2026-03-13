@@ -115,7 +115,8 @@ public:
          */
         void
         invoke() final {
-            if constexpr (has_member_func_is_alive<_Actor>::value) {
+            // C++23: Use concept directly
+            if constexpr (qb::has_is_alive<_Actor>) {
                 if (likely(_actor.is_alive()))
                     _actor.on(_event);
             } else
@@ -182,6 +183,8 @@ public:
     template <typename EV_EVENT>
     void
     on(EV_EVENT &event, int revents) {
+        // Safe reinterpret_cast: event::base<EV_EVENT> is standard-layout compatible
+        // with EV_EVENT (libev watcher). Required for the C++ wrapper pattern around libev.
         auto &w    = *reinterpret_cast<event::base<EV_EVENT> *>(&event);
         w._revents = revents;
         w._interface->invoke();

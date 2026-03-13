@@ -388,7 +388,8 @@ TEST_F(CryptoAsymmetricTest, AsymmetricPerformance) {
     // Time X25519 key generation
     auto start_keygen = std::chrono::high_resolution_clock::now();
 
-    for (int i = 0; i < iterations; i++) {
+    // C++23: Using auto for type deduction
+    for (auto i = 0; i < iterations; ++i) {
         auto [private_key, public_key] = qb::crypto::generate_x25519_keypair_bytes();
         EXPECT_FALSE(private_key.empty());
         EXPECT_FALSE(public_key.empty());

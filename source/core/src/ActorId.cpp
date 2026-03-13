@@ -23,6 +23,7 @@
  */
 
 #include <qb/core/ActorId.h>
+#include <bit>  // C++20: std::bit_cast for safe type punning
 
 namespace qb {
 ActorId::ActorId() noexcept
@@ -34,11 +35,14 @@ ActorId::ActorId(ServiceId id, CoreId index) noexcept
     , _core_id(index) {}
 
 ActorId::ActorId(uint32_t id) noexcept {
-    *reinterpret_cast<uint32_t *>(this) = id;
+    // C++20: Using std::bit_cast for safe, well-defined type punning
+    // Replaces undefined behavior from reinterpret_cast strict aliasing violation
+    *this = std::bit_cast<ActorId>(id);
 }
 
 ActorId::operator uint32_t() const noexcept {
-    return *reinterpret_cast<uint32_t const *>(this);
+    // C++20: std::bit_cast provides well-defined conversion without UB
+    return std::bit_cast<uint32_t>(*this);
 }
 
 ServiceId

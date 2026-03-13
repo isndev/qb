@@ -49,7 +49,7 @@ namespace internal {
  */
 template <typename T>
 class ringbuffer : public nocopy {
-    typedef std::size_t        size_t;
+    using size_t = std::size_t;
     constexpr static const int padding_size =
         QB_LOCKFREE_CACHELINE_BYTES - sizeof(size_t);
     std::atomic<size_t> write_index_;
@@ -381,7 +381,7 @@ private:
  */
 template <typename T, size_t _MaxSize>
 class ringbuffer : public internal::ringbuffer<T> {
-    typedef std::size_t     size_t;
+    using size_t = std::size_t;
     constexpr static size_t max_size = _MaxSize + 1;
     std::array<T, max_size> array_;
 
@@ -478,7 +478,7 @@ public:
  */
 template <typename T>
 class ringbuffer<T, 0> : public internal::ringbuffer<T> {
-    typedef std::size_t size_t;
+    using size_t = std::size_t;
     const size_t        max_size_;
     std::unique_ptr<T>  array_;
 

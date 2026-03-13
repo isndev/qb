@@ -204,7 +204,8 @@ public:
         std::vector<CoreId> result;
         result.reserve(_bits.count());
 
-        for (size_t i = 0; i < MaxCores; ++i) {
+        // C++23: Using 'uz' suffix for size_t literals
+        for (auto i = 0uz; i < MaxCores; ++i) {
             if (_bits.test(i)) {
                 result.push_back(static_cast<CoreId>(i));
             }
@@ -221,7 +222,8 @@ public:
     to_unordered_set() const {
         qb::unordered_set<CoreId> result;
 
-        for (size_t i = 0; i < MaxCores; ++i) {
+        // C++23: Using 'uz' suffix for size_t literals
+        for (auto i = 0uz; i < MaxCores; ++i) {
             if (_bits.test(i)) {
                 result.insert(static_cast<CoreId>(i));
             }

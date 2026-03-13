@@ -218,7 +218,8 @@ public:
         registerEvent<StatusEvent>(*this);
 
         // Create error actors
-        for (int i = 0; i < _num_actors; i++) {
+        // C++23: Using auto for type deduction
+        for (auto i = 0; i < _num_actors; ++i) {
             auto actor_id = addRefActor<ErrorActor>(i, _should_actors_recover);
             _error_actors.push_back(actor_id->id());
         }

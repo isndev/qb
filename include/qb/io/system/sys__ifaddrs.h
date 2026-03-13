@@ -280,23 +280,25 @@ namespace qb::io {
 namespace internal {
 /**
  * @brief Netlink request structure for communicating with the kernel
+ * C++23: Modernized using using alias instead of typedef struct
  */
-typedef struct {
+using netlink_request = struct {
     struct nlmsghdr header;
     struct rtgenmsg message;
-} netlink_request;
+};
 
 /**
  * @brief Session information for netlink communication
+ * C++23: Modernized using using alias instead of typedef struct
  */
-typedef struct {
+using netlink_session = struct {
     int                sock_fd;
     int                seq;
     struct sockaddr_nl them;           /* kernel end */
     struct sockaddr_nl us;             /* our end */
     struct msghdr      message_header; /* for use with sendmsg */
     struct iovec       payload_vector; /* Used to send netlink_request */
-} netlink_session;
+};
 
 /**
  * @brief Extended sockaddr_ll structure to handle larger hardware addresses
@@ -1077,8 +1079,8 @@ error:
 
     return NULL;
 }
-typedef int (*getifaddrs_impl_fptr)(struct ifaddrs **);
-typedef void (*freeifaddrs_impl_fptr)(struct ifaddrs *ifa);
+using getifaddrs_impl_fptr = int (*)(struct ifaddrs **);   // C++23: using alias
+using freeifaddrs_impl_fptr = void (*)(struct ifaddrs *); // C++23: using alias
 
 static getifaddrs_impl_fptr  getifaddrs_impl  = NULL;
 static freeifaddrs_impl_fptr freeifaddrs_impl = NULL;

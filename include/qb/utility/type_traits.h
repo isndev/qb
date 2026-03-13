@@ -8,7 +8,7 @@
  * - Detection of container properties (e.g., `is_container`, `is_sequence_container`).
  * - Iterator category detection and value type extraction (`is_map_iterator`, `iterator_type`).
  * - CRTP (Curiously Recurring Template Pattern) base helper (`qb::crtp`).
- * - SFINAE utilities for detecting member types and functions (e.g., `has_push_back`, macros like `CREATE_MEMBER_CHECK`).
+ * - C++23 Concepts for detecting member types and functions (e.g., `has_is_alive`, `has_disconnect`).
  * - Helper aliases for `std::move` and `std::forward` (`qb::mv`, `qb::fwd`).
  * - Utilities for variadic template expansion (`qb::indexes_tuple`, `qb::expand`).
  *
@@ -19,6 +19,8 @@
 
 #ifndef QB_TYPE_TRAITS_H
 #define QB_TYPE_TRAITS_H
+#include <concepts>
+#include <ranges>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -66,6 +68,96 @@ fwd(std::remove_reference_t<T> &&t) noexcept {
 namespace qb {
 
 /**
+ * @brief Concept for container-like types with begin/end iteration
+ * @ingroup TypeTraits
+ * @tparam T Type to check
+ */
+template <typename T>
+concept container = requires(T t) {
+    typename T::const_iterator;
+    { t.begin() } -> std::convertible_to<typename T::const_iterator>;
+    { t.end() }   -> std::convertible_to<typename T::const_iterator>;
+};
+
+/**
+ * @brief Concept for sequence containers (vector, list, deque, etc.)
+ * @ingroup TypeTraits
+ * @tparam T Type to check
+ */
+template <typename T>
+concept sequence_container = container<T> && requires(T t) {
+    { t.push_back(std::declval<typename T::value_type>()) } -> std::same_as<void>;
+};
+
+/**
+ * @brief Concept for map-like containers with key_type and mapped_type
+ * @ingroup TypeTraits
+ * @tparam T Type to check
+ */
+template <typename T>
+concept associative_container = container<T> && requires(T t) {
+    typename T::key_type;
+    typename T::mapped_type;
+    { t[std::declval<const typename T::key_type &>()] } -> std::convertible_to<typename T::mapped_type &>;
+};
+
+/**
+ * @brief Concept for iterator types that have value_type
+ * @ingroup TypeTraits
+ * @tparam T Type to check
+ */
+template <typename T>
+concept has_iterator_traits = requires {
+    typename std::iterator_traits<T>::value_type;
+    typename std::iterator_traits<T>::reference;
+    typename std::iterator_traits<T>::pointer;
+    typename std::iterator_traits<T>::difference_type;
+    typename std::iterator_traits<T>::iterator_category;
+};
+
+/**
+ * @brief Concept for types that can be called with operator()
+ * @ingroup TypeTraits
+ * @tparam F Callable type
+ * @tparam Args Argument types
+ */
+template <typename F, typename... Args>
+concept callable = requires(F f, Args... args) {
+    { f(std::forward<Args>(args)...) };
+};
+
+/**
+ * @brief Concept for types with a clone() method
+ * @ingroup TypeTraits
+ * @tparam T Type to check
+ */
+template <typename T>
+concept clonable = requires(const T t) {
+    { t.clone() } -> std::convertible_to<T *>;
+};
+
+/**
+ * @brief Concept for types with value_type typedef
+ * @ingroup TypeTraits
+ * @tparam T Type to check
+ */
+template <typename T>
+concept has_value_type = requires {
+    typename T::value_type;
+};
+
+/**
+ * @brief Concept for types with size() method
+ * @ingroup TypeTraits
+ * @tparam T Type to check
+ */
+template <typename T>
+concept has_size_method = requires(T t) {
+    { t.size() } -> std::convertible_to<std::size_t>;
+};
+
+
+/**
  * @struct crtp
  * @ingroup TypeTraits
  * @brief Base class for implementing the Curiously Recurring Template Pattern (CRTP).
@@ -74,132 +166,38 @@ namespace qb {
  * to the derived class type `T`. This is the core mechanism of CRTP, enabling static polymorphism
  * and code reuse by allowing base classes to access members of their derived classes.
  *
+ * C++23: Uses explicit object parameter (deducing this) to handle const/non-const in one method.
+ *
  * @tparam T The derived class type that inherits from `crtp<T>`.
  */
 template <typename T>
 struct crtp {
     /**
      * @brief Access the derived class instance
+     * C++23: Single method with deducing-this handles both const and non-const.
+     * Preserves const-ness: const crtp<T> → const T&, non-const → T&.
      *
      * @return Reference to the derived class
      */
-    inline T &
-    impl() noexcept {
-        return static_cast<T &>(*this);
-    }
-
-    /**
-     * @brief Access the derived class instance (const version)
-     *
-     * @return Const reference to the derived class
-     */
-    inline T const &
-    impl() const noexcept {
-        return static_cast<T const &>(*this);
+    [[nodiscard]] inline auto &&impl(this auto &&self) noexcept {
+        using Self = std::remove_reference_t<decltype(self)>;
+        if constexpr (std::is_const_v<Self>)
+            return static_cast<const T &>(self);
+        else
+            return static_cast<T &>(self);
     }
 };
 
-namespace detail {
-/** @private */
-struct sfinae_base {
-    using yes = char;
-    using no  = yes[2];
-};
-
 /**
- * @brief Type trait to detect whether T has a const_iterator type
- *
- * @tparam T Type to check
- */
-template <typename T>
-struct has_const_iterator : private sfinae_base {
-private:
-    template <typename C>
-    static yes &test(typename C::const_iterator *);
-    template <typename C>
-    static no &test(...);
-
-public:
-    static const bool value = sizeof(test<T>(nullptr)) == sizeof(yes);
-    using type              = T;
-};
-
-/**
- * @brief Type trait to detect whether T has begin() and end() methods
- *
- * Checks if the type has proper const_iterator returning begin and end methods.
- *
- * @tparam T Type to check
- */
-template <typename T>
-struct has_begin_end : private sfinae_base {
-private:
-    template <typename C>
-    static yes &
-    f(typename std::enable_if<std::is_same<
-          decltype(static_cast<typename C::const_iterator (C::*)() const>(&C::begin)),
-          typename C::const_iterator (C::*)() const>::value>::type *);
-
-    template <typename C>
-    static no &f(...);
-
-    template <typename C>
-    static yes &
-    g(typename std::enable_if<
-        std::is_same<
-            decltype(static_cast<typename C::const_iterator (C::*)() const>(&C::end)),
-            typename C::const_iterator (C::*)() const>::value,
-        void>::type *);
-
-    template <typename C>
-    static no &g(...);
-
-public:
-    /** @brief Whether the type has a valid begin() method */
-    static bool const beg_value = sizeof(f<T>(nullptr)) == sizeof(yes);
-
-    /** @brief Whether the type has a valid end() method */
-    static bool const end_value = sizeof(g<T>(nullptr)) == sizeof(yes);
-};
-
-/**
- * @brief Internal implementation to detect map-like types
- *
- * @tparam T Type to check
- * @tparam U SFINAE enabler
- */
-template <typename T, typename U = void>
-struct is_mappish_impl : std::false_type {};
-
-/**
- * @brief Specialization for types that have key_type, mapped_type, and operator[]
- *
- * @tparam T Type to check
- */
-template <typename T>
-struct is_mappish_impl<
-    T, std::void_t<
-           typename T::key_type, typename T::mapped_type,
-           decltype(std::declval<T &>()[std::declval<const typename T::key_type &>()])>>
-    : std::true_type {};
-
-} // namespace detail
-
-/**
- * @struct is_container
- * @ingroup TypeTraits
  * @brief Type trait to check if a type `T` is a container.
- * @details A type `T` is considered a container if it has a `const_iterator` nested type,
- *          and `begin()` and `end()` member functions that return this `const_iterator`.
+ * @ingroup TypeTraits
+ * @details C++23: Uses the container concept instead of complex SFINAE.
+ *          A type `T` is considered a container if it satisfies qb::container concept.
  *          Specializations exist for C-style arrays, `std::valarray`, `std::pair`, and `std::tuple`.
  * @tparam T The type to check.
- * @return `std::true_type` if `T` is a container, `std::false_type` otherwise.
  */
 template <typename T>
-struct is_container
-    : public std::integral_constant<bool, detail::has_const_iterator<T>::value &&
-                                              detail::has_begin_end<T>::beg_value &&
-                                              detail::has_begin_end<T>::end_value> {};
+struct is_container : std::bool_constant<container<T>> {};
 
 /**
  * @brief Specialization for array types, which are containers
@@ -248,14 +246,14 @@ struct is_container<std::tuple<Args...>> : std::true_type {};
  * @ingroup TypeTraits
  * @brief Conditionally removes a reference from type `T` if `cond` is true.
  * @tparam T The type to process.
- * @tparam cond A boolean condition. If true, `std::remove_reference<T>::type` is used.
+ * @tparam cond A boolean condition. If true, `std::remove_reference_t<T>` is used.
  * @return `type` is `T` if `cond` is false, or `std::remove_reference_t<T>` if `cond` is true.
  *         `value` indicates if the reference was actually removed.
  */
 template <typename T, bool cond>
 struct remove_reference_if {
-    /** @brief Resulting type (unchanged if condition is false) */
-    typedef T type;
+    /** @brief Resulting type (unchanged if condition is false) - C++23: using alias */
+    using type = T;
     /** @brief Whether reference was removed */
     constexpr static bool value = false;
 };
@@ -267,8 +265,8 @@ struct remove_reference_if {
  */
 template <typename T>
 struct remove_reference_if<T, true> {
-    /** @brief Resulting type with reference removed */
-    typedef typename std::remove_reference<T>::type type;
+    /** @brief Resulting type with reference removed - C++23: using _t alias */
+    using type = std::remove_reference_t<T>;
     /** @brief Whether reference was removed */
     constexpr static bool value = true;
 };
@@ -277,13 +275,13 @@ struct remove_reference_if<T, true> {
  * @struct is_mappish
  * @ingroup TypeTraits
  * @brief Type trait to check if a type `T` is map-like.
- * @details A type is considered map-like if it has `key_type` and `mapped_type` nested types,
- *          and an `operator[]` that takes a `const key_type&`.
+ * @details C++23: Uses associative_container concept.
+ *          A type is considered map-like if it satisfies qb::associative_container.
  * @tparam T The type to check.
  * @return `std::true_type` if `T` is map-like, `std::false_type` otherwise.
  */
 template <typename T>
-struct is_mappish : detail::is_mappish_impl<T>::type {};
+struct is_mappish : std::bool_constant<associative_container<T>> {};
 
 /**
  * @struct is_pair
@@ -333,8 +331,17 @@ struct is_inserter : std::false_type {};
  */
 template <typename T>
 struct is_inserter<
-    T, typename std::enable_if<!std::is_void<typename T::container_type>::value>::type>
+    // C++23: Use _v suffix and _t alias
+    T, std::enable_if_t<!std::is_void_v<typename T::container_type>>>
     : std::true_type {};
+
+/**
+ * @brief Helper variable template for is_inserter
+ * @ingroup TypeTraits
+ * @tparam T Type to check
+ */
+template <typename T>
+inline constexpr bool is_inserter_v = is_inserter<T>::value;
 
 /**
  * @struct iterator_type
@@ -360,9 +367,10 @@ struct iterator_type {
  * @tparam Iter Iterator type
  */
 template <typename Iter>
-struct iterator_type<Iter, typename std::enable_if<is_inserter<Iter>::value>::type> {
-    /** @brief The value type of the underlying container */
-    using type = typename std::decay<typename Iter::container_type::value_type>::type;
+// C++23: Use _t alias and _v suffix
+struct iterator_type<Iter, std::enable_if_t<is_inserter_v<Iter>>> {
+    /** @brief The value type of the underlying container - C++23: using _t alias */
+    using type = std::decay_t<typename Iter::container_type::value_type>;
 };
 
 /**
@@ -384,7 +392,8 @@ struct is_terator : std::false_type {};
  * @tparam Iter Iterator type
  */
 template <typename Iter>
-struct is_terator<Iter, typename std::enable_if<is_inserter<Iter>::value>::type>
+// C++23: Use _t alias and _v suffix
+struct is_terator<Iter, std::enable_if_t<is_inserter_v<Iter>>>
     : std::true_type {};
 
 /**
@@ -395,10 +404,12 @@ struct is_terator<Iter, typename std::enable_if<is_inserter<Iter>::value>::type>
  * @tparam Iter Iterator type
  */
 template <typename Iter>
+// C++23: Use _t alias
 struct is_terator<Iter,
-                  typename std::enable_if<!std::is_void<
-                      typename std::iterator_traits<Iter>::value_type>::value>::type>
-    : std::integral_constant<bool, !std::is_convertible<Iter, std::string_view>::value> {
+                  std::enable_if_t<!std::is_void_v<
+                      typename std::iterator_traits<Iter>::value_type>>>
+    // C++23: Use _v suffix
+    : std::integral_constant<bool, !std::is_convertible_v<Iter, std::string_view>> {
 };
 
 /**
@@ -410,6 +421,30 @@ struct is_terator<Iter,
  */
 template <typename T>
 struct is_map_iterator : is_pair<typename iterator_type<T>::type> {};
+
+/**
+ * @brief Helper variable template for is_map_iterator
+ * @ingroup TypeTraits
+ * @tparam T Type to check
+ */
+template <typename T>
+inline constexpr bool is_map_iterator_v = is_map_iterator<T>::value;
+
+/**
+ * @brief Helper variable template for is_terator
+ * @ingroup TypeTraits
+ * @tparam Iter Type to check
+ */
+template <typename Iter>
+inline constexpr bool is_terator_v = is_terator<Iter>::value;
+
+/**
+ * @brief Helper type alias for iterator_type
+ * @ingroup TypeTraits
+ * @tparam Iter Iterator type
+ */
+template <typename Iter>
+using iterator_type_t = typename iterator_type<Iter>::type;
 
 /**
  * @struct has_push_back
@@ -428,8 +463,9 @@ struct has_push_back : std::false_type {};
  */
 template <typename T>
 struct has_push_back<
-    T, typename std::enable_if<std::is_void<decltype(std::declval<T>().push_back(
-           std::declval<typename T::value_type>()))>::value>::type> : std::true_type {};
+    // C++23: Use _t alias
+    T, std::enable_if_t<std::is_void_v<decltype(std::declval<T>().push_back(
+           std::declval<typename T::value_type>()))>>> : std::true_type {};
 
 /**
  * @struct has_insert
@@ -448,10 +484,27 @@ struct has_insert : std::false_type {};
  */
 template <typename T>
 struct has_insert<
-    T, typename std::enable_if<std::is_same<
+    // C++23: Use _t alias
+    T, std::enable_if_t<std::is_same_v<
            decltype(std::declval<T>().insert(std::declval<typename T::const_iterator>(),
                                              std::declval<typename T::value_type>())),
-           typename T::iterator>::value>::type> : std::true_type {};
+           typename T::iterator>>> : std::true_type {};
+
+/**
+ * @brief Helper variable template for has_push_back
+ * @ingroup TypeTraits
+ * @tparam T Type to check
+ */
+template <typename T>
+inline constexpr bool has_push_back_v = has_push_back<T>::value;
+
+/**
+ * @brief Helper variable template for has_insert
+ * @ingroup TypeTraits
+ * @tparam T Type to check
+ */
+template <typename T>
+inline constexpr bool has_insert_v = has_insert<T>::value;
 
 /**
  * @struct is_sequence_container
@@ -463,8 +516,9 @@ struct has_insert<
 template <typename T>
 struct is_sequence_container
     : std::integral_constant<
-          bool, has_push_back<T>::value &&
-                    !std::is_same<typename std::decay<T>::type, std::string>::value> {};
+          // C++23: Use _v suffix and _t alias
+          bool, has_push_back_v<T> &&
+                    !std::is_same_v<std::decay_t<T>, std::string>> {};
 
 /**
  * @struct is_associative_container
@@ -475,7 +529,8 @@ struct is_sequence_container
  */
 template <typename T>
 struct is_associative_container
-    : std::integral_constant<bool, has_insert<T>::value && !has_push_back<T>::value> {};
+    // C++23: Use _v suffix
+    : std::integral_constant<bool, has_insert_v<T> && !has_push_back_v<T>> {};
 
 /**
  * @struct nth_type
@@ -512,7 +567,7 @@ struct nth_type<num, T, Y...> : nth_type<num - 1, Y...> {};
  */
 template <typename T, typename... Y>
 struct nth_type<0, T, Y...> {
-    typedef T type; ///< The type at the specified index
+    using type = T; ///< The type at the specified index - C++23: using alias
 };
 
 /**
@@ -560,7 +615,7 @@ struct index_builder<num, indexes_tuple<Indexes...>>
  */
 template <size_t... Indexes>
 struct index_builder<0, indexes_tuple<Indexes...>> {
-    typedef indexes_tuple<Indexes...> type; ///< The final tuple type with all indices
+    using type = indexes_tuple<Indexes...>; ///< The final tuple type with all indices - C++23: using alias
     enum { size = sizeof...(Indexes) };     ///< Size of the index sequence
 };
 
@@ -594,328 +649,129 @@ struct expand {
 
 } // namespace qb
 
-/**
- * @brief Helper class to force ambiguity of class members
- *
- * Used in the implementation of member detection techniques.
- *
- * @tparam Args Types to inherit from
- */
-template <typename... Args>
-struct ambiguate : public Args... {};
+// ============================================================================
+// QB Compile-Time Trait Generation Macros
+// ============================================================================
+//
+// Three macro families cover all detection patterns in the framework:
+//
+//  ┌──────────────────────────────┬───────────────────────────────────────────┐
+//  │ Macro                        │ Detects                                   │
+//  ├──────────────────────────────┼───────────────────────────────────────────┤
+//  │ QB_DEFINE_METHOD_TRAIT(name) │ .name(Args...) — any or exact return type │
+//  │ QB_DEFINE_PROPERTY_TRAIT(nm) │ .nm() or .nm — bool-valued property       │
+//  │ QB_DEFINE_MEMBER_TRAIT(name) │ .name() — no-arg method existence         │
+//  │ QB_DEFINE_TYPE_TRAIT(name)   │ typename T::name — nested type member     │
+//  └──────────────────────────────┴───────────────────────────────────────────┘
+//
+// Each macro generates, for a given `name`:
+//
+//   In namespace qb (preferred for new code):
+//     qb::has_<name>[<T[, Args...]>]   — simple existence concept
+//     qb::has_<name>_r<C, Ret, Args...>— exact return type (METHOD only)
+//
+//   At global scope (legacy ::value compatibility):
+//     has_member_<name><T>::value      — wraps the qb:: concept
+//     has_member_func_<name><T>::value — identical alias (historical compat)
+//
+//   METHOD only — additional struct for `friend class` declarations:
+//     has_method_<name><C, Ret, Args...>::value
+//       Ret = void → existence only (qb::has_<name>)
+//       Ret ≠ void → exact return  (qb::has_<name>_r, std::same_as<Ret>)
+//
+// ============================================================================
 
-/**
- * @brief Type trait to check if a type exists
- *
- * Default implementation is false.
- *
- * @tparam A Type to check
- * @tparam SFINAE enabler
- */
-template <typename A, typename = void>
-struct got_type : std::false_type {};
+// ----------------------------------------------------------------------------
+// QB_DEFINE_METHOD_TRAIT — variadic method with optional return type constraint
+// ----------------------------------------------------------------------------
+#define QB_DEFINE_METHOD_TRAIT(name)                                             \
+    namespace qb {                                                               \
+    /** Concept: C& has .name(Args...) callable, any return type. */             \
+    template <typename C, typename... Args>                                      \
+    concept has_##name = requires(C &c) {                                        \
+        { c.name(std::declval<Args>()...) };                                     \
+    };                                                                           \
+    /** Concept: C& has .name(Args...) returning exactly Ret. */                 \
+    template <typename C, typename Ret, typename... Args>                        \
+    concept has_##name##_r = requires(C &c) {                                   \
+        { c.name(std::declval<Args>()...) } -> std::same_as<Ret>;               \
+    };                                                                           \
+    } /* namespace qb */                                                         \
+    /** Legacy trait — supports `friend class has_method_name<...>`. */          \
+    /** Ret=void → existence only; Ret≠void → exact return (same_as<Ret>). */   \
+    template <typename C, typename Ret, typename... Args>                        \
+    struct has_method_##name                                                     \
+        : std::bool_constant<std::is_void_v<Ret>                                 \
+                                 ? qb::has_##name<C, Args...>                    \
+                                 : qb::has_##name##_r<C, Ret, Args...>> {}
 
-/**
- * @brief Specialization that indicates the type exists
- *
- * @tparam A Type that exists
- */
-template <typename A>
-struct got_type<A> : std::true_type {
-    /** @brief The type that was found */
-    typedef A type;
-};
+// ----------------------------------------------------------------------------
+// QB_DEFINE_PROPERTY_TRAIT — bool-valued property: function OR data member
+// ----------------------------------------------------------------------------
+#define QB_DEFINE_PROPERTY_TRAIT(name)                                           \
+    namespace qb {                                                               \
+    /** Concept: T has .name() -> bool or .name convertible to bool. */          \
+    template <typename T>                                                        \
+    concept has_##name = requires(T &t) {                                        \
+        { t.name() } -> std::convertible_to<bool>;                              \
+    } || requires(T &t) {                                                        \
+        { t.name } -> std::convertible_to<bool>;                                \
+    };                                                                           \
+    } /* namespace qb */                                                         \
+    template <typename T>                                                        \
+    struct has_member_##name : std::bool_constant<qb::has_##name<T>> {};        \
+    template <typename T>                                                        \
+    struct has_member_func_##name : std::bool_constant<qb::has_##name<T>> {}
 
-/**
- * @brief Helper for signature checking
- *
- * @tparam T Type of the signature
- * @tparam The actual signature to check
- */
-template <typename T, T>
-struct sig_check : std::true_type {};
+// ----------------------------------------------------------------------------
+// QB_DEFINE_MEMBER_TRAIT — no-arg method existence
+// ----------------------------------------------------------------------------
+#define QB_DEFINE_MEMBER_TRAIT(name)                                             \
+    namespace qb {                                                               \
+    /** Concept: T has .name() callable (any return type). */                    \
+    template <typename T>                                                        \
+    concept has_##name = requires(T &t) {                                        \
+        { t.name() };                                                            \
+    };                                                                           \
+    } /* namespace qb */                                                         \
+    template <typename T>                                                        \
+    struct has_member_##name : std::bool_constant<qb::has_##name<T>> {};        \
+    template <typename T>                                                        \
+    struct has_member_func_##name : std::bool_constant<qb::has_##name<T>> {}
 
-/**
- * @brief Type trait to check if a type has a specific member
- *
- * @tparam Alias Alias type that may contain the member
- * @tparam AmbiguitySeed Seed type for ambiguity resolution
- */
-template <typename Alias, typename AmbiguitySeed>
-struct has_member {
-    template <typename C>
-    static char (&f(decltype(&C::value)))[1];
-    template <typename C>
-    static char (&f(...))[2];
+// ----------------------------------------------------------------------------
+// QB_DEFINE_TYPE_TRAIT — nested type alias/typedef detection
+// ----------------------------------------------------------------------------
+#define QB_DEFINE_TYPE_TRAIT(name)                                               \
+    namespace qb {                                                               \
+    /** Concept: T has a nested type member T::name. */                          \
+    template <typename T>                                                        \
+    concept has_type_##name = requires { typename T::name; };                   \
+    } /* namespace qb */                                                         \
+    template <typename T>                                                        \
+    struct has_member_##name : std::bool_constant<qb::has_type_##name<T>> {}
 
-    // Make sure the member name is consistently spelled the same.
-    static_assert(
-        (sizeof(f<AmbiguitySeed>(0)) == 1),
-        "Member name specified in AmbiguitySeed is different from member name specified "
-        "in Alias, or wrong Alias/AmbiguitySeed has been specified.");
+// ============================================================================
+// Trait instantiations for all symbols used in the qb framework
+// ============================================================================
 
-    /** @brief Whether the member exists */
-    static bool const value = sizeof(f<Alias>(0)) == 2;
-};
+// Method traits (variadic, with optional exact-return variant)
+QB_DEFINE_METHOD_TRAIT(on);
+QB_DEFINE_METHOD_TRAIT(read);
+QB_DEFINE_METHOD_TRAIT(write);
+QB_DEFINE_METHOD_TRAIT(flush);
 
-/**
- * @brief Macro to create a type trait to check for any member with a given name
- *
- * Creates has_member_[member] trait that can detect variables, functions,
- * classes, unions, or enums.
- *
- * @param member Name of the member to check for
- */
-#define CREATE_MEMBER_CHECK(member)                                               \
-                                                                                  \
-    template <typename T, typename = std::true_type>                              \
-    struct Alias_##member;                                                        \
-                                                                                  \
-    template <typename T>                                                         \
-    struct Alias_##member<                                                        \
-        T, std::integral_constant<bool, got_type<decltype(&T::member)>::value>> { \
-        static const decltype(&T::member) value;                                  \
-    };                                                                            \
-                                                                                  \
-    struct AmbiguitySeed_##member {                                               \
-        char member;                                                              \
-    };                                                                            \
-                                                                                  \
-    template <typename T>                                                         \
-    struct has_member_##member {                                                  \
-        static const bool value =                                                 \
-            has_member<Alias_##member<ambiguate<T, AmbiguitySeed_##member>>,      \
-                       Alias_##member<AmbiguitySeed_##member>>::value;            \
-    }
+// Bool property traits (function-or-variable)
+QB_DEFINE_PROPERTY_TRAIT(is_alive);
+QB_DEFINE_PROPERTY_TRAIT(is_broadcast);
+QB_DEFINE_PROPERTY_TRAIT(is_valid);
 
-/**
- * @brief Macro to create a type trait to check for a member variable with given name
- *
- * Creates has_member_var_[var_name] trait.
- *
- * @param var_name Name of the variable to check for
- */
-#define CREATE_MEMBER_VAR_CHECK(var_name)                                              \
-                                                                                       \
-    template <typename T, typename = std::true_type>                                   \
-    struct has_member_var_##var_name : std::false_type {};                             \
-                                                                                       \
-    template <typename T>                                                              \
-    struct has_member_var_##var_name<                                                  \
-        T, std::integral_constant<                                                     \
-               bool, !std::is_member_function_pointer<decltype(&T::var_name)>::value>> \
-        : std::true_type {}
+// No-arg member method traits
+QB_DEFINE_MEMBER_TRAIT(disconnect);
+QB_DEFINE_MEMBER_TRAIT(shared_from_this);
 
-/**
- * @brief Macro to create a type trait to check for a member class with given name
- *
- * Creates has_member_class_[class_name] trait.
- *
- * @param class_name Name of the class to check for
- */
-#define CREATE_MEMBER_CLASS_CHECK(class_name)                                       \
-                                                                                    \
-    template <typename T, typename = std::true_type>                                \
-    struct has_member_class_##class_name : std::false_type {};                      \
-                                                                                    \
-    template <typename T>                                                           \
-    struct has_member_class_##class_name<                                           \
-        T, std::integral_constant<bool, std::is_class<typename got_type<            \
-                                            typename T::class_name>::type>::value>> \
-        : std::true_type {}
+// Nested-type member trait
+QB_DEFINE_TYPE_TRAIT(Protocol);
 
-/**
- * @brief Macro to create a type trait to check for a member union with given name
- *
- * Creates has_member_union_[union_name] trait.
- *
- * @param union_name Name of the union to check for
- */
-#define CREATE_MEMBER_UNION_CHECK(union_name)                                       \
-                                                                                    \
-    template <typename T, typename = std::true_type>                                \
-    struct has_member_union_##union_name : std::false_type {};                      \
-                                                                                    \
-    template <typename T>                                                           \
-    struct has_member_union_##union_name<                                           \
-        T, std::integral_constant<bool, std::is_union<typename got_type<            \
-                                            typename T::union_name>::type>::value>> \
-        : std::true_type {}
-
-/**
- * @brief Macro to create a type trait to check for a member enum with given name
- *
- * Creates has_member_enum_[enum_name] trait.
- *
- * @param enum_name Name of the enum to check for
- */
-#define CREATE_MEMBER_ENUM_CHECK(enum_name)                                             \
-                                                                                        \
-    template <typename T, typename = std::true_type>                                    \
-    struct has_member_enum_##enum_name : std::false_type {};                            \
-                                                                                        \
-    template <typename T>                                                               \
-    struct has_member_enum_##enum_name<                                                 \
-        T,                                                                              \
-        std::integral_constant<                                                         \
-            bool, std::is_enum<typename got_type<typename T::enum_name>::type>::value>> \
-        : std::true_type {}
-
-/**
- * @brief Macro to create a type trait to check for a member function with given name
- *
- * Creates has_member_func_[func] trait that identifies functions specifically
- * (not variables, classes, unions, or enums).
- *
- * @param func Name of the function to check for
- */
-#define CREATE_MEMBER_FUNC_CHECK(func)                                                  \
-    template <typename T>                                                               \
-    struct has_member_func_##func {                                                     \
-        static const bool value =                                                       \
-            has_member_##func<T>::value && !has_member_var_##func<T>::value &&          \
-            !has_member_class_##func<T>::value && !has_member_union_##func<T>::value && \
-            !has_member_enum_##func<T>::value;                                          \
-    }
-
-/**
- * @brief Macro to create all member check variants for a single member name
- *
- * Creates checks for any member type, variables, classes, unions, enums, and functions.
- *
- * @param member Name of the member to check for
- */
-#define CREATE_MEMBER_CHECKS(member)   \
-    CREATE_MEMBER_CHECK(member);       \
-    CREATE_MEMBER_VAR_CHECK(member);   \
-    CREATE_MEMBER_CLASS_CHECK(member); \
-    CREATE_MEMBER_UNION_CHECK(member); \
-    CREATE_MEMBER_ENUM_CHECK(member);  \
-    CREATE_MEMBER_FUNC_CHECK(member)
-
-/**
- * @brief Macro to generate a type trait to check for a method with a specific signature
- *
- * Creates has_method_[method] trait that checks if a type has a method with the
- * given name and matches the specified signature (return type and parameters).
- *
- * @param method Name of the method to check for
- */
-#define GENERATE_HAS_METHOD(method)                                                  \
-                                                                                     \
-    template <typename C, typename Ret, typename... Args>                            \
-    class has_method_##method {                                                      \
-        template <typename T>                                                        \
-        static constexpr auto check(T *) -> typename std::is_same<                   \
-            decltype(std::declval<T>().method(std::declval<Args>()...)), Ret>::type; \
-                                                                                     \
-        template <typename>                                                          \
-        static constexpr std::false_type check(...);                                 \
-                                                                                     \
-        typedef decltype(check<C>(0)) type;                                          \
-                                                                                     \
-    public:                                                                          \
-        static constexpr bool value = type::value;                                   \
-    };
-
-/**
- * @brief Macro to generate a type trait to check for a member of any kind
- *
- * Creates has_member_[member] trait using a different technique that avoids
- * ambiguity issues in some contexts.
- *
- * @param member Name of the member to check for
- */
-#define GENERATE_HAS_MEMBER(member)                                                   \
-                                                                                      \
-    template <class T>                                                                \
-    class HasMember_##member {                                                        \
-    private:                                                                          \
-        using Yes = char[2];                                                          \
-        using No  = char[1];                                                          \
-                                                                                      \
-        struct Fallback {                                                             \
-            int member;                                                               \
-        };                                                                            \
-        struct Derived                                                                \
-            : T                                                                       \
-            , Fallback {};                                                            \
-                                                                                      \
-        template <class U>                                                            \
-        static No &test(decltype(U::member) *);                                       \
-        template <typename U>                                                         \
-        static Yes &test(U *);                                                        \
-                                                                                      \
-    public:                                                                           \
-        static constexpr bool RESULT = sizeof(test<Derived>(nullptr)) == sizeof(Yes); \
-    };                                                                                \
-                                                                                      \
-    template <class T>                                                                \
-    struct has_member_##member                                                        \
-        : public std::integral_constant<bool, HasMember_##member<T>::RESULT> {};
-
-/**
- * @brief Macro to generate a type trait to check for a member type
- *
- * Creates has_member_type_[Type] trait that checks if a type has a nested type
- * definition with the given name.
- *
- * @param Type Name of the type to check for
- */
-#define GENERATE_HAS_MEMBER_TYPE(Type)                                                \
-                                                                                      \
-    template <class T>                                                                \
-    class HasMemberType_##Type {                                                      \
-    private:                                                                          \
-        using Yes = char[2];                                                          \
-        using No  = char[1];                                                          \
-                                                                                      \
-        struct Fallback {                                                             \
-            struct Type {};                                                           \
-        };                                                                            \
-        struct Derived                                                                \
-            : T                                                                       \
-            , Fallback {};                                                            \
-                                                                                      \
-        template <class U>                                                            \
-        static No &test(typename U::Type *);                                          \
-        template <typename U>                                                         \
-        static Yes &test(U *);                                                        \
-                                                                                      \
-    public:                                                                           \
-        static constexpr bool RESULT = sizeof(test<Derived>(nullptr)) == sizeof(Yes); \
-    };                                                                                \
-                                                                                      \
-    template <class T>                                                                \
-    struct has_member_type_##Type                                                     \
-        : public std::integral_constant<bool, HasMemberType_##Type<T>::RESULT> {};
-
-// Create member check traits for commonly used members
-CREATE_MEMBER_CHECKS(is_alive);
-CREATE_MEMBER_CHECKS(is_broadcast);
-CREATE_MEMBER_CHECKS(is_valid);
-CREATE_MEMBER_CHECKS(disconnect);
-
-// Create method check traits for commonly used methods
-GENERATE_HAS_METHOD(on)
-GENERATE_HAS_METHOD(read)
-GENERATE_HAS_METHOD(write)
-
-/**
- * @struct has_shared_from_this
- * @ingroup TypeTraits
- * @brief Detects whether T::shared_from_this() is a valid expression.
- *
- * Works correctly even when T inherits from std::enable_shared_from_this<Base>
- * where Base != T (e.g. CRTP HTTP sessions that inherit from
- * enable_shared_from_this<Derived>). The standard std::is_base_of check fails
- * in that case because it looks for enable_shared_from_this<T> specifically.
- */
-template<typename T, typename = void>
-struct has_shared_from_this : std::false_type {};
-
-template<typename T>
-struct has_shared_from_this<T, std::void_t<decltype(std::declval<T &>().shared_from_this())>>
-    : std::true_type {};
 
 #endif // QB_TYPE_TRAITS_H

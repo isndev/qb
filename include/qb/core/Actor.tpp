@@ -30,25 +30,25 @@
 
 namespace qb {
 
-template <typename _Actor>
+template <callback_type _Actor>
 void
 Actor::registerCallback(_Actor &actor) const noexcept {
     VirtualCore::_handler->registerCallback(actor);
 }
 
-template <typename _Actor>
+template <callback_type _Actor>
 void
 Actor::unregisterCallback(_Actor &actor) const noexcept {
     VirtualCore::_handler->unregisterCallback(actor.id());
 }
 
-template <typename _Event, typename _Actor>
+template <event_type _Event, actor_type _Actor>
 void
 Actor::registerEvent(_Actor &actor) const noexcept {
     VirtualCore::_handler->registerEvent<_Event>(actor);
 }
 
-template <typename _Event, typename _Actor>
+template <event_type _Event, actor_type _Actor>
 void
 Actor::unregisterEvent(_Actor &actor) const noexcept {
     VirtualCore::_handler->unregisterEvent<_Event>(actor);
@@ -121,7 +121,7 @@ Actor::getService() const noexcept {
     return VirtualCore::_handler->getService<_ServiceActor>();
 }
 
-template <typename _Event, typename... _Args>
+template <event_type _Event, typename... _Args>
 Actor::EventBuilder &
 Actor::EventBuilder::push(_Args &&...args) noexcept {
     dest_pipe.push<_Event>(std::forward<_Args>(args)...);

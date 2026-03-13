@@ -185,7 +185,8 @@ Test_SESH(std::size_t expected_count) {
     FakeActor actor(1);
 
     _Event::_count = 0;
-    for (auto i = 0; i < 1024; ++i) {
+    // C++23: Using 'uz' suffix for size_t literals
+    for (auto i = 0uz; i < 1024uz; ++i) {
         qb::router::sesh<_Event, FakeActor>(actor).template route<_CleanEvent>(event);
     }
     EXPECT_EQ(_Event::_count, expected_count);
@@ -214,8 +215,9 @@ Test_SEMH(std::size_t expected_count) {
     semhRouter.unsubscribe(actor1.id());
 
     _Event::_count = 0;
-    for (auto i = 0; i < 1024; ++i) {
-        for (auto j = 1; j < 4; ++j) {
+    // C++23: Using 'uz' suffix for size_t literals
+    for (auto i = 0uz; i < 1024uz; ++i) {
+        for (auto j = 1uz; j < 4uz; ++j) {
             event.dest = ActorId(j);
             semhRouter.template route<_CleanEvent>(event);
         }
@@ -247,7 +249,8 @@ Test_MESH(std::size_t expected_count) {
     meshRouter.template subscribe<_Event>();
 
     _Event::_count = 0;
-    for (auto i = 0; i < 1024; ++i) {
+    // C++23: Using 'uz' suffix for size_t literals
+    for (auto i = 0uz; i < 1024uz; ++i) {
         meshRouter.route(event);
     }
     EXPECT_EQ(_Event::_count, expected_count);
@@ -282,8 +285,9 @@ Test_MEMH(std::size_t expected_count) {
 
     _Event::_count     = 0;
     const auto onError = [](auto &) {};
-    for (auto i = 0; i < 1024; ++i) {
-        for (auto j = 1; j < 6; ++j) {
+    // C++23: Using 'uz' suffix for size_t literals
+    for (auto i = 0uz; i < 1024uz; ++i) {
+        for (auto j = 1uz; j < 6uz; ++j) {
             event.dest = ActorId(j);
             memhRouter.route(event, onError);
         }

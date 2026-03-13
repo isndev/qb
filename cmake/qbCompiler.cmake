@@ -407,13 +407,6 @@ function(qb_check_cpp_features)
         QB_HAS_VARIANT
     )
 
-    # Check for C++20 features
-    check_cxx_source_compiles(
-        "#include <span>
-         int main() { std::span<int> s; return 0; }"
-        QB_HAS_SPAN
-    )
-
     check_cxx_source_compiles(
         "#include <concepts>
          template<typename T>
@@ -450,9 +443,6 @@ function(qb_check_cpp_features)
     endif()
     if(QB_HAS_VARIANT)
         list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_VARIANT=1")
-    endif()
-    if(QB_HAS_SPAN)
-        list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_SPAN=1")
     endif()
     if(QB_HAS_CONCEPTS)
         list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_CONCEPTS=1")

@@ -36,7 +36,8 @@ template <typename _Actor, typename... _Args>
 ActorId
 CoreInitializer::addActor(_Args &&...args) noexcept {
     ActorId id = ActorId::NotFound;
-    if constexpr (std::is_base_of_v<Service, _Actor>) {
+    // C++23: Use service_type concept instead of std::is_base_of_v
+    if constexpr (service_type<_Actor>) {
         if (_registered_services.find(_Actor::ServiceIndex) ==
             _registered_services.end()) {
             _registered_services.insert(_Actor::ServiceIndex);

@@ -85,7 +85,7 @@ public:
     explicit client(_Server &server)
         : _uuid(generate_random_uuid())
         , _server(server) {
-        if constexpr (has_member_Protocol<_Derived>::value) {
+        if constexpr (qb::has_type_Protocol<_Derived>) {
             if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
                 this->template switch_protocol<typename _Derived::Protocol>(
                     static_cast<_Derived &>(*this));
@@ -102,8 +102,8 @@ public:
      * @brief Get the associated server
      * @return Reference to the associated server
      */
-    inline _Server &
-    server() {
+    [[nodiscard]] inline _Server &
+    server() noexcept {
         return _server;
     }
 
@@ -111,8 +111,8 @@ public:
      * @brief Get the associated server (const version)
      * @return Const reference to the associated server
      */
-    inline _Server &
-    server() const {
+    [[nodiscard]] inline _Server const &
+    server() const noexcept {
         return _server;
     }
 
@@ -120,7 +120,7 @@ public:
      * @brief Get the client's unique identifier
      * @return Const reference to the UUID
      */
-    inline uuid const &
+    [[nodiscard]] inline uuid const &
     id() const noexcept {
         return _uuid;
     }
@@ -129,15 +129,16 @@ public:
      * @brief Get the client as a shared pointer
      * @return Shared pointer to the client
      */
-    inline auto
+    [[nodiscard]] inline auto
     shared() const {
         return server().session(id());
     }
+
     /**
      * @brief Get the client's IP address
      * @return IP address
      */
-    inline auto
+    [[nodiscard]] inline auto
     ip() const {
         return transport().peer_endpoint().ip();
     }
@@ -146,7 +147,7 @@ public:
      * @brief Get the client's port
      * @return Port
      */
-    inline auto
+    [[nodiscard]] inline auto
     port() const {
         return transport().peer_endpoint().port();
     }
@@ -191,7 +192,7 @@ public:
      * an instance of that protocol is created and attached to the client.
      */
     client() noexcept {
-        if constexpr (has_member_Protocol<_Derived>::value) {
+        if constexpr (qb::has_type_Protocol<_Derived>) {
             if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
                 this->template switch_protocol<typename _Derived::Protocol>(
                     static_cast<_Derived &>(*this));

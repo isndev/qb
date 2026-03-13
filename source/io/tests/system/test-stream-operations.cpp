@@ -140,7 +140,7 @@ TEST_F(StreamTest, FileOutputStream) {
     const std::string write_content = "Testing output stream";
 
     // Add data to output buffer and write
-    output_stream.publish(write_content.c_str(), write_content.size());
+    std::ignore = output_stream.publish(write_content.c_str(), write_content.size());
     int write_result = output_stream.write();
     ASSERT_GT(write_result, 0);
 
@@ -165,7 +165,7 @@ TEST_F(StreamTest, FileOutputStream) {
     std::vector<char> vec_buffer(vec_content.begin(), vec_content.end());
 
     // Add data to output buffer and write
-    output_stream.publish(vec_buffer.data(), vec_buffer.size());
+    std::ignore = output_stream.publish(vec_buffer.data(), vec_buffer.size());
     write_result = output_stream.write();
     ASSERT_GT(write_result, 0);
 
@@ -197,7 +197,7 @@ TEST_F(StreamTest, FileBidirectionalStream) {
     const std::string write_content = "Bidirectional stream test";
 
     // Add data to output buffer and write
-    bidir_stream.publish(write_content.c_str(), write_content.size());
+    std::ignore = bidir_stream.publish(write_content.c_str(), write_content.size());
     int write_result = bidir_stream.write();
 
     if (write_result <= 0) {
@@ -256,7 +256,7 @@ TEST_F(StreamTest, FileTransport) {
     const std::string write_content = "Transport file test";
 
     // Add data to output buffer and write
-    transport.publish(write_content.c_str(), write_content.size());
+    std::ignore = transport.publish(write_content.c_str(), write_content.size());
     int write_result = transport.write();
 
     if (write_result <= 0) {
@@ -517,7 +517,7 @@ TEST_F(StreamTest, DISABLED_LargeDataTransfer) {
 
     while (total_written < buffer_size) {
         size_t current_chunk = std::min(chunk_size, buffer_size - total_written);
-        stream.publish(large_buffer.data() + total_written, current_chunk);
+        std::ignore = stream.publish(large_buffer.data() + total_written, current_chunk);
         int bytes_written = stream.write();
         EXPECT_GT(bytes_written, 0);
         total_written += current_chunk;
@@ -568,7 +568,7 @@ TEST_F(StreamTest, StreamErrors) {
     output_stream.transport() = closed_file;
 
     const std::string test_data = "Test data";
-    output_stream.publish(test_data.c_str(), test_data.size());
+    std::ignore = output_stream.publish(test_data.c_str(), test_data.size());
     result = output_stream.write();
     EXPECT_LT(result, 0);
 }
@@ -646,7 +646,7 @@ TEST_F(StreamTest, DISABLED_MemoryBufferStream) {
 
     // Test writing to memory buffer
     const std::string test_data = "Testing memory buffer stream";
-    stream.publish(test_data.c_str(), test_data.size());
+    std::ignore = stream.publish(test_data.c_str(), test_data.size());
     int write_result = stream.write();
     ASSERT_GT(write_result, 0);
 
@@ -710,7 +710,7 @@ TEST_F(StreamTest, StreamChaining) {
     const char *content_data = input_stream.in().data();
 
     // Publish data to output stream's buffer
-    output_stream.publish(content_data, content_size);
+    std::ignore = output_stream.publish(content_data, content_size);
 
     // Write from output stream's buffer to file
     int write_result = output_stream.write();
@@ -770,7 +770,7 @@ TEST_F(StreamTest, NullStream) {
 
     // Test writing to null stream
     const std::string test_data = "This data should be discarded";
-    null_stream.publish(test_data.c_str(), test_data.size());
+    std::ignore = null_stream.publish(test_data.c_str(), test_data.size());
     int written = null_stream.write();
 
     // Should report all bytes written
@@ -893,7 +893,7 @@ TEST_F(StreamTest, AdvancedErrorHandling) {
     // Test error recovery - should be able to publish and write data
     // even though the input file was deleted
     const std::string recovery_data = "Data written after error";
-    output_stream.publish(recovery_data.c_str(), recovery_data.size());
+    std::ignore = output_stream.publish(recovery_data.c_str(), recovery_data.size());
     int write_result = output_stream.write();
     EXPECT_GT(write_result, 0);
 
@@ -918,7 +918,8 @@ TEST_F(StreamTest, StreamPerformance) {
 
     // Create random data
     std::vector<char> data(file_size);
-    for (size_t i = 0; i < file_size; i++) {
+    // C++23: Using 'uz' suffix for size_t literals
+    for (auto i = 0uz; i < file_size; ++i) {
         data[i] = static_cast<char>(rand() % 256);
     }
 
@@ -1000,7 +1001,7 @@ public:
         _transform_func(buffer.data(), buffer.size());
 
         // Publish transformed data
-        _base_stream.publish(buffer.data(), buffer.size());
+        std::ignore = _base_stream.publish(buffer.data(), buffer.size());
     }
 
     int
@@ -1029,7 +1030,8 @@ TEST_F(StreamTest, StreamComposition) {
 
     // Create a transform that converts lowercase to uppercase
     auto uppercase_transform = [](char *data, size_t size) {
-        for (size_t i = 0; i < size; i++) {
+        // C++23: Using 'uz' suffix for size_t literals
+        for (auto i = 0uz; i < size; ++i) {
             if (data[i] >= 'a' && data[i] <= 'z') {
                 data[i] = data[i] - 'a' + 'A';
             }

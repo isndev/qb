@@ -51,7 +51,8 @@ public:
         size_t q999 = 0;
         double mean = 0;
 
-        for (size_t i = 0; i < TBucketCount; i++) {
+        // C++23: Using 'uz' suffix for size_t literals
+        for (auto i = 0uz; i < TBucketCount; ++i) {
             auto current = buckets[i];
             accumulate_and_print(
                 output, unit, cum, mean, q50, q99, q999, current,

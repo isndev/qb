@@ -509,7 +509,7 @@ public:
      * // core_config.setLatency(100000); // 100us
      * @endcode
      */
-    [[nodiscard]] CoreInitializer &core(CoreId index);
+    [[nodiscard]] CoreInitializer &core(CoreId const index);
 
     /*!
      * @brief Set the default event loop latency for all VirtualCores.

@@ -38,7 +38,8 @@ BM_Unicast_Latency(benchmark::State &state) {
         qb::Main   main;
 
         qb::ActorIdList ids = {};
-        for (auto i = 0; i < nb_actor; ++i) {
+        // C++23: Using 'uz' suffix for size_t literals
+        for (auto i = 0uz; i < static_cast<std::size_t>(nb_actor); ++i) {
             const auto coreid = (i % (nb_core - (nb_core > 1))) + (nb_core > 1);
             ids = {main.addActor<ConsumerActor<Event>>(coreid, qb::ActorIdList(ids))};
         }

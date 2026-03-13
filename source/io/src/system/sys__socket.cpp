@@ -1013,7 +1013,6 @@ socket::tcp_rtt(socket_type s) {
         return info.tcpi_rtt;
 #elif defined(__APPLE__)
     struct tcp_connection_info info;
-    int                        length = sizeof(struct tcp_connection_info);
     /*
     info.tcpi_srtt: average RTT in ms
     info.tcpi_rttcur: most recent RTT in ms
