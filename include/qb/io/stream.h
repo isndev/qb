@@ -141,7 +141,9 @@ public:
     [[nodiscard]] int
     read(std::enable_if_t<has_method_read<_IO_, int, char *, std::size_t>::value,
                           Available> * = nullptr) noexcept {
-        static constexpr const std::size_t bucket_read = QB_DEFAULT_READ_BUFFER_SIZE;
+        // Use safe buffer size that won't overflow when cast to 32-bit for socket APIs
+        constexpr std::size_t bucket_read = QB_DEFAULT_READ_BUFFER_SIZE;
+        static_assert(bucket_read <= QB_MAX_IO_SIZE, "Buffer size exceeds safe I/O limits");
         
         // Security check: prevent DoS via buffer exhaustion
         // We only check the actual data size, not the capacity. The pipe may resize internally,
@@ -151,11 +153,14 @@ public:
             return -2; // Special error code for buffer size limit exceeded
         }
         
-        const auto ret = _in.read(_in_buffer.allocate_back(bucket_read), bucket_read);
+        // Clamp to max I/O size to prevent integer overflow in platform APIs
+        const std::size_t read_size = (bucket_read > QB_MAX_IO_SIZE) ? QB_MAX_IO_SIZE : bucket_read;
+        
+        const auto ret = _in.read(_in_buffer.allocate_back(read_size), read_size);
         if (ret >= 0)
-            _in_buffer.free_back(bucket_read - ret);
+            _in_buffer.free_back(read_size - static_cast<std::size_t>(ret));
         else
-            _in_buffer.free_back(bucket_read); // Release entire reservation on read failure (e.g. WSAEWOULDBLOCK)
+            _in_buffer.free_back(read_size); // Release entire reservation on read failure (e.g. WSAEWOULDBLOCK)
         return ret;
     }
 

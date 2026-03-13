@@ -25,6 +25,8 @@
 
 #include <qb/io/compression.h>
 
+#include <cstring>  // For std::memset
+
 #if defined(QB_HAS_COMPRESSION)
 #include <zlib.h>
 // zconf.h may define compress
@@ -53,9 +55,21 @@ public:
     zlib_compressor_base(int windowBits, int compressionLevel = Z_DEFAULT_COMPRESSION,
                          int method = Z_DEFLATED, int strategy = Z_DEFAULT_STRATEGY,
                          int memLevel = MAX_MEM_LEVEL)
-        : m_algorithm(windowBits >= 16 ? GZIP : DEFLATE) {
+        : m_state{Z_STREAM_ERROR}  // Initialize to invalid state
+        , m_algorithm(windowBits >= 16 ? GZIP : DEFLATE)
+        , m_initialized{false} {
+        // Initialize the z_stream structure to zero before use
+        std::memset(&m_stream, 0, sizeof(m_stream));
+        
         m_state = deflateInit2(&m_stream, compressionLevel, method, windowBits, memLevel,
                                strategy);
+        if (m_state != Z_OK) {
+            // Initialization failed - ensure we don't try to cleanup
+            m_initialized = false;
+            throw std::runtime_error("Failed to initialize zlib compressor: error " +
+                                     std::to_string(m_state));
+        }
+        m_initialized = true;
     }
 
     const std::string &
@@ -67,6 +81,10 @@ public:
     compress(const uint8_t *input, size_t input_size, uint8_t *output,
              size_t output_size, operation_hint hint, size_t &input_bytes_processed,
              bool &done) {
+        if (!m_initialized) {
+            throw std::runtime_error("Compressor not properly initialized");
+        }
+        
         if (m_state == Z_STREAM_END ||
             (hint != operation_hint::is_last && !input_size)) {
             input_bytes_processed = 0;
@@ -113,6 +131,9 @@ public:
 
     void
     reset() {
+        if (!m_initialized) {
+            throw std::runtime_error("Compressor not properly initialized");
+        }
         m_state = deflateReset(&m_stream);
         if (m_state != Z_OK) {
             throw std::runtime_error("Failed to reset zlib compressor " +
@@ -121,13 +142,18 @@ public:
     }
 
     ~zlib_compressor_base() {
-        (void) deflateEnd(&m_stream);
+        // Only call deflateEnd if initialization was successful
+        // Calling deflateEnd on an uninitialized stream can cause crashes
+        if (m_initialized) {
+            (void) deflateEnd(&m_stream);
+        }
     }
 
 private:
-    int                m_state{Z_BUF_ERROR};
-    z_stream           m_stream{};
+    int                m_state;
+    z_stream           m_stream;
     const std::string &m_algorithm;
+    bool               m_initialized;
 };
 
 const std::string zlib_compressor_base::GZIP(algorithm::GZIP);
@@ -137,9 +163,20 @@ const std::string zlib_compressor_base::DEFLATE(algorithm::DEFLATE);
 class zlib_decompressor_base : public decompress_provider {
 public:
     zlib_decompressor_base(int windowBits)
-        : m_algorithm(windowBits >= 16 ? zlib_compressor_base::GZIP
-                                       : zlib_compressor_base::DEFLATE) {
+        : m_state{Z_STREAM_ERROR}
+        , m_algorithm(windowBits >= 16 ? zlib_compressor_base::GZIP
+                                       : zlib_compressor_base::DEFLATE)
+        , m_initialized{false} {
+        // Initialize the z_stream structure to zero before use
+        std::memset(&m_stream, 0, sizeof(m_stream));
+        
         m_state = inflateInit2(&m_stream, windowBits);
+        if (m_state != Z_OK) {
+            m_initialized = false;
+            throw std::runtime_error("Failed to initialize zlib decompressor: error " +
+                                     std::to_string(m_state));
+        }
+        m_initialized = true;
     }
 
     const std::string &
@@ -151,6 +188,10 @@ public:
     decompress(const uint8_t *input, size_t input_size, uint8_t *output,
                size_t output_size, operation_hint hint, size_t &input_bytes_processed,
                bool &done) {
+        if (!m_initialized) {
+            throw std::runtime_error("Decompressor not properly initialized");
+        }
+        
         if (m_state == Z_STREAM_END || !input_size) {
             input_bytes_processed = 0;
             done                  = (m_state == Z_STREAM_END);
@@ -197,6 +238,9 @@ public:
 
     void
     reset() {
+        if (!m_initialized) {
+            throw std::runtime_error("Decompressor not properly initialized");
+        }
         m_state = inflateReset(&m_stream);
         if (m_state != Z_OK) {
             throw std::runtime_error("Failed to reset zlib decompressor " +
@@ -205,13 +249,17 @@ public:
     }
 
     ~zlib_decompressor_base() {
-        (void) inflateEnd(&m_stream);
+        // Only call inflateEnd if initialization was successful
+        if (m_initialized) {
+            (void) inflateEnd(&m_stream);
+        }
     }
 
 private:
-    int                m_state{Z_BUF_ERROR};
-    z_stream           m_stream{};
+    int                m_state;
+    z_stream           m_stream;
     const std::string &m_algorithm;
+    bool               m_initialized;
 };
 
 class gzip_compressor : public zlib_compressor_base {

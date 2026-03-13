@@ -1529,7 +1529,11 @@ operator==(const qb::io::inet::ip::endpoint &lhs,
 #endif
 
 namespace qb::io {
-enum SocketStatus { Error = -1, Done };
+enum SocketStatus { 
+    Error = -1,           /**< General socket error */
+    Done,                 /**< Operation completed successfully */
+    CertificateError      /**< SSL/TLS certificate verification failed (possible MITM attack) */
+};
 constexpr static const int FD_INVALID = -1;
 
 /**

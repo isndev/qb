@@ -65,7 +65,7 @@ struct nocopy {
     nocopy(nocopy const &) = delete;
 
     /** @brief Deleted move constructor. Prevents moving of derived class instances by default. */
-    nocopy(nocopy const &&) = delete; // Corrected from const && to && for typical move signature, though deleting it covers all.
+    nocopy(nocopy &&) = delete;
 
     /** @brief Deleted copy assignment operator. Prevents copy assignment of derived class instances. */
     nocopy &operator=(nocopy const &) = delete;

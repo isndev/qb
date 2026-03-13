@@ -121,18 +121,38 @@ file_to_pipe::~file_to_pipe() noexcept {
 
 bool
 file_to_pipe::open(std::string const &path) noexcept {
-    struct stat st;
-
     _handle.close();
-    if (!stat(path.c_str(), &st)) {
-        _handle.open(path, O_RDONLY);
-        if (_handle.is_open()) {
-            _read_bytes    = 0;
-            _expected_size = st.st_size;
-            return true;
-        }
+
+    // Open the file first with O_NOFOLLOW to prevent TOCTOU race condition via symlinks
+    // This ensures we operate on the actual file, not a swapped symlink
+#ifdef O_NOFOLLOW
+    _handle.open(path, O_RDONLY | O_NOFOLLOW);
+#else
+    // Fallback for platforms without O_NOFOLLOW
+    _handle.open(path, O_RDONLY);
+#endif
+
+    if (!_handle.is_open()) {
+        return false;
     }
-    return false;
+
+    // Use fstat on the open file descriptor to get accurate file information
+    // This eliminates the TOCTOU window between stat() and open()
+    struct stat st;
+    if (fstat(_handle.native_handle(), &st) != 0) {
+        _handle.close();
+        return false;
+    }
+
+    // Verify this is a regular file (not a directory, symlink, device, etc.)
+    if (!S_ISREG(st.st_mode)) {
+        _handle.close();
+        return false;
+    }
+
+    _read_bytes    = 0;
+    _expected_size = st.st_size;
+    return true;
 }
 
 int

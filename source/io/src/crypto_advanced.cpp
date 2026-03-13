@@ -223,29 +223,6 @@ crypto::derive_key(const std::string &password, const std::vector<unsigned char>
     }
 }
 
-// Implementation of constant-time comparison
-bool
-crypto::constant_time_compare(const std::vector<unsigned char> &a,
-                              const std::vector<unsigned char> &b) {
-    // If lengths differ, return false (but still do the comparison to avoid timing
-    // attacks)
-    bool   result  = (a.size() == b.size());
-    size_t max_len = std::max(a.size(), b.size());
-
-    unsigned char diff = 0;
-    for (size_t i = 0; i < max_len; i++) {
-        // Get byte i if it exists, otherwise 0
-        unsigned char byte_a = (i < a.size()) ? a[i] : 0;
-        unsigned char byte_b = (i < b.size()) ? b[i] : 0;
-
-        // XOR the bytes and OR with the running diff
-        diff |= byte_a ^ byte_b;
-    }
-
-    // Result is true only if both lengths are equal AND diff is 0
-    return result && (diff == 0);
-}
-
 // Implementation of secure token generation
 std::string
 crypto::generate_token(const std::string &payload, const std::vector<unsigned char> &key,
