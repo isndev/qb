@@ -127,11 +127,11 @@ TEST(Session, COMMAND_OVER_TCP) {
             client << STRING_MESSAGE << '\n';
         }
 
-        for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
+        for (auto i = 0uz; i < (NB_ITERATION * 5) && !all_done(); ++i)
             async::run(EVRUN_ONCE);
     });
 
-    for (auto i = 0; i < (NB_ITERATION * 5) && !all_done(); ++i)
+    for (auto i = 0uz; i < (NB_ITERATION * 5) && !all_done(); ++i)
         async::run(EVRUN_ONCE);
     t.join();
 }
@@ -236,7 +236,7 @@ TEST(Session, COMMAND_OVER_SECURE_TCP) {
 
     std::thread tc([]() {
         async::init();
-        for (auto i = 0; i < NB_CLIENTS; ++i) {
+        for (auto i = 0uz; i < NB_CLIENTS; ++i) {
             msg_count_client_side = 0;
             TestSecureClient client;
             if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", 9999)) {
@@ -270,7 +270,7 @@ TEST(Session, COMMAND_OVER_SECURE_UTCP) {
     server.start();
     std::thread tc([]() {
         async::init();
-        for (auto i = 0; i < NB_CLIENTS; ++i) {
+        for (auto i = 0uz; i < NB_CLIENTS; ++i) {
             msg_count_client_side = 0;
             TestSecureClient client;
             if (SocketStatus::Done != client.transport().connect_un(UNIX_SOCK_PATH)) {
@@ -340,7 +340,7 @@ TEST(Session, DISABLED_COMMAND_OVER_UDP) {
     std::thread tc([]() {
         async::init();
 
-        for (auto i = 0; i < 5; ++i) {
+        for (auto i = 0uz; i < 5uz; ++i) {
             msg_count_client_side = 0;
             TestUDPClient client;
             client.transport().init();

@@ -412,7 +412,8 @@ crypto::xor_bytes(const std::vector<unsigned char> &a,
         throw std::runtime_error("vectors must have the same size to XOR");
     }
     std::vector<unsigned char> result(a.size());
-    for (size_t i = 0; i < a.size(); ++i) {
+    // C++23: Using 'uz' suffix for size_t literals
+    for (auto i = 0uz; i < a.size(); ++i) {
         result[i] = a[i] ^ b[i];
     }
     return result;

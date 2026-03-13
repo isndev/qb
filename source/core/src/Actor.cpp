@@ -151,7 +151,7 @@ Actor::try_send(Event const &event) const noexcept {
     return VirtualCore::_handler->try_send(event);
 }
 
-Service::Service(ServiceId const sid)
+Service::Service(ServiceId const sid) noexcept
     : Actor(ActorId(sid, VirtualCore::_handler->getIndex())) {}
 } // namespace qb
 

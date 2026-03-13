@@ -56,7 +56,7 @@ using Nanoseconds = std::chrono::nanoseconds;
  */
 template <typename T, std::size_t max_size, size_t nb_producer = 0>
 class ringbuffer : public nocopy {
-    typedef std::size_t size_t;
+    using size_t = std::size_t;
 
     /**
      * @brief Producer data structure containing a lock and dedicated ring buffer
@@ -247,7 +247,7 @@ public:
  */
 template <typename T, std::size_t max_size>
 class ringbuffer<T, max_size, 0> : public nocopy {
-    typedef std::size_t size_t;
+    using size_t = std::size_t;
 
     /**
      * @brief Producer data structure containing a lock and dedicated ring buffer
@@ -385,7 +385,8 @@ public:
     size_t
     dequeue(T *ret, size_t size) {
         const size_t save_size = size;
-        for (size_t i = 0; i < _nb_producer; ++i) {
+        // C++23: Using 'uz' suffix for size_t literals
+        for (auto i = 0uz; i < _nb_producer; ++i) {
             size -= _producers[i]._ringbuffer.dequeue(ret, size);
             if (!size)
                 break;
@@ -406,7 +407,8 @@ public:
     size_t
     dequeue(Func const &func, T *ret, size_t const size) {
         size_t nb_consume = 0;
-        for (size_t i = 0; i < _nb_producer; ++i) {
+        // C++23: Using 'uz' suffix for size_t literals
+        for (auto i = 0uz; i < _nb_producer; ++i) {
             nb_consume += _producers[i]._ringbuffer.dequeue(func, ret, size);
         }
         return nb_consume;
@@ -423,7 +425,8 @@ public:
     size_t
     consume_all(Func const &func) {
         size_t nb_consume = 0;
-        for (size_t i = 0; i < _nb_producer; ++i) {
+        // C++23: Using 'uz' suffix for size_t literals
+        for (auto i = 0uz; i < _nb_producer; ++i) {
             nb_consume += _producers[i]._ringbuffer.consume_all(func);
         }
         return nb_consume;

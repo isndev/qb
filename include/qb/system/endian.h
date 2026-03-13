@@ -117,15 +117,17 @@ is_big_endian() {
 template <typename T>
 inline T
 byteswap(T value) {
-    static_assert(std::is_arithmetic<T>::value || std::is_enum<T>::value,
+    // C++23: Use _v suffix for cleaner syntax
+    static_assert(std::is_arithmetic_v<T> || std::is_enum_v<T>,
                   "byteswap only supports arithmetic or enum types");
-    static_assert(std::is_trivially_copyable<T>::value, "T must be trivially copyable");
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
 
     T              result;
     const uint8_t *src = reinterpret_cast<const uint8_t *>(&value);
     uint8_t       *dst = reinterpret_cast<uint8_t *>(&result);
 
-    for (size_t i = 0; i < sizeof(T); ++i)
+    // C++23: Using 'uz' suffix for size_t literals
+    for (auto i = 0uz; i < sizeof(T); ++i)
         dst[i] = src[sizeof(T) - 1 - i];
 
     return result;

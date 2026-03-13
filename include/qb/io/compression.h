@@ -624,7 +624,7 @@ struct to_compress {
     const char *data;                          /**< Pointer to the data to compress */
     std::size_t size;                          /**< Size of the data in bytes */
     int         level = Z_DEFAULT_COMPRESSION; /**< Compression level */
-    size_t      size_compressed;               /**< [out] Size of the compressed data */
+    size_t      size_compressed = 0;           /**< [out] Size of the compressed data */
 };
 
 /**
@@ -696,7 +696,7 @@ struct to_uncompress {
     const char *data;              /**< Pointer to the compressed data */
     std::size_t size;              /**< Size of the compressed data in bytes */
     std::size_t max = 0;           /**< Maximum allowed output size (0 for unlimited) */
-    std::size_t size_uncompressed; /**< [out] Size of the uncompressed data */
+    std::size_t size_uncompressed = 0;         /**< [out] Size of the uncompressed data */
 };
 
 /**
@@ -800,7 +800,7 @@ struct to_compress {
     const char *data;                          /**< Pointer to the data to compress */
     std::size_t size;                          /**< Size of the data in bytes */
     int         level = Z_DEFAULT_COMPRESSION; /**< Compression level */
-    size_t      size_compressed;               /**< [out] Size of the compressed data */
+    size_t      size_compressed = 0;           /**< [out] Size of the compressed data */
 };
 
 /**
@@ -872,7 +872,7 @@ struct to_uncompress {
     const char *data;              /**< Pointer to the compressed data */
     std::size_t size;              /**< Size of the compressed data in bytes */
     std::size_t max = 0;           /**< Maximum allowed output size (0 for unlimited) */
-    std::size_t size_uncompressed; /**< [out] Size of the uncompressed data */
+    std::size_t size_uncompressed = 0;         /**< [out] Size of the uncompressed data */
 };
 
 /**

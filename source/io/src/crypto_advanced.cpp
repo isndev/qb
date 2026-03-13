@@ -83,7 +83,7 @@ crypto::hkdf(const std::vector<unsigned char> &input_key_material,
     size_t digest_len = EVP_MD_size(md);
     size_t n = (output_length + digest_len - 1) / digest_len; // Ceiling division
 
-    for (size_t i = 1; i <= n; i++) {
+    for (auto i = 1uz; i <= n; ++i) {
         // T(i) = HMAC-Hash(PRK, T(i-1) | info | i)
         std::vector<unsigned char> data = previous;
         data.insert(data.end(), info.begin(), info.end());
@@ -543,7 +543,8 @@ crypto::generate_unique_iv(size_t size) {
         uint64_t unique_value = (timestamp << 32) | current_count;
 
         // XOR the last 8 bytes with the unique value
-        for (size_t i = 0; i < 8 && i < size; i++) {
+        // C++23: Using 'uz' suffix for size_t literals
+        for (auto i = 0uz; i < 8uz && i < size; ++i) {
             iv[size - i - 1] ^= (unique_value >> (i * 8)) & 0xFF;
         }
     }

@@ -72,10 +72,23 @@ protected:
      * @param handler The handler to invoke
      * @param event The event to pass to the handler
      */
+    /**
+     * @brief Invoke a handler with an event
+     *
+     * C++23: Using qb::has_is_alive concept instead of trait.
+     * If the event type has an is_alive() method, it will be checked
+     * before invoking the handler.
+     *
+     * @tparam _Handler Handler type
+     * @tparam _Event Event type
+     * @param handler The handler to invoke
+     * @param event The event to pass to the handler
+     */
     template <typename _Handler, typename _Event>
     inline void
     invoke(_Handler &handler, _Event &event) const {
-        if constexpr (has_member_func_is_alive<_Event>::value) {
+        // C++23: Use concept directly instead of trait with ::value
+        if constexpr (qb::has_is_alive<_Event>) {
             if (handler.is_alive())
                 handler.on(event);
         } else
@@ -91,11 +104,22 @@ protected:
      * @tparam _Event Event type
      * @param event The event to dispose
      */
+    /**
+     * @brief Dispose of an event if necessary
+     *
+     * C++23: Using qb::has_is_alive concept instead of trait.
+     * If the event type is not trivially destructible and has an is_alive() method,
+     * it will be destructed when is_alive() returns false.
+     *
+     * @tparam _Event Event type
+     * @param event The event to dispose
+     */
     template <typename _Event>
     inline void
     dispose(_Event &event) const noexcept {
         if constexpr (!std::is_trivially_destructible_v<_Event>) {
-            if constexpr (has_member_func_is_alive<_Event>::value) {
+            // C++23: Use concept directly instead of trait with ::value
+            if constexpr (qb::has_is_alive<_Event>) {
                 if (!event.is_alive())
                     event.~_Event();
             } else
@@ -179,7 +203,8 @@ public:
     template <bool _CleanEvent = true>
     void
     route(_RawEvent &event) noexcept {
-        if constexpr (has_member_func_is_broadcast<_HandlerId>::value) {
+        // C++23: Use concept directly
+        if constexpr (qb::has_is_broadcast<_HandlerId>) {
             if (event.getDestination().is_broadcast()) {
                 for (auto &it : _subscribed_handlers)
                     invoke(*it.second, event);
@@ -308,7 +333,8 @@ public:
     template <bool _CleanEvent = false>
     void
     route(_RawEvent &event) const noexcept {
-        if constexpr (has_member_func_is_broadcast<_HandlerId>::value) {
+        // C++23: Use concept directly
+        if constexpr (qb::has_is_broadcast<_HandlerId>) {
             if (event.getDestination().is_broadcast()) {
                 for (const auto &it : _subscribed_handlers)
                     it.second->resolve(event);

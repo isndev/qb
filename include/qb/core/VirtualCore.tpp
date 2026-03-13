@@ -85,12 +85,13 @@ VirtualCore::fill_event(T &data, ActorId const dest, ActorId const source) noexc
     data.dest   = dest;
     data.source = source;
 
-    if constexpr (std::is_base_of_v<EventQOS0, T>) {
+    // C++23: Use event_qos0_type and service_event_type concepts
+    if constexpr (event_qos0_type<T>) {
         static_assert(std::is_trivially_destructible_v<T>,
                       "EventQOS < 2 require to be trivially destructible");
     }
 
-    if constexpr (std::is_base_of_v<ServiceEvent, T>) {
+    if constexpr (service_event_type<T>) {
         data.forward = source;
         std::swap(data.id, data.service_event_id);
     }

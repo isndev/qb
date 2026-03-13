@@ -89,11 +89,24 @@ namespace qb {
  * @param cleaner Deleter function
  * @return unique_ptr wrapping the resource with the custom deleter
  */
+/**
+ * @brief Creates a unique_ptr with a custom deleter for a resource
+ *
+ * This is a helper function to manage resources in a RAII manner
+ * with a custom deleter function.
+ * C++23: Using std::remove_pointer_t for cleaner syntax.
+ *
+ * @tparam T Type of the resource
+ * @tparam TCleaner Type of the cleaner/deleter function
+ * @param handle Resource handle
+ * @param cleaner Deleter function
+ * @return unique_ptr wrapping the resource with the custom deleter
+ */
 template <typename T, typename TCleaner>
 auto
 resource(T handle, TCleaner cleaner) {
-    return std::unique_ptr<typename std::remove_pointer<T>::type, TCleaner>(handle,
-                                                                            cleaner);
+    // C++23: Use _t alias instead of ::type
+    return std::unique_ptr<std::remove_pointer_t<T>, TCleaner>(handle, cleaner);
 }
 
 /**
@@ -270,7 +283,7 @@ public:
                     if (pBuffer != nullptr)
                         std::free(pBuffer);
                     pBuffer =
-                        (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION) std::malloc(dwLength);
+                        reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION>(std::malloc(dwLength));  // C++23: modern cast
                     if (pBuffer == nullptr)
                         return std::make_pair(-1, -1);
                 } else

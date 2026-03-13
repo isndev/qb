@@ -47,6 +47,65 @@ namespace qb {
 class VirtualCore;
 class ActorProxy;
 class Service;
+class Event;
+class ICallback;
+class Actor;  // Forward declaration for concepts
+
+/**
+ * @brief Concept for event types that derive from qb::Event
+ * @ingroup Concepts
+ * @tparam T Type to check
+ */
+template <typename T>
+concept event_type = std::is_base_of_v<Event, T>;
+
+/**
+ * @brief Concept for actor types that derive from qb::Actor
+ * @ingroup Concepts
+ * @tparam T Type to check
+ */
+template <typename T>
+concept actor_type = std::is_base_of_v<Actor, T>;
+
+/**
+ * @brief Concept for service types that derive from qb::Service
+ * @ingroup Concepts
+ * @tparam T Type to check
+ */
+template <typename T>
+concept service_type = std::is_base_of_v<Service, T>;
+
+/**
+ * @brief Concept for types that implement ICallback interface
+ * @ingroup Concepts
+ * @tparam T Type to check
+ */
+template <typename T>
+concept callback_type = std::is_base_of_v<ICallback, T>;
+
+/**
+ * @brief Concept for event types that are trivially destructible (for unordered send)
+ * @ingroup Concepts
+ * @tparam T Type to check
+ */
+template <typename T>
+concept trivial_event = event_type<T> && std::is_trivially_destructible_v<T>;
+
+/**
+ * @brief Concept for QOS0 event types (fire-and-forget, unordered delivery)
+ * @ingroup Concepts
+ * @tparam T Type to check
+ */
+template <typename T>
+concept event_qos0_type = std::is_base_of_v<EventQOS0, T>;
+
+/**
+ * @brief Concept for service event types (forwardable events)
+ * @ingroup Concepts
+ * @tparam T Type to check
+ */
+template <typename T>
+concept service_event_type = std::is_base_of_v<ServiceEvent, T>;
 
 /**
  * @class Actor
@@ -351,7 +410,7 @@ public:
          * @param args Arguments to forward to the event constructor
          * @return Reference to this EventBuilder for method chaining
          */
-        template <typename _Event, typename... _Args>
+        template <event_type _Event, typename... _Args>
         EventBuilder &push(_Args &&...args) noexcept;
     };
 
@@ -475,7 +534,7 @@ public:
      * };
      * @endcode
      */
-    template <typename _Actor>
+    template <callback_type _Actor>
     void registerCallback(_Actor &actor) const noexcept;
 
     /**
@@ -493,7 +552,7 @@ public:
      * // }
      * @endcode
      */
-    template <typename _Actor>
+    template <callback_type _Actor>
     void unregisterCallback(_Actor &actor) const noexcept;
 
     /**
@@ -525,7 +584,7 @@ public:
      * // void on(AnotherEvent& event) { handle AnotherEvent, can reply/forward }
      * @endcode
      */
-    template <typename _Event, typename _Actor>
+    template <event_type _Event, actor_type _Actor>
     void registerEvent(_Actor &actor) const noexcept;
 
     /**
@@ -542,7 +601,7 @@ public:
      * // }
      * @endcode
      */
-    template <typename _Event, typename _Actor>
+    template <event_type _Event, actor_type _Actor>
     void unregisterEvent(_Actor &actor) const noexcept;
 
     /**
@@ -844,7 +903,7 @@ public:
  */
 class Service : public Actor {
 public:
-    explicit Service(ServiceId sid);
+    explicit Service(ServiceId const sid) noexcept;
 };
 
 /**
@@ -941,13 +1000,32 @@ template <template <typename...> class Template, typename... Args>
 struct is_specialization_of<Template, Template<Args...>> : std::true_type {};
 
 /**
+ * @concept string_literal
+ * @brief Concept for string literal types (const char[N])
+ * @ingroup Concepts
+ * @tparam T Type to check
+ */
+template <typename T>
+concept string_literal = std::is_array_v<T> &&
+                         std::is_same_v<std::remove_extent_t<T>, const char>;
+
+/**
+ * @concept reference_wrapper_type
+ * @brief Concept for std::reference_wrapper types
+ * @ingroup Concepts
+ * @tparam T Type to check
+ */
+template <typename T>
+concept reference_wrapper_type =
+    is_specialization_of<std::reference_wrapper, std::decay_t<T>>::value;
+
+/**
  * @struct actor_factory_param
  * @brief Utility struct for processing actor factory constructor arguments
  * @details
- * This struct handles parameter type transformations for actor factory arguments.
- * It specializes the handling of reference wrappers, string literals, and other types
- * to ensure they are properly stored and forwarded to actor constructors.
- * 
+ * C++23: Uses concepts and explicit specializations instead of nested std::conditional_t.
+ * Handles reference wrappers, string literals, and other types for actor constructors.
+ *
  * @tparam T The original parameter type to process
  * @ingroup Actor
  */
@@ -957,16 +1035,17 @@ struct actor_factory_param {
     using no_ref = std::remove_reference_t<T>;
 
     /** @brief Whether the type is a reference wrapper */
-    static constexpr bool is_ref_wrapper =
-        is_specialization_of<std::reference_wrapper, std::decay_t<no_ref>>::value;
+    static constexpr bool is_ref_wrapper = reference_wrapper_type<no_ref>;
 
     /** @brief The resulting type after transformation */
+    // C++23: Using constexpr if chain in the using declaration is not possible,
+    // so we keep the std::conditional_t structure but with cleaner concept-based checks
     using type = std::conditional_t<
         is_ref_wrapper,
         no_ref, // Keep ref_wrapper untouched
 
         std::conditional_t<
-            std::is_array_v<T> && std::is_same_v<std::remove_extent_t<T>, const char>,
+            string_literal<T>,
             std::string,  // string literals → std::string
 
             std::decay_t<T> // fallback
@@ -987,12 +1066,21 @@ struct actor_factory_param {
  * @return The transformed and properly forwarded value
  * @ingroup Actor
  */
+/**
+ * @brief Utility function for forwarding and transforming arguments to actor factory
+ * @details
+ * C++23: Uses string_literal concept for cleaner type checking.
+ *
+ * @tparam T The type of the argument to forward
+ * @param val The value to forward
+ * @return The transformed and properly forwarded value
+ * @ingroup Actor
+ */
 template <typename T>
-inline auto actor_factory_forward(T&& val) {
-    using Target = typename actor_factory_param<T>::type;
-
-    if constexpr (std::is_same_v<Target, std::string>) {
-        return std::string(std::forward<T>(val)); // copy literal
+[[nodiscard]] inline auto actor_factory_forward(T&& val) {
+    // C++23: Use concept for direct type checking instead of std::is_same_v
+    if constexpr (string_literal<T>) {
+        return std::string(std::forward<T>(val)); // copy literal to std::string
     } else {
         return std::forward<T>(val); // forward all others
     }
@@ -1024,7 +1112,8 @@ public:
     }
 
     [[nodiscard]] bool isService() const final {
-        return std::is_base_of_v<Service, _Actor>;
+        // C++23: Use concept instead of std::is_base_of_v
+        return service_type<_Actor>;
     }
 
 private:

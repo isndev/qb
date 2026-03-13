@@ -44,13 +44,9 @@
 
 namespace uuids
 {
-#ifdef __cpp_lib_span
+   // C++23: Always use std::span
    template <class ElementType, std::size_t Extent>
    using span = std::span<ElementType, Extent>;
-#else
-   template <class ElementType, std::ptrdiff_t Extent>
-   using span = gsl::span<ElementType, Extent>;
-#endif
 
    namespace detail
    {
@@ -212,7 +208,8 @@ namespace uuids
          void process_block() 
          {
             uint32_t w[80];
-            for (size_t i = 0; i < 16; i++) {
+            // C++23: Using 'uz' suffix for size_t literals
+            for (auto i = 0uz; i < 16uz; ++i) {
                w[i] = (m_block[i * 4 + 0] << 24);
                w[i] |= (m_block[i * 4 + 1] << 16);
                w[i] |= (m_block[i * 4 + 2] << 8);
@@ -399,7 +396,8 @@ namespace uuids
 
       constexpr bool is_nil() const noexcept
       {
-         for (size_t i = 0; i < data.size(); ++i) if (data[i] != 0) return false;
+         // C++23: Using 'uz' suffix for size_t literals
+         for (auto i = 0uz; i < data.size(); ++i) if (data[i] != 0) return false;
          return true;
       }
 
@@ -729,7 +727,8 @@ namespace uuids
       uuid operator()()
       {
          uint8_t bytes[16];
-         for (int i = 0; i < 16; i += 4)
+         // C++23: Using auto for type deduction
+         for (auto i = 0; i < 16; i += 4)
             *reinterpret_cast<uint32_t*>(bytes + i) = distribution(*generator);
 
          // variant must be 10xxxxxx

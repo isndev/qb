@@ -818,8 +818,12 @@ pipe<char> &pipe<char>::put<pipe<char>>(pipe<char> const &rhs);
  * @param p Pipe to display
  * @return Reference to the output stream
  */
-template <typename stream, typename = std::enable_if_t<
-                               !std::is_same_v<stream, qb::allocator::pipe<char>>>>
+/**
+ * @brief Stream output operator for pipe<char>
+ * C++23: Using requires clause instead of std::enable_if_t
+ */
+template <typename stream>
+    requires (!std::is_same_v<stream, qb::allocator::pipe<char>>)
 stream &
 operator<<(stream &os, qb::allocator::pipe<char> const &p) {
     os << std::string_view(p.begin(), p.size());

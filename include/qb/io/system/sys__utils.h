@@ -36,7 +36,7 @@ namespace qb {
  * @brief Type for representing high-precision time values, typically in nanoseconds.
  *        Defined as `long long`.
  */
-typedef long long highp_time_t;
+using highp_time_t = long long;  // C++23: using alias
 
 /**
  * @typedef steady_clock_t
@@ -45,7 +45,7 @@ typedef long long highp_time_t;
  * @details This clock is used to measure time intervals with high precision, suitable for
  *          benchmarking and performance measurement. It is generally monotonic.
  */
-typedef std::chrono::high_resolution_clock steady_clock_t;
+using steady_clock_t = std::chrono::high_resolution_clock;  // C++23: using alias
 
 /**
  * @typedef system_clock_t
@@ -54,7 +54,7 @@ typedef std::chrono::high_resolution_clock steady_clock_t;
  * @details This clock represents the system-wide real time wall clock. It may be adjusted
  *          (e.g., by the user or NTP synchronization) and is not guaranteed to be monotonic.
  */
-typedef std::chrono::system_clock system_clock_t;
+using system_clock_t = std::chrono::system_clock;  // C++23: using alias
 
 /**
  * @brief Gets a timestamp in nanoseconds since epoch from a specified clock.

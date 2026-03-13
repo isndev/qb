@@ -71,7 +71,7 @@ public:
      */
     void
     on(event::disconnected &&e) {
-        if constexpr (has_method_on<_Derived, void, event::disconnected>::value)
+        if constexpr (qb::has_on<_Derived, event::disconnected>)
             static_cast<_Derived &>(*this).on(std::forward<event::disconnected>(e));
         else
             throw std::runtime_error("Acceptor has been disconnected");

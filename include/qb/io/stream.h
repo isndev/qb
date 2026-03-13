@@ -137,10 +137,17 @@ public:
      * @note **Security:** If the buffer size would exceed `max_read_buffer_size()` after
      *       this read, the operation fails with error code -2 to prevent DoS attacks.
      */
-    template <typename Available = void>
+    /**
+     * @brief Read data from the input stream into the internal buffer
+     * @return Number of bytes read, or negative value on error
+     *
+     * C++23: Using requires clause instead of std::enable_if_t for cleaner syntax.
+     * This method is only available when the underlying IO type has a compatible read method.
+     */
     [[nodiscard]] int
-    read(std::enable_if_t<has_method_read<_IO_, int, char *, std::size_t>::value,
-                          Available> * = nullptr) noexcept {
+    read() noexcept
+        requires qb::has_read_r<_IO_, int, char *, std::size_t>
+    {
         // Use safe buffer size that won't overflow when cast to 32-bit for socket APIs
         constexpr std::size_t bucket_read = QB_DEFAULT_READ_BUFFER_SIZE;
         static_assert(bucket_read <= QB_MAX_IO_SIZE, "Buffer size exceeds safe I/O limits");
@@ -195,10 +202,18 @@ public:
      * Resets the input buffer and closes or disconnects the underlying
      * transport, depending on the available methods.
      */
+    /**
+     * @brief Close the stream
+     *
+     * Resets the input buffer and closes or disconnects the underlying
+     * transport, depending on the available methods.
+     * C++23: Using qb::has_disconnect concept instead of trait.
+     */
     void
     close() noexcept {
         _in_buffer.reset();
-        if constexpr (has_member_func_disconnect<_IO_>::value)
+        // C++23: Use concept directly
+        if constexpr (qb::has_disconnect<_IO_>)
             _in.disconnect();
         _in.close();
     }
@@ -282,14 +297,20 @@ public:
      * It writes the entire buffer content and adjusts or resets the buffer
      * based on the actual number of bytes written.
      */
-    template <typename Available = void>
+    /**
+     * @brief Write data from the output buffer to the stream
+     * @return Number of bytes written, or negative value on error
+     *
+     * C++23: Using requires clause instead of std::enable_if_t for cleaner syntax.
+     */
     [[nodiscard]] int
-    write(std::enable_if_t<has_method_write<_IO_, int, const char *, std::size_t>::value,
-                           Available> * = nullptr) noexcept {
+    write() noexcept
+        requires qb::has_write_r<_IO_, int, const char *, std::size_t>
+    {
         const auto ret = _out.write(_out_buffer.begin(), _out_buffer.size());
 
         if (ret > 0) {
-            if (ret != _out_buffer.size()) {
+            if (static_cast<std::size_t>(ret) != _out_buffer.size()) {
                 _out_buffer.free_front(ret);
                 _out_buffer.reorder();
             } else
@@ -308,7 +329,7 @@ public:
      * Copies the specified data to the output buffer for later
      * transmission by the write method.
      */
-    char *
+    [[nodiscard]] char *
     publish(char const *data, std::size_t size) noexcept {
         // Security check: prevent DoS via buffer exhaustion
         // We only check the actual data size, not the capacity. The pipe may resize internally,
@@ -327,11 +348,13 @@ public:
      *
      * Resets the output buffer and closes or disconnects the underlying
      * transport, depending on the available methods.
+     * C++23: Using qb::has_disconnect concept instead of trait.
      */
     void
     close() noexcept {
         _out_buffer.reset();
-        if constexpr (has_member_func_disconnect<_IO_>::value)
+        // C++23: Use concept directly
+        if constexpr (qb::has_disconnect<_IO_>)
             _out.disconnect();
         _out.close();
     }
@@ -400,10 +423,19 @@ public:
      * Note that this implementation uses the input IO object (_in) for writing,
      * which is suitable for bidirectional transports like sockets.
      */
-    template <typename Available = void>
+    /**
+     * @brief Write data from the output buffer to the transport (bidirectional version)
+     * @return Number of bytes written on success, error code on failure
+     *
+     * C++23: Using requires clause instead of std::enable_if_t for cleaner syntax.
+     * This method is enabled only if the IO type has a compatible write method.
+     * Note that this implementation uses the input IO object (_in) for writing,
+     * which is suitable for bidirectional transports like sockets.
+     */
     [[nodiscard]] int
-    write(std::enable_if_t<has_method_write<_IO_, int, const char *, std::size_t>::value,
-                           Available> * = nullptr) noexcept {
+    write() noexcept
+        requires qb::has_write_r<_IO_, int, const char *, std::size_t>
+    {
         const auto ret = this->_in.write(_out_buffer.begin(), _out_buffer.size());
         if (ret > 0) {
             if (static_cast<std::size_t>(ret) != _out_buffer.size()) {
@@ -448,7 +480,7 @@ public:
      *       this operation, returns nullptr to prevent DoS attacks. The caller should
      *       handle this case appropriately (e.g., disconnect the connection).
      */
-    char *
+    [[nodiscard]] char *
     publish(char const *data, std::size_t size) noexcept {
         // Security check: prevent DoS via buffer exhaustion
         // We only check the actual data size, not the capacity. The pipe may resize internally,

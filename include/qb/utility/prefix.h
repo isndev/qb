@@ -42,26 +42,20 @@
 */
 
 /**
- * @brief Determines the optimal cache line size for the current platform at compile time.
+ * @brief Compile-time constant for cache line size.
  * @ingroup SystemInfo
- * @return The cache line size in bytes.
- * @details Uses `KNOWN_L1_CACHE_LINE_SIZE` if defined, `std::hardware_destructive_interference_size`
- *          if available (C++17), or defaults to 64 bytes as a common fallback.
- *          This value is used to define `QB_LOCKFREE_CACHELINE_BYTES`.
+ * @details Defaults to 64 bytes, which is the standard cache line size on all modern
+ *          platforms (x86_64, ARM64, etc.). Can be overridden by defining KNOWN_L1_CACHE_LINE_SIZE.
+ *          This constant is used for alignas() and static array sizing, requiring
+ *          a compile-time constant rather than a runtime function.
  */
-constexpr std::size_t
-cache_line_size() {
 #ifdef KNOWN_L1_CACHE_LINE_SIZE
-    return KNOWN_L1_CACHE_LINE_SIZE;
-#elif defined(__cpp_lib_hardware_interference_size)
-    return std::hardware_destructive_interference_size;
+    #define QB_LOCKFREE_CACHELINE_BYTES KNOWN_L1_CACHE_LINE_SIZE
 #else
-    return 64;
+    #define QB_LOCKFREE_CACHELINE_BYTES 64
 #endif
-}
 
-#define QB_LOCKFREE_CACHELINE_BYTES cache_line_size()
-#define QB_LOCKFREE_EVENT_BUCKET_BYTES cache_line_size()
+#define QB_LOCKFREE_EVENT_BUCKET_BYTES QB_LOCKFREE_CACHELINE_BYTES
 
 #ifdef _MSC_VER
 

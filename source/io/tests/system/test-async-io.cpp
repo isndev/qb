@@ -77,7 +77,7 @@ TEST_F(AsyncIOTest, BasicTimer) {
     TimerHandler timer(0.1); // 100ms timeout
 
     // Run event loop for a short time
-    for (int i = 0; i < 5 && !timer.timer_triggered; ++i) {
+    for (auto i = 0; i < 5 && !timer.timer_triggered; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -97,7 +97,7 @@ TEST_F(AsyncIOTest, UpdateTimeout) {
     timer.updateTimeout();
 
     // Make sure the timer is not triggered too early
-    for (int i = 0; i < 3; ++i) {
+    for (auto i = 0; i < 3; ++i) {
         async::run(EVRUN_NOWAIT); // Use NOWAIT to avoid blocking
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -109,7 +109,7 @@ TEST_F(AsyncIOTest, UpdateTimeout) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
 
     // Run the event loop to allow the timer to trigger
-    for (int i = 0; i < 5 && !timer.timer_triggered; ++i) {
+    for (auto i = 0; i < 5 && !timer.timer_triggered; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -124,7 +124,7 @@ TEST_F(AsyncIOTest, SetTimeout) {
     timer.setTimeout(0.1);
 
     // Run event loop
-    for (int i = 0; i < 5 && !timer.timer_triggered; ++i) {
+    for (auto i = 0; i < 5 && !timer.timer_triggered; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -137,7 +137,7 @@ TEST_F(AsyncIOTest, SetTimeout) {
     timer.setTimeout(0.0);
 
     // Run event loop - timer should not trigger
-    for (int i = 0; i < 5; ++i) {
+    for (auto i = 0; i < 5; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
@@ -155,7 +155,7 @@ TEST_F(AsyncIOTest, TimeoutUtility) {
         [&callback_executed]() { callback_executed = true; }, 0.1);
 
     // Run event loop until callback is executed
-    for (int i = 0; i < 10 && !callback_executed; ++i) {
+    for (auto i = 0; i < 10 && !callback_executed; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -243,7 +243,7 @@ TEST_F(AsyncIOTest, DISABLED_SignalHandling) {
     });
 
     // Run event loop until signals are received
-    for (int i = 0; i < 20 && (!handler.sigint_received || !handler.sigusr1_received);
+    for (auto i = 0; i < 20 && (!handler.sigint_received || !handler.sigusr1_received);
          ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -365,7 +365,7 @@ TEST_F(AsyncIOTest, TCPNonBlockingIO) {
 
     // Accept the connection on the server side
     bool server_accepted = false;
-    for (int i = 0; i < 20; ++i) {
+    for (auto i = 0; i < 20; ++i) {
         if (server.accept()) {
             server_accepted = true;
             break;
@@ -381,7 +381,7 @@ TEST_F(AsyncIOTest, TCPNonBlockingIO) {
     ASSERT_TRUE(client.send(TEST_MESSAGE));
 
     // Server receives the message
-    for (int i = 0; i < 20 && !server.data_received; ++i) {
+    for (auto i = 0; i < 20 && !server.data_received; ++i) {
         server.receive();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -392,7 +392,7 @@ TEST_F(AsyncIOTest, TCPNonBlockingIO) {
     ASSERT_TRUE(server.send(RESPONSE_MESSAGE));
 
     // Client receives the response
-    for (int i = 0; i < 20 && !client.data_received; ++i) {
+    for (auto i = 0; i < 20 && !client.data_received; ++i) {
         client.receive();
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -470,7 +470,7 @@ TEST_F(AsyncIOTest, EventPriorities) {
         0.3);
 
     // Run event loop
-    for (int i = 0; i < 30; ++i) {
+    for (auto i = 0; i < 30; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
@@ -572,7 +572,7 @@ TEST_F(AsyncIOTest, TextProtocolCommunication) {
         }
 
         // Run event loop until all messages are processed
-        for (auto i = 0;
+        for (auto i = 0u;
              i < (TEXT_ITERATIONS * 5) &&
              (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS);
              ++i) {
@@ -582,7 +582,7 @@ TEST_F(AsyncIOTest, TextProtocolCommunication) {
     });
 
     // Run server event loop
-    for (auto i = 0; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS ||
+    for (auto i = 0u; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS ||
                                                    msg_count_client < TEXT_ITERATIONS);
          ++i) {
         async::run(EVRUN_ONCE);
@@ -691,7 +691,7 @@ TEST_F(AsyncIOTest, SSLCommunication) {
         }
 
         // Run event loop until all messages are processed
-        for (auto i = 0;
+        for (auto i = 0u;
              i < (TEXT_ITERATIONS * 5) &&
              (msg_count_server < TEXT_ITERATIONS || msg_count_client < TEXT_ITERATIONS);
              ++i) {
@@ -701,7 +701,7 @@ TEST_F(AsyncIOTest, SSLCommunication) {
     });
 
     // Run server event loop
-    for (auto i = 0; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS ||
+    for (auto i = 0u; i < (TEXT_ITERATIONS * 5) && (msg_count_server < TEXT_ITERATIONS ||
                                                    msg_count_client < TEXT_ITERATIONS);
          ++i) {
         async::run(EVRUN_ONCE);
@@ -761,7 +761,7 @@ TEST_F(AsyncIOTest, FileWatcherFunctionality) {
     FileWatchHandler watcher(test_file);
 
     // Run event loop a few times to initialize the watcher
-    for (int i = 0; i < 5; ++i) {
+    for (auto i = 0; i < 5; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -780,7 +780,7 @@ TEST_F(AsyncIOTest, FileWatcherFunctionality) {
     }
 
     // Run event loop to detect changes
-    for (int i = 0; i < 20 && !watcher.file_changed; ++i) {
+    for (auto i = 0; i < 20 && !watcher.file_changed; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
@@ -895,7 +895,7 @@ TEST_F(AsyncIOTest, PeriodicTimer) {
     PeriodicTimerHandler timer(0.05);
 
     // Run event loop to allow timer to trigger multiple times
-    for (int i = 0; i < 10; ++i) {
+    for (auto i = 0; i < 10; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -910,7 +910,7 @@ TEST_F(AsyncIOTest, PeriodicTimer) {
     int previous_count = timer.timer_count;
 
     // Run event loop again
-    for (int i = 0; i < 5; ++i) {
+    for (auto i = 0; i < 5; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -945,7 +945,7 @@ TEST_F(AsyncIOTest, TimerCancellation) {
     CancellableTimerHandler timer(0.2); // 200ms timeout
 
     // Run the event loop a few times but not enough to trigger the timer
-    for (int i = 0; i < 3; ++i) {
+    for (auto i = 0; i < 3; ++i) {
         async::run(EVRUN_NOWAIT);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -961,7 +961,7 @@ TEST_F(AsyncIOTest, TimerCancellation) {
     timer.timer_triggered = false;
 
     // Now run the event loop long enough that the original timer would have triggered
-    for (int i = 0; i < 10; ++i) {
+    for (auto i = 0; i < 10; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
     }
@@ -1026,7 +1026,7 @@ TEST_F(AsyncIOTest, TimerPrecision) {
         timeout_seconds);
 
     // Run the event loop until the timer fires or we exhaust the budget.
-    for (int i = 0; i < 20 && !timer_triggered; ++i) {
+    for (auto i = 0; i < 20 && !timer_triggered; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -1068,7 +1068,7 @@ TEST_F(AsyncIOTest, TimerSynchronization) {
     MutexTester tester;
 
     // Create multiple timers accessing the same resource
-    for (int i = 0; i < 5; ++i) {
+    for (auto i = 0; i < 5; ++i) {
         new async::Timeout<std::function<void()>>(
             [&tester, i]() { tester.critical_section(i); },
             0.05 * (i + 1) // Staggered timeouts
@@ -1076,7 +1076,7 @@ TEST_F(AsyncIOTest, TimerSynchronization) {
     }
 
     // Run event loop until all timers complete
-    for (int i = 0; i < 30; ++i) {
+    for (auto i = 0; i < 30; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -1172,7 +1172,7 @@ TEST_F(AsyncIOTest, NestedTimedOperations) {
     );
 
     // Run event loop until both timers have triggered
-    for (int i = 0; i < 20 && operation_count < 2; ++i) {
+    for (auto i = 0; i < 20 && operation_count < 2; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -1207,7 +1207,7 @@ TEST_F(AsyncIOTest, StatefulTimerOperation) {
     StatefulTimer timer(0.1); // 100ms timeout
 
     // Run event loop until timer triggers
-    for (int i = 0; i < 10 && !timer.timer_triggered; ++i) {
+    for (auto i = 0; i < 10 && !timer.timer_triggered; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -1221,7 +1221,7 @@ TEST_F(AsyncIOTest, DroppedTimers) {
     std::atomic<int> completed_count{0};
 
     // Create multiple timeout objects but don't store references to them
-    for (int i = 0; i < 10; ++i) {
+    for (auto i = 0; i < 10; ++i) {
         new async::Timeout<std::function<void()>>(
             [&completed_count]() { completed_count++; },
             0.02 * (i + 1) // Stagger timeouts from 20ms to 200ms
@@ -1229,7 +1229,7 @@ TEST_F(AsyncIOTest, DroppedTimers) {
     }
 
     // Run event loop until all timers have triggered
-    for (int i = 0; i < 30 && completed_count < 10; ++i) {
+    for (auto i = 0; i < 30 && completed_count < 10; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -1284,7 +1284,7 @@ TEST_F(AsyncIOTest, TimeoutBehavior) {
         [&small_timer_triggered]() { small_timer_triggered = true; }, 0.001);
 
     // Run event loop a few times
-    for (int i = 0; i < 5 && !small_timer_triggered; ++i) {
+    for (auto i = 0; i < 5 && !small_timer_triggered; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -1297,7 +1297,7 @@ TEST_F(AsyncIOTest, TimeoutBehavior) {
         [&negative_timer_triggered]() { negative_timer_triggered = true; }, -1.0);
 
     // Run event loop a few times
-    for (int i = 0; i < 5 && !negative_timer_triggered; ++i) {
+    for (auto i = 0; i < 5 && !negative_timer_triggered; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -1331,7 +1331,7 @@ TEST_F(AsyncIOTest, ExceptionHandlingInCallbacks) {
         [&second_timer_triggered]() { second_timer_triggered = true; }, 0.1);
 
     // Run event loop
-    for (int i = 0; i < 10 && !second_timer_triggered; ++i) {
+    for (auto i = 0; i < 10 && !second_timer_triggered; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
@@ -1360,7 +1360,7 @@ TEST_F(AsyncIOTest, ResourceCleanup) {
     }
 
     // Run event loop a few more times
-    for (int i = 0; i < 5; ++i) {
+    for (auto i = 0; i < 5; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -1369,7 +1369,7 @@ TEST_F(AsyncIOTest, ResourceCleanup) {
     timers.clear();
 
     // Run event loop a few more times to ensure cleanup
-    for (int i = 0; i < 5; ++i) {
+    for (auto i = 0; i < 5; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -1386,7 +1386,7 @@ TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
 
     // Create multiple threads performing async operations
     for (int t = 0; t < 4; ++t) {
-        threads.emplace_back([&completed_operations, t]() {
+        threads.emplace_back([&completed_operations]() {
             async::init();
             
             std::atomic<int> thread_completed{0};
@@ -1405,13 +1405,13 @@ TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
             }
 
             // Run event loop until ALL operations in this thread complete
-            for (int i = 0; i < 200 && thread_completed < NUM_OPERATIONS; ++i) {
+            for (auto i = 0; i < 200 && thread_completed < NUM_OPERATIONS; ++i) {
                 async::run(EVRUN_ONCE);
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
             
             // Extra time to ensure all timers fire
-            for (int i = 0; i < 10; ++i) {
+            for (auto i = 0; i < 10; ++i) {
                 async::run(EVRUN_NOWAIT);
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
@@ -1439,7 +1439,7 @@ TEST_F(AsyncIOTest, ManyConcurrentTimers) {
     }
 
     // Run event loop until all timers complete
-    for (int i = 0; i < 50; ++i) {
+    for (auto i = 0; i < 50; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
@@ -1472,7 +1472,7 @@ TEST_F(AsyncIOTest, TimerMemoryUsage) {
     }
 
     // Run event loop until all timers complete
-    for (int i = 0; i < 50; ++i) {
+    for (auto i = 0; i < 50; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
@@ -1493,7 +1493,7 @@ TEST_F(AsyncIOTest, TimerMemoryUsage) {
     timers.clear();
 
     // Run event loop a few more times to ensure cleanup
-    for (int i = 0; i < 5; ++i) {
+    for (auto i = 0; i < 5; ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -1523,7 +1523,7 @@ TEST_F(AsyncIOTest, EventLoopReinitialization) {
         [&timer2_triggered]() { timer2_triggered = true; }, 0.1);
 
     // Run event loop until both timers trigger
-    for (int i = 0; i < 10 && (!timer_triggered || !timer2_triggered); ++i) {
+    for (auto i = 0; i < 10 && (!timer_triggered || !timer2_triggered); ++i) {
         async::run(EVRUN_ONCE);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }

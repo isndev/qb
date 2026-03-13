@@ -173,7 +173,8 @@ public:
             std::cerr << "epoll::Poller polling has failed " << std::endl;
             return;
         }
-        for (int i = 0; i < ret; ++i) {
+        // C++23: Using auto for type deduction
+        for (auto i = 0; i < ret; ++i) {
             func(_epvts[i]);
         }
     }

@@ -36,8 +36,9 @@
 #include "listener.h"
 #include "protocol.h"
 
-CREATE_MEMBER_CHECK(Protocol);
-GENERATE_HAS_METHOD(flush)
+// C++23: Member check macros replaced by traits in qb/utility/type_traits.h
+// - qb::has_type_Protocol<T>
+// - qb::has_flush<C, Args...> / qb::has_flush_r<C, Ret, Args...>
 
 #define Derived static_cast<_Derived &>(*this)
 
@@ -150,7 +151,7 @@ public:
      * @brief Gets the current configured timeout value.
      * @return Current timeout value in seconds.
      */
-    auto
+    [[nodiscard]] auto
     getTimeout() const noexcept {
         return _timeout;
     }
@@ -402,17 +403,16 @@ public:
                 Derived.flush(ret);
             }
             Derived.eof();
-            if constexpr (has_method_on<_Derived, void, event::pending_read>::value ||
-                          has_method_on<_Derived, void, event::eof>::value) {
+            if constexpr (qb::has_on<_Derived, event::pending_read> ||
+                          qb::has_on<_Derived, event::eof>) {
                 const auto pendingRead = Derived.pendingRead();
                 if (pendingRead) {
-                    if constexpr (has_method_on<_Derived, void,
-                                                event::pending_read>::value) {
-                        Derived.on(event::pending_read{pendingRead});
+                    if constexpr (qb::has_on<_Derived, event::pending_read>) {
+                        auto evt__pending_read = event::pending_read{pendingRead}; Derived.on(std::move(evt__pending_read));
                     }
                 } else {
-                    if constexpr (has_method_on<_Derived, void, event::eof>::value) {
-                        Derived.on(event::eof{});
+                    if constexpr (qb::has_on<_Derived, event::eof>) {
+                        auto evt__eof = event::eof{}; Derived.on(std::move(evt__eof));
                     }
                 }
             }
@@ -440,7 +440,7 @@ private:
         int ret = 0u;
 
         // forward event to Derived if desired
-        if constexpr (has_method_on<_Derived, void, event::file>::value) {
+        if constexpr (qb::has_on<_Derived, event::file>) {
             Derived.on(event);
         }
 
@@ -527,7 +527,7 @@ private:
         //        int ret = 0u;
 
         // forward event to Derived if desired
-        if constexpr (has_method_on<_Derived, void, event::file>::value) {
+        if constexpr (qb::has_on<_Derived, event::file>) {
             Derived.on(event);
         }
 
@@ -1071,16 +1071,16 @@ private:
      */
     void
     handle_post_read() {
-        if constexpr (has_method_on<_Derived, void, event::pending_read>::value ||
-                      has_method_on<_Derived, void, event::eof>::value) {
+        if constexpr (qb::has_on<_Derived, event::pending_read> ||
+                      qb::has_on<_Derived, event::eof>) {
             const auto pendingRead = Derived.pendingRead();
             if (pendingRead) {
-                if constexpr (has_method_on<_Derived, void, event::pending_read>::value) {
-                    Derived.on(event::pending_read{pendingRead});
+                if constexpr (qb::has_on<_Derived, event::pending_read>) {
+                    auto evt__pending_read = event::pending_read{pendingRead}; Derived.on(std::move(evt__pending_read));
                 }
             } else {
-                if constexpr (has_method_on<_Derived, void, event::eof>::value) {
-                    Derived.on(event::eof{});
+                if constexpr (qb::has_on<_Derived, event::eof>) {
+                    auto evt__eof = event::eof{}; Derived.on(std::move(evt__eof));
                 }
             }
         }
@@ -1123,7 +1123,7 @@ private:
         }
 
         if (likely(event._revents & EV_READ)) {
-            if constexpr (has_shared_from_this<_Derived>::value) {
+            if constexpr (qb::has_shared_from_this<_Derived>) {
                 try { _self_guard = Derived.shared_from_this(); } catch (...) {}
             }
 
@@ -1177,18 +1177,20 @@ protected:
             return;
         _is_disposed = true;
 
-        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
+        if constexpr (qb::has_on<_Derived, event::disconnected>) {
             if (_system_error != 0) {
-                Derived.on(event::disconnected::with_error(_reason, _system_error));
+                auto evt = event::disconnected::with_error(_reason, _system_error);
+                Derived.on(std::move(evt));
             } else {
-                Derived.on(event::disconnected{_reason});
+                auto evt = event::disconnected{_reason};
+                Derived.on(std::move(evt));
             }
         }
 
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
-        } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
-            Derived.on(event::dispose{});
+        } else if constexpr (qb::has_on<_Derived, event::dispose>) {
+            auto evt__dispose = event::dispose{}; Derived.on(std::move(evt__dispose));
         }
     }
 };
@@ -1549,12 +1551,11 @@ private:
             
             if (!Derived.pendingWrite()) {
                 this->_async_event.set(EV_NONE);
-                if constexpr (has_method_on<_Derived, void, event::eos>::value) {
-                    Derived.on(event::eos{});
+                if constexpr (qb::has_on<_Derived, event::eos>) {
+                    auto evt__eos = event::eos{}; Derived.on(std::move(evt__eos));
                 }
-            } else if constexpr (has_method_on<_Derived, void,
-                                               event::pending_write>::value) {
-                Derived.on(event::pending_write{Derived.pendingWrite()});
+            } else if constexpr (qb::has_on<_Derived, event::pending_write>) {
+                auto evt__pending_write = event::pending_write{Derived.pendingWrite()}; Derived.on(std::move(evt__pending_write));
             }
             return;
         }
@@ -1586,18 +1587,20 @@ protected:
             return;
         _is_disposed = true;
 
-        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
+        if constexpr (qb::has_on<_Derived, event::disconnected>) {
             if (_system_error != 0) {
-                Derived.on(event::disconnected::with_error(_reason, _system_error));
+                auto evt = event::disconnected::with_error(_reason, _system_error);
+                Derived.on(std::move(evt));
             } else {
-                Derived.on(event::disconnected{_reason});
+                auto evt = event::disconnected{_reason};
+                Derived.on(std::move(evt));
             }
         }
 
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
-        } else if constexpr (has_method_on<_Derived, void, event::dispose>::value) {
-            Derived.on(event::dispose{});
+        } else if constexpr (qb::has_on<_Derived, event::dispose>) {
+            auto evt__dispose = event::dispose{}; Derived.on(std::move(evt__dispose));
         }
     }
 };
@@ -2227,16 +2230,16 @@ private:
      */
     void
     handle_post_read() {
-        if constexpr (has_method_on<_Derived, void, event::pending_read>::value ||
-                      has_method_on<_Derived, void, event::eof>::value) {
+        if constexpr (qb::has_on<_Derived, event::pending_read> ||
+                      qb::has_on<_Derived, event::eof>) {
             const auto pendingRead = Derived.pendingRead();
             if (pendingRead) {
-                if constexpr (has_method_on<_Derived, void, event::pending_read>::value) {
-                    Derived.on(event::pending_read{pendingRead});
+                if constexpr (qb::has_on<_Derived, event::pending_read>) {
+                    auto evt__pending_read = event::pending_read{pendingRead}; Derived.on(std::move(evt__pending_read));
                 }
             } else {
-                if constexpr (has_method_on<_Derived, void, event::eof>::value) {
-                    Derived.on(event::eof{});
+                if constexpr (qb::has_on<_Derived, event::eof>) {
+                    auto evt__eof = event::eof{}; Derived.on(std::move(evt__eof));
                 }
             }
         }
@@ -2260,11 +2263,11 @@ private:
             if (unlikely(!_protocol || !_protocol->ok()))
                 return false;
             this->_async_event.set(EV_READ);
-            if constexpr (has_method_on<_Derived, void, event::eos>::value) {
-                Derived.on(event::eos{});
+            if constexpr (qb::has_on<_Derived, event::eos>) {
+                auto evt__eos = event::eos{}; Derived.on(std::move(evt__eos));
             }
-        } else if constexpr (has_method_on<_Derived, void, event::pending_write>::value) {
-            Derived.on(event::pending_write{Derived.pendingWrite()});
+        } else if constexpr (qb::has_on<_Derived, event::pending_write>) {
+            auto evt__pending_write = event::pending_write{Derived.pendingWrite()}; Derived.on(std::move(evt__pending_write));
         }
         return true;
     }
@@ -2296,7 +2299,7 @@ private:
         if (event._revents & EV_READ && _protocol && _protocol->ok()) {
             constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
 
-            if constexpr (has_shared_from_this<_Derived>::value) {
+            if constexpr (qb::has_shared_from_this<_Derived>) {
                 try { _self_guard = Derived.shared_from_this(); } catch (...) {}
             }
 
@@ -2369,11 +2372,13 @@ protected:
             return;
         _is_disposed = true;
 
-        if constexpr (has_method_on<_Derived, void, event::disconnected>::value) {
+        if constexpr (qb::has_on<_Derived, event::disconnected>) {
             if (_system_error != 0) {
-                Derived.on(event::disconnected::with_error(_reason, _system_error));
+                auto evt = event::disconnected::with_error(_reason, _system_error);
+                Derived.on(std::move(evt));
             } else {
-                Derived.on(event::disconnected{_reason});
+                auto evt = event::disconnected{_reason};
+                Derived.on(std::move(evt));
             }
         }
 
@@ -2384,8 +2389,10 @@ protected:
             // Standalone client: must stop watcher immediately to prevent further events
             // This is critical for clients created via connect() to avoid processing events after disconnect
             this->_async_event.stop(); // Stop the watcher to prevent further events
-            if constexpr (has_method_on<_Derived, void, event::dispose>::value)
-                Derived.on(event::dispose{});
+            if constexpr (qb::has_on<_Derived, event::dispose>) {
+                auto evt__dispose = event::dispose{};
+                Derived.on(std::move(evt__dispose));
+            }
         }
     }
 };

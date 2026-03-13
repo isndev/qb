@@ -163,7 +163,7 @@ public:
      * @param id The UUID of the session to retrieve
      * @return Shared pointer to the session, or nullptr if not found
      */
-    std::shared_ptr<_Session>
+    [[nodiscard]] std::shared_ptr<_Session>
     session(uuid id) {
         auto it = _sessions.find(id);
         return (it != std::end(_sessions)) ? it->second : nullptr;
@@ -206,7 +206,7 @@ public:
         }
 
         session->start();
-        if constexpr (has_method_on<_Derived, void, _Session &>::value)
+        if constexpr (qb::has_on<_Derived, _Session &>)
             static_cast<_Derived &>(*this).on(*session);
         return *session;
     }
@@ -237,7 +237,7 @@ public:
     extractSession(uuid const &ident) {
         auto it = _sessions.find(ident);
         if (it != _sessions.cend()) {
-            if constexpr (has_method_on<_Session, void, qb::io::async::event::extracted>::value)
+            if constexpr (qb::has_on<_Session, qb::io::async::event::extracted>)
                 (*it->second).on(qb::io::async::event::extracted{});
             auto t_io = std::move(it->second->transport());
             _sessions.erase(it);

@@ -229,7 +229,8 @@ TEST_F(FileSystemTest, LargeFileOperations) {
     const std::string content = "This is test content for large file operations.";
 
     // Write content to file (make it just large enough for the test)
-    for (int i = 0; i < 1000; i++) {
+    // C++23: Using auto for type deduction
+    for (auto i = 0; i < 1000; ++i) {
         large_file_stream << content;
     }
     large_file_stream.close();
@@ -290,7 +291,8 @@ TEST_F(FileSystemTest, ConcurrentOperations) {
         qb::io::sys::file file;
         file.open(concurrent_file, O_WRONLY | O_CREAT, 0644);
 
-        for (int i = 0; i < 100; i++) {
+        // C++23: Using auto for type deduction
+        for (auto i = 0; i < 100; ++i) {
             std::string data = "Line " + std::to_string(i) + "\n";
             file.write(data.c_str(), data.size());
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -312,7 +314,8 @@ TEST_F(FileSystemTest, ConcurrentOperations) {
             int  total_read = 0;
 
             // Read repeatedly - should get more data over time
-            for (int i = 0; i < 10; i++) {
+            // C++23: Using auto for type deduction
+            for (auto i = 0; i < 10; ++i) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
                 int bytes_read = file.read(buffer, sizeof(buffer));
@@ -431,7 +434,8 @@ TEST_F(FileSystemTest, FileToPipeAdvanced) {
     std::string test_content;
 
     // Generate content - we don't need it to be too large
-    for (int i = 0; i < 100; i++) {
+    // C++23: Using auto for type deduction
+    for (auto i = 0; i < 100; ++i) {
         test_content += "Block " + std::to_string(i) + " of test data. ";
     }
 
@@ -572,7 +576,8 @@ TEST_F(FileSystemTest, RoundTripOperations) {
 
     // Generate diverse content with pattern changes and repetitions
     std::vector<char> source_data;
-    for (int i = 0; i < 1000; i++) {
+    // C++23: Using auto for type deduction
+    for (auto i = 0; i < 1000; ++i) {
         char c = 'A' + (i % 26);
         source_data.push_back(c);
 
@@ -673,7 +678,8 @@ TEST_F(FileSystemTest, VeryLargeFileTransfer) {
         const size_t pattern_size    = pattern.size();
         const size_t chunks_to_write = large_size / pattern_size + 1;
 
-        for (size_t i = 0; i < chunks_to_write && file.good(); i++) {
+        // C++23: Using 'uz' suffix for size_t literals
+        for (auto i = 0uz; i < chunks_to_write && file.good(); ++i) {
             file.write(pattern.data(), pattern_size);
 
             // Don't write more than large_size
