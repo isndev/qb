@@ -24,7 +24,9 @@
 
 #ifndef QB_ACTOR_H
 #define QB_ACTOR_H
+#include <atomic>
 #include <map>
+#include <memory>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -32,6 +34,7 @@
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/nocopy.h>
 #include <qb/utility/type_traits.h>
+#include <qb/io/async/coroutine.h>
 #include "Event.h"
 #include "ICallback.h"
 #include "Pipe.h"
@@ -891,8 +894,163 @@ public:
     _Actor *addRefActor(_Args &&...args) const;
 
     /**
+     * @name Coroutine Support
+     * C++23 coroutine integration for async I/O operations.
+     * @{
+     */
+
+    /**
+     * @brief Launch an async coroutine in isolated context
+     *
+     * This is the ONLY way to use coroutines within an Actor.
+     * The coroutine runs in an isolated context and cannot directly
+     * access Actor state. Communication must happen via push<Event>().
+     *
+     * ⚠️ CRITICAL SAFETY REQUIREMENTS:
+     * ================================
+     * 1. **NEVER access actor member variables after co_await**
+     *    - Actor may be destroyed while coroutine is suspended
+     *    - Accessing `this->_member` after suspension = UNDEFINED BEHAVIOR
+     * 
+     * 2. **Capture all data by VALUE before first co_await**
+     *    - Copy everything you need from actor state BEFORE any co_await
+     *    - Never capture `this` or references to actor members
+     * 
+     * 3. **Use ONLY CoroContext after suspension**
+     *    - ctx.push<Event>() is safe (events to dead actors are ignored)
+     *    - ctx.id() and ctx.time() are safe
+     * 
+     * 4. **Keep coroutines SHORT-LIVED**
+     *    - Long-running coroutines increase risk of actor destruction
+     *    - Prefer multiple short coroutines over one long one
+     *
+     * @tparam Func Coroutine function type (returns task<void>)
+     * @param func Coroutine to execute
+     *
+     * @example ✅ SAFE Pattern
+     * void on(RequestEvent& ev) {
+     *     // Copy ALL needed data BEFORE spawning
+     *     std::string key = ev.key;
+     *     ActorId sender = ev.sender;
+     *
+     *     spawn_async([key, sender](auto ctx) -> qb::io::async::task<void> {
+     *         // NO access to 'this' after this point!
+     *         auto reply = co_await fetch(key);  // Actor may die here
+     *         
+     *         // ONLY use ctx after co_await
+     *         ctx.template push<ResultEvent>(reply);
+     *     });
+     * }
+     * 
+     * @example ❌ DANGEROUS Pattern (DO NOT USE)
+     * void on(RequestEvent& ev) {
+     *     spawn_async([this](auto ctx) -> qb::io::async::task<void> {
+     *         co_await sleep(100ms);  // Actor may die here
+     *         
+     *         // ❌ CRASH: accessing this->_member after suspension!
+     *         this->_member = value;  // UNDEFINED BEHAVIOR
+     *     });
+     * }
+     */
+    template <typename Func>
+    void spawn_async(Func&& func) const;
+
+    /**
+     * @brief Check if actor has active coroutines
+     * @return true if any coroutines are still running
+     */
+    [[nodiscard]] bool has_active_coroutines() const {
+        return active_coroutines_.load(std::memory_order_relaxed) > 0;
+    }
+
+    /**
+     * @brief Get number of active coroutines
+     * @return Count of running coroutines
+     */
+    [[nodiscard]] std::size_t active_coroutine_count() const {
+        return active_coroutines_.load(std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Get the coroutine scheduler for this actor
+     * @return Pointer to scheduler, or nullptr if not initialized
+     * @private Internal use by VirtualCore for workflow integration
+     */
+    [[nodiscard]] qb::io::async::CoroutineScheduler* get_coro_scheduler() const {
+        return coro_scheduler_;
+    }
+
+    /**
      * @}
      */
+
+private:
+    /**
+     * @brief Coroutine scheduler pointer (shared with listener)
+     *
+     * Points to the listener's scheduler (not owned by actor).
+     * All actors on the same VirtualCore share the scheduler for efficiency.
+     * 
+     * SAFETY: When actor is destroyed, active_coroutines_ is checked.
+     * Coroutines must NOT access actor state after suspension - they should
+     * only use CoroContext to send events back to the actor.
+     */
+    mutable qb::io::async::CoroutineScheduler* coro_scheduler_ = nullptr;
+
+    /**
+     * @brief Count of active coroutines
+     *
+     * Used for lifecycle management and debugging.
+     */
+    mutable std::atomic<std::size_t> active_coroutines_{0};
+};
+
+/**
+ * @class CoroContext
+ * @brief Safe context for coroutines spawned via spawn_async()
+ * @ingroup Actor
+ *
+ * Provides a restricted interface for coroutines to interact with
+ * the Actor safely. Only event sending is allowed.
+ */
+class CoroContext {
+    Actor* actor_;
+
+public:
+    /**
+     * @brief Construct from actor
+     * @param actor The parent actor
+     */
+    explicit CoroContext(Actor* actor) : actor_(actor) {}
+
+    /**
+     * @brief Send an event to an actor
+     * @tparam Event The event type
+     * @tparam Args Event constructor arguments
+     * @param args Arguments to forward to event constructor
+     */
+    template <typename Event, typename... Args>
+    void push(Args&&... args) const {
+        actor_->push<Event>(actor_->id(), std::forward<Args>(args)...);
+    }
+
+    /**
+     * @brief Get this actor's ID
+     * @return ActorId
+     */
+    [[nodiscard]] ActorId id() const { return actor_->id(); }
+
+    /**
+     * @brief Get current time
+     * @return Timestamp in nanoseconds
+     */
+    [[nodiscard]] uint64_t time() const { return actor_->time(); }
+
+    /**
+     * @brief Get the actor pointer (for push<Event> usage)
+     * @return Pointer to parent actor
+     */
+    [[nodiscard]] Actor* actor() const { return actor_; }
 };
 
 /**

@@ -49,6 +49,7 @@
 #include "async/tcp/server.h"
 #include "async/udp/client.h"
 #include "async/udp/server.h"
+#include "async/coroutine.h"  // C++23 coroutine support
 #include "config.h"
 
 #include "transport/accept.h"

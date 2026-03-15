@@ -25,3 +25,6 @@
 
 # Add system tests for the IO library
 add_subdirectory(system)
+
+# Add coroutine tests
+add_subdirectory(coroutine)
