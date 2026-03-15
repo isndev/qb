@@ -281,9 +281,15 @@ VirtualCore::__workflow__() {
                    << " actor(s)");
     while (likely(true)) {
         _metrics._nanotimer = Timestamp::nano();
-        // core has io
-        if (io::async::listener::current.size())
+        
+        // Process I/O events and ALL coroutines (including actor coroutines) via libev
+        // Always run libev even if size() == 0, because actor coroutine timers
+        // are registered in libev but not counted in listener.size()
+        if (io::async::listener::current.has_coro_scheduler() || 
+            io::async::listener::current.size()) {
             _metrics._nb_event_io = io::async::run(EVRUN_NOWAIT);
+        }
+        
         // send core events
         __flush_all__();
         // receive core events
@@ -356,8 +362,19 @@ VirtualCore::removeActor(ActorId const id) noexcept {
     unregisterEvents(id);
     const auto it = _actors.find(id);
     if (it != _actors.end()) {
-        LOG_INFO("Delete " << *it->second);
-        delete it->second;
+        Actor* actor = it->second;
+        
+        // WARNING: Actor destroyed with active coroutines
+        // The coroutines will continue running but MUST NOT access actor state
+        // They should only use CoroContext to send events (which will be ignored)
+        if (actor->has_active_coroutines()) {
+            LOG_WARN("Actor " << id << " destroyed with " 
+                     << actor->active_coroutine_count() 
+                     << " active coroutines - coroutines must not access actor state!");
+        }
+        
+        LOG_INFO("Delete " << *actor);
+        delete actor;
         _actors.erase(it);
         if (id._service_id > _nb_service)
             _ids.insert(id._service_id);

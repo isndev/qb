@@ -52,6 +52,7 @@ set(ACTOR_SYSTEM_TESTS
         test-actor-concurrency-safety.cpp
         test-actor-resource-management.cpp
         test-actor-lifecycle-hooks.cpp
+        test-actor-coroutine.cpp
 )
 
 # -----------------------------------------------------------------------------

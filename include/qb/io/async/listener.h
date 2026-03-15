@@ -26,12 +26,14 @@
 #define QB_IO_ASYNC_LISTENER_H_
 
 #include <algorithm>
+#include <memory>
 #include <qb/system/container/unordered_set.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 #include <thread>
 #include <vector>
 #include "event/base.h"
+#include "coroutine/scheduler.h"
 
 namespace qb::io::async {
 
@@ -130,6 +132,9 @@ private:
                 _registeredEvents;      /**< Set of registered event handlers */
     std::size_t _nb_invoked_events = 0; /**< Counter for the number of invoked events */
     std::size_t _total_events_processed = 0; /**< Total number of events processed since listener creation */
+
+    // Coroutine support
+    std::unique_ptr<class CoroutineScheduler> _coro_scheduler; /**< Coroutine scheduler */
 
 public:
     /**
@@ -258,6 +263,8 @@ public:
      * This call blocks or returns based on the flag and event activity.
      * It also resets the `_nb_invoked_events` counter before running.
      *
+     * After processing libev events, any ready coroutines are also executed.
+     *
      * @param flag The libev run flag (e.g., `EVRUN_NOWAIT` to check once and return,
      *             `EVRUN_ONCE` to wait for and process one event block, `0` for default blocking run).
      *             Default is `0`, which means `ev_run` will block until `ev_break` is called or no active watchers remain.
@@ -266,6 +273,13 @@ public:
     run(int flag = 0) {
         _nb_invoked_events = 0;
         _loop.run(flag);
+
+        // Process ready coroutines
+        if (_coro_scheduler) {
+            std::size_t coro_count = _coro_scheduler->run_ready();
+            _nb_invoked_events += coro_count;
+            _total_events_processed += coro_count;
+        }
     }
 
     /**
@@ -307,6 +321,31 @@ public:
     [[nodiscard]] inline std::size_t
     size() const {
         return _registeredEvents.size();
+    }
+
+    /**
+     * @brief Get the coroutine scheduler for this listener
+     * @return Reference to the CoroutineScheduler
+     *
+     * Creates the scheduler on first access.
+     */
+    [[nodiscard]] inline CoroutineScheduler&
+    coro_scheduler() {
+        if (!_coro_scheduler) {
+            _coro_scheduler = std::make_unique<CoroutineScheduler>(_loop);
+            // Set as current for this thread
+            CoroutineScheduler::set_current(_coro_scheduler.get());
+        }
+        return *_coro_scheduler;
+    }
+
+    /**
+     * @brief Check if coroutine scheduler is initialized
+     * @return true if scheduler exists
+     */
+    [[nodiscard]] inline bool
+    has_coro_scheduler() const {
+        return _coro_scheduler != nullptr;
     }
 };
 
