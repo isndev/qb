@@ -141,8 +141,9 @@ public:
             _socket.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)) {
             _socket.disconnect();
             err = 1;
-        } else if (err && (err != EISCONN) && (!_timeout || ev_time() < _timeout))
-            return;
+        }
+        // Always complete: once writable we have a definitive result (success or SO_ERROR).
+        // Do not wait for timeout when SO_ERROR is already set (e.g. ECONNREFUSED).
         listener::current.unregisterEvent(event._interface);
         if (!err || err == EISCONN) {
             LOG_DEBUG("Connected async to " << _remote.source());

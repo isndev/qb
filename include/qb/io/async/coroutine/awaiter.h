@@ -61,7 +61,9 @@
 #include <coroutine>
 #include <chrono>
 #include <functional>
-#include <atomic>
+// No <atomic>: libev callbacks fire on the same thread as the coroutines
+// (VirtualCore thread). Plain bools are sufficient for single-thread cooperative.
+#include <memory>
 #include <ev/ev++.h>
 
 // scheduler.h must be included before task.h to get schedule_via_current
@@ -90,14 +92,15 @@ struct awaiter_base {
 
     /**
      * @brief Flag indicating if result is ready
+     * Plain bool: libev callback and coroutine run on the same thread.
      */
-    std::atomic<bool> ready_{false};
+    bool ready_{false};
 
     /**
-     * @brief Flag indicating if the awaiter has been resumed
-     * Used to prevent double-resume in race conditions.
+     * @brief Guard against double-resume (e.g. watcher fires after await_resume).
+     * Plain bool: no concurrent access in single-thread cooperative model.
      */
-    std::atomic<bool> resumed_{false};
+    bool resumed_{false};
 
     /**
      * @brief Pointer to the scheduler
@@ -125,11 +128,7 @@ struct awaiter_base {
      * @brief Check if awaiter is ready
      * @return true if the operation completed synchronously
      */
-    [[nodiscard]] bool await_ready() const noexcept {
-        // Check ready flag - relaxed memory order is sufficient here
-        // because await_ready is called synchronously by the compiler
-        return ready_.load(std::memory_order_relaxed);
-    }
+    [[nodiscard]] bool await_ready() const noexcept { return ready_; }
 
     /**
      * @brief Suspend and register with libev
@@ -145,10 +144,7 @@ struct awaiter_base {
      *
      * Called when the operation completes. Stops the watcher.
      */
-    virtual void await_resume() {
-        // Mark as resumed to prevent double-resume from callback
-        resumed_.store(true, std::memory_order_release);
-    }
+    virtual void await_resume() { resumed_ = true; }
 
     /**
      * @brief Called by libev when event fires
@@ -157,12 +153,12 @@ struct awaiter_base {
      * Thread-safe: uses atomic flags to prevent race conditions.
      */
     void on_event_ready() noexcept {
-        // Set ready flag first (release semantics for synchronization)
-        ready_.store(true, std::memory_order_release);
+        ready_ = true;
+        if (resumed_) return;  // watcher fired after await_resume — ignore
 
-        // Check if already resumed (await_resume was called before callback)
-        if (resumed_.load(std::memory_order_acquire)) {
-            return;  // Already resumed, nothing to do
+        // Unregister from suspended set before resuming
+        if (scheduler_ && handle_) {
+            scheduler_->unregister_suspended(handle_);
         }
 
 #ifdef QB_DEBUG_COROUTINES
@@ -179,6 +175,18 @@ struct awaiter_base {
                       << scheduler_ << " handle=" << handle_.address() << ")\n";
         }
 #endif
+    }
+
+    /**
+     * @brief Register the coroutine as suspended
+     *
+     * Called by derived classes in await_suspend to track this coroutine
+     * as waiting for an event.
+     */
+    void register_suspended() noexcept {
+        if (scheduler_ && handle_) {
+            scheduler_->register_suspended(handle_);
+        }
     }
 
     /**
@@ -248,6 +256,7 @@ struct timer_awaiter : awaiter_base {
             // Fallback: create/get the current scheduler
             scheduler_ = &CoroutineScheduler::current();
         }
+        register_suspended();  // Track this coroutine as suspended
         ev_timer_start(loop_, &watcher_);
         started_ = true;
     }
@@ -256,12 +265,16 @@ struct timer_awaiter : awaiter_base {
      * @brief Stop timer on resume
      *
      * Stops the watcher to prevent it from firing after resumption.
-     * Also marks the awaiter as resumed.
+     * Also marks the awaiter as resumed and unregisters from suspended set.
      */
     void await_resume() override {
         if (started_ && ev_is_active(&watcher_)) {
             ev_timer_stop(loop_, &watcher_);
             started_ = false;
+        }
+        // Unregister from suspended set (in case on_event_ready wasn't called)
+        if (scheduler_ && handle_) {
+            scheduler_->unregister_suspended(handle_);
         }
         awaiter_base::await_resume();
     }
@@ -366,6 +379,7 @@ struct socket_awaiter : awaiter_base {
         if (!scheduler_) {
             scheduler_ = &CoroutineScheduler::current();
         }
+        register_suspended();  // Track this coroutine as suspended
         ev_io_start(loop_, &watcher_);
         started_ = true;
     }
@@ -374,12 +388,16 @@ struct socket_awaiter : awaiter_base {
      * @brief Stop watcher on resume
      *
      * Stops the watcher to prevent it from firing after resumption.
-     * Also marks the awaiter as resumed.
+     * Also marks the awaiter as resumed and unregisters from suspended set.
      */
     void await_resume() override {
         if (started_ && ev_is_active(&watcher_)) {
             ev_io_stop(loop_, &watcher_);
             started_ = false;
+        }
+        // Unregister from suspended set (in case on_event_ready wasn't called)
+        if (scheduler_ && handle_) {
+            scheduler_->unregister_suspended(handle_);
         }
         awaiter_base::await_resume();
     }
@@ -455,11 +473,15 @@ struct async_awaiter : awaiter_base {
 
     /**
      * @brief Internal callback that wraps the user's callback
-     *
-     * This is stored as a member to ensure the callback stays valid
-     * for the duration of the async operation.
      */
     callback_type callback_;
+
+    /**
+     * @brief Validity flag: set false in destructor so callback no-ops if
+     * the coroutine/awaiter was destroyed before the async op completed.
+     * Plain bool (via shared_ptr): lifecycle events are sequential on one thread.
+     */
+    std::shared_ptr<bool> valid_;
 
     /**
      * @brief Construct with async operation
@@ -472,9 +494,8 @@ struct async_awaiter : awaiter_base {
      * @brief Suspend and start async operation
      * @param h The coroutine handle
      *
-     * Creates a callback that will store the result and resume the coroutine.
-     * The callback captures 'this' safely because the awaiter is alive
-     * until await_resume() returns or the awaiter is destroyed.
+     * Callback uses valid_ to avoid use-after-free if the awaiter is
+     * destroyed (e.g. exception) before the async operation completes.
      */
     void await_suspend(std::coroutine_handle<> h) override {
         handle_ = h;
@@ -482,33 +503,33 @@ struct async_awaiter : awaiter_base {
         if (!scheduler_) {
             scheduler_ = &CoroutineScheduler::current();
         }
+        register_suspended();
 
-        // Create the callback that will be invoked when async op completes
-        callback_ = [this](ResultType result) {
+        valid_ = std::make_shared<bool>(true);
+        std::shared_ptr<bool> valid = valid_;
+        callback_ = [this, valid](ResultType result) {
+            if (!*valid) return;
             result_ = std::move(result);
-            ready_.store(true, std::memory_order_release);
-            this->on_event_ready();
+            ready_ = true;
+            on_event_ready();
         };
 
-        // Start async operation with the callback
         async_op_(callback_);
     }
 
-    /**
-     * @brief Get the result
-     * @return The async result (moved out)
-     *
-     * Must only be called when ready is true.
-     */
     ResultType await_resume() {
+        if (scheduler_ && handle_) {
+            scheduler_->unregister_suspended(handle_);
+        }
         awaiter_base::await_resume();
         return std::move(*result_);
     }
 
-    /**
-     * @brief Destructor
-     */
-    ~async_awaiter() override = default;
+    ~async_awaiter() override {
+        if (valid_) {
+            *valid_ = false;
+        }
+    }
 };
 
 } // namespace qb::io::async

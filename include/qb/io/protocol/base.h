@@ -177,7 +177,7 @@ public:
      */
     std::size_t
     getMessageSize() {
-        const auto &buffer = this->_in_buffer;
+        const auto &buffer = this->_io.in();
         auto        i      = buffer.begin() + _offset;
 
         if ((buffer.end() - i) < _SizeBytes)

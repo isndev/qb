@@ -609,6 +609,53 @@ TEST_F(CoroutineSchedulerTests, CancellationOfAwaitedTask) {
 }
 
 // =============================================================================
+// LOCK-FREE QUEUE STRESS
+// =============================================================================
+
+/**
+ * @test Many spawns stress the ready queue
+ * @brief Lock-free MPSC queue under many concurrent-style pushes from one thread
+ */
+TEST_F(CoroutineSchedulerTests, ManySpawnsStressReadyQueue) {
+    constexpr int N = 200;
+    std::atomic<int> done{0};
+
+    for (int i = 0; i < N; ++i) {
+        auto fn = [&done]() -> task<void> {
+            co_await sleep(1ms);
+            done++;
+        };
+        coro_scheduler().spawn(fn());
+    }
+
+    run_for(500ms);
+    EXPECT_EQ(done.load(), N);
+}
+
+/**
+ * @test Burst of schedule_resume (via sleep then resume)
+ * @brief Many coroutines suspend and get scheduled back; stresses queue
+ */
+TEST_F(CoroutineSchedulerTests, BurstScheduleResumeStress) {
+    constexpr int N = 100;
+    std::atomic<int> steps{0};
+
+    auto fn = [&steps]() -> task<void> {
+        for (int i = 0; i < 5; ++i) {
+            co_await sleep(2ms);
+            steps++;
+        }
+    };
+
+    for (int i = 0; i < N; ++i) {
+        coro_scheduler().spawn(fn());
+    }
+
+    run_for(1500ms);
+    EXPECT_EQ(steps.load(), N * 5);
+}
+
+// =============================================================================
 // MAIN
 // =============================================================================
 
