@@ -34,6 +34,13 @@
 #include <vector>
 #include "event/base.h"
 #include "coroutine/scheduler.h"
+#include <cstdio>
+
+#if defined(QB_DEBUG_CORO_LIFECYCLE) && QB_DEBUG_CORO_LIFECYCLE
+#define QB_LISTENER_TRACE(fmt, ...) std::fprintf(stderr, "[listener] " fmt "\n", ##__VA_ARGS__)
+#else
+#define QB_LISTENER_TRACE(fmt, ...) ((void)0)
+#endif
 
 namespace qb::io::async {
 
@@ -156,12 +163,15 @@ public:
      */
     void
     clear() {
+        QB_LISTENER_TRACE("clear() begin registeredEvents=%zu has_coro_scheduler=%d",
+            _registeredEvents.size(), _coro_scheduler != nullptr);
         if (!_registeredEvents.empty()) {
             for (auto it : _registeredEvents)
                 delete it;
             _registeredEvents.clear();
             run(EVRUN_ONCE);
         }
+        QB_LISTENER_TRACE("clear() end (scheduler NOT reset)");
     }
 
     /**
@@ -170,7 +180,9 @@ public:
      * Cleans up by calling `clear()` to remove all registered events and their watchers.
      */
     ~listener() noexcept {
+        QB_LISTENER_TRACE("~listener() begin");
         clear();
+        QB_LISTENER_TRACE("~listener() about to destroy _coro_scheduler (unique_ptr reset)");
     }
 
     /**
@@ -327,7 +339,9 @@ public:
      * @brief Get the coroutine scheduler for this listener
      * @return Reference to the CoroutineScheduler
      *
-     * Creates the scheduler on first access.
+     * Creates the scheduler on first access. The reference is valid until the
+     * listener is destroyed or reset_coro_scheduler() is called. Do not store
+     * this reference across listener teardown (single-thread: use within run/run_for).
      */
     [[nodiscard]] inline CoroutineScheduler&
     coro_scheduler() {
@@ -346,6 +360,24 @@ public:
     [[nodiscard]] inline bool
     has_coro_scheduler() const {
         return _coro_scheduler != nullptr;
+    }
+
+    /**
+     * @brief Reset the coroutine scheduler (for test isolation).
+     *
+     * Destroys the current scheduler and clears the thread-local current pointer.
+     * The next call to coro_scheduler() will create a new scheduler.
+     * Use in test TearDown to avoid leftover state affecting the next test.
+     */
+    inline void
+    reset_coro_scheduler() {
+        QB_LISTENER_TRACE("reset_coro_scheduler() begin has_scheduler=%d", _coro_scheduler != nullptr);
+        if (_coro_scheduler) {
+            _coro_scheduler->destroy_all_suspended();
+        }
+        CoroutineScheduler::set_current(nullptr);
+        _coro_scheduler.reset();
+        QB_LISTENER_TRACE("reset_coro_scheduler() end");
     }
 };
 

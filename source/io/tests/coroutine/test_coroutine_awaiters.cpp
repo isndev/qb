@@ -196,11 +196,11 @@ TEST_F(CoroutineAwaiterTests, AlwaysSuspendAwaiterSuspends) {
     
     coro_scheduler().spawn(fn());
     
-    // After spawn, should have suspended
-    coro_scheduler().run_ready();
+    // Run one step only: coroutine runs to co_await, suspends, re-enqueues itself
+    coro_scheduler().run_ready(1);
     EXPECT_EQ(stage.load(), 1);
     
-    // After scheduler processes ready queue
+    // Run again (or run_for) to let it resume and complete
     run_for(10ms);
     EXPECT_EQ(stage.load(), 2);
 }

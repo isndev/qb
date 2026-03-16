@@ -161,6 +161,8 @@ class CoroutineScheduler;
 template <typename T = void>
 class task {
 public:
+    using value_type = T;
+
     /**
      * @brief Promise type for task<T> coroutines
      *
@@ -366,8 +368,16 @@ public:
      *
      * Sets the continuation and returns this task's handle for symmetric transfer.
      * The continuation will be resumed when this coroutine completes via final_suspend.
+     *
+     * IMPLEMENTATION NOTE: This is defined inline to avoid circular dependency
+     * with CoroutineScheduler. Symmetric transfer prevents stack overflow.
      */
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept;
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept {
+        handle_.promise().continuation_ = caller;
+        // Symmetric transfer: return the handle to resume
+        // The compiler will resume it directly without recursion
+        return handle_;
+    }
 
     /**
      * @brief Awaitable: get the result
@@ -423,6 +433,8 @@ private:
 template <>
 class task<void> {
 public:
+    using value_type = void;
+
     /**
      * @brief Promise type for task<void>
      */
@@ -548,8 +560,15 @@ public:
      *
      * Sets the continuation and returns this task's handle for symmetric transfer.
      * The continuation will be resumed when this coroutine completes via final_suspend.
+     *
+     * IMPLEMENTATION NOTE: This is defined inline to avoid circular dependency
+     * with CoroutineScheduler. Symmetric transfer prevents stack overflow.
      */
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept;
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept {
+        handle_.promise().continuation_ = caller;
+        // Symmetric transfer: return the handle to resume
+        return handle_;
+    }
 
     void await_resume() {
         if (handle_.promise().has_exception()) {

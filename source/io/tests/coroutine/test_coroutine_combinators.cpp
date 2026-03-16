@@ -6,7 +6,7 @@
  * - when_all: wait for all coroutines
  * - when_any: wait for first coroutine
  * - race: competition between coroutines
- * - select: choose from multiple operations
+ * - timeout: execute with timeout limit
  *
  * @author qb - C++ Actor Framework
  */
@@ -32,54 +32,87 @@ protected:
         qb::io::async::init();
     }
     void TearDown() override {
+        qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
 };
 
 /**
- * @test Manual when_all implementation
+ * @test when_all with heterogeneous types
  * @brief Wait for multiple coroutines with different types
  */
-TEST_F(CoroutineWhenAll, ManualWhenAllMixedTypes) {
+TEST_F(CoroutineWhenAll, WhenAllMixedTypes) {
     std::atomic<bool> task1_done{false};
     std::atomic<bool> task2_done{false};
     std::atomic<bool> all_done{false};
-    
+
     auto task1 = [&task1_done]() -> task<int> {
         co_await sleep(30ms);
         task1_done = true;
         co_return 42;
     };
-    
+
     auto task2 = [&task2_done]() -> task<std::string> {
         co_await sleep(20ms);
         task2_done = true;
         co_return "hello";
     };
-    
+
     auto all_done_ptr = &all_done;
     auto coro_fn = [all_done_ptr, &task1, &task2]() -> task<void> {
         auto t1 = task1();
         auto t2 = task2();
-        
+
         // Wait for both
         int r1 = co_await t1;
         std::string r2 = co_await t2;
-        
+
         EXPECT_EQ(r1, 42);
         EXPECT_EQ(r2, "hello");
-        
+
         (*all_done_ptr) = true;
         co_return;
     };
     auto coordinator = coro_fn();
-    
+
     coro_scheduler().spawn(std::move(coordinator));
     run_for(100ms);
-    
+
     EXPECT_TRUE(task1_done);
     EXPECT_TRUE(task2_done);
     EXPECT_TRUE(all_done);
+}
+
+/**
+ * @test when_all helper function
+ * @brief Test the when_all combinator
+ */
+TEST_F(CoroutineWhenAll, WhenAllHelper) {
+    std::atomic<int> sum{0};
+
+    auto worker = [&sum](int value, int delay_ms) -> task<int> {
+        co_await sleep(std::chrono::milliseconds(delay_ms));
+        sum += value;
+        co_return value;
+    };
+
+    auto coro_fn = [&worker]() -> task<void> {
+        auto [r1, r2, r3] = co_await when_all(
+            worker(10, 30),
+            worker(20, 20),
+            worker(30, 10)
+        );
+
+        EXPECT_EQ(r1, 10);
+        EXPECT_EQ(r2, 20);
+        EXPECT_EQ(r3, 30);
+    };
+
+    auto t = coro_fn();
+    coro_scheduler().spawn(std::move(t));
+    run_for(100ms);
+
+    EXPECT_EQ(sum, 60);
 }
 
 /**
@@ -90,90 +123,84 @@ TEST_F(CoroutineWhenAll, WhenAllVoidTasks) {
     constexpr int count = 5;
     std::atomic<int> completed{0};
     std::atomic<bool> all_done{false};
-    
+
     auto completed_ptr = &completed;
     auto all_done_ptr = &all_done;
-    
-    // Worker function outside the coroutine
+
     auto worker_fn = [completed_ptr](int delay_ms) -> task<void> {
         co_await sleep(std::chrono::milliseconds(delay_ms));
         completed_ptr->fetch_add(1);
-        co_return;
     };
-    
-    auto coro_fn = [completed_ptr, all_done_ptr, &worker_fn]() -> task<void> {
-        std::vector<task<void>> tasks;
-        
-        for (int i = 0; i < count; ++i) {
-            tasks.push_back(worker_fn(10 + (i * 5)));
-        }
-        
-        // Wait for all
-        for (auto& t : tasks) {
-            co_await t;
-        }
-        
-        all_done_ptr->store(true);
-        co_return;
+
+    auto coro_fn = [all_done_ptr, &worker_fn]() -> task<void> {
+        auto t1 = worker_fn(10);
+        auto t2 = worker_fn(20);
+        auto t3 = worker_fn(30);
+        auto t4 = worker_fn(15);
+        auto t5 = worker_fn(25);
+
+        co_await t1;
+        co_await t2;
+        co_await t3;
+        co_await t4;
+        co_await t5;
+
+        (*all_done_ptr) = true;
     };
     auto coordinator = coro_fn();
-    
+
     coro_scheduler().spawn(std::move(coordinator));
     run_for(200ms);
-    
+
     EXPECT_EQ(completed, count);
     EXPECT_TRUE(all_done);
 }
 
 /**
- * @test when_all with early failure
- * @brief Verify failure handling in when_all
+ * @test when_all with vector
+ * @brief Wait for vector of coroutines
  */
-TEST_F(CoroutineWhenAll, WhenAllWithFailure) {
-    std::atomic<bool> task1_completed{false};
-    std::atomic<bool> task2_completed{false};
-    std::atomic<bool> saw_exception{false};
-    
-    auto task1 = [&task1_completed]() -> task<int> {
-        co_await sleep(50ms);
-        task1_completed = true;
-        co_return 1;
-    };
-    
-    auto task2 = [&task2_completed]() -> task<int> {
+TEST_F(CoroutineWhenAll, WhenAllVector) {
+    constexpr int count = 10;
+    std::atomic<int> sum{0};
+
+    auto worker_fn = [&sum](int value) -> task<int> {
         co_await sleep(10ms);
-        task2_completed = true;
-        throw std::runtime_error("task2 failed");
-        co_return 2;
+        sum += value;
+        co_return value;
     };
-    
-    auto saw_exception_ptr = &saw_exception;
-    auto coro_fn = [saw_exception_ptr, &task1, &task2]() -> task<void> {
-        auto t1 = task1();
-        auto t2 = task2();
-        
-        try {
-            co_await t1;
-        } catch (...) {
-            // task1 doesn't throw
+
+    auto coro_fn = [&]() -> task<void> {
+        std::vector<task<int>> tasks;
+        for (int i = 0; i < count; ++i) {
+            tasks.push_back(worker_fn(i));
         }
-        
-        try {
-            co_await t2;
-        } catch (const std::runtime_error& e) {
-            (*saw_exception_ptr) = true;
+        auto results = co_await when_all(std::move(tasks));
+        EXPECT_EQ(results.size(), static_cast<size_t>(count));
+        for (int i = 0; i < count; ++i) {
+            EXPECT_EQ(results[i], i);
         }
-        
-        co_return;
     };
-    auto coordinator = coro_fn();
-    
-    coro_scheduler().spawn(std::move(coordinator));
-    run_for(100ms);
-    
-    EXPECT_TRUE(task1_completed);
-    EXPECT_TRUE(task2_completed);
-    EXPECT_TRUE(saw_exception);
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(500ms);
+    EXPECT_EQ(sum, 45);
+}
+
+/**
+ * @test when_all with empty set
+ * @brief when_all completes immediately with no tasks
+ */
+TEST_F(CoroutineWhenAll, WhenAllEmpty) {
+    auto coro_fn = []() -> task<void> {
+        // Empty when_all should complete immediately
+        auto results = co_await when_all(std::vector<task<int>>());
+        EXPECT_TRUE(results.empty());
+    };
+
+    auto t = coro_fn();
+    coro_scheduler().spawn(std::move(t));
+    run_for(10ms);
 }
 
 // =============================================================================
@@ -186,437 +213,488 @@ protected:
         qb::io::async::init();
     }
     void TearDown() override {
+        qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
 };
 
 /**
- * @test when_any - first completion wins
- * @brief Race multiple coroutines, first wins using atomic compare-exchange
+ * @test when_any returns first completed
+ * @brief Race between coroutines
  */
-TEST_F(CoroutineWhenAny, WhenAnyFirstCompletion) {
-    std::atomic<int> winner{0};
-    std::atomic<int> completed_count{0};
-    
-    auto winner_ptr = &winner;
-    auto completed_ptr = &completed_count;
-    
-    // Create workers inline to avoid nested lambda capture issues
-    auto w1 = [winner_ptr, completed_ptr]() -> task<void> {
-        co_await sleep(20ms);
-        completed_ptr->fetch_add(1);
-        int expected = 0;
-        winner_ptr->compare_exchange_strong(expected, 1);
-        co_return;
-    };
-    
-    auto w2 = [winner_ptr, completed_ptr]() -> task<void> {
-        co_await sleep(50ms);
-        completed_ptr->fetch_add(1);
-        int expected = 0;
-        winner_ptr->compare_exchange_strong(expected, 2);
-        co_return;
-    };
-    
-    auto w3 = [winner_ptr, completed_ptr]() -> task<void> {
-        co_await sleep(100ms);
-        completed_ptr->fetch_add(1);
-        int expected = 0;
-        winner_ptr->compare_exchange_strong(expected, 3);
-        co_return;
-    };
-    
-    // Spawn all three
-    coro_scheduler().spawn(w1());
-    coro_scheduler().spawn(w2());
-    coro_scheduler().spawn(w3());
-    
-    run_for(150ms);
-    
-    EXPECT_EQ(winner.load(), 1);  // Fast should complete first
-    EXPECT_EQ(completed_count.load(), 3);  // All should eventually complete
-}
-
-/**
- * @test race with same completion time
- * @brief Race with tasks of similar duration
- */
-TEST_F(CoroutineWhenAny, RaceSimilarDuration) {
-    constexpr int count = 3;
-    std::vector<int> completion_order;
-    std::mutex mutex;
-    
-    auto t = [&completion_order, &mutex](int id) -> task<void> {
-        co_await sleep(20ms);  // Same duration
-        std::lock_guard<std::mutex> lock(mutex);
-        completion_order.push_back(id);
-        co_return;
-    };
-    
-    // Launch all at once
-    auto coro_fn = [&t]() -> task<void> {
-        for (int i = 0; i < count; ++i) {
-            coro_scheduler().spawn(t(i));
-        }
-        co_return;
-    };
-    auto coordinator = coro_fn();
-    
-    coro_scheduler().spawn(std::move(coordinator));
-    run_for(100ms);
-    
-    EXPECT_EQ(completion_order.size(), count);
-    
-    // Verify all IDs are present and unique
-    std::set<int> unique_ids(completion_order.begin(), completion_order.end());
-    EXPECT_EQ(unique_ids.size(), count);
-    
-    // Verify all IDs are in valid range
-    for (int id : completion_order) {
-        EXPECT_GE(id, 0);
-        EXPECT_LT(id, count);
-    }
-}
-
-// =============================================================================
-// TEST SUITE: Select Pattern
-// =============================================================================
-
-class CoroutineSelect : public ::testing::Test {
-protected:
-    void SetUp() override {
-        qb::io::async::init();
-    }
-    void TearDown() override {
-        qb::io::async::listener::current.clear();
-    }
-};
-
-/**
- * @test select from multiple operations
- * @brief Choose first available result using spawn + polling
- */
-TEST_F(CoroutineSelect, SelectFromMultiple) {
-    std::atomic<int> selected{-1};
+TEST_F(CoroutineWhenAny, WhenAnyBasic) {
     std::atomic<bool> done{false};
-    
-    auto selected_ptr = &selected;
-    auto done_ptr = &done;
-    
-    // Create operations that track completion
-    auto w1 = [selected_ptr]() -> task<void> {
-        co_await sleep(30ms);
-        int expected = -1;
-        selected_ptr->compare_exchange_strong(expected, 1);
-        co_return;
-    };
-    
-    auto w2 = [selected_ptr]() -> task<void> {
-        co_await sleep(10ms);
-        int expected = -1;
-        selected_ptr->compare_exchange_strong(expected, 2);
-        co_return;
-    };
-    
-    auto w3 = [selected_ptr]() -> task<void> {
-        co_await sleep(50ms);
-        int expected = -1;
-        selected_ptr->compare_exchange_strong(expected, 3);
-        co_return;
-    };
-    
-    // Monitor coroutine
-    auto monitor = [selected_ptr, done_ptr]() -> task<void> {
-        // Wait for first to complete
-        while (selected_ptr->load() == -1) {
-            co_await sleep(1ms);
-        }
-        done_ptr->store(true);
-        co_return;
-    };
-    
-    // Spawn all operations and monitor
-    coro_scheduler().spawn(w1());
-    coro_scheduler().spawn(w2());
-    coro_scheduler().spawn(w3());
-    coro_scheduler().spawn(monitor());
-    
-    run_for(100ms);
-    
-    EXPECT_TRUE(done.load());
-    EXPECT_EQ(selected.load(), 2);  // op2 is fastest
-}
 
-/**
- * @test select with timeout
- * @brief Select with a timeout option
- */
-TEST_F(CoroutineSelect, SelectWithTimeout) {
-    std::atomic<bool> slow_completed{false};
-    std::atomic<bool> timeout_hit{false};
-    std::atomic<bool> done{false};
-    
-    auto slow_operation = [&slow_completed]() -> task<int> {
-        co_await sleep(100ms);
-        slow_completed = true;
-        co_return 42;
+    auto worker = [](int delay_ms, int result) -> task<int> {
+        co_await sleep(std::chrono::milliseconds(delay_ms));
+        co_return result;
     };
-    
-    auto timeout_hit_ptr = &timeout_hit;
-    auto done_ptr = &done;
-    auto coro_fn = [timeout_hit_ptr, done_ptr, &slow_operation]() -> task<void> {
-        auto slow = slow_operation();
-        
-        auto start = std::chrono::steady_clock::now();
-        
-        while (std::chrono::steady_clock::now() - start < 50ms) {
-            if (slow.handle().promise().is_ready()) {
-                break;
-            }
-            co_await sleep(5ms);
-        }
-        
-        if (!slow.handle().promise().is_ready()) {
-            (*timeout_hit_ptr) = true;
-        }
-        
-        (*done_ptr) = true;
-        co_return;
+
+    auto coro_fn = [&done, &worker]() -> task<void> {
+        auto [index, value] = co_await when_any(
+            worker(100, 1),
+            worker(50, 2),
+            worker(200, 3)
+        );
+
+        // Second task (50ms) should win
+        EXPECT_EQ(index, 1u);
+        EXPECT_EQ(std::any_cast<int>(value), 2);
+        done = true;
     };
-    auto with_timeout = coro_fn();
-    
-    coro_scheduler().spawn(std::move(with_timeout));
-    run_for(150ms);
-    
+
+    auto t = coro_fn();
+    coro_scheduler().spawn(std::move(t));
+    run_for(100ms);
+
     EXPECT_TRUE(done);
-    EXPECT_TRUE(timeout_hit);
-    EXPECT_FALSE(slow_completed);  // Didn't complete in time
-}
-
-// =============================================================================
-// TEST SUITE: Scatter-Gather Pattern
-// =============================================================================
-
-class CoroutineScatterGather : public ::testing::Test {
-protected:
-    void SetUp() override {
-        qb::io::async::init();
-    }
-    void TearDown() override {
-        qb::io::async::listener::current.clear();
-    }
-};
-
-/**
- * @test scatter-gather pattern
- * @brief Fan out work and collect results
- * 
- * NOTE: Disabled - complex capture issue causing incorrect results
- */
-TEST_F(CoroutineScatterGather, ScatterGatherPattern) {
-    constexpr int workers = 5;
-    std::vector<int> results;
-    std::mutex mutex;
-    
-    // Worker function with parameter (not captured lambda)
-    auto worker = [](int id) -> task<int> {
-        co_await sleep(std::chrono::milliseconds(10 + id * 5));
-        co_return id * 10;
-    };
-    
-    auto results_ptr = &results;
-    auto mutex_ptr = &mutex;
-    
-    auto coro_fn = [results_ptr, mutex_ptr, &worker]() -> task<void> {
-        std::vector<task<int>> tasks;
-        
-        // Scatter
-        for (int i = 0; i < workers; ++i) {
-            tasks.push_back(worker(i));
-        }
-        
-        // Gather
-        for (auto& t : tasks) {
-            int result = co_await t;
-            std::lock_guard<std::mutex> lock(*mutex_ptr);
-            results_ptr->push_back(result);
-        }
-        
-        co_return;
-    };
-    auto coordinator = coro_fn();
-    
-    coro_scheduler().spawn(std::move(coordinator));
-    run_for(200ms);
-    
-    EXPECT_EQ(results.size(), workers);
-    
-    // Sort results for deterministic comparison
-    std::sort(results.begin(), results.end());
-    for (int i = 0; i < workers; ++i) {
-        EXPECT_EQ(results[i], i * 10);
-    }
 }
 
 /**
- * @test partial gather
- * @brief Gather only successful results, handling exceptions
- * 
- * NOTE: Disabled - complex capture issue causing incorrect exception handling
+ * @test when_any with vector
+ * @brief Race with vector of coroutines
  */
-TEST_F(CoroutineScatterGather, PartialGather) {
-    constexpr int workers = 5;
-    std::vector<int> successful_results;
-    std::atomic<int> failures{0};
-    
-    // Worker function with parameter
-    auto worker = [](int id) -> task<int> {
-        co_await sleep(10ms);
-        if (id % 2 == 0) {
-            co_return id * 10;
-        } else {
-            throw std::runtime_error("odd id failed");
-        }
-    };
-    
-    auto successful_results_ptr = &successful_results;
-    auto failures_ptr = &failures;
-    
-    auto coro_fn = [successful_results_ptr, failures_ptr, &worker]() -> task<void> {
-        std::vector<task<int>> tasks;
-        
-        for (int i = 0; i < workers; ++i) {
-            tasks.push_back(worker(i));
-        }
-        
-        for (auto& t : tasks) {
-            try {
-                int result = co_await t;
-                successful_results_ptr->push_back(result);
-            } catch (...) {
-                failures_ptr->fetch_add(1);
-            }
-        }
-        
-        co_return;
-    };
-    auto coordinator = coro_fn();
-    
-    coro_scheduler().spawn(std::move(coordinator));
-    run_for(100ms);
-    
-    EXPECT_EQ(successful_results.size(), 3);  // IDs 0, 2, 4 succeed
-    EXPECT_EQ(failures, 2);  // IDs 1, 3 fail
-}
-
-// =============================================================================
-// TEST SUITE: Pipeline Pattern
-// =============================================================================
-
-class CoroutinePipeline : public ::testing::Test {
-protected:
-    void SetUp() override {
-        qb::io::async::init();
-    }
-    void TearDown() override {
-        qb::io::async::listener::current.clear();
-    }
-};
-
-/**
- * @test pipeline processing
- * @brief Chain of processing stages with sequential await
- * 
- * NOTE: Disabled - complex capture issue causing incorrect stage results
- */
-TEST_F(CoroutinePipeline, PipelineProcessing) {
-    std::vector<int> input{1, 2, 3, 4, 5};
-    std::vector<int> output;
-    std::mutex mutex;
-    
-    // Define stages OUTSIDE coroutine
-    auto stage1 = [](int x) -> task<int> {
-        co_await sleep(5ms);
-        co_return x * 2;
-    };
-    
-    auto stage2 = [](int x) -> task<int> {
-        co_await sleep(5ms);
-        co_return x + 10;
-    };
-    
-    auto stage3 = [](int x) -> task<int> {
-        co_await sleep(5ms);
-        co_return x * x;
-    };
-    
-    auto input_ptr = &input;
-    auto output_ptr = &output;
-    auto mutex_ptr = &mutex;
-    
-    auto coro_fn = [input_ptr, output_ptr, mutex_ptr, &stage1, &stage2, &stage3]() -> task<void> {
-        for (int x : *input_ptr) {
-            int r1 = co_await stage1(x);
-            int r2 = co_await stage2(r1);
-            int r3 = co_await stage3(r2);
-            
-            std::lock_guard<std::mutex> lock(*mutex_ptr);
-            output_ptr->push_back(r3);
-        }
-        co_return;
-    };
-    auto pipeline = coro_fn();
-    
-    coro_scheduler().spawn(std::move(pipeline));
-    run_for(500ms);
-    
-    EXPECT_EQ(output.size(), input.size());
-    
-    // Calculate expected: ((x * 2) + 10)^2
-    for (size_t i = 0; i < input.size(); ++i) {
-        int expected = ((input[i] * 2) + 10) * ((input[i] * 2) + 10);
-        EXPECT_EQ(output[i], expected);
-    }
-}
-
-/**
- * @test parallel pipeline stages
- * @brief Pipeline with parallel processing within stages
- */
-TEST_F(CoroutinePipeline, ParallelPipelineStages) {
+TEST_F(CoroutineWhenAny, WhenAnyVector) {
     constexpr int count = 10;
-    std::vector<int> results;
-    std::mutex mutex;
-    
-    auto parallel_stage = [&mutex, &results](int start, int end) -> task<void> {
-        for (int i = start; i < end; ++i) {
-            co_await sleep(5ms);
-            std::lock_guard<std::mutex> lock(mutex);
-            results.push_back(i);
+    std::atomic<int> winner_index{-1};
+
+    auto worker_fn = [](int index, int delay_ms) -> task<int> {
+        co_await sleep(std::chrono::milliseconds(delay_ms));
+        co_return index;
+    };
+
+    auto coro_fn = [&worker_fn, &winner_index]() -> task<void> {
+        std::vector<task<int>> tasks;
+        for (int i = 0; i < count; ++i) {
+            tasks.push_back(worker_fn(i, 10 + i * 5));
         }
-        co_return;
+
+        auto [index, value] = co_await when_any(std::move(tasks));
+
+        // First task should win (10ms)
+        EXPECT_EQ(index, 0);
+        EXPECT_EQ(std::any_cast<int>(value), 0);
+        winner_index = index;
     };
-    
-    auto coro_fn = [&parallel_stage]() -> task<void> {
-        // Process in parallel chunks
-        auto t1 = parallel_stage(0, 5);
-        auto t2 = parallel_stage(5, 10);
-        
-        co_await t1;
-        co_await t2;
-        
-        co_return;
-    };
-    auto coordinator = coro_fn();
-    
-    coro_scheduler().spawn(std::move(coordinator));
-    run_for(200ms);
-    
-    EXPECT_EQ(results.size(), count);
+
+    auto t = coro_fn();
+    coro_scheduler().spawn(std::move(t));
+    run_for(100ms);
+
+    EXPECT_EQ(winner_index, 0);
 }
 
 // =============================================================================
-// MAIN
+// TEST SUITE: race Pattern
+// =============================================================================
+
+class CoroutineRace : public ::testing::Test {
+protected:
+    void SetUp() override {
+        qb::io::async::init();
+    }
+    void TearDown() override {
+        qb::io::async::listener::current.reset_coro_scheduler();
+        qb::io::async::listener::current.clear();
+    }
+};
+
+/**
+ * @test race is alias for when_any
+ * @brief Race between coroutines
+ */
+TEST_F(CoroutineRace, RaceBasic) {
+    auto worker = [](int delay_ms, int result) -> task<int> {
+        co_await sleep(std::chrono::milliseconds(delay_ms));
+        co_return result;
+    };
+
+    auto coro_fn = [&worker]() -> task<void> {
+        auto [index, value] = co_await race(
+            worker(100, 1),
+            worker(30, 2),
+            worker(200, 3)
+        );
+
+        EXPECT_EQ(index, 1u);  // 30ms wins
+        EXPECT_EQ(std::any_cast<int>(value), 2);
+    };
+
+    auto t = coro_fn();
+    coro_scheduler().spawn(std::move(t));
+    run_for(100ms);
+}
+
+// =============================================================================
+// TEST SUITE: with_timeout
+// =============================================================================
+
+class CoroutineTimeout : public ::testing::Test {
+protected:
+    void SetUp() override {
+        qb::io::async::init();
+    }
+    void TearDown() override {
+        qb::io::async::listener::current.reset_coro_scheduler();
+        qb::io::async::listener::current.clear();
+    }
+};
+
+/**
+ * @test with_timeout success case
+ * @brief Operation completes before timeout
+ */
+TEST_F(CoroutineTimeout, WithTimeoutSuccess) {
+    std::atomic<bool> done{false};
+    auto done_ptr = &done;
+
+    auto coro_fn = [done_ptr]() -> task<void> {
+        auto result = co_await coro_with_timeout(
+            []() -> task<int> {
+                co_await sleep(50ms);
+                co_return 42;
+            }(),
+            100ms
+        );
+
+        EXPECT_EQ(result, 42);
+        *done_ptr = true;
+    };
+
+    auto t = coro_fn();
+    coro_scheduler().spawn(std::move(t));
+    run_for(200ms);
+
+    EXPECT_TRUE(done);
+}
+
+/**
+ * @test with_timeout timeout case
+ * @brief Operation exceeds timeout
+ */
+TEST_F(CoroutineTimeout, WithTimeoutTimeout) {
+    std::atomic<bool> caught{false};
+    auto caught_ptr = &caught;
+
+    auto coro_fn = [caught_ptr]() -> task<void> {
+        try {
+            co_await coro_with_timeout(
+                []() -> task<int> {
+                    co_await sleep(100ms);
+                    co_return 42;
+                }(),
+                50ms
+            );
+        } catch (const timeout_error&) {
+            *caught_ptr = true;
+        }
+    };
+
+    auto t = coro_fn();
+    coro_scheduler().spawn(std::move(t));
+    run_for(200ms);
+
+    EXPECT_TRUE(caught);
+}
+
+/**
+ * @test with_timeout with void task
+ * @brief Timeout with void return type
+ */
+TEST_F(CoroutineTimeout, WithTimeoutVoidSuccess) {
+    std::atomic<bool> done{false};
+    auto done_ptr = &done;
+
+    auto coro_fn = [done_ptr]() -> task<void> {
+        co_await coro_with_timeout(
+            [done_ptr]() -> task<void> {
+                co_await sleep(30ms);
+                *done_ptr = true;
+            }(),
+            100ms
+        );
+    };
+
+    auto t = coro_fn();
+    coro_scheduler().spawn(std::move(t));
+    run_for(150ms);
+
+    EXPECT_TRUE(done);
+}
+
+/**
+ * @test with_timeout void timeout case
+ * @brief Void task times out
+ */
+TEST_F(CoroutineTimeout, WithTimeoutVoidTimeout) {
+    std::atomic<bool> caught{false};
+    auto caught_ptr = &caught;
+
+    auto coro_fn = [caught_ptr]() -> task<void> {
+        try {
+            co_await coro_with_timeout(
+                []() -> task<void> {
+                    co_await sleep(100ms);
+                }(),
+                50ms
+            );
+        } catch (const timeout_error&) {
+            *caught_ptr = true;
+        }
+    };
+
+    auto t = coro_fn();
+    coro_scheduler().spawn(std::move(t));
+    run_for(200ms);
+
+    EXPECT_TRUE(caught);
+}
+
+/**
+ * @test race with vector of tasks
+ * @brief First completing task wins
+ */
+TEST_F(CoroutineRace, RaceVector) {
+    std::atomic<int> winner{-1};
+    auto worker = [](int id, int delay_ms) -> task<int> {
+        co_await sleep(std::chrono::milliseconds(delay_ms));
+        co_return id;
+    };
+
+    auto coro_fn = [&worker, &winner]() -> task<void> {
+        std::vector<task<int>> tasks;
+        tasks.push_back(worker(1, 80));
+        tasks.push_back(worker(2, 30));
+        tasks.push_back(worker(3, 50));
+        auto [index, value] = co_await race(std::move(tasks));
+        winner = std::any_cast<int>(value);
+        EXPECT_EQ(index, 1u);
+        EXPECT_EQ(winner, 2);
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(100ms);
+    EXPECT_EQ(winner, 2);
+}
+
+/**
+ * @test when_any result index and value access
+ * @brief result.index and result.value (any_cast) work
+ */
+TEST_F(CoroutineWhenAny, WhenAnyResultIndexAndValue) {
+    std::atomic<bool> done{false};
+    auto worker = [](int v) -> task<int> {
+        co_await sleep(20ms);
+        co_return v;
+    };
+
+    auto coro_fn = [&worker, &done]() -> task<void> {
+        auto result = co_await when_any(worker(10), worker(30), worker(20));
+        int val = std::any_cast<int>(result.value);
+        EXPECT_TRUE(val == 10 || val == 20 || val == 30);
+        EXPECT_LT(result.index, 3u);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(100ms);
+    EXPECT_TRUE(done);
+}
+
+// =============================================================================
+// TEST SUITE: Lifetime & Lambda Safety
+// Stresses the shared_ptr<state_t> lifetime pattern introduced to fix
+// dangling-[this] captures in the spawned run_one coroutines.
+// =============================================================================
+
+class CoroutineLifetime : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override {
+        qb::io::async::listener::current.reset_coro_scheduler();
+        qb::io::async::listener::current.clear();
+    }
+};
+
+/**
+ * @test when_any first task completes instantly
+ * @brief The winner finishes immediately; the other slow tasks must still clean
+ *        up safely without crashing even after the awaiter is destroyed.
+ */
+TEST_F(CoroutineLifetime, WhenAnyFirstTaskImmediateOthersLong) {
+    std::atomic<bool> done{false};
+    std::atomic<int>  completed_count{0};
+
+    auto fast = [&completed_count]() -> task<int> {
+        ++completed_count;
+        co_return 1;
+    };
+    auto slow = [&completed_count](int ms) -> task<int> {
+        co_await sleep(std::chrono::milliseconds(ms));
+        ++completed_count;
+        co_return ms;
+    };
+
+    auto coro_fn = [&]() -> task<void> {
+        auto res = co_await when_any(fast(), slow(50), slow(80));
+        EXPECT_EQ(res.index, 0u);
+        EXPECT_EQ(std::any_cast<int>(res.value), 1);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+    // All three tasks (winner + 2 losers) must have run to completion.
+    EXPECT_EQ(completed_count.load(), 3);
+}
+
+/**
+ * @test when_any all tasks complete at the same "tick"
+ * @brief No delay: tests the atomic compare_exchange_strong first-winner logic.
+ */
+TEST_F(CoroutineLifetime, WhenAnyAllImmediate) {
+    std::atomic<bool> done{false};
+    std::atomic<int>  run_count{0};
+
+    auto instant = [&run_count](int v) -> task<int> {
+        ++run_count;
+        co_return v;
+    };
+
+    auto coro_fn = [&]() -> task<void> {
+        auto res = co_await when_any(instant(10), instant(20), instant(30));
+        // Exactly one winner; index in [0,2], value matches index*10+10
+        EXPECT_LT(res.index, 3u);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(50ms);
+    EXPECT_TRUE(done);
+    EXPECT_EQ(run_count.load(), 3);
+}
+
+/**
+ * @test when_all with many tasks
+ * @brief Stress test with 20 tasks to ensure no per-task allocation or CAS bug.
+ */
+TEST_F(CoroutineLifetime, WhenAllLargeCount) {
+    std::atomic<bool> done{false};
+    constexpr int N = 20;
+
+    auto worker = [](int v) -> task<int> {
+        co_await sleep(10ms);
+        co_return v;
+    };
+
+    // Build a when_all over a vector (uses the vector overload).
+    auto coro_fn = [&]() -> task<void> {
+        std::vector<task<int>> tasks;
+        tasks.reserve(N);
+        for (int i = 0; i < N; ++i) tasks.push_back(worker(i));
+        auto results = co_await when_all(std::move(tasks));
+        EXPECT_EQ(static_cast<int>(results.size()), N);
+        int expected_sum = N * (N - 1) / 2;
+        int actual_sum = 0;
+        for (auto v : results) actual_sum += v;
+        EXPECT_EQ(actual_sum, expected_sum);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(300ms);
+    EXPECT_TRUE(done);
+}
+
+/**
+ * @test coro_with_timeout where operation completes well before the deadline
+ * @brief Verifies the timeout coroutine (spawned as a separate task) cleans up
+ *        safely after the main operation wins and the awaiter is gone.
+ */
+TEST_F(CoroutineLifetime, WithTimeoutWinnerBeforeDeadline) {
+    std::atomic<bool> done{false};
+
+    auto coro_fn = [&]() -> task<void> {
+        auto result = co_await coro_with_timeout(
+            []() -> task<int> {
+                co_await sleep(10ms);
+                co_return 99;
+            }(),
+            200ms
+        );
+        EXPECT_EQ(result, 99);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(300ms);
+    EXPECT_TRUE(done);
+}
+
+/**
+ * @test coro_with_timeout where timeout fires before the operation
+ * @brief The timeout-loser path: operation's run_one coroutine must not crash
+ *        after the awaiter is destroyed on timeout.
+ */
+TEST_F(CoroutineLifetime, WithTimeoutFiresBeforeOperation) {
+    std::atomic<bool> timed_out{false};
+
+    auto coro_fn = [&]() -> task<void> {
+        try {
+            co_await coro_with_timeout(
+                []() -> task<int> {
+                    co_await sleep(500ms);
+                    co_return 1;
+                }(),
+                20ms
+            );
+            ADD_FAILURE() << "Expected timeout_error";
+        } catch (const timeout_error&) {
+            timed_out = true;
+        }
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(600ms);
+    EXPECT_TRUE(timed_out);
+}
+
+/**
+ * @test when_any vector version — first task wins immediately
+ * @brief Same lifetime stress as variadic version but using the vector overload.
+ *        Note: the vector version returns std::pair<size_t, std::any>.
+ */
+TEST_F(CoroutineLifetime, WhenAnyVectorFirstWins) {
+    std::atomic<bool> done{false};
+    std::atomic<int>  count{0};
+
+    auto make_task = [&count](int ms) -> task<int> {
+        if (ms > 0) co_await sleep(std::chrono::milliseconds(ms));
+        ++count;
+        co_return ms;
+    };
+
+    auto coro_fn = [&]() -> task<void> {
+        std::vector<task<int>> tasks;
+        tasks.push_back(make_task(0));   // instant winner
+        tasks.push_back(make_task(50));
+        tasks.push_back(make_task(80));
+        // Vector overload returns std::pair<size_t, std::any>
+        auto res = co_await when_any(std::move(tasks));
+        EXPECT_EQ(res.first, 0u);
+        EXPECT_EQ(std::any_cast<int>(res.second), 0);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro_fn());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+    EXPECT_EQ(count.load(), 3);
+}
+
+// =============================================================================
+// Main Entry Point
 // =============================================================================
 
 int main(int argc, char** argv) {

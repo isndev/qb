@@ -197,71 +197,40 @@
 #ifndef QB_IO_ASYNC_COROUTINE_H
 #define QB_IO_ASYNC_COROUTINE_H
 
-// Include order is critical:
-// 1. scheduler.h first (defines CoroutineScheduler and schedule_via_current)
-// 2. task.h second (uses schedule_via_current)
-// 3. awaiter.h third (uses scheduler and task types)
-// 4. utils.h last (uses all of the above)
-
-#include "coroutine/scheduler.h"
-#include "coroutine/task.h"
-#include "coroutine/awaiter.h"
-#include "coroutine/utils.h"
-
-// Implementation of task<T>::await_suspend() - needs scheduler to be complete
-// Implementation of CoroutineScheduler::spawn() - needs task<void> to be complete
-namespace qb::io::async {
-
 /**
- * @brief Implementation of task<T>::await_suspend
+ * @brief Main header for coroutine support in qb-io
  *
- * Sets the continuation and uses symmetric transfer to resume the awaited task.
- * This is the standard C++20/23 pattern that prevents stack overflow while
- * maintaining correct execution semantics.
- */
-template<typename T>
-std::coroutine_handle<> task<T>::await_suspend(std::coroutine_handle<> caller) noexcept {
-    handle_.promise().continuation_ = caller;
-    // Symmetric transfer: return the handle to resume
-    // The compiler will resume it directly without recursion
-    return handle_;
-}
-
-/**
- * @brief Implementation of task<void>::await_suspend
+ * This header includes all coroutine-related functionality for the
+ * QB async I/O framework. It provides C++23 coroutine integration
+ * with the libev event loop.
  *
- * Sets the continuation and uses symmetric transfer to resume the awaited task.
- */
-inline std::coroutine_handle<> task<void>::await_suspend(std::coroutine_handle<> caller) noexcept {
-    handle_.promise().continuation_ = caller;
-    // Symmetric transfer: return the handle to resume
-    return handle_;
-}
-
-/**
- * @brief Implementation of CoroutineScheduler::spawn
+ * Include order (do not reorder):
+ * 1. scheduler.h - CoroutineScheduler (no dependencies on task)
+ * 2. task.h - task<T> (needs schedule_via_current from scheduler.h)
+ * 3. awaiter.h - Awaiters (needs scheduler)
+ * 4. utils.h - Utility functions (needs awaiters)
+ * 5. mixin.h - CRTP mixin (optional, needs task)
  *
- * The coroutine is added to the ready queue and will be resumed
- * on the next run_ready() call. The task's handle is transferred
- * to the scheduler.
+ * Single-thread: one scheduler per thread; do not share coroutine objects across threads.
+ *
+ * (stream, connector, client moved to coroutine/old/ - disabled until redesign)
  */
-inline void CoroutineScheduler::spawn(task<void>&& t) {
-    auto handle = t.detach();
-    if (!handle) return;
 
-    // Set this scheduler as the coroutine's scheduler
-    handle.promise().scheduler_ = this;
+#include "coroutine/scheduler.h"   // Must be first - defines schedule_via_current
+#include "coroutine/task.h"        // Needs schedule_via_current for await_suspend
+#include "coroutine/awaiter.h"     // Needs scheduler
+#include "coroutine/utils.h"       // Needs awaiters
+#include "coroutine/mixin.h"       // Optional CRTP mixin
 
-    // Mark as in-flight and add to ready queue (must hold lock for both)
-    std::lock_guard<std::mutex> lock(queue_mutex_);
-    in_flight_.insert(handle.address());
-    ready_queue_.push({handle, true});
-}
-
-} // namespace qb::io::async
-
-// Note: listener.h integration is in the main async.h or via separate include
-// to avoid circular dependencies
+// Combinators and utilities
+#include "coroutine/combinators.h" // when_all, when_any, race, timeout
+#include "coroutine/cancellation.h"// cancellation_token, cancellable operations
+#include "coroutine/channel.h"     // channel<T> for coroutine communication
+#include "coroutine/sync.h"        // semaphore, async_mutex, barrier
+#include "coroutine/retry.h"       // with_retry, retry policies
+#include "coroutine/scope.h"       // coroutine_scope, lifetime management
+#include "coroutine/generator.h"   // generator<T> with co_yield
+#include "coroutine/stream.h"      // async_stream<T> transformations
 
 /**
  * @namespace qb::io::async
