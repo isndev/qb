@@ -64,11 +64,29 @@ public:
 
 public:
     /**
-     * @brief Create stream from channel
+     * @brief Create stream from channel (borrowed reference)
+     *
+     * @pre The channel @p ch must outlive the returned stream AND every
+     *      coroutine that consumes it.  Breaking this precondition is
+     *      undefined behaviour (use-after-free).  When you cannot
+     *      guarantee the lifetime, prefer from_channel_shared().
      */
     static async_stream from_channel(channel<T>& ch) {
-        return async_stream([&ch]() -> task<std::optional<T>> {
-            co_return co_await ch.recv();
+        channel<T>* ch_ptr = &ch;
+        return async_stream([ch_ptr]() -> task<std::optional<T>> {
+            co_return co_await ch_ptr->recv();
+        });
+    }
+
+    /**
+     * @brief Create stream from a shared channel (lifetime-safe)
+     *
+     * The shared_ptr keeps the channel alive as long as any stream or
+     * coroutine consuming it exists.
+     */
+    static async_stream from_channel_shared(std::shared_ptr<channel<T>> ch) {
+        return async_stream([ch]() -> task<std::optional<T>> {
+            co_return co_await ch->recv();
         });
     }
 
@@ -289,115 +307,89 @@ public:
         });
     }
 
+    // -----------------------------------------------------------------------
+    // Terminal consumers
+    //
+    // All terminal methods are non-coroutine shims that move *this into a
+    // private static coroutine helper.  This guarantees that the stream's
+    // _next functor (and any callable passed alongside it) lives in the
+    // coroutine frame rather than being accessed via a dangling `this`
+    // pointer — the same pattern used by scheduler::spawn(Callable) to
+    // handle temporary lambdas safely.
+    // -----------------------------------------------------------------------
+
     /**
-     * @brief Process each element
+     * @brief Process each element with a sync or async callback.
+     *
+     * Supports both:
+     *   - sync:  `[](T v) { ... }`
+     *   - async: `[](T v) -> task<void> { co_await ...; }`
      */
-    task<void> for_each(std::function<void(T)> f) {
-        while (true) {
-            auto opt = co_await _next();
-            if (!opt) co_return;
-            f(std::move(*opt));
-        }
+    template <typename F>
+    task<void> for_each(F f) {
+        return for_each_impl(std::move(*this), std::move(f));
     }
 
     /**
-     * @brief Collect all elements into vector
+     * @brief Collect all elements into a vector.
      */
     task<std::vector<T>> collect() {
-        std::vector<T> result;
-
-        while (true) {
-            auto opt = co_await _next();
-            if (!opt) break;
-            result.push_back(std::move(*opt));
-        }
-
-        co_return result;
+        return collect_impl(std::move(*this));
     }
 
     /**
-     * @brief Get first element
+     * @brief Get the first element (or nullopt if the stream is empty).
      */
     task<std::optional<T>> first() {
-        co_return co_await _next();
+        return first_impl(std::move(*this));
     }
 
     /**
-     * @brief Reduce to single value
+     * @brief Reduce all elements to a single value.
      */
     template <typename F>
     task<T> reduce(F f, T initial) {
-        T result = std::move(initial);
-
-        while (true) {
-            auto opt = co_await _next();
-            if (!opt) break;
-            result = f(std::move(result), std::move(*opt));
-        }
-
-        co_return result;
+        return reduce_impl(std::move(*this), std::move(f), std::move(initial));
     }
 
     /**
-     * @brief Count elements
+     * @brief Count the number of elements.
      */
     task<size_t> count() {
-        size_t n = 0;
-
-        while (true) {
-            auto opt = co_await _next();
-            if (!opt) break;
-            ++n;
-        }
-
-        co_return n;
+        return count_impl(std::move(*this));
     }
 
     /**
-     * @brief Check if any element matches
+     * @brief Return true if any element satisfies the predicate.
      */
     template <typename P>
     task<bool> any(P predicate) {
-        while (true) {
-            auto opt = co_await _next();
-            if (!opt) co_return false;
-            if (predicate(*opt)) co_return true;
-        }
+        return any_impl(std::move(*this), std::move(predicate));
     }
 
     /**
-     * @brief Check if all elements match
+     * @brief Return true if all elements satisfy the predicate.
      */
     template <typename P>
     task<bool> all(P predicate) {
-        while (true) {
-            auto opt = co_await _next();
-            if (!opt) co_return true;
-            if (!predicate(*opt)) co_return false;
-        }
+        return all_impl(std::move(*this), std::move(predicate));
     }
 
     /**
-     * @brief Find first matching element
+     * @brief Find the first element satisfying the predicate.
      */
     template <typename P>
     task<std::optional<T>> find(P predicate) {
-        while (true) {
-            auto opt = co_await _next();
-            if (!opt) co_return std::nullopt;
-            if (predicate(*opt)) co_return opt;
-        }
+        return find_impl(std::move(*this), std::move(predicate));
     }
 
     /**
-     * @brief Drain to channel
+     * @brief Drain all elements into a channel.
+     *
+     * @pre @p ch must outlive the coroutine produced by this call.
      */
     task<void> drain_to(channel<T>& ch) {
-        while (true) {
-            auto opt = co_await _next();
-            if (!opt) co_return;
-            co_await ch.send(std::move(*opt));
-        }
+        return drain_to_impl(std::move(*this), &ch);
     }
 
     /**
@@ -427,6 +419,98 @@ public:
             }
             co_return opt;
         });
+    }
+
+    // -----------------------------------------------------------------------
+    // Private static coroutine helpers for terminal consumers.
+    //
+    // Each helper takes `async_stream<T>` and the callable **by value** so
+    // both live inside the coroutine frame.  The public shim above simply
+    // calls the helper with std::move(*this) — making the shim itself a
+    // plain (non-coroutine) function with no `this`-dangling risk.
+    // -----------------------------------------------------------------------
+
+    template <typename F>
+    static task<void> for_each_impl(async_stream<T> stream, F f) {
+        while (true) {
+            auto opt = co_await stream._next();
+            if (!opt) co_return;
+            if constexpr (std::is_same_v<std::invoke_result_t<F, T>, task<void>>) {
+                co_await f(std::move(*opt));
+            } else {
+                f(std::move(*opt));
+            }
+        }
+    }
+
+    static task<std::vector<T>> collect_impl(async_stream<T> stream) {
+        std::vector<T> result;
+        while (true) {
+            auto opt = co_await stream._next();
+            if (!opt) break;
+            result.push_back(std::move(*opt));
+        }
+        co_return result;
+    }
+
+    static task<std::optional<T>> first_impl(async_stream<T> stream) {
+        co_return co_await stream._next();
+    }
+
+    template <typename F>
+    static task<T> reduce_impl(async_stream<T> stream, F f, T initial) {
+        T result = std::move(initial);
+        while (true) {
+            auto opt = co_await stream._next();
+            if (!opt) break;
+            result = f(std::move(result), std::move(*opt));
+        }
+        co_return result;
+    }
+
+    static task<size_t> count_impl(async_stream<T> stream) {
+        size_t n = 0;
+        while (true) {
+            auto opt = co_await stream._next();
+            if (!opt) break;
+            ++n;
+        }
+        co_return n;
+    }
+
+    template <typename P>
+    static task<bool> any_impl(async_stream<T> stream, P predicate) {
+        while (true) {
+            auto opt = co_await stream._next();
+            if (!opt) co_return false;
+            if (predicate(*opt)) co_return true;
+        }
+    }
+
+    template <typename P>
+    static task<bool> all_impl(async_stream<T> stream, P predicate) {
+        while (true) {
+            auto opt = co_await stream._next();
+            if (!opt) co_return true;
+            if (!predicate(*opt)) co_return false;
+        }
+    }
+
+    template <typename P>
+    static task<std::optional<T>> find_impl(async_stream<T> stream, P predicate) {
+        while (true) {
+            auto opt = co_await stream._next();
+            if (!opt) co_return std::nullopt;
+            if (predicate(*opt)) co_return opt;
+        }
+    }
+
+    static task<void> drain_to_impl(async_stream<T> stream, channel<T>* ch_ptr) {
+        while (true) {
+            auto opt = co_await stream._next();
+            if (!opt) co_return;
+            co_await ch_ptr->send(std::move(*opt));
+        }
     }
 
     // Static free function: fn, buffer, sem are VALUE parameters in the

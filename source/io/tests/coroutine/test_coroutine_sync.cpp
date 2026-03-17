@@ -297,6 +297,234 @@ TEST_F(BarrierTests, Synchronization) {
 }
 
 // =============================================================================
+// TEST SUITE: async_event
+// =============================================================================
+
+class AsyncEventTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(AsyncEventTests, ManualReset_WakesAllWaiters) {
+    async_event ev;
+    int woken = 0;
+
+    auto waiter = [&ev, &woken]() -> task<void> {
+        co_await ev.wait();
+        ++woken;
+    };
+
+    coro_scheduler().spawn(waiter());
+    coro_scheduler().spawn(waiter());
+    coro_scheduler().spawn(waiter());
+    run_for(10ms);
+    EXPECT_EQ(woken, 0);  // not set yet
+
+    ev.set();
+    run_for(10ms);
+    EXPECT_EQ(woken, 3);
+}
+
+TEST_F(AsyncEventTests, ManualReset_NewWaiterPassesThrough) {
+    async_event ev;
+    ev.set();
+    int woken = 0;
+
+    auto late_waiter = [&ev, &woken]() -> task<void> {
+        co_await ev.wait();  // event already set → returns immediately
+        ++woken;
+    };
+    coro_scheduler().spawn(late_waiter());
+    run_for(10ms);
+    EXPECT_EQ(woken, 1);
+}
+
+TEST_F(AsyncEventTests, ManualReset_ResetClearsSignal) {
+    async_event ev;
+    ev.set();
+    ev.reset();
+    int woken = 0;
+
+    auto waiter = [&ev, &woken]() -> task<void> {
+        co_await ev.wait();
+        ++woken;
+    };
+    coro_scheduler().spawn(waiter());
+    run_for(10ms);
+    EXPECT_EQ(woken, 0);  // cleared
+
+    ev.set();
+    run_for(10ms);
+    EXPECT_EQ(woken, 1);
+}
+
+TEST_F(AsyncEventTests, AutoReset_WakesOneWaiter) {
+    async_event ev(/*auto_reset=*/true);
+    int woken = 0;
+
+    auto waiter = [&ev, &woken]() -> task<void> {
+        co_await ev.wait();
+        ++woken;
+    };
+    coro_scheduler().spawn(waiter());
+    coro_scheduler().spawn(waiter());
+    run_for(10ms);
+    EXPECT_EQ(woken, 0);
+
+    ev.set();           // wakes exactly one
+    run_for(10ms);
+    EXPECT_EQ(woken, 1);
+
+    ev.set();           // wakes the second
+    run_for(10ms);
+    EXPECT_EQ(woken, 2);
+}
+
+TEST_F(AsyncEventTests, AutoReset_SignalStoredWhenNoWaiter) {
+    async_event ev(/*auto_reset=*/true);
+    ev.set();           // signal stored
+    int woken = 0;
+
+    auto late = [&ev, &woken]() -> task<void> {
+        co_await ev.wait();  // consumes stored signal
+        ++woken;
+    };
+    coro_scheduler().spawn(late());
+    run_for(10ms);
+    EXPECT_EQ(woken, 1);
+    EXPECT_FALSE(ev.is_set());  // consumed
+}
+
+TEST_F(AsyncEventTests, IsSetReflectsState) {
+    async_event ev;
+    EXPECT_FALSE(ev.is_set());
+    ev.set();
+    EXPECT_TRUE(ev.is_set());
+    ev.reset();
+    EXPECT_FALSE(ev.is_set());
+}
+
+TEST_F(AsyncEventTests, ProducerConsumerHandshake) {
+    async_event ready;
+    async_event done;
+    std::string message;
+
+    auto producer = [&ready, &done, &message]() -> task<void> {
+        co_await sleep(5ms);
+        message = "hello";
+        ready.set();
+        co_await done.wait();
+    };
+
+    auto consumer = [&ready, &done, &message]() -> task<void> {
+        co_await ready.wait();
+        EXPECT_EQ(message, "hello");
+        message += " world";
+        done.set();
+    };
+
+    coro_scheduler().spawn(producer());
+    coro_scheduler().spawn(consumer());
+    run_for(50ms);
+    EXPECT_EQ(message, "hello world");
+}
+
+// =============================================================================
+// TEST SUITE: async_latch
+// =============================================================================
+
+class AsyncLatchTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(AsyncLatchTests, BasicCountdown) {
+    async_latch latch(3);
+    int woken = 0;
+
+    auto waiter = [&latch, &woken]() -> task<void> {
+        co_await latch.wait();
+        ++woken;
+    };
+    coro_scheduler().spawn(waiter());
+    coro_scheduler().spawn(waiter());
+    run_for(10ms);
+    EXPECT_EQ(woken, 0);
+
+    latch.count_down();
+    run_for(10ms);
+    EXPECT_EQ(woken, 0);
+    latch.count_down();
+    run_for(10ms);
+    EXPECT_EQ(woken, 0);
+    latch.count_down();  // reaches 0
+    run_for(10ms);
+    EXPECT_EQ(woken, 2);
+}
+
+TEST_F(AsyncLatchTests, AlreadyZeroPassesImmediately) {
+    async_latch latch(0);  // already done
+    int woken = 0;
+
+    auto waiter = [&latch, &woken]() -> task<void> {
+        co_await latch.wait();
+        ++woken;
+    };
+    coro_scheduler().spawn(waiter());
+    run_for(10ms);
+    EXPECT_EQ(woken, 1);
+}
+
+TEST_F(AsyncLatchTests, ArriveAndWait) {
+    async_latch latch(2);
+    int woken = 0;
+
+    auto worker = [&latch, &woken]() -> task<void> {
+        co_await latch.arrive_and_wait();
+        ++woken;
+    };
+    coro_scheduler().spawn(worker());
+    coro_scheduler().spawn(worker());
+    run_for(50ms);
+    EXPECT_EQ(woken, 2);
+}
+
+TEST_F(AsyncLatchTests, CountDownByN) {
+    async_latch latch(10);
+    int woken = 0;
+
+    auto waiter = [&latch, &woken]() -> task<void> {
+        co_await latch.wait();
+        ++woken;
+    };
+    coro_scheduler().spawn(waiter());
+    run_for(10ms);
+    EXPECT_EQ(woken, 0);
+
+    latch.count_down(10);
+    run_for(10ms);
+    EXPECT_EQ(woken, 1);
+}
+
+TEST_F(AsyncLatchTests, ExtraCountDownIsSafe) {
+    async_latch latch(1);
+    int woken = 0;
+
+    auto waiter = [&latch, &woken]() -> task<void> {
+        co_await latch.wait();
+        ++woken;
+    };
+    coro_scheduler().spawn(waiter());
+    latch.count_down();   // 0
+    latch.count_down();   // no-op
+    latch.count_down();   // no-op
+    run_for(10ms);
+    EXPECT_EQ(woken, 1);
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

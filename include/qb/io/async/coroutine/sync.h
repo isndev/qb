@@ -595,6 +595,201 @@ private:
 };
 
 // =============================================================================
+// Async Event
+// =============================================================================
+
+/**
+ * @brief Asynchronous event — signals waiting coroutines without blocking
+ *
+ * Two modes:
+ *  - Manual-reset (default): set() wakes ALL waiters and stays set.
+ *    New waiters after set() return immediately until reset() is called.
+ *  - Auto-reset: set() wakes exactly ONE waiter (or records the signal for
+ *    the next waiter), behaving like a binary semaphore.
+ *
+ * Usage:
+ * @code
+ * async_event ready;
+ *
+ * task<void> producer() {
+ *     co_await do_work();
+ *     ready.set();          // broadcast to all waiters
+ * }
+ *
+ * task<void> consumer() {
+ *     co_await ready.wait();  // suspends until set()
+ *     use_result();
+ * }
+ * @endcode
+ *
+ * With cancellation:
+ * @code
+ * async_event ev;
+ * task<void> consumer(cancellation_token tok) {
+ *     co_await when_any(ev.wait(), check_cancelled(tok));
+ * }
+ * @endcode
+ */
+class async_event {
+public:
+    /**
+     * @param auto_reset     if true, each set() wakes exactly one waiter
+     * @param initially_set  if true, first wait() returns immediately
+     */
+    explicit async_event(bool auto_reset = false, bool initially_set = false) noexcept
+        : _signaled(initially_set)
+        , _auto_reset(auto_reset) {}
+
+    // Non-copyable (waiters hold a pointer to this)
+    async_event(const async_event&) = delete;
+    async_event& operator=(const async_event&) = delete;
+
+    /**
+     * @brief Awaiter — suspends until the event is set
+     *
+     * Cooperative single-thread: no lock needed; only one coroutine
+     * executes between await_ready() and await_suspend().
+     */
+    struct wait_awaiter {
+        async_event& _ev;
+
+        bool await_ready() noexcept {
+            if (_ev._signaled) {
+                if (_ev._auto_reset) _ev._signaled = false;
+                return true;
+            }
+            return false;
+        }
+
+        void await_suspend(std::coroutine_handle<> h) {
+            if (_ev._signaled) {
+                if (_ev._auto_reset) _ev._signaled = false;
+                schedule_via_current(h);
+            } else {
+                _ev._waiters.push_back(h);
+            }
+        }
+
+        void await_resume() noexcept {}
+    };
+
+    /** @brief Suspend until the event is set */
+    wait_awaiter wait() { return wait_awaiter{*this}; }
+
+    /**
+     * @brief Signal the event
+     *
+     * Manual-reset: wakes all current waiters and marks event as set.
+     * Auto-reset:   wakes one waiter, or records the signal if no waiter.
+     */
+    void set() {
+        if (_auto_reset) {
+            if (!_waiters.empty()) {
+                auto h = _waiters.front();
+                _waiters.pop_front();
+                schedule_via_current(h);
+            } else {
+                _signaled = true;
+            }
+        } else {
+            _signaled = true;
+            auto waiters = std::move(_waiters);
+            for (auto h : waiters)
+                schedule_via_current(h);
+        }
+    }
+
+    /** @brief Clear the event (only meaningful in manual-reset mode) */
+    void reset() noexcept { _signaled = false; }
+
+    bool is_set() const noexcept { return _signaled; }
+    size_t waiters_count() const noexcept { return _waiters.size(); }
+
+private:
+    bool _signaled;
+    bool _auto_reset;
+    std::deque<std::coroutine_handle<>> _waiters;
+};
+
+// =============================================================================
+// Async Latch (one-shot countdown)
+// =============================================================================
+
+/**
+ * @brief One-shot countdown synchronization point
+ *
+ * A latch starts with a count > 0 and decrements toward zero. Once it reaches
+ * zero all waiters are released and the latch stays open (cannot be reset —
+ * use barrier for reusable rendezvous).
+ *
+ * Usage:
+ * @code
+ * async_latch latch(3);
+ *
+ * task<void> worker(async_latch& l) {
+ *     co_await do_work();
+ *     l.count_down();          // decrement; releases all when reaching 0
+ * }
+ *
+ * task<void> orchestrator() {
+ *     scope.spawn(worker(latch));
+ *     scope.spawn(worker(latch));
+ *     scope.spawn(worker(latch));
+ *     co_await latch.wait();   // waits until all three decremented
+ * }
+ * @endcode
+ */
+class async_latch {
+public:
+    explicit async_latch(size_t count) noexcept : _count(count) {}
+
+    // Non-copyable (waiters hold a pointer)
+    async_latch(const async_latch&) = delete;
+    async_latch& operator=(const async_latch&) = delete;
+
+    /**
+     * @brief Decrement the counter by n (default 1)
+     *
+     * Releases all waiters if the counter reaches zero.
+     * Safe to call extra times after reaching zero (no-op).
+     */
+    void count_down(size_t n = 1) noexcept {
+        if (_count == 0) return;
+        _count = (n >= _count) ? 0 : _count - n;
+        if (_count == 0) {
+            auto w = std::move(_waiters);
+            for (auto h : w) schedule_via_current(h);
+        }
+    }
+
+    bool is_ready() const noexcept { return _count == 0; }
+    size_t current_count() const noexcept { return _count; }
+
+    struct wait_awaiter {
+        async_latch& _latch;
+        bool await_ready() const noexcept { return _latch._count == 0; }
+        void await_suspend(std::coroutine_handle<> h) {
+            if (_latch._count == 0) schedule_via_current(h);
+            else _latch._waiters.push_back(h);
+        }
+        void await_resume() noexcept {}
+    };
+
+    /** @brief Suspend until the count reaches zero */
+    wait_awaiter wait() { return wait_awaiter{*this}; }
+
+    /** @brief count_down(1) then wait() combined */
+    task<void> arrive_and_wait() {
+        count_down();
+        co_await wait();
+    }
+
+private:
+    size_t _count;
+    std::vector<std::coroutine_handle<>> _waiters;
+};
+
+// =============================================================================
 // Helper Functions
 // =============================================================================
 

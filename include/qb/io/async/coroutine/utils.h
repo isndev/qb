@@ -226,6 +226,59 @@ inline void run_for(std::chrono::milliseconds duration) {
     }
 }
 
+/**
+ * @brief Execute a coroutine synchronously (blocking until completion)
+ *
+ * Runs a coroutine to completion, blocking the current thread until it finishes.
+ * Useful for bridging synchronous code (like test SetUp) with coroutine APIs.
+ *
+ * Usage:
+ * @code
+ * // In test SetUp:
+ * void SetUp() override {
+ *     async::init();
+ *     if (!run_sync(redis.connect()))
+ *         throw std::runtime_error("Connection failed");
+ * }
+ *
+ * // With return value:
+ * auto reply = run_sync(redis.get("key"));
+ * @endcode
+ *
+ * @tparam Awaitable The awaitable type (task, connect_awaiter, etc.)
+ * @param awaitable The awaitable to execute
+ * @return The result of the awaitable
+ * @ingroup Coroutine
+ */
+template <typename Awaitable>
+auto run_sync(Awaitable&& awaitable) -> decltype(auto) {
+    using return_type = decltype(awaitable.await_resume());
+
+    // For void return type, just execute and return void
+    if constexpr (std::is_void_v<return_type>) {
+        bool done = false;
+        coro_scheduler().spawn([&]() -> task<void> {
+            co_await std::forward<Awaitable>(awaitable);
+            done = true;
+        }());
+        while (!done) {
+            listener::current.run(EVRUN_NOWAIT);
+        }
+    } else {
+        // For non-void, store the result
+        std::optional<return_type> result;
+        bool done = false;
+        coro_scheduler().spawn([&]() -> task<void> {
+            result = co_await std::forward<Awaitable>(awaitable);
+            done = true;
+        }());
+        while (!done) {
+            listener::current.run(EVRUN_NOWAIT);
+        }
+        return std::move(*result);
+    }
+}
+
 } // namespace qb::io::async
 
 #endif // QB_IO_ASYNC_COROUTINE_UTILS_H

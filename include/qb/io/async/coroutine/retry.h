@@ -297,7 +297,7 @@ auto with_retry_until(F f, P is_success, retry_policy policy = {})
  */
 template <typename F>
 auto retry(F f) -> task<typename std::invoke_result_t<F>::value_type> {
-    return with_retry(f, retry_policy{});
+    return with_retry(std::move(f), retry_policy{});
 }
 
 /**
@@ -320,7 +320,8 @@ auto retry(F f) -> task<typename std::invoke_result_t<F>::value_type> {
  */
 template <typename F>
 auto make_retryable(F f, retry_policy policy = {}) {
-    return [f, policy]() mutable -> task<std::invoke_result_t<F>> {
+    return [f = std::move(f), policy = std::move(policy)]() mutable
+               -> task<typename std::invoke_result_t<F>::value_type> {
         co_return co_await with_retry(f, policy);
     };
 }

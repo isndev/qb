@@ -10,18 +10,22 @@
  * @author qb - C++ Actor Framework
  */
 
+#ifndef QB_DEBUG_SCOPE
+#define QB_DEBUG_SCOPE 1   // always on in this test file
+#endif
 #include <gtest/gtest.h>
 #include <qb/io/async/coroutine.h>
 #include <chrono>
 #include <atomic>
 #include <numeric>
 #include <vector>
-#if defined(QB_DEBUG_SCOPE) && QB_DEBUG_SCOPE
 #include <cstdio>
-#endif
 
 using namespace qb::io::async;
 using namespace std::chrono_literals;
+
+// Convenience: print a separator so each test is clearly delimited
+#define TLOG(fmt, ...) std::fprintf(stderr, "[test ] " fmt "\n", ##__VA_ARGS__)
 
 // =============================================================================
 // TEST SUITE: Coroutine Scope Basic
@@ -30,22 +34,20 @@ using namespace std::chrono_literals;
 class ScopeBasicTests : public ::testing::Test {
 protected:
     void SetUp() override {
-#if defined(QB_DEBUG_SCOPE) && QB_DEBUG_SCOPE
-        std::fprintf(stderr, "[test] SetUp ScopeBasicTests\n");
-#endif
+        TLOG("=== SetUp  %s ===", ::testing::UnitTest::GetInstance()->current_test_info()->name());
         qb::io::async::init();
+        TLOG("    init() done");
     }
     void TearDown() override {
-#if defined(QB_DEBUG_SCOPE) && QB_DEBUG_SCOPE
-        std::fprintf(stderr, "[test] TearDown ScopeBasicTests drain then clear\n");
-#endif
-        if (qb::io::async::listener::current.has_coro_scheduler()) {
+        TLOG("=== TearDown %s ===", ::testing::UnitTest::GetInstance()->current_test_info()->name());
+        bool has_sched = qb::io::async::listener::current.has_coro_scheduler();
+        TLOG("    has_coro_scheduler=%d, draining...", (int)has_sched);
+        if (has_sched) {
             qb::io::async::run_for(5ms);
         }
+        TLOG("    drain done, clearing listener...");
         qb::io::async::listener::current.clear();
-#if defined(QB_DEBUG_SCOPE) && QB_DEBUG_SCOPE
-        std::fprintf(stderr, "[test] TearDown done\n");
-#endif
+        TLOG("    clear() done");
     }
 };
 
@@ -179,6 +181,7 @@ TEST_F(ScopeBasicTests, JoinAllForSuccess) {
  * @brief active_count() reflects running vs completed tasks
  */
 TEST_F(ScopeBasicTests, ActiveCountDuringRun) {
+    TLOG("--- ActiveCountDuringRun: begin");
     std::atomic<size_t> active_at_start{0};
     std::atomic<size_t> active_after_one{0};
 
@@ -200,10 +203,15 @@ TEST_F(ScopeBasicTests, ActiveCountDuringRun) {
         EXPECT_EQ(scope.active_count(), 0u);
     };
 
+    TLOG("--- ActiveCountDuringRun: spawning coro_fn");
     coro_scheduler().spawn(coro_fn());
+    TLOG("--- ActiveCountDuringRun: running run_for(200ms)");
     run_for(200ms);
+    TLOG("--- ActiveCountDuringRun: run_for done, active_at_start=%zu active_after_one=%zu",
+         active_at_start.load(), active_after_one.load());
     EXPECT_EQ(active_at_start, 2u);
     EXPECT_EQ(active_after_one, 1u);
+    TLOG("--- ActiveCountDuringRun: end");
 }
 
 /**
@@ -211,27 +219,42 @@ TEST_F(ScopeBasicTests, ActiveCountDuringRun) {
  * @brief rethrow_if_error() propagates first task exception
  */
 TEST_F(ScopeBasicTests, RethrowIfError) {
+    TLOG("--- RethrowIfError: begin");
+
     auto throwing_worker = []() -> task<void> {
+        TLOG("    throwing_worker: before sleep");
         co_await sleep(5ms);
+        TLOG("    throwing_worker: before throw");
         throw std::runtime_error("task failed");
     };
 
     std::atomic<bool> caught{false};
     auto coro_fn = [&throwing_worker, &caught]() -> task<void> {
+        TLOG("    coro_fn: entry, creating scope");
         coroutine_scope scope;
+        TLOG("    coro_fn: spawning throwing_worker");
         scope.spawn(throwing_worker());
+        TLOG("    coro_fn: co_await sleep(50ms)");
         co_await sleep(50ms);
+        TLOG("    coro_fn: woke up, calling rethrow_if_error");
         try {
             scope.rethrow_if_error();
+            TLOG("    coro_fn: no error thrown (unexpected!)");
         } catch (const std::runtime_error& e) {
+            TLOG("    coro_fn: caught expected exception: %s", e.what());
             EXPECT_STREQ(e.what(), "task failed");
             caught = true;
         }
+        TLOG("    coro_fn: returning");
     };
 
+    TLOG("--- RethrowIfError: spawning coro_fn");
     coro_scheduler().spawn(coro_fn());
+    TLOG("--- RethrowIfError: run_for(100ms)");
     run_for(100ms);
+    TLOG("--- RethrowIfError: run_for done, caught=%d", (int)caught.load());
     EXPECT_TRUE(caught);
+    TLOG("--- RethrowIfError: end");
 }
 
 /**
@@ -493,6 +516,152 @@ TEST_F(ParallelMapTests, LargeInput) {
 
     coro_scheduler().spawn(coro_fn());
     run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+// =============================================================================
+// TEST SUITE: Event-Driven Join (no polling)
+// =============================================================================
+
+class ScopeEventDrivenTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(ScopeEventDrivenTests, JoinAll_WakesImmediatelyWhenEmpty) {
+    bool done = false;
+
+    auto coro = [&done]() -> task<void> {
+        coroutine_scope scope;
+        co_await scope.join_all();  // nothing spawned → immediate
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro());
+    run_for(20ms);
+    EXPECT_TRUE(done);
+}
+
+static task<void> event_driven_worker(std::vector<int>* order, int tag,
+                                       std::chrono::milliseconds delay) {
+    co_await sleep(delay);
+    order->push_back(tag);
+}
+
+TEST_F(ScopeEventDrivenTests, JoinAll_EventDrivenNoPolling) {
+    bool done = false;
+    std::vector<int> order;
+
+    auto coro = [&done, &order]() -> task<void> {
+        coroutine_scope scope;
+        scope.spawn(event_driven_worker(&order, 1, 15ms));
+        scope.spawn(event_driven_worker(&order, 2, 10ms));
+        co_await scope.join_all();
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro());
+    run_for(100ms);
+    EXPECT_TRUE(done);
+    EXPECT_EQ(order.size(), 2u);
+    EXPECT_EQ(order[0], 2);  // 10ms finishes first
+    EXPECT_EQ(order[1], 1);
+}
+
+static task<void> sleep_worker(std::chrono::milliseconds ms) { co_await sleep(ms); }
+
+static task<void> join_all_waiter(coroutine_scope* scope, int* counter) {
+    co_await scope->join_all();
+    ++(*counter);
+}
+
+TEST_F(ScopeEventDrivenTests, JoinAny_EventDriven) {
+    bool done = false;
+    size_t winner_idx = 999;
+
+    auto coro = [&done, &winner_idx]() -> task<void> {
+        coroutine_scope scope;
+        scope.spawn(sleep_worker(50ms));
+        scope.spawn(sleep_worker(5ms));
+        winner_idx = co_await scope.join_any();
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro());
+    run_for(100ms);
+    EXPECT_TRUE(done);
+    EXPECT_EQ(winner_idx, 1u);  // 5ms task is index 1
+}
+
+TEST_F(ScopeEventDrivenTests, JoinAllFor_ReturnsTrueOnCompletion) {
+    bool done   = false;
+    bool result = false;
+
+    auto coro = [&done, &result]() -> task<void> {
+        coroutine_scope scope;
+        scope.spawn(sleep_worker(10ms));
+        result = co_await scope.join_all_for(200ms);
+        done   = true;
+    };
+
+    coro_scheduler().spawn(coro());
+    run_for(300ms);
+    EXPECT_TRUE(done);
+    EXPECT_TRUE(result);
+}
+
+TEST_F(ScopeEventDrivenTests, JoinAllFor_ReturnsFalseOnTimeout) {
+    bool done   = false;
+    bool result = true;
+
+    auto coro = [&done, &result]() -> task<void> {
+        coroutine_scope scope;
+        scope.spawn(sleep_worker(500ms));
+        result = co_await scope.join_all_for(20ms);
+        done   = true;
+    };
+
+    coro_scheduler().spawn(coro());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+    EXPECT_FALSE(result);
+}
+
+TEST_F(ScopeEventDrivenTests, MultipleJoinAllConcurrent) {
+    // Two coroutines waiting on the same scope via join_all
+    int woken = 0;
+
+    auto coro = [&woken]() -> task<void> {
+        coroutine_scope scope;
+        scope.spawn(sleep_worker(20ms));
+
+        coro_scheduler().spawn(join_all_waiter(&scope, &woken));
+        coro_scheduler().spawn(join_all_waiter(&scope, &woken));
+        co_await sleep(100ms);
+    };
+
+    coro_scheduler().spawn(coro());
+    run_for(200ms);
+    EXPECT_EQ(woken, 2);
+}
+
+TEST_F(ScopeEventDrivenTests, ScopeActiveCount) {
+    bool done = false;
+
+    auto coro = [&done]() -> task<void> {
+        coroutine_scope scope;
+        EXPECT_EQ(scope.active_count(), 0u);
+        scope.spawn(sleep_worker(20ms));
+        scope.spawn(sleep_worker(20ms));
+        EXPECT_EQ(scope.active_count(), 2u);
+        co_await scope.join_all();
+        EXPECT_EQ(scope.active_count(), 0u);
+        done = true;
+    };
+
+    coro_scheduler().spawn(coro());
+    run_for(200ms);
     EXPECT_TRUE(done);
 }
 

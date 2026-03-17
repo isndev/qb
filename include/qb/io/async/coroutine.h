@@ -213,7 +213,8 @@
  *
  * Single-thread: one scheduler per thread; do not share coroutine objects across threads.
  *
- * (stream, connector, client moved to coroutine/old/ - disabled until redesign)
+ * TCP coroutine connector is available in tcp/connector.h (when __cpp_impl_coroutine is defined).
+ * (stream, client moved to coroutine/old/ - disabled until redesign)
  */
 
 #include "coroutine/scheduler.h"   // Must be first - defines schedule_via_current
@@ -231,6 +232,7 @@
 #include "coroutine/scope.h"       // coroutine_scope, lifetime management
 #include "coroutine/generator.h"   // generator<T> with co_yield
 #include "coroutine/stream.h"      // async_stream<T> transformations
+#include "coroutine/shared_task.h" // shared_task<T> — multi-consumer result
 
 /**
  * @namespace qb::io::async
