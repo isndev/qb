@@ -183,6 +183,39 @@ public:
     void spawn(task<void>&& t);
 
     /**
+     * @brief Spawn a callable (lambda/functor) as a coroutine — closure is owned.
+     *
+     * This overload solves the "dangling lambda" problem that arises when
+     * writing `spawn(f())`: the temporary closure of `f` is destroyed as soon
+     * as the call expression is evaluated, leaving the coroutine frame with a
+     * dangling `this` pointer.
+     *
+     * By passing the callable WITHOUT invoking it, `invoke_owned` moves it
+     * into a wrapper coroutine frame as a **value parameter**.  C++ guarantees
+     * that function parameters are copied into the coroutine state, so the
+     * callable stays alive for the entire duration of the spawned task.
+     *
+     * Usage:
+     * @code
+     * // BROKEN — lambda can dangle:
+     * coro_scheduler().spawn([captured_data]() -> task<void> { ... }());
+     *
+     * // SAFE — pass the lambda itself, without the trailing ():
+     * coro_scheduler().spawn([captured_data]() -> task<void> { ... });
+     * @endcode
+     *
+     * @param fn Callable that returns task<void> (no arguments required)
+     */
+    template <typename Callable>
+    requires std::invocable<Callable>
+          && std::same_as<std::invoke_result_t<Callable>, task<void>>
+          && (!std::same_as<std::decay_t<Callable>, task<void>>)
+    void spawn(Callable fn) {
+        // invoke_owned_ moves fn into its own coroutine frame (value param)
+        spawn(invoke_owned_(std::move(fn)));
+    }
+
+    /**
      * @brief Schedule a coroutine for resumption
      *
      * Called by awaiters when their event fires. The coroutine
@@ -366,6 +399,19 @@ public:
     }
 
 private:
+    /**
+     * @brief Wrapper coroutine that owns the callable in its frame.
+     *
+     * Since fn is a **value parameter**, C++ copies/moves it into the
+     * coroutine state at construction — the callable stays alive for the
+     * entire duration of the spawned coroutine regardless of the original
+     * lambda's lifetime.
+     */
+    template <typename F>
+    static task<void> invoke_owned_(F fn) {
+        co_await fn();
+    }
+
     // Ready queue item: (handle, owned)
     // owned=true for handles from spawn() - scheduler must destroy when done
     // owned=false for continuations - they destroy themselves

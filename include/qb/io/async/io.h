@@ -1193,6 +1193,24 @@ protected:
             auto evt__dispose = event::dispose{}; Derived.on(std::move(evt__dispose));
         }
     }
+
+    /**
+     * @brief Resets internal disconnection state so the component can be reused.
+     *
+     * After `dispose()` sets `_is_disposed = true`, subsequent calls to `dispose()`
+     * are no-ops, preventing `on(disconnected)` from firing on the next connection drop.
+     * Call this before restarting I/O on the same object (e.g. for auto-reconnect) to
+     * restore a clean slate identical to the freshly-constructed state.
+     *
+     * @pre The old async event must be stopped and the old transport socket closed
+     *      before calling this — typically done from within the reconnect setup path.
+     */
+    void
+    reset_io_state() noexcept {
+        _is_disposed  = false;
+        _reason       = 0;
+        _system_error = 0;
+    }
 };
 
 /**
@@ -2394,6 +2412,24 @@ protected:
                 Derived.on(std::move(evt__dispose));
             }
         }
+    }
+
+    /**
+     * @brief Resets internal disconnection state so the component can be reused.
+     *
+     * After `dispose()` sets `_is_disposed = true`, subsequent calls to `dispose()`
+     * are no-ops, preventing `on(disconnected)` from firing on the next connection drop.
+     * Call this before restarting I/O on the same object (e.g. for auto-reconnect) to
+     * restore a clean slate identical to the freshly-constructed state.
+     *
+     * @pre The old async event must be stopped and the old transport socket closed
+     *      before calling this — typically done from within the reconnect setup path.
+     */
+    void
+    reset_io_state() noexcept {
+        _is_disposed  = false;
+        _reason       = 0;
+        _system_error = 0;
     }
 };
 

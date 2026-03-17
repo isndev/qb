@@ -163,6 +163,13 @@ qb_add_test(
     DEPENDS qb-io gtest_main
 )
 
+# shared_task<T> tests
+qb_add_test(
+    NAME qb-io-gtest-coroutine-shared-task
+    SOURCES test_coroutine_shared_task.cpp
+    DEPENDS qb-io gtest_main
+)
+
 # -----------------------------------------------------------------------------
 # DISABLED: coroutine client/stream/connector (moved to coroutine/old/, redesign pending)
 # -----------------------------------------------------------------------------

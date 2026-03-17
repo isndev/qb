@@ -346,6 +346,235 @@ TEST_F(PipelineTests, ClosePropagates) {
 }
 
 // =============================================================================
+// TEST SUITE: channel select()
+// =============================================================================
+
+class ChannelSelectTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(ChannelSelectTests, FastPath_ValueAlreadyInBuffer) {
+    channel<int>    ch_a(4), ch_b(4);
+    select_result   result;
+    bool done = false;
+
+    ch_a.try_send(42);
+
+    auto reader = [&ch_a, &ch_b, &result, &done]() -> task<void> {
+        result = co_await select(ch_a, ch_b);
+        done = true;
+    };
+
+    coro_scheduler().spawn(reader());
+    run_for(20ms);
+    EXPECT_TRUE(done);
+    EXPECT_EQ(result.index, 0u);
+    EXPECT_EQ(result.get<int>(), 42);
+}
+
+TEST_F(ChannelSelectTests, SlowPath_FirstSenderWins) {
+    channel<int>  ch_a(1), ch_b(1);
+    select_result result;
+    bool done = false;
+
+    auto reader = [&ch_a, &ch_b, &result, &done]() -> task<void> {
+        result = co_await select(ch_a, ch_b);
+        done = true;
+    };
+    coro_scheduler().spawn(reader());
+
+    // Send to ch_b first (shorter delay)
+    auto sender_b = [&ch_b]() -> task<void> {
+        co_await sleep(5ms);
+        co_await ch_b.send(99);
+    };
+    auto sender_a = [&ch_a]() -> task<void> {
+        co_await sleep(20ms);
+        co_await ch_a.send(77);
+    };
+    coro_scheduler().spawn(sender_b());
+    coro_scheduler().spawn(sender_a());
+
+    run_for(100ms);
+    EXPECT_TRUE(done);
+    EXPECT_EQ(result.index, 1u);  // ch_b won
+    EXPECT_EQ(result.get<int>(), 99);
+}
+
+TEST_F(ChannelSelectTests, ClosedChannel_ResolvedAsClosed) {
+    channel<int>  ch_a(1), ch_b(1);
+    select_result result;
+    bool done = false;
+
+    ch_a.close();
+
+    auto reader = [&ch_a, &ch_b, &result, &done]() -> task<void> {
+        result = co_await select(ch_a, ch_b);
+        done = true;
+    };
+    coro_scheduler().spawn(reader());
+    run_for(10ms);
+    EXPECT_TRUE(done);
+    EXPECT_EQ(result.index, 0u);
+    EXPECT_TRUE(result.closed);
+}
+
+TEST_F(ChannelSelectTests, VectorSelect_PicksFirstReady) {
+    channel<int> ch0(1), ch1(1), ch2(1);
+    std::vector<channel<int>*> channels = {&ch0, &ch1, &ch2};
+    select_result result;
+    bool done = false;
+
+    auto reader = [&channels, &result, &done]() -> task<void> {
+        result = co_await select(channels);
+        done = true;
+    };
+    coro_scheduler().spawn(reader());
+
+    auto sender = [&ch2]() -> task<void> {
+        co_await sleep(5ms);
+        co_await ch2.send(7);
+    };
+    coro_scheduler().spawn(sender());
+    run_for(50ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_EQ(result.index, 2u);
+    EXPECT_EQ(result.get<int>(), 7);
+}
+
+TEST_F(ChannelSelectTests, SelectInLoop_DrainsMultipleChannels) {
+    channel<int>  ch_a(4), ch_b(4);
+    std::vector<int> received;
+
+    auto producer = [&ch_a, &ch_b]() -> task<void> {
+        co_await ch_a.send(1);
+        co_await ch_b.send(2);
+        co_await ch_a.send(3);
+        ch_a.close();
+        ch_b.close();
+    };
+
+    // Use select() while both channels are still open, fall back to
+    // individual recv() once one of them closes. This avoids the
+    // deterministic left-to-right bias of select picking the same
+    // closed channel on every iteration.
+    auto consumer = [&ch_a, &ch_b, &received]() -> task<void> {
+        bool a_open = true, b_open = true;
+        while (a_open || b_open) {
+            if (a_open && b_open) {
+                auto res = co_await select(ch_a, ch_b);
+                if (res.closed) {
+                    (res.index == 0 ? a_open : b_open) = false;
+                } else {
+                    received.push_back(res.get<int>());
+                }
+            } else if (a_open) {
+                auto v = co_await ch_a.recv();
+                if (!v) a_open = false; else received.push_back(*v);
+            } else {
+                auto v = co_await ch_b.recv();
+                if (!v) b_open = false; else received.push_back(*v);
+            }
+        }
+    };
+
+    coro_scheduler().spawn(producer());
+    coro_scheduler().spawn(consumer());
+    run_for(100ms);
+
+    EXPECT_EQ(received.size(), 3u);
+}
+
+// =============================================================================
+// TEST SUITE: channel recv_for / send_for timeouts
+// =============================================================================
+
+class ChannelTimeoutTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(ChannelTimeoutTests, RecvFor_ValueArrivesBeforeTimeout) {
+    channel<int>       ch(1);
+    std::optional<int> result;
+    bool done = false;
+
+    auto sender = [&ch]() -> task<void> {
+        co_await sleep(10ms);
+        co_await ch.send(42);
+    };
+
+    auto recver = [&ch, &result, &done]() -> task<void> {
+        result = co_await ch.recv_for(200ms);
+        done   = true;
+    };
+
+    coro_scheduler().spawn(sender());
+    coro_scheduler().spawn(recver());
+    run_for(300ms);
+
+    EXPECT_TRUE(done);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 42);
+}
+
+TEST_F(ChannelTimeoutTests, RecvFor_TimesOutWhenNoValue) {
+    channel<int>       ch(1);
+    std::optional<int> result{999};
+    bool done = false;
+
+    auto recver = [&ch, &result, &done]() -> task<void> {
+        result = co_await ch.recv_for(20ms);
+        done   = true;
+    };
+
+    coro_scheduler().spawn(recver());
+    run_for(100ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_FALSE(result.has_value());
+}
+
+TEST_F(ChannelTimeoutTests, RecvFor_BufferedFastPath) {
+    channel<int>       ch(4);
+    ch.try_send(55);
+    std::optional<int> result;
+    bool done = false;
+
+    auto recver = [&ch, &result, &done]() -> task<void> {
+        result = co_await ch.recv_for(50ms);
+        done   = true;
+    };
+    coro_scheduler().spawn(recver());
+    run_for(20ms);
+
+    EXPECT_TRUE(done);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(*result, 55);
+}
+
+TEST_F(ChannelTimeoutTests, RecvFor_ClosedChannelReturnsNullopt) {
+    channel<int>       ch(1);
+    ch.close();
+    std::optional<int> result{999};
+    bool done = false;
+
+    auto recver = [&ch, &result, &done]() -> task<void> {
+        result = co_await ch.recv_for(50ms);
+        done   = true;
+    };
+    coro_scheduler().spawn(recver());
+    run_for(20ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_FALSE(result.has_value());
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

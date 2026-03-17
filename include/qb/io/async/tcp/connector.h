@@ -6,6 +6,33 @@
  * It defines the connector class template which handles the async connection
  * process and a connect function for initiating asynchronous connections.
  *
+ * C++23 Coroutine Support:
+ * ========================
+ *
+ * This file also provides C++23 coroutine awaiters for async TCP connections,
+ * enabling `co_await` style programming:
+ *
+ * @code
+ * #include <qb/io/async/tcp/connector.h>
+ *
+ * qb::io::async::task<void> my_connection() {
+ *     using namespace std::chrono_literals;
+ *
+ *     auto socket = co_await qb::io::async::tcp::connect(
+ *         qb::io::uri{"tcp://localhost:6379"},
+ *         5s
+ *     );
+ *
+ *     if (!socket) {
+ *         // Connection failed
+ *         co_return;
+ *     }
+ *
+ *     // Use connected socket
+ *     // ...
+ * }
+ * @endcode
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,6 +55,7 @@
 #include <qb/io.h>
 #include <qb/io/system/sys__socket.h>
 #include "../../uri.h"
+#include "../../transport/tcp.h"
 #include "../event/io.h"
 #include "../listener.h"
 
@@ -199,6 +227,162 @@ void
 connect(Socket_&& existing_socket, uri const &remote, Func_ &&func, double timeout = 0.) {
     new connector<Socket_, Func_>(std::move(existing_socket), remote, std::forward<Func_>(func), timeout);
 }
+
+// =============================================================================
+// C++23 Coroutine Support
+// =============================================================================
+
+#ifdef __cpp_impl_coroutine
+// Coroutines are available (C++20/23)
+
+#include <coroutine>
+#include <optional>
+#include <chrono>
+
+/**
+ * @defgroup CoroutineTCP Coroutine TCP Connectors
+ * @brief C++23 coroutine awaiters for TCP connections
+ *
+ * These classes enable `co_await` style programming for TCP connections,
+ * wrapping the callback-based connector with a modern coroutine interface.
+ *
+ * @code
+ * auto socket = co_await qb::io::async::tcp::connect(
+ *     uri{"tcp://localhost:6379"}, 5s
+ * );
+ * if (socket) { // use socket
+ *     // ...
+ * }
+ * @endcode
+ */
+
+/**
+ * @brief Coroutine awaiter for TCP connection establishment
+ * @ingroup CoroutineTCP
+ * @tparam Socket_ The socket type
+ *
+ * This awaiter wraps the callback-based tcp::connect with a C++23 coroutine
+ * interface. It suspends the coroutine until connection completes and resumes
+ * with std::optional<Socket_>.
+ */
+template <typename Socket_>
+class connect_awaiter {
+    uri _remote;
+    std::chrono::milliseconds _timeout;
+    std::optional<Socket_> _result;
+    std::coroutine_handle<> _handle;
+    bool _ready = false;
+
+public:
+    explicit connect_awaiter(uri remote,
+                             std::chrono::milliseconds timeout = std::chrono::milliseconds{0})
+        : _remote(std::move(remote))
+        , _timeout(timeout) {}
+
+    [[nodiscard]] bool await_ready() const noexcept { return _ready; }
+
+    void await_suspend(std::coroutine_handle<> h) {
+        _handle = h;
+
+        double timeout_sec = _timeout.count() > 0
+            ? static_cast<double>(_timeout.count()) / 1000.0
+            : 0.0;
+
+        // Use function from outer namespace (before coroutine section)
+        ::qb::io::async::tcp::connect<Socket_>(_remote, [this](Socket_&& socket) {
+            if (socket.is_open()) {
+                _result = std::move(socket);
+            }
+            _ready = true;
+            if (_handle) {
+                ::qb::io::async::CoroutineScheduler::current().schedule_resume(_handle);
+            }
+        }, timeout_sec);
+    }
+
+    [[nodiscard]] std::optional<Socket_> await_resume() {
+        return std::move(_result);
+    }
+};
+
+/**
+ * @brief Factory function for TCP connection awaiter
+ * @ingroup CoroutineTCP
+ * @tparam Transport The transport type (default: transport::tcp)
+ * @param remote The remote endpoint URI
+ * @param timeout Connection timeout (default: 0ms = no timeout)
+ * @return connect_awaiter with appropriate socket type
+ */
+template <typename Transport = qb::io::transport::tcp>
+[[nodiscard]] auto connect(uri remote,
+                           std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) {
+    using socket_type = typename Transport::transport_io_type;
+    return connect_awaiter<socket_type>{std::move(remote), timeout};
+}
+
+/**
+ * @brief Awaiter for connecting with existing socket
+ * @ingroup CoroutineTCP
+ * @tparam Socket_ The socket type
+ */
+template <typename Socket_>
+class connect_with_socket_awaiter {
+    Socket_ _socket;
+    uri _remote;
+    std::chrono::milliseconds _timeout;
+    std::optional<Socket_> _result;
+    std::coroutine_handle<> _handle;
+    bool _ready = false;
+
+public:
+    connect_with_socket_awaiter(Socket_&& sock, uri remote, std::chrono::milliseconds timeout)
+        : _socket(std::move(sock))
+        , _remote(std::move(remote))
+        , _timeout(timeout) {}
+
+    [[nodiscard]] bool await_ready() const noexcept { return _ready; }
+
+    void await_suspend(std::coroutine_handle<> h) {
+        _handle = h;
+
+        double timeout_sec = _timeout.count() > 0
+            ? static_cast<double>(_timeout.count()) / 1000.0
+            : 0.0;
+
+        // Use function from outer namespace (before coroutine section)
+        ::qb::io::async::tcp::connect<Socket_>(std::move(_socket), _remote, [this](Socket_&& socket) {
+            if (socket.is_open()) {
+                _result = std::move(socket);
+            }
+            _ready = true;
+            if (_handle) {
+                ::qb::io::async::CoroutineScheduler::current().schedule_resume(_handle);
+            }
+        }, timeout_sec);
+    }
+
+    [[nodiscard]] std::optional<Socket_> await_resume() {
+        return std::move(_result);
+    }
+};
+
+/**
+ * @brief Factory function for connecting with existing socket
+ * @ingroup CoroutineTCP
+ * @tparam Transport The transport type (default: transport::tcp)
+ * @param existing_socket Socket to use for the connection (will be moved)
+ * @param remote The remote endpoint URI
+ * @param timeout Connection timeout (default: 0ms = no timeout)
+ */
+template <typename Transport = qb::io::transport::tcp>
+[[nodiscard]] auto connect_with_socket(typename Transport::transport_io_type&& existing_socket,
+                                         uri remote,
+                                         std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) {
+    using socket_type = typename Transport::transport_io_type;
+    return connect_with_socket_awaiter<socket_type>{std::move(existing_socket), std::move(remote), timeout};
+}
+
+#endif // __cpp_impl_coroutine
 
 } // namespace qb::io::async::tcp
 

@@ -43,6 +43,39 @@ public:
     channel_closed() : std::runtime_error("Channel is closed") {}
 };
 
+// =============================================================================
+// channel_select_state — shared coordination state for select()
+// =============================================================================
+
+/**
+ * @brief Shared state for channel select operations.
+ *
+ * All participating channels hold a pointer to the same select_state.
+ * The first channel to deliver a value calls resolve() which wakes the
+ * awaiting coroutine. Subsequent channels find the state already resolved
+ * and skip. Lazy cleanup of stale select_waiter_entry items happens inside
+ * send_awaiter: resolved entries are discarded when encountered.
+ *
+ * Single-thread cooperative: no mutex needed.
+ */
+struct channel_select_state {
+    bool   resolved{false};
+    size_t winner{0};
+    bool   closed{false};  ///< true when the winning channel was closed
+    std::any value;
+    std::coroutine_handle<> outer{};
+
+    void resolve(size_t idx, std::any v, bool ch_closed = false) {
+        if (!resolved) {
+            resolved = true;
+            winner   = idx;
+            value    = std::move(v);
+            closed   = ch_closed;
+            if (outer) schedule_via_current(std::exchange(outer, {}));
+        }
+    }
+};
+
 /**
  * @brief Multi-Producer Single-Consumer channel
  * @tparam T Type of values passed through the channel
@@ -114,16 +147,28 @@ public:
         // No lock: single-thread cooperative — state is stable between
         // await_ready() and await_suspend() (no other coroutine can run).
         bool await_ready() {
-            if (ch._closed)
-                return false;
+            if (ch._closed) return false;
+            // 1. Satisfy a direct recv waiter
             if (!ch._recv_waiters.empty()) {
                 auto [recv_h, result_ptr] = ch._recv_waiters.front();
                 ch._recv_waiters.pop_front();
                 *result_ptr = std::move(value);
-                _completed = true;
+                _completed  = true;
                 schedule_via_current(recv_h);
                 return true;
             }
+            // 2. Satisfy a select waiter (lazy-clean stale resolved entries)
+            while (!ch._select_waiters.empty()) {
+                auto& entry = ch._select_waiters.front();
+                if (!entry.state->resolved) {
+                    entry.state->resolve(entry.index, std::any(std::move(value)));
+                    ch._select_waiters.pop_front();
+                    _completed = true;
+                    return true;
+                }
+                ch._select_waiters.pop_front();  // stale, skip
+            }
+            // 3. Buffer
             if (ch._buffer.size() < ch._capacity) {
                 ch._buffer.push(std::move(value));
                 _completed = true;
@@ -133,19 +178,28 @@ public:
         }
 
         void await_suspend(std::coroutine_handle<> h) {
-            if (ch._closed) {
-                _completed = true;
-                schedule_via_current(h);
-                return;
-            }
+            if (ch._closed) { _completed = true; schedule_via_current(h); return; }
             if (!ch._recv_waiters.empty()) {
                 auto [recv_h, result_ptr] = ch._recv_waiters.front();
                 ch._recv_waiters.pop_front();
                 *result_ptr = std::move(value);
-                _completed = true;
+                _completed  = true;
                 schedule_via_current(recv_h);
                 schedule_via_current(h);
-            } else if (ch._buffer.size() < ch._capacity) {
+                return;
+            }
+            while (!ch._select_waiters.empty()) {
+                auto& entry = ch._select_waiters.front();
+                if (!entry.state->resolved) {
+                    entry.state->resolve(entry.index, std::any(std::move(value)));
+                    ch._select_waiters.pop_front();
+                    _completed = true;
+                    schedule_via_current(h);
+                    return;
+                }
+                ch._select_waiters.pop_front();
+            }
+            if (ch._buffer.size() < ch._capacity) {
                 ch._buffer.push(std::move(value));
                 _completed = true;
                 schedule_via_current(h);
@@ -230,7 +284,7 @@ public:
     }
 
     /**
-     * @brief Non-blocking try send
+     * @brief Non-blocking try send (copy)
      * @param value Value to send
      * @return true if sent, false if buffer full or closed
      */
@@ -246,6 +300,28 @@ public:
         }
         if (_buffer.size() < _capacity) {
             _buffer.push(value);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * @brief Non-blocking try send (move)
+     * @param value Value to send (moved)
+     * @return true if sent, false if buffer full or closed
+     */
+    bool try_send(T&& value) {
+        if (_closed)
+            return false;
+        if (!_recv_waiters.empty()) {
+            auto [recv_h, result_ptr] = _recv_waiters.front();
+            _recv_waiters.pop_front();
+            *result_ptr = std::move(value);
+            schedule_via_current(recv_h);
+            return true;
+        }
+        if (_buffer.size() < _capacity) {
+            _buffer.push(std::move(value));
             return true;
         }
         return false;
@@ -278,14 +354,14 @@ public:
     void close() {
         if (_closed) return;
         _closed = true;
-        for (auto& [h, result_ptr] : _recv_waiters) {
-            (void)result_ptr;
-            schedule_via_current(h);
-        }
+        for (auto& [h, result_ptr] : _recv_waiters) { (void)result_ptr; schedule_via_current(h); }
         _recv_waiters.clear();
-        for (auto h : _send_waiters)
-            schedule_via_current(h);
+        for (auto h : _send_waiters) schedule_via_current(h);
         _send_waiters.clear();
+        // Notify select waiters with "closed" signal
+        for (auto& entry : _select_waiters)
+            entry.state->resolve(entry.index, std::any{}, /*closed=*/true);
+        _select_waiters.clear();
     }
 
     bool is_closed() const noexcept { return _closed; }
@@ -293,13 +369,155 @@ public:
     size_t capacity()const noexcept { return _capacity; }
     bool   empty()   const noexcept { return _buffer.empty(); }
 
+    // -----------------------------------------------------------------------
+    // select() support
+    // -----------------------------------------------------------------------
+
+    /**
+     * @brief Register a select operation as a potential receiver on this channel.
+     *
+     * Called by channel_select_awaiter before suspending. When a value becomes
+     * available (via send or close), this channel will call state->resolve() if
+     * the select is not yet resolved.
+     */
+    void register_select_waiter(std::shared_ptr<channel_select_state> state, size_t idx) {
+        // Fast path: value already in buffer
+        if (!_buffer.empty()) {
+            T val = std::move(_buffer.front()); _buffer.pop();
+            if (!_send_waiters.empty()) {
+                schedule_via_current(_send_waiters.front());
+                _send_waiters.pop_front();
+            }
+            state->resolve(idx, std::any(std::move(val)));
+            return;
+        }
+        if (_closed) {
+            state->resolve(idx, std::any{}, true);
+            return;
+        }
+        _select_waiters.push_back({std::move(state), idx});
+    }
+
+    // -----------------------------------------------------------------------
+    // Timed recv / send
+    // -----------------------------------------------------------------------
+
+    /**
+     * @brief Receive with timeout
+     * @param timeout Maximum time to wait
+     * @return Optional value — empty on timeout or closed channel
+     */
+    task<std::optional<T>> recv_for(std::chrono::milliseconds timeout) {
+        // Fast path
+        if (!_buffer.empty()) {
+            co_return try_recv();
+        }
+        if (_closed) co_return std::nullopt;
+
+        auto state = std::make_shared<channel_select_state>();
+        // index 0 = data received, resolved via timer with winner=1 = timeout
+        struct timed_recv_awaiter {
+            channel<T>& ch;
+            std::shared_ptr<channel_select_state> state;
+            std::chrono::milliseconds timeout_ms;
+
+            bool await_ready() const noexcept { return state->resolved; }
+
+            void await_suspend(std::coroutine_handle<> h) {
+                if (state->resolved) { schedule_via_current(h); return; }
+                state->outer = h;
+                ch._select_waiters.push_back({state, 0});
+                coro_scheduler().spawn(channel_timer(state, h, timeout_ms));
+            }
+
+            std::optional<T> await_resume() {
+                if (!state->resolved || state->winner == 1 || state->closed)
+                    return std::nullopt;
+                if (!state->value.has_value()) return std::nullopt;
+                return std::any_cast<T>(std::move(state->value));
+            }
+        };
+
+        co_return co_await timed_recv_awaiter{*this, state, timeout};
+    }
+
+    /**
+     * @brief Send with timeout
+     * @param value  Value to send
+     * @param timeout Maximum time to wait for buffer space
+     * @return true if sent, false on timeout or closed channel
+     */
+    task<bool> send_for(T value, std::chrono::milliseconds timeout) {
+        if (_closed) co_return false;
+        // Fast path: space available
+        if (_buffer.size() < _capacity || !_recv_waiters.empty()) {
+            co_await send(std::move(value));
+            co_return true;
+        }
+
+        // Slow path: wait for space or timeout
+        auto done  = std::make_shared<bool>(false);
+        auto fired = std::make_shared<bool>(false);
+
+        struct timed_send_awaiter {
+            channel<T>& ch;
+            T val;
+            std::shared_ptr<bool> done;
+            std::shared_ptr<bool> fired;
+            std::chrono::milliseconds timeout_ms;
+
+            bool await_ready() const noexcept { return *done; }
+
+            void await_suspend(std::coroutine_handle<> h) {
+                if (*done) { schedule_via_current(h); return; }
+                ch._send_waiters.push_back(h);
+                coro_scheduler().spawn(send_timer(fired, h, timeout_ms));
+            }
+
+            bool await_resume() {
+                if (*fired) return false;  // timeout fired first
+                if (ch._closed) return false;
+                return true;
+            }
+        };
+
+        co_return co_await timed_send_awaiter{*this, std::move(value), done, fired, timeout};
+    }
+
 private:
+    // Free functions: parameters stored by value in the coroutine frame.
+    static task<void> channel_timer(std::shared_ptr<channel_select_state> state,
+                                     std::coroutine_handle<> h,
+                                     std::chrono::milliseconds delay) {
+        co_await sleep(delay);
+        // winner=1 signals timeout; schedule_via_current deduplicates
+        if (!state->resolved) {
+            state->resolved = true;
+            state->winner   = 1;
+            schedule_via_current(h);
+        }
+    }
+
+    static task<void> send_timer(std::shared_ptr<bool> fired,
+                                  std::coroutine_handle<> h,
+                                  std::chrono::milliseconds delay) {
+        co_await sleep(delay);
+        *fired = true;
+        schedule_via_current(h);
+    }
+
     size_t _capacity;
     using recv_waiter_entry = std::pair<std::coroutine_handle<>, std::optional<T>*>;
 
-    std::queue<T> _buffer;
+    struct select_waiter_entry {
+        std::shared_ptr<channel_select_state> state;
+        size_t index;
+    };
+
+    std::queue<T>  _buffer;
     std::deque<std::coroutine_handle<>> _send_waiters;
-    std::deque<recv_waiter_entry> _recv_waiters;
+    std::deque<recv_waiter_entry>       _recv_waiters;
+    std::deque<select_waiter_entry>     _select_waiters;
     bool _closed = false;
 };
 
@@ -470,6 +688,165 @@ task<void> pipeline_worker(F fn, channel<T>* in_ptr, channel<U>* out_ptr) {
         co_await out_ptr->send(fn(*val));
     }
     out_ptr->close();
+}
+
+// =============================================================================
+// select() — wait on the first of N channels to have data
+// =============================================================================
+
+/**
+ * @brief Result of a select() operation
+ *
+ * - index  : which channel (0-based) won the race
+ * - closed : true if the winning channel was closed (value is empty)
+ * - value  : std::any wrapping the received value (empty on close/timeout)
+ */
+struct select_result {
+    size_t   index{0};
+    bool     closed{false};
+    std::any value;
+
+    template <typename T>
+    T get() const { return std::any_cast<T>(value); }
+};
+
+/**
+ * @brief Awaiter for variadic heterogeneous channel select
+ * @tparam Ts  Value types of the participated channels
+ *
+ * Registers with every channel as a select waiter. The first channel to
+ * deliver a value (or close) resolves the shared state and wakes the caller.
+ * Stale entries in other channels' select queues are cleaned up lazily.
+ */
+template <typename... Ts>
+class channel_select_awaiter {
+    using state_t = channel_select_state;
+    std::shared_ptr<state_t>     _state;
+    std::tuple<channel<Ts>*...>  _channels;
+
+    // Pass 1: prefer any channel that has buffered data.
+    template <size_t I>
+    bool try_data() {
+        auto* ch = std::get<I>(_channels);
+        if (!ch->empty()) {
+            if (auto val = ch->try_recv()) {
+                _state->resolve(I, std::any(std::move(*val)));
+                return true;
+            }
+        }
+        if constexpr (I + 1 < sizeof...(Ts))
+            return try_data<I + 1>();
+        return false;
+    }
+
+    // Pass 2: only after no data anywhere, report a closed channel.
+    template <size_t I>
+    bool try_closed() {
+        auto* ch = std::get<I>(_channels);
+        if (ch->is_closed() && ch->empty()) {
+            _state->resolve(I, std::any{}, true);
+            return true;
+        }
+        if constexpr (I + 1 < sizeof...(Ts))
+            return try_closed<I + 1>();
+        return false;
+    }
+
+    bool try_immediate() { return try_data<0>() || try_closed<0>(); }
+
+    template <size_t... Is>
+    void register_all(std::index_sequence<Is...>) {
+        (std::get<Is>(_channels)->register_select_waiter(_state, Is), ...);
+    }
+
+public:
+    explicit channel_select_awaiter(channel<Ts>&... chs)
+        : _state(std::make_shared<state_t>())
+        , _channels(&chs...) {}
+
+    bool await_ready() { return try_immediate(); }
+
+    void await_suspend(std::coroutine_handle<> h) {
+        if (_state->resolved) { schedule_via_current(h); return; }
+        _state->outer = h;
+        register_all(std::make_index_sequence<sizeof...(Ts)>{});
+    }
+
+    select_result await_resume() {
+        return {_state->winner, _state->closed, std::move(_state->value)};
+    }
+};
+
+/**
+ * @brief Wait for the first of several channels to have data (variadic)
+ *
+ * @code
+ * auto res = co_await select(ch_int, ch_string);
+ * if (res.index == 0) use(res.get<int>());
+ * else               use(res.get<std::string>());
+ * @endcode
+ *
+ * @ingroup Coroutine
+ */
+template <typename... Ts>
+auto select(channel<Ts>&... chs) {
+    return channel_select_awaiter<Ts...>(chs...);
+}
+
+/**
+ * @brief Homogeneous vector-of-channels select
+ *
+ * Waits for the first channel in @p channels to deliver a value.
+ * Returns {index, closed, any(value)}.
+ *
+ * @ingroup Coroutine
+ */
+template <typename T>
+class channel_select_vector_awaiter {
+    using state_t = channel_select_state;
+    std::shared_ptr<state_t>  _state;
+    std::vector<channel<T>*>  _channels;
+
+public:
+    explicit channel_select_vector_awaiter(std::vector<channel<T>*> chs)
+        : _state(std::make_shared<state_t>())
+        , _channels(std::move(chs)) {}
+
+    bool await_ready() {
+        // Pass 1: prefer data over close signals (avoids starvation).
+        for (size_t i = 0; i < _channels.size(); ++i) {
+            auto* ch = _channels[i];
+            if (!ch->empty()) {
+                auto val = ch->try_recv();
+                if (val) { _state->resolve(i, std::any(std::move(*val))); return true; }
+            }
+        }
+        // Pass 2: report first closed-and-empty channel.
+        for (size_t i = 0; i < _channels.size(); ++i) {
+            auto* ch = _channels[i];
+            if (ch->is_closed() && ch->empty()) {
+                _state->resolve(i, std::any{}, true);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void await_suspend(std::coroutine_handle<> h) {
+        if (_state->resolved) { schedule_via_current(h); return; }
+        _state->outer = h;
+        for (size_t i = 0; i < _channels.size(); ++i)
+            _channels[i]->register_select_waiter(_state, i);
+    }
+
+    select_result await_resume() {
+        return {_state->winner, _state->closed, std::move(_state->value)};
+    }
+};
+
+template <typename T>
+auto select(std::vector<channel<T>*> chs) {
+    return channel_select_vector_awaiter<T>(std::move(chs));
 }
 
 } // namespace qb::io::async

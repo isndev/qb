@@ -10,11 +10,21 @@
  * @author qb - C++ Actor Framework
  */
 
+// Enable async_generator and ag_* helper traces
+#define QB_DEBUG_AGEN 1
+// Enable scheduler traces
+#define QB_DEBUG_SCOPE 1
+
 #include <gtest/gtest.h>
 #include <qb/io/async/coroutine.h>
+#include <chrono>
 #include <vector>
+#include <cstdio>
 
 using namespace qb::io::async;
+using namespace std::chrono_literals;
+
+#define TLOG(fmt, ...) std::fprintf(stderr, "[test ] " fmt "\n", ##__VA_ARGS__)
 
 // =============================================================================
 // TEST SUITE: Basic Generator
@@ -279,6 +289,185 @@ TEST_F(GeneratorUtilityTests, ManualIteration) {
     auto val3 = g.next();
     EXPECT_FALSE(val3.has_value());
     EXPECT_FALSE(g.has_next());
+}
+
+// =============================================================================
+// TEST SUITE: async_generator<T> helpers (ag_*)
+// =============================================================================
+
+class AsyncGeneratorHelpersTests : public ::testing::Test {
+protected:
+    void SetUp() override {
+        TLOG("SetUp");
+        qb::io::async::init();
+    }
+    void TearDown() override {
+        TLOG("TearDown");
+        qb::io::async::listener::current.clear();
+    }
+};
+
+static async_generator<int> range_async(int n) {
+    TLOG("range_async start n=%d", n);
+    for (int i = 0; i < n; ++i) {
+        TLOG("range_async sleeping i=%d", i);
+        co_await sleep(std::chrono::milliseconds(1));
+        TLOG("range_async yielding i=%d", i);
+        co_yield i;
+        TLOG("range_async resumed after yield i=%d", i);
+    }
+    TLOG("range_async done");
+}
+
+TEST_F(AsyncGeneratorHelpersTests, AgForEach_VisitsAll) {
+    std::vector<int> visited;
+    bool done = false;
+    TLOG("AgForEach_VisitsAll: spawning");
+
+    // Use spawn(callable) — no trailing () — to avoid dangling closure
+    coro_scheduler().spawn([&visited, &done]() -> task<void> {
+        TLOG("AgForEach coroutine start");
+        co_await ag_for_each(range_async(5), [&visited](int v) {
+            TLOG("AgForEach callback v=%d", v);
+            visited.push_back(v);
+        });
+        TLOG("AgForEach coroutine: ag_for_each awaited, setting done");
+        done = true;
+        TLOG("AgForEach coroutine: done=true set, returning");
+    });
+    run_for(100ms);
+    TLOG("AgForEach_VisitsAll: after run_for done=%d visited.size=%zu",
+         done ? 1 : 0, visited.size());
+
+    EXPECT_TRUE(done);
+    EXPECT_EQ(visited, (std::vector<int>{0, 1, 2, 3, 4}));
+}
+
+TEST_F(AsyncGeneratorHelpersTests, AgCollect_GathersAll) {
+    bool done = false;
+    std::vector<int> result;
+    TLOG("AgCollect_GathersAll: spawning");
+
+    coro_scheduler().spawn([&result, &done]() -> task<void> {
+        TLOG("AgCollect coroutine start");
+        result = co_await ag_collect(range_async(5));
+        TLOG("AgCollect coroutine done result.size=%zu", result.size());
+        done = true;
+    });
+    run_for(100ms);
+    TLOG("AgCollect_GathersAll: done=%d result.size=%zu", done ? 1 : 0, result.size());
+
+    EXPECT_TRUE(done);
+    EXPECT_EQ(result, (std::vector<int>{0, 1, 2, 3, 4}));
+}
+
+TEST_F(AsyncGeneratorHelpersTests, AgMap_TransformsAll) {
+    bool done = false;
+    std::vector<int> result;
+
+    coro_scheduler().spawn([&result, &done]() -> task<void> {
+        result = co_await ag_map(range_async(4), [](int v) { return v * 2; });
+        done = true;
+    });
+    run_for(100ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_EQ(result, (std::vector<int>{0, 2, 4, 6}));
+}
+
+TEST_F(AsyncGeneratorHelpersTests, AgFilter_KeepsMatching) {
+    bool done = false;
+    std::vector<int> result;
+
+    coro_scheduler().spawn([&result, &done]() -> task<void> {
+        result = co_await ag_filter(range_async(6), [](int v) { return v % 2 == 0; });
+        done = true;
+    });
+    run_for(100ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_EQ(result, (std::vector<int>{0, 2, 4}));
+}
+
+TEST_F(AsyncGeneratorHelpersTests, AgReduce_SumsAll) {
+    bool done = false;
+    int  sum  = 0;
+
+    coro_scheduler().spawn([&sum, &done]() -> task<void> {
+        sum = co_await ag_reduce(range_async(5), 0, std::plus<int>{});
+        done = true;
+    });
+    run_for(100ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_EQ(sum, 0 + 1 + 2 + 3 + 4);
+}
+
+TEST_F(AsyncGeneratorHelpersTests, AgTake_LimitsOutput) {
+    bool done = false;
+    std::vector<int> result;
+
+    coro_scheduler().spawn([&result, &done]() -> task<void> {
+        result = co_await ag_collect(ag_take(range_async(10), 3));
+        done = true;
+    });
+    run_for(100ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_EQ(result, (std::vector<int>{0, 1, 2}));
+}
+
+TEST_F(AsyncGeneratorHelpersTests, AgSkip_SkipsN) {
+    bool done = false;
+    std::vector<int> result;
+
+    coro_scheduler().spawn([&result, &done]() -> task<void> {
+        result = co_await ag_collect(ag_skip(range_async(6), 3));
+        done = true;
+    });
+    run_for(100ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_EQ(result, (std::vector<int>{3, 4, 5}));
+}
+
+TEST_F(AsyncGeneratorHelpersTests, AgForEach_WithAsyncCallback) {
+    std::vector<int> visited;
+    bool done = false;
+    TLOG("AgForEach_WithAsyncCallback: spawning");
+
+    coro_scheduler().spawn([&visited, &done]() -> task<void> {
+        TLOG("AgForEach_WithAsyncCallback coroutine start");
+        co_await ag_for_each(range_async(3),
+            [&visited](int v) -> task<void> {
+                TLOG("AgForEach_WithAsyncCallback async_cb v=%d sleeping", v);
+                co_await sleep(1ms);
+                TLOG("AgForEach_WithAsyncCallback async_cb v=%d pushing", v);
+                visited.push_back(v * 10);
+            });
+        TLOG("AgForEach_WithAsyncCallback coroutine done");
+        done = true;
+    });
+    run_for(200ms);
+    TLOG("AgForEach_WithAsyncCallback: done=%d visited.size=%zu",
+         done ? 1 : 0, visited.size());
+
+    EXPECT_TRUE(done);
+    EXPECT_EQ(visited, (std::vector<int>{0, 10, 20}));
+}
+
+TEST_F(AsyncGeneratorHelpersTests, EmptyGenerator) {
+    bool done = false;
+    std::vector<int> result;
+
+    coro_scheduler().spawn([&result, &done]() -> task<void> {
+        result = co_await ag_collect(range_async(0));
+        done = true;
+    });
+    run_for(50ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_TRUE(result.empty());
 }
 
 // =============================================================================

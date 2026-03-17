@@ -26,6 +26,15 @@
 #include <coroutine>
 #include <optional>
 #include <exception>
+#include <cstdio>
+
+/** Set QB_DEBUG_AGEN=1 (compile flag or before the include) to enable
+ *  async_generator trace prints that show the yield/next/suspend flow. */
+#if defined(QB_DEBUG_AGEN) && QB_DEBUG_AGEN
+#  define QB_AGEN_TRACE(fmt, ...) std::fprintf(stderr, "[agen ] " fmt "\n", ##__VA_ARGS__)
+#else
+#  define QB_AGEN_TRACE(fmt, ...) (void)0
+#endif
 
 namespace qb::io::async {
 
@@ -223,9 +232,10 @@ public:
         std::suspend_always initial_suspend() { return {}; }
 
         auto final_suspend() noexcept {
+            QB_AGEN_TRACE("final_suspend continuation=%p",
+                          continuation ? (void*)continuation.address() : nullptr);
             struct final_awaiter {
                 std::coroutine_handle<> continuation;
-
                 bool await_ready() const noexcept { return false; }
                 std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept {
                     return continuation ? continuation : std::noop_coroutine();
@@ -241,9 +251,25 @@ public:
 
         void return_void() {}
 
-        std::suspend_always yield_value(T value) {
+        /**
+         * @brief Symmetric-transfer yield: resumes the awaiting consumer
+         * (ag_for_each / ag_collect etc.) inline instead of going through
+         * the scheduler.  Previously returned std::suspend_always which
+         * left both the generator AND the consumer permanently suspended.
+         */
+        auto yield_value(T value) {
             current_value = std::move(value);
-            return {};
+            QB_AGEN_TRACE("yield_value value ready, transferring to continuation=%p",
+                          continuation ? (void*)continuation.address() : nullptr);
+            struct yield_awaiter {
+                std::coroutine_handle<> cont;
+                bool await_ready() const noexcept { return false; }
+                std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept {
+                    return cont ? cont : std::noop_coroutine();
+                }
+                void await_resume() noexcept {}
+            };
+            return yield_awaiter{continuation};
         }
     };
 
@@ -275,16 +301,38 @@ public:
 
     struct next_awaiter {
         handle_type handle;
-        std::optional<T> result;
 
         bool await_ready() const { return false; }
 
-        void await_suspend(std::coroutine_handle<> h) {
+        /**
+         * @brief Symmetric transfer to the generator.
+         *
+         * Returning the generator's handle (instead of calling handle.resume()
+         * directly) is critical for two reasons:
+         *
+         * 1. Stack safety: avoids N levels of nested resume() calls for N
+         *    yielded values.
+         *
+         * 2. Use-after-free prevention: with a direct handle.resume() call,
+         *    the completion chain (generator → ag_for_each → caller task) can
+         *    trigger ~task<void>() which calls handle.destroy() BEFORE
+         *    await_suspend() returns, leaving a dangling handle that the
+         *    post-resume code would then dereference (SIGSEGV / ASAN UAF).
+         *
+         * With symmetric transfer the coroutine machinery ensures that
+         * await_suspend() returns IMMEDIATELY (tail-call) without any further
+         * access to `handle` in this frame.
+         */
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept {
+            QB_AGEN_TRACE("next await_suspend consumer=%p gen=%p",
+                          (void*)h.address(), (void*)handle.address());
             handle.promise().continuation = h;
-            handle.resume();
+            return handle;  // symmetric transfer — do NOT access handle after this
         }
 
         std::optional<T> await_resume() {
+            QB_AGEN_TRACE("next await_resume gen=%p done=%d",
+                          (void*)handle.address(), handle.done() ? 1 : 0);
             if (handle.done()) {
                 return std::nullopt;
             }
@@ -477,6 +525,136 @@ generator<T> skip(generator<T> gen, size_t count) {
     for (auto& val : gen) {
         if (i++ < count) continue;
         co_yield std::move(val);
+    }
+}
+
+// =============================================================================
+// async_generator<T> helper algorithms
+// =============================================================================
+
+/**
+ * @brief Consume every value from an async_generator
+ *
+ * Calls f(*value) for each value produced. f may be a regular function or
+ * a coroutine (returning task<void>).
+ *
+ * @code
+ * async_generator<int> produce() { ... }
+ *
+ * co_await ag_for_each(produce(), [](int v) -> task<void> {
+ *     co_await process(v);
+ * });
+ * @endcode
+ * @ingroup Coroutine
+ */
+template <typename T, typename F>
+task<void> ag_for_each(async_generator<T> gen, F f) {
+    QB_AGEN_TRACE("ag_for_each start");
+    [[maybe_unused]] std::size_t n = 0;
+    while (auto val = co_await gen.next()) {
+        QB_AGEN_TRACE("ag_for_each got item #%zu", n++);
+        if constexpr (std::is_same_v<std::invoke_result_t<F, T&>, task<void>>) {
+            co_await f(*val);
+        } else {
+            f(*val);
+        }
+    }
+    QB_AGEN_TRACE("ag_for_each done after %zu items", n);
+}
+
+/**
+ * @brief Collect all values from an async_generator into a vector
+ * @code
+ * std::vector<int> v = co_await ag_collect(produce());
+ * @endcode
+ * @ingroup Coroutine
+ */
+template <typename T>
+task<std::vector<T>> ag_collect(async_generator<T> gen) {
+    QB_AGEN_TRACE("ag_collect start");
+    std::vector<T> result;
+    while (auto val = co_await gen.next()) {
+        QB_AGEN_TRACE("ag_collect got item total=%zu", result.size() + 1);
+        result.push_back(std::move(*val));
+    }
+    QB_AGEN_TRACE("ag_collect done total=%zu", result.size());
+    co_return result;
+}
+
+/**
+ * @brief Map each value with f, collecting into a vector
+ * @code
+ * auto doubled = co_await ag_map(produce(), [](int v){ return v * 2; });
+ * @endcode
+ * @ingroup Coroutine
+ */
+template <typename T, typename F>
+task<std::vector<std::invoke_result_t<F, T>>> ag_map(async_generator<T> gen, F f) {
+    using R = std::invoke_result_t<F, T>;
+    std::vector<R> result;
+    while (auto val = co_await gen.next())
+        result.push_back(f(std::move(*val)));
+    co_return result;
+}
+
+/**
+ * @brief Filter values, collecting matching ones into a vector
+ * @code
+ * auto evens = co_await ag_filter(produce(), [](int v){ return v % 2 == 0; });
+ * @endcode
+ * @ingroup Coroutine
+ */
+template <typename T, typename Pred>
+task<std::vector<T>> ag_filter(async_generator<T> gen, Pred pred) {
+    std::vector<T> result;
+    while (auto val = co_await gen.next())
+        if (pred(*val)) result.push_back(std::move(*val));
+    co_return result;
+}
+
+/**
+ * @brief Fold / reduce all values into a single accumulator
+ *
+ * @param gen     Source generator
+ * @param init    Initial accumulator value
+ * @param reducer Binary function: (Acc, T) -> Acc
+ * @code
+ * int sum = co_await ag_reduce(produce(), 0, std::plus<int>{});
+ * @endcode
+ * @ingroup Coroutine
+ */
+template <typename T, typename Acc, typename F>
+task<Acc> ag_reduce(async_generator<T> gen, Acc init, F reducer) {
+    while (auto val = co_await gen.next())
+        init = reducer(std::move(init), std::move(*val));
+    co_return init;
+}
+
+/**
+ * @brief Take at most N values from an async_generator
+ * @ingroup Coroutine
+ */
+template <typename T>
+async_generator<T> ag_take(async_generator<T> gen, size_t n) {
+    size_t count = 0;
+    while (count < n) {
+        auto val = co_await gen.next();
+        if (!val) break;
+        co_yield std::move(*val);
+        ++count;
+    }
+}
+
+/**
+ * @brief Skip the first N values from an async_generator
+ * @ingroup Coroutine
+ */
+template <typename T>
+async_generator<T> ag_skip(async_generator<T> gen, size_t n) {
+    size_t skipped = 0;
+    while (auto val = co_await gen.next()) {
+        if (skipped++ < n) continue;
+        co_yield std::move(*val);
     }
 }
 

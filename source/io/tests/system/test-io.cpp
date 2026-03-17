@@ -26,6 +26,9 @@
 #include <gtest/gtest.h>
 #include <qb/io/tcp/listener.h>
 #include <qb/io/udp/socket.h>
+#include <qb/io/async.h>
+#include <qb/io/async/coroutine.h>
+#include <qb/io/async/tcp/connector.h>
 #include <thread>
 
 constexpr const unsigned short port = 64322;
@@ -460,3 +463,165 @@ TEST(UNIX_UDP, NonBlocking) {
 }
 
 #endif
+
+//
+// Coroutine-based async TCP connection tests (C++23)
+//
+
+TEST(CORO_TCP, ConnectAwaiter) {
+    using namespace std::chrono_literals;
+
+    std::this_thread::sleep_for(50ms);
+
+    constexpr const unsigned short test_port = 64323;
+
+    std::thread tlistener([]() {
+        qb::io::async::init();
+
+        qb::io::tcp::listener listener;
+        EXPECT_FALSE(listener.listen_v4(test_port) != qb::io::SocketStatus::Done);
+        EXPECT_TRUE(listener.is_open());
+
+        std::thread tconnector([]() {
+            qb::io::async::init();
+
+            bool completed = false;
+
+            auto test_task = [&completed]() -> qb::io::async::task<void> {
+                // Test basic connection using coroutine awaiter
+                auto socket = co_await qb::io::async::tcp::connect(
+                    qb::io::uri{std::string{"tcp://127.0.0.1:"} + std::to_string(test_port)}
+                );
+
+                // Connection should succeed
+                EXPECT_TRUE(socket.has_value());
+                EXPECT_TRUE(socket->is_open());
+
+                completed = true;
+            };
+
+            qb::io::async::coro_scheduler().spawn(test_task());
+
+            // Run until completed
+            while (!completed) {
+                qb::io::async::run(EVRUN_NOWAIT);
+            }
+        });
+
+        // Accept the connection
+        qb::io::tcp::socket accepted_sock;
+        EXPECT_FALSE(listener.accept(accepted_sock) != qb::io::SocketStatus::Done);
+        EXPECT_TRUE(accepted_sock.is_open());
+
+        tconnector.join();
+    });
+
+    tlistener.join();
+}
+
+TEST(CORO_TCP, ConnectAwaiterTimeout) {
+    using namespace std::chrono_literals;
+
+    std::this_thread::sleep_for(50ms);
+
+    // Test connection to non-existent port with short timeout
+    qb::io::async::init();
+
+    bool completed = false;
+
+    auto test_task = [&completed]() -> qb::io::async::task<void> {
+        // Try to connect to a port that should be closed, with 100ms timeout
+        auto socket = co_await qb::io::async::tcp::connect(
+            qb::io::uri{"tcp://127.0.0.1:1"},  // Port 1 is unlikely to be open
+            100ms
+        );
+
+        // Connection should fail (timeout or refused)
+        EXPECT_FALSE(socket.has_value());
+
+        completed = true;
+    };
+
+    qb::io::async::coro_scheduler().spawn(test_task());
+
+    // Run until completed (with some extra time for timeout)
+    auto start = std::chrono::steady_clock::now();
+    while (!completed) {
+        qb::io::async::run(EVRUN_NOWAIT);
+
+        // Safety timeout for the test itself
+        auto elapsed = std::chrono::steady_clock::now() - start;
+        if (elapsed > 5s) {
+            ADD_FAILURE() << "Test timed out waiting for connection";
+            break;
+        }
+    }
+
+    EXPECT_TRUE(completed);
+}
+
+TEST(CORO_TCP, DISABLED_ConnectAwaiterWithExistingSocket) {
+    using namespace std::chrono_literals;
+
+    // Small delay to let previous test free the port
+    std::this_thread::sleep_for(100ms);
+
+    constexpr const unsigned short test_port = 64327;
+
+    std::thread tlistener([]() {
+        qb::io::async::init();
+
+        qb::io::tcp::listener listener;
+        EXPECT_FALSE(listener.listen_v4(test_port) != qb::io::SocketStatus::Done);
+        EXPECT_TRUE(listener.is_open());
+
+        std::thread tconnector([]() {
+            qb::io::async::init();
+
+            bool completed = false;
+            std::optional<qb::io::tcp::socket> connected_socket;
+
+            auto test_task = [&completed, &connected_socket]() -> qb::io::async::task<void> {
+                // Create a socket first (initialized but not connected)
+                qb::io::tcp::socket existing_socket;
+                auto status = existing_socket.init(AF_INET);
+                EXPECT_FALSE(status != qb::io::SocketStatus::Done);
+
+                // Connect using the existing socket
+                connected_socket = co_await qb::io::async::tcp::connect_with_socket(
+                    std::move(existing_socket),
+                    qb::io::uri{std::string{"tcp://127.0.0.1:"} + std::to_string(test_port)}
+                );
+
+                completed = true;
+            };
+
+            qb::io::async::coro_scheduler().spawn(test_task());
+
+            // Run until completed with timeout
+            auto start = std::chrono::steady_clock::now();
+            while (!completed) {
+                qb::io::async::run(EVRUN_NOWAIT);
+
+                auto elapsed = std::chrono::steady_clock::now() - start;
+                if (elapsed > 5s) {
+                    ADD_FAILURE() << "Test timed out";
+                    break;
+                }
+            }
+
+            EXPECT_TRUE(connected_socket.has_value());
+            if (connected_socket) {
+                EXPECT_TRUE(connected_socket->is_open());
+            }
+        });
+
+        // Accept the connection
+        qb::io::tcp::socket accepted_sock;
+        EXPECT_FALSE(listener.accept(accepted_sock) != qb::io::SocketStatus::Done);
+
+        tconnector.join();
+    });
+
+    tlistener.join();
+}
