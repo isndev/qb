@@ -51,6 +51,9 @@ class QB_API socket : protected qb::io::socket {
      */
     int connect_in(int af, std::string const &host, uint16_t port) noexcept;
 
+    int connect_in(int af, std::string const &host, uint16_t port,
+                   std::chrono::microseconds wtimeout) noexcept;
+
     /**
      * @brief Internal method to perform a non-blocking connect.
      * @param af Address family (AF_INET for IPv4, AF_INET6 for IPv6).
@@ -144,11 +147,24 @@ public:
     int connect(qb::io::endpoint const &ep) noexcept;
 
     /**
+     * @brief Connect to a remote TCP endpoint with a wall-clock bound on the TCP handshake.
+     * @param ep Remote endpoint.
+     * @param wtimeout Maximum time to wait; non-positive values are clamped to zero (poll once).
+     * @return 0 on success; non-zero on failure (including timeout; see `get_last_errno()`).
+     */
+    int connect(qb::io::endpoint const &ep, std::chrono::microseconds wtimeout) noexcept;
+
+    /**
      * @brief Connect to a remote TCP endpoint specified by a URI.
      * @param u The `qb::io::uri` of the remote server.
      * @return 0 on success, or a non-zero error code on failure.
      */
     int connect(uri const &u) noexcept;
+
+    /**
+     * @brief Connect using a URI with a bound TCP handshake duration.
+     */
+    int connect(uri const &u, std::chrono::microseconds wtimeout) noexcept;
 
     /**
      * @brief Connect to an IPv4 TCP server.

@@ -1029,9 +1029,9 @@ public:
     QB__DECL static int connect(socket_type s, const endpoint &ep);
 
     /**
-     * @brief Establishes a connection to a specified this socket with nonblocking
+     * @brief Establishes a connection with a non-blocking start and a bounded wait for completion.
      * @params:
-     *        timeout: connection timeout, millseconds
+     *        wtimeout: maximum wait time (microseconds); non-positive is clamped to zero (poll once).
      *
      * @returns: [0].succeed, [-1].failed
      * @remark: Because on win32, there is no way to test whether the socket is

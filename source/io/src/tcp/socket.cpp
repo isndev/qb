@@ -86,6 +86,23 @@ socket::connect_in(int af, std::string const &host, uint16_t port) noexcept {
 }
 
 int
+socket::connect_in(int af, std::string const &host, uint16_t port,
+                   std::chrono::microseconds wtimeout) noexcept {
+    auto ret = -1;
+    qb::io::socket::resolve_i(
+        [&, this](const auto &ep) {
+            if (ep.af() == af) {
+                ret = connect(ep, wtimeout);
+                return true;
+            }
+            return false;
+        },
+        host.c_str(), port, af, SOCK_STREAM);
+
+    return ret;
+}
+
+int
 socket::connect(qb::io::endpoint const &ep) noexcept {
     if (is_open()) {
         const auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
@@ -98,6 +115,18 @@ socket::connect(qb::io::endpoint const &ep) noexcept {
 }
 
 int
+socket::connect(qb::io::endpoint const &ep, std::chrono::microseconds wtimeout) noexcept {
+    if (is_open()) {
+        const auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
+        if (af != ep.af())
+            return -1;
+    } else if (init(ep.af()))
+        return -1;
+
+    return qb::io::socket::connect_n(ep, wtimeout);
+}
+
+int
 socket::connect(uri const &u) noexcept {
     switch (u.af()) {
         case AF_INET:
@@ -106,6 +135,19 @@ socket::connect(uri const &u) noexcept {
         case AF_UNIX:
             const auto path = std::string(u.path()) + std::string(u.host());
             return connect_un(path);
+    }
+    return -1;
+}
+
+int
+socket::connect(uri const &u, std::chrono::microseconds wtimeout) noexcept {
+    switch (u.af()) {
+        case AF_INET:
+        case AF_INET6:
+            return connect_in(u.af(), std::string(u.host()), u.u_port(), wtimeout);
+        case AF_UNIX:
+            const auto path = std::string(u.path()) + std::string(u.host());
+            return connect(qb::io::endpoint().as_un(path.c_str()), wtimeout);
     }
     return -1;
 }
