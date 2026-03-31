@@ -340,6 +340,9 @@ class QB_API socket : public tcp::socket {
      */
     int connect_in(int af, std::string const &host, uint16_t port) noexcept;
 
+    int connect_in(int af, std::string const &host, uint16_t port,
+                   std::chrono::microseconds wtimeout) noexcept;
+
     /**
      * @brief Internal method to initiate a non-blocking SSL connection to an address with a specific address family.
      * @param af Address family (AF_INET for IPv4, AF_INET6 for IPv6).
@@ -412,11 +415,22 @@ public:
     int connect(endpoint const &ep, std::string const &hostname = "") noexcept;
 
     /**
+     * @brief Like `connect(endpoint, hostname)` but bounds the underlying TCP connect phase.
+     */
+    int connect(endpoint const &ep, std::string const &hostname,
+                std::chrono::microseconds wtimeout) noexcept;
+
+    /**
      * @brief Establish a blocking SSL/TLS connection to a remote endpoint specified by a URI.
      * @param u The `qb::io::uri` of the remote server. The URI's host is used for SNI if not overridden.
      * @return 0 on success, non-zero error code on failure.
      */
     int connect(uri const &u) noexcept;
+
+    /**
+     * @brief URI connect with a bounded TCP connect (TLS handshake is not separately timed here).
+     */
+    int connect(uri const &u, std::chrono::microseconds wtimeout) noexcept;
 
     /**
      * @brief Establish a blocking SSL/TLS connection to an IPv4 server.

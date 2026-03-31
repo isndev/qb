@@ -513,9 +513,27 @@ socket::connect_in(int af, std::string const &host, uint16_t port) noexcept {
 }
 
 int
+socket::connect_in(int af, std::string const &host, uint16_t port,
+                     std::chrono::microseconds wtimeout) noexcept {
+    auto ret = -1;
+    qb::io::socket::resolve_i(
+        [&, this](const auto &ep) {
+            if (ep.af() == af) {
+                ret = connect(ep, host, wtimeout);
+                return true;
+            }
+            return false;
+        },
+        host.c_str(), port, af, SOCK_STREAM);
+
+    return ret;
+}
+
+int
 socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
-    auto ret = tcp::socket::connect(ep);
-    if (ret != 0 && !socket_no_error(qb::io::socket::get_last_errno()))
+    auto      ret = tcp::socket::connect(ep);
+    const int err = qb::io::socket::get_last_errno();
+    if (ret != 0 && !socket_no_error(err) && err != EISCONN)
         return ret;
     if (!_ssl_handle) {
         const auto ctx = SSL_CTX_new(SSLv23_client_method());
@@ -531,7 +549,33 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
     SSL_set_tlsext_host_name(h_ssl, hostname.c_str());
     SSL_set_connect_state(h_ssl);
     SSL_set_fd(h_ssl, static_cast<int>(native_handle()));
-    if (ret != 0)
+    if (ret != 0 && socket_no_error(err))
+        return ret;
+    return handCheck() < 0 ? -1 : 0;
+}
+
+int
+socket::connect(endpoint const &ep, std::string const &hostname,
+                std::chrono::microseconds wtimeout) noexcept {
+    auto      ret = tcp::socket::connect(ep, wtimeout);
+    const int err = qb::io::socket::get_last_errno();
+    if (ret != 0 && !socket_no_error(err) && err != EISCONN)
+        return ret;
+    if (!_ssl_handle) {
+        const auto ctx = SSL_CTX_new(SSLv23_client_method());
+        _ssl_handle.reset(SSL_new(ctx));
+        if (!_ssl_handle) {
+            SSL_CTX_free(ctx);
+            tcp::socket::disconnect();
+            return SocketStatus::Error;
+        }
+    }
+    const auto h_ssl = ssl_handle();
+    SSL_set_quiet_shutdown(h_ssl, 1);
+    SSL_set_tlsext_host_name(h_ssl, hostname.c_str());
+    SSL_set_connect_state(h_ssl);
+    SSL_set_fd(h_ssl, static_cast<int>(native_handle()));
+    if (ret != 0 && socket_no_error(err))
         return ret;
     return handCheck() < 0 ? -1 : 0;
 }
@@ -546,6 +590,19 @@ socket::connect(uri const &u) noexcept {
         case AF_UNIX:
             const auto path = std::string(u.path()) + std::string(u.host());
             return connect_un(path);
+    }
+    return -1;
+}
+
+int
+socket::connect(uri const &u, std::chrono::microseconds wtimeout) noexcept {
+    switch (u.af()) {
+        case AF_INET:
+        case AF_INET6:
+            return connect_in(u.af(), std::string(u.host()), u.u_port(), wtimeout);
+        case AF_UNIX:
+            const auto path = std::string(u.path()) + std::string(u.host());
+            return connect(endpoint().as_un(path.c_str()), "", wtimeout);
     }
     return -1;
 }
@@ -652,6 +709,8 @@ socket::disconnect() noexcept {
 
 int
 socket::read(void *data, std::size_t size) noexcept {
+    if (!_ssl_handle)
+        return -1;
     auto ret = handCheck();
     if (ret == 1) {
         ret = SSL_read(ssl_handle(), data, static_cast<int>(size));
@@ -679,6 +738,8 @@ socket::read(void *data, std::size_t size) noexcept {
 
 int
 socket::write(const void *data, std::size_t size) noexcept {
+    if (!_ssl_handle)
+        return -1;
     auto ret = handCheck();
     if (ret == 1) {
         ret = SSL_write(ssl_handle(), data, static_cast<int>(size));

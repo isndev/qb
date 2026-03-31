@@ -69,7 +69,10 @@
 #define QB_IO_ASYNC_COROUTINE_UTILS_H
 
 #include <chrono>
+#include <optional>
 #include <thread>
+#include <type_traits>
+#include <utility>
 #include "awaiter.h"
 #include "../listener.h"
 
@@ -251,29 +254,50 @@ inline void run_for(std::chrono::milliseconds duration) {
  * @ingroup Coroutine
  */
 template <typename Awaitable>
-auto run_sync(Awaitable&& awaitable) -> decltype(auto) {
-    using return_type = decltype(awaitable.await_resume());
+auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
+                                                               decltype(std::declval<std::remove_cvref_t<Awaitable>>().await_resume())>,
+                                                           void,
+                                                           std::remove_cvref_t<decltype(
+                                                               std::declval<std::remove_cvref_t<Awaitable>>().await_resume())>> {
+    using raw_awaitable = std::remove_cvref_t<Awaitable>;
+    using return_type   = decltype(std::declval<raw_awaitable>().await_resume());
+    using value_type    = std::remove_cvref_t<return_type>;
 
-    // For void return type, just execute and return void
+    // Capture awaitable by reference: some awaiters are non-movable (e.g. redis_awaiter holds
+    // Reply with deleted copy/move). Caller prvalues (run_sync(redis.flushall())) live until
+    // run_sync returns, so the reference is valid for the pump loop.
+    // Return type is explicit value (not decltype(auto)): `return std::move(*optional)` can deduce
+    // an rvalue reference into the optional's storage and dangle after this function returns.
     if constexpr (std::is_void_v<return_type>) {
         bool done = false;
-        coro_scheduler().spawn([&]() -> task<void> {
-            co_await std::forward<Awaitable>(awaitable);
-            done = true;
-        }());
+        coro_scheduler().spawn(
+            [&awaitable, &done]() -> task<void> {
+                co_await awaitable;
+                done = true;
+            });
         while (!done) {
-            listener::current.run(EVRUN_NOWAIT);
+            for (int i = 0; i < 16 && !done; ++i) {
+                listener::current.run(EVRUN_NOWAIT);
+                if (!listener::current.has_coro_scheduler() ||
+                    !listener::current.coro_scheduler().has_ready())
+                    break;
+            }
         }
     } else {
-        // For non-void, store the result
-        std::optional<return_type> result;
-        bool done = false;
-        coro_scheduler().spawn([&]() -> task<void> {
-            result = co_await std::forward<Awaitable>(awaitable);
-            done = true;
-        }());
+        std::optional<value_type> result;
+        bool                      done = false;
+        coro_scheduler().spawn(
+            [&awaitable, &result, &done]() -> task<void> {
+                result = co_await awaitable;
+                done   = true;
+            });
         while (!done) {
-            listener::current.run(EVRUN_NOWAIT);
+            for (int i = 0; i < 16 && !done; ++i) {
+                listener::current.run(EVRUN_NOWAIT);
+                if (!listener::current.has_coro_scheduler() ||
+                    !listener::current.coro_scheduler().has_ready())
+                    break;
+            }
         }
         return std::move(*result);
     }

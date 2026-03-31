@@ -69,3 +69,9 @@ generate_random_uuid() {
 #include "async/listener.cpp"
 #include "stream.cpp"
 #include "udp/socket.cpp"
+
+// CoroutineScheduler TLS: must live in exactly one TU (header keeps only the declaration).
+#include <qb/io/async/coroutine/scheduler.h>
+namespace qb::io::async {
+thread_local CoroutineScheduler* CoroutineScheduler::current_ = nullptr;
+} // namespace qb::io::async

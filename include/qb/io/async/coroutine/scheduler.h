@@ -435,12 +435,9 @@ private:
     // Reference to event loop
     ev::loop_ref loop_;
 
-    // Thread-local current scheduler
+    // Thread-local current scheduler (defined in qb-io, e.g. io.cpp — one TU only)
     static thread_local CoroutineScheduler* current_;
 };
-
-// Initialize thread-local static (inline for C++17)
-inline thread_local CoroutineScheduler* CoroutineScheduler::current_ = nullptr;
 
 // Global function for awaiters to get current scheduler
 [[nodiscard]] inline CoroutineScheduler* current_scheduler_ptr() noexcept {

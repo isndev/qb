@@ -30,6 +30,7 @@
 #ifdef _DEBUG
 #include <stdio.h>
 #endif
+#include <algorithm>
 #include <cstring> // For memset
 #include <cstdlib> // For strerror
 
@@ -76,6 +77,19 @@ namespace compat {
 namespace qb::io {
 QB__NS_INLINE
 namespace inet {
+
+namespace {
+
+bool
+connect_syscall_in_progress(int err) {
+#if defined(_WIN32)
+    return err == WSAEWOULDBLOCK || err == WSAEINPROGRESS;
+#else
+    return err == EINPROGRESS || err == EWOULDBLOCK;
+#endif
+}
+
+} // namespace
 
 int
 socket::xpconnect(const char *hostname, u_short port, u_short local_port) {
@@ -635,43 +649,56 @@ socket::connect_n(const endpoint &ep, const std::chrono::microseconds &wtimeout)
     return this->connect_n(this->fd, ep, wtimeout);
 }
 int
-socket::connect_n(socket_type s, const endpoint &ep, const std::chrono::microseconds &) {
-    //    fd_set rset, wset;
-    int n, error = 0;
+socket::connect_n(socket_type s, const endpoint &ep,
+                  const std::chrono::microseconds &wtimeout) {
+    if (set_nonblocking(s, true) != 0)
+        return -1;
 
-    set_nonblocking(s, true);
-
-    if ((n = socket::connect(s, ep)) < 0) {
-        error = socket::get_last_errno();
-        if (error != EINPROGRESS && error != EWOULDBLOCK)
+    const int n = socket::connect(s, ep);
+    if (n == 0) {
+        if (set_nonblocking(s, false) != 0)
             return -1;
+        return 0;
     }
 
-    return n;
-    /* Do whatever we want while the connect is taking place. */
-    //    if (n == 0)
-    //        goto done; /* connect completed immediately */
-    //
-    //    if ((n = socket::select(s, &rset, &wset, NULL, wtimeout)) <= 0)
-    //        error = socket::get_last_errno();
-    //    else if ((FD_ISSET(s, &rset) || FD_ISSET(s, &wset))) { /* Everythings are ok */
-    //        socklen_t len = sizeof(error);
-    //        if (::getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&error, &len) < 0)
-    //            return (-1); /* Solaris pending error */
-    //    }
-    //
-    // done:
-    //    if (error != 0) {
-    //        ::closesocket(s); /* just in case */
-    //        return (-1);
-    //    }
-    //
-    //    /* Since v3.31.2, we don't restore file status flags for unify behavior for all
-    //     * platforms */
-    //    // pitfall: because on win32, there is no way to test whether the s is
-    //    non-blocking
-    //    // so, can't restore properly
-    //    return (0);
+    const int connect_errno = socket::get_last_errno();
+    if (!connect_syscall_in_progress(connect_errno)) {
+        set_nonblocking(s, false);
+        return -1;
+    }
+
+    auto remaining = std::chrono::microseconds(
+        std::max<std::chrono::microseconds::rep>(wtimeout.count(), 0));
+
+    fd_set readfds;
+    fd_set writefds;
+    FD_ZERO(&readfds);
+    FD_ZERO(&writefds);
+    FD_SET(s, &readfds);
+    FD_SET(s, &writefds);
+
+    const int sel = socket::select(s, &readfds, &writefds, nullptr, remaining);
+    if (sel <= 0) {
+        set_nonblocking(s, false);
+        return -1;
+    }
+
+    int       so_error = 0;
+    socklen_t len      = static_cast<socklen_t>(sizeof(so_error));
+    if (::getsockopt(s, SOL_SOCKET, SO_ERROR,
+                     reinterpret_cast<char *>(&so_error), &len) != 0) {
+        set_nonblocking(s, false);
+        return -1;
+    }
+    if (so_error != 0) {
+        socket::set_last_errno(so_error);
+        set_nonblocking(s, false);
+        return -1;
+    }
+
+    if (set_nonblocking(s, false) != 0)
+        return -1;
+    return 0;
 }
 
 int
