@@ -208,7 +208,6 @@ TEST_F(CoroutineMemoryBenchmark, CoroutineFrameAllocation) {
     constexpr int count = 100;
     
     // Small coroutine - minimal frame
-    auto small_start = std::chrono::steady_clock::now();
     for (int i = 0; i < count; ++i) {
         auto t = []() -> task<void> {
             co_return;
@@ -216,8 +215,6 @@ TEST_F(CoroutineMemoryBenchmark, CoroutineFrameAllocation) {
         coro_scheduler().spawn(std::move(t));
     }
     run_for(50ms);
-    auto small_end = std::chrono::steady_clock::now();
-    auto small_ms = std::chrono::duration_cast<std::chrono::milliseconds>(small_end - small_start).count();
     
     // Large coroutine - with captures
     struct LargeData {
@@ -302,7 +299,7 @@ TEST_F(CoroutineThroughput, ConcurrentExecution) {
     
     for (int i = 0; i < concurrent; ++i) {
         auto total_work_ptr = &total_work;
-        auto coro_fn = [total_work_ptr, work_per_coro]() -> task<void> {
+        auto coro_fn = [total_work_ptr]() -> task<void> {
             for (int j = 0; j < work_per_coro; ++j) {
                 co_await sleep(1ms);
                 total_work_ptr->fetch_add(1);

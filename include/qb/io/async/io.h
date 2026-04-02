@@ -219,7 +219,7 @@ public:
      *          ensuring one-shot execution and automatic cleanup.
      */
     void
-    on(event::timer const & /*event*/) const { // Marked event as unused
+    on(event::timer const & /*event*/) { // Marked event as unused
         _func();
         delete this;
     }
@@ -1031,7 +1031,7 @@ private:
      * @details Optimized hot path: caches protocol pointer to reduce member access overhead.
      */
     bool
-    process_messages() {
+    process_messages() noexcept {
         std::size_t ret = 0u;
 
         _on_message = true;
@@ -1310,7 +1310,7 @@ public:
     void
     ready_to_write() noexcept {
         if (!(this->_async_event.events & EV_WRITE))
-            this->_async_event.set(EV_WRITE);
+            this->_async_event.set(this->_async_event.events | EV_WRITE);
     }
 
     /**
@@ -2208,7 +2208,7 @@ private:
      * @details Optimized hot path: caches protocol pointer to reduce member access overhead.
      */
     bool
-    process_messages() {
+    process_messages() noexcept {
         std::size_t ret = 0u;
 
         _on_message = true;
@@ -2268,7 +2268,7 @@ private:
      * @return true if write succeeded, false if an error occurred.
      */
     bool
-    handle_write() {
+    handle_write() noexcept {
         constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
         auto ret = static_cast<std::size_t>(Derived.write());
         if (unlikely(ret == invalid_ret))

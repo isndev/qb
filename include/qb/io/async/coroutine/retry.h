@@ -28,6 +28,7 @@
 #include <functional>
 #include <exception>
 #include <optional>
+#include <random>
 
 namespace qb::io::async {
 
@@ -79,7 +80,7 @@ struct retry_policy {
     };
 
     // Optional callback for each retry
-    std::function<void(size_t attempt, const std::exception&)> on_retry;
+    std::function<void(size_t attempt, const std::exception&)> on_retry = nullptr;
 };
 
 namespace detail {
@@ -105,9 +106,13 @@ inline std::chrono::milliseconds calculate_delay(
 
         case backoff_strategy::exponential_jitter:
             delay = policy.base_delay * (1 << attempt);
-            // Add 0-50% jitter
-            delay += std::chrono::milliseconds(
-                (delay.count() * (rand() % 50)) / 100);
+            // Add 0-50% jitter using thread-local RNG
+            {
+                static thread_local std::mt19937 rng{std::random_device{}()};
+                std::uniform_int_distribution<long long> dist(0, 49);
+                delay += std::chrono::milliseconds(
+                    (delay.count() * dist(rng)) / 100);
+            }
             break;
     }
 

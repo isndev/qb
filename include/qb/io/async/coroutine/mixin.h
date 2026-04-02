@@ -67,7 +67,7 @@ namespace qb::io::async {
 template <typename Derived>
 class coro_mixin {
 protected:
-    constexpr Derived& derived() {
+    constexpr Derived& derived() noexcept {
         return static_cast<Derived&>(*this);
     }
 
@@ -83,7 +83,7 @@ public:
      *
      * @return Reference to the derived type (CRTP pattern)
      */
-    constexpr Derived& coro() {
+    constexpr Derived& coro() noexcept {
         return derived();
     }
 };

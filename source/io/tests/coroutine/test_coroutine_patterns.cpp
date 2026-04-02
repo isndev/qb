@@ -249,7 +249,7 @@ TEST_F(CoroutineTimingPatterns, SequentialTimers) {
     auto start = std::chrono::steady_clock::now();
     
     auto timestamps_ptr = &timestamps;
-    auto coro_fn = [timestamps_ptr, start]() -> task<void> {
+    auto coro_fn = [timestamps_ptr]() -> task<void> {
         co_await sleep(20ms);
         timestamps_ptr->push_back(std::chrono::steady_clock::now());
         
@@ -343,7 +343,7 @@ TEST_F(CoroutineErrorPatterns, CircuitBreaker) {
     std::atomic<int> attempts{0};
     std::atomic<bool> circuit_open{false};
     
-    auto flaky_operation = [&attempts, &failures]() -> task<bool> {
+    auto flaky_operation = [&attempts]() -> task<bool> {
         attempts.fetch_add(1);
         co_await sleep(10ms);
         
@@ -355,7 +355,7 @@ TEST_F(CoroutineErrorPatterns, CircuitBreaker) {
     };
     auto failures_ptr = &failures;
     auto circuit_open_ptr = &circuit_open;
-    auto coro_fn = [&flaky_operation, failures_ptr, circuit_open_ptr, failure_threshold]() -> task<void> {
+    auto coro_fn = [&flaky_operation, failures_ptr, circuit_open_ptr]() -> task<void> {
         for (int i = 0; i < 5; ++i) {
             if (failures_ptr->load() >= failure_threshold) {
                 circuit_open_ptr->store(true);

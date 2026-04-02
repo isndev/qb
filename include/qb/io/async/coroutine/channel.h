@@ -146,7 +146,7 @@ public:
 
         // No lock: single-thread cooperative — state is stable between
         // await_ready() and await_suspend() (no other coroutine can run).
-        bool await_ready() {
+        [[nodiscard]] bool await_ready() {
             if (ch._closed) return false;
             // 1. Satisfy a direct recv waiter
             if (!ch._recv_waiters.empty()) {
@@ -221,7 +221,7 @@ public:
      * @return Awaiter that completes when value is in buffer
      * @throws channel_closed if channel is closed
      */
-    send_awaiter send(T value) {
+    [[nodiscard]] send_awaiter send(T value) {
         return send_awaiter{*this, std::move(value)};
     }
 
@@ -235,7 +235,7 @@ public:
         channel& ch;
         std::optional<T> _result;
 
-        bool await_ready() {
+        [[nodiscard]] bool await_ready() {
             if (!ch._buffer.empty()) {
                 _result = std::move(ch._buffer.front());
                 ch._buffer.pop();
@@ -279,7 +279,7 @@ public:
      *         - Has value: received data
      *         - Empty: channel closed
      */
-    recv_awaiter recv() {
+    [[nodiscard]] recv_awaiter recv() {
         return recv_awaiter{*this, std::nullopt};
     }
 
@@ -421,7 +421,7 @@ public:
             std::shared_ptr<channel_select_state> state;
             std::chrono::milliseconds timeout_ms;
 
-            bool await_ready() const noexcept { return state->resolved; }
+            [[nodiscard]] bool await_ready() const noexcept { return state->resolved; }
 
             void await_suspend(std::coroutine_handle<> h) {
                 if (state->resolved) { schedule_via_current(h); return; }
@@ -466,7 +466,7 @@ public:
             std::shared_ptr<bool> fired;
             std::chrono::milliseconds timeout_ms;
 
-            bool await_ready() const noexcept { return *done; }
+            [[nodiscard]] bool await_ready() const noexcept { return *done; }
 
             void await_suspend(std::coroutine_handle<> h) {
                 if (*done) { schedule_via_current(h); return; }
@@ -764,7 +764,7 @@ public:
         : _state(std::make_shared<state_t>())
         , _channels(&chs...) {}
 
-    bool await_ready() { return try_immediate(); }
+    [[nodiscard]] bool await_ready() { return try_immediate(); }
 
     void await_suspend(std::coroutine_handle<> h) {
         if (_state->resolved) { schedule_via_current(h); return; }
@@ -812,7 +812,7 @@ public:
         : _state(std::make_shared<state_t>())
         , _channels(std::move(chs)) {}
 
-    bool await_ready() {
+    [[nodiscard]] bool await_ready() {
         // Pass 1: prefer data over close signals (avoids starvation).
         for (size_t i = 0; i < _channels.size(); ++i) {
             auto* ch = _channels[i];

@@ -181,7 +181,7 @@ TEST_F(RetryPolicyTests, FixedBackoff) {
         co_return 42;
     };
 
-    auto coro_fn = [&op, &start]() -> task<void> {
+    auto coro_fn = [&op]() -> task<void> {
         co_await with_retry(op, retry_policy{
             .max_attempts = 3,
             .base_delay = 20ms,

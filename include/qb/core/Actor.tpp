@@ -235,7 +235,6 @@ void Actor::spawn_async(Func&& func) const {
         handle.promise().continuation_ = tracker.handle_;
 
         // Detach the tracker so it survives after this function returns
-        auto tracker_handle = tracker.handle_;
         tracker.handle_ = nullptr;  // Prevent destructor from destroying
 
         // Schedule tracker for cleanup (will decrement counter when user_task completes)

@@ -49,6 +49,9 @@ namespace internal {
  */
 template <typename T>
 class ringbuffer : public nocopy {
+    static_assert(std::is_trivially_copyable_v<T>,
+                  "spsc::ringbuffer<T> requires T to be trivially copyable "
+                  "because bulk enqueue/dequeue use std::memcpy");
     using size_t = std::size_t;
     constexpr static const int padding_size =
         QB_LOCKFREE_CACHELINE_BYTES - sizeof(size_t);
@@ -74,10 +77,8 @@ protected:
      */
     static size_t
     next_index(size_t arg, size_t const max_size) {
-        size_t ret = arg + 1;
-        while (unlikely(ret >= max_size))
-            ret -= max_size;
-        return ret;
+        const size_t next = arg + 1;
+        return next < max_size ? next : 0;
     }
 
     /**

@@ -123,7 +123,7 @@ public:
      * @brief Get the map of active sessions
      * @return Reference to the sessions map
      */
-    session_map_t &
+    [[nodiscard]] session_map_t &
     sessions() {
         return _sessions;
     }

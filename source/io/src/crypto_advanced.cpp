@@ -465,7 +465,7 @@ crypto::verify_password(const std::string &password, const std::string &hash) {
 #else
     // Fallback implementation for PBKDF2 format
     // Parse the hash string format: $pbkdf2-sha256$i=iterations$salt$hash
-    if (hash.substr(0, 13) != "$pbkdf2-sha256") {
+    if (hash.substr(0, 14) != "$pbkdf2-sha256") {
         return false; // Unsupported format
     }
 

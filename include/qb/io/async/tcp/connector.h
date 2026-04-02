@@ -114,8 +114,8 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
      */
     void
     deliver(Socket_ &&s) {
+        auto guard = std::exchange(self_hold_, nullptr);
         func_(std::move(s));
-        self_hold_.reset();
     }
 
 public:

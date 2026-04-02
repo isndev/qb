@@ -55,7 +55,7 @@ struct io : base<ev::io> {
      * @brief Constructor.
      * @param loop Reference to the libev event loop (`ev::loop_ref`) this event watcher will be associated with.
      */
-    explicit io(ev::loop_ref loop)
+    explicit io(ev::loop_ref loop) noexcept
         : base_t(loop) {}
 };
 
