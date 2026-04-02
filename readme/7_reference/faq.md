@@ -98,7 +98,7 @@ A: No, QB-Core does not provide a built-in, ready-to-use supervision hierarchy l
 A: (This is a general comparison; specific features vary widely across frameworks.)
 *   **Deep `qb-io` Integration:** QB is built with its own high-performance asynchronous I/O library (`qb-io`) as a core, inseparable foundation, influencing its design for network and I/O-intensive tasks.
 *   **Performance Focus:** Emphasis on low-level control where needed (e.g., core affinity, latency settings, `qb::string`, MPSC queues for inter-core) combined with high-level actor abstractions.
-*   **C++17 Idioms:** Leverages modern C++ features for type safety and efficiency.
+*   **C++23 baseline:** Uses modern language and library features (templates, `constexpr`, `optional` / `expected`, coroutine-aware I/O in `qb-io` where applicable) for type safety and efficiency.
 *   **Flexibility:** While providing the Actor Model, it doesn't enforce overly rigid lifecycle or supervision patterns by default, giving developers control.
 *   **Lean Dependencies:** Relies on a few carefully selected, often bundled, high-quality C/C++ libraries (`libev`, `ska_hash`, `stduuid`, `nlohmann/json`) with optional dependencies for SSL and Zlib.
 

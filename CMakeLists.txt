@@ -28,7 +28,7 @@
 # Both methods provide the same targets: qb::core, qb::io
 # -----------------------------------------------------------------------------
 
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.22)
 
 # -----------------------------------------------------------------------------
 # Early Configuration
@@ -50,6 +50,9 @@ project(${QB_FRAMEWORK_NAME}
 include("${QB_CMAKE_DIR}/qbCompiler.cmake")
 include("${QB_CMAKE_DIR}/qbDependencies.cmake")
 include("${QB_CMAKE_DIR}/qbFunctions.cmake")
+
+# GoogleTest / Google Benchmark (FetchContent or system); must run before test targets.
+include("${QB_CMAKE_DIR}/qbFetchGoogleDeps.cmake")
 
 # Print configuration summary
 qb_print_configuration()
@@ -104,42 +107,10 @@ endif()
 set(QB_ALL_LIBRARIES ${QB_CORE_LIBRARIES} ${QB_MODULE_LIBRARIES})
 
 # -----------------------------------------------------------------------------
-# Testing and Benchmarking Setup
+# Test resources (SSL certificates, etc.)
 # -----------------------------------------------------------------------------
 if(QB_BUILD_TESTS)
-    # Check if googletest module is available
-    if(NOT EXISTS "${QB_MODULES_DIR}/googletest/CMakeLists.txt")
-        qb_warning_message("Cannot build tests: googletest module not found")
-        qb_warning_message("Try: git submodule update --init --recursive")
-        set(QB_BUILD_TESTS OFF)
-    else()
-        # Configure Google Test
-        if(MSVC)
-            set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-        endif()
-        
-        set(GOOGLETEST_DIR "${QB_MODULES_DIR}/googletest")
-        add_subdirectory("${GOOGLETEST_DIR}")
-        
-        # Setup test resources (SSL certificates, etc.)
-        qb_setup_test_resources()
-    endif()
-endif()
-
-if(QB_BUILD_BENCHMARKS)
-    # Check if googlebenchmark module is available
-    if(NOT EXISTS "${QB_MODULES_DIR}/googlebenchmark/CMakeLists.txt")
-        qb_warning_message("Cannot build benchmarks: googlebenchmark module not found")
-        qb_warning_message("Try: git submodule update --init --recursive")
-        set(QB_BUILD_BENCHMARKS OFF)
-    else()
-        # Configure Google Benchmark
-        set(BENCHMARK_DOWNLOAD_DEPENDENCIES ON CACHE BOOL "" FORCE)
-        set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-        
-        set(GOOGLEBENCHMARK_DIR "${QB_MODULES_DIR}/googlebenchmark")
-        add_subdirectory("${GOOGLEBENCHMARK_DIR}")
-    endif()
+    qb_setup_test_resources()
 endif()
 
 # -----------------------------------------------------------------------------
@@ -287,6 +258,8 @@ if(hasParent)
     # Export build flags and settings
     set(QB_BUILD_TESTS ${QB_BUILD_TESTS} PARENT_SCOPE)
     set(QB_BUILD_BENCHMARKS ${QB_BUILD_BENCHMARKS} PARENT_SCOPE)
+    set(QB_HAS_GTEST ${QB_HAS_GTEST} PARENT_SCOPE)
+    set(QB_HAS_BENCHMARK ${QB_HAS_BENCHMARK} PARENT_SCOPE)
     
     # Export compatibility variables
     set(OPENSSL_FOUND ${QB_HAS_SSL} PARENT_SCOPE)

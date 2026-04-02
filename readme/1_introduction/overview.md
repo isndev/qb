@@ -1,9 +1,9 @@
 @page intro_overview_md QB Framework: A High-Performance C++ Actor Toolkit
-@brief Discover the QB Actor Framework – your C++17 toolkit for crafting powerful, concurrent, and distributed applications with ease and efficiency.
+@brief Discover the QB Actor Framework – your C++23 toolkit for crafting powerful, concurrent, and distributed applications with ease and efficiency.
 
 # QB Framework: A High-Performance C++ Actor Toolkit
 
-Welcome to the QB Actor Framework! If you're looking to build sophisticated, high-performance concurrent or distributed systems in C++17, you're in the right place. QB is engineered to simplify the complexities of modern C++ development by elegantly integrating two powerful paradigms:
+Welcome to the QB Actor Framework! If you're looking to build sophisticated, high-performance concurrent or distributed systems in **C++23**, you're in the right place. QB is engineered to simplify the complexities of modern C++ development by elegantly integrating two powerful paradigms:
 
 1.  **The Actor Model:** Structure your concurrent logic around actors – independent, isolated entities that communicate through asynchronous messages. This model naturally manages state and simplifies reasoning about concurrency.
 2.  **Asynchronous I/O (`qb-io`):** Leverage a robust, non-blocking I/O engine for highly efficient network and file operations, ensuring your application remains responsive under load.
@@ -14,7 +14,7 @@ QB empowers you to focus on your application's business logic while it handles t
 
 This documentation is tailored for **skilled C++ developers**. We assume you have a solid grasp of:
 
-*   Modern C++ (C++17 and beyond).
+*   Modern C++ with a **C++23** language baseline (and familiarity with coroutines, `std::optional`, `std::expected`, etc., where the framework exposes them).
 *   Fundamental concurrency concepts (threads, asynchronous operations, potential pitfalls like race conditions).
 *   Basic network programming (TCP/IP, UDP).
 *   CMake for building projects.

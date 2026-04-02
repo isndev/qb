@@ -9,14 +9,13 @@ This guide provides detailed information on building the QB Actor Framework from
 
 Before you begin, ensure your development environment has the following:
 
-*   **C++17 Compliant Compiler:** A modern C++ compiler that supports C++17 features (e.g., GCC 7+, Clang 5+, MSVC 2017+).
-*   **CMake:** Version 3.14 or higher is required to process the build scripts.
-*   **Git:** For cloning the QB Framework repository.
+*   **C++23-capable compiler:** The framework targets **C++23** (e.g. a recent GCC, Clang, or MSVC with C++23 support).
+*   **CMake:** **3.22 or newer** is required (see also [CMake and dependencies](./cmake_dependencies.md)).
+*   **Git:** Required on the configure machine if you use **FetchContent** for GoogleTest / Google Benchmark (default when tests or benchmarks are enabled).
 *   **Optional Dependencies (for extended features):**
-    *   **OpenSSL Development Libraries:** Required if you want to enable SSL/TLS for secure networking or use QB's cryptography features. (Package names like `libssl-dev` on Debian/Ubuntu, `openssl-devel` on Fedora/CentOS, or installed via installers on Windows/macOS).
-    *   **Zlib Development Libraries:** Needed for data compression features (`qb::compression`). (Package names like `zlib1g-dev` on Debian/Ubuntu, `zlib-devel` on Fedora/CentOS).
-    *   **Google Test:** If you intend to build and run the framework's unit and system tests (`QB_BUILD_TESTS=ON`). QB may bundle this or fetch it via CMake's `FetchContent`.
-    *   **Google Benchmark:** If you plan to build and run performance benchmarks (`QB_BUILD_BENCHMARKS=ON`).
+    *   **OpenSSL Development Libraries:** For SSL/TLS and cryptography (`QB_WITH_SSL=ON`).
+    *   **Zlib Development Libraries:** For compression (`QB_WITH_COMPRESSION=ON`).
+    *   **Google Test / Google Benchmark:** Not a manual install by default — qb uses **CMake FetchContent** with pinned tags when `QB_BUILD_TESTS` / `QB_BUILD_BENCHMARKS` are **ON**. Use **`QB_USE_SYSTEM_GTEST`** / **`QB_USE_SYSTEM_BENCHMARK`** with **`find_package(... CONFIG)`** if you prefer vcpkg, Conan, or distro packages.
 
 ## 2. Standard Build Process
 
@@ -26,8 +25,6 @@ The recommended way to build QB is an out-of-source build:
     ```bash
     git clone <your_repository_url> qb-framework
     cd qb-framework
-    # If the framework uses Git submodules for dependencies, initialize them:
-    # git submodule update --init --recursive 
     ```
 
 2.  **Create a Build Directory & Configure with CMake:**
@@ -38,10 +35,10 @@ The recommended way to build QB is an out-of-source build:
 
     # Configure the build. Adjust options as needed.
     # Example: Release build, enable tests, disable SSL/Zlib for a minimal build
-    cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TESTS=ON -DQB_IO_WITH_SSL=OFF -DQB_IO_WITH_ZLIB=OFF
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TESTS=ON -DQB_WITH_SSL=OFF -DQB_WITH_COMPRESSION=OFF
 
     # Example: Debug build with tests, SSL, and Zlib enabled
-    # cmake .. -DCMAKE_BUILD_TYPE=Debug -DQB_BUILD_TESTS=ON -DQB_IO_WITH_SSL=ON -DQB_IO_WITH_ZLIB=ON
+    # cmake .. -DCMAKE_BUILD_TYPE=Debug -DQB_BUILD_TESTS=ON -DQB_WITH_SSL=ON -DQB_WITH_COMPRESSION=ON
     ```
 
 3.  **Compile the Code:**
@@ -72,7 +69,7 @@ The QB Framework's CMake build system is organized as follows:
 *   **Root `CMakeLists.txt`:** Located at the top level of the framework. It sets up the main project, defines global build options, and includes the `CMakeLists.txt` files of subdirectories (like `qb/source`, `example`, `cmake`).
 *   **Module `CMakeLists.txt` (e.g., `qb/source/io/CMakeLists.txt`, `qb/source/core/CMakeLists.txt`):** Each core library (`qb-io`, `qb-core`) has its own CMake file that defines its specific source files, dependencies, and build targets.
 *   **Examples & Tests `CMakeLists.txt`:** Directories for examples (`example/`) and tests (`qb/source/*/tests/`) also have their own `CMakeLists.txt` files to define their respective executable targets and link them against the QB libraries.
-*   **`cmake/` Directory:** Often contains helper CMake modules, for instance, to find external dependencies like OpenSSL or Zlib, or to define custom CMake functions used throughout the build process.
+*   **`cmake/` Directory:** Helper modules (`qbConfig.cmake`, `qbFetchGoogleDeps.cmake`, find modules, etc.). See [CMake and dependencies](./cmake_dependencies.md) for GoogleTest / Google Benchmark behavior.
 
 ## 4. Key CMake Build Options
 
@@ -86,8 +83,11 @@ You can customize the build by passing options to CMake during the configuration
 *   **`QB_BUILD_DOC`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Enables CMake targets related to generating Doxygen API documentation.
 *   **`QB_BUILD_EXAMPLES`**: (Boolean: `ON`/`OFF`, Default: Often `ON`) Controls whether to build the example applications provided with the framework.
 *   **`QB_INSTALL`**: (Boolean: `ON`/`OFF`, Default: `ON`) If `ON`, CMake will generate installation rules. This allows you to use `cmake --install .`.
-*   **`QB_IO_WITH_SSL`**: (Boolean: `ON`/`OFF`, Default: `OFF` or auto-detected) Enables SSL/TLS features in `qb-io` (e.g., `tcp::ssl::socket`, `qb::crypto`). Requires OpenSSL development libraries.
-*   **`QB_IO_WITH_ZLIB`**: (Boolean: `ON`/`OFF`, Default: `OFF` or auto-detected) Enables data compression features in `qb-io` (`qb::compression`). Requires Zlib development libraries.
+*   **`QB_WITH_SSL`**: (Boolean: `ON`/`OFF`, default often `ON` with auto-detect) Enables SSL/TLS in `qb-io`. Requires OpenSSL development libraries when `ON`.
+*   **`QB_WITH_COMPRESSION`**: (Boolean: `ON`/`OFF`, default often `ON` with auto-detect) Enables compression in `qb-io`. Requires Zlib when `ON`.
+*   **`QB_USE_SYSTEM_GTEST`**: (Boolean: `OFF` by default) If `ON`, uses **`find_package(GTest CONFIG REQUIRED)`** instead of **FetchContent** for tests.
+*   **`QB_USE_SYSTEM_BENCHMARK`**: (Boolean: `OFF` by default) If `ON`, uses **`find_package(benchmark CONFIG REQUIRED)`** instead of **FetchContent** for benchmarks.
+*   **`QB_GOOGLETEST_GIT_TAG`** / **`QB_GOOGLEBENCHMARK_GIT_TAG`**: (String, advanced cache) Pin FetchContent to a tag or full commit hash.
 *   **`QB_LOGGER`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Enables integration with the `nanolog` high-performance logging library. Requires `nanolog` to be available (e.g., as a submodule) and typically also `QB_WITH_LOG=ON`.
 *   **`QB_WITH_LOG`**: (Boolean: `ON`/`OFF`, Default: `ON`) A general switch that might enable logging infrastructure, often a prerequisite for `QB_LOGGER`.
 *   **`QB_STDOUT_LOG`**: (Boolean: `ON`/`OFF`, Default: Often `ON` if `QB_LOGGER` is `OFF`) Enables simple diagnostic logging to `stdout` via `qb::io::cout()` when the full `nanolog` system is not active.
@@ -114,7 +114,7 @@ Successfully building the framework will produce several targets:
 ## 6. Dependencies Overview
 
 *   **Core Required by QB:**
-    *   C++17 Standard Library
+    *   C++23 standard library (as configured by the project)
     *   `libev` (event loop library - QB likely bundles this or provides a CMake script to find/fetch it)
     *   `ska_hash` (for `qb::unordered_map/set` - likely bundled)
     *   `stduuid` (for `qb::uuid` - likely bundled)
@@ -122,16 +122,16 @@ Successfully building the framework will produce several targets:
 *   **Optional External Libraries (enabled via CMake options):**
     *   OpenSSL (for `QB_IO_WITH_SSL=ON`)
     *   Zlib (for `QB_IO_WITH_ZLIB=ON`)
-    *   Google Test (for `QB_BUILD_TESTS=ON` - may be fetched by CMake)
-    *   Google Benchmark (for `QB_BUILD_BENCHMARKS=ON` - may be fetched by CMake)
+    *   Google Test (for `QB_BUILD_TESTS=ON` — **FetchContent** by default; see [cmake_dependencies.md](./cmake_dependencies.md))
+    *   Google Benchmark (for `QB_BUILD_BENCHMARKS=ON` — same)
     *   `nanolog` (for `QB_LOGGER=ON` - may be a submodule or fetched)
 
 ## 7. Platform-Specific Notes
 
-*   **Windows:** Uses Winsock2. Ensure MSVC 2017+ is used. If enabling OpenSSL/Zlib, make sure their development libraries (headers, .lib files) are correctly installed and their paths are known to CMake (e.g., by setting `CMAKE_PREFIX_PATH`, or using environment variables like `OPENSSL_ROOT_DIR`).
-*   **Linux:** Uses POSIX sockets. GCC 7+ or Clang 5+ are recommended. Install development packages for optional libraries (e.g., `libssl-dev`, `zlib1g-dev` on Debian/Ubuntu; `openssl-devel`, `zlib-devel` on Fedora/RHEL derivatives).
-*   **macOS:** Uses POSIX sockets. Xcode's Clang or a separately installed GCC/Clang should work. Optional dependencies like OpenSSL and Zlib can often be installed via Homebrew (`brew install openssl zlib`). You may need to provide hints to CMake (e.g., via `CMAKE_PREFIX_PATH`) to locate Homebrew-installed libraries.
+*   **Windows:** Uses Winsock2. Use a **Visual Studio 2022** (or newer) installation whose MSVC toolset supports **`/std:c++23`** for the features qb relies on. If enabling OpenSSL/Zlib, ensure development libraries (headers, `.lib` files) are on `CMAKE_PREFIX_PATH` or via variables such as `OPENSSL_ROOT_DIR`.
+*   **Linux:** Uses POSIX sockets. Prefer **GCC 12+** or **Clang 16+** for solid **C++23** support. Install development packages for optional libraries (e.g., `libssl-dev`, `zlib1g-dev` on Debian/Ubuntu; `openssl-devel`, `zlib-devel` on Fedora/RHEL derivatives).
+*   **macOS:** Uses POSIX sockets. Recent **Xcode** / Apple Clang with C++23 support is recommended. Optional dependencies such as OpenSSL and Zlib are often installed via Homebrew (`brew install openssl zlib`); point CMake with `CMAKE_PREFIX_PATH` if needed.
 
 This guide should provide a solid understanding of how to build and configure the QB Actor Framework to suit your development and deployment needs.
 
-**(Next:** Learn about [Reference: Testing the QB Framework](./testing.md) or revisit the [Getting Started Guide](./../6_guides/getting_started.md).)** 
+**(Next:** [CMake and dependencies](./cmake_dependencies.md) · [Testing](./testing.md) · [Getting Started](../6_guides/getting_started.md).)** 

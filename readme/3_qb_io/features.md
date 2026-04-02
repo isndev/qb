@@ -3,7 +3,7 @@
 
 # QB-IO: Feature Showcase
 
-The `qb-io` library is a versatile and powerful C++17 toolkit designed for building applications that demand high-performance asynchronous I/O and robust system utilities. Here's a look at its key feature areas:
+The `qb-io` library is a versatile and powerful **C++23** toolkit designed for building applications that demand high-performance asynchronous I/O and robust system utilities. Here's a look at its key feature areas:
 
 ## 1. Core Asynchronous System (`qb::io::async`)
 
