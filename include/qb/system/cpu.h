@@ -22,403 +22,132 @@
  * @ingroup System
  */
 
-#ifndef FEATURES_CPU_H
-#define FEATURES_CPU_H
+#ifndef QB_SYSTEM_CPU_H
+#define QB_SYSTEM_CPU_H
 
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <thread>
-#if defined(__APPLE__)
-#include <sys/sysctl.h>
-#elif defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
-#include <fstream>
-#include <regex>
-#include <unistd.h>
-#elif defined(_WIN32) || defined(_WIN64)
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
-#endif
-
-/**
- * @namespace Internals
- * @brief Internal helper functions for CPU information
- */
-namespace Internals {
-
-#if defined(_WIN32) || defined(_WIN64)
-/**
- * @brief Counts the number of bits set in a processor mask
- *
- * Helper function to count the number of logical processors in a processor mask.
- *
- * @param pBitMask The processor mask to count bits in
- * @return Number of bits set in the mask
- */
-DWORD
-CountSetBits(ULONG_PTR pBitMask) {
-    DWORD     dwLeftShift   = sizeof(ULONG_PTR) * 8 - 1;
-    DWORD     dwBitSetCount = 0;
-    ULONG_PTR pBitTest      = (ULONG_PTR) 1 << dwLeftShift;
-
-    for (DWORD i = 0; i <= dwLeftShift; ++i) {
-        dwBitSetCount += ((pBitMask & pBitTest) ? 1 : 0);
-        pBitTest /= 2;
-    }
-
-    return dwBitSetCount;
-}
-#endif
-
-} // namespace Internals
+#include <type_traits>
+#include <utility>
 
 namespace qb {
 
 /**
  * @brief Creates a unique_ptr with a custom deleter for a resource
  *
- * This is a helper function to manage resources in a RAII manner
- * with a custom deleter function.
- *
- * @tparam T Type of the resource
- * @tparam TCleaner Type of the cleaner/deleter function
+ * @tparam T Type of the resource handle
+ * @tparam TCleaner Type of the deleter
  * @param handle Resource handle
- * @param cleaner Deleter function
- * @return unique_ptr wrapping the resource with the custom deleter
- */
-/**
- * @brief Creates a unique_ptr with a custom deleter for a resource
- *
- * This is a helper function to manage resources in a RAII manner
- * with a custom deleter function.
- * C++23: Using std::remove_pointer_t for cleaner syntax.
- *
- * @tparam T Type of the resource
- * @tparam TCleaner Type of the cleaner/deleter function
- * @param handle Resource handle
- * @param cleaner Deleter function
- * @return unique_ptr wrapping the resource with the custom deleter
+ * @param cleaner Deleter function/object
+ * @return unique_ptr managing the resource
  */
 template <typename T, typename TCleaner>
-auto
-resource(T handle, TCleaner cleaner) {
-    // C++23: Use _t alias instead of ::type
+auto resource(T handle, TCleaner cleaner) {
     return std::unique_ptr<std::remove_pointer_t<T>, TCleaner>(handle, cleaner);
 }
 
 /**
  * @brief Creates a unique_ptr with a custom deleter for a void* resource
  *
- * Specialization for void* resources.
- *
- * @tparam TCleaner Type of the cleaner/deleter function
+ * @tparam TCleaner Type of the deleter
  * @param handle Resource handle
- * @param cleaner Deleter function
- * @return unique_ptr wrapping the resource with the custom deleter
+ * @param cleaner Deleter function/object
+ * @return unique_ptr managing the resource
  */
 template <typename TCleaner>
-auto
-resource(void *handle, TCleaner cleaner) {
+auto resource(void* handle, TCleaner cleaner) {
     return std::unique_ptr<void, TCleaner>(handle, cleaner);
 }
 
 /**
- * @brief Creates a unique_ptr with a custom deleter using the deleter itself as a handle
+ * @brief Creates a unique_ptr with the deleter object itself as payload
  *
- * This variant is useful for self-contained resources.
+ * This overload is only useful for special self-contained cleanup patterns.
  *
- * @tparam TCleaner Type of the cleaner/deleter function
- * @param cleaner Deleter function
- * @return unique_ptr with the deleter pointing to itself
+ * @tparam TCleaner Type of the deleter
+ * @param cleaner Deleter function/object
+ * @return unique_ptr managing the pseudo-resource
  */
 template <typename TCleaner>
-auto
-resource(TCleaner cleaner) {
+auto resource(TCleaner cleaner) {
     return std::unique_ptr<void, TCleaner>(&cleaner, cleaner);
 }
 
 /**
  * @class CPU
- * @brief Provides platform-independent access to CPU information
- *
- * This class contains static methods to query CPU information such as
- * architecture, logical/physical core counts, clock speed, and more.
+ * @brief Platform-independent CPU information utilities
  */
 class CPU {
 public:
-    CPU()                = delete;
-    CPU(const CPU &)     = delete;
-    CPU(CPU &&) noexcept = delete;
-    ~CPU()               = delete;
+    CPU() = delete;
+    CPU(const CPU&) = delete;
+    CPU(CPU&&) noexcept = delete;
+    ~CPU() = delete;
 
-    CPU &operator=(const CPU &)     = delete;
-    CPU &operator=(CPU &&) noexcept = delete;
+    CPU& operator=(const CPU&) = delete;
+    CPU& operator=(CPU&&) noexcept = delete;
 
     /**
-     * @brief Gets the CPU architecture name/description
-     *
-     * @return CPU architecture or model name as a string
+     * @brief Returns the CPU architecture / brand string
      */
-    static std::string
-    Architecture() {
-#if defined(__APPLE__)
-        char   result[1024];
-        size_t size = sizeof(result);
-        if (sysctlbyname("machdep.cpu.brand_string", result, &size, nullptr, 0) == 0)
-            return result;
+    static std::string Architecture();
 
-        return "<unknown>";
-#elif defined(unix) || defined(__unix) || defined(__unix__)
-        static std::regex pattern("model name(.*): (.*)");
-
-        std::string   line;
-        std::ifstream stream("/proc/cpuinfo");
-        while (getline(stream, line)) {
-            std::smatch matches;
-            if (std::regex_match(line, matches, pattern))
-                return matches[2];
-        }
-
-        return "<unknown>";
-#elif defined(_WIN32) || defined(_WIN64)
-        HKEY hKeyProcessor;
-        LONG lError = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-                                    "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-                                    0, KEY_READ, &hKeyProcessor);
-        if (lError != ERROR_SUCCESS)
-            return "<unknown>";
-
-        // Smart resource cleaner pattern
-        auto key = resource(hKeyProcessor, [](HKEY hKey) { RegCloseKey(hKey); });
-
-        CHAR  pBuffer[_MAX_PATH] = {0};
-        DWORD dwBufferSize       = sizeof(pBuffer);
-        lError = RegQueryValueExA(key.get(), "ProcessorNameString", nullptr, nullptr,
-                                  (LPBYTE) pBuffer, &dwBufferSize);
-        if (lError != ERROR_SUCCESS)
-            return "<unknown>";
-
-        return std::string(pBuffer);
-#else
-#error Unsupported platform
-#endif
-    }
     /**
-     * @brief Gets the number of logical processors available to the process
-     *
-     * @return Number of logical processors
+     * @brief Returns the number of logical processors available
      */
-    static int
-    Affinity() {
-#if defined(__APPLE__)
-        int    logical      = 0;
-        size_t logical_size = sizeof(logical);
-        if (sysctlbyname("hw.logicalcpu", &logical, &logical_size, nullptr, 0) != 0)
-            logical = -1;
+    static int Affinity();
 
-        return logical;
-#elif defined(unix) || defined(__unix) || defined(__unix__)
-        long processors = sysconf(_SC_NPROCESSORS_ONLN);
-        return processors;
-#elif defined(_WIN32) || defined(_WIN64)
-        SYSTEM_INFO si;
-        GetSystemInfo(&si);
-        return si.dwNumberOfProcessors;
-#else
-#error Unsupported platform
-#endif
-    }
     /**
-     * @brief Gets the number of logical CPU cores
-     *
-     * @return Number of logical cores
+     * @brief Returns the number of logical CPU cores
      */
-    static int
-    LogicalCores() {
-        return TotalCores().first;
-    }
+    static int LogicalCores();
+
     /**
-     * @brief Gets the number of physical CPU cores
-     *
-     * @return Number of physical cores
+     * @brief Returns the number of physical CPU cores
      */
-    static int
-    PhysicalCores() {
-        return TotalCores().second;
-    }
+    static int PhysicalCores();
+
     /**
-     * @brief Gets both logical and physical core counts
+     * @brief Returns both logical and physical core counts
      *
-     * @return Pair of (logical cores, physical cores)
+     * @return pair(logical, physical)
      */
-    static std::pair<int, int>
-    TotalCores() {
-#if defined(__APPLE__)
-        int    logical      = 0;
-        size_t logical_size = sizeof(logical);
-        if (sysctlbyname("hw.logicalcpu", &logical, &logical_size, nullptr, 0) != 0)
-            logical = -1;
+    static std::pair<int, int> TotalCores();
 
-        int    physical      = 0;
-        size_t physical_size = sizeof(physical);
-        if (sysctlbyname("hw.physicalcpu", &physical, &physical_size, nullptr, 0) != 0)
-            physical = -1;
-
-        return std::make_pair(logical, physical);
-#elif defined(unix) || defined(__unix) || defined(__unix__)
-        long processors = sysconf(_SC_NPROCESSORS_ONLN);
-        return std::make_pair(processors, processors);
-#elif defined(_WIN32) || defined(_WIN64)
-        BOOL                                  allocated = FALSE;
-        PSYSTEM_LOGICAL_PROCESSOR_INFORMATION pBuffer   = nullptr;
-        DWORD                                 dwLength  = 0;
-
-        while (!allocated) {
-            BOOL bResult = GetLogicalProcessorInformation(pBuffer, &dwLength);
-            if (bResult == FALSE) {
-                if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-                    if (pBuffer != nullptr)
-                        std::free(pBuffer);
-                    pBuffer =
-                        reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION>(std::malloc(dwLength));  // C++23: modern cast
-                    if (pBuffer == nullptr)
-                        return std::make_pair(-1, -1);
-                } else
-                    return std::make_pair(-1, -1);
-            } else
-                allocated = TRUE;
-        }
-
-        std::pair<int, int>                   result(0, 0);
-        PSYSTEM_LOGICAL_PROCESSOR_INFORMATION pCurrent = pBuffer;
-        DWORD                                 dwOffset = 0;
-
-        while (dwOffset + sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION) <= dwLength) {
-            switch (pCurrent->Relationship) {
-                case RelationProcessorCore:
-                    result.first += Internals::CountSetBits(pCurrent->ProcessorMask);
-                    result.second += 1;
-                    break;
-                case RelationNumaNode:
-                case RelationCache:
-                case RelationProcessorPackage:
-                    break;
-                default:
-                    return std::make_pair(-1, -1);
-            }
-            dwOffset += sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
-            pCurrent++;
-        }
-
-        std::free(pBuffer);
-
-        return result;
-#else
-#error Unsupported platform
-#endif
-    }
     /**
-     * @brief Gets the CPU clock speed in Hz
-     *
-     * @return CPU frequency in Hz, or -1 if unavailable
+     * @brief Returns CPU clock speed in Hz, or -1 if unavailable
      */
-    static int64_t
-    ClockSpeed() {
-#if defined(__APPLE__)
-        uint64_t frequency = 0;
-        size_t   size      = sizeof(frequency);
-        if (sysctlbyname("hw.cpufrequency", &frequency, &size, nullptr, 0) == 0)
-            return frequency;
+    static std::int64_t ClockSpeed();
 
-        return -1;
-#elif defined(unix) || defined(__unix) || defined(__unix__)
-        static std::regex pattern("cpu MHz(.*): (.*)");
-
-        std::string   line;
-        std::ifstream stream("/proc/cpuinfo");
-        while (getline(stream, line)) {
-            std::smatch matches;
-            if (std::regex_match(line, matches, pattern))
-                return (int64_t) (atof(matches[2].str().c_str()) * 1000000);
-        }
-
-        return -1;
-#elif defined(_WIN32) || defined(_WIN64)
-        HKEY hKeyProcessor;
-        long lError = RegOpenKeyExA(HKEY_LOCAL_MACHINE,
-                                    "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
-                                    0, KEY_READ, &hKeyProcessor);
-        if (lError != ERROR_SUCCESS)
-            return -1;
-
-        // Smart resource cleaner pattern
-        auto key = resource(hKeyProcessor, [](HKEY hKey) { RegCloseKey(hKey); });
-
-        DWORD dwMHz        = 0;
-        DWORD dwBufferSize = sizeof(DWORD);
-        lError = RegQueryValueExA(key.get(), "~MHz", nullptr, nullptr, (LPBYTE) &dwMHz,
-                                  &dwBufferSize);
-        if (lError != ERROR_SUCCESS)
-            return -1;
-
-        return dwMHz * 1000000;
-#else
-#error Unsupported platform
-#endif
-    }
     /**
-     * @brief Checks if hyperthreading is enabled
-     *
-     * @return true if hyperthreading is enabled, false otherwise
+     * @brief Returns true when logical cores differ from physical cores
      */
-    static bool
-    HyperThreading() {
-        std::pair<int, int> cores = TotalCores();
-        return (cores.first != cores.second);
-    }
+    static bool HyperThreading();
 };
 
 } // namespace qb
 
-#ifdef __SSE2__
+#if defined(__SSE2__)
 #include <emmintrin.h>
 namespace qb {
-/**
- * @brief Executes a CPU pause instruction for spinloops (x86/x64 SSE2)
- *
- * Improves spin-wait loop performance by hinting to the CPU.
- * Reduces power consumption and avoids excessive bus activity.
- */
-inline void
-spin_loop_pause() noexcept {
+inline void spin_loop_pause() noexcept {
     _mm_pause();
 }
 } // namespace qb
+
 #elif defined(_MSC_VER) && _MSC_VER >= 1800 && (defined(_M_X64) || defined(_M_IX86))
 #include <intrin.h>
 namespace qb {
-/**
- * @brief Executes a CPU pause instruction for spinloops (MSVC x86/x64)
- */
-inline void
-spin_loop_pause() noexcept {
+inline void spin_loop_pause() noexcept {
     _mm_pause();
 }
 } // namespace qb
+
 #elif defined(__aarch64__) || defined(_M_ARM64)
 namespace qb {
-/**
- * @brief Executes CPU yield instruction for spinloops (ARM64)
- *
- * On ARM64, the yield instruction provides a hint that the current
- * thread is spinning on a lock. This allows the CPU to optimize
- * resource allocation and reduce power consumption.
- */
-inline void
-spin_loop_pause() noexcept {
+inline void spin_loop_pause() noexcept {
 #if defined(__GNUC__) || defined(__clang__)
     __asm__ volatile("yield" ::: "memory");
 #elif defined(_MSC_VER)
@@ -426,31 +155,22 @@ spin_loop_pause() noexcept {
 #endif
 }
 } // namespace qb
+
 #elif defined(__arm__)
 namespace qb {
-/**
- * @brief Executes CPU yield instruction for spinloops (ARM32)
- */
-inline void
-spin_loop_pause() noexcept {
+inline void spin_loop_pause() noexcept {
 #if defined(__GNUC__) || defined(__clang__)
     __asm__ volatile("yield" ::: "memory");
 #endif
 }
 } // namespace qb
+
 #else
 namespace qb {
-/**
- * @brief Fallback implementation for platforms without specific pause instruction
- *
- * Uses std::this_thread::yield() which may cause context switch.
- * Consider implementing platform-specific optimization for new architectures.
- */
-inline void
-spin_loop_pause() noexcept {
+inline void spin_loop_pause() noexcept {
     std::this_thread::yield();
 }
 } // namespace qb
 #endif
 
-#endif // FEATURES_CPU_H
+#endif // QB_SYSTEM_CPU_H

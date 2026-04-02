@@ -34,6 +34,7 @@ project(qb-io
 # -----------------------------------------------------------------------------
 # Define the library using the new qb framework functions
 set(IO_SOURCES
+    src/cpu.cpp
     src/io.cpp
 )
 
