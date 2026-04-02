@@ -61,6 +61,14 @@ set(QB_SOURCE_DIR "${QB_ROOT_DIR}/source")
 option(QB_BUILD_TESTS "Build qb tests" ON)
 option(QB_BUILD_EXAMPLES "Build qb examples" ON)
 option(QB_BUILD_BENCHMARKS "Build qb benchmarks" OFF)
+# When OFF (default), GoogleTest is provided via FetchContent with QB_GOOGLETEST_GIT_TAG.
+option(QB_USE_SYSTEM_GTEST "Use find_package(GTest CONFIG) instead of FetchContent" OFF)
+# When OFF (default), Google Benchmark is provided via FetchContent with QB_GOOGLEBENCHMARK_GIT_TAG.
+option(QB_USE_SYSTEM_BENCHMARK "Use find_package(benchmark CONFIG) instead of FetchContent" OFF)
+
+set(QB_GOOGLETEST_GIT_TAG "v1.15.2" CACHE STRING "Git tag (or SHA) for FetchContent googletest")
+set(QB_GOOGLEBENCHMARK_GIT_TAG "v1.9.2" CACHE STRING "Git tag (or SHA) for FetchContent googlebenchmark")
+mark_as_advanced(QB_GOOGLETEST_GIT_TAG QB_GOOGLEBENCHMARK_GIT_TAG)
 option(QB_BUILD_DOCS "Build qb documentation" OFF)
 option(QB_BUILD_SHARED_LIBS "Build shared libraries instead of static" OFF)
 option(QB_INSTALL "Install qb framework" ON)

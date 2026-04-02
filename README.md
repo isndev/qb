@@ -1,4 +1,4 @@
-# QB Actor Framework: High-Performance C++17 for Concurrent & Distributed Systems
+# QB Actor Framework: High-Performance C++23 for Concurrent & Distributed Systems
 
 <p align="center"><img src="./resources/logo.svg" width="180px" alt="QB Actor Framework Logo" /></p>
 
@@ -6,7 +6,7 @@
 
 QB simplifies the art of building responsive, real-time systems, network services, and distributed computations by harmonizing the robust **Actor Model** with a high-efficiency **Asynchronous I/O Engine**. Focus on your application's logic; let QB handle the intricacies of parallelism and non-blocking I/O.
 
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B17) [![CMake](https://img.shields.io/badge/CMake-3.14+-blue.svg)](https://cmake.org/) [![Cross Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](https://github.com/isndev/qb) [![Architecture](https://img.shields.io/badge/Arch-x86__64%20%7C%20ARM64-lightgrey.svg)](https://github.com/isndev/qb) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.wikipedia.org/wiki/C%2B%2B23) [![CMake](https://img.shields.io/badge/CMake-3.22+-blue.svg)](https://cmake.org/) [![Cross Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](https://github.com/isndev/qb) [![Architecture](https://img.shields.io/badge/Arch-x86__64%20%7C%20ARM64-lightgrey.svg)](https://github.com/isndev/qb) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 ## Quick Start with QB
 
@@ -196,16 +196,16 @@ target_link_libraries(my_app PRIVATE qbm::http)
 - Cache-friendly data structures and minimal allocations
 
 **Developer Experience:**
-- Modern C++17 with clean, expressive APIs
+- Modern **C++23** with clean, expressive APIs
 - Extensive utility library (time, crypto, compression, containers)
 - Comprehensive documentation and examples
 
 ## Build Information
 
 ### Build Requirements
-- **C++17** compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
-- **CMake 3.14+**
-- **Git** (for submodules)
+- **C++23**-capable compiler (recent GCC, Clang, or MSVC)
+- **CMake 3.22+**
+- **Git** (for optional qbm/examples submodules; **GoogleTest** / **Benchmark** use **FetchContent** when tests/benchmarks are enabled)
 
 ### Optional Dependencies
 - **OpenSSL 1.1+** - SSL/TLS support, cryptographic functions
@@ -215,15 +215,14 @@ target_link_libraries(my_app PRIVATE qbm::http)
 ### Building from Source
 
 ```bash
-# Clone with submodules
-git clone --recursive https://github.com/isndev/qb.git
+git clone https://github.com/isndev/qb.git
 cd qb
 
 # Configure build
 mkdir build && cd build
 cmake -DCMAKE_BUILD_TYPE=Release \
-      -DQB_IO_WITH_SSL=ON \
-      -DQB_IO_WITH_ZLIB=ON \
+      -DQB_WITH_SSL=ON \
+      -DQB_WITH_COMPRESSION=ON \
       ..
 
 # Build (parallel)

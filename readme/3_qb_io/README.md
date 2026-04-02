@@ -1,9 +1,9 @@
 @page qb_io_readme_md QB-IO Module: High-Performance Asynchronous I/O & Utilities
-@brief Discover `qb-io`, the powerful C++17 library underpinning QB's non-blocking I/O, also available for standalone use. Provides an overview and navigation for the QB-IO module documentation.
+@brief Discover `qb-io`, the powerful C++23 library underpinning QB's non-blocking I/O, also available for standalone use. Provides an overview and navigation for the QB-IO module documentation.
 
 # QB-IO Module: High-Performance Asynchronous I/O & Utilities
 
-Welcome to the `qb-io` module documentation. `qb-io` is the foundational C++17 library that powers the QB Actor Framework's responsive, non-blocking input/output capabilities. More than just a component of the actor system, `qb-io` is a comprehensive, cross-platform toolkit designed for building high-performance, event-driven applications. It can be used **effectively as a standalone library** for any project requiring efficient asynchronous I/O.
+Welcome to the `qb-io` module documentation. `qb-io` is the foundational **C++23** library that powers the QB Actor Framework's responsive, non-blocking input/output capabilities. More than just a component of the actor system, `qb-io` is a comprehensive, cross-platform toolkit designed for building high-performance, event-driven applications. It can be used **effectively as a standalone library** for any project requiring efficient asynchronous I/O.
 
 This section provides a detailed exploration of `qb-io`'s features, architecture, and usage.
 

@@ -3,7 +3,7 @@
 
 # QB-IO: The Asynchronous Engine (`qb::io::async`)
 
-The `qb::io::async` namespace is the powerhouse behind `qb-io`'s non-blocking capabilities. It provides a complete, event-driven asynchronous programming model built around a high-performance event loop. While it seamlessly integrates with the `qb-core` actor system, `qb::io::async` is also designed to be fully usable as a standalone toolkit for any C++17 application requiring efficient asynchronous operations.
+The `qb::io::async` namespace is the powerhouse behind `qb-io`'s non-blocking capabilities. It provides a complete, event-driven asynchronous programming model built around a high-performance event loop. While it seamlessly integrates with the `qb-core` actor system, `qb::io::async` is also designed to be fully usable as a standalone toolkit for any **C++23** application requiring efficient asynchronous operations (including **C++20/23 coroutines** where enabled).
 
 ## The Event Loop: `qb::io::async::listener`
 

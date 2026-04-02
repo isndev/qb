@@ -166,31 +166,12 @@ else()
     set(QB_HAS_COMPRESSION FALSE)
 endif()
 
-# Google Test (optional, for testing)
-if(QB_BUILD_TESTS)
-    find_package(GTest QUIET)
-    if(GTest_FOUND)
-        qb_status_message("Found Google Test: ${GTest_VERSION}")
-        set(QB_HAS_GTEST TRUE)
-    else()
-        qb_status_message("Google Test not found - using internal implementation")
-        set(QB_HAS_GTEST FALSE)
-    endif()
-else()
+# Google Test / Google Benchmark: resolved in qbFetchGoogleDeps.cmake (FetchContent or
+# find_package when QB_USE_SYSTEM_* is ON). Defaults are set here for summary printing.
+if(NOT QB_BUILD_TESTS)
     set(QB_HAS_GTEST FALSE)
 endif()
-
-# Google Benchmark (optional, for benchmarking)
-if(QB_BUILD_BENCHMARKS)
-    find_package(benchmark QUIET)
-    if(benchmark_FOUND)
-        qb_status_message("Found Google Benchmark")
-        set(QB_HAS_BENCHMARK TRUE)
-    else()
-        qb_status_message("Google Benchmark not found - using internal implementation")
-        set(QB_HAS_BENCHMARK FALSE)
-    endif()
-else()
+if(NOT QB_BUILD_BENCHMARKS)
     set(QB_HAS_BENCHMARK FALSE)
 endif()
 
@@ -346,27 +327,7 @@ endif()
 # Test Framework Configuration
 # -----------------------------------------------------------------------------
 if(QB_BUILD_TESTS)
-    # Enable testing
     enable_testing()
-    
-    # Configure test discovery
-    if(QB_HAS_GTEST)
-        include(GoogleTest)
-        qb_status_message("Using system Google Test")
-    else()
-        qb_status_message("Using internal Google Test")
-    endif()
-endif()
-
-# -----------------------------------------------------------------------------
-# Benchmark Framework Configuration
-# -----------------------------------------------------------------------------
-if(QB_BUILD_BENCHMARKS)
-    if(QB_HAS_BENCHMARK)
-        qb_status_message("Using system Google Benchmark")
-    else()
-        qb_status_message("Using internal Google Benchmark")
-    endif()
 endif()
 
 # -----------------------------------------------------------------------------

@@ -23,6 +23,8 @@ Our testing strategy is divided into two main categories:
 
 Tests are compiled as part of the standard QB Framework build process if the `QB_BUILD_TESTS` CMake option is enabled (it is often `ON` by default).
 
+**GoogleTest** is resolved automatically: by default CMake **FetchContent** clones a **pinned release** (see [CMake and dependencies](./cmake_dependencies.md)). The first configure needs **network** access unless you use **`QB_USE_SYSTEM_GTEST=ON`** with a preinstalled **GTest** CMake package.
+
 1.  **Ensure `QB_BUILD_TESTS=ON`:** When configuring CMake:
     ```bash
     # In your build directory

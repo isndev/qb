@@ -3,7 +3,7 @@
 
 # QB-Core Module: The Actor Model Engine
 
-Welcome to the `qb-core` module documentation. `qb-core` is the high-performance C++17 library that brings the **Actor Model** to life within the QB Framework. Building directly upon the asynchronous foundation provided by `qb-io`, `qb-core` empowers you to design and implement complex concurrent applications by composing independent, message-driven actors.
+Welcome to the `qb-core` module documentation. `qb-core` is the high-performance **C++23** library that brings the **Actor Model** to life within the QB Framework. Building directly upon the asynchronous foundation provided by `qb-io`, `qb-core` empowers you to design and implement complex concurrent applications by composing independent, message-driven actors.
 
 This section provides a detailed exploration of `qb-core`'s architecture, its fundamental abstractions like actors and events, the engine that drives them, and common patterns for their use.
 

@@ -253,12 +253,12 @@ function(qb_add_test)
     # Apply common properties
     _qb_apply_target_properties(${TEST_NAME})
     
-    # Add Google Test dependency
-    if(QB_HAS_GTEST)
+    if(TARGET GTest::gtest_main)
         target_link_libraries(${TEST_NAME} PRIVATE GTest::gtest_main)
-    else()
-        # Use internal Google Test
+    elseif(TARGET gtest_main)
         target_link_libraries(${TEST_NAME} PRIVATE gtest_main)
+    else()
+        qb_error_message("qb_add_test: no GTest target (enable QB_BUILD_TESTS and FetchContent/system GTest)")
     endif()
     
     # Apply dependencies
@@ -357,12 +357,12 @@ function(qb_add_benchmark)
     # Apply common properties
     _qb_apply_target_properties(${BENCH_NAME})
     
-    # Add Google Benchmark dependency
-    if(QB_HAS_BENCHMARK)
+    if(TARGET benchmark::benchmark)
         target_link_libraries(${BENCH_NAME} PRIVATE benchmark::benchmark)
-    else()
-        # Use internal Google Benchmark
+    elseif(TARGET benchmark)
         target_link_libraries(${BENCH_NAME} PRIVATE benchmark)
+    else()
+        qb_error_message("qb_add_benchmark: no benchmark target (enable QB_BUILD_BENCHMARKS and FetchContent/system benchmark)")
     endif()
     
     # Apply dependencies

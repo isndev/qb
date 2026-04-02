@@ -3,11 +3,11 @@
 
 # QB Actor Framework
 
-**High-Performance C++17 Actor Framework for Concurrent & Distributed Systems**
+**High-Performance C++23 Actor Framework for Concurrent & Distributed Systems**
 
 ## Overview
 
-The QB Actor Framework is a modern C++17 library designed for building high-performance, scalable, and robust concurrent and distributed applications. It leverages the **Actor Model** paradigm and an efficient **Asynchronous I/O** foundation (`qb-io`) to simplify the development of complex systems.
+The QB Actor Framework is a modern **C++23** library (`CMAKE_CXX_STANDARD 23`) designed for building high-performance, scalable, and robust concurrent and distributed applications. It leverages the **Actor Model** paradigm and an efficient **Asynchronous I/O** foundation (`qb-io`) to simplify the development of complex systems.
 
 QB provides developers with tools to manage concurrency through isolated actors and asynchronous message passing, while handling low-level I/O and system details efficiently.
 

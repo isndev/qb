@@ -9,9 +9,9 @@ Welcome to the QB Actor Framework! This guide will walk you through setting up y
 
 Before you begin, ensure your development environment meets these requirements:
 
-*   **C++17 Compliant Compiler:** GCC 7+, Clang 5+, or MSVC 2017+.
-*   **CMake:** Version 3.14 or higher.
-*   **Git:** For cloning the QB Framework repository.
+*   **C++23-capable compiler:** Recent GCC, Clang, or MSVC with C++23 enabled (qb sets `CXX_STANDARD 23`).
+*   **CMake:** **3.22 or newer.**
+*   **Git:** For cloning qb; also used by **FetchContent** when tests or benchmarks are enabled (default), unless you use system GTest/Benchmark packages.
 *   **(Optional but Recommended for Full Features)**
     *   **OpenSSL Development Libraries:** If you plan to use SSL/TLS for secure networking or QB's cryptography features (`qb::crypto`, `qb::jwt`).
     *   **Zlib Development Libraries:** If you intend to use data compression features (`qb::compression`).
@@ -25,12 +25,7 @@ git clone <your_repository_url> qb-framework
 cd qb-framework
 ```
 
-If the QB framework uses Git submodules for dependencies (check for a `.gitmodules` file), initialize and update them:
-
-```bash
-# If submodules are present:
-git submodule update --init --recursive
-```
+GoogleTest and Google Benchmark are **not** git submodules anymore: CMake **FetchContent** downloads pinned versions when `QB_BUILD_TESTS` or `QB_BUILD_BENCHMARKS` is **ON** (see [CMake and dependencies](../7_reference/cmake_dependencies.md)).
 
 ## 3. Build the QB Framework Libraries
 
@@ -45,8 +40,8 @@ cd build
 
 # 2. Configure the build (from within the 'build' directory)
 #    This example creates a Release build and enables tests.
-#    Adjust QB_IO_WITH_SSL and QB_IO_WITH_ZLIB if you have OpenSSL/Zlib and need those features.
-cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TESTS=ON -DQB_IO_WITH_SSL=OFF -DQB_IO_WITH_ZLIB=OFF
+#    Adjust QB_WITH_SSL and QB_WITH_COMPRESSION if you need those features.
+cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TESTS=ON -DQB_WITH_SSL=OFF -DQB_WITH_COMPRESSION=OFF
 
 # 3. Build the framework (libraries, examples, tests)
 cmake --build . --config Release
@@ -208,10 +203,10 @@ int main() {
 Create a `CMakeLists.txt` file in your `my_qb_app` directory:
 
 ```cmake
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.22)
 project(MyQBApp CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Find the QB package. 
