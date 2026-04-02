@@ -364,7 +364,7 @@ TEST_F(CryptoAdvancedTest, PasswordHashing) {
         EXPECT_NE(hash, password);
 
         // Hash should start with "$pbkdf2-sha256"
-        EXPECT_TRUE(hash.substr(0, 13) == "$pbkdf2-sha256");
+        EXPECT_TRUE(hash.substr(0, 14) == "$pbkdf2-sha256");
 
         // Verify that the correct password is accepted
         EXPECT_TRUE(qb::crypto::verify_password(password, hash));

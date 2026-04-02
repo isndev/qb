@@ -141,7 +141,7 @@ public:
      * @param size Message size
      */
     void
-    onMessage(std::size_t size) const noexcept {
+    onMessage(std::size_t size) noexcept {
         this->_io.on(message{size, this->_io.in().cbegin() + this->shiftSize()});
     }
 };

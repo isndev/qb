@@ -49,7 +49,7 @@ public:
      * other mechanisms in the file implementation.
      */
     [[nodiscard]] int
-    write() {
+    write() noexcept {
         return 0;
     }
 };

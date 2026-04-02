@@ -118,7 +118,7 @@ public:
      * the last accepted secure connection.
      */
     io::tcp::ssl::socket &
-    getAccepted() {
+    getAccepted() noexcept {
         return _accepted_io;
     }
 };

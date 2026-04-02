@@ -26,22 +26,11 @@
 
 #ifndef QB_LOCKFREE_MPSC_H
 #define QB_LOCKFREE_MPSC_H
-#include <chrono>
 #include <mutex>
 #include "spinlock.h"
 #include "spsc.h"
 
 namespace qb::lockfree::mpsc {
-
-/**
- * @brief High-resolution clock type used for distribution of producer indexes
- */
-using Clock = std::chrono::high_resolution_clock;
-
-/**
- * @brief Nanosecond duration type used for time measurements
- */
-using Nanoseconds = std::chrono::nanoseconds;
 
 /**
  * @brief Multi-Producer Single-Consumer ring buffer with fixed number of producers
@@ -132,26 +121,27 @@ public:
     }
 
     /**
-     * @brief Enqueue an item using a random producer index
+     * @brief Enqueue an item using a per-thread round-robin producer index
      *
-     * This method automatically selects a producer based on the current time,
-     * providing load balancing across producers.
+     * This method automatically selects a producer using a thread-local counter,
+     * providing even load balancing across producers.
      *
      * @param t The item to enqueue
      * @return true if the item was successfully enqueued, false if the buffer was full
      */
     size_t
     enqueue(T const &t) {
-        const size_t index = Clock::now().time_since_epoch().count() % nb_producer;
+        static thread_local size_t tl_index = 0;
+        const size_t index = tl_index++ % nb_producer;
         std::lock_guard<SpinLock> lock(_producers[index].lock);
         return _producers[index]._ringbuffer.enqueue(t);
     }
 
     /**
-     * @brief Enqueue multiple items using a random producer index
+     * @brief Enqueue multiple items using a round-robin producer index
      *
-     * This method automatically selects a producer based on the current time,
-     * providing load balancing across producers.
+     * This method automatically selects a producer using a per-thread
+     * round-robin counter, providing even load balancing across producers.
      *
      * @tparam _All If true, requires all items to be enqueued or none
      * @param t Array of items to enqueue
@@ -161,7 +151,8 @@ public:
     template <bool _All = true>
     size_t
     enqueue(T const *t, size_t const size) {
-        const size_t index = Clock::now().time_since_epoch().count() % nb_producer;
+        static thread_local size_t tl_index = 0;
+        const size_t index = tl_index++ % nb_producer;
         std::lock_guard<SpinLock> lock(_producers[index].lock);
         return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
     }
@@ -338,26 +329,27 @@ public:
     }
 
     /**
-     * @brief Enqueue an item using a random producer index
+     * @brief Enqueue an item using a per-thread round-robin producer index
      *
-     * This method automatically selects a producer based on the current time,
-     * providing load balancing across producers.
+     * This method automatically selects a producer using a thread-local counter,
+     * providing even load balancing across producers.
      *
      * @param t The item to enqueue
      * @return true if the item was successfully enqueued, false if the buffer was full
      */
     size_t
     enqueue(T const &t) {
-        const size_t index = Clock::now().time_since_epoch().count() % _nb_producer;
+        static thread_local size_t tl_index = 0;
+        const size_t index = tl_index++ % _nb_producer;
         std::lock_guard<SpinLock> lock(_producers[index].lock);
         return _producers[index]._ringbuffer.enqueue(t);
     }
 
     /**
-     * @brief Enqueue multiple items using a random producer index
+     * @brief Enqueue multiple items using a round-robin producer index
      *
-     * This method automatically selects a producer based on the current time,
-     * providing load balancing across producers.
+     * This method automatically selects a producer using a per-thread
+     * round-robin counter, providing even load balancing across producers.
      *
      * @tparam _All If true, requires all items to be enqueued or none
      * @param t Array of items to enqueue
@@ -367,7 +359,8 @@ public:
     template <bool _All = true>
     size_t
     enqueue(T const *t, size_t const size) {
-        const size_t index = Clock::now().time_since_epoch().count() % _nb_producer;
+        static thread_local size_t tl_index = 0;
+        const size_t index = tl_index++ % _nb_producer;
         std::lock_guard<SpinLock> lock(_producers[index].lock);
         return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
     }

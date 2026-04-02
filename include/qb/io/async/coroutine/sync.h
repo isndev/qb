@@ -81,7 +81,7 @@ public:
 
         // Always suspend so await_suspend can decrement _available atomically
         // with respect to the cooperative scheduler.
-        bool await_ready() const noexcept { return false; }
+        [[nodiscard]] bool await_ready() const noexcept { return false; }
 
         void await_suspend(std::coroutine_handle<> h) {
             if (sem._available > 0) {
@@ -232,7 +232,7 @@ public:
         async_mutex& mtx;
         bool _completed = false;
 
-        bool await_ready() const noexcept { return false; }
+        [[nodiscard]] bool await_ready() const noexcept { return false; }
 
         void await_suspend(std::coroutine_handle<> h) {
             if (!mtx._locked) {
@@ -378,7 +378,7 @@ public:
         async_rw_lock& rw;
         bool _completed = false;
 
-        bool await_ready() const noexcept {
+        [[nodiscard]] bool await_ready() const noexcept {
             return false;
         }
 
@@ -400,7 +400,7 @@ public:
         async_rw_lock& rw;
         bool _completed = false;
 
-        bool await_ready() const noexcept { return false; }
+        [[nodiscard]] bool await_ready() const noexcept { return false; }
 
         void await_suspend(std::coroutine_handle<> h) {
             if (!rw._write_locked && rw._readers == 0) {
@@ -556,7 +556,7 @@ public:
 
         // Single-thread cooperative: _remaining won't change between
         // await_ready() and await_suspend() since we haven't suspended yet.
-        bool await_ready() const noexcept { return b._remaining == 0; }
+        [[nodiscard]] bool await_ready() const noexcept { return b._remaining == 0; }
 
         void await_suspend(std::coroutine_handle<> h) {
             if (b._remaining == 0) {
@@ -653,7 +653,7 @@ public:
     struct wait_awaiter {
         async_event& _ev;
 
-        bool await_ready() noexcept {
+        [[nodiscard]] bool await_ready() noexcept {
             if (_ev._signaled) {
                 if (_ev._auto_reset) _ev._signaled = false;
                 return true;
@@ -767,7 +767,7 @@ public:
 
     struct wait_awaiter {
         async_latch& _latch;
-        bool await_ready() const noexcept { return _latch._count == 0; }
+        [[nodiscard]] bool await_ready() const noexcept { return _latch._count == 0; }
         void await_suspend(std::coroutine_handle<> h) {
             if (_latch._count == 0) schedule_via_current(h);
             else _latch._waiters.push_back(h);

@@ -207,7 +207,7 @@ inline void run_for(std::chrono::milliseconds duration) {
         if (remaining.count() <= 0) break;
 
         // Run event loop (listener::run does run_ready() after _loop.run())
-        for (int i = 0; i < 16; ++i) {
+        for (int i = 0; i < 16 /*max event loop drain iterations*/; ++i) {
             listener::current.run(EVRUN_NOWAIT);
             if (!listener::current.has_coro_scheduler() ||
                 !listener::current.coro_scheduler().has_ready()) {
@@ -276,7 +276,7 @@ auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
                 done = true;
             });
         while (!done) {
-            for (int i = 0; i < 16 && !done; ++i) {
+            for (int i = 0; i < 16 /*max event loop drain iterations*/ && !done; ++i) {
                 listener::current.run(EVRUN_NOWAIT);
                 if (!listener::current.has_coro_scheduler() ||
                     !listener::current.coro_scheduler().has_ready())
@@ -292,7 +292,7 @@ auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
                 done   = true;
             });
         while (!done) {
-            for (int i = 0; i < 16 && !done; ++i) {
+            for (int i = 0; i < 16 /*max event loop drain iterations*/ && !done; ++i) {
                 listener::current.run(EVRUN_NOWAIT);
                 if (!listener::current.has_coro_scheduler() ||
                     !listener::current.coro_scheduler().has_ready())

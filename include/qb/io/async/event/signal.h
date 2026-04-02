@@ -88,7 +88,7 @@ struct signal : public base<ev::sig> {
      * Creates a signal watcher for the specified signal number (if provided as template argument).
      * @param loop Reference to the libev event loop (`ev::loop_ref`) this watcher will be associated with.
      */
-    explicit signal(ev::loop_ref loop)
+    explicit signal(ev::loop_ref loop) noexcept
         : base_t(loop) {
         if constexpr (_SIG != -1) {
             this->set(_SIG); // `this->` is needed here for dependent name in template
@@ -116,7 +116,7 @@ struct signal<-1> : public base<ev::sig> {
      * The signal must be set later using the `set(int signum)` method of the `ev::sig` watcher.
      * @param loop Reference to the libev event loop (`ev::loop_ref`) this watcher will be associated with.
      */
-    explicit signal(ev::loop_ref loop)
+    explicit signal(ev::loop_ref loop) noexcept
         : base_t(loop) {}
 };
 

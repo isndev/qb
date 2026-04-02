@@ -26,6 +26,7 @@
 #ifndef QB_SPINLOCK_H
 #define QB_SPINLOCK_H
 #include <atomic>
+#include <qb/system/cpu.h>
 #include <qb/system/timestamp.h>
 
 namespace qb::lockfree {
@@ -162,8 +163,13 @@ public:
      */
     void
     lock() noexcept {
-        while (_lock.exchange(true, std::memory_order_acquire))
-            ;
+        for (;;) {
+            if (!_lock.exchange(true, std::memory_order_acquire))
+                return;
+            // TTAS: spin on load (read-shared) before retrying exchange
+            while (_lock.load(std::memory_order_relaxed))
+                qb::spin_loop_pause();
+        }
     }
 
     /**

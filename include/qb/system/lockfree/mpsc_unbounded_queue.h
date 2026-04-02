@@ -26,6 +26,7 @@
 #define QB_LOCKFREE_MPSC_UNBOUNDED_QUEUE_H
 
 #include <atomic>
+#include <qb/system/cpu.h>
 #include <qb/utility/nocopy.h>
 
 namespace qb::lockfree {
@@ -66,9 +67,7 @@ public:
         Node* n = head_.load(std::memory_order_relaxed);
         while (n) {
             Node* next = n->next.load(std::memory_order_relaxed);
-            if (n != sentinel_) {
-                delete n;
-            }
+            delete n;
             n = next;
         }
     }
@@ -95,9 +94,7 @@ public:
             head_.store(next, std::memory_order_release);
             out = std::move(next->value);
             count_.fetch_sub(1, std::memory_order_relaxed);
-            if (node != sentinel_) {
-                delete node;
-            }
+            delete node;
             return true;
         }
 
@@ -106,14 +103,12 @@ public:
         }
 
         while (!(next = node->next.load(std::memory_order_acquire))) {
-            /* spin until producer links the node */
+            qb::spin_loop_pause();
         }
         head_.store(next, std::memory_order_release);
         out = std::move(next->value);
         count_.fetch_sub(1, std::memory_order_relaxed);
-        if (node != sentinel_) {
-            delete node;
-        }
+        delete node;
         return true;
     }
 

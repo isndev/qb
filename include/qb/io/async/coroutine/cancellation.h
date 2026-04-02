@@ -139,7 +139,7 @@ struct cancellation_awaiter {
     cancellation_token token;
     std::coroutine_handle<> _handle;
 
-    bool await_ready() const {
+    [[nodiscard]] bool await_ready() const {
         return token.is_cancelled();
     }
 
@@ -173,7 +173,7 @@ inline cancellation_awaiter check_cancelled(const cancellation_token& token) {
 struct yield_awaiter {
     cancellation_token token;
 
-    bool await_ready() const { return false; }
+    [[nodiscard]] bool await_ready() const { return false; }
 
     void await_suspend(std::coroutine_handle<> h) {
         enqueue_for_later_via_current(h);
@@ -230,7 +230,7 @@ public:
         cancellation_token token;
         bool throw_on_cancel;
 
-        bool await_ready() const {
+        [[nodiscard]] bool await_ready() const {
             return token.is_cancelled() && throw_on_cancel;
         }
 
@@ -292,7 +292,7 @@ public:
         cancellation_token token;
         bool throw_on_cancel;
 
-        bool await_ready() const {
+        [[nodiscard]] bool await_ready() const {
             return token.is_cancelled() && throw_on_cancel;
         }
 
@@ -362,7 +362,7 @@ struct cancellable_sleep_awaiter {
     std::chrono::milliseconds duration;
     cancellation_token token;
 
-    bool await_ready() const { return token.is_cancelled(); }
+    [[nodiscard]] bool await_ready() const { return token.is_cancelled(); }
 
     void await_suspend(std::coroutine_handle<> h) {
         auto state = std::make_shared<sleep_state>();
@@ -414,7 +414,7 @@ struct with_deadline_timeout_awaiter {
     std::chrono::steady_clock::time_point deadline;
     cancellation_token token;
 
-    bool await_ready() const {
+    [[nodiscard]] bool await_ready() const {
         if (token.is_cancelled()) {
             state->result = 1;
             state->completed = true;

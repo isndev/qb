@@ -68,7 +68,7 @@ struct timer : base<ev::timer> {
      * @brief Constructor.
      * @param loop Reference to the libev event loop (`ev::loop_ref`) this timer watcher will be associated with.
      */
-    explicit timer(ev::loop_ref loop)
+    explicit timer(ev::loop_ref loop) noexcept
         : base_t(loop) {}
 };
 

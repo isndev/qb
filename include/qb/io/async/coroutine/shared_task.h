@@ -112,8 +112,8 @@ public:
     shared_task(shared_task&&)                 = default;
     shared_task& operator=(shared_task&&)      = default;
 
-    bool valid()    const noexcept { return _state != nullptr; }
-    bool is_ready() const noexcept { return _state && _state->is_done(); }
+    [[nodiscard]] bool valid()    const noexcept { return _state != nullptr; }
+    [[nodiscard]] bool is_ready() const noexcept { return _state && _state->is_done(); }
 
     // -----------------------------------------------------------------------
     // Awaiter
@@ -121,7 +121,7 @@ public:
     struct awaiter {
         std::shared_ptr<state> s;
 
-        bool await_ready() const noexcept { return s->is_done(); }
+        [[nodiscard]] bool await_ready() const noexcept { return s->is_done(); }
 
         void await_suspend(std::coroutine_handle<> h) {
             if (s->is_done()) schedule_via_current(h);
@@ -188,12 +188,12 @@ public:
     shared_task(shared_task&&)                 = default;
     shared_task& operator=(shared_task&&)      = default;
 
-    bool valid()    const noexcept { return _state != nullptr; }
-    bool is_ready() const noexcept { return _state && _state->is_done(); }
+    [[nodiscard]] bool valid()    const noexcept { return _state != nullptr; }
+    [[nodiscard]] bool is_ready() const noexcept { return _state && _state->is_done(); }
 
     struct awaiter {
         std::shared_ptr<state> s;
-        bool await_ready() const noexcept { return s->is_done(); }
+        [[nodiscard]] bool await_ready() const noexcept { return s->is_done(); }
         void await_suspend(std::coroutine_handle<> h) {
             if (s->is_done()) schedule_via_current(h);
             else              s->_waiters.push_back(h);

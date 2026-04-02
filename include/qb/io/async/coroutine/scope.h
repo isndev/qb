@@ -42,7 +42,7 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
-#define QB_SCOPE_TRACE(fmt, ...) std::fprintf(stderr, "[scope] " fmt "\n", ##__VA_ARGS__)
+#define QB_SCOPE_TRACE(fmt, ...) std::fprintf(stderr, "[scope] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
 #if defined(__clang__) || defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -324,7 +324,7 @@ public:
             std::shared_ptr<scope_impl>              impl;
             std::shared_ptr<std::coroutine_handle<>> slot;
 
-            bool await_ready() const noexcept { return impl->active_count == 0; }
+            [[nodiscard]] bool await_ready() const noexcept { return impl->active_count == 0; }
 
             void await_suspend(std::coroutine_handle<> h) {
                 if (impl->active_count == 0) { schedule_via_current(h); return; }
@@ -353,7 +353,7 @@ public:
             std::shared_ptr<scope_impl>              impl;
             std::shared_ptr<std::coroutine_handle<>> slot;
 
-            bool await_ready() const noexcept {
+            [[nodiscard]] bool await_ready() const noexcept {
                 for (const auto& t : impl->tasks)
                     if (t->completed) return true;
                 return false;
@@ -400,7 +400,7 @@ public:
             std::shared_ptr<std::coroutine_handle<>> slot;
             std::chrono::milliseconds                timeout_ms;
 
-            bool await_ready() const noexcept { return impl->active_count == 0; }
+            [[nodiscard]] bool await_ready() const noexcept { return impl->active_count == 0; }
 
             void await_suspend(std::coroutine_handle<> h) {
                 if (impl->active_count == 0) { schedule_via_current(h); return; }

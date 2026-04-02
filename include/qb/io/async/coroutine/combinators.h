@@ -110,7 +110,7 @@ public:
     explicit when_all_awaiter(Tasks... tasks)
         : _state(std::make_shared<state_t>(std::move(tasks)...)) {}
 
-    bool await_ready() const noexcept {
+    [[nodiscard]] bool await_ready() const noexcept {
         return N == 0;
     }
 
@@ -149,7 +149,7 @@ public:
     explicit when_all_vector_awaiter(std::vector<task<T>> tasks)
         : _state(std::make_shared<state_t>(std::move(tasks))) {}
 
-    bool await_ready() const noexcept {
+    [[nodiscard]] bool await_ready() const noexcept {
         return _state->tasks.empty();
     }
 
@@ -218,11 +218,17 @@ auto when_all(std::vector<task<T>> tasks) {
 struct when_any_result {
     size_t index;
     std::any value;
+    std::exception_ptr exception; ///< Non-null when the winning task threw
 
     template <typename T>
     T get() const {
+        if (exception)
+            std::rethrow_exception(exception);
         return std::any_cast<T>(value);
     }
+
+    /// @brief Check whether the winning task completed with an exception
+    [[nodiscard]] bool has_exception() const noexcept { return exception != nullptr; }
 };
 
 // Structured binding: auto [index, value] = co_await when_any(...);
@@ -296,7 +302,8 @@ private:
                 state->done = true;
                 state->result = when_any_result{
                     I,
-                    std::is_void_v<value_type> ? std::any{} : std::move(stored)
+                    std::is_void_v<value_type> ? std::any{} : std::move(stored),
+                    nullptr
                 };
                 if (state->continuation)
                     schedule_via_current(state->continuation);
@@ -304,7 +311,7 @@ private:
         } catch (...) {
             if (!state->done) {
                 state->done = true;
-                state->result = when_any_result{I, std::any{}};
+                state->result = when_any_result{I, std::any{}, std::current_exception()};
                 if (state->continuation)
                     schedule_via_current(state->continuation);
             }
@@ -320,7 +327,7 @@ public:
     explicit when_any_awaiter(Tasks... tasks)
         : _state(std::make_shared<state_t>(std::move(tasks)...)) {}
 
-    bool await_ready() const noexcept {
+    [[nodiscard]] bool await_ready() const noexcept {
         return N == 0;
     }
 
@@ -331,7 +338,7 @@ public:
 
     result_type await_resume() {
         if (!_state->result) {
-            return when_any_result{0, std::any{}};
+            return when_any_result{0, std::any{}, nullptr};
         }
         return std::move(*_state->result);
     }
@@ -358,7 +365,7 @@ public:
     explicit when_any_vector_awaiter(std::vector<task<T>> tasks)
         : _state(std::make_shared<state_t>(std::move(tasks))) {}
 
-    bool await_ready() const noexcept {
+    [[nodiscard]] bool await_ready() const noexcept {
         return _state->tasks.empty();
     }
 
@@ -379,6 +386,7 @@ private:
     struct state_t {
         std::vector<task<T>> tasks;
         std::optional<result_type> result;
+        std::exception_ptr exception;
         bool done{false};  // single-thread
         std::coroutine_handle<> continuation;
         explicit state_t(std::vector<task<T>> t) : tasks(std::move(t)) {}
@@ -398,6 +406,7 @@ private:
         } catch (...) {
             if (!state->done) {
                 state->done = true;
+                state->exception = std::current_exception();
                 state->result = result_type{i, std::any{}};
                 if (state->continuation)
                     schedule_via_current(state->continuation);
@@ -485,7 +494,7 @@ public:
         : _state(std::make_shared<state_t>(std::move(t)))
         , _timeout(timeout) {}
 
-    bool await_ready() const noexcept { return false; }
+    [[nodiscard]] bool await_ready() const noexcept { return false; }
 
     void await_suspend(std::coroutine_handle<> h) {
         _state->continuation = h;
@@ -561,7 +570,7 @@ public:
         : _state(std::make_shared<state_t>(std::move(t)))
         , _timeout(timeout) {}
 
-    bool await_ready() const noexcept { return false; }
+    [[nodiscard]] bool await_ready() const noexcept { return false; }
 
     void await_suspend(std::coroutine_handle<> h) {
         _state->continuation = h;

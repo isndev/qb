@@ -118,7 +118,7 @@ public:
      * the last accepted connection.
      */
     io::tcp::socket &
-    getAccepted() {
+    getAccepted() noexcept {
         return _accepted_io;
     }
 };

@@ -388,10 +388,7 @@ public:
         if (handle_.promise().has_exception()) {
             std::rethrow_exception(handle_.promise().exception());
         }
-        // Force a copy/move into a local variable before returning
-        // This ensures the value is extracted before the task destructor runs
-        T result = std::move(handle_.promise().value());
-        return result;
+        return std::move(handle_.promise().value());
     }
 
     /**

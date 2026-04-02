@@ -119,7 +119,7 @@ public:
      * @param alpn_protocols The ALPN protocols to support.
      * @return True if the server is listening, false otherwise.
      */
-    bool listen(qb::io::uri uri,
+    [[nodiscard]] bool listen(qb::io::uri uri,
                 std::filesystem::path cert_file = {},
                 std::filesystem::path key_file = {},
                 std::vector<std::string> alpn_protocols = {}) {
