@@ -520,6 +520,74 @@ TEST_F(CancellationCoroutineTests, MakeCancellableMultipleSequential) {
 }
 
 // =============================================================================
+// TEST SUITE: Advanced Cancellation APIs
+// =============================================================================
+
+class CancellationAdvancedTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(CancellationAdvancedTests, YieldOrCancelYieldsAndThrows) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        cancellation_token token;
+        int iterations = 0;
+        try {
+            for (int i = 0; i < 100; ++i) {
+                ++iterations;
+                if (i == 3) token.cancel();
+                co_await yield_or_cancel(token);
+            }
+        } catch (const cancelled_error&) {
+        }
+        EXPECT_EQ(iterations, 4);
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(CancellationAdvancedTests, YieldOrCancelYieldsWithoutCancel) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        cancellation_token token;
+        int iterations = 0;
+        for (int i = 0; i < 5; ++i) {
+            ++iterations;
+            co_await yield_or_cancel(token);
+        }
+        EXPECT_EQ(iterations, 5);
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(CancellationAdvancedTests, WithDeadlineAlreadyCancelledToken) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        cancellation_token token;
+        token.cancel();
+        auto deadline = std::chrono::steady_clock::now() + 5s;
+        try {
+            co_await with_deadline(
+                []() -> task<int> {
+                    co_await sleep(100ms);
+                    co_return 42;
+                }(),
+                deadline, token);
+            ADD_FAILURE() << "Should throw";
+        } catch (const cancelled_error&) {
+        }
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

@@ -471,6 +471,79 @@ TEST_F(AsyncGeneratorHelpersTests, EmptyGenerator) {
 }
 
 // =============================================================================
+// TEST SUITE: Generator Advanced APIs
+// =============================================================================
+
+class GeneratorAdvancedTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(GeneratorAdvancedTests, FromIteratorYieldsRange) {
+    std::vector<int> data = {10, 20, 30, 40};
+    auto gen = from_iterator(data.begin(), data.end());
+    auto result = collect_to_vector(gen);
+    EXPECT_EQ(result.size(), 4u);
+    EXPECT_EQ(result[0], 10);
+    EXPECT_EQ(result[3], 40);
+}
+
+TEST_F(GeneratorAdvancedTests, FromIteratorEmpty) {
+    std::vector<int> data;
+    auto gen = from_iterator(data.begin(), data.end());
+    auto result = collect_to_vector(gen);
+    EXPECT_TRUE(result.empty());
+}
+
+TEST_F(GeneratorAdvancedTests, GeneratorYieldsThenEnds) {
+    auto finite_gen = []() -> generator<int> {
+        co_yield 1;
+        co_yield 2;
+    };
+
+    auto gen = finite_gen();
+    auto it = gen.begin();
+    EXPECT_NE(it, gen.end());
+    EXPECT_EQ(*it, 1);
+    ++it;
+    EXPECT_EQ(*it, 2);
+    ++it;
+    EXPECT_EQ(it, gen.end());
+}
+
+TEST_F(GeneratorAdvancedTests, GeneratorHasNextAndNext) {
+    auto gen = range(1, 4);
+    EXPECT_TRUE(gen.has_next());
+    EXPECT_EQ(gen.next(), 1);
+    EXPECT_TRUE(gen.has_next());
+    EXPECT_EQ(gen.next(), 2);
+    EXPECT_TRUE(gen.has_next());
+    EXPECT_EQ(gen.next(), 3);
+    EXPECT_FALSE(gen.has_next());
+}
+
+TEST_F(GeneratorAdvancedTests, GeneratorMoveSemantics) {
+    auto gen1 = range(1, 4);
+    auto gen2 = std::move(gen1);
+    auto result = collect_to_vector(gen2);
+    EXPECT_EQ(result.size(), 3u);
+}
+
+TEST_F(GeneratorAdvancedTests, AsyncGeneratorMoveSemantics) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto gen1 = range_async(3);
+        auto gen2 = std::move(gen1);
+        auto result = co_await ag_collect(std::move(gen2));
+        EXPECT_EQ(result.size(), 3u);
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

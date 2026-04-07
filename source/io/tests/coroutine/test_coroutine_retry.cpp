@@ -300,6 +300,121 @@ TEST_F(PredefinedPolicies, IdempotentPolicy) {
 }
 
 // =============================================================================
+// TEST SUITE: Advanced Retry APIs
+// =============================================================================
+
+class RetryAdvancedTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(RetryAdvancedTests, WithRetryUntilPredicateSuccess) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        int call_count = 0;
+        auto result = co_await with_retry_until(
+            [&]() -> task<int> {
+                co_return ++call_count;
+            },
+            [](int v) { return v >= 3; },
+            retry_policy{.max_attempts = 10, .base_delay = 1ms, .strategy = backoff_strategy::fixed}
+        );
+        EXPECT_EQ(result, 3);
+        EXPECT_EQ(call_count, 3);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(RetryAdvancedTests, WithRetryUntilExhaustsAttempts) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await with_retry_until(
+                []() -> task<int> { co_return 0; },
+                [](int v) { return v > 0; },
+                retry_policy{.max_attempts = 3, .base_delay = 1ms, .strategy = backoff_strategy::fixed}
+            );
+            ADD_FAILURE() << "Should have thrown retry_exhausted";
+        } catch (const retry_exhausted& e) {
+            EXPECT_EQ(e.attempts(), 3u);
+        }
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(RetryAdvancedTests, MakeRetryableWrapper) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        int call_count = 0;
+        auto retryable_fn = make_retryable(
+            [&]() -> task<int> {
+                if (++call_count < 3) throw std::runtime_error("fail");
+                co_return 42;
+            },
+            retry_policy{.max_attempts = 5, .base_delay = 1ms, .strategy = backoff_strategy::fixed}
+        );
+        auto result = co_await retryable_fn();
+        EXPECT_EQ(result, 42);
+        EXPECT_EQ(call_count, 3);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(RetryAdvancedTests, RetryDefaultPolicy) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        int call_count = 0;
+        auto result = co_await retry([&]() -> task<int> {
+            if (++call_count < 2) throw std::runtime_error("transient");
+            co_return 99;
+        });
+        EXPECT_EQ(result, 99);
+        done = true;
+    }());
+    run_for(2000ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(RetryAdvancedTests, AggressiveRetryPolicy) {
+    auto policy = aggressive_retry_policy();
+    EXPECT_EQ(policy.max_attempts, 20u);
+    EXPECT_EQ(policy.strategy, backoff_strategy::linear);
+    EXPECT_TRUE(policy.is_retryable(std::runtime_error("any")));
+}
+
+TEST_F(RetryAdvancedTests, RetryExhaustedAccessors) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await with_retry(
+                []() -> task<int> { throw std::runtime_error("test-err"); co_return 0; },
+                retry_policy{.max_attempts = 2, .base_delay = 1ms, .strategy = backoff_strategy::fixed}
+            );
+            ADD_FAILURE() << "Should have thrown retry_exhausted";
+        } catch (const retry_exhausted& e) {
+            EXPECT_EQ(e.attempts(), 2u);
+            EXPECT_NE(e.last_error(), nullptr);
+            try {
+                e.rethrow_last();
+                ADD_FAILURE() << "Should have thrown";
+            } catch (const std::runtime_error& inner) {
+                EXPECT_STREQ(inner.what(), "test-err");
+            }
+        }
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

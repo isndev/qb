@@ -575,6 +575,111 @@ TEST_F(ChannelTimeoutTests, RecvFor_ClosedChannelReturnsNullopt) {
 }
 
 // =============================================================================
+// TEST SUITE: Channel Advanced APIs
+// =============================================================================
+
+class ChannelAdvancedTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(ChannelAdvancedTests, ChannelRangeIteratesBufferedItems) {
+    channel<int> ch(10);
+    ch.try_send(1);
+    ch.try_send(2);
+    ch.try_send(3);
+
+    std::vector<int> collected;
+    for (auto val : channel_range(ch)) {
+        collected.push_back(val);
+    }
+    EXPECT_EQ(collected.size(), 3u);
+    EXPECT_EQ(collected[0], 1);
+    EXPECT_EQ(collected[2], 3);
+    EXPECT_TRUE(ch.empty());
+}
+
+TEST_F(ChannelAdvancedTests, ChannelRangeEmptyChannel) {
+    channel<int> ch(10);
+    std::vector<int> collected;
+    for (auto val : channel_range(ch)) {
+        collected.push_back(val);
+    }
+    EXPECT_TRUE(collected.empty());
+}
+
+TEST_F(ChannelAdvancedTests, MakeChannelFactory) {
+    auto ch = make_channel<std::string>(5);
+    ASSERT_NE(ch, nullptr);
+    EXPECT_EQ(ch->capacity(), 5u);
+    ch->try_send("hello");
+    auto val = ch->try_recv();
+    ASSERT_TRUE(val.has_value());
+    EXPECT_EQ(*val, "hello");
+}
+
+TEST_F(ChannelAdvancedTests, MPSCMultipleSenders) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        channel<int> ch(10);
+        for (int i = 0; i < 5; ++i) {
+            co_await ch.send(i);
+        }
+        std::vector<int> received;
+        while (auto v = ch.try_recv()) {
+            received.push_back(*v);
+        }
+        EXPECT_EQ(received.size(), 5u);
+        std::sort(received.begin(), received.end());
+        for (int i = 0; i < 5; ++i) {
+            EXPECT_EQ(received[i], i);
+        }
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(ChannelAdvancedTests, SendForSuccessPath) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        channel<int> ch(1);
+        bool sent = co_await ch.send_for(42, 100ms);
+        EXPECT_TRUE(sent);
+        auto v = ch.try_recv();
+        EXPECT_TRUE(v.has_value());
+        if (v.has_value()) EXPECT_EQ(*v, 42);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(ChannelAdvancedTests, RecvDrainsBufferOnClose) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        channel<int> ch(5);
+        co_await ch.send(10);
+        co_await ch.send(20);
+        ch.close();
+
+        auto v1 = co_await ch.recv();
+        auto v2 = co_await ch.recv();
+        auto v3 = co_await ch.recv();
+
+        EXPECT_TRUE(v1.has_value());
+        EXPECT_EQ(*v1, 10);
+        EXPECT_TRUE(v2.has_value());
+        EXPECT_EQ(*v2, 20);
+        EXPECT_FALSE(v3.has_value());
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

@@ -656,6 +656,78 @@ TEST_F(CoroutineSchedulerTests, BurstScheduleResumeStress) {
 }
 
 // =============================================================================
+// TEST SUITE: Task and Scheduler Advanced APIs
+// =============================================================================
+
+TEST_F(CoroutineSchedulerTests, TaskDetachRunsIndependently) {
+    std::atomic<bool> finished{false};
+
+    auto fn = [&finished]() -> task<void> {
+        co_await sleep(20ms);
+        finished = true;
+    };
+
+    auto t = fn();
+    coro_scheduler().spawn(std::move(t));
+
+    run_for(200ms);
+    EXPECT_TRUE(finished.load());
+}
+
+TEST_F(CoroutineSchedulerTests, TaskDoneReflectsCompletion) {
+    auto fn = []() -> task<int> {
+        co_return 42;
+    };
+
+    auto t = fn();
+    EXPECT_FALSE(t.done());
+
+    bool done = false;
+    coro_scheduler().spawn([&t, &done]() -> task<void> {
+        auto val = co_await std::move(t);
+        EXPECT_EQ(val, 42);
+        done = true;
+    }());
+    run_for(50ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(CoroutineSchedulerTests, TaskOperatorBoolChecksValidity) {
+    auto fn = []() -> task<int> { co_return 1; };
+    auto t = fn();
+    EXPECT_TRUE(static_cast<bool>(t));
+
+    auto t2 = std::move(t);
+    EXPECT_FALSE(static_cast<bool>(t));
+    EXPECT_TRUE(static_cast<bool>(t2));
+}
+
+TEST_F(CoroutineSchedulerTests, SpawnCallableOverload) {
+    std::atomic<bool> called{false};
+
+    coro_scheduler().spawn([&called]() -> task<void> {
+        called = true;
+        co_return;
+    });
+
+    run_for(50ms);
+    EXPECT_TRUE(called.load());
+}
+
+TEST_F(CoroutineSchedulerTests, PendingCountAfterSpawn) {
+    auto& sched = coro_scheduler();
+
+    std::atomic<bool> finished{false};
+    sched.spawn([&finished]() -> task<void> {
+        co_await sleep(50ms);
+        finished = true;
+    }());
+
+    run_for(200ms);
+    EXPECT_TRUE(finished.load());
+}
+
+// =============================================================================
 // MAIN
 // =============================================================================
 

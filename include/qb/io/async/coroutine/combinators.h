@@ -379,6 +379,10 @@ public:
     }
 
     result_type await_resume() {
+        if (_state->exception)
+            std::rethrow_exception(_state->exception);
+        if (!_state->result)
+            return result_type{0, std::any{}};  // empty vector edge case
         return std::move(*_state->result);
     }
 

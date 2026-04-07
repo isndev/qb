@@ -32,6 +32,7 @@
 #include <any>
 #include <exception>
 #include <memory>
+#include <optional>
 #include <vector>
 #include "task.h"
 #include "scheduler.h"
@@ -54,14 +55,13 @@ class shared_task {
     struct state {
         enum class status { pending, ready, failed };
 
-        status             _status{status::pending};
-        T                  _value{};
-        std::exception_ptr _error;
-        // All coroutines waiting for the result
+        status                _status{status::pending};
+        std::optional<T>      _value;
+        std::exception_ptr    _error;
         std::vector<std::coroutine_handle<>> _waiters;
 
         void complete(T val) {
-            _value  = std::move(val);
+            _value.emplace(std::move(val));
             _status = status::ready;
             flush();
         }
@@ -78,7 +78,7 @@ class shared_task {
 
         T get() const {
             if (_status == status::failed) std::rethrow_exception(_error);
-            return _value;
+            return *_value;
         }
 
     private:

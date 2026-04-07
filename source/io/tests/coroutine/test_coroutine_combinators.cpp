@@ -694,6 +694,95 @@ TEST_F(CoroutineLifetime, WhenAnyVectorFirstWins) {
 }
 
 // =============================================================================
+// TEST SUITE: when_any_result API
+// =============================================================================
+
+class WhenAnyResultTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(WhenAnyResultTests, GetExtractsTypedValue) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto result = co_await when_any(
+            []() -> task<int> { co_return 42; }(),
+            []() -> task<std::string> { co_await sleep(1s); co_return "slow"; }()
+        );
+        auto val = result.get<int>();
+        EXPECT_EQ(val, 42);
+        EXPECT_EQ(result.index, 0u);
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(WhenAnyResultTests, HasExceptionReflectsState) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto result = co_await when_any(
+            []() -> task<int> { throw std::runtime_error("boom"); co_return 0; }(),
+            []() -> task<int> { co_await sleep(1s); co_return 99; }()
+        );
+        EXPECT_TRUE(result.has_exception());
+        EXPECT_THROW(result.get<int>(), std::runtime_error);
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(WhenAnyResultTests, HasExceptionFalseOnSuccess) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto result = co_await when_any(
+            []() -> task<int> { co_return 1; }(),
+            []() -> task<int> { co_await sleep(1s); co_return 2; }()
+        );
+        EXPECT_FALSE(result.has_exception());
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(WhenAnyResultTests, StructuredBindingDecomposition) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto result = co_await when_any(
+            []() -> task<int> { co_return 7; }(),
+            []() -> task<int> { co_await sleep(1s); co_return 0; }()
+        );
+        auto [idx, val] = result;
+        EXPECT_EQ(idx, 0u);
+        EXPECT_EQ(std::any_cast<int>(val), 7);
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(WhenAnyResultTests, WhenAllWithExceptionPropagation) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await when_all(
+                []() -> task<int> { co_return 1; }(),
+                []() -> task<int> { throw std::runtime_error("fail"); co_return 0; }()
+            );
+            ADD_FAILURE() << "Should have thrown";
+        } catch (const std::runtime_error& e) {
+            EXPECT_STREQ(e.what(), "fail");
+        }
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

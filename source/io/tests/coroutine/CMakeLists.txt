@@ -170,6 +170,13 @@ qb_add_test(
     DEPENDS qb-io gtest_main
 )
 
+# Regression tests for all identified and fixed coroutine bugs
+qb_add_test(
+    NAME qb-io-gtest-coroutine-regression
+    SOURCES test_coroutine_regression.cpp
+    DEPENDS qb-io gtest_main
+)
+
 # -----------------------------------------------------------------------------
 # DISABLED: coroutine client/stream/connector (moved to coroutine/old/, redesign pending)
 # -----------------------------------------------------------------------------
