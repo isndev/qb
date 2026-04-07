@@ -24,7 +24,6 @@
 
 #ifndef QB_IO_ASYNC_PROTOCOL_HANDSHAKE_H
 #define QB_IO_ASYNC_PROTOCOL_HANDSHAKE_H
-#include <functional>
 #include "../async/protocol.h"
 #include "../async/event/handshake.h"
 namespace qb::io::protocol {
@@ -75,7 +74,10 @@ public:
     getMessageSize() noexcept final {
         if (_handshake_done)
             return 0;
-        return static_cast<size_t>(this->_io.transport().do_handshake());
+        const auto result = this->_io.transport().do_handshake();
+        if (result <= 0)
+            return 0;
+        return static_cast<std::size_t>(result);
     }
 
     /**
@@ -94,9 +96,7 @@ public:
     }
 
     /**
-     * @brief Resets the protocol state.
-     * @details This protocol is stateless regarding message parsing (it only checks handshake status),
-     *          so this method is a no-op.
+     * @brief Resets the protocol state, allowing a new handshake cycle.
      */
     void
     reset() noexcept final {

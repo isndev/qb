@@ -26,17 +26,17 @@
  * @ingroup IO
  */
 
+#ifndef QB_IO_URI_H_
+#define QB_IO_URI_H_
+
 #include <charconv>
+#include <iterator>
 #include <qb/io/config.h>
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/build_macros.h>
-#include <regex>
 #include <string>
 #include <string_view>
 #include <vector>
-
-#ifndef QB_IO_URI_H_
-#define QB_IO_URI_H_
 
 namespace qb::io {
 
@@ -275,20 +275,22 @@ public:
      */
     template <typename _IT>
     static std::string
-    decode(_IT begin, _IT end) noexcept {
+    decode(_IT begin, _IT end) {
         std::string out;
         char        c, v1, v2{};
 
         while (begin != end) {
             c = *(begin++);
             if (c == '%') {
+                if (std::distance(begin, end) < 2)
+                    break;
                 if ((v1 = tbl[(unsigned char) *(begin++)]) < 0 ||
                     (v2 = tbl[(unsigned char) *(begin++)]) < 0) {
                     break;
                 }
-                c = (v1 << 4) | v2;
+                c = static_cast<char>((v1 << 4) | v2);
             }
-            out += (c);
+            out += c;
         }
 
         return out;
@@ -311,7 +313,7 @@ public:
      */
     template <typename _IT>
     static std::string
-    encode(_IT begin, _IT end) noexcept {
+    encode(_IT begin, _IT end) {
         std::string encoded;
 
         encoded.reserve(static_cast<ptrdiff_t>(end - begin) * 3);

@@ -88,10 +88,13 @@ public:
     onMessage(std::size_t size) noexcept final {
         const auto parsed = this->shiftSize(size);
         const auto data   = this->_io.in().cbegin();
-
-        this->_io.on(message{
-            parsed, data,
-            nlohmann::json::parse(std::string_view(data, parsed), nullptr, false)});
+        try {
+            this->_io.on(message{
+                parsed, data,
+                nlohmann::json::parse(std::string_view(data, parsed), nullptr, false)});
+        } catch (...) {
+            this->not_ok();
+        }
     }
 };
 
@@ -152,8 +155,13 @@ public:
     onMessage(std::size_t size) noexcept final {
         const auto parsed = this->shiftSize(size);
         const auto data   = this->_io.in().cbegin();
-        this->_io.on(message{
-            parsed, data, nlohmann::json::from_msgpack(std::string_view(data, parsed))});
+        try {
+            this->_io.on(message{
+                parsed, data,
+                nlohmann::json::from_msgpack(std::string_view(data, parsed), true, false)});
+        } catch (...) {
+            this->not_ok();
+        }
     }
 };
 

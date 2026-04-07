@@ -56,7 +56,7 @@ public:
      * that is not void, an instance of that protocol is created and attached
      * to the server.
      */
-    server() noexcept {
+    server() {
         if constexpr (qb::has_type_Protocol<_Derived>) {
             if constexpr (!std::is_void_v<typename _Derived::Protocol>) {
                 this->template switch_protocol<typename _Derived::Protocol>(

@@ -348,9 +348,15 @@ uri::uri(std::string &&str, int af) noexcept
 
 // Enhanced parsing implementation
 bool uri::parse() noexcept {
+    _scheme = {};
+    _user_info = {};
+    _host = {};
+    _port = {};
+    _path = {};
+    _raw_queries = {};
+    _fragment = {};
     _queries.clear();
 
-    // If source is empty, return with default empty state
     if (_source.empty()) {
         _path = "/";
         return true;
@@ -749,12 +755,14 @@ uri& uri::operator=(std::string &&str) noexcept {
 }
 
 uri& uri::operator=(uri const &rhs) {
+    _af = rhs._af;
     _source = rhs._source;
     parse();
     return *this;
 }
 
 uri& uri::operator=(uri &&rhs) noexcept {
+    _af = rhs._af;
     _source = std::move(rhs._source);
     parse();
     return *this;

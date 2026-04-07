@@ -23,6 +23,7 @@
  * @ingroup IO
  */
 
+#include <limits>
 #include <qb/io/tcp/ssl/socket.h>
 #include <openssl/err.h>    // For error handling
 #include <openssl/x509v3.h> // For advanced certificate properties and OCSP, SANs
@@ -36,28 +37,35 @@
 
 // Helper function to convert ASN1_TIME to time_t
 static time_t asn1_time_to_time_t(const ASN1_TIME *time) {
-    if (!time) return 0;
-    struct tm t;
-    const char *str = (const char *)time->data;
-    size_t i = 0;
+    if (!time || !time->data || time->length < 1)
+        return 0;
 
-    memset(&t, 0, sizeof(t));
+    const auto len = static_cast<std::size_t>(time->length);
+    const char *str = reinterpret_cast<const char *>(time->data);
+    std::size_t i = 0;
+    struct tm t{};
 
-    if (time->type == V_ASN1_UTCTIME) { /* YYMMDDHHMMSSZ */
+    const std::size_t min_len = (time->type == V_ASN1_UTCTIME) ? 12 : 14;
+    if (len < min_len)
+        return 0;
+
+    if (time->type == V_ASN1_UTCTIME) {
         t.tm_year = (str[i++] - '0') * 10; t.tm_year += (str[i++] - '0');
-        if (t.tm_year < 70) t.tm_year += 100; // Adjust for 2-digit year (UTCTIME is 1950-2049)
-    } else if (time->type == V_ASN1_GENERALIZEDTIME) { /* YYYYMMDDHHMMSSZ */
+        if (t.tm_year < 70) t.tm_year += 100;
+    } else if (time->type == V_ASN1_GENERALIZEDTIME) {
         t.tm_year = (str[i++] - '0') * 1000; t.tm_year += (str[i++] - '0') * 100;
         t.tm_year += (str[i++] - '0') * 10; t.tm_year += (str[i++] - '0');
         t.tm_year -= 1900;
+    } else {
+        return 0;
     }
-    t.tm_mon = (str[i++] - '0') * 10; t.tm_mon += (str[i++] - '0'); --t.tm_mon; // Month is 0-11
+    t.tm_mon  = (str[i++] - '0') * 10; t.tm_mon  += (str[i++] - '0'); --t.tm_mon;
     t.tm_mday = (str[i++] - '0') * 10; t.tm_mday += (str[i++] - '0');
     t.tm_hour = (str[i++] - '0') * 10; t.tm_hour += (str[i++] - '0');
-    t.tm_min = (str[i++] - '0') * 10; t.tm_min += (str[i++] - '0');
-    t.tm_sec = (str[i++] - '0') * 10; t.tm_sec += (str[i++] - '0');
+    t.tm_min  = (str[i++] - '0') * 10; t.tm_min  += (str[i++] - '0');
+    t.tm_sec  = (str[i++] - '0') * 10; t.tm_sec  += (str[i++] - '0');
 
-    return mktime(&t); // mktime expects local time, OpenSSL times are usually UTC. GMT adjustment might be needed based on system.
+    return mktime(&t);
 }
 
 // Helper to convert ASN1_INTEGER to hex string
@@ -115,7 +123,8 @@ get_certificate(SSL *ssl) {
                 if (san->type == GEN_DNS) {
                     ASN1_IA5STRING *dns_name = san->d.dNSName;
                     if (dns_name && dns_name->data && dns_name->length > 0) {
-                        san_str = std::string("DNS:") + reinterpret_cast<char*>(dns_name->data);
+                        san_str = "DNS:" + std::string(reinterpret_cast<const char*>(dns_name->data),
+                                                       static_cast<std::size_t>(dns_name->length));
                     }
                 } else if (san->type == GEN_IPADD) {
                     ASN1_OCTET_STRING *ip_addr = san->d.iPAddress;
@@ -453,11 +462,9 @@ socket::~socket() noexcept {
         const auto handle    = ssl_handle();
         const auto ctx       = SSL_get_SSL_CTX(handle);
         const auto is_client = !SSL_is_server(handle);
-        // SSL_shutdown(handle);
-        // SSL_free(handle);
-        if (is_client)
-            SSL_CTX_free(ctx);
         _ssl_handle.reset(nullptr);
+        if (is_client && ctx)
+            SSL_CTX_free(ctx);
         _connected = false;
     }
 }
@@ -466,20 +473,28 @@ void
 socket::init(SSL *handle) noexcept {
     _connected = false;
     if (!_ssl_handle) {
-        const auto ctx = SSL_CTX_new(SSLv23_client_method());
+        auto *ctx = SSL_CTX_new(TLS_client_method());
         _ssl_handle.reset(SSL_new(ctx));
         if (!_ssl_handle) {
             SSL_CTX_free(ctx);
             return;
         }
-    } else 
-    _ssl_handle.reset(handle);
+    } else {
+        auto *old_ssl = _ssl_handle.get();
+        auto *old_ctx = SSL_get_SSL_CTX(old_ssl);
+        bool  was_client = !SSL_is_server(old_ssl);
+        _ssl_handle.reset(handle);
+        if (was_client && old_ctx)
+            SSL_CTX_free(old_ctx);
+    }
 }
 
 int
 socket::handCheck() noexcept {
     if (_connected)
         return 1;
+    if (!_ssl_handle)
+        return -1;
     auto ret = SSL_do_handshake(ssl_handle());
     if (ret != 1) {
         auto err = SSL_get_error(ssl_handle(), ret);
@@ -536,7 +551,7 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
     if (ret != 0 && !socket_no_error(err) && err != EISCONN)
         return ret;
     if (!_ssl_handle) {
-        const auto ctx = SSL_CTX_new(SSLv23_client_method());
+        const auto ctx = SSL_CTX_new(TLS_client_method());
         _ssl_handle.reset(SSL_new(ctx));
         if (!_ssl_handle) {
             SSL_CTX_free(ctx);
@@ -562,7 +577,7 @@ socket::connect(endpoint const &ep, std::string const &hostname,
     if (ret != 0 && !socket_no_error(err) && err != EISCONN)
         return ret;
     if (!_ssl_handle) {
-        const auto ctx = SSL_CTX_new(SSLv23_client_method());
+        const auto ctx = SSL_CTX_new(TLS_client_method());
         _ssl_handle.reset(SSL_new(ctx));
         if (!_ssl_handle) {
             SSL_CTX_free(ctx);
@@ -645,7 +660,7 @@ socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
     if (ret != 0 && !socket_no_error(qb::io::socket::get_last_errno()))
         return ret;
     if (!_ssl_handle) {
-        const auto ctx = SSL_CTX_new(SSLv23_client_method());
+        const auto ctx = SSL_CTX_new(TLS_client_method());
         _ssl_handle.reset(SSL_new(ctx));
         if (!_ssl_handle) {
             SSL_CTX_free(ctx);
@@ -711,6 +726,8 @@ int
 socket::read(void *data, std::size_t size) noexcept {
     if (!_ssl_handle)
         return -1;
+    if (size > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        size = static_cast<std::size_t>(std::numeric_limits<int>::max());
     auto ret = handCheck();
     if (ret == 1) {
         ret = SSL_read(ssl_handle(), data, static_cast<int>(size));
@@ -740,6 +757,8 @@ int
 socket::write(const void *data, std::size_t size) noexcept {
     if (!_ssl_handle)
         return -1;
+    if (size > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        size = static_cast<std::size_t>(std::numeric_limits<int>::max());
     auto ret = handCheck();
     if (ret == 1) {
         ret = SSL_write(ssl_handle(), data, static_cast<int>(size));
@@ -880,7 +899,8 @@ socket::get_peer_certificate_chain() const noexcept {
                     if (san_entry->type == GEN_DNS) {
                         ASN1_IA5STRING *dns_name = san_entry->d.dNSName;
                         if (dns_name && dns_name->data && dns_name->length > 0) {
-                           san_str_entry = std::string("DNS:") + reinterpret_cast<char*>(dns_name->data);
+                           san_str_entry = "DNS:" + std::string(reinterpret_cast<const char*>(dns_name->data),
+                                                                static_cast<std::size_t>(dns_name->length));
                         }
                     } else if (san_entry->type == GEN_IPADD) {
                         ASN1_OCTET_STRING *ip_addr = san_entry->d.iPAddress;

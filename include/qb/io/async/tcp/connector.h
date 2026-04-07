@@ -91,21 +91,19 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
     /** Absolute libev time `ev_time() + timeout` when `timeout > 0`; else `0` (no deadline). */
     const double deadline_;
 
-    /** Set after exactly one successful delivery to `func_` (immediate or async path). */
-    std::atomic<bool>        completed_{false};
+    bool                     completed_{false};
     IRegisteredKernelEvent * io_iface_{nullptr};
-    /** Strong ref to self while an async path (write watcher or deadline) may still run. */
     std::shared_ptr<connector> self_hold_;
 
     /**
      * @brief Marks this connect attempt as finished for callback purposes.
      * @return true if this call is the first completion; false if already completed.
-     * @private
      */
     [[nodiscard]] bool
     mark_completed_once() noexcept {
-        bool expected = false;
-        return completed_.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
+        if (completed_) return false;
+        completed_ = true;
+        return true;
     }
 
     /**
@@ -208,8 +206,8 @@ public:
             socket_.connected();
             deliver(std::move(socket_));
         } else {
-            LOG_DEBUG("Failed to connect to " << remote_.source() << " err="
-                                              << qb::io::socket::get_last_errno());
+            socket_.disconnect();
+            LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << err);
             deliver(Socket_{});
         }
     }

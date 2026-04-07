@@ -25,8 +25,9 @@
 #ifndef QB_IO_ASYNC_EVENT_DISCONNECTED_H
 #define QB_IO_ASYNC_EVENT_DISCONNECTED_H
 
-#include <system_error>
+#include <cerrno>
 #include <string>
+#include <system_error>
 
 namespace qb::io::async::event {
 

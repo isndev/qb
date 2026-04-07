@@ -46,8 +46,12 @@ listener::accept() const noexcept {
     auto sock = tcp::listener::accept();
     if (!sock.is_open())
         return {};
-    const auto ctx = SSL_new(ssl_handle());
-    SSL_set_fd(ctx, sock.native_handle());
+    auto *ctx = SSL_new(ssl_handle());
+    if (!ctx) {
+        sock.close();
+        return {};
+    }
+    SSL_set_fd(ctx, static_cast<int>(sock.native_handle()));
     SSL_set_accept_state(ctx);
     return {ctx, sock};
 }
@@ -57,7 +61,11 @@ listener::accept(ssl::socket &ssock) const noexcept {
     tcp::socket sock;
     auto        ret = tcp::listener::accept(sock);
     if (!ret) {
-        const auto ctx = SSL_new(ssl_handle());
+        auto *ctx = SSL_new(ssl_handle());
+        if (!ctx) {
+            sock.close();
+            return -1;
+        }
         SSL_set_accept_state(ctx);
         SSL_set_fd(ctx, static_cast<int>(sock.native_handle()));
         ssock = ssl::socket{ctx, sock};
@@ -213,12 +221,12 @@ long listener::get_session_cache_size() const {
 }
 
 long listener::set_options(long options_to_set) {
-    if (!_ctx) return SSL_CTX_get_options(_ctx.get());
+    if (!_ctx) return 0;
     return SSL_CTX_set_options(_ctx.get(), options_to_set);
 }
 
 long listener::clear_options(long options_to_clear) {
-    if (!_ctx) return SSL_CTX_get_options(_ctx.get());
+    if (!_ctx) return 0;
     return SSL_CTX_clear_options(_ctx.get(), options_to_clear);
 }
 

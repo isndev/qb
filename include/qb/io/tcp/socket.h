@@ -22,11 +22,10 @@
  * @ingroup TCP
  */
 
-#include "../system/sys__socket.h"
-#include "../uri.h"
-
 #ifndef QB_IO_TCP_SOCKET_H_
 #define QB_IO_TCP_SOCKET_H_
+#include "../system/sys__socket.h"
+#include "../uri.h"
 
 namespace qb::io::tcp {
 

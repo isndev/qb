@@ -51,7 +51,7 @@ public:
      * @brief Indicates that this transport implementation resets its input buffer state
      *        when a read operation is pending (characteristic of datagram processing).
      */
-    constexpr static const bool has_reset_on_pending_read = true;
+    static constexpr bool has_reset_on_pending_read = true;
 
     /**
      * @struct identity
@@ -100,9 +100,15 @@ public:
          * @return true if identities differ, false otherwise
          */
         bool
-        operator!=(identity const &rhs) const noexcept {
-            return std::string_view(reinterpret_cast<const char *>(this), len()) !=
+        operator==(identity const &rhs) const noexcept {
+            return len() == rhs.len() &&
+                   std::string_view(reinterpret_cast<const char *>(this), len()) ==
                    std::string_view(reinterpret_cast<const char *>(&rhs), rhs.len());
+        }
+
+        bool
+        operator!=(identity const &rhs) const noexcept {
+            return !(*this == rhs);
         }
     };
 
@@ -232,7 +238,7 @@ public:
      *          and `setDestination(_remote_source)` is called to set this as the default reply-to target.
      *          The maximum datagram size read is `io::udp::socket::MaxDatagramSize`.
      */
-    int
+    [[nodiscard]] int
     read() noexcept {
         const auto ret =
             transport().read(_in_buffer.allocate_back(io::udp::socket::MaxDatagramSize),
@@ -240,6 +246,8 @@ public:
         if (qb::likely(ret > 0)) {
             _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
             setDestination(_remote_source);
+        } else {
+            _in_buffer.free_back(io::udp::socket::MaxDatagramSize);
         }
         return ret;
     }

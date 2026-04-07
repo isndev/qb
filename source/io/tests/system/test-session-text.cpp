@@ -294,6 +294,189 @@ TEST(Session, COMMAND_OVER_SECURE_UTCP) {
 
 #endif
 
+// ---------------------------------------------------------------------------
+// Binary protocol (basic_binary16) — exercises the OOB read fix
+// ---------------------------------------------------------------------------
+
+static std::atomic<std::size_t> bin_msg_count_server{0};
+static std::atomic<std::size_t> bin_msg_count_client{0};
+
+constexpr std::size_t BIN_ITERATIONS = 500;
+
+bool bin_all_done() {
+    return bin_msg_count_server >= BIN_ITERATIONS &&
+           bin_msg_count_client >= BIN_ITERATIONS;
+}
+
+class BinaryServer;
+
+class BinaryServerSession
+    : public use<BinaryServerSession>::tcp::client<BinaryServer> {
+public:
+    using Protocol = qb::protocol::text::binary16<BinaryServerSession>;
+
+    explicit BinaryServerSession(IOServer &server)
+        : client(server) {}
+
+    void
+    on(Protocol::message &&msg) {
+        EXPECT_EQ(msg.size, sizeof(STRING_MESSAGE) - 1);
+        EXPECT_EQ(std::string_view(msg.data, msg.size), STRING_MESSAGE);
+
+        uint16_t len = htons(static_cast<uint16_t>(msg.size));
+        *this << std::string_view(reinterpret_cast<const char *>(&len), sizeof(len))
+              << std::string_view(msg.data, msg.size);
+        ++bin_msg_count_server;
+    }
+};
+
+class BinaryServer
+    : public use<BinaryServer>::tcp::server<BinaryServerSession> {
+public:
+    void on(IOSession &) {}
+};
+
+class BinaryClient : public use<BinaryClient>::tcp::client<> {
+public:
+    using Protocol = qb::protocol::text::binary16<BinaryClient>;
+
+    void
+    on(Protocol::message &&msg) {
+        EXPECT_EQ(msg.size, sizeof(STRING_MESSAGE) - 1);
+        EXPECT_EQ(std::string_view(msg.data, msg.size), STRING_MESSAGE);
+        ++bin_msg_count_client;
+    }
+};
+
+TEST(Session, BINARY16_OVER_TCP) {
+    async::init();
+    bin_msg_count_server = 0;
+    bin_msg_count_client = 0;
+
+    BinaryServer server;
+    server.transport().listen_v4(9997);
+    server.start();
+
+    std::thread t([]() {
+        async::init();
+        BinaryClient client;
+        if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", 9997)) {
+            throw std::runtime_error("could not connect");
+        }
+        client.start();
+
+        for (auto i = 0uz; i < BIN_ITERATIONS; ++i) {
+            uint16_t len = htons(static_cast<uint16_t>(sizeof(STRING_MESSAGE) - 1));
+            client.publish(std::string_view(reinterpret_cast<const char *>(&len), sizeof(len)),
+                           std::string_view(STRING_MESSAGE, sizeof(STRING_MESSAGE) - 1));
+        }
+
+        while (async::run(EVRUN_NOWAIT) > 0 || !bin_all_done());
+    });
+
+    while (async::run(EVRUN_NOWAIT) > 0 || !bin_all_done());
+    t.join();
+
+    EXPECT_EQ(bin_msg_count_server, BIN_ITERATIONS);
+    EXPECT_EQ(bin_msg_count_client, BIN_ITERATIONS);
+}
+
+// ---------------------------------------------------------------------------
+// Protocol switch mid-session — text -> binary16
+// ---------------------------------------------------------------------------
+
+static std::atomic<std::size_t> switch_text_count{0};
+static std::atomic<std::size_t> switch_bin_count{0};
+
+class ProtoSwitchServer;
+
+class ProtoSwitchSession
+    : public use<ProtoSwitchSession>::tcp::client<ProtoSwitchServer> {
+public:
+    using Protocol = qb::protocol::text::command<ProtoSwitchSession>;
+
+    explicit ProtoSwitchSession(IOServer &server)
+        : client(server) {}
+
+    void
+    on(Protocol::message &&msg) {
+        ++switch_text_count;
+        if (msg.text == "SWITCH") {
+            switch_protocol<qb::protocol::text::binary16<ProtoSwitchSession>>(
+                static_cast<ProtoSwitchSession &>(*this));
+        } else {
+            *this << msg.text << Protocol::end;
+        }
+    }
+
+    void
+    on(qb::protocol::text::binary16<ProtoSwitchSession>::message &&msg) {
+        ++switch_bin_count;
+        uint16_t len = htons(static_cast<uint16_t>(msg.size));
+        *this << std::string_view(reinterpret_cast<const char *>(&len), sizeof(len))
+              << std::string_view(msg.data, msg.size);
+    }
+};
+
+class ProtoSwitchServer
+    : public use<ProtoSwitchServer>::tcp::server<ProtoSwitchSession> {
+public:
+    void on(IOSession &) {}
+};
+
+TEST(Session, PROTOCOL_SWITCH_TEXT_TO_BINARY) {
+    async::init();
+    switch_text_count = 0;
+    switch_bin_count = 0;
+
+    ProtoSwitchServer server;
+    server.transport().listen_v4(9996);
+    server.start();
+
+    std::atomic<bool> done{false};
+    std::thread t([&done]() {
+        qb::io::tcp::socket sock;
+        ASSERT_EQ(sock.connect_v4("127.0.0.1", 9996), SocketStatus::Done);
+
+        sock.write("hello\n", 6);
+        char buf[512]{};
+        sock.set_nonblocking(false);
+        auto n = sock.read(buf, sizeof(buf));
+        EXPECT_GT(n, 0);
+        if (n > 0)
+            EXPECT_EQ(std::string_view(buf, 5), "hello");
+
+        sock.write("SWITCH\n", 7);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        const char payload[] = "binary_data!";
+        uint16_t len = htons(static_cast<uint16_t>(sizeof(payload) - 1));
+        sock.write(reinterpret_cast<const char *>(&len), sizeof(len));
+        sock.write(payload, sizeof(payload) - 1);
+
+        char bin_buf[512]{};
+        n = sock.read(bin_buf, sizeof(bin_buf));
+        EXPECT_GT(n, 0);
+        if (n > 2) {
+            uint16_t got_len = ntohs(*reinterpret_cast<uint16_t *>(bin_buf));
+            EXPECT_EQ(got_len, sizeof(payload) - 1);
+            EXPECT_EQ(std::string_view(bin_buf + 2, got_len), payload);
+        }
+
+        sock.disconnect();
+        done = true;
+    });
+
+    for (auto i = 0; i < 100 && !done; ++i) {
+        async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    t.join();
+
+    EXPECT_GE(switch_text_count, 1u);
+    EXPECT_GE(switch_bin_count, 1u);
+}
+
 // OVER UDP
 
 class TestUDPServerClient : public use<TestUDPServerClient>::udp::server {

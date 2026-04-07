@@ -80,7 +80,7 @@ struct base : public _EV_EVENT {
      * @brief Constructor.
      * @param loop Reference to the libev event loop (`ev::loop_ref`) this event will be associated with.
      */
-    explicit base(ev::loop_ref loop)
+    explicit base(ev::loop_ref loop) noexcept
         : _EV_EVENT(loop)
         , _interface(nullptr)
         , _revents(0) {}

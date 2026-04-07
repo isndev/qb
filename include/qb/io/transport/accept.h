@@ -47,7 +47,7 @@ class accept {
 
 public:
     /** @brief Indicates that this transport implementation is not secure */
-    constexpr bool is_secure() const noexcept { return false; }
+    static constexpr bool is_secure() noexcept { return false; }
     /** @brief Type of the underlying transport I/O */
     using transport_io_type = io::tcp::listener;
 

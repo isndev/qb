@@ -253,8 +253,8 @@ public:
      */
     void
     unregisterEvent(IRegisteredKernelEvent *kevent) {
-        _registeredEvents.erase(kevent);
-        delete kevent;
+        if (kevent && _registeredEvents.erase(kevent))
+            delete kevent;
     }
 
     /**

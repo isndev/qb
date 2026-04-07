@@ -29,7 +29,14 @@
 #include <qb/io/async.h>
 #include <qb/io/async/coroutine.h>
 #include <qb/io/async/tcp/connector.h>
+#include <qb/io/stream.h>
+#include <qb/io/transport/udp.h>
+#include <qb/uuid.h>
+#include <limits>
+#include <set>
 #include <thread>
+#include <vector>
+#include <unordered_set>
 
 constexpr const unsigned short port = 64322;
 
@@ -465,6 +472,109 @@ TEST(UNIX_UDP, NonBlocking) {
 #endif
 
 //
+// ---------------------------------------------------------------------------
+// UUID thread safety
+// ---------------------------------------------------------------------------
+
+TEST(SocketUtils, UUIDThreadSafety) {
+    constexpr int num_threads = 8;
+    constexpr int uuids_per_thread = 500;
+
+    std::vector<std::vector<qb::uuid>> results(num_threads);
+    std::vector<std::thread> threads;
+
+    for (int t = 0; t < num_threads; ++t) {
+        threads.emplace_back([&results, t]() {
+            results[t].reserve(uuids_per_thread);
+            for (int i = 0; i < uuids_per_thread; ++i) {
+                results[t].push_back(qb::generate_random_uuid());
+            }
+        });
+    }
+
+    for (auto &th : threads)
+        th.join();
+
+    std::set<std::string> all_uuids;
+    for (auto &vec : results)
+        for (auto &u : vec)
+            all_uuids.insert(uuids::to_string(u));
+
+    EXPECT_EQ(all_uuids.size(), static_cast<std::size_t>(num_threads * uuids_per_thread));
+}
+
+// ---------------------------------------------------------------------------
+// Endpoint on invalid fd
+// ---------------------------------------------------------------------------
+
+TEST(SocketUtils, EndpointOnInvalidFd) {
+    auto local = qb::io::socket::local_endpoint(qb::io::inet::invalid_socket);
+    EXPECT_FALSE(local);
+
+    auto peer = qb::io::socket::peer_endpoint(qb::io::inet::invalid_socket);
+    EXPECT_FALSE(peer);
+}
+
+TEST(SocketUtils, EndpointOnValidConnection) {
+    qb::io::tcp::listener listener;
+    EXPECT_EQ(listener.listen_v4(64399), qb::io::SocketStatus::Done);
+
+    std::thread t([]() {
+        qb::io::tcp::socket sock;
+        EXPECT_EQ(sock.connect_v4("127.0.0.1", 64399), qb::io::SocketStatus::Done);
+
+        auto local = sock.local_endpoint();
+        EXPECT_TRUE(local);
+        EXPECT_NE(local.port(), 0);
+
+        auto peer = sock.peer_endpoint();
+        EXPECT_TRUE(peer);
+        EXPECT_EQ(peer.port(), 64399);
+
+        sock.disconnect();
+    });
+
+    qb::io::tcp::socket accepted;
+    EXPECT_EQ(listener.accept(accepted), qb::io::SocketStatus::Done);
+    t.join();
+}
+
+// ---------------------------------------------------------------------------
+// UDP identity equality and hashing
+// ---------------------------------------------------------------------------
+
+TEST(UDPTransport, IdentityEquality) {
+    qb::io::transport::udp::identity id1{qb::io::endpoint("127.0.0.1", 5000)};
+    qb::io::transport::udp::identity id2{qb::io::endpoint("127.0.0.1", 5000)};
+    qb::io::transport::udp::identity id3{qb::io::endpoint("127.0.0.1", 5001)};
+    qb::io::transport::udp::identity id4{qb::io::endpoint("192.168.1.1", 5000)};
+
+    EXPECT_EQ(id1, id2);
+    EXPECT_NE(id1, id3);
+    EXPECT_NE(id1, id4);
+}
+
+TEST(UDPTransport, IdentityHashConsistency) {
+    qb::io::transport::udp::identity id1{qb::io::endpoint("127.0.0.1", 5000)};
+    qb::io::transport::udp::identity id2{qb::io::endpoint("127.0.0.1", 5000)};
+    qb::io::transport::udp::identity id3{qb::io::endpoint("10.0.0.1", 5000)};
+
+    qb::io::transport::udp::identity::hasher h;
+    EXPECT_EQ(h(id1), h(id2));
+    EXPECT_NE(h(id1), h(id3));
+}
+
+TEST(UDPTransport, IdentityInUnorderedSet) {
+    using identity = qb::io::transport::udp::identity;
+    std::unordered_set<identity, identity::hasher> id_set;
+
+    id_set.insert(identity{qb::io::endpoint("127.0.0.1", 5000)});
+    id_set.insert(identity{qb::io::endpoint("127.0.0.1", 5001)});
+    id_set.insert(identity{qb::io::endpoint("127.0.0.1", 5000)});
+
+    EXPECT_EQ(id_set.size(), 2u);
+}
+
 // Coroutine-based async TCP connection tests (C++23)
 //
 
@@ -624,4 +734,455 @@ TEST(CORO_TCP, DISABLED_ConnectAwaiterWithExistingSocket) {
     });
 
     tlistener.join();
+}
+
+// ===========================================================================
+// Regression tests for bugs found during code review
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// BUG FIX: base_pipe copy after free_front copied from wrong offset
+// ---------------------------------------------------------------------------
+
+TEST(PipeRegression, CopyAfterFreeFront) {
+    qb::allocator::pipe<char> src;
+    src.put("GARBAGE_PREFIX_HELLO_WORLD", 26);
+
+    src.free_front(15);
+    ASSERT_EQ(src.size(), 11u);
+    EXPECT_EQ(src.view(), "HELLO_WORLD");
+
+    qb::allocator::pipe<char> dst(src);
+    EXPECT_EQ(dst.size(), 11u);
+    EXPECT_EQ(dst.view(), "HELLO_WORLD");
+}
+
+TEST(PipeRegression, AssignAfterFreeFront) {
+    qb::allocator::pipe<char> src;
+    src.put("PREFIX_DATA_PAYLOAD", 19);
+    src.free_front(12);
+    ASSERT_EQ(src.view(), "PAYLOAD");
+
+    qb::allocator::pipe<char> dst;
+    dst.put("overwritten", 11);
+    dst = src;
+
+    EXPECT_EQ(dst.size(), 7u);
+    EXPECT_EQ(dst.view(), "PAYLOAD");
+}
+
+TEST(PipeRegression, CopyAfterMultipleFreeFronts) {
+    qb::allocator::pipe<char> p;
+    for (int i = 0; i < 5; ++i) {
+        p.put("ABCDEFGHIJ", 10);
+    }
+    p.free_front(40);
+    ASSERT_EQ(p.size(), 10u);
+    EXPECT_EQ(p.view(), "ABCDEFGHIJ");
+
+    auto copy = p;
+    EXPECT_EQ(copy.size(), 10u);
+    EXPECT_EQ(copy.view(), "ABCDEFGHIJ");
+}
+
+// ---------------------------------------------------------------------------
+// BUG FIX: uri::decode buffer over-read on truncated % sequence
+// ---------------------------------------------------------------------------
+
+TEST(URIRegression, DecodeTrailingPercent) {
+    auto result1 = qb::io::uri::decode(std::string_view("hello%"));
+    EXPECT_EQ(result1, "hello%");
+
+    auto result2 = qb::io::uri::decode(std::string_view("hello%2"));
+    EXPECT_EQ(result2, "hello%2");
+
+    auto result3 = qb::io::uri::decode(std::string_view("%20end%"));
+    EXPECT_EQ(result3, " end%");
+
+    auto result4 = qb::io::uri::decode(std::string_view(""));
+    EXPECT_EQ(result4, "");
+
+    auto result5 = qb::io::uri::decode(std::string_view("%"));
+    EXPECT_EQ(result5, "%");
+}
+
+// ---------------------------------------------------------------------------
+// BUG FIX: uri::parse() didn't reset string_view members on re-parse
+// ---------------------------------------------------------------------------
+
+TEST(URIRegression, ReassignClearsStaleComponents) {
+    qb::io::uri u{"https://user:pass@host.com:9090/path?q=v#frag"};
+    EXPECT_EQ(u.scheme(), "https");
+    EXPECT_EQ(u.user_info(), "user:pass");
+    EXPECT_EQ(u.host(), "host.com");
+    EXPECT_EQ(u.u_port(), 9090);
+    EXPECT_EQ(u.path(), "/path");
+    EXPECT_EQ(u.query("q"), "v");
+    EXPECT_EQ(u.fragment(), "frag");
+
+    u = std::string("http://minimal.com");
+    EXPECT_EQ(u.scheme(), "http");
+    EXPECT_EQ(u.host(), "minimal.com");
+    EXPECT_EQ(u.u_port(), 80);
+    EXPECT_EQ(u.path(), "/");
+
+    EXPECT_TRUE(u.user_info().empty());
+    EXPECT_TRUE(u.fragment().empty());
+    EXPECT_TRUE(u.queries().empty());
+}
+
+TEST(URIRegression, ReassignToEmpty) {
+    qb::io::uri u{"https://example.com:443/api?key=val#sec"};
+    EXPECT_FALSE(u.scheme().empty());
+    EXPECT_FALSE(u.host().empty());
+
+    u = std::string("");
+    EXPECT_TRUE(u.scheme().empty());
+    EXPECT_TRUE(u.host().empty());
+    EXPECT_TRUE(u.fragment().empty());
+    EXPECT_EQ(u.path(), "/");
+}
+
+// ---------------------------------------------------------------------------
+// BUG FIX: uri copy/move assignment didn't preserve explicit _af
+// ---------------------------------------------------------------------------
+
+TEST(URIRegression, CopyPreservesAF) {
+    qb::io::uri ipv6_uri{"tcp://[::1]:5000/path"};
+    EXPECT_EQ(ipv6_uri.af(), AF_INET6);
+
+    qb::io::uri copy;
+    copy = ipv6_uri;
+    EXPECT_EQ(copy.af(), AF_INET6);
+    EXPECT_EQ(copy.host(), "::1");
+}
+
+TEST(URIRegression, MovePreservesAF) {
+    qb::io::uri unix_uri{"unix:///var/run/app.sock"};
+    EXPECT_EQ(unix_uri.af(), AF_UNIX);
+
+    qb::io::uri moved;
+    moved = std::move(unix_uri);
+    EXPECT_EQ(moved.af(), AF_UNIX);
+    EXPECT_EQ(moved.scheme(), "unix");
+}
+
+TEST(URIRegression, CopyConstructPreservesAF) {
+    qb::io::uri ipv6{"https://[::1]:443/api"};
+    EXPECT_EQ(ipv6.af(), AF_INET6);
+
+    qb::io::uri copy(ipv6);
+    EXPECT_EQ(copy.af(), AF_INET6);
+    EXPECT_EQ(copy.host(), "::1");
+    EXPECT_EQ(copy.u_port(), 443);
+}
+
+TEST(URIRegression, MoveConstructPreservesAF) {
+    qb::io::uri unix_uri{"unix://my.sock/service"};
+    EXPECT_EQ(unix_uri.af(), AF_UNIX);
+
+    qb::io::uri moved(std::move(unix_uri));
+    EXPECT_EQ(moved.af(), AF_UNIX);
+    EXPECT_EQ(moved.scheme(), "unix");
+}
+
+// ===========================================================================
+// Pipe robustness tests
+// ===========================================================================
+
+TEST(PipeRobustness, EmptyPipeOperations) {
+    qb::allocator::pipe<char> p;
+    EXPECT_TRUE(p.empty());
+    EXPECT_EQ(p.size(), 0u);
+    EXPECT_EQ(p.begin(), p.end());
+    EXPECT_EQ(p.view(), "");
+    EXPECT_EQ(p.str(), "");
+    EXPECT_GT(p.capacity(), 0u);
+}
+
+TEST(PipeRobustness, SwapCorrectness) {
+    qb::allocator::pipe<int> a;
+    int vals_a[] = {1, 2, 3};
+    a.put(vals_a, 3);
+
+    qb::allocator::pipe<int> b;
+    int vals_b[] = {10, 20, 30, 40};
+    b.put(vals_b, 4);
+
+    a.swap(b);
+    EXPECT_EQ(a.size(), 4u);
+    EXPECT_EQ(a.begin()[0], 10);
+    EXPECT_EQ(a.begin()[3], 40);
+    EXPECT_EQ(b.size(), 3u);
+    EXPECT_EQ(b.begin()[0], 1);
+}
+
+TEST(PipeRobustness, SwapBothNonEmpty) {
+    qb::allocator::pipe<int> a;
+    int vals_a[] = {1, 2, 3, 4, 5};
+    a.put(vals_a, 5);
+
+    qb::allocator::pipe<int> b;
+    int vals_b[] = {100, 200};
+    b.put(vals_b, 2);
+
+    a.swap(b);
+    EXPECT_EQ(a.size(), 2u);
+    EXPECT_EQ(a.begin()[0], 100);
+    EXPECT_EQ(a.begin()[1], 200);
+    EXPECT_EQ(b.size(), 5u);
+    EXPECT_EQ(b.begin()[0], 1);
+    EXPECT_EQ(b.begin()[4], 5);
+}
+
+TEST(PipeRobustness, ResizeGrow) {
+    qb::allocator::pipe<char> p;
+    p.put("ABC", 3);
+    EXPECT_EQ(p.size(), 3u);
+
+    p.resize(10);
+    EXPECT_EQ(p.size(), 10u);
+    EXPECT_EQ(std::string_view(p.begin(), 3), "ABC");
+}
+
+TEST(PipeRobustness, ResizeShrink) {
+    qb::allocator::pipe<char> p;
+    p.put("ABCDEFGHIJ", 10);
+    EXPECT_EQ(p.size(), 10u);
+
+    p.resize(5);
+    EXPECT_EQ(p.size(), 5u);
+    EXPECT_EQ(std::string_view(p.begin(), 5), "ABCDE");
+}
+
+TEST(PipeRobustness, ReorderAfterFreeFront) {
+    qb::allocator::pipe<char> p;
+    p.put("HEADERPAYLOAD", 13);
+    p.free_front(6);
+    EXPECT_EQ(p.view(), "PAYLOAD");
+
+    p.reorder();
+    EXPECT_EQ(p.view(), "PAYLOAD");
+    EXPECT_EQ(p.size(), 7u);
+}
+
+TEST(PipeRobustness, PutStringView) {
+    qb::allocator::pipe<char> p;
+    std::string_view sv = "hello from string_view";
+    p.put(sv);
+    EXPECT_EQ(p.view(), sv);
+}
+
+TEST(PipeRobustness, PutCString) {
+    qb::allocator::pipe<char> p;
+    const char* cstr = "c-string data";
+    p.put(cstr);
+    EXPECT_EQ(p.view(), "c-string data");
+}
+
+TEST(PipeRobustness, PutStdString) {
+    qb::allocator::pipe<char> p;
+    std::string s = "std::string content";
+    p.put(s);
+    EXPECT_EQ(p.view(), s);
+}
+
+TEST(PipeRobustness, PutPipe) {
+    qb::allocator::pipe<char> src;
+    src.put("source_pipe_data", 16);
+
+    qb::allocator::pipe<char> dst;
+    dst.put(src);
+    EXPECT_EQ(dst.view(), "source_pipe_data");
+}
+
+TEST(PipeRobustness, PutPipeAfterFreeFront) {
+    qb::allocator::pipe<char> src;
+    src.put("GARBAGE_REAL_DATA", 17);
+    src.free_front(8);
+
+    qb::allocator::pipe<char> dst;
+    dst.put(src);
+    EXPECT_EQ(dst.view(), "REAL_DATA");
+}
+
+TEST(PipeRobustness, ReserveDoesNotChangeSize) {
+    qb::allocator::pipe<char> p;
+    p.put("data", 4);
+    auto old_size = p.size();
+    p.reserve(1000);
+    EXPECT_EQ(p.size(), old_size);
+    EXPECT_EQ(p.view(), "data");
+}
+
+TEST(PipeRobustness, AllocateBackOverflowThrows) {
+    qb::allocator::pipe<char> p;
+    EXPECT_THROW(p.allocate_back(std::numeric_limits<std::size_t>::max()), std::bad_alloc);
+}
+
+TEST(PipeRobustness, MoveConstruct) {
+    qb::allocator::pipe<char> src;
+    src.put("MOVE_ME", 7);
+
+    qb::allocator::pipe<char> dst(std::move(src));
+    EXPECT_EQ(dst.view(), "MOVE_ME");
+    EXPECT_EQ(dst.size(), 7u);
+    EXPECT_TRUE(src.empty());
+}
+
+TEST(PipeRobustness, MoveAssign) {
+    qb::allocator::pipe<char> src;
+    src.put("MOVE_ASSIGN", 11);
+
+    qb::allocator::pipe<char> dst;
+    dst.put("OLD_DATA", 8);
+    dst = std::move(src);
+
+    EXPECT_EQ(dst.view(), "MOVE_ASSIGN");
+    EXPECT_TRUE(src.empty());
+}
+
+// ===========================================================================
+// Stream buffer limit tests
+// ===========================================================================
+
+TEST(StreamLimits, DefaultBufferLimitsAreConfigured) {
+    qb::io::stream<qb::io::tcp::socket> s;
+    EXPECT_EQ(s.max_read_buffer_size(), QB_MAX_READ_BUFFER_SIZE);
+    EXPECT_EQ(s.max_write_buffer_size(), QB_MAX_WRITE_BUFFER_SIZE);
+    EXPECT_GT(s.max_read_buffer_size(), 0u);
+    EXPECT_LT(s.max_read_buffer_size(), std::numeric_limits<std::size_t>::max());
+}
+
+TEST(StreamLimits, PublishRejectsWhenLimitExceeded) {
+    qb::io::stream<qb::io::tcp::socket> s;
+    s.set_max_write_buffer_size(20);
+
+    const char data[] = "1234567890";
+    auto *result1 = s.publish(data, 10);
+    EXPECT_NE(result1, nullptr);
+    EXPECT_EQ(s.pendingWrite(), 10u);
+
+    auto *result2 = s.publish(data, 10);
+    EXPECT_NE(result2, nullptr);
+    EXPECT_EQ(s.pendingWrite(), 20u);
+
+    // This should be rejected — would exceed the 20-byte limit
+    auto *result3 = s.publish(data, 1);
+    EXPECT_EQ(result3, nullptr);
+    EXPECT_EQ(s.pendingWrite(), 20u);
+}
+
+TEST(StreamLimits, PublishAcceptsExactLimit) {
+    qb::io::stream<qb::io::tcp::socket> s;
+    s.set_max_write_buffer_size(10);
+
+    const char data[] = "1234567890";
+    auto *result = s.publish(data, 10);
+    EXPECT_NE(result, nullptr);
+    EXPECT_EQ(s.pendingWrite(), 10u);
+}
+
+TEST(StreamLimits, SetMaxBufferSizes) {
+    qb::io::stream<qb::io::tcp::socket> s;
+
+    s.set_max_read_buffer_size(1024);
+    EXPECT_EQ(s.max_read_buffer_size(), 1024u);
+
+    s.set_max_write_buffer_size(2048);
+    EXPECT_EQ(s.max_write_buffer_size(), 2048u);
+}
+
+// ===========================================================================
+// URI decode iterator template tests
+// ===========================================================================
+
+TEST(URIRobustness, DecodeIteratorTrailingPercent) {
+    // Template decode breaks on truncated % — stops processing, no crash
+    std::string input1 = "abc%";
+    auto result1 = qb::io::uri::decode(input1.begin(), input1.end());
+    EXPECT_EQ(result1, "abc");
+
+    std::string input2 = "%";
+    auto result2 = qb::io::uri::decode(input2.begin(), input2.end());
+    EXPECT_EQ(result2, "");
+
+    std::string input3 = "test%2";
+    auto result3 = qb::io::uri::decode(input3.begin(), input3.end());
+    EXPECT_EQ(result3, "test");
+
+    // Verify no crash on empty range
+    std::string empty;
+    auto result4 = qb::io::uri::decode(empty.begin(), empty.end());
+    EXPECT_EQ(result4, "");
+
+    // Valid decode still works
+    std::string valid = "hello%20world";
+    auto result5 = qb::io::uri::decode(valid.begin(), valid.end());
+    EXPECT_EQ(result5, "hello world");
+}
+
+TEST(URIRobustness, DecodeStringViewPreservesPercent) {
+    // string_view overload preserves truncated % in output
+    EXPECT_EQ(qb::io::uri::decode(std::string_view("abc%")), "abc%");
+    EXPECT_EQ(qb::io::uri::decode(std::string_view("%")), "%");
+    EXPECT_EQ(qb::io::uri::decode(std::string_view("test%2")), "test%2");
+    EXPECT_EQ(qb::io::uri::decode(std::string_view("%20ok%")), " ok%");
+}
+
+TEST(URIRobustness, DecodeIteratorValid) {
+    std::string input = "%48%65%6C%6C%6F";
+    auto result = qb::io::uri::decode(input.begin(), input.end());
+    EXPECT_EQ(result, "Hello");
+}
+
+TEST(URIRobustness, EncodeDecodeRoundtrip) {
+    std::vector<std::string> test_cases = {
+        "simple text",
+        "special: !@#$%^&*()",
+        "",
+        "unicode: \xC3\xA9\xC3\xA0\xC3\xBC",
+        "slashes/and?query=yes&more=true",
+        std::string(1000, 'X'),
+        "trailing%",
+        "%already%20encoded",
+    };
+
+    for (const auto &original : test_cases) {
+        auto encoded = qb::io::uri::encode(original);
+        auto decoded = qb::io::uri::decode(encoded);
+        EXPECT_EQ(decoded, original) << "Roundtrip failed for: " << original;
+    }
+}
+
+TEST(URIRobustness, ParseQueryWithEncodedAmpersand) {
+    qb::io::uri u{"http://host/p?key=val%26ue&k2=v2"};
+    EXPECT_EQ(u.query("key"), "val&ue");
+    EXPECT_EQ(u.query("k2"), "v2");
+}
+
+TEST(URIRobustness, ParseEmptyQueryValues) {
+    qb::io::uri u{"http://host/p?a=&b=&c="};
+    EXPECT_EQ(u.query("a"), "");
+    EXPECT_EQ(u.query("b"), "");
+    EXPECT_EQ(u.query("c"), "");
+}
+
+TEST(URIRobustness, ParseQueryKeyOnly) {
+    qb::io::uri u{"http://host/p?flagA&flagB&key=val"};
+    EXPECT_EQ(u.query("flagA"), "");
+    EXPECT_EQ(u.query("flagB"), "");
+    EXPECT_EQ(u.query("key"), "val");
+}
+
+TEST(URIRobustness, LongURIStress) {
+    std::string long_query;
+    for (int i = 0; i < 200; ++i) {
+        if (i > 0) long_query += "&";
+        long_query += "key" + std::to_string(i) + "=value" + std::to_string(i);
+    }
+    qb::io::uri u{"http://host/path?" + long_query};
+    EXPECT_EQ(u.query("key0"), "value0");
+    EXPECT_EQ(u.query("key99"), "value99");
+    EXPECT_EQ(u.query("key199"), "value199");
 }

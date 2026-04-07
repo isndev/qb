@@ -29,6 +29,7 @@
 #ifndef QB_IO_ASYNC_IO_H
 #define QB_IO_ASYNC_IO_H
 
+#include <memory>
 #include <qb/utility/type_traits.h>
 #include "../config.h"
 #include "../system/sys__socket.h"
@@ -140,7 +141,7 @@ public:
     setTimeout(ev_tstamp timeout) noexcept {
         _timeout = timeout;
         if (_timeout > 0.) { // Check against 0, not just if(_timeout)
-            _last_activity = ev_time(); // Consider using this->_async_event.loop.now() for consistency
+            _last_activity = this->_async_event.loop.now();
             this->_async_event.set(_timeout);
             this->_async_event.start();
         } else
@@ -171,7 +172,7 @@ private:
     on(event::timer &event) noexcept {
         const ev_tstamp after = _last_activity - event.loop.now() + _timeout;
 
-        if (after < 0.)
+        if (after <= 0.)
             Derived.on(event);
         else {
             this->_async_event.set(after);
@@ -203,10 +204,10 @@ public:
      *                the function is executed immediately (or in the next loop iteration,
      *                depending on `with_timeout` behavior) and this `Timeout` object is deleted.
      */
-    Timeout(_Func &&func, double timeout = 0.)
-        : with_timeout<Timeout<_Func>>(timeout)
+    Timeout(_Func &&func, double timeout)
+        : with_timeout<Timeout<_Func>>(timeout > 0. ? timeout : 0.)
         , _func(std::forward<_Func>(func)) {
-        if (!timeout) { // More direct check for zero or less
+        if (timeout <= 0.) {
             _func();
             delete this;
         }
@@ -219,8 +220,8 @@ public:
      *          ensuring one-shot execution and automatic cleanup.
      */
     void
-    on(event::timer const & /*event*/) { // Marked event as unused
-        _func();
+    on(event::timer const & /*event*/) {
+        try { _func(); } catch (...) {}
         delete this;
     }
 };
@@ -240,6 +241,10 @@ public:
 template <typename _Func>
 void
 callback(_Func &&func, double timeout = 0.) {
+    if (timeout <= 0.) {
+        func();
+        return;
+    }
     new Timeout<_Func>(std::forward<_Func>(func), timeout);
 }
 
@@ -264,8 +269,9 @@ void callback(_Func&& func, std::chrono::duration<Rep, Period> timeout_duration)
 template <typename _Derived>
 class file_watcher : public base<file_watcher<_Derived>, event::file> {
     using base_t = base<file_watcher<_Derived>, event::file>;
-    IProtocol *_protocol = nullptr; /**< Protocol instance for processing file contents. Can be null. */
-    std::vector<IProtocol *> _protocol_list; /**< List of owned protocol instances for cleanup. */
+    IProtocol *_protocol = nullptr; /**< Active protocol (non-owning view into _protocol_list). */
+    std::vector<std::unique_ptr<IProtocol>> _protocol_list; /**< Owned protocol instances (RAII). */
+    std::size_t _max_message_size = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size. */
 
 public:
     using base_io_t = file_watcher<_Derived>; /**< Base I/O type alias for CRTP. */
@@ -298,11 +304,7 @@ public:
      * @details Cleans up all protocol instances created and owned by this `file_watcher`
      *          (i.e., those added to `_protocol_list` via `switch_protocol`).
      */
-    ~file_watcher() noexcept {
-        // Optimized: use pointer iteration to avoid unnecessary copies
-        for (auto *protocol_ptr : _protocol_list)
-            delete protocol_ptr;
-    }
+    ~file_watcher() noexcept = default;
 
     /**
      * @brief Switches to a new protocol for processing file contents, taking ownership.
@@ -324,15 +326,14 @@ public:
     template <typename _Protocol, typename... _Args>
     _Protocol *
     switch_protocol(_Args &&...args) {
-        auto new_protocol = new _Protocol(std::forward<_Args>(args)...);
-        if (new_protocol->ok()) {
-            _protocol = new_protocol;
-            _protocol_list.push_back(new_protocol);
-            return new_protocol;
-        } else {
-            delete new_protocol;
-            return nullptr;
+        auto up = std::make_unique<_Protocol>(std::forward<_Args>(args)...);
+        if (up->ok()) {
+            auto *raw = up.get();
+            _protocol_list.push_back(std::move(up));
+            _protocol = raw;
+            return raw;
         }
+        return nullptr;
     }
 
     /**
@@ -395,9 +396,11 @@ public:
             if (unlikely(!this->_protocol->ok()))
                 return -1;
             while ((ret = this->_protocol->getMessageSize()) > 0) {
-                // has a new message to read
+                if (unlikely(ret > _max_message_size)) {
+                    this->_protocol->not_ok();
+                    return -1;
+                }
                 this->_protocol->onMessage(ret);
-                // Re-check protocol validity after message processing
                 if (unlikely(!this->_protocol->ok()))
                     return -1;
                 Derived.flush(ret);
@@ -437,7 +440,7 @@ private:
      */
     void
     on(event::file const &event) {
-        int ret = 0u;
+        int ret = 0;
 
         // forward event to Derived if desired
         if constexpr (qb::has_on<_Derived, event::file>) {
@@ -558,8 +561,8 @@ private:
 template <typename _Derived>
 class input : public base<input<_Derived>, event::io> {
     using base_t                   = base<input<_Derived>, event::io>;
-    IProtocol *_protocol = nullptr; /**< Current protocol for processing input. Can be changed via `switch_protocol`. */
-    std::vector<IProtocol *> _protocol_list; /**< List of owned protocol instances for cleanup. */
+    IProtocol *_protocol = nullptr; /**< Active protocol (non-owning view into _protocol_list). */
+    std::vector<std::unique_ptr<IProtocol>> _protocol_list; /**< Owned protocol instances (RAII). */
     bool _on_message  = false; /**< Internal flag to prevent re-entrant calls to `on(event::io&)` during message processing. */
     bool _is_disposed = false; /**< Internal flag to ensure `dispose()` is called only once. */
     int _reason = 0; /**< Stores the reason for disconnection if initiated by `disconnect()`. */
@@ -587,9 +590,9 @@ public:
      *       or ensure `clear_protocols` is not called if it would delete an externally managed protocol.
      *       Currently, this constructor implies ownership.
      */
-    input(IProtocol *protocol) noexcept
+    input(IProtocol *protocol)
         : _protocol(protocol) {
-        _protocol_list.push_back(protocol); // Assumes ownership
+        _protocol_list.push_back(std::unique_ptr<IProtocol>(protocol));
     }
 
     /**
@@ -599,12 +602,10 @@ public:
 
     /**
      * @brief Destructor.
-     * @details Calls `clear_protocols()` to clean up all protocol instances owned by this component.
-     *          The base class destructor will handle unregistering the `event::io` watcher.
+     * @details RAII: `_protocol_list` (unique_ptr vector) cleans up all owned protocols.
+     *          The base class destructor handles unregistering the `event::io` watcher.
      */
-    ~input() noexcept {
-        clear_protocols();
-    }
+    ~input() noexcept = default;
 
     /**
      * @brief Switches to a new protocol for processing input, taking ownership of the new protocol.
@@ -628,57 +629,33 @@ public:
     template <typename _Protocol, typename... _Args>
     _Protocol *
     switch_protocol(_Args &&...args) {
-        auto new_protocol = new _Protocol(std::forward<_Args>(args)...);
-        if (new_protocol->ok()) {
-            _protocol = new_protocol;
-            _protocol_list.push_back(new_protocol);
-            return new_protocol;
-        } else {
-            delete new_protocol;
-            return nullptr;
+        auto up = std::make_unique<_Protocol>(std::forward<_Args>(args)...);
+        if (up->ok()) {
+            auto *raw = up.get();
+            _protocol_list.push_back(std::move(up));
+            _protocol = raw;
+            return raw;
         }
+        return nullptr;
     }
 
     /**
      * @brief Clears all owned protocol instances.
-     * @details Deletes all protocol instances stored in the internal `_protocol_list` and resets the current `_protocol` pointer to `nullptr`.
-     *          This is called automatically by the destructor.
-     * @note Optimized: uses pointer iteration to avoid unnecessary copies and frees memory with `shrink_to_fit()`.
+     * @details Clears `_protocol_list` (unique_ptrs auto-delete) and resets `_protocol` to nullptr.
      */
     void
     clear_protocols() {
-        for (auto *protocol : _protocol_list)
-            delete protocol;
         _protocol_list.clear();
-        _protocol_list.shrink_to_fit(); // Free memory after clearing
+        _protocol_list.shrink_to_fit();
         _protocol = nullptr;
-    };
+    }
 
-    /**
-     * @brief Gets a pointer to the current active protocol instance.
-     * @return Pointer to the `IProtocol` currently in use for message parsing, or `nullptr` if no protocol is set.
-     * 
-     * @note **Usage:** This method allows access to the protocol for configuration or state inspection.
-     *       For example, you might call `protocol()->set_should_flush(false)` to change flush behavior,
-     *       or check `protocol()->ok()` to verify the protocol is still valid.
-     * 
-     * @note The returned pointer is valid as long as the protocol remains active. If `switch_protocol()`
-     *       is called, the previous protocol pointer may become invalid (though it remains in `_protocol_list`
-     *       until `clear_protocols()` is called).
-     */
-    IProtocol *
+    [[nodiscard]] IProtocol *
     protocol() noexcept {
         return _protocol;
     }
 
-    /**
-     * @brief Gets a pointer to the current active protocol instance (const version).
-     * @return Const pointer to the `IProtocol` currently in use for message parsing, or `nullptr` if no protocol is set.
-     * 
-     * @note This const overload allows read-only access to the protocol, useful for inspection without modification.
-     *       See the non-const `protocol()` overload for usage details.
-     */
-    IProtocol const *
+    [[nodiscard]] IProtocol const *
     protocol() const noexcept {
         return _protocol;
     }
@@ -723,6 +700,8 @@ public:
      */
     void
     start() noexcept {
+        _is_disposed = false;
+        _on_message = false;
         _reason = 0;
         _system_error = 0;
         Derived.transport().set_nonblocking(true);
@@ -734,7 +713,6 @@ public:
      * @details If the internal `event::io` watcher (from the `base` class) is not currently set to listen for `EV_READ`,
      *          this method reconfigures and restarts it to include `EV_READ` in its watched events.
      *          This is useful if read operations were temporarily paused.
-     * @note Despite the name suggesting a query, this method modifies state by enabling read event monitoring.
      */
     void
     ready_to_read() noexcept {
@@ -1017,8 +995,8 @@ public:
      *       but the disconnection process will only occur once.
      */
     void
-    disconnect(int reason = 1) {
-        _reason = reason;
+    disconnect(int reason = 1) noexcept {
+        _reason = reason ? reason : 1;
         this->_async_event.feed_event(EV_UNDEF);
     }
 
@@ -1124,7 +1102,7 @@ private:
 
         if (likely(event._revents & EV_READ)) {
             if constexpr (qb::has_shared_from_this<_Derived>) {
-                try { _self_guard = Derived.shared_from_this(); } catch (...) {}
+                try { _self_guard = Derived.shared_from_this(); } catch (std::bad_weak_ptr const&) {}
             }
 
             auto ret = static_cast<std::size_t>(Derived.read());
@@ -1153,7 +1131,8 @@ private:
         if (qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
             return;
 #endif
-        _system_error = qb::io::socket::get_last_errno();
+        if (!_reason)
+            _system_error = qb::io::socket::get_last_errno();
         dispose();
     }
 
@@ -1189,8 +1168,11 @@ protected:
 
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
-        } else if constexpr (qb::has_on<_Derived, event::dispose>) {
-            auto evt__dispose = event::dispose{}; Derived.on(std::move(evt__dispose));
+        } else {
+            this->_async_event.stop();
+            if constexpr (qb::has_on<_Derived, event::dispose>) {
+                auto evt__dispose = event::dispose{}; Derived.on(std::move(evt__dispose));
+            }
         }
     }
 
@@ -1208,6 +1190,7 @@ protected:
     void
     reset_io_state() noexcept {
         _is_disposed  = false;
+        _on_message   = false;
         _reason       = 0;
         _system_error = 0;
     }
@@ -1294,6 +1277,7 @@ public:
      */
     void
     start() noexcept {
+        _is_disposed = false;
         _reason = 0;
         _system_error = 0;
         Derived.transport().set_nonblocking(true);
@@ -1303,14 +1287,13 @@ public:
     /**
      * @brief Ensures the I/O watcher is listening for write events (`EV_WRITE`).
      * @details If the internal `event::io` watcher (from the `base` class) is not currently set to listen for `EV_WRITE`,
-     *          this method reconfigures it to include `EV_WRITE` in its watched events. This is often called implicitly
-     *          by `publish()` or `operator<<` to signal that there is data ready to be written.
-     * @note Despite the name suggesting a query, this method modifies state by enabling write event monitoring.
+     *          this method reconfigures and restarts it to include `EV_WRITE` in its watched events.
      */
     void
     ready_to_write() noexcept {
         if (!(this->_async_event.events & EV_WRITE))
-            this->_async_event.set(this->_async_event.events | EV_WRITE);
+            this->_async_event.start(Derived.transport().native_handle(),
+                                     this->_async_event.events | EV_WRITE);
     }
 
     /**
@@ -1488,20 +1471,15 @@ public:
      */
     template <typename... _Args>
     inline auto &
-    publish(_Args &&...args) noexcept {
+    publish(_Args &&...args) {
+        if (unlikely(_is_disposed || _reason))
+            return Derived.out();
         ready_to_write();
         if constexpr (sizeof...(_Args))
             (Derived.out() << ... << std::forward<_Args>(args));
         return Derived.out();
     }
 
-    /**
-     * @brief Stream operator for publishing data, equivalent to `publish(std::forward<T>(data))`.
-     * @tparam T Type of data to publish.
-     * @param data Data to publish.
-     * @return A reference to the `_Derived::out()` buffer.
-     * @see publish()
-     */
     template <typename T>
     auto &
     operator<<(T &&data) {
@@ -1528,8 +1506,8 @@ public:
      *       but the disconnection process will only occur once.
      */
     void
-    disconnect(int reason = 1) {
-        _reason = reason;
+    disconnect(int reason = 1) noexcept {
+        _reason = reason ? reason : 1;
         this->_async_event.feed_event(EV_UNDEF);
     }
 
@@ -1553,19 +1531,17 @@ private:
      */
     void
     on(event::io const &event) {
-        auto ret = 0;
-
         if (_reason)
             goto error;
 
         if (likely(event._revents & EV_WRITE)) {
-            ret = Derived.write();
-            if (unlikely(ret < 0))
-                goto error;
-            
-            // Update statistics (ret is int, convert to size_t)
-            if (likely(ret > 0))
-                _bytes_written += static_cast<std::size_t>(ret);
+            {
+                auto ret = Derived.write();
+                if (unlikely(ret < 0))
+                    goto error;
+                if (likely(ret > 0))
+                    _bytes_written += static_cast<std::size_t>(ret);
+            }
             
             if (!Derived.pendingWrite()) {
                 this->_async_event.set(EV_NONE);
@@ -1582,7 +1558,8 @@ private:
         if (qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
             return;
 #endif
-        _system_error = qb::io::socket::get_last_errno();
+        if (!_reason)
+            _system_error = qb::io::socket::get_last_errno();
         dispose();
     }
 
@@ -1617,8 +1594,11 @@ protected:
 
         if constexpr (_Derived::has_server) {
             Derived.server().disconnected(Derived.id());
-        } else if constexpr (qb::has_on<_Derived, event::dispose>) {
-            auto evt__dispose = event::dispose{}; Derived.on(std::move(evt__dispose));
+        } else {
+            this->_async_event.stop();
+            if constexpr (qb::has_on<_Derived, event::dispose>) {
+                auto evt__dispose = event::dispose{}; Derived.on(std::move(evt__dispose));
+            }
         }
     }
 };
@@ -1645,8 +1625,8 @@ protected:
 template <typename _Derived>
 class io : public base<io<_Derived>, event::io> {
     using base_t                   = base<io<_Derived>, event::io>;
-    IProtocol *_protocol = nullptr; /**< Current protocol for I/O processing. */
-    std::vector<IProtocol *> _protocol_list; /**< List of owned protocol instances. */
+    IProtocol *_protocol = nullptr; /**< Active protocol (non-owning view into _protocol_list). */
+    std::vector<std::unique_ptr<IProtocol>> _protocol_list; /**< Owned protocol instances (RAII). */
     bool _on_message  = false; /**< Internal flag for re-entrance protection in `on(event::io&)`. */
     bool _is_disposed = false; /**< Internal flag for `dispose()` idempotency. */
     int _reason = 0; /**< Disconnection reason code. */
@@ -1671,9 +1651,9 @@ public:
      * @param protocol Pointer to an existing protocol instance. This `io` component will use it and
      *                 take ownership by adding it to its internal list of protocols.
      */
-    io(IProtocol *protocol) noexcept
+    io(IProtocol *protocol)
         : _protocol(protocol) {
-        _protocol_list.push_back(protocol);
+        _protocol_list.push_back(std::unique_ptr<IProtocol>(protocol));
     }
 
     /**
@@ -1683,11 +1663,9 @@ public:
 
     /**
      * @brief Destructor.
-     * @details Cleans up owned protocols via `clear_protocols()`. Base class handles watcher unregistration.
+     * @details RAII: `_protocol_list` (unique_ptr vector) cleans up all owned protocols.
      */
-    ~io() noexcept {
-        clear_protocols();
-    }
+    ~io() noexcept = default;
 
     /**
      * @brief Switches to a new protocol for I/O processing, taking ownership.
@@ -1711,55 +1689,33 @@ public:
     template <typename _Protocol, typename... _Args>
     _Protocol *
     switch_protocol(_Args &&...args) {
-        auto new_protocol = new _Protocol(std::forward<_Args>(args)...);
-        if (new_protocol->ok()) {
-            _protocol = new_protocol;
-            _protocol_list.push_back(new_protocol);
-            return new_protocol;
-        } else {
-            delete new_protocol;
-            return nullptr;
+        auto up = std::make_unique<_Protocol>(std::forward<_Args>(args)...);
+        if (up->ok()) {
+            auto *raw = up.get();
+            _protocol_list.push_back(std::move(up));
+            _protocol = raw;
+            return raw;
         }
+        return nullptr;
     }
 
     /**
      * @brief Clears all owned protocol instances.
-     * @details Deletes protocols in `_protocol_list` and resets `_protocol` pointer to `nullptr`.
+     * @details Clears `_protocol_list` (unique_ptrs auto-delete) and resets `_protocol` to nullptr.
      */
     void
     clear_protocols() {
-        for (auto *protocol : _protocol_list)
-            delete protocol;
         _protocol_list.clear();
-        _protocol_list.shrink_to_fit(); // Free memory after clearing
+        _protocol_list.shrink_to_fit();
         _protocol = nullptr;
-    };
+    }
 
-    /**
-     * @brief Gets a pointer to the current active protocol instance.
-     * @return Pointer to the `IProtocol` for message parsing/formatting, or `nullptr` if no protocol is set.
-     * 
-     * @note **Usage:** This method allows access to the protocol for configuration or state inspection.
-     *       For example, you might call `protocol()->set_should_flush(false)` to change flush behavior,
-     *       or check `protocol()->ok()` to verify the protocol is still valid.
-     * 
-     * @note The returned pointer is valid as long as the protocol remains active. If `switch_protocol()`
-     *       is called, the previous protocol pointer may become invalid (though it remains in `_protocol_list`
-     *       until `clear_protocols()` is called).
-     */
-    IProtocol *
+    [[nodiscard]] IProtocol *
     protocol() noexcept {
         return _protocol;
     }
 
-    /**
-     * @brief Gets a pointer to the current active protocol instance (const version).
-     * @return Const pointer to the `IProtocol` for message parsing/formatting, or `nullptr` if no protocol is set.
-     * 
-     * @note This const overload allows read-only access to the protocol, useful for inspection without modification.
-     *       See the non-const `protocol()` overload for usage details.
-     */
-    IProtocol const *
+    [[nodiscard]] IProtocol const *
     protocol() const noexcept {
         return _protocol;
     }
@@ -1808,6 +1764,8 @@ public:
      */
     void
     start() noexcept {
+        _is_disposed = false;
+        _on_message = false;
         _reason = 0;
         _system_error = 0;
         Derived.transport().set_nonblocking(true);
@@ -1817,7 +1775,6 @@ public:
     /**
      * @brief Ensures the I/O watcher is listening for read events (`EV_READ`).
      * @details Modifies the event watcher flags to include `EV_READ` if not already set.
-     * @note Despite the name suggesting a query, this method modifies state by enabling read event monitoring.
      */
     void
     ready_to_read() noexcept {
@@ -2142,7 +2099,7 @@ public:
      *          writing any remaining buffered output if the protocol is not ok and output buffer is empty.
      */
     void
-    close_after_deliver() const noexcept {
+    close_after_deliver() noexcept {
         if (_protocol)
             _protocol->not_ok();
     }
@@ -2155,19 +2112,15 @@ public:
      */
     template <typename... _Args>
     inline auto &
-    publish(_Args &&...args) noexcept {
+    publish(_Args &&...args) {
+        if (unlikely(_is_disposed || _reason))
+            return Derived.out();
         ready_to_write();
         if constexpr (sizeof...(_Args))
             (Derived.out() << ... << std::forward<_Args>(args));
         return Derived.out();
     }
 
-    /**
-     * @brief Stream operator for publishing data.
-     * @tparam T Type of data.
-     * @param data Data to publish.
-     * @return Reference to `_Derived::out()` buffer.
-     */
     template <typename T>
     auto &
     operator<<(T &&data) {
@@ -2194,8 +2147,8 @@ public:
      *       but the disconnection process will only occur once.
      */
     void
-    disconnect(int reason = 1) {
-        _reason = reason;
+    disconnect(int reason = 1) noexcept {
+        _reason = reason ? reason : 1;
         this->_async_event.feed_event(EV_UNDEF);
     }
 
@@ -2205,7 +2158,8 @@ private:
     /**
      * @brief Processes messages from the input buffer using the protocol.
      * @return true if processing succeeded, false if an error occurred.
-     * @details Optimized hot path: caches protocol pointer to reduce member access overhead.
+     * @details When close_after_deliver() was called during message processing,
+     *          this defers disposal until all pending output data has been flushed.
      */
     bool
     process_messages() noexcept {
@@ -2213,29 +2167,27 @@ private:
 
         _on_message = true;
         while ((ret = this->_protocol->getMessageSize()) > 0) {
-            // Security check: prevent DoS via oversized messages
             if (unlikely(ret > _max_message_size)) {
                 this->_protocol->not_ok();
                 _system_error = 0;
-                _reason = -2; // Message too large (DoS protection)
+                _reason = -2;
                 _on_message = false;
                 return false;
             }
-            // Capture protocol pointer before onMessage() — onMessage() may call
-            // switch_protocol() internally (e.g. handshake → HTTP/2 upgrade).
-            // The OLD protocol's should_flush() must be used for flush(), not the new one.
             auto *protocol = this->_protocol;
             protocol->onMessage(ret);
-            // Update statistics: message successfully processed
             ++_messages_processed;
-            // Check if the CURRENT (potentially new) protocol became invalid
             if (unlikely(!this->_protocol->ok())) {
+                if (Derived.pendingWrite()) {
+                    this->ready_to_write();
+                    _on_message = false;
+                    return true;
+                }
                 _system_error = 0;
-                _reason = -1; // Protocol error
+                _reason = -1;
                 _on_message = false;
                 return false;
             }
-            // Use the OLD protocol's should_flush() to preserve protocol-switching semantics
             if (likely(protocol->should_flush()))
                 Derived.flush(ret);
         }
@@ -2269,12 +2221,11 @@ private:
      */
     bool
     handle_write() noexcept {
-        constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
-        auto ret = static_cast<std::size_t>(Derived.write());
-        if (unlikely(ret == invalid_ret))
+        auto raw_ret = Derived.write();
+        if (unlikely(raw_ret < 0))
             return false;
+        auto ret = static_cast<std::size_t>(raw_ret);
         
-        // Update statistics
         _bytes_written += ret;
         
         if (!Derived.pendingWrite()) {
@@ -2311,15 +2262,16 @@ private:
         
         if (_on_message)
             return;
+
+        if constexpr (qb::has_shared_from_this<_Derived>) {
+            try { _self_guard = Derived.shared_from_this(); } catch (std::bad_weak_ptr const&) {}
+        }
+
         if (_reason)
             goto error;
         
         if (event._revents & EV_READ && _protocol && _protocol->ok()) {
             constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
-
-            if constexpr (qb::has_shared_from_this<_Derived>) {
-                try { _self_guard = Derived.shared_from_this(); } catch (...) {}
-            }
 
             auto ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret))
@@ -2356,7 +2308,8 @@ private:
         if (qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
             return;
 #endif
-        _system_error = qb::io::socket::get_last_errno();
+        if (!_reason)
+            _system_error = qb::io::socket::get_last_errno();
         dispose();
     }
 
@@ -2428,6 +2381,7 @@ protected:
     void
     reset_io_state() noexcept {
         _is_disposed  = false;
+        _on_message   = false;
         _reason       = 0;
         _system_error = 0;
     }

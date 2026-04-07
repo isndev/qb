@@ -26,6 +26,7 @@
 #ifndef QB_IO_PROT_BASE_H_
 #define QB_IO_PROT_BASE_H_
 #include <cstring>
+#include <type_traits>
 #include <qb/system/allocator/pipe.h>
 #include "../async/protocol.h"
 
@@ -49,9 +50,9 @@ class byte_terminated : public io::async::AProtocol<_IO_> {
     std::size_t _offset = 0u; /**< Position to resume delimiter search */
 
 public:
-    constexpr static const std::size_t delimiter_size =
-        1;                                      /**< Delimiter size (1 byte) */
-    constexpr static const char end = _EndByte; /**< End character */
+    static constexpr std::size_t delimiter_size =
+        1;                                /**< Delimiter size (1 byte) */
+    static constexpr char end = _EndByte; /**< End character */
 
     /**
      * @brief Default constructor (deleted)
@@ -77,9 +78,9 @@ public:
      * @param size Total size including the delimiter
      * @return Message size without the delimiter
      */
-    inline std::size_t
+    [[nodiscard]] inline std::size_t
     shiftSize(std::size_t const size) const noexcept {
-        return static_cast<std::size_t>(size) - delimiter_size;
+        return size >= delimiter_size ? size - delimiter_size : 0;
     }
 
     /**
@@ -95,8 +96,8 @@ public:
         auto        it     = buffer.begin() + _offset;
         while (it != buffer.end()) {
             if (*it == _EndByte) {
-                _offset = 0; // reset
-                return (it - buffer.begin()) + delimiter_size;
+                _offset = 0;
+                return static_cast<std::size_t>(it - buffer.begin()) + delimiter_size;
             }
             ++it;
         }
@@ -130,14 +131,15 @@ public:
  */
 template <typename _IO_, typename _Trait>
 class bytes_terminated : public io::async::AProtocol<_IO_> {
-    constexpr static const std::size_t _SizeBytes =
+    static constexpr std::size_t _SizeBytes =
         sizeof(_Trait::_EndBytes) - 1; /**< Size of the termination sequence */
+    static_assert(_SizeBytes > 0, "Delimiter sequence must not be empty");
     std::size_t _offset = 0u;          /**< Position to resume delimiter search */
 
 public:
-    constexpr static const std::size_t delimiter_size =
-        _SizeBytes;                                      /**< Delimiter size */
-    constexpr static const auto end = _Trait::_EndBytes; /**< End sequence */
+    static constexpr std::size_t delimiter_size =
+        _SizeBytes;                                /**< Delimiter size */
+    static constexpr auto end = _Trait::_EndBytes; /**< End sequence */
 
     /**
      * @brief Default constructor (deleted)
@@ -163,9 +165,9 @@ public:
      * @param size Total size including the delimiter
      * @return Message size without the delimiter
      */
-    inline std::size_t
+    [[nodiscard]] inline std::size_t
     shiftSize(std::size_t const size) const noexcept {
-        return static_cast<std::size_t>(size) - delimiter_size;
+        return size >= delimiter_size ? size - delimiter_size : 0;
     }
 
     /**
@@ -176,7 +178,7 @@ public:
      * @return Message size if found, 0 otherwise
      */
     std::size_t
-    getMessageSize() {
+    getMessageSize() noexcept final {
         const auto &buffer = this->_io.in();
         auto        i      = buffer.begin() + _offset;
 
@@ -221,7 +223,7 @@ public:
  */
 template <typename _IO_, typename _Size = uint16_t>
 class size_as_header : public io::async::AProtocol<_IO_> {
-    constexpr static const std::size_t SIZEOF = sizeof(_Size); /**< Header size */
+    static constexpr std::size_t SIZEOF = sizeof(_Size); /**< Header size */
     _Size _size = 0u; /**< Size of the message being analyzed */
 
 public:
@@ -261,15 +263,21 @@ public:
         auto &buffer = this->_io.in();
 
         if (!_size && buffer.size() >= SIZEOF) {
+            _Size raw;
+            std::memcpy(&raw, buffer.begin(), SIZEOF);
             if constexpr (SIZEOF == 2)
-                _size = ntohs(*reinterpret_cast<_Size *>(buffer.begin()));
+                _size = ntohs(raw);
             else if constexpr (SIZEOF == 4)
-                _size = ntohl(*reinterpret_cast<_Size *>(buffer.begin()));
+                _size = ntohl(raw);
             else
-                _size = *reinterpret_cast<_Size *>(buffer.begin());
+                _size = raw;
+            if (!_size) {
+                this->not_ok();
+                return 0;
+            }
             buffer.free_front(SIZEOF);
         }
-        if (buffer.size() >= _size) {
+        if (_size && buffer.size() >= _size) {
             const auto ret = _size;
             _size          = 0;
             return ret;
@@ -288,12 +296,13 @@ public:
      */
     static _Size
     Header(std::size_t size) noexcept {
+        static_assert(std::is_unsigned_v<_Size>, "size header must be unsigned");
         if constexpr (SIZEOF == 2) {
-            return htons(static_cast<_Size>(size));
+            return htons(static_cast<_Size>(size & 0xFFFF));
         } else if constexpr (SIZEOF == 4) {
-            return htonl(static_cast<_Size>(size));
+            return htonl(static_cast<_Size>(size & 0xFFFFFFFF));
         } else {
-            return size;
+            return static_cast<_Size>(size);
         }
     }
 

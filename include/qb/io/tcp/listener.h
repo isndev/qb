@@ -22,10 +22,9 @@
  * @ingroup TCP
  */
 
-#include "socket.h"
-
 #ifndef QB_IO_TCP_LISTENER_H_
 #define QB_IO_TCP_LISTENER_H_
+#include "socket.h"
 
 namespace qb::io::tcp {
 

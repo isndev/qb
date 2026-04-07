@@ -24,6 +24,7 @@
 
 #ifndef QB_IO_ASYNC_PROTOCOL_ACCEPT_H
 #define QB_IO_ASYNC_PROTOCOL_ACCEPT_H
+#include "../async/protocol.h"
 
 namespace qb::io::protocol {
 

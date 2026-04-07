@@ -120,9 +120,9 @@ public:
      * @return True if the server is listening, false otherwise.
      */
     [[nodiscard]] bool listen(qb::io::uri uri,
-                std::filesystem::path cert_file = {},
-                std::filesystem::path key_file = {},
-                std::vector<std::string> alpn_protocols = {}) {
+                [[maybe_unused]] std::filesystem::path cert_file = {},
+                [[maybe_unused]] std::filesystem::path key_file = {},
+                [[maybe_unused]] std::vector<std::string> alpn_protocols = {}) {
 #ifdef QB_HAS_SSL
         using tpt = std::decay_t<decltype(this->transport())>;
         if constexpr (tpt::is_secure()) {

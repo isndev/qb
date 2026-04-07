@@ -17,6 +17,7 @@
 #include <array>
 #include <cstring>
 #include <memory>
+#include <new>
 #include <qb/string.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/nocopy.h>
@@ -94,7 +95,7 @@ public:
         , _capacity(0)
         , _factor(1)
         , _data(nullptr) {
-        std::memcpy(allocate_back(rhs.size()), rhs._data, rhs.size() * sizeof(T));
+        std::memcpy(allocate_back(rhs.size()), rhs.begin(), rhs.size() * sizeof(T));
     }
 
     /**
@@ -125,7 +126,7 @@ public:
     base_pipe &operator=(base_pipe const &rhs) {
         if (this != &rhs) {
             reset();
-            std::memcpy(allocate_back(rhs.size()), rhs._data, rhs.size() * sizeof(T));
+            std::memcpy(allocate_back(rhs.size()), rhs.begin(), rhs.size() * sizeof(T));
         }
         return *this;
     };
@@ -342,7 +343,7 @@ public:
      */
     inline auto *
     allocate_back(std::size_t const size) {
-        if (likely(_end + size <= _capacity)) {
+        if (likely(size <= _capacity - _end && _end <= _capacity)) {
             const auto save_index = _end;
             _end += size;
             return _data + save_index;
@@ -356,9 +357,14 @@ public:
         } else {
             std::size_t new_capacity;
             do {
+                if (unlikely(_factor >= (std::size_t{1} << (sizeof(std::size_t) * 4))))
+                    throw std::bad_alloc();
                 _factor <<= 1u;
                 new_capacity = _factor * _SIZE;
-            } while (new_capacity - nb_item < size);
+            } while (new_capacity > nb_item && new_capacity - nb_item < size);
+
+            if (unlikely(new_capacity <= nb_item || nb_item + size > new_capacity))
+                throw std::bad_alloc();
 
             const auto new_data = base_type::allocate(new_capacity);
             std::memcpy(new_data, _data + _begin, nb_item * sizeof(T));
@@ -601,7 +607,7 @@ public:
      */
     template <typename U>
     pipe &
-    operator<<(U &&rhs) noexcept {
+    operator<<(U &&rhs) {
         this->template allocate_back<U>(std::forward<U>(rhs));
         return *this;
     }
