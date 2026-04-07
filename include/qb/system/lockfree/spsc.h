@@ -349,23 +349,10 @@ public:
      *
      * @return true if the buffer is empty, false otherwise
      */
-    bool
-    empty() {
-        return empty(write_index_.load(std::memory_order_relaxed),
-                     read_index_.load(std::memory_order_relaxed));
-    }
-
-private:
-    /**
-     * @brief Check if the buffer is empty using provided indices
-     *
-     * @param write_index Current write index
-     * @param read_index Current read index
-     * @return true if the buffer is empty, false otherwise
-     */
-    bool
-    empty(size_t write_index, size_t read_index) {
-        return write_index == read_index;
+    [[nodiscard]] bool
+    empty() const noexcept {
+        return write_index_.load(std::memory_order_relaxed)
+            == read_index_.load(std::memory_order_relaxed);
     }
 };
 

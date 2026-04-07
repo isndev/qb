@@ -17,11 +17,11 @@
  * @ingroup Utility
  */
 
-#include <cerrno>
-#include <cstdint>
-
 #ifndef QB_BUILD_MACROS_H_
 #define QB_BUILD_MACROS_H_
+
+#include <cerrno>
+#include <cstdint>
 
 #if defined(_WIN32) || defined(_WIN64)
 #define __WIN__SYSTEM__
@@ -142,6 +142,18 @@ typedef intptr_t ssize_t;
 #endif // C++20 features check
 #if !defined(QB__HAS_CXX20)
 #define QB__HAS_CXX20 0
+#endif
+
+// Tests whether compiler has c++23 support
+#if (defined(__cplusplus) && __cplusplus >= 202302L) || \
+    (defined(_MSC_VER) && _MSC_VER >= 1939 &&           \
+     (defined(_MSVC_LANG) && (_MSVC_LANG >= 202302L)))
+#ifndef QB__HAS_CXX23
+#define QB__HAS_CXX23 1
+#endif // C++23 features macro
+#endif // C++23 features check
+#if !defined(QB__HAS_CXX23)
+#define QB__HAS_CXX23 0
 #endif
 
 // Workaround for compiler without fully c++11 support, such as vs2013

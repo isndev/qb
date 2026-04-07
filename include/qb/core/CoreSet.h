@@ -52,7 +52,7 @@ class CoreSet {
     const CoreIdSet               _raw_set;
     const std::size_t             _nb_core;
     const std::size_t             _size;
-    std::array<uint8_t, MaxCores> _set;
+    std::array<uint8_t, MaxCores> _set{};
 
 public:
     CoreSet() = delete;

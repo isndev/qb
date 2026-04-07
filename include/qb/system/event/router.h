@@ -26,13 +26,14 @@
  * @ingroup Event
  */
 
+#ifndef QB_EVENT_ROUTER_H
+#define QB_EVENT_ROUTER_H
+
+#include <memory>
 #include <mutex>
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
-
-#ifndef QB_EVENT_ROUTER_H
-#define QB_EVENT_ROUTER_H
 
 namespace qb::router {
 //        struct EventExample {
@@ -64,20 +65,8 @@ protected:
     /**
      * @brief Invoke a handler with an event
      *
-     * If the event type has an is_alive() method, it will be checked
-     * before invoking the handler.
-     *
-     * @tparam _Handler Handler type
-     * @tparam _Event Event type
-     * @param handler The handler to invoke
-     * @param event The event to pass to the handler
-     */
-    /**
-     * @brief Invoke a handler with an event
-     *
-     * C++23: Using qb::has_is_alive concept instead of trait.
-     * If the event type has an is_alive() method, it will be checked
-     * before invoking the handler.
+     * If the event type satisfies qb::has_is_alive, handler liveness
+     * is checked before dispatch.
      *
      * @tparam _Handler Handler type
      * @tparam _Event Event type
@@ -98,18 +87,9 @@ protected:
     /**
      * @brief Dispose of an event if necessary
      *
-     * If the event type is not trivially destructible and has an is_alive() method,
-     * it will be destructed when is_alive() returns false.
-     *
-     * @tparam _Event Event type
-     * @param event The event to dispose
-     */
-    /**
-     * @brief Dispose of an event if necessary
-     *
-     * C++23: Using qb::has_is_alive concept instead of trait.
-     * If the event type is not trivially destructible and has an is_alive() method,
-     * it will be destructed when is_alive() returns false.
+     * Non-trivially destructible events are explicitly destructed.
+     * If the event satisfies qb::has_is_alive, destruction only occurs
+     * when is_alive() returns false.
      *
      * @tparam _Event Event type
      * @param event The event to dispose
@@ -308,18 +288,11 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
         }
     };
 
-    qb::unordered_map<_HandlerId, IHandlerResolver *> _subscribed_handlers;
+    qb::unordered_map<_HandlerId, std::unique_ptr<IHandlerResolver>> _subscribed_handlers;
 
 public:
     semh() = default;
-
-    /**
-     * @brief Destructor that cleans up all handler resolvers
-     */
-    ~semh() noexcept {
-        for (const auto &it : _subscribed_handlers)
-            delete it.second;
-    }
+    ~semh() noexcept = default;
 
     /**
      * @brief Routes an event to the appropriate handler
@@ -333,7 +306,6 @@ public:
     template <bool _CleanEvent = false>
     void
     route(_RawEvent &event) const noexcept {
-        // C++23: Use concept directly
         if constexpr (qb::has_is_broadcast<_HandlerId>) {
             if (event.getDestination().is_broadcast()) {
                 for (const auto &it : _subscribed_handlers)
@@ -357,21 +329,15 @@ public:
     /**
      * @brief Subscribe a handler to receive events
      *
-     * Creates a handler resolver for the specific handler type
-     *
      * @tparam _Handler The handler type
      * @param handler The handler to subscribe
      */
     template <typename _Handler>
     void
     subscribe(_Handler &handler) noexcept {
-        const auto &it = _subscribed_handlers.find(handler.id());
-        if (it != _subscribed_handlers.cend()) {
-            delete it->second;
-            _subscribed_handlers.erase(it);
-        }
-        _subscribed_handlers.insert(
-            {handler.id(), new HandlerResolver<_Handler>(handler)});
+        _subscribed_handlers.erase(handler.id());
+        _subscribed_handlers.emplace(
+            handler.id(), std::make_unique<HandlerResolver<_Handler>>(handler));
     }
 
     /**
@@ -381,11 +347,7 @@ public:
      */
     void
     unsubscribe(_HandlerId const &id) noexcept {
-        const auto &it = _subscribed_handlers.find(id);
-        if (it != _subscribed_handlers.end()) {
-            delete it->second;
-            _subscribed_handlers.erase(it);
-        }
+        _subscribed_handlers.erase(id);
     }
 };
 
@@ -451,8 +413,8 @@ private:
         }
     };
 
-    _Handler                                     &_handler;
-    qb::unordered_map<_EventId, IEventResolver *> _registered_events;
+    _Handler                                                        &_handler;
+    qb::unordered_map<_EventId, std::unique_ptr<IEventResolver>>     _registered_events;
 
 public:
     mesh() = delete;
@@ -465,77 +427,50 @@ public:
     explicit mesh(_Handler &handler) noexcept
         : _handler(handler) {}
 
-    /**
-     * @brief Destructor that cleans up all event resolvers
-     */
-    ~mesh() noexcept {
-        unsubscribe();
-    }
+    ~mesh() noexcept = default;
 
     /**
      * @brief Routes an event to the handler
      *
-     * Uses the event ID to find the appropriate resolver and process the event.
+     * Unregistered dynamic events risk leaking memory, so this
+     * intentionally throws via .at() on missing IDs.
      *
      * @param event The event to route
      */
     void
     route(_RawEvent &event) {
-        // /!\ Why do not not protecting this ?
-        // because a dynamic event pushed and not registred
-        // has 100% risk of leaking memory
-        // Todo : may be should add a define to prevent user from this
-        // const auto &it = _registered_events.find(event.getID());
-        // if (likely(it != _registered_events.cend()))
-        //    it->second.resolve(event);
         _registered_events.at(event.getID())->resolve(_handler, event);
     }
 
     /**
      * @brief Subscribe to events of a specific type
      *
-     * Creates and registers an event resolver for the given event type.
-     *
      * @tparam _Event The event type to subscribe to
      */
     template <typename _Event>
     void
     subscribe() {
-        const auto &it =
-            _registered_events.find(_RawEvent::template type_to_id<_Event>());
-        if (it == _registered_events.cend()) {
-            _registered_events.insert(
-                {_RawEvent::template type_to_id<_Event>(), new EventResolver<_Event>});
-        }
+        _registered_events.try_emplace(
+            _RawEvent::template type_to_id<_Event>(),
+            std::make_unique<EventResolver<_Event>>());
     }
 
     /**
      * @brief Unsubscribe from events of a specific type
-     *
-     * Removes the event resolver for the given event type.
      *
      * @tparam _Event The event type to unsubscribe from
      */
     template <typename _Event>
     void
     unsubscribe() {
-        const auto &it =
-            _registered_events.find(_RawEvent::template type_to_id<_Event>());
-        if (it != _registered_events.cend()) {
-            delete it->second;
-            _registered_events.erase(it);
-        }
+        _registered_events.erase(_RawEvent::template type_to_id<_Event>());
     }
 
     /**
      * @brief Unsubscribe from all event types
-     *
-     * Removes all event resolvers.
      */
     void
     unsubscribe() {
-        for (const auto &it : _registered_events)
-            delete it.second;
         _registered_events.clear();
     }
 };
@@ -620,18 +555,11 @@ private:
         }
     };
 
-    qb::unordered_map<_EventId, IEventResolver *> _registered_events;
+    qb::unordered_map<_EventId, std::unique_ptr<IEventResolver>> _registered_events;
 
 public:
     memh() = default;
-
-    /**
-     * @brief Destructor that cleans up all event resolvers
-     */
-    ~memh() noexcept {
-        for (const auto &it : _registered_events)
-            delete it.second;
-    }
+    ~memh() noexcept = default;
 
     /**
      * @brief Routes an event to the appropriate handlers with error handling
@@ -646,13 +574,8 @@ public:
         const auto &it = _registered_events.find(event.getID());
         if (likely(it != _registered_events.cend()))
             it->second->resolve(event);
-        else {
-            // std::lock_guard lk(_disposers_mtx);
+        else
             onError(event);
-            //_disposers.at(event.getID())->dispose(&event);
-        };
-        // /!\ Look notice in of mesh router above
-        // _registered_events.at(event.getID())->resolve(event);
     }
 
     /**
@@ -667,12 +590,12 @@ public:
         const auto &it =
             _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it == _registered_events.cend()) {
-            auto *resolver = new EventResolver<_Event>;
+            auto resolver = std::make_unique<EventResolver<_Event>>();
             resolver->subscribe(handler);
-            _registered_events.insert(
-                {_RawEvent::template type_to_id<_Event>(), resolver});
+            _registered_events.emplace(
+                _RawEvent::template type_to_id<_Event>(), std::move(resolver));
         } else {
-            dynamic_cast<EventResolver<_Event> *>(it->second)->subscribe(handler);
+            dynamic_cast<EventResolver<_Event> *>(it->second.get())->subscribe(handler);
         }
     }
 
@@ -708,9 +631,8 @@ public:
      */
     void
     unsubscribe(_HandlerId const &id) const {
-        for (auto const &it : _registered_events) {
+        for (auto const &it : _registered_events)
             it.second->unsubscribe(id);
-        }
     }
 };
 
@@ -836,7 +758,7 @@ private:
         }
     };
 
-    qb::unordered_map<_EventId, IEventResolver *> _registered_events;
+    qb::unordered_map<_EventId, std::unique_ptr<IEventResolver>> _registered_events;
 
 public:
     /**
@@ -848,28 +770,16 @@ public:
      */
     template <typename T>
     struct SafeDispose {
-        /**
-         * @brief Constructor that registers a disposer
-         */
         SafeDispose() {
             std::lock_guard lk(_disposers_mtx);
-
             _disposers.try_emplace(_RawEvent::template type_to_id<T>(),
-                                   new Disposer<T>());
+                                   std::make_unique<Disposer<T>>());
         }
-
         ~SafeDispose() = default;
     };
 
     memh() = default;
-
-    /**
-     * @brief Destructor that cleans up all event resolvers
-     */
-    ~memh() noexcept {
-        for (const auto &it : _registered_events)
-            delete it.second;
-    }
+    ~memh() noexcept = default;
 
     /**
      * @brief Routes an event to the appropriate handlers with error handling
@@ -890,7 +800,7 @@ public:
                 std::lock_guard lk(_disposers_mtx);
                 _disposers.at(event.getID())->dispose(&event);
             }
-        };
+        }
     }
 
     /**
@@ -908,12 +818,12 @@ public:
         const auto &it =
             _registered_events.find(_RawEvent::template type_to_id<_Event>());
         if (it == _registered_events.cend()) {
-            auto *resolver = new EventResolver<_Event>;
+            auto resolver = std::make_unique<EventResolver<_Event>>();
             resolver->subscribe(handler);
-            _registered_events.insert(
-                {_RawEvent::template type_to_id<_Event>(), resolver});
+            _registered_events.emplace(
+                _RawEvent::template type_to_id<_Event>(), std::move(resolver));
         } else {
-            dynamic_cast<EventResolver<_Event> *>(it->second)->subscribe(handler);
+            dynamic_cast<EventResolver<_Event> *>(it->second.get())->subscribe(handler);
         }
     }
 
@@ -952,9 +862,8 @@ public:
      */
     void
     unsubscribe(_HandlerId const &id) const {
-        for (auto const &it : _registered_events) {
+        for (auto const &it : _registered_events)
             it.second->unsubscribe(id);
-        }
     }
 };
 

@@ -77,20 +77,17 @@ public:
      *
      * @return true if the lock is held, false otherwise
      */
-    bool
-    locked() noexcept {
+    [[nodiscard]] bool
+    locked() const noexcept {
         return _lock.load(std::memory_order_acquire);
     }
 
     /**
      * @brief Try to acquire the lock without spinning
      *
-     * This method attempts to acquire the lock once and returns immediately
-     * regardless of success.
-     *
      * @return true if the lock was acquired, false if it was already locked
      */
-    bool
+    [[nodiscard]] bool
     trylock() noexcept {
         return !_lock.exchange(true, std::memory_order_acquire);
     }
@@ -98,13 +95,10 @@ public:
     /**
      * @brief Try to acquire the lock with a maximum number of spin attempts
      *
-     * This method attempts to acquire the lock, spinning for up to 'spin'
-     * iterations if necessary.
-     *
      * @param spin Maximum number of spin iterations
      * @return true if the lock was acquired, false if maximum spins exceeded
      */
-    bool
+    [[nodiscard]] bool
     trylock(int64_t spin) noexcept {
         // Try to acquire spin-lock at least one time
         do {
@@ -125,7 +119,7 @@ public:
      * @param timespan Maximum duration to try acquiring the lock
      * @return true if the lock was acquired, false if the timeout expired
      */
-    bool
+    [[nodiscard]] bool
     trylock_for(const Timespan &timespan) noexcept {
         // Calculate a finish timestamp
         Timestamp finish = NanoTimestamp() + timespan;
@@ -149,7 +143,7 @@ public:
      * @param timestamp Point in time until which to try acquiring the lock
      * @return true if the lock was acquired, false if the timeout expired
      */
-    bool
+    [[nodiscard]] bool
     trylock_until(const UtcTimestamp &timestamp) noexcept {
         return trylock_for(timestamp - UtcTimestamp());
     }

@@ -44,8 +44,8 @@ namespace qb {
  * @return unique_ptr managing the resource
  */
 template <typename T, typename TCleaner>
-auto resource(T handle, TCleaner cleaner) {
-    return std::unique_ptr<std::remove_pointer_t<T>, TCleaner>(handle, cleaner);
+[[nodiscard]] auto resource(T handle, TCleaner cleaner) {
+    return std::unique_ptr<std::remove_pointer_t<T>, TCleaner>(handle, std::move(cleaner));
 }
 
 /**
@@ -57,23 +57,39 @@ auto resource(T handle, TCleaner cleaner) {
  * @return unique_ptr managing the resource
  */
 template <typename TCleaner>
-auto resource(void* handle, TCleaner cleaner) {
-    return std::unique_ptr<void, TCleaner>(handle, cleaner);
+[[nodiscard]] auto resource(void* handle, TCleaner cleaner) {
+    return std::unique_ptr<void, TCleaner>(handle, std::move(cleaner));
 }
 
 /**
- * @brief Creates a unique_ptr with the deleter object itself as payload
+ * @brief RAII scope guard that invokes a callable on destruction
  *
- * This overload is only useful for special self-contained cleanup patterns.
+ * Replaces the previous dangling-pointer overload of resource().
+ * Use as: auto guard = qb::scope_guard([]{ cleanup(); });
  *
- * @tparam TCleaner Type of the deleter
- * @param cleaner Deleter function/object
- * @return unique_ptr managing the pseudo-resource
+ * @tparam F Callable type (lambda, function pointer, etc.)
  */
-template <typename TCleaner>
-auto resource(TCleaner cleaner) {
-    return std::unique_ptr<void, TCleaner>(&cleaner, cleaner);
-}
+template <typename F>
+class [[nodiscard]] scope_guard {
+    F _fn;
+    bool _active;
+public:
+    explicit scope_guard(F fn) noexcept(std::is_nothrow_move_constructible_v<F>)
+        : _fn(std::move(fn)), _active(true) {}
+    ~scope_guard() { if (_active) _fn(); }
+
+    scope_guard(scope_guard&& other) noexcept(std::is_nothrow_move_constructible_v<F>)
+        : _fn(std::move(other._fn)), _active(other._active) { other.dismiss(); }
+
+    void dismiss() noexcept { _active = false; }
+
+    scope_guard(const scope_guard&) = delete;
+    scope_guard& operator=(const scope_guard&) = delete;
+    scope_guard& operator=(scope_guard&&) = delete;
+};
+
+template <typename F>
+scope_guard(F) -> scope_guard<F>;
 
 /**
  * @class CPU
@@ -92,39 +108,39 @@ public:
     /**
      * @brief Returns the CPU architecture / brand string
      */
-    static std::string Architecture();
+    [[nodiscard]] static std::string Architecture();
 
     /**
      * @brief Returns the number of logical processors available
      */
-    static int Affinity();
+    [[nodiscard]] static int Affinity();
 
     /**
      * @brief Returns the number of logical CPU cores
      */
-    static int LogicalCores();
+    [[nodiscard]] static int LogicalCores();
 
     /**
      * @brief Returns the number of physical CPU cores
      */
-    static int PhysicalCores();
+    [[nodiscard]] static int PhysicalCores();
 
     /**
      * @brief Returns both logical and physical core counts
      *
      * @return pair(logical, physical)
      */
-    static std::pair<int, int> TotalCores();
+    [[nodiscard]] static std::pair<int, int> TotalCores();
 
     /**
      * @brief Returns CPU clock speed in Hz, or -1 if unavailable
      */
-    static std::int64_t ClockSpeed();
+    [[nodiscard]] static std::int64_t ClockSpeed();
 
     /**
      * @brief Returns true when logical cores differ from physical cores
      */
-    static bool HyperThreading();
+    [[nodiscard]] static bool HyperThreading();
 };
 
 } // namespace qb

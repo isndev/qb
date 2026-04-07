@@ -26,7 +26,6 @@
 
 #ifndef QB_CORE_H
 #define QB_CORE_H
-#include <iostream>
 #include <set>
 #include <thread>
 #include <vector>
@@ -97,6 +96,7 @@ public:
 
 private:
     friend class Actor;
+    friend class CoroContext;
     friend class Service;
     friend class CoreInitializer;
     friend class Main;
@@ -106,7 +106,7 @@ private:
     // Types
     using Mailbox         = SharedCoreCommunication::Mailbox;
     using EventBuffer     = std::array<EventBucket, MaxRingEvents>;
-    using ActorMap        = qb::unordered_map<ActorId, Actor *>;
+    using ActorMap        = qb::unordered_map<ActorId, std::unique_ptr<Actor>>;
     using CallbackMap     = qb::unordered_map<ActorId, ICallback *>;
     using PipeMap         = std::vector<VirtualPipe>;
     using RemoveActorList = qb::unordered_set<ActorId>;
@@ -152,6 +152,7 @@ private:
         }
         //
     } _metrics;
+    bool _signal_consumed = false;
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
@@ -200,7 +201,7 @@ private:
      * @param doInit Whether to call the actor's init method
      * @return ID of the added actor or Invalid ID if addition failed
      */
-    [[nodiscard]] ActorId appendActor(Actor &actor, bool doInit = false) noexcept;
+    [[nodiscard]] ActorId appendActor(std::unique_ptr<Actor> actor, bool doInit = false) noexcept;
     void                  removeActor(ActorId id) noexcept;
     //! Actor Management
 

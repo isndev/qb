@@ -50,11 +50,8 @@ VirtualCore::addReferencedActor(_Init &&...init) noexcept {
     _Actor *actor     = actor_ptr.get();
     actor->id_type    = type_id<_Actor>();
     actor->name       = typeid(_Actor).name();
-    if (appendActor(*actor, true).is_valid()) {
-        // Transfert de propriété au système d'acteurs
-        actor_ptr.release();
+    if (appendActor(std::move(actor_ptr), true).is_valid())
         return actor;
-    }
     return nullptr;
 }
 
@@ -68,7 +65,7 @@ VirtualCore::getService() const noexcept {
                                           << " : does not exist");
         return nullptr;
     }
-    return dynamic_cast<_ServiceActor *>(it->second);
+    return dynamic_cast<_ServiceActor *>(it->second.get());
 }
 
 template <typename _Actor>

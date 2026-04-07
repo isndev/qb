@@ -22,21 +22,23 @@
  * @ingroup Time
  */
 
-#ifndef FEATURES_TIMESTAMP_H
-#define FEATURES_TIMESTAMP_H
+#ifndef QB_SYSTEM_TIMESTAMP_H
+#define QB_SYSTEM_TIMESTAMP_H
 
+#include <array>
 #include <chrono>
+#include <compare>
 #include <cstdint>
+#include <functional>
+#include <iomanip>
+#include <optional>
 #include <ratio>
+#include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <utility>
-#include <iomanip>
-#include <array>
-#include <optional>
-#include <functional>
-#include <thread>
 
 #if defined(__APPLE__)
 #include <mach/mach.h>
@@ -353,30 +355,7 @@ public:
         return *this;
     }
     
-    // Comparison operators
-    constexpr bool operator==(const Duration& rhs) const noexcept {
-        return count() == rhs.count();
-    }
-
-    constexpr bool operator!=(const Duration& rhs) const noexcept {
-        return count() != rhs.count();
-    }
-
-    constexpr bool operator<(const Duration& rhs) const noexcept {
-        return count() < rhs.count();
-    }
-
-    constexpr bool operator<=(const Duration& rhs) const noexcept {
-        return count() <= rhs.count();
-    }
-
-    constexpr bool operator>(const Duration& rhs) const noexcept {
-        return count() > rhs.count();
-    }
-
-    constexpr bool operator>=(const Duration& rhs) const noexcept {
-        return count() >= rhs.count();
-    }
+    constexpr auto operator<=>(const Duration& rhs) const noexcept = default;
     
 private:
     rep _duration{0}; ///< Duration in nanoseconds
@@ -890,7 +869,7 @@ public:
 #if defined(_MSC_VER)
         gmtime_s(&tm, &time_t_value);
 #else
-        tm = *std::gmtime(&time_t_value);
+        gmtime_r(&time_t_value, &tm);
 #endif
         
         std::array<char, 128> buffer{};
@@ -972,6 +951,8 @@ public:
         return now().count();
     }
 
+    constexpr auto operator<=>(const TimePoint& rhs) const noexcept = default;
+
 protected:
     rep _time_since_epoch{0}; ///< Time in nanoseconds since epoch
 };
@@ -1025,73 +1006,6 @@ inline Duration operator-(const TimePoint& lhs, const TimePoint& rhs) noexcept {
     return Duration(static_cast<Duration::rep>(lhs.count() - rhs.count()));
 }
 
-// Comparison operators for TimePoint
-/**
- * @brief Equality comparison for time points
- * @param lhs First time point
- * @param rhs Second time point
- * @return true if the time points are equal, false otherwise
- * @ingroup Time
- */
-constexpr bool operator==(const TimePoint& lhs, const TimePoint& rhs) noexcept {
-    return lhs.count() == rhs.count();
-}
-
-/**
- * @brief Inequality comparison for time points
- * @param lhs First time point
- * @param rhs Second time point
- * @return true if the time points are not equal, false otherwise
- * @ingroup Time
- */
-constexpr bool operator!=(const TimePoint& lhs, const TimePoint& rhs) noexcept {
-    return lhs.count() != rhs.count();
-}
-
-/**
- * @brief Less than comparison for time points
- * @param lhs First time point
- * @param rhs Second time point
- * @return true if lhs is earlier than rhs, false otherwise
- * @ingroup Time
- */
-constexpr bool operator<(const TimePoint& lhs, const TimePoint& rhs) noexcept {
-    return lhs.count() < rhs.count();
-}
-
-/**
- * @brief Less than or equal comparison for time points
- * @param lhs First time point
- * @param rhs Second time point
- * @return true if lhs is earlier than or equal to rhs, false otherwise
- * @ingroup Time
- */
-constexpr bool operator<=(const TimePoint& lhs, const TimePoint& rhs) noexcept {
-    return lhs.count() <= rhs.count();
-}
-
-/**
- * @brief Greater than comparison for time points
- * @param lhs First time point
- * @param rhs Second time point
- * @return true if lhs is later than rhs, false otherwise
- * @ingroup Time
- */
-constexpr bool operator>(const TimePoint& lhs, const TimePoint& rhs) noexcept {
-    return lhs.count() > rhs.count();
-}
-
-/**
- * @brief Greater than or equal comparison for time points
- * @param lhs First time point
- * @param rhs Second time point
- * @return true if lhs is later than or equal to rhs, false otherwise
- * @ingroup Time
- */
-constexpr bool operator>=(const TimePoint& lhs, const TimePoint& rhs) noexcept {
-    return lhs.count() >= rhs.count();
-}
-
 // Backward compatibility typedefs
 /**
  * @typedef Timespan
@@ -1128,12 +1042,8 @@ public:
      * @brief Gets current UTC time
      * @return UtcTimePoint representing current UTC time
      */
-    static UtcTimePoint now() noexcept {
-        auto tp = TimePoint::now();
-        UtcTimePoint result;
-        // Convert timepoint to epoch value and construct UtcTimePoint with it
-        result = UtcTimePoint(tp.count());
-        return result;
+    [[nodiscard]] static UtcTimePoint now() noexcept {
+        return UtcTimePoint(TimePoint::now().count());
     }
 };
 
@@ -1156,12 +1066,8 @@ public:
      * @brief Gets current local time
      * @return LocalTimePoint representing current local time
      */
-    static LocalTimePoint now() noexcept {
-        auto tp = TimePoint::now();
-        LocalTimePoint result;
-        // Convert timepoint to epoch value and construct LocalTimePoint with it
-        result = LocalTimePoint(tp.count());
-        return result;
+    [[nodiscard]] static LocalTimePoint now() noexcept {
+        return LocalTimePoint(TimePoint::now().count());
     }
     
     /**
@@ -1176,7 +1082,7 @@ public:
 #if defined(_MSC_VER)
         localtime_s(&tm, &time_t_value);
 #else
-        tm = *std::localtime(&time_t_value);
+        localtime_r(&time_t_value, &tm);
 #endif
         
         std::array<char, 128> buffer{};
@@ -1210,12 +1116,8 @@ public:
      * @brief Gets current high-resolution time
      * @return HighResTimePoint representing current high-resolution time
      */
-    static HighResTimePoint now() noexcept {
-        auto tp = TimePoint::now();
-        HighResTimePoint result;
-        // Convert timepoint to epoch value and construct HighResTimePoint with it
-        result = HighResTimePoint(tp.count());
-        return result;
+    [[nodiscard]] static HighResTimePoint now() noexcept {
+        return HighResTimePoint(TimePoint::now().count());
     }
 };
 
@@ -1536,4 +1438,4 @@ namespace std {
 }
 #endif
 
-#endif // FEATURES_TIMESTAMP_H
+#endif // QB_SYSTEM_TIMESTAMP_H

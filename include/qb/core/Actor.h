@@ -169,6 +169,7 @@ class Actor : nocopy {
     friend class VirtualCore;
     friend class ActorProxy;
     friend class Service;
+    friend struct std::default_delete<Actor>;
 
     const char   *name = "unnamed";
     ActorId       _id;
@@ -960,7 +961,7 @@ public:
      * @return true if any coroutines are still running
      */
     [[nodiscard]] bool has_active_coroutines() const {
-        return active_coroutines_.load(std::memory_order_relaxed) > 0;
+        return active_coroutines_ && active_coroutines_->load(std::memory_order_relaxed) > 0;
     }
 
     /**
@@ -968,7 +969,7 @@ public:
      * @return Count of running coroutines
      */
     [[nodiscard]] std::size_t active_coroutine_count() const {
-        return active_coroutines_.load(std::memory_order_relaxed);
+        return active_coroutines_ ? active_coroutines_->load(std::memory_order_relaxed) : 0;
     }
 
     /**
@@ -998,11 +999,13 @@ private:
     mutable qb::io::async::CoroutineScheduler* coro_scheduler_ = nullptr;
 
     /**
-     * @brief Count of active coroutines
+     * @brief Shared count of active coroutines
      *
-     * Used for lifecycle management and debugging.
+     * Uses shared_ptr so coroutine RAII guards can safely decrement even
+     * after the actor is destroyed (the shared_ptr keeps the counter alive).
+     * Lazily allocated on first spawn_async() call.
      */
-    mutable std::atomic<std::size_t> active_coroutines_{0};
+    mutable std::shared_ptr<std::atomic<std::size_t>> active_coroutines_;
 };
 
 /**
@@ -1011,46 +1014,50 @@ private:
  * @ingroup Actor
  *
  * Provides a restricted interface for coroutines to interact with
- * the Actor safely. Only event sending is allowed.
+ * the actor system safely after co_await points. Captures ActorId
+ * by value to avoid dangling pointer if the actor is destroyed
+ * while the coroutine is suspended.
  */
 class CoroContext {
-    Actor* actor_;
+    ActorId actor_id_;
 
 public:
     /**
-     * @brief Construct from actor
-     * @param actor The parent actor
+     * @brief Construct from actor, capturing its ID by value
+     * @param actor The parent actor (only used to capture ID)
      */
-    explicit CoroContext(Actor* actor) : actor_(actor) {}
+    explicit CoroContext(Actor const *actor) : actor_id_(actor->id()) {}
 
     /**
-     * @brief Send an event to an actor
-     * @tparam Event The event type
+     * @brief Send an event to self (the spawning actor's ID)
+     * @tparam _Event The event type
      * @tparam Args Event constructor arguments
      * @param args Arguments to forward to event constructor
      */
-    template <typename Event, typename... Args>
-    void push(Args&&... args) const {
-        actor_->push<Event>(actor_->id(), std::forward<Args>(args)...);
-    }
+    template <typename _Event, typename... Args>
+    void push(Args &&...args) const;
 
     /**
-     * @brief Get this actor's ID
+     * @brief Send an event to a specific destination actor
+     * @tparam _Event The event type
+     * @tparam Args Event constructor arguments
+     * @param dest Destination actor ID
+     * @param args Arguments to forward to event constructor
+     */
+    template <typename _Event, typename... Args>
+    void push_to(ActorId dest, Args &&...args) const;
+
+    /**
+     * @brief Get the spawning actor's ID (captured at construction)
      * @return ActorId
      */
-    [[nodiscard]] ActorId id() const { return actor_->id(); }
+    [[nodiscard]] ActorId id() const noexcept { return actor_id_; }
 
     /**
-     * @brief Get current time
+     * @brief Get current time from the VirtualCore
      * @return Timestamp in nanoseconds
      */
-    [[nodiscard]] uint64_t time() const { return actor_->time(); }
-
-    /**
-     * @brief Get the actor pointer (for push<Event> usage)
-     * @return Pointer to parent actor
-     */
-    [[nodiscard]] Actor* actor() const { return actor_; }
+    [[nodiscard]] uint64_t time() const noexcept;
 };
 
 /**

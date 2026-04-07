@@ -48,7 +48,9 @@ class mpsc_unbounded_queue : public nocopy {
         std::atomic<Node*> next{nullptr};
         T value;
 
-        explicit Node(T&& v) : value(std::move(v)) {}
+        Node() requires std::default_initializable<T> = default;
+        explicit Node(T&& v) noexcept(std::is_nothrow_move_constructible_v<T>)
+            : value(std::move(v)) {}
     };
 
     alignas(64) std::atomic<Node*> head_{nullptr};
@@ -58,7 +60,7 @@ class mpsc_unbounded_queue : public nocopy {
 
 public:
     mpsc_unbounded_queue() {
-        sentinel_ = new Node(T{});
+        sentinel_ = new Node();
         head_.store(sentinel_, std::memory_order_relaxed);
         tail_.store(sentinel_, std::memory_order_relaxed);
     }

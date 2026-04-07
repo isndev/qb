@@ -16,7 +16,6 @@
 #define QB_PIPE_H
 #include <array>
 #include <cstring>
-#include <iostream>
 #include <memory>
 #include <qb/string.h>
 #include <qb/utility/branch_hints.h>
@@ -417,7 +416,7 @@ public:
      */
     inline auto
     allocate(std::size_t const size) {
-        if (_begin - (size + 1) < _end) {
+        if (_begin >= size + 1 && (_begin - size - 1) < _end) {
             _begin -= size;
             _flag_front = true;
             return _data + _begin;
@@ -512,11 +511,9 @@ public:
         if (!_begin)
             return;
         const auto nb_item = _end - _begin;
-        // std::cout << "Start reorder " << _begin << ":" << _end << "|" << nb_item;
         std::memmove(_data, _data + _begin, nb_item * sizeof(T));
         _begin = 0;
         _end   = nb_item;
-        // std::cout << "End reorder " << _begin << ":" << _end << "|" << _end - _begin;
     }
 
     /**
@@ -811,16 +808,7 @@ pipe<char> &pipe<char>::put<pipe<char>>(pipe<char> const &rhs);
 } // namespace qb::allocator
 
 /**
- * @brief Stream operator to display the content of a pipe<char>
- *
- * @tparam stream Type of output stream
- * @param os Output stream
- * @param p Pipe to display
- * @return Reference to the output stream
- */
-/**
  * @brief Stream output operator for pipe<char>
- * C++23: Using requires clause instead of std::enable_if_t
  */
 template <typename stream>
     requires (!std::is_same_v<stream, qb::allocator::pipe<char>>)

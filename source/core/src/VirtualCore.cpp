@@ -22,6 +22,7 @@
  * @ingroup Core
  */
 
+#include <ostream>
 #include <qb/core/VirtualCore.h>
 #include <qb/event.h>
 #include <qb/io/async/listener.h>
@@ -110,12 +111,7 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     }
 }
 
-VirtualCore::~VirtualCore() noexcept {
-    for (auto [_, actor] : _actors)
-        delete actor;
-    for (auto [_, callback] : _actor_callbacks)
-        delete callback;
-}
+VirtualCore::~VirtualCore() noexcept = default;
 
 ActorId
 VirtualCore::__generate_id__() noexcept {
@@ -259,18 +255,14 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
 
 bool
 VirtualCore::__init__actors__() const {
-    // Create a vector of pairs of ActorId and Actor*
-    // This is done to avoid modifying the _actors map while iterating over it
-    // This is safe because we are not modifying the map while iterating over it
-    std::vector<std::pair<ActorId, Actor *>> actors_to_init;
-    for (auto &actor : _actors) {
-        actors_to_init.push_back(actor);
-    }
-    // Init Static Actors
-    return !std::any_of(actors_to_init.begin(), actors_to_init.end(), [](auto &pair) {
-        auto ret = !pair.second->onInit();
+    std::vector<Actor *> actors_to_init;
+    actors_to_init.reserve(_actors.size());
+    for (const auto &[_, actor] : _actors)
+        actors_to_init.push_back(actor.get());
+    return !std::any_of(actors_to_init.begin(), actors_to_init.end(), [](auto *actor) {
+        auto ret = !actor->onInit();
         if (ret)
-            LOG_CRIT(*pair.second << " failed to init");
+            LOG_CRIT(*actor << " failed to init");
         return ret;
     });
 }
@@ -281,10 +273,18 @@ VirtualCore::__workflow__() {
                    << " actor(s)");
     while (likely(true)) {
         _metrics._nanotimer = Timestamp::nano();
-        
-        // Process I/O events and ALL coroutines (including actor coroutines) via libev
-        // Always run libev even if size() == 0, because actor coroutine timers
-        // are registered in libev but not counted in listener.size()
+
+        // Poll for pending signal (async-signal-safe: volatile sig_atomic_t read)
+        if (auto sig = Main::_signal_pending; sig && !_signal_consumed) {
+            _signal_consumed = true;
+            SignalEvent sig_event;
+            fill_event<SignalEvent>(sig_event, BroadcastId(_index),
+                                   BroadcastId(_index));
+            sig_event.signum = sig;
+            auto &pipe = __getPipe__(_index);
+            pipe.recycle(sig_event, sig_event.bucket_size);
+        }
+
         if (io::async::listener::current.has_coro_scheduler() || 
             io::async::listener::current.size()) {
             _metrics._nb_event_io = io::async::run(EVRUN_NOWAIT);
@@ -297,9 +297,17 @@ VirtualCore::__workflow__() {
         // check if reception killed actors
         if (unlikely(!_actor_to_remove.empty()))
             goto removeActors;
-        // call registered actor callbacks
-        for (const auto &callback : _actor_callbacks)
-            callback.second->onCallback();
+        // Snapshot callback pointers before iteration because onCallback()
+        // may indirectly modify _actor_callbacks (e.g. via addRefActor)
+        {
+            thread_local std::vector<ICallback *> cb_snapshot;
+            cb_snapshot.clear();
+            cb_snapshot.reserve(_actor_callbacks.size());
+            for (const auto &[_, cb] : _actor_callbacks)
+                cb_snapshot.push_back(cb);
+            for (auto *cb : cb_snapshot)
+                cb->onCallback();
+        }
         // check if callbacks killed actors
         if (unlikely(!_actor_to_remove.empty())) {
         removeActors:
@@ -342,16 +350,18 @@ VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
 }
 
 ActorId
-VirtualCore::appendActor(Actor &actor, bool const doInit) noexcept {
+VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) noexcept {
+    Actor &actor = *actor_ptr;
     if (initActor(actor, doInit).is_valid()) {
-        if (_actors.find(actor.id()) == _actors.end()) {
-            _actors.insert({actor.id(), &actor});
+        ActorId id = actor.id();
+        if (_actors.find(id) == _actors.end()) {
+            _actors.emplace(id, std::move(actor_ptr));
             LOG_INFO("New " << actor);
         } else {
             LOG_CRIT("Error Cannot add Service Actor multiple times" << actor);
             return ActorId::NotFound;
         }
-        return actor.id();
+        return id;
     }
     return ActorId::NotFound;
 }
@@ -362,19 +372,13 @@ VirtualCore::removeActor(ActorId const id) noexcept {
     unregisterEvents(id);
     const auto it = _actors.find(id);
     if (it != _actors.end()) {
-        Actor* actor = it->second;
-        
-        // WARNING: Actor destroyed with active coroutines
-        // The coroutines will continue running but MUST NOT access actor state
-        // They should only use CoroContext to send events (which will be ignored)
+        auto &actor = it->second;
         if (actor->has_active_coroutines()) {
-            LOG_WARN("Actor " << id << " destroyed with " 
-                     << actor->active_coroutine_count() 
+            LOG_WARN("Actor " << id << " destroyed with "
+                     << actor->active_coroutine_count()
                      << " active coroutines - coroutines must not access actor state!");
         }
-        
         LOG_INFO("Delete " << *actor);
-        delete actor;
         _actors.erase(it);
         if (id._service_id > _nb_service)
             _ids.insert(id._service_id);
