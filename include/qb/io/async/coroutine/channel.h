@@ -204,13 +204,26 @@ public:
                 _completed = true;
                 schedule_via_current(h);
             } else {
-                ch._send_waiters.push_back(h);
+                ch._send_waiters.push_back({h, nullptr});
             }
         }
 
         void await_resume() {
             if (ch._closed && !_completed) {
                 throw channel_closed();
+            }
+            if (!_completed) {
+                // Woken by a recv that freed buffer space — deliver our value.
+                // If a receiver is already waiting, hand it directly.
+                if (!ch._recv_waiters.empty()) {
+                    auto [recv_h, result_ptr] = ch._recv_waiters.front();
+                    ch._recv_waiters.pop_front();
+                    *result_ptr = std::move(value);
+                    schedule_via_current(recv_h);
+                } else {
+                    ch._buffer.push(std::move(value));
+                }
+                _completed = true;
             }
         }
     };
@@ -239,15 +252,11 @@ public:
             if (!ch._buffer.empty()) {
                 _result = std::move(ch._buffer.front());
                 ch._buffer.pop();
-                if (!ch._send_waiters.empty()) {
-                    auto send_h = ch._send_waiters.front();
-                    ch._send_waiters.pop_front();
-                    schedule_via_current(send_h);
-                }
+                ch.wake_one_sender();
                 return true;
             }
             if (ch._closed)
-                return true;  // _result stays nullopt → channel closed
+                return true;
             return false;
         }
 
@@ -255,11 +264,7 @@ public:
             if (!ch._buffer.empty()) {
                 _result = std::move(ch._buffer.front());
                 ch._buffer.pop();
-                if (!ch._send_waiters.empty()) {
-                    auto send_h = ch._send_waiters.front();
-                    ch._send_waiters.pop_front();
-                    schedule_via_current(send_h);
-                }
+                ch.wake_one_sender();
                 schedule_via_current(h);
             } else if (ch._closed) {
                 schedule_via_current(h);
@@ -269,6 +274,12 @@ public:
         }
 
         std::optional<T> await_resume() {
+            // If woken by close() while data is still in the buffer, drain it.
+            if (!_result && !ch._buffer.empty()) {
+                _result = std::move(ch._buffer.front());
+                ch._buffer.pop();
+                ch.wake_one_sender();
+            }
             return std::move(_result);
         }
     };
@@ -335,11 +346,7 @@ public:
         if (!_buffer.empty()) {
             T value = std::move(_buffer.front());
             _buffer.pop();
-            if (!_send_waiters.empty()) {
-                auto h = _send_waiters.front();
-                _send_waiters.pop_front();
-                schedule_via_current(h);
-            }
+            wake_one_sender();
             return value;
         }
         return std::nullopt;
@@ -356,7 +363,11 @@ public:
         _closed = true;
         for (auto& [h, result_ptr] : _recv_waiters) { (void)result_ptr; schedule_via_current(h); }
         _recv_waiters.clear();
-        for (auto h : _send_waiters) schedule_via_current(h);
+        for (auto& entry : _send_waiters) {
+            if (entry.guard && *entry.guard) continue;
+            if (entry.guard) *entry.guard = true;
+            schedule_via_current(entry.handle);
+        }
         _send_waiters.clear();
         // Notify select waiters with "closed" signal
         for (auto& entry : _select_waiters)
@@ -384,10 +395,7 @@ public:
         // Fast path: value already in buffer
         if (!_buffer.empty()) {
             T val = std::move(_buffer.front()); _buffer.pop();
-            if (!_send_waiters.empty()) {
-                schedule_via_current(_send_waiters.front());
-                _send_waiters.pop_front();
-            }
+            wake_one_sender();
             state->resolve(idx, std::any(std::move(val)));
             return;
         }
@@ -455,33 +463,43 @@ public:
             co_return true;
         }
 
-        // Slow path: wait for space or timeout
-        auto done  = std::make_shared<bool>(false);
+        // Slow path: wait for space or timeout.
+        // guard: shared flag — whichever wakes us first (recv or timer) sets it
+        // to true, preventing the other from double-scheduling the handle.
+        auto guard = std::make_shared<bool>(false);
         auto fired = std::make_shared<bool>(false);
 
         struct timed_send_awaiter {
             channel<T>& ch;
             T val;
-            std::shared_ptr<bool> done;
+            std::shared_ptr<bool> guard;
             std::shared_ptr<bool> fired;
             std::chrono::milliseconds timeout_ms;
 
-            [[nodiscard]] bool await_ready() const noexcept { return *done; }
+            [[nodiscard]] bool await_ready() const noexcept { return false; }
 
             void await_suspend(std::coroutine_handle<> h) {
-                if (*done) { schedule_via_current(h); return; }
-                ch._send_waiters.push_back(h);
-                coro_scheduler().spawn(send_timer(fired, h, timeout_ms));
+                ch._send_waiters.push_back(send_waiter_entry{h, guard});
+                coro_scheduler().spawn(send_timer(guard, fired, h, timeout_ms));
             }
 
             bool await_resume() {
-                if (*fired) return false;  // timeout fired first
+                if (*fired) return false;
                 if (ch._closed) return false;
+                // Deliver directly to a pending receiver if one exists
+                if (!ch._recv_waiters.empty()) {
+                    auto [recv_h, result_ptr] = ch._recv_waiters.front();
+                    ch._recv_waiters.pop_front();
+                    *result_ptr = std::move(val);
+                    schedule_via_current(recv_h);
+                } else {
+                    ch._buffer.push(std::move(val));
+                }
                 return true;
             }
         };
 
-        co_return co_await timed_send_awaiter{*this, std::move(value), done, fired, timeout};
+        co_return co_await timed_send_awaiter{*this, std::move(value), guard, fired, timeout};
     }
 
 private:
@@ -498,24 +516,44 @@ private:
         }
     }
 
-    static task<void> send_timer(std::shared_ptr<bool> fired,
+    static task<void> send_timer(std::shared_ptr<bool> guard,
+                                  std::shared_ptr<bool> fired,
                                   std::coroutine_handle<> h,
                                   std::chrono::milliseconds delay) {
         co_await sleep(delay);
-        *fired = true;
-        schedule_via_current(h);
+        if (!*guard) {
+            *guard = true;
+            *fired = true;
+            schedule_via_current(h);
+        }
     }
 
     size_t _capacity;
     using recv_waiter_entry = std::pair<std::coroutine_handle<>, std::optional<T>*>;
+
+    struct send_waiter_entry {
+        std::coroutine_handle<> handle;
+        std::shared_ptr<bool>   guard;  // set to true on wake (prevents timer double-schedule)
+    };
 
     struct select_waiter_entry {
         std::shared_ptr<channel_select_state> state;
         size_t index;
     };
 
+    void wake_one_sender() {
+        while (!_send_waiters.empty()) {
+            auto entry = _send_waiters.front();
+            _send_waiters.pop_front();
+            if (entry.guard && *entry.guard) continue;  // already woken by timer
+            if (entry.guard) *entry.guard = true;
+            schedule_via_current(entry.handle);
+            return;
+        }
+    }
+
     std::queue<T>  _buffer;
-    std::deque<std::coroutine_handle<>> _send_waiters;
+    std::deque<send_waiter_entry>       _send_waiters;
     std::deque<recv_waiter_entry>       _recv_waiters;
     std::deque<select_waiter_entry>     _select_waiters;
     bool _closed = false;

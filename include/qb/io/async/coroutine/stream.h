@@ -26,6 +26,7 @@
 #include "task.h"
 #include "channel.h"
 #include <functional>
+#include <limits>
 #include <vector>
 #include <optional>
 
@@ -232,50 +233,47 @@ public:
      * Emits the last value only after no new values arrive for the delay period
      */
     async_stream debounce(std::chrono::milliseconds delay) {
-        auto source = _next;
-        auto pending = std::make_shared<std::optional<T>>(std::nullopt);
-        auto deadline = std::make_shared<std::chrono::steady_clock::time_point>();
-        auto waiting = std::make_shared<bool>(false);
-        auto finished = std::make_shared<bool>(false);
+        auto source  = _next;
+        // Effectively unbounded: producer never blocks, consumer drains on wake.
+        auto ch      = std::make_shared<channel<T>>(std::numeric_limits<size_t>::max());
+        auto started = std::make_shared<bool>(false);
 
-        return async_stream([source, pending, deadline, waiting, finished, delay]() -> task<std::optional<T>> {
-            // If we were waiting on a deadline, check if it passed
-            if (*waiting && std::chrono::steady_clock::now() >= *deadline) {
-                *waiting = false;
-                auto result = std::move(*pending);
-                *pending = std::nullopt;
-                co_return result;
+        return async_stream([source, ch, started, delay]() -> task<std::optional<T>> {
+            // Lazy start: spawn producer on first pull
+            if (!*started) {
+                *started = true;
+                coro_scheduler().spawn(
+                    [](std::function<task<std::optional<T>>()> src,
+                       std::shared_ptr<channel<T>> c) -> task<void> {
+                        try {
+                            while (true) {
+                                auto opt = co_await src();
+                                if (!opt) break;
+                                co_await c->send(std::move(*opt));
+                            }
+                        } catch (...) {}
+                        c->close();
+                    }(source, ch));
             }
 
-            // Try to get a new value
+            // Block until at least one value arrives
+            auto first = co_await ch->recv();
+            if (!first) co_return std::nullopt;
+
+            T latest = std::move(*first);
+
+            // Debounce loop: sleep, then drain anything buffered during the quiet period
             while (true) {
-                auto opt = co_await source();
-                if (!opt) {
-                    // Source finished - if we have a pending value, emit it now
-                    *finished = true;
-                    if (*waiting) {
-                        *waiting = false;
-                        auto result = std::move(*pending);
-                        *pending = std::nullopt;
-                        co_return result;
-                    }
-                    co_return std::nullopt;
+                co_await sleep(delay);
+
+                bool got_new = false;
+                while (auto val = ch->try_recv()) {
+                    latest  = std::move(*val);
+                    got_new = true;
                 }
 
-                // Got a new value - update pending and reset deadline
-                *pending = std::move(*opt);
-                *deadline = std::chrono::steady_clock::now() + delay;
-                *waiting = true;
-
-                // Wait a bit then check again
-                co_await sleep(std::chrono::milliseconds(1));
-
-                if (std::chrono::steady_clock::now() >= *deadline) {
-                    *waiting = false;
-                    auto result = std::move(*pending);
-                    *pending = std::nullopt;
-                    co_return result;
-                }
+                if (got_new) continue;  // new values arrived — restart quiet period
+                co_return std::move(latest);
             }
         });
     }
@@ -531,9 +529,8 @@ public:
         }
     }
 
-    // Allow zip to access _next
-    template <typename U>
-    friend async_stream<std::pair<T, U>> zip(async_stream<T> a, async_stream<U> b);
+    // Expose next function for composition helpers (zip, merge_streams)
+    std::function<task<std::optional<T>>()>& next_fn() { return _next; }
 };
 
 /**
@@ -549,9 +546,9 @@ async_stream<T> merge_streams(std::vector<async_stream<T>> streams) {
         return async_stream<T>::empty();
     }
 
-    auto next_funcs = std::make_shared<std::vector<std::function<task<std::optional<T>>>>>();
+    auto next_funcs = std::make_shared<std::vector<std::function<task<std::optional<T>>()>>>();
     for (auto& s : streams) {
-        next_funcs->push_back(std::move(s._next));
+        next_funcs->push_back(std::move(s.next_fn()));
     }
     auto index = std::make_shared<size_t>(0);
     auto active_count = std::make_shared<size_t>(streams.size());
@@ -595,8 +592,8 @@ async_stream<T> merge_streams(std::vector<async_stream<T>> streams) {
  */
 template <typename T, typename U>
 async_stream<std::pair<T, U>> zip(async_stream<T> a, async_stream<U> b) {
-    auto next_a = a._next;
-    auto next_b = b._next;
+    auto next_a = std::move(a.next_fn());
+    auto next_b = std::move(b.next_fn());
 
     return async_stream<std::pair<T, U>>([next_a, next_b]() -> task<std::optional<std::pair<T, U>>> {
         auto opt_a = co_await next_a();

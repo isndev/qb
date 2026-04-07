@@ -272,6 +272,62 @@ TEST_F(SharedTaskScopeTests, FanOut_MultipleWorkersAwaitSameData) {
 }
 
 // =============================================================================
+// TEST SUITE: SharedTask Advanced
+// =============================================================================
+
+class SharedTaskAdvancedTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(SharedTaskAdvancedTests, DefaultConstructedIsInvalid) {
+    shared_task<int> st;
+    EXPECT_FALSE(st.valid());
+    EXPECT_FALSE(st.is_ready());
+}
+
+TEST_F(SharedTaskAdvancedTests, NonDefaultConstructibleType) {
+    struct NoDefault {
+        int value;
+        explicit NoDefault(int v) : value(v) {}
+    };
+
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto st = make_shared_task([]() -> task<NoDefault> {
+            co_return NoDefault{42};
+        }());
+        co_await sleep(10ms);
+        auto result = co_await st;
+        EXPECT_EQ(result.value, 42);
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(SharedTaskAdvancedTests, SharedTaskCopyAndValidState) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto st = make_shared_task([]() -> task<int> {
+            co_await sleep(10ms);
+            co_return 100;
+        }());
+        EXPECT_TRUE(st.valid());
+        auto st_copy = st;
+        EXPECT_TRUE(st_copy.valid());
+        auto val = co_await st;
+        EXPECT_EQ(val, 100);
+        EXPECT_TRUE(st.is_ready());
+        EXPECT_TRUE(st_copy.is_ready());
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

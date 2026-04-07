@@ -268,6 +268,24 @@ auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
     // run_sync returns, so the reference is valid for the pump loop.
     // Return type is explicit value (not decltype(auto)): `return std::move(*optional)` can deduce
     // an rvalue reference into the optional's storage and dangle after this function returns.
+    auto pump = [](bool& done) {
+        while (!done) {
+            bool has_ready = listener::current.has_coro_scheduler() &&
+                             listener::current.coro_scheduler().has_ready();
+            if (has_ready) {
+                for (int i = 0; i < 16 && !done; ++i) {
+                    listener::current.run(EVRUN_NOWAIT);
+                    if (!listener::current.has_coro_scheduler() ||
+                        !listener::current.coro_scheduler().has_ready())
+                        break;
+                }
+            } else {
+                // Block until at least one event fires (avoids 100% CPU spin)
+                listener::current.run(EVRUN_ONCE);
+            }
+        }
+    };
+
     if constexpr (std::is_void_v<return_type>) {
         bool done = false;
         coro_scheduler().spawn(
@@ -275,14 +293,7 @@ auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
                 co_await awaitable;
                 done = true;
             });
-        while (!done) {
-            for (int i = 0; i < 16 /*max event loop drain iterations*/ && !done; ++i) {
-                listener::current.run(EVRUN_NOWAIT);
-                if (!listener::current.has_coro_scheduler() ||
-                    !listener::current.coro_scheduler().has_ready())
-                    break;
-            }
-        }
+        pump(done);
     } else {
         std::optional<value_type> result;
         bool                      done = false;
@@ -291,14 +302,7 @@ auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
                 result = co_await awaitable;
                 done   = true;
             });
-        while (!done) {
-            for (int i = 0; i < 16 /*max event loop drain iterations*/ && !done; ++i) {
-                listener::current.run(EVRUN_NOWAIT);
-                if (!listener::current.has_coro_scheduler() ||
-                    !listener::current.coro_scheduler().has_ready())
-                    break;
-            }
-        }
+        pump(done);
         return std::move(*result);
     }
 }

@@ -666,6 +666,156 @@ TEST_F(ScopeEventDrivenTests, ScopeActiveCount) {
 }
 
 // =============================================================================
+// TEST SUITE: Scope Advanced APIs
+// =============================================================================
+
+class ScopeAdvancedTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler())
+            qb::io::async::run_for(5ms);
+        qb::io::async::listener::current.clear();
+    }
+};
+
+TEST_F(ScopeAdvancedTests, CancellingScopePolicy) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        cancelling_scope scope;
+        scope.spawn(sleep_worker(10ms));
+        scope.spawn(sleep_worker(10ms));
+        EXPECT_EQ(scope.active_count(), 2u);
+        scope.cancel_all();
+        co_await scope.join_all();
+        EXPECT_EQ(scope.active_count(), 0u);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(ScopeAdvancedTests, DetachingScopeDefaultConstructor) {
+    detaching_scope scope;
+    EXPECT_EQ(scope.active_count(), 0u);
+    EXPECT_TRUE(scope.empty());
+}
+
+TEST_F(ScopeAdvancedTests, ScopeCancelTokenAccessor) {
+    coroutine_scope scope;
+    auto token = scope.cancel_token();
+    EXPECT_FALSE(token.is_cancelled());
+    scope.cancel_all();
+    EXPECT_TRUE(token.is_cancelled());
+}
+
+TEST_F(ScopeAdvancedTests, CaptureResult) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        std::optional<int> result;
+        coroutine_scope scope;
+        scope.spawn(capture_result([]() -> task<int> {
+            co_await sleep(10ms);
+            co_return 42;
+        }(), result));
+        co_await scope.join_all();
+        EXPECT_TRUE(result.has_value());
+        if (result.has_value()) EXPECT_EQ(*result, 42);
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(ScopeAdvancedTests, ParallelVariadic) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto [a, b, c] = co_await parallel(
+            []() -> task<int> { co_await sleep(10ms); co_return 1; }(),
+            []() -> task<int> { co_await sleep(10ms); co_return 2; }(),
+            []() -> task<int> { co_await sleep(10ms); co_return 3; }()
+        );
+        EXPECT_EQ(a, 1);
+        EXPECT_EQ(b, 2);
+        EXPECT_EQ(c, 3);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(ScopeAdvancedTests, WithScopeHelper) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto result = co_await with_scope([](coroutine_scope& scope) -> task<int> {
+            co_return 42;
+        });
+        EXPECT_EQ(result, 42);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(ScopeAdvancedTests, RepeatWhileStopsOnPredicate) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        int iterations = 0;
+        co_await repeat_while(
+            [&]() -> task<void> {
+                ++iterations;
+                co_await sleep(5ms);
+            },
+            [&]() { return iterations < 5; }
+        );
+        EXPECT_EQ(iterations, 5);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(ScopeAdvancedTests, RepeatWhileStopsOnCancelToken) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        int iterations = 0;
+        cancellation_token token;
+        token.cancel();
+        co_await repeat_while(
+            [&]() -> task<void> {
+                ++iterations;
+                co_return;
+            },
+            [&]() { return iterations < 10; },
+            token
+        );
+        EXPECT_EQ(iterations, 0);
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(ScopeAdvancedTests, TotalCountVsActiveCount) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        coroutine_scope scope;
+        scope.spawn(sleep_worker(10ms));
+        scope.spawn(sleep_worker(200ms));
+        EXPECT_EQ(scope.total_count(), 2u);
+        EXPECT_EQ(scope.active_count(), 2u);
+        co_await sleep(50ms);
+        EXPECT_EQ(scope.total_count(), 2u);
+        EXPECT_LE(scope.active_count(), 2u);
+        scope.cancel_all();
+        co_await scope.join_all();
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

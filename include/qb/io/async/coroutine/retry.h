@@ -97,15 +97,18 @@ inline std::chrono::milliseconds calculate_delay(
             break;
 
         case backoff_strategy::linear:
-            delay = policy.base_delay * static_cast<int>(attempt);
+            delay = policy.base_delay * static_cast<long long>(std::min<size_t>(attempt, 10000));
             break;
 
-        case backoff_strategy::exponential:
-            delay = policy.base_delay * (1 << attempt);
+        case backoff_strategy::exponential: {
+            auto shift = std::min<size_t>(attempt, 30);
+            delay = policy.base_delay * (1u << shift);
             break;
+        }
 
-        case backoff_strategy::exponential_jitter:
-            delay = policy.base_delay * (1 << attempt);
+        case backoff_strategy::exponential_jitter: {
+            auto shift = std::min<size_t>(attempt, 30);
+            delay = policy.base_delay * (1u << shift);
             // Add 0-50% jitter using thread-local RNG
             {
                 static thread_local std::mt19937 rng{std::random_device{}()};
@@ -114,6 +117,7 @@ inline std::chrono::milliseconds calculate_delay(
                     (delay.count() * dist(rng)) / 100);
             }
             break;
+        }
     }
 
     // Cap at max delay

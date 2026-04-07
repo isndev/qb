@@ -548,7 +548,7 @@ task<std::tuple<typename Tasks::value_type...>> parallel(Tasks... tasks) {
  * @ingroup Coroutine
  */
 template <typename F>
-task<std::invoke_result_t<F>> with_scope(F f) {
+auto with_scope(F f) -> task<typename std::invoke_result_t<F, coroutine_scope&>::value_type> {
     coroutine_scope scope;
     co_return co_await f(scope);
 }

@@ -577,6 +577,208 @@ TEST_F(StreamLifetimeTests, FromChannelWithAsyncProducer) {
 }
 
 // =============================================================================
+// TEST SUITE: Stream Advanced Factories and Operators
+// =============================================================================
+
+class StreamAdvancedTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(StreamAdvancedTests, MergeStreamsInterleavesRoundRobin) {
+    auto coro_fn = []() -> task<void> {
+        auto s1 = async_stream<int>::from_vector({1, 3, 5});
+        auto s2 = async_stream<int>::from_vector({2, 4, 6});
+
+        std::vector<async_stream<int>> vec;
+        vec.push_back(std::move(s1));
+        vec.push_back(std::move(s2));
+
+        auto merged = merge_streams(std::move(vec));
+        auto result = co_await merged.collect();
+
+        EXPECT_EQ(result.size(), 6u);
+        EXPECT_EQ(result[0], 1);
+        EXPECT_EQ(result[1], 2);
+        EXPECT_EQ(result[2], 3);
+        EXPECT_EQ(result[3], 4);
+    };
+
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await coro_fn();
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(StreamAdvancedTests, MergeEmptyStreams) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        std::vector<async_stream<int>> vec;
+        auto merged = merge_streams(std::move(vec));
+        auto result = co_await merged.collect();
+        EXPECT_TRUE(result.empty());
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(StreamAdvancedTests, ZipPairsElements) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto s1 = async_stream<int>::from_vector({1, 2, 3});
+        auto s2 = async_stream<std::string>::from_vector({"a", "b", "c"});
+
+        auto zipped = zip(std::move(s1), std::move(s2));
+        auto result = co_await zipped.collect();
+
+        EXPECT_EQ(result.size(), 3u);
+        EXPECT_EQ(result[0].first, 1);
+        EXPECT_EQ(result[0].second, "a");
+        EXPECT_EQ(result[2].first, 3);
+        EXPECT_EQ(result[2].second, "c");
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(StreamAdvancedTests, ZipStopsAtShorterStream) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto s1 = async_stream<int>::from_vector({1, 2, 3, 4, 5});
+        auto s2 = async_stream<int>::from_vector({10, 20});
+
+        auto zipped = zip(std::move(s1), std::move(s2));
+        auto result = co_await zipped.collect();
+
+        EXPECT_EQ(result.size(), 2u);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(StreamAdvancedTests, DrainToChannel) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        channel<int> ch(10);
+        auto stream = async_stream<int>::from_vector({10, 20, 30});
+        co_await stream.drain_to(ch);
+        ch.close();
+
+        std::vector<int> collected;
+        while (auto v = co_await ch.recv()) {
+            collected.push_back(*v);
+        }
+        EXPECT_EQ(collected.size(), 3u);
+        EXPECT_EQ(collected[0], 10);
+        EXPECT_EQ(collected[2], 30);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(StreamAdvancedTests, FromGeneratorSync) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        int counter = 0;
+        auto stream = from_generator([&counter]() -> int {
+            return counter++;
+        });
+        auto result = co_await stream.take(5).collect();
+        EXPECT_EQ(result.size(), 5u);
+        EXPECT_EQ(result[0], 0);
+        EXPECT_EQ(result[4], 4);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(StreamAdvancedTests, TimerStreamEmitsOnceAfterDelay) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto stream = timer(42, 50ms);
+        auto result = co_await stream.collect();
+        EXPECT_EQ(result.size(), 1u);
+        EXPECT_EQ(result[0], 42);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(StreamAdvancedTests, IntervalStreamEmitsTicks) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto stream = interval(30ms, true);
+        auto result = co_await stream.take(3).collect();
+        EXPECT_EQ(result.size(), 3u);
+        EXPECT_EQ(result[0], 0u);
+        EXPECT_EQ(result[1], 1u);
+        EXPECT_EQ(result[2], 2u);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(StreamAdvancedTests, BackpressureRespectsBound) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto source = async_stream<int>::from_vector({1, 2, 3, 4, 5});
+        auto bp = source.backpressure(2);
+        auto result = co_await bp.collect();
+        EXPECT_EQ(result.size(), 5u);
+        EXPECT_EQ(result[0], 1);
+        EXPECT_EQ(result[4], 5);
+        done = true;
+    }());
+    run_for(1000ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(StreamAdvancedTests, ThrottleRateLimits) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto stream = async_stream<int>::from_vector({1, 2, 3});
+        auto throttled = stream.throttle(30ms);
+        auto start = std::chrono::steady_clock::now();
+        auto result = co_await throttled.collect();
+        auto elapsed = std::chrono::steady_clock::now() - start;
+        EXPECT_EQ(result.size(), 3u);
+        EXPECT_GE(elapsed, 50ms);
+        done = true;
+    }());
+    run_for(1000ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(StreamAdvancedTests, FromChannelSharedMultipleConsumers) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto ch_ptr = std::make_shared<channel<int>>(10);
+        co_await ch_ptr->send(1);
+        co_await ch_ptr->send(2);
+        co_await ch_ptr->send(3);
+        ch_ptr->close();
+
+        auto stream = async_stream<int>::from_channel_shared(ch_ptr);
+        auto result = co_await stream.collect();
+        EXPECT_EQ(result.size(), 3u);
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

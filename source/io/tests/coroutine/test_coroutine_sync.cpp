@@ -525,6 +525,126 @@ TEST_F(AsyncLatchTests, ExtraCountDownIsSafe) {
 }
 
 // =============================================================================
+// TEST SUITE: Advanced Sync APIs
+// =============================================================================
+
+class SyncAdvancedTests : public ::testing::Test {
+protected:
+    void SetUp() override { qb::io::async::init(); }
+    void TearDown() override { qb::io::async::listener::current.clear(); }
+};
+
+TEST_F(SyncAdvancedTests, WithSemaphoreHelper) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        semaphore sem(1);
+        auto result = co_await with_semaphore(sem, []() { return 42; });
+        EXPECT_EQ(result, 42);
+        EXPECT_EQ(sem.available_permits(), 1u);
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(SyncAdvancedTests, WithLockHelper) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        async_mutex mtx;
+        auto result = co_await with_lock(mtx, []() { return std::string("hello"); });
+        EXPECT_EQ(result, "hello");
+        EXPECT_FALSE(mtx.is_locked());
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(SyncAdvancedTests, BarrierResetAndReuse) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        barrier b(2);
+        int phase = 0;
+
+        auto participant = [&b, &phase](int id) -> task<void> {
+            co_await b.arrive_and_wait();
+            phase = 1;
+        };
+
+        coro_scheduler().spawn(participant(1));
+        coro_scheduler().spawn(participant(2));
+        co_await sleep(50ms);
+        EXPECT_EQ(phase, 1);
+
+        b.reset();
+        phase = 0;
+
+        coro_scheduler().spawn(participant(3));
+        coro_scheduler().spawn(participant(4));
+        co_await sleep(50ms);
+        EXPECT_EQ(phase, 1);
+
+        done = true;
+    }());
+    run_for(500ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(SyncAdvancedTests, SemaphoreAvailableAndTotalPermits) {
+    semaphore sem(5);
+    EXPECT_EQ(sem.total_permits(), 5u);
+    EXPECT_EQ(sem.available_permits(), 5u);
+    EXPECT_TRUE(sem.try_acquire());
+    EXPECT_EQ(sem.available_permits(), 4u);
+    EXPECT_EQ(sem.total_permits(), 5u);
+    sem.release();
+    EXPECT_EQ(sem.available_permits(), 5u);
+}
+
+TEST_F(SyncAdvancedTests, AsyncMutexWaitersCount) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        async_mutex mtx;
+        EXPECT_EQ(mtx.waiters_count(), 0u);
+        EXPECT_FALSE(mtx.is_locked());
+        co_await mtx.lock();
+        EXPECT_TRUE(mtx.is_locked());
+        EXPECT_EQ(mtx.waiters_count(), 0u);
+        mtx.unlock();
+        EXPECT_FALSE(mtx.is_locked());
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+TEST_F(SyncAdvancedTests, AsyncEventBasicState) {
+    async_event evt;
+    EXPECT_EQ(evt.waiters_count(), 0u);
+    EXPECT_FALSE(evt.is_set());
+    evt.set();
+    EXPECT_TRUE(evt.is_set());
+    evt.reset();
+    EXPECT_FALSE(evt.is_set());
+}
+
+TEST_F(SyncAdvancedTests, RWLockScopedReadWriteLock) {
+    bool done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        async_rw_lock rw;
+        {
+            auto rg = co_await rw.scoped_read_lock();
+        }
+        {
+            auto wg = co_await rw.scoped_write_lock();
+        }
+        done = true;
+    }());
+    run_for(200ms);
+    EXPECT_TRUE(done);
+}
+
+// =============================================================================
 // Main Entry Point
 // =============================================================================
 

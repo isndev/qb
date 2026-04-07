@@ -552,7 +552,6 @@ public:
 
     struct arrive_awaiter {
         barrier& b;
-        std::coroutine_handle<> _handle;
 
         // Single-thread cooperative: _remaining won't change between
         // await_ready() and await_suspend() since we haven't suspended yet.
@@ -577,7 +576,7 @@ public:
     };
 
     arrive_awaiter arrive_and_wait() {
-        return arrive_awaiter{*this, std::coroutine_handle<>{}};
+        return arrive_awaiter{*this};
     }
 
     /**
