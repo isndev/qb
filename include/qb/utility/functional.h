@@ -25,23 +25,26 @@
 
 #ifndef QB_FUNCTIONAL_H
 #define QB_FUNCTIONAL_H
+#include <cstddef>
 #include <functional>
 
 namespace qb {
 
+namespace detail {
+
 /**
- * @brief Internal helper function to combine a single value into a hash seed.
- * @private
+ * @brief Combines a single value's hash into a seed (FNV-1a inspired).
  * @tparam T Type of the value to hash.
- * @param seed The seed value to combine with (modified in-place by XORing and bit manipulation).
- * @param val The value whose hash is to be combined into the seed.
- * @details Uses a common hash combining approach similar to FNV-1a or boost::hash_combine.
+ * @param seed The running hash seed (modified in-place).
+ * @param val The value whose hash is to be folded into the seed.
  */
 template <typename T>
-void
-_hash_combine(size_t &seed, const T &val) {
-    seed ^= std::hash<T>()(val) + 0x9e3779b9 + (seed << 6u) + (seed >> 2u);
+constexpr void
+hash_combine_one(std::size_t &seed, const T &val) noexcept {
+    seed ^= std::hash<T>{}(val) + 0x9e3779b9 + (seed << 6u) + (seed >> 2u);
 }
+
+} // namespace detail
 
 /**
  * @brief Combines the hash values of multiple objects into a single hash value.
@@ -49,42 +52,33 @@ _hash_combine(size_t &seed, const T &val) {
  * @tparam Types Variadic template parameter pack of the types of objects to hash.
  * @param args The values whose hash codes are to be combined.
  * @return A single `size_t` hash value representing the combination of all input values.
- * @details This function is particularly useful for creating custom hash functions for composite
- *          objects (structs or classes) to be used as keys in hash-based containers like
- *          `qb::unordered_map` or `std::unordered_map`. It iteratively combines the hash
- *          of each argument into a seed.
  *
  * @code
  * struct MyKey {
  *     int id;
  *     std::string name;
- *     double value;
  *
- *     bool operator==(const MyKey& other) const {
- *         return id == other.id && name == other.name && value == other.value;
- *     }
+ *     bool operator==(const MyKey&) const = default;
  * };
  *
  * namespace std {
  *   template <>
  *   struct hash<MyKey> {
  *     std::size_t operator()(const MyKey& k) const {
- *       return qb::hash_combine(k.id, k.name, k.value);
+ *       return qb::hash_combine(k.id, k.name);
  *     }
  *   };
- * } // namespace std
- *
- * // ... later ...
- * // qb::unordered_map<MyKey, SomeData> my_map;
+ * }
  * @endcode
  */
 template <typename... Types>
-size_t
-hash_combine(const Types &...args) {
-    size_t seed = 0;
-    (_hash_combine(seed, args), ...); // create hash value with seed over all args
+[[nodiscard]] constexpr std::size_t
+hash_combine(const Types &...args) noexcept {
+    std::size_t seed = 0;
+    (detail::hash_combine_one(seed, args), ...);
     return seed;
 }
+
 } // namespace qb
 
 #endif // QB_FUNCTIONAL_H

@@ -151,6 +151,11 @@ Actor::try_send(Event const &event) const noexcept {
     return VirtualCore::_handler->try_send(event);
 }
 
+uint64_t
+CoroContext::time() const noexcept {
+    return VirtualCore::_handler->time();
+}
+
 Service::Service(ServiceId const sid) noexcept
     : Actor(ActorId(sid, VirtualCore::_handler->getIndex())) {}
 } // namespace qb

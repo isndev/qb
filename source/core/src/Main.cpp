@@ -23,6 +23,7 @@
  */
 
 #include <csignal>
+#include <iostream>
 #include <qb/core/Main.h>
 #include <qb/core/VirtualCore.h>
 #include <qb/io/async/listener.h>
@@ -44,8 +45,6 @@ void
 CoreInitializer::clear() noexcept {
     _next_id = VirtualCore::_nb_service + 1;
     _affinity.clear();
-    for (auto factory : _actor_factories)
-        delete factory;
     _actor_factories.clear();
     _registered_services.clear();
 }
@@ -120,15 +119,11 @@ SharedCoreCommunication::SharedCoreCommunication(
     for (const auto &[index, initializer] : core_initializers) {
         const auto nb_producers = _core_set.getNbCore();
         _mail_boxes[_core_set.resolve(index)] =
-            new Mailbox(nb_producers, initializer.getLatency());
+            std::make_unique<Mailbox>(nb_producers, initializer.getLatency());
     }
 }
 
-SharedCoreCommunication::~SharedCoreCommunication() noexcept {
-    for (auto mailbox : _mail_boxes) {
-        delete mailbox;
-    }
-}
+SharedCoreCommunication::~SharedCoreCommunication() noexcept = default;
 
 bool
 SharedCoreCommunication::send(Event const &event) const noexcept {
@@ -147,7 +142,7 @@ SharedCoreCommunication::send(Event const &event) const noexcept {
 
 SharedCoreCommunication::Mailbox &
 SharedCoreCommunication::getMailBox(CoreId const id) const noexcept {
-    return *_mail_boxes[_core_set.resolve(id)];
+    return *_mail_boxes[_core_set.resolve(id)].get();
 }
 
 CoreId
@@ -156,24 +151,13 @@ SharedCoreCommunication::getNbCore() const noexcept {
 }
 // !SharedCoreCommunication
 
-std::vector<Main *> Main::_instances      = {};
-std::mutex          Main::_instances_lock = {};
+std::vector<Main *>           Main::_instances      = {};
+std::mutex                    Main::_instances_lock = {};
+volatile std::sig_atomic_t    Main::_signal_pending = 0;
 
 void
 Main::onSignal(int const signum) noexcept {
-    std::lock_guard lock(Main::_instances_lock);
-    for (auto it : Main::_instances) {
-        if (it->_is_running) {
-            for (auto core_id : it->_shared_com->_core_set._raw_set) {
-                SignalEvent event;
-                VirtualCore::fill_event<SignalEvent>(event, BroadcastId(core_id),
-                                                     BroadcastId(core_id));
-                event.signum = signum;
-                while (!it->_shared_com->send(event))
-                    spin_loop_pause();
-            }
-        }
-    }
+    _signal_pending = signum;
 }
 
 Main::Main() noexcept
@@ -210,8 +194,9 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
             params.sync_start.store(VirtualCore::Error::NoActor,
                                     std::memory_order_release);
         } else if (std::any_of(core_factory.begin(), core_factory.end(),
-                               [&core](auto it) {
-                                   return !core.appendActor(*it->create()).is_valid();
+                               [&core](auto const &it) {
+                                   return !core.appendActor(
+                                       std::unique_ptr<Actor>(it->create())).is_valid();
                                })) {
             LOG_CRIT("Actor at " << core << " failed to init");
             params.sync_start.store(VirtualCore::Error::BadActorInit,
@@ -270,7 +255,8 @@ Main::start(bool async) noexcept {
         return;
     }
 
-    _is_running = true;
+    _is_running      = true;
+    _signal_pending  = 0;
     _shared_com = std::make_unique<SharedCoreCommunication>(_core_initializers);
     _cores.resize(_core_initializers.size());
 
@@ -310,7 +296,7 @@ Main::hasError() const noexcept {
 
 void
 Main::stop() noexcept {
-    std::raise(SIGINT);
+    _signal_pending = SIGINT;
 }
 
 void

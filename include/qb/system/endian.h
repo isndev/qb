@@ -4,8 +4,8 @@
  *
  * This file provides utilities for detecting the system's native endianness
  * and converting values between different byte orders (little endian and big endian).
- * It includes functions for runtime and compile-time endianness detection,
- * as well as safe byte-swapping operations that work with arithmetic and enum types.
+ * It leverages C++20 std::endian and C++23 std::byteswap when available, with
+ * portable fallbacks for other compilers.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -25,112 +25,84 @@
 
 #ifndef QB_SYSTEM_ENDIAN_H
 #define QB_SYSTEM_ENDIAN_H
+#include <bit>
 #include <cstdint>
-#include <cstring>
 #include <type_traits>
-
-// Compile-time endianness detection (GCC/Clang)
-#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && \
-    defined(__ORDER_BIG_ENDIAN__)
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#define ENDIAN_NATIVE_LITTLE
-#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define ENDIAN_NATIVE_BIG
-#endif
-#endif
 
 namespace qb::endian {
 
 /**
- * @brief Enumeration of byte order types
+ * @brief Enumeration of byte order types (maps to std::endian)
  */
 enum class order {
-    little, ///< Little-endian (least significant byte first)
-    big,    ///< Big-endian (most significant byte first)
-    unknown ///< Unknown endianness
+    little  = static_cast<int>(std::endian::little),
+    big     = static_cast<int>(std::endian::big),
+    native  = static_cast<int>(std::endian::native),
+    unknown = -1
 };
 
 /**
- * @brief Determines the system's native byte order at runtime
- *
- * Uses compiler macros for detection when available, with a fallback to
- * runtime detection using a union.
- *
+ * @brief Determines the system's native byte order
  * @return The native byte order of the system
  */
-constexpr order
-native_order() {
-#if defined(ENDIAN_NATIVE_LITTLE)
-    return order::little;
-#elif defined(ENDIAN_NATIVE_BIG)
-    return order::big;
-#else
-    union {
-        uint32_t i;
-        uint8_t  c[4];
-    } u = {0x01020304};
-
-    return (u.c[0] == 0x04) ? order::little : order::big;
-#endif
+[[nodiscard]] consteval order
+native_order() noexcept {
+    if constexpr (std::endian::native == std::endian::little)
+        return order::little;
+    else if constexpr (std::endian::native == std::endian::big)
+        return order::big;
+    else
+        return order::unknown;
 }
 
 /**
- * @brief Checks if the system is little-endian at compile time when possible
- *
- * Uses compiler macros for detection when available, with a fallback to
- * runtime detection.
- *
+ * @brief Checks if the system is little-endian
  * @return true if system is little-endian, false otherwise
  */
-constexpr bool
-is_little_endian() {
-#if defined(ENDIAN_NATIVE_LITTLE)
-    return true;
-#elif defined(ENDIAN_NATIVE_BIG)
-    return false;
-#else
-    return native_order() == order::little;
-#endif
+[[nodiscard]] consteval bool
+is_little_endian() noexcept {
+    return std::endian::native == std::endian::little;
 }
 
 /**
  * @brief Checks if the system is big-endian
- *
  * @return true if system is big-endian, false otherwise
  */
-constexpr bool
-is_big_endian() {
-    return !is_little_endian();
+[[nodiscard]] consteval bool
+is_big_endian() noexcept {
+    return std::endian::native == std::endian::big;
 }
 
 /**
  * @brief Swaps the byte order of a value
  *
- * Reverses the bytes of any trivially copyable type. This function is safe
- * to use with any arithmetic or enum type.
+ * Uses C++23 std::byteswap for integral types.
+ * Falls back to a manual reversal for enum types.
  *
- * @tparam T The type of value to byte-swap (must be arithmetic or enum and trivially
- * copyable)
+ * @tparam T The type of value to byte-swap (must be arithmetic or enum and trivially copyable)
  * @param value The value to byte-swap
  * @return The byte-swapped value
  */
 template <typename T>
-inline T
-byteswap(T value) {
-    // C++23: Use _v suffix for cleaner syntax
+[[nodiscard]] constexpr T
+byteswap(T value) noexcept {
     static_assert(std::is_arithmetic_v<T> || std::is_enum_v<T>,
                   "byteswap only supports arithmetic or enum types");
     static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
 
-    T              result;
-    const uint8_t *src = reinterpret_cast<const uint8_t *>(&value);
-    uint8_t       *dst = reinterpret_cast<uint8_t *>(&result);
-
-    // C++23: Using 'uz' suffix for size_t literals
-    for (auto i = 0uz; i < sizeof(T); ++i)
-        dst[i] = src[sizeof(T) - 1 - i];
-
-    return result;
+    if constexpr (std::is_integral_v<T>) {
+        return std::byteswap(value);
+    } else if constexpr (std::is_enum_v<T>) {
+        using U = std::underlying_type_t<T>;
+        return static_cast<T>(std::byteswap(static_cast<U>(value)));
+    } else {
+        T              result;
+        const uint8_t *src = reinterpret_cast<const uint8_t *>(&value);
+        uint8_t       *dst = reinterpret_cast<uint8_t *>(&result);
+        for (std::size_t i = 0; i < sizeof(T); ++i)
+            dst[i] = src[sizeof(T) - 1 - i];
+        return result;
+    }
 }
 
 /**
@@ -141,9 +113,12 @@ byteswap(T value) {
  * @return The value in big-endian byte order
  */
 template <typename T>
-inline T
-to_big_endian(T value) {
-    return is_little_endian() ? byteswap(value) : value;
+[[nodiscard]] constexpr T
+to_big_endian(T value) noexcept {
+    if constexpr (is_little_endian())
+        return byteswap(value);
+    else
+        return value;
 }
 
 /**
@@ -154,9 +129,12 @@ to_big_endian(T value) {
  * @return The value in native byte order
  */
 template <typename T>
-inline T
-from_big_endian(T value) {
-    return is_little_endian() ? byteswap(value) : value;
+[[nodiscard]] constexpr T
+from_big_endian(T value) noexcept {
+    if constexpr (is_little_endian())
+        return byteswap(value);
+    else
+        return value;
 }
 
 /**
@@ -167,9 +145,12 @@ from_big_endian(T value) {
  * @return The value in little-endian byte order
  */
 template <typename T>
-inline T
-to_little_endian(T value) {
-    return is_big_endian() ? byteswap(value) : value;
+[[nodiscard]] constexpr T
+to_little_endian(T value) noexcept {
+    if constexpr (is_big_endian())
+        return byteswap(value);
+    else
+        return value;
 }
 
 /**
@@ -180,9 +161,12 @@ to_little_endian(T value) {
  * @return The value in native byte order
  */
 template <typename T>
-inline T
-from_little_endian(T value) {
-    return is_big_endian() ? byteswap(value) : value;
+[[nodiscard]] constexpr T
+from_little_endian(T value) noexcept {
+    if constexpr (is_big_endian())
+        return byteswap(value);
+    else
+        return value;
 }
 
 } // namespace qb::endian

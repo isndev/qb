@@ -25,9 +25,10 @@
 
 #ifndef QB_UNORDERED_MAP_H
 #define QB_UNORDERED_MAP_H
-#include <string>
+#include <algorithm>
 #include <map>
 #include <ska_hash/unordered_map.hpp>
+#include <string>
 #include <unordered_map>
 
 namespace qb {
@@ -185,12 +186,10 @@ public:
      * @param str The input string
      * @return std::string Lowercase version of the input string
      */
-    static std::string
+    [[nodiscard]] static std::string
     convert(std::string const &str) {
-        std::string copy;
-        copy.reserve(str.size());
-        std::for_each(str.cbegin(), str.cend(),
-                      [&copy](const char &c) { copy += charToLower(c); });
+        std::string copy(str.size(), '\0');
+        std::transform(str.cbegin(), str.cend(), copy.begin(), charToLower);
         return copy;
     }
 
@@ -200,12 +199,10 @@ public:
      * @param str The input string_view
      * @return std::string Lowercase version of the input string
      */
-    static std::string
+    [[nodiscard]] static std::string
     convert(std::string_view const &str) {
-        std::string copy;
-        copy.reserve(str.size());
-        std::for_each(str.cbegin(), str.cend(),
-                      [&copy](const char &c) { copy += charToLower(c); });
+        std::string copy(str.size(), '\0');
+        std::transform(str.cbegin(), str.cend(), copy.begin(), charToLower);
         return copy;
     }
 };
@@ -290,7 +287,7 @@ public:
      * @throws std::out_of_range if the key is not found
      */
     template <typename T>
-    auto &
+    [[nodiscard]] auto &
     at(T &&key) {
         return static_cast<base_t &>(*this).at(_Trait::convert(std::forward<T>(key)));
     }
@@ -304,7 +301,7 @@ public:
      * @throws std::out_of_range if the key is not found
      */
     template <typename T>
-    const auto &
+    [[nodiscard]] const auto &
     at(T &&key) const {
         return static_cast<base_t const &>(*this).at(
             _Trait::convert(std::forward<T>(key)));
@@ -331,7 +328,7 @@ public:
      * @return Iterator to the key-value pair if found, or end() if not found
      */
     template <typename T>
-    auto
+    [[nodiscard]] auto
     find(T &&key) {
         return static_cast<base_t &>(*this).find(_Trait::convert(std::forward<T>(key)));
     }
@@ -345,7 +342,7 @@ public:
      * @return Iterator to the key-value pair if found, or end() if not found
      */
     template <typename T>
-    auto
+    [[nodiscard]] auto
     find(T &&key) const {
         return static_cast<base_t const &>(*this).find(
             _Trait::convert(std::forward<T>(key)));
@@ -359,7 +356,7 @@ public:
      * @return true if the key exists, false otherwise
      */
     template <typename T>
-    bool
+    [[nodiscard]] bool
     has(T &&key) const {
         return find(std::forward<T>(key)) != this->cend();
     }

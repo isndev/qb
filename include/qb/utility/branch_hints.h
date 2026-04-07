@@ -7,6 +7,10 @@
  * the compiler make better decisions about code generation for conditional
  * branches, especially in performance-critical sections.
  *
+ * C++20 note: The standard [[likely]]/[[unlikely]] attributes apply to
+ * statements/labels, not to expressions. These helper functions remain the
+ * idiomatic way to annotate boolean conditions inline.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,26 +31,15 @@
 #define QB_UTILS_BRANCH_HINTS_H
 
 namespace qb {
+
 /**
  * @brief Hint for branch prediction when a condition is expected to be true.
  * @ingroup MiscUtils
  * @param expr Boolean expression to evaluate.
  * @return The result of evaluating `expr`.
- * @details Use this function to indicate to the compiler that the expression `expr` is
- *          expected to evaluate to `true` most of the time. This can help the compiler
- *          optimize code paths that are frequently taken, potentially improving performance
- *          by reducing branch mispredictions.
- *          Typically implemented using `__builtin_expect` on GCC/Clang.
- * @code
- * if (qb::likely(common_case_condition)) {
- *   // Optimized path for likely true
- * } else {
- *   // Path for less common false case
- * }
- * @endcode
  */
-inline bool
-likely(bool expr) {
+[[nodiscard]] constexpr bool
+likely(bool expr) noexcept {
 #ifdef __GNUC__
     return __builtin_expect(expr, true);
 #else
@@ -59,21 +52,9 @@ likely(bool expr) {
  * @ingroup MiscUtils
  * @param expr Boolean expression to evaluate.
  * @return The result of evaluating `expr`.
- * @details Use this function to indicate to the compiler that the expression `expr` is
- *          expected to evaluate to `false` most of the time. This can help the compiler
- *          optimize for the more common case where the branch is not taken, or the alternative
- *          path is taken.
- *          Typically implemented using `__builtin_expect` on GCC/Clang.
- * @code
- * if (qb::unlikely(error_condition)) {
- *   // Path for rare error case
- * } else {
- *   // Optimized path for likely non-error
- * }
- * @endcode
  */
-inline bool
-unlikely(bool expr) {
+[[nodiscard]] constexpr bool
+unlikely(bool expr) noexcept {
 #ifdef __GNUC__
     return __builtin_expect(expr, false);
 #else

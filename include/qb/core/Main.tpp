@@ -60,7 +60,7 @@ CoreInitializer::addActor(_Args &&...args) noexcept {
         id = ActorId(_next_id++, _index);
     }
     _actor_factories.push_back(
-        new TActorFactory<_Actor, _Args...>(id, std::forward<_Args>(args)...));
+        std::make_unique<TActorFactory<_Actor, _Args...>>(id, std::forward<_Args>(args)...));
     return id;
 }
 

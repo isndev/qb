@@ -26,15 +26,17 @@
 #include <utility>
 #include <valarray>
 
+namespace qb {
+
 /**
  * @brief Alias for `std::move` with a concise syntax.
  * @ingroup MiscUtils
  * @tparam T Type of the value to move.
  * @param t Value to move.
- * @return Value cast to an rvalue reference (`std::remove_reference_t<T>&&`).
+ * @return Value cast to an rvalue reference.
  */
 template <typename T>
-inline std::remove_reference_t<T> &&
+[[nodiscard]] constexpr std::remove_reference_t<T> &&
 mv(T &&t) noexcept {
     return static_cast<std::remove_reference_t<T> &&>(t);
 }
@@ -44,10 +46,10 @@ mv(T &&t) noexcept {
  * @ingroup MiscUtils
  * @tparam T Type to forward.
  * @param t Lvalue reference to forward.
- * @return Forwarded reference, preserving value category and const/volatile qualifiers of `T`.
+ * @return Forwarded reference, preserving value category.
  */
 template <typename T>
-inline T &&
+[[nodiscard]] constexpr T &&
 fwd(std::remove_reference_t<T> &t) noexcept {
     return std::forward<T>(t);
 }
@@ -57,13 +59,19 @@ fwd(std::remove_reference_t<T> &t) noexcept {
  * @ingroup MiscUtils
  * @tparam T Type to forward.
  * @param t Rvalue reference to forward.
- * @return Forwarded reference, preserving value category and const/volatile qualifiers of `T`.
+ * @return Forwarded reference, preserving value category.
  */
 template <typename T>
-inline T &&
+[[nodiscard]] constexpr T &&
 fwd(std::remove_reference_t<T> &&t) noexcept {
     return std::forward<T>(t);
 }
+
+} // namespace qb
+
+// Backward-compatible global aliases
+using qb::mv;
+using qb::fwd;
 
 namespace qb {
 
@@ -437,6 +445,17 @@ inline constexpr bool is_map_iterator_v = is_map_iterator<T>::value;
  */
 template <typename Iter>
 inline constexpr bool is_terator_v = is_terator<Iter>::value;
+
+/**
+ * @brief Corrected alias for is_terator (preserved for backward compatibility)
+ * @ingroup TypeTraits
+ * @tparam Iter Type to check
+ */
+template <typename Iter, typename T = Void<>>
+using is_iterator = is_terator<Iter, T>;
+
+template <typename Iter>
+inline constexpr bool is_iterator_v = is_terator_v<Iter>;
 
 /**
  * @brief Helper type alias for iterator_type

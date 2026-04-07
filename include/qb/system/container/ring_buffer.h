@@ -27,9 +27,7 @@
 
 #include <algorithm>
 #include <cstring>
-#include <iostream>
 #include <type_traits>
-#include <vector>
 
 namespace qb {
 
@@ -46,18 +44,7 @@ class ring_buffer;
 
 namespace detail {
 /**
- * @brief Iterator for ring_buffer
- *
- * @tparam T The type of elements in the buffer
- * @tparam N The capacity of the buffer
- * @tparam C Whether this is a const iterator (true) or non-const iterator (false)
- * @tparam Overwrite Whether to overwrite old elements when the buffer is full
- */
-/**
- * @brief Iterator for ring_buffer
- *
- * C++23: Modernized using explicit object parameter (deducing this) for cleaner
- * const/non-const handling instead of SFINAE patterns.
+ * @brief Iterator for ring_buffer (uses C++23 deducing this for const/non-const)
  *
  * @tparam T The type of elements in the buffer
  * @tparam N The capacity of the buffer
@@ -262,7 +249,7 @@ public:
      */
     ring_buffer(ring_buffer const &rhs) noexcept(
         std::is_nothrow_copy_constructible_v<value_type>) {
-        copy_impl(rhs, std::bool_constant<std::is_trivially_copyable_v<T>>{});
+        copy_impl(rhs);
     }
 
     /**
@@ -277,8 +264,8 @@ public:
         if (this == &rhs)
             return *this;
 
-        destroy_all(std::bool_constant<std::is_trivially_copyable_v<T>>{});
-        copy_impl(rhs, std::bool_constant<std::is_trivially_copyable_v<T>>{});
+        clear();
+        copy_impl(rhs);
 
         return *this;
     }
@@ -296,7 +283,11 @@ public:
     template <typename U>
     void
     push_back(U &&value) {
-        push_back(std::forward<U>(value), std::bool_constant<Overwrite>{});
+        if constexpr (!Overwrite) {
+            if (full())
+                return;
+        }
+        push_back_impl(std::forward<U>(value));
     }
 
     /**
@@ -307,9 +298,7 @@ public:
         if (empty())
             return;
 
-        destroy(tail_,
-                std::bool_constant<std::is_trivially_destructible_v<value_type>>{});
-
+        destroy_at(tail_);
         --size_;
         tail_ = ++tail_ % N;
     }
@@ -321,7 +310,7 @@ public:
      */
     [[nodiscard]] reference
     back() noexcept {
-        const size_type idx = std::clamp<size_type>(head_ - 1, 0UL, N - 1);
+        const size_type idx = (head_ == 0) ? N - 1 : head_ - 1;
         return *reinterpret_cast<pointer>(elements_ + idx * sizeof(T));
     }
 
@@ -452,7 +441,14 @@ public:
      */
     void
     clear() noexcept {
-        destroy_all(std::bool_constant<std::is_trivially_destructible_v<value_type>>{});
+        if constexpr (!std::is_trivially_destructible_v<value_type>) {
+            while (!empty()) {
+                destroy_at(tail_);
+                tail_ = ++tail_ % N;
+                --size_;
+            }
+        }
+        head_ = tail_ = size_ = 0;
     }
 
     /**
@@ -460,125 +456,54 @@ public:
      */
     ~ring_buffer() {
         clear();
-    };
+    }
 
 private:
     /**
-     * @brief Destroy all elements (trivially destructible version)
-     *
-     * No-op for trivially destructible types.
-     *
-     * @param tag Tag dispatch for trivially destructible types
+     * @brief Destroy the element at the given index (no-op for trivially destructible)
      */
     void
-    destroy_all(std::true_type) {}
-
-    /**
-     * @brief Destroy all elements (non-trivially destructible version)
-     *
-     * Calls the destructor for each element in the buffer.
-     *
-     * @param tag Tag dispatch for non-trivially destructible types
-     */
-    void
-    destroy_all(std::false_type) {
-        while (!empty()) {
-            destroy(tail_,
-                    std::bool_constant<std::is_trivially_destructible_v<value_type>>{});
-            tail_ = ++tail_ % N;
-            --size_;
-        }
+    destroy_at(size_type index) noexcept {
+        if constexpr (!std::is_trivially_destructible_v<value_type>)
+            reinterpret_cast<pointer>(elements_ + index * sizeof(T))->~T();
     }
 
     /**
-     * @brief Copy implementation for trivially copyable types
-     *
-     * Uses memcpy for efficient copying of trivially copyable types.
-     *
-     * @param rhs The ring buffer to copy from
-     * @param tag Tag dispatch for trivially copyable types
+     * @brief Copy elements from another ring buffer
      */
     void
-    copy_impl(self_type const &rhs, std::true_type) {
-        std::memcpy(elements_, rhs.elements_, rhs.size_ * sizeof(T));
-        size_ = rhs.size_;
-        tail_ = rhs.tail_;
-        head_ = rhs.head_;
-    }
-
-    /**
-     * @brief Copy implementation for non-trivially copyable types
-     *
-     * Individually constructs each element by calling its copy constructor.
-     *
-     * @param rhs The ring buffer to copy from
-     * @param tag Tag dispatch for non-trivially copyable types
-     */
-    void
-    copy_impl(self_type const &rhs, std::false_type) {
+    copy_impl(self_type const &rhs) {
         tail_ = rhs.tail_;
         head_ = rhs.head_;
         size_ = rhs.size_;
 
-        try {
-            // C++23: Using 'uz' suffix for size_t literals
-            for (auto i = 0uz; i < size_; ++i)
-                // C++23: Adjust for std::byte array indexing
-                new (elements_ + (((tail_ + i) % N) * sizeof(T))) T(rhs[tail_ + ((tail_ + i) % N)]);
-        } catch (...) {
-            while (!empty()) {
-                destroy(
-                    tail_,
-                    std::bool_constant<std::is_trivially_destructible_v<value_type>>{});
-                tail_ = ++tail_ % N;
-                --size_;
+        if constexpr (std::is_trivially_copyable_v<T>) {
+            std::memcpy(elements_, rhs.elements_, sizeof(elements_));
+        } else {
+            try {
+                for (size_type i = 0; i < size_; ++i)
+                    new (elements_ + (((tail_ + i) % N) * sizeof(T)))
+                        T(rhs[(tail_ + i) % N]);
+            } catch (...) {
+                while (!empty()) {
+                    destroy_at(tail_);
+                    tail_ = ++tail_ % N;
+                    --size_;
+                }
+                throw;
             }
-            throw;
         }
-    }
-
-    /**
-     * @brief Push back implementation for Overwrite=true
-     *
-     * @tparam U Type of the value to add
-     * @param value The value to add
-     * @param tag Tag dispatch for Overwrite=true
-     */
-    template <typename U>
-    void
-    push_back(U &&value, std::true_type) {
-        push_back_impl(std::forward<U>(value));
-    }
-
-    /**
-     * @brief Push back implementation for Overwrite=false
-     *
-     * @tparam U Type of the value to add
-     * @param value The value to add
-     * @param tag Tag dispatch for Overwrite=false
-     */
-    template <typename U>
-    void
-    push_back(U &&value, std::false_type) {
-        if (full() && !Overwrite)
-            return;
-        push_back_impl(std::forward<U>(value));
     }
 
     /**
      * @brief Common implementation for push_back
-     *
-     * @tparam U Type of the value to add
-     * @param value The value to add
      */
     template <typename U>
     void
     push_back_impl(U &&value) {
         if (full())
-            destroy(head_,
-                    std::bool_constant<std::is_trivially_destructible_v<value_type>>{});
+            destroy_at(head_);
 
-        // C++23: Adjust for std::byte array indexing
         new (elements_ + head_ * sizeof(T)) T{std::forward<U>(value)};
         head_ = ++head_ % N;
 
@@ -587,31 +512,6 @@ private:
 
         if (!full())
             ++size_;
-    }
-
-    /**
-     * @brief Destroy an element (trivially destructible version)
-     *
-     * No-op for trivially destructible types.
-     *
-     * @param index Index of the element to destroy
-     * @param tag Tag dispatch for trivially destructible types
-     */
-    void
-    destroy(size_type index, std::true_type) noexcept {}
-
-    /**
-     * @brief Destroy an element (non-trivially destructible version)
-     *
-     * Calls the destructor for the element at the specified index.
-     *
-     * @param index Index of the element to destroy
-     * @param tag Tag dispatch for non-trivially destructible types
-     */
-    void
-    destroy(size_type index, std::false_type) noexcept {
-        // C++23: Adjust for std::byte array indexing
-        reinterpret_cast<pointer>(elements_ + index * sizeof(T))->~T();
     }
 
     /// Storage for elements with proper alignment

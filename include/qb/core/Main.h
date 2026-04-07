@@ -30,6 +30,7 @@
 #ifndef QB_MAIN_H
 #define QB_MAIN_H
 #include <condition_variable>
+#include <csignal>
 #include <qb/system/container/unordered_map.h>
 #include <thread>
 #include <vector>
@@ -153,8 +154,8 @@ private:
     CoreIdSet    _affinity;
     uint64_t     _latency;
 
-    qb::unordered_set<ServiceId> _registered_services;
-    std::vector<IActorFactory *> _actor_factories;
+    qb::unordered_set<ServiceId>                  _registered_services;
+    std::vector<std::unique_ptr<IActorFactory>>   _actor_factories;
     //        CoreSet _restricted_communication; future use
 
 public:
@@ -329,9 +330,9 @@ class SharedCoreCommunication : nocopy {
         }
     };
 
-    const CoreSet                  _core_set;
-    std::vector<std::atomic<bool>> _event_safe_deadlock;
-    std::vector<Mailbox *>         _mail_boxes;
+    const CoreSet                                _core_set;
+    std::vector<std::atomic<bool>>               _event_safe_deadlock;
+    std::vector<std::unique_ptr<Mailbox>>         _mail_boxes;
 
 public:
     SharedCoreCommunication() = delete;
@@ -414,6 +415,8 @@ class Main {
 
     static std::vector<Main *> _instances;
     static std::mutex          _instances_lock;
+
+    static volatile std::sig_atomic_t _signal_pending;
 
     std::atomic<uint64_t> _sync_start;
     static void           onSignal(int signal) noexcept;
