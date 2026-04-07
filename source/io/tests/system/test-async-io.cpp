@@ -29,6 +29,7 @@
 #include <gtest/gtest.h>
 #include <iostream>
 #include <qb/io/async.h>
+#include <qb/io/async/tcp/connector.h>
 #include <qb/io/protocol/text.h>
 #include <qb/io/system/file.h>
 #include <qb/io/tcp/listener.h>
@@ -1291,19 +1292,12 @@ TEST_F(AsyncIOTest, TimeoutBehavior) {
 
     EXPECT_TRUE(small_timer_triggered);
 
-    // Test negative timeout (should be treated as a positive timeout)
+    // Test negative timeout — executes immediately (same as zero)
     std::atomic<bool> negative_timer_triggered{false};
     new async::Timeout<std::function<void()>>(
         [&negative_timer_triggered]() { negative_timer_triggered = true; }, -1.0);
 
-    // Run event loop a few times
-    for (auto i = 0; i < 5 && !negative_timer_triggered; ++i) {
-        async::run(EVRUN_ONCE);
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-
-    // Negative timeouts are treated as positive values
-    EXPECT_FALSE(negative_timer_triggered);
+    EXPECT_TRUE(negative_timer_triggered);
 }
 
 // Test exception handling in callbacks
@@ -1530,6 +1524,394 @@ TEST_F(AsyncIOTest, EventLoopReinitialization) {
 
     EXPECT_TRUE(timer_triggered);
     EXPECT_TRUE(timer2_triggered);
+}
+
+// ---------------------------------------------------------------------------
+// disconnect(0) — verify it triggers proper disposal (not a no-op)
+// ---------------------------------------------------------------------------
+
+static std::atomic<bool> g_dz_session_destroyed{false};
+
+class DisconnectZeroServer;
+
+class DisconnectZeroSession
+    : public use<DisconnectZeroSession>::tcp::client<DisconnectZeroServer> {
+public:
+    using Protocol = qb::protocol::text::command<DisconnectZeroSession>;
+
+    explicit DisconnectZeroSession(IOServer &server)
+        : client(server) {}
+
+    ~DisconnectZeroSession() { g_dz_session_destroyed = true; }
+
+    void
+    on(Protocol::message &&) {
+        disconnect(0);
+    }
+};
+
+class DisconnectZeroServer
+    : public use<DisconnectZeroServer>::tcp::server<DisconnectZeroSession> {
+public:
+    bool session_connected = false;
+    void on(IOSession &) { session_connected = true; }
+};
+
+TEST_F(AsyncIOTest, DisconnectZeroTriggersDisposal) {
+    g_dz_session_destroyed = false;
+
+    DisconnectZeroServer server;
+    server.transport().listen_v4(64380);
+    server.start();
+
+    std::thread t([]() {
+        qb::io::tcp::socket sock;
+        ASSERT_EQ(sock.connect_v4("127.0.0.1", 64380), SocketStatus::Done);
+        sock.write("hello\n", 6);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        sock.disconnect();
+    });
+
+    for (auto i = 0; i < 50 && !g_dz_session_destroyed; ++i) {
+        async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
+    t.join();
+    EXPECT_TRUE(server.session_connected);
+    EXPECT_TRUE(g_dz_session_destroyed);
+}
+
+// ---------------------------------------------------------------------------
+// close_after_deliver — sends pending data then disconnects
+// ---------------------------------------------------------------------------
+
+static std::atomic<bool> g_cad_session_destroyed{false};
+
+class CloseAfterDeliverServer;
+
+class CloseAfterDeliverSession
+    : public use<CloseAfterDeliverSession>::tcp::client<CloseAfterDeliverServer> {
+public:
+    using Protocol = qb::protocol::text::command<CloseAfterDeliverSession>;
+
+    explicit CloseAfterDeliverSession(IOServer &server)
+        : client(server) {}
+
+    ~CloseAfterDeliverSession() { g_cad_session_destroyed = true; }
+
+    void
+    on(Protocol::message &&) {
+        *this << "goodbye" << Protocol::end;
+        close_after_deliver();
+    }
+};
+
+class CloseAfterDeliverServer
+    : public use<CloseAfterDeliverServer>::tcp::server<CloseAfterDeliverSession> {
+public:
+    void on(IOSession &) {}
+};
+
+TEST_F(AsyncIOTest, CloseAfterDeliverSendsDataThenDisconnects) {
+    g_cad_session_destroyed = false;
+
+    CloseAfterDeliverServer server;
+    server.transport().listen_v4(64381);
+    server.start();
+
+    std::atomic<bool> got_goodbye{false};
+    std::atomic<bool> client_done{false};
+    std::thread t([&got_goodbye, &client_done]() {
+        qb::io::tcp::socket sock;
+        ASSERT_EQ(sock.connect_v4("127.0.0.1", 64381), SocketStatus::Done);
+        sock.write("ping\n", 5);
+
+        char buffer[512]{};
+        std::size_t total = 0;
+        for (auto i = 0; i < 50; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            sock.set_nonblocking(true);
+            auto n = sock.read(buffer + total, sizeof(buffer) - total);
+            if (n > 0)
+                total += static_cast<std::size_t>(n);
+            if (total > 0)
+                break;
+        }
+        if (total > 0) {
+            std::string_view response(buffer, total);
+            if (response.find("goodbye") != std::string_view::npos)
+                got_goodbye = true;
+        }
+        sock.disconnect();
+        client_done = true;
+    });
+
+    for (auto i = 0; i < 100 && (!g_cad_session_destroyed || !client_done); ++i) {
+        async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    t.join();
+    EXPECT_TRUE(got_goodbye);
+    EXPECT_TRUE(g_cad_session_destroyed);
+}
+
+// ---------------------------------------------------------------------------
+// async::callback() — immediate and scheduled execution
+// ---------------------------------------------------------------------------
+
+TEST_F(AsyncIOTest, CallbackImmediateExecution) {
+    bool executed = false;
+    async::callback([&executed]() { executed = true; }, 0.0);
+    EXPECT_TRUE(executed);
+}
+
+TEST_F(AsyncIOTest, CallbackScheduledExecution) {
+    std::atomic<bool> executed{false};
+    async::callback([&executed]() { executed = true; }, 0.05);
+
+    EXPECT_FALSE(executed);
+    for (auto i = 0; i < 20 && !executed; ++i) {
+        async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    EXPECT_TRUE(executed);
+}
+
+// ---------------------------------------------------------------------------
+// Broadcast to multiple sessions via io_handler stream()
+// ---------------------------------------------------------------------------
+
+class BroadcastServer;
+
+class BroadcastSession
+    : public use<BroadcastSession>::tcp::client<BroadcastServer> {
+public:
+    using Protocol = qb::protocol::text::command<BroadcastSession>;
+    int message_count = 0;
+
+    explicit BroadcastSession(IOServer &server)
+        : client(server) {}
+
+    void on(Protocol::message &&msg);
+};
+
+class BroadcastServer
+    : public use<BroadcastServer>::tcp::server<BroadcastSession> {
+public:
+    int connection_count = 0;
+    bool all_received = false;
+
+    void on(IOSession &) { ++connection_count; }
+
+    void broadcast_to_all(std::string_view msg) {
+        this->stream(msg, '\n');
+    }
+
+    void check_all_received() {
+        if (connection_count < 3)
+            return;
+        for (auto &[id, session] : this->sessions()) {
+            if (session->message_count < 2)
+                return;
+        }
+        all_received = true;
+    }
+};
+
+void BroadcastSession::on(Protocol::message &&msg) {
+    ++message_count;
+    if (msg.text == "broadcast_trigger") {
+        static_cast<BroadcastServer &>(this->server())
+            .broadcast_to_all("hello_all");
+    }
+}
+
+TEST_F(AsyncIOTest, BroadcastToMultipleSessions) {
+    BroadcastServer server;
+    server.transport().listen_v4(64382);
+    server.start();
+
+    constexpr int num_clients = 3;
+    std::vector<std::thread> clients;
+
+    for (int c = 0; c < num_clients; ++c) {
+        clients.emplace_back([c]() {
+            qb::io::tcp::socket sock;
+            ASSERT_EQ(sock.connect_v4("127.0.0.1", 64382), SocketStatus::Done);
+            if (c == 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                sock.write("broadcast_trigger\n", 18);
+            }
+            sock.set_nonblocking(false);
+            char buffer[512]{};
+            sock.read(buffer, sizeof(buffer));
+            sock.disconnect();
+        });
+    }
+
+    for (auto i = 0; i < 100 && !server.all_received; ++i) {
+        async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        server.check_all_received();
+    }
+
+    for (auto &t : clients)
+        t.join();
+
+    EXPECT_EQ(server.connection_count, num_clients);
+}
+
+// ---------------------------------------------------------------------------
+// Async connector to refused port — exercises SO_ERROR handling
+// ---------------------------------------------------------------------------
+
+TEST_F(AsyncIOTest, ConnectorToRefusedPort) {
+    std::atomic<bool> callback_fired{false};
+    bool socket_invalid = false;
+
+    async::tcp::connect<qb::io::tcp::socket>(
+        uri{"tcp://127.0.0.1:1"},
+        [&](qb::io::tcp::socket &&sock) {
+            socket_invalid = !sock.is_open();
+            callback_fired = true;
+        },
+        2.0);
+
+    for (auto i = 0; i < 100 && !callback_fired; ++i) {
+        async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    }
+
+    EXPECT_TRUE(callback_fired);
+    EXPECT_TRUE(socket_invalid);
+}
+
+// ---------------------------------------------------------------------------
+// Async connector with timeout to unreachable address
+// ---------------------------------------------------------------------------
+
+TEST_F(AsyncIOTest, ConnectorWithTimeoutExpiry) {
+    std::atomic<bool> callback_fired{false};
+    bool socket_invalid = false;
+
+    async::tcp::connect<qb::io::tcp::socket>(
+        uri{"tcp://192.0.2.1:12345"},
+        [&](qb::io::tcp::socket &&sock) {
+            socket_invalid = !sock.is_open();
+            callback_fired = true;
+        },
+        1.0);
+
+    auto start = std::chrono::steady_clock::now();
+    for (auto i = 0; i < 200 && !callback_fired; ++i) {
+        async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    auto elapsed = std::chrono::steady_clock::now() - start;
+
+    EXPECT_TRUE(callback_fired);
+    EXPECT_TRUE(socket_invalid);
+    EXPECT_LT(elapsed, std::chrono::seconds(5));
+}
+
+// ===========================================================================
+// Robustness tests for bug fixes in async layer
+// ===========================================================================
+
+TEST_F(AsyncIOTest, TimeoutExceptionSafetyNoLeak) {
+    // Verify that a Timeout that throws in its callback doesn't leak
+    // The fix wraps _func() in try/catch to guarantee delete this runs
+    static std::atomic<int> throw_count{0};
+    static std::atomic<int> normal_count{0};
+
+    new async::Timeout<std::function<void()>>(
+        []() {
+            throw_count++;
+            throw std::runtime_error("intentional throw");
+        },
+        0.05);
+
+    new async::Timeout<std::function<void()>>(
+        []() { normal_count++; }, 0.1);
+
+    for (int i = 0; i < 20 && normal_count == 0; ++i) {
+        async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
+    EXPECT_EQ(throw_count, 1);
+    EXPECT_EQ(normal_count, 1);
+}
+
+TEST_F(AsyncIOTest, NegativeTimeoutTriggersImmediately) {
+    std::atomic<bool> triggered{false};
+    new async::Timeout<std::function<void()>>(
+        [&]() { triggered = true; }, -5.0);
+
+    // Negative timeout should execute immediately without event loop
+    EXPECT_TRUE(triggered);
+}
+
+TEST_F(AsyncIOTest, ZeroTimeoutTriggersImmediately) {
+    std::atomic<bool> triggered{false};
+    new async::Timeout<std::function<void()>>(
+        [&]() { triggered = true; }, 0.0);
+
+    EXPECT_TRUE(triggered);
+}
+
+static std::atomic<int> g_rapid_disconnect_count{0};
+class RapidServer;
+
+class RapidSession
+    : public use<RapidSession>::tcp::client<RapidServer> {
+public:
+    using Protocol = qb::protocol::text::command<RapidSession>;
+    explicit RapidSession(IOServer &server) : client(server) {}
+
+    void on(Protocol::message &&) {}
+    void on(async::event::disconnected const &) { g_rapid_disconnect_count++; }
+};
+
+class RapidServer
+    : public use<RapidServer>::tcp::server<RapidSession> {
+public:
+    void on(IOSession &) {}
+};
+
+TEST_F(AsyncIOTest, MultipleRapidDisconnects) {
+    static constexpr unsigned short PORT = 64491;
+    g_rapid_disconnect_count = 0;
+
+    RapidServer server;
+    server.transport().listen_v4(PORT);
+    server.start();
+
+    static constexpr int NUM_CLIENTS = 10;
+    std::vector<std::thread> clients;
+
+    for (int i = 0; i < NUM_CLIENTS; ++i) {
+        clients.emplace_back([]() {
+            qb::io::tcp::socket sock;
+            if (sock.connect_v4("127.0.0.1", PORT) == SocketStatus::Done) {
+                sock.write("hello\n", 6);
+                sock.disconnect();
+            }
+        });
+    }
+
+    auto start = std::chrono::steady_clock::now();
+    while (g_rapid_disconnect_count < NUM_CLIENTS &&
+           std::chrono::steady_clock::now() - start < std::chrono::seconds(5)) {
+        async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    for (auto &t : clients) t.join();
+
+    EXPECT_GE(g_rapid_disconnect_count.load(), 1);
 }
 
 int

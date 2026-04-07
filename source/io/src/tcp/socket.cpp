@@ -22,6 +22,7 @@
  * @ingroup IO
  */
 
+#include <limits>
 #include <qb/io/tcp/socket.h>
 
 namespace qb::io::tcp {
@@ -47,8 +48,7 @@ socket::init(int af) noexcept {
 int
 socket::bind(qb::io::endpoint const &ep) noexcept {
     if (is_open()) {
-        const auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
-        if (af != ep.af())
+        if (local_endpoint().af() != ep.af())
             return -1;
     } else if (init(ep.af()))
         return -1;
@@ -105,8 +105,7 @@ socket::connect_in(int af, std::string const &host, uint16_t port,
 int
 socket::connect(qb::io::endpoint const &ep) noexcept {
     if (is_open()) {
-        const auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
-        if (af != ep.af())
+        if (local_endpoint().af() != ep.af())
             return -1;
     } else if (init(ep.af()))
         return -1;
@@ -117,8 +116,7 @@ socket::connect(qb::io::endpoint const &ep) noexcept {
 int
 socket::connect(qb::io::endpoint const &ep, std::chrono::microseconds wtimeout) noexcept {
     if (is_open()) {
-        const auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
-        if (af != ep.af())
+        if (local_endpoint().af() != ep.af())
             return -1;
     } else if (init(ep.af()))
         return -1;
@@ -188,8 +186,7 @@ socket::n_connect_in(int af, std::string const &host, uint16_t port) noexcept {
 int
 socket::n_connect(qb::io::endpoint const &ep) noexcept {
     if (is_open()) {
-        const auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
-        if (af != ep.af())
+        if (local_endpoint().af() != ep.af())
             return -1;
     } else if (init(ep.af()))
         return -1;
@@ -227,6 +224,8 @@ socket::n_connect_un(std::string const &path) noexcept {
 
 int
 socket::read(void *dest, std::size_t len) const noexcept {
+    if (len > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        len = static_cast<std::size_t>(std::numeric_limits<int>::max());
     int ret = recv(dest, static_cast<int>(len));
     if (ret > 0)
         return ret;
@@ -246,6 +245,8 @@ socket::read(void *dest, std::size_t len) const noexcept {
 
 int
 socket::write(const void *data, std::size_t size) const noexcept {
+    if (size > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        size = static_cast<std::size_t>(std::numeric_limits<int>::max());
     return send(data, static_cast<int>(size));
 }
 

@@ -43,9 +43,9 @@ pipe<char>::put<unsigned char>(const unsigned char &c) {
 template <>
 pipe<char> &
 pipe<char>::put<const char *>(const char *const &c) {
-    auto b = c;
-    while (*b)
-        put(*(b++));
+    const auto len = std::strlen(c);
+    if (len)
+        std::memcpy(allocate_back(len), c, len);
     return *this;
 }
 
@@ -59,20 +59,16 @@ pipe<char>::put<std::string>(std::string const &str) {
 template <>
 pipe<char> &
 pipe<char>::put<std::string_view>(std::string_view const &str) {
-    auto b = allocate_back(str.size());
-    for (auto c : str) {
-        *(b++) = c;
-    }
+    if (str.size())
+        std::memcpy(allocate_back(str.size()), str.data(), str.size());
     return *this;
 }
 
 template <>
 pipe<char> &
 pipe<char>::put<pipe<char>>(pipe<char> const &rhs) {
-    auto b = allocate_back(rhs.size());
-    for (auto c : rhs) {
-        *(b++) = c;
-    }
+    if (rhs.size())
+        std::memcpy(allocate_back(rhs.size()), rhs.begin(), rhs.size());
     return *this;
 }
 

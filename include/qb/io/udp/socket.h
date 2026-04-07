@@ -22,14 +22,12 @@
  * @ingroup UDP
  */
 
-#include "../system/sys__socket.h"
-#include "../uri.h"
-#include <optional>
-#include <chrono>
-#include <string>
-
 #ifndef QB_IO_UDP_SOCKET_H_
 #define QB_IO_UDP_SOCKET_H_
+#include "../system/sys__socket.h"
+#include "../uri.h"
+#include <chrono>
+#include <string>
 
 namespace qb::io::udp {
 

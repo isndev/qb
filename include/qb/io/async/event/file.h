@@ -74,7 +74,7 @@ struct file : base<ev::stat> {
      * @brief Constructor.
      * @param loop Reference to the libev event loop (`ev::loop_ref`) this event watcher will be associated with.
      */
-    explicit file(ev::loop_ref loop)
+    explicit file(ev::loop_ref loop) noexcept
         : base_t(loop) {}
 };
 

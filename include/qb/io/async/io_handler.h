@@ -25,6 +25,7 @@
 #ifndef QB_IO_ASYNC_IO_HANDLER_H
 #define QB_IO_ASYNC_IO_HANDLER_H
 
+#include <vector>
 #include <qb/system/container/unordered_map.h>
 #include <qb/uuid.h>
 #include <qb/io/async/event/extracted.h>
@@ -258,8 +259,12 @@ public:
     template <typename... _Args>
     _Derived &
     stream(_Args &&...args) {
-        for (auto &[key, session] : sessions())
-            (*session << ... << std::forward<_Args>(args));
+        std::vector<std::shared_ptr<_Session>> snapshot;
+        snapshot.reserve(_sessions.size());
+        for (auto &[key, session] : _sessions)
+            snapshot.push_back(session);
+        for (auto &session : snapshot)
+            (*session << ... << args);
         return static_cast<_Derived &>(*this);
     }
 
@@ -277,9 +282,13 @@ public:
     template <typename _Func, typename... _Args>
     _Derived &
     stream_if(_Func const &func, _Args &&...args) {
-        for (auto &[key, session] : sessions())
+        std::vector<std::shared_ptr<_Session>> snapshot;
+        snapshot.reserve(_sessions.size());
+        for (auto &[key, session] : _sessions)
+            snapshot.push_back(session);
+        for (auto &session : snapshot)
             if (func(*session))
-                (*session << ... << std::forward<_Args>(args));
+                (*session << ... << args);
         return static_cast<_Derived &>(*this);
     }
 };

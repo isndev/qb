@@ -25,7 +25,6 @@
 
 #ifndef QB_IO_TRANSPORT_STCP_H
 #define QB_IO_TRANSPORT_STCP_H
-#include <iostream>
 #include "../config.h"
 #include "../stream.h"
 #include "../tcp/ssl/socket.h"
@@ -45,7 +44,7 @@ namespace qb::io::transport {
 class stcp : public stream<io::tcp::ssl::socket> {
 public:
     /** @brief Indicates that this transport implementation is secure */
-    constexpr bool is_secure() const noexcept { return true; }
+    static constexpr bool is_secure() noexcept { return true; }
     /**
      * @brief Read data from the secure TCP socket
      * @return Number of bytes read on success, error code on failure
@@ -59,12 +58,9 @@ public:
     read() noexcept {
         static constexpr const std::size_t bucket_read = QB_DEFAULT_READ_BUFFER_SIZE;
 
-        // Security check: prevent DoS via buffer exhaustion
-        // We only check the actual data size, not the capacity. The pipe may resize internally,
-        // but what matters is the actual number of bytes present in the buffer.
-        // If _max_read_buffer_size == SIZE_MAX (-1), the comparison will always be false (unlimited).
-        if (_in_buffer.size() + bucket_read > this->_max_read_buffer_size) {
-            return -2; // Buffer size limit exceeded
+        if (this->_max_read_buffer_size < _in_buffer.size() ||
+            bucket_read > this->_max_read_buffer_size - _in_buffer.size()) {
+            return ErrBufferLimitExceeded;
         }
         
         auto ret = _in.read(_in_buffer.allocate_back(bucket_read), bucket_read);
@@ -72,13 +68,21 @@ public:
             _in_buffer.free_back(bucket_read - ret);
             const auto pending = SSL_pending(transport().ssl_handle());
             if (pending) {
-                // Security check: prevent DoS via buffer exhaustion before second allocate_back
-                if (_in_buffer.size() + pending > this->_max_read_buffer_size) {
-                    return -2; // Buffer size limit exceeded
+                if (this->_max_read_buffer_size < _in_buffer.size() ||
+                    static_cast<std::size_t>(pending) > this->_max_read_buffer_size - _in_buffer.size()) {
+                    return ErrBufferLimitExceeded;
                 }
-                
-                ret += _in.read(_in_buffer.allocate_back(pending), pending);
+                const auto pending_sz = static_cast<std::size_t>(pending);
+                const auto ret2 = _in.read(_in_buffer.allocate_back(pending_sz), pending_sz);
+                if (ret2 >= 0) {
+                    _in_buffer.free_back(pending_sz - static_cast<std::size_t>(ret2));
+                    ret += ret2;
+                } else {
+                    _in_buffer.free_back(pending_sz);
+                }
             }
+        } else {
+            _in_buffer.free_back(bucket_read);
         }
         return ret;
     }

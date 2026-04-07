@@ -22,12 +22,15 @@
  * @ingroup SSL
  */
 
-#include <filesystem>
-#include <openssl/ssl.h>
-#include "../socket.h"
-
 #ifndef QB_IO_TCP_SSL_SOCKET_H_
 #define QB_IO_TCP_SSL_SOCKET_H_
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <vector>
+#include <openssl/ssl.h>
+#include "../socket.h"
 
 namespace qb::io::ssl {
 

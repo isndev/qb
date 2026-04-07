@@ -279,7 +279,7 @@ socket::address_family() const noexcept {
         return -1;
     }
     
-    return get_optval<int>(SOL_SOCKET, SO_TYPE);
+    return local_endpoint().af();
 }
 
 bool
@@ -299,8 +299,7 @@ socket::is_bound() const noexcept {
 int
 socket::bind(qb::io::endpoint const &ep) noexcept {
     if (is_open()) {
-        auto af = get_optval<int>(SOL_SOCKET, SO_TYPE);
-        if (af != ep.af())
+        if (local_endpoint().af() != ep.af())
             return -1;
     } else
         init(ep.af());

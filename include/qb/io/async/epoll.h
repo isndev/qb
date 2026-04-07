@@ -24,17 +24,17 @@
  * @ingroup IO
  */
 
-#include <exception>
-#include <qb/utility/branch_hints.h>
-#include <sys/epoll.h>
-#include "../helper.h"
+#ifndef QB_IO_EPOLL_H
+#define QB_IO_EPOLL_H
 
 #ifdef __WIN__SYSTEM__
 #error "epoll is not available on windows"
 #endif
 
-#ifndef QB_IO_EPOLL_H
-#define QB_IO_EPOLL_H
+#include <exception>
+#include <qb/utility/branch_hints.h>
+#include <sys/epoll.h>
+#include "../helper.h"
 
 namespace qb {
 namespace io {
@@ -133,7 +133,7 @@ public:
      * Throws a runtime_error if the epoll creation fails.
      */
     Poller()
-        : Proxy(epoll_create(_MAX_EVENTS)) {
+        : Proxy(epoll_create1(EPOLL_CLOEXEC)) {
         if (unlikely(_epoll < 0))
             throw std::runtime_error("failed to init epoll::Poller");
     }

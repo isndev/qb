@@ -208,3 +208,70 @@ TEST(Session, JSON_OVER_SECURE_TCP) {
 }
 
 #endif
+
+// ---------------------------------------------------------------------------
+// Malformed JSON resilience — no crash/terminate on invalid input
+// ---------------------------------------------------------------------------
+
+class MalformedJsonServer;
+
+class MalformedJsonSession
+    : public use<MalformedJsonSession>::tcp::client<MalformedJsonServer> {
+public:
+    using Protocol = qb::protocol::json<MalformedJsonSession>;
+    int good_messages = 0;
+    int bad_messages = 0;
+
+    explicit MalformedJsonSession(IOServer &server)
+        : client(server) {}
+
+    void
+    on(Protocol::message &&msg) {
+        if (msg.json.is_discarded())
+            ++bad_messages;
+        else
+            ++good_messages;
+    }
+};
+
+class MalformedJsonServer
+    : public use<MalformedJsonServer>::tcp::server<MalformedJsonSession> {
+public:
+    bool session_connected = false;
+    bool session_disconnected = false;
+
+    void on(IOSession &) { session_connected = true; }
+    void on(qb::io::async::event::disconnected &&) { session_disconnected = true; }
+};
+
+TEST(Session, JSON_MALFORMED_RESILIENCE) {
+    async::init();
+
+    MalformedJsonServer server;
+    server.transport().listen_v4(9998);
+    server.start();
+
+    std::thread t([]() {
+        qb::io::tcp::socket sock;
+        ASSERT_EQ(sock.connect_v4("127.0.0.1", 9998), qb::io::SocketStatus::Done);
+
+        const char good_json[] = "{\"key\":\"value\"}\0";
+        sock.write(good_json, sizeof(good_json) - 1);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        const char bad_json[] = "{this is not json}\0";
+        sock.write(bad_json, sizeof(bad_json) - 1);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        sock.disconnect();
+    });
+
+    for (auto i = 0; i < 50 && !server.session_disconnected; ++i) {
+        async::run(EVRUN_ONCE);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
+    t.join();
+    EXPECT_TRUE(server.session_connected);
+}

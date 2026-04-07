@@ -37,15 +37,12 @@
 namespace qb {
 uuid
 generate_random_uuid() {
-    static uuids::uuid_random_generator gen{[]() {
-        static auto          seed_data = std::array<int, std::mt19937::state_size>{[]() {
-            std::random_device                        rd;
-            std::array<int, std::mt19937::state_size> new_seed;
-            std::generate(std::begin(new_seed), std::end(new_seed), std::ref(rd));
-            return new_seed;
-        }()};
-        static std::seed_seq seq(std::begin(seed_data), std::end(seed_data));
-        static std::mt19937  generator(seq);
+    thread_local uuids::uuid_random_generator gen{[]() {
+        std::random_device                        rd;
+        std::array<int, std::mt19937::state_size> seed_data;
+        std::generate(std::begin(seed_data), std::end(seed_data), std::ref(rd));
+        thread_local std::seed_seq seq(std::begin(seed_data), std::end(seed_data));
+        thread_local std::mt19937  generator(seq);
         return &generator;
     }()};
     return gen();

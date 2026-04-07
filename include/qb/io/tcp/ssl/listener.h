@@ -22,11 +22,10 @@
  * @ingroup SSL
  */
 
-#include "../listener.h"
-#include "socket.h"
-
 #ifndef QB_IO_TCP_SSL_LISTENER_H_
 #define QB_IO_TCP_SSL_LISTENER_H_
+#include "../listener.h"
+#include "socket.h"
 
 namespace qb::io::tcp::ssl {
 

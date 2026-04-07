@@ -183,8 +183,7 @@ socket::pconnect_n(const char *hostname, u_short port, u_short local_port) {
     int error = -1;
     socket::resolve_i(
         [&](const endpoint &ep) {
-            (error = pconnect_n(ep, local_port));
-            return true;
+            return 0 == (error = pconnect_n(ep, local_port));
         },
         hostname, port);
     return error;
@@ -193,8 +192,8 @@ socket::pconnect_n(const char *hostname, u_short port, u_short local_port) {
 int
 socket::pconnect(const endpoint &ep, u_short local_port) {
     if (this->reopen(ep.af())) {
-        if (local_port != 0)
-            this->bind(QB_ADDR_ANY(ep.af()), local_port);
+        if (local_port != 0 && this->bind(QB_ADDR_ANY(ep.af()), local_port) != 0)
+            return -1;
         return this->connect(ep);
     }
     return -1;
@@ -204,8 +203,8 @@ int
 socket::pconnect_n(const endpoint &ep, const std::chrono::microseconds &wtimeout,
                    u_short local_port) {
     if (this->reopen(ep.af())) {
-        if (local_port != 0)
-            this->bind(QB_ADDR_ANY(ep.af()), local_port);
+        if (local_port != 0 && this->bind(QB_ADDR_ANY(ep.af()), local_port) != 0)
+            return -1;
         return this->connect_n(ep, wtimeout);
     }
     return -1;
@@ -214,8 +213,8 @@ socket::pconnect_n(const endpoint &ep, const std::chrono::microseconds &wtimeout
 int
 socket::pconnect_n(const endpoint &ep, u_short local_port) {
     if (this->reopen(ep.af())) {
-        if (local_port != 0)
-            this->bind(QB_ADDR_ANY(ep.af()), local_port);
+        if (local_port != 0 && this->bind(QB_ADDR_ANY(ep.af()), local_port) != 0)
+            return -1;
         return socket::connect_n(this->fd, ep);
     }
     return -1;
@@ -546,6 +545,8 @@ socket::set_nonblocking(socket_type s, bool nonblocking) {
     return ::ioctlsocket(s, FIONBIO, &argp);
 #else
     int flags = ::fcntl(s, F_GETFL, 0);
+    if (flags < 0)
+        return -1;
     return ::fcntl(s, F_SETFL,
                    nonblocking ? (flags | O_NONBLOCK) : (flags & ~O_NONBLOCK));
 #endif
@@ -707,8 +708,8 @@ socket::connect_n(const endpoint &ep) {
 }
 int
 socket::connect_n(socket_type s, const endpoint &ep) {
-    set_nonblocking(s, true);
-
+    if (set_nonblocking(s, true) != 0)
+        return -1;
     return socket::connect(s, ep);
 }
 
@@ -736,12 +737,10 @@ socket::send_n(socket_type s, const void *buf, int len,
     int n;
     int error = 0;
 
-    socket::set_nonblocking(s, true);
+    if (socket::set_nonblocking(s, true) != 0)
+        return -1;
 
     for (; bytes_transferred < len;) {
-        // Try to transfer as much of the remaining data as possible.
-        // Since the socket is in non-blocking mode, this call will not
-        // block.
         n = socket::send(s, (const char *) buf + bytes_transferred,
                          len - bytes_transferred, flags);
         if (n > 0) {
@@ -749,27 +748,21 @@ socket::send_n(socket_type s, const void *buf, int len,
             continue;
         }
 
-        // Check for possible blocking.
         error = socket::get_last_errno();
         if (n == -1 && socket::not_send_error(error)) {
-            // Wait upto <timeout> for the blocking to subside.
             auto      start = qb::highp_clock();
             int const rtn   = handle_write_ready(s, wtimeout);
             wtimeout -= std::chrono::microseconds(qb::highp_clock() - start);
 
-            // Did select() succeed?
             if (rtn != -1 && wtimeout.count() > 0) {
-                // Blocking subsided in <timeout> period.  Continue
-                // data transfer.
                 continue;
             }
         }
 
-        // Wait in select() timed out or other data transfer or
-        // select() failures.
         break;
     }
 
+    socket::set_nonblocking(s, false);
     return bytes_transferred;
 }
 
@@ -785,12 +778,10 @@ socket::recv_n(socket_type s, void *buf, int len, std::chrono::microseconds wtim
     int n;
     int error = 0;
 
-    socket::set_nonblocking(s, true);
+    if (socket::set_nonblocking(s, true) != 0)
+        return -1;
 
     for (; bytes_transferred < len;) {
-        // Try to transfer as much of the remaining data as possible.
-        // Since the socket is in non-blocking mode, this call will not
-        // block.
         n = socket::recv(s, static_cast<char *>(buf) + bytes_transferred,
                          len - bytes_transferred, flags);
         if (n > 0) {
@@ -798,27 +789,21 @@ socket::recv_n(socket_type s, void *buf, int len, std::chrono::microseconds wtim
             continue;
         }
 
-        // Check for possible blocking.
         error = socket::get_last_errno();
         if (n == -1 && socket::not_recv_error(error)) {
-            // Wait upto <timeout> for the blocking to subside.
             auto      start = qb::highp_clock();
             int const rtn   = handle_read_ready(s, wtimeout);
             wtimeout -= std::chrono::microseconds(qb::highp_clock() - start);
 
-            // Did select() succeed?
             if (rtn != -1 && wtimeout.count() > 0) {
-                // Blocking subsided in <timeout> period.  Continue
-                // data transfer.
                 continue;
             }
         }
 
-        // Wait in select() timed out or other data transfer or
-        // select() failures.
         break;
     }
 
+    socket::set_nonblocking(s, false);
     return bytes_transferred;
 }
 
@@ -923,7 +908,8 @@ endpoint
 socket::local_endpoint(socket_type fd) {
     endpoint  ep;
     socklen_t socklen = sizeof(ep);
-    getsockname(fd, &ep.sa_, &socklen);
+    if (::getsockname(fd, &ep.sa_, &socklen) != 0)
+        return {};
     ep.len(socklen);
     return ep;
 }
@@ -936,7 +922,8 @@ endpoint
 socket::peer_endpoint(socket_type fd) {
     endpoint  ep;
     socklen_t socklen = sizeof(ep);
-    getpeername(fd, &ep.sa_, &socklen);
+    if (::getpeername(fd, &ep.sa_, &socklen) != 0)
+        return {};
     ep.len(socklen);
     return ep;
 }

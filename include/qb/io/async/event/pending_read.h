@@ -25,6 +25,7 @@
 
 #ifndef QB_IO_ASYNC_EVENT_PENDINGREAD_H
 #define QB_IO_ASYNC_EVENT_PENDINGREAD_H
+#include <cstddef>
 
 namespace qb::io::async::event {
 

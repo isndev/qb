@@ -23,8 +23,8 @@
  * @ingroup TCP
  */
 
-#ifndef QB_IO_ASYNC_TCP_SESSION_H
-#define QB_IO_ASYNC_TCP_SESSION_H
+#ifndef QB_IO_ASYNC_TCP_CLIENT_H
+#define QB_IO_ASYNC_TCP_CLIENT_H
 
 #include "../../../uuid.h"
 #include "../io.h"
@@ -212,4 +212,4 @@ public:
 
 } // namespace qb::io::async::tcp
 
-#endif // QB_IO_ASYNC_TCP_SESSION_H
+#endif // QB_IO_ASYNC_TCP_CLIENT_H

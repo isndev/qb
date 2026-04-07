@@ -29,7 +29,8 @@ namespace qb::io::tcp {
 int
 listener::listen(io::endpoint const &ep) noexcept {
     const auto ret = pserve(ep);
-    set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
+    if (!ret && ep.af() != AF_UNIX)
+        set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
     return ret;
 }
 
@@ -72,8 +73,10 @@ listener::accept(tcp::socket &sock) const noexcept {
     socket_type nt_sock = qb::io::inet::invalid_socket;
 
     auto ret = io::socket::accept_n(nt_sock);
-    sock     = nt_sock;
-    sock.set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
+    if (!ret) {
+        sock = nt_sock;
+        sock.set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
+    }
     return ret;
 }
 

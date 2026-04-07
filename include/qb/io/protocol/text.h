@@ -83,7 +83,7 @@ public:
      * @param size Message size with the delimiter
      */
     void
-    onMessage(std::size_t size) noexcept {
+    onMessage(std::size_t size) noexcept final {
         const auto &buffer = this->_io.in();
         const auto  parsed = this->shiftSize(size);
         this->_io.on(message{parsed, buffer.cbegin(), {buffer.cbegin(), parsed}});
@@ -141,8 +141,8 @@ public:
      * @param size Message size
      */
     void
-    onMessage(std::size_t size) noexcept {
-        this->_io.on(message{size, this->_io.in().cbegin() + this->shiftSize()});
+    onMessage(std::size_t size) noexcept final {
+        this->_io.on(message{size, this->_io.in().cbegin()});
     }
 };
 

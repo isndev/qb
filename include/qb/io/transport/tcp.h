@@ -42,7 +42,7 @@ namespace qb::io::transport {
 class tcp : public stream<io::tcp::socket> {
 public:
     /** @brief Indicates that this transport implementation is not secure */
-    constexpr bool is_secure() const noexcept { return false; }
+    static constexpr bool is_secure() noexcept { return false; }
 };
 
 } // namespace qb::io::transport

@@ -81,8 +81,11 @@ public:
      * @param Disconnected event
      */
     void
-    on(event::disconnected &&) {
-        // throw std::runtime_error("Server had been disconnected");
+    on(event::disconnected &&e) {
+        if constexpr (qb::has_on<_Derived, event::disconnected>)
+            static_cast<_Derived &>(*this).on(std::move(e));
+        else
+            LOG_CRIT("Server acceptor disconnected (reason=" << e.reason << ")");
     }
 };
 
