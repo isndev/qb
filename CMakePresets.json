@@ -1,0 +1,136 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 22,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_CXX_STANDARD": "23",
+                "QB_BUILD_TESTS": "ON",
+                "QB_BUILD_EXAMPLES": "ON"
+            }
+        },
+        {
+            "name": "debug",
+            "displayName": "Debug",
+            "description": "Debug build with full diagnostics",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release",
+            "description": "Optimized release build",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "QB_BUILD_TESTS": "OFF"
+            }
+        },
+        {
+            "name": "relwithdebinfo",
+            "displayName": "RelWithDebInfo",
+            "description": "Release with debug symbols",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+            }
+        },
+        {
+            "name": "dev",
+            "displayName": "Development",
+            "description": "Development build with tests and benchmarks",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "QB_BUILD_TESTS": "ON",
+                "QB_BUILD_BENCHMARKS": "ON",
+                "QB_BUILD_EXAMPLES": "ON"
+            }
+        },
+        {
+            "name": "sanitize",
+            "displayName": "Sanitizers",
+            "description": "Debug build with ASan + UBSan",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "QB_DEBUG_MEMORY": "ON"
+            }
+        },
+        {
+            "name": "coverage",
+            "displayName": "Coverage",
+            "description": "Debug build with code coverage instrumentation",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "QB_BUILD_COVERAGE": "ON"
+            }
+        },
+        {
+            "name": "release-lto",
+            "displayName": "Release + LTO",
+            "description": "Release build with Link Time Optimization",
+            "inherits": "release",
+            "cacheVariables": {
+                "QB_ENABLE_LTO": "ON"
+            }
+        },
+        {
+            "name": "release-native",
+            "displayName": "Release + Native Arch",
+            "description": "Release build optimized for the host CPU",
+            "inherits": "release",
+            "cacheVariables": {
+                "QB_ENABLE_NATIVE_ARCH": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "debug"
+        },
+        {
+            "name": "release",
+            "configurePreset": "release"
+        },
+        {
+            "name": "dev",
+            "configurePreset": "dev"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "debug",
+            "configurePreset": "debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 300,
+                "jobs": 4
+            }
+        },
+        {
+            "name": "dev",
+            "configurePreset": "dev",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 300,
+                "jobs": 4
+            }
+        }
+    ]
+}

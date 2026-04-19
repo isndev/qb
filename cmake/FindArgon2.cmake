@@ -57,8 +57,7 @@ if(ARGON2_FOUND)
     # Create a modern imported target so consumers automatically inherit include dirs
     # when linked via target_link_libraries(... Argon2::Argon2).
     if(NOT TARGET Argon2::Argon2)
-        add_library(Argon2::Argon2 UNKNOWN IMPORTED
-                ../source/io/src/cpu.cpp)
+        add_library(Argon2::Argon2 UNKNOWN IMPORTED)
         set_target_properties(Argon2::Argon2 PROPERTIES
             IMPORTED_LOCATION             "${ARGON2_LIBRARY}"
             INTERFACE_INCLUDE_DIRECTORIES "${ARGON2_INCLUDE_DIR}"

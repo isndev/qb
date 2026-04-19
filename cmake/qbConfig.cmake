@@ -77,6 +77,10 @@ option(QB_INSTALL "Install qb framework" ON)
 option(QB_ENABLE_OPTIMIZATIONS "Enable performance optimizations" ON)
 option(QB_ENABLE_LTO "Enable Link Time Optimization" OFF)
 option(QB_ENABLE_NATIVE_ARCH "Enable native architecture optimizations" OFF)
+option(QB_ENABLE_FAST_MATH "Enable -ffast-math / /fp:fast (breaks IEEE-754 compliance)" OFF)
+
+# Coverage
+option(QB_BUILD_COVERAGE "Enable code coverage instrumentation (Debug builds only)" OFF)
 
 # Feature options
 option(QB_WITH_LOGGING "Enable logging support" ON)

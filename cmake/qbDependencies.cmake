@@ -233,25 +233,16 @@ endif()
 # -----------------------------------------------------------------------------
 # Internal Dependencies (qb modules)
 # -----------------------------------------------------------------------------
-# Add internal modules directory to the path
 set(QB_INTERNAL_MODULES_PATH "${QB_MODULES_DIR}")
 
-# Internal modules list
-set(QB_INTERNAL_MODULES
-    ev
-    nanolog
-    nlohmann
-    ska_hash
-    uuid
-)
+# Header-only internal modules whose include directories must be available
+# to qb-io / qb-core (and transitively to their dependents).
+# We collect them here; _qb_apply_target_properties() propagates them via
+# PUBLIC $<BUILD_INTERFACE:${QB_MODULES_DIR}> on every qb target.
+set(QB_HEADER_ONLY_MODULES nanolog nlohmann ska_hash)
 
-# Add internal modules to include path
-foreach(module ${QB_INTERNAL_MODULES})
-    if(EXISTS "${QB_INTERNAL_MODULES_PATH}/${module}")
-        include_directories("${QB_INTERNAL_MODULES_PATH}/${module}")
-        qb_debug_message("Added internal module: ${module}")
-    endif()
-endforeach()
+# Internal modules list (for logging / diagnostics only)
+set(QB_INTERNAL_MODULES ev uuid ${QB_HEADER_ONLY_MODULES})
 
 # -----------------------------------------------------------------------------
 # Dependency Resolution Functions
@@ -326,9 +317,8 @@ endif()
 # -----------------------------------------------------------------------------
 # Test Framework Configuration
 # -----------------------------------------------------------------------------
-if(QB_BUILD_TESTS)
-    enable_testing()
-endif()
+# enable_testing() is called from the root project (qb-dev/CMakeLists.txt)
+# to ensure ctest discovers all tests. Do not duplicate here.
 
 # -----------------------------------------------------------------------------
 # Dependency Summary

@@ -176,12 +176,6 @@ elseif(QB_COMPILER_GCC OR QB_COMPILER_CLANG)
     
     # Compiler-specific optimizations
     if(QB_COMPILER_GCC)
-        # GCC specific flags
-        list(APPEND QB_CXX_FLAGS_RELEASE
-            "-flto"             # Link time optimization (if enabled)
-            "-fuse-linker-plugin"  # Use linker plugin
-        )
-        
         # GCC version-specific flags
         if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "9.0")
             list(APPEND QB_CXX_FLAGS_BASE "-Wno-error=deprecated-copy")
@@ -211,40 +205,37 @@ if(QB_ENABLE_OPTIMIZATIONS)
         # MSVC optimizations
         list(APPEND QB_CXX_FLAGS_RELEASE
             "/favor:speed"      # Favor speed over size
-            "/fp:fast"          # Fast floating point
         )
+        if(QB_ENABLE_FAST_MATH)
+            list(APPEND QB_CXX_FLAGS_RELEASE "/fp:fast")
+        endif()
         
-        # Enable intrinsics if supported
-        if(QB_ARCH_64)
+        # ISA-specific intrinsics only when targeting the host CPU
+        if(QB_ENABLE_NATIVE_ARCH AND QB_ARCH_64)
             list(APPEND QB_CXX_FLAGS_RELEASE "/arch:AVX2")
         endif()
         
     elseif(QB_COMPILER_GCC OR QB_COMPILER_CLANG)
         # GCC/Clang optimizations
         list(APPEND QB_CXX_FLAGS_RELEASE
-            "-ffast-math"           # Fast math
             "-funroll-loops"        # Unroll loops
             "-ftree-vectorize"      # Tree vectorization
-            "-fno-signed-zeros"     # No signed zeros
-            "-fno-trapping-math"    # No trapping math
         )
+        if(QB_ENABLE_FAST_MATH)
+            list(APPEND QB_CXX_FLAGS_RELEASE
+                "-ffast-math"           # Fast math (breaks IEEE-754)
+                "-fno-signed-zeros"     # No signed zeros
+                "-fno-trapping-math"    # No trapping math
+            )
+        endif()
         
         # Architecture-specific optimizations
         if(QB_ENABLE_NATIVE_ARCH)
             list(APPEND QB_CXX_FLAGS_RELEASE "-march=native")
         elseif(QB_ARCH_ARM64)
-            list(APPEND QB_CXX_FLAGS_RELEASE "-mcpu=cortex-a72")
+            list(APPEND QB_CXX_FLAGS_RELEASE "-march=armv8-a")
         elseif(QB_ARCH_64 AND NOT QB_ARCH_ARM)
             list(APPEND QB_CXX_FLAGS_RELEASE "-march=x86-64")
-        endif()
-        
-        # Enable specific instruction sets
-        if(QB_ARCH_64 AND NOT QB_ARCH_ARM)
-            list(APPEND QB_CXX_FLAGS_RELEASE
-                "-msse4.2"
-                "-mavx"
-                "-mavx2"
-            )
         endif()
     endif()
 endif()
@@ -268,6 +259,9 @@ if(QB_ENABLE_LTO)
             list(APPEND QB_CXX_FLAGS_RELEASE "-flto")
             set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -flto")
             set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} -flto")
+            if(QB_COMPILER_GCC)
+                list(APPEND QB_CXX_FLAGS_RELEASE "-fuse-linker-plugin")
+            endif()
         else()
             qb_warning_message("LTO requested but not supported by compiler")
         endif()
