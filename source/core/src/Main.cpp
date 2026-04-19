@@ -161,15 +161,22 @@ Main::onSignal(int const signum) noexcept {
 }
 
 Main::Main() noexcept
-    : _shared_com(nullptr)
+    : _stop_source()
+    , _shared_com(nullptr)
     , _is_running(false) {
     std::lock_guard lock(_instances_lock);
     Main::_instances.push_back(this);
 }
 
 Main::~Main() noexcept {
-    if (_is_running)
+    if (_is_running) {
+        // Ensure every worker receives a stop request before the engine object
+        // is torn down. `std::jthread` destructors will then request_stop() and
+        // join automatically, but requesting here shortens the shutdown path
+        // for workers that are currently parking on a high-latency mailbox.
+        _stop_source.request_stop();
         join();
+    }
     std::lock_guard lock(_instances_lock);
     Main::_instances.erase(
         std::find(Main::_instances.cbegin(), Main::_instances.cend(), this));
@@ -179,6 +186,9 @@ void
 Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     auto       &initializer = params.initializer;
     VirtualCore core(initializer.getIndex(), params.shared_com);
+    // Wire the engine-wide `std::stop_token` so `__workflow__` can observe
+    // cooperative cancellation requests issued via `std::stop_source`.
+    core.__set_stop_token__(params.stop_token);
     VirtualCore::_handler = &core;
     io::async::init();
 
@@ -261,14 +271,26 @@ Main::start(bool async) noexcept {
     _cores.resize(_core_initializers.size());
 
     auto i = 0u;
+    const auto stop_token = _stop_source.get_token();
     for (auto &it : _core_initializers) {
         if (!async && i == (_core_initializers.size() - 1)) {
             Main::registerSignal(SIGINT);
-            start_thread({it.first, it.second, *_shared_com, _sync_start});
-        } else
-            _cores[i] = std::thread(
-                start_thread,
-                CoreSpawnerParameter{it.first, it.second, *_shared_com, _sync_start});
+            // Synchronous fallback: the caller becomes the last worker. The
+            // stop token is still wired so a `request_stop()` on the source
+            // (from destruction or a signal-free stop path) cancels it too.
+            start_thread({it.first, it.second, *_shared_com, _sync_start, stop_token});
+        } else {
+            // C++20: `std::jthread` auto-joins on destruction. The worker is
+            // spawned with the stop_token captured by value so the lifetime
+            // of the token is tied to each thread — `Main::_stop_source` can
+            // request_stop() asynchronously at any moment during `~Main()`
+            // or `stop()` without fearing lifetime issues.
+            _cores[i] = std::jthread(
+                [params = CoreSpawnerParameter{it.first, it.second, *_shared_com,
+                                               _sync_start, stop_token}] {
+                    start_thread(params);
+                });
+        }
         ++i;
     }
 
@@ -296,11 +318,21 @@ Main::hasError() const noexcept {
 
 void
 Main::stop() noexcept {
+    // `stop()` is documented to be callable from a POSIX signal handler,
+    // therefore only async-signal-safe operations are performed here. The
+    // `std::stop_source` broadcast is left to `~Main()` / `join()` where
+    // normal thread-synchronization primitives are safe. Worker loops poll
+    // `_signal_pending` on every iteration, so this write is observed within
+    // the configured mailbox latency.
     _signal_pending = SIGINT;
 }
 
 void
 Main::join() {
+    // C++20: `std::jthread::join()` may be invoked explicitly; if the caller
+    // skips this, the destructor of each element in `_cores` will request
+    // a stop and join automatically. We still expose `join()` for users who
+    // explicitly want to block until all workers terminate.
     for (auto &core : _cores) {
         if (core.joinable())
             core.join();

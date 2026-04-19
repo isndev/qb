@@ -46,13 +46,35 @@ VirtualCore::unregisterEvent(_Actor &actor) noexcept {
 template <typename _Actor, typename... _Init>
 _Actor *
 VirtualCore::addReferencedActor(_Init &&...init) noexcept {
-    auto    actor_ptr = std::make_unique<_Actor>(std::forward<_Init>(init)...);
-    _Actor *actor     = actor_ptr.get();
-    actor->id_type    = type_id<_Actor>();
-    actor->name       = typeid(_Actor).name();
+    // Route through the same allocation customization point used by TActorFactory so
+    // users who override qb::allocate_actor<_Actor> get consistent behaviour for
+    // both engine-created and dynamically-added actors (PMR/pool support, 2.13).
+    auto *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
+    std::unique_ptr<_Actor> actor_ptr(raw_actor);
+    // Use the ActorProxy customization point so dynamically created actors get the
+    // same demangled name and typed id_type as factory-created ones.
+    ActorProxy::setTypeInfo<_Actor>(*raw_actor);
     if (appendActor(std::move(actor_ptr), true).is_valid())
-        return actor;
+        return raw_actor;
     return nullptr;
+}
+
+template <typename _Actor>
+_Actor *
+VirtualCore::findActor(ActorId const id) const noexcept {
+    if (!id.is_valid())
+        return nullptr;
+    const auto it = _actors.find(id);
+    if (it == _actors.end())
+        return nullptr;
+    Actor *raw = it->second.get();
+    if (!raw->is_alive())
+        return nullptr;
+    // Fast path: id_type set by ActorProxy::setTypeInfo matches the requested type.
+    if (raw->id_type == ActorProxy::getType<_Actor>())
+        return static_cast<_Actor *>(raw);
+    // Slow path: support downcasts to base classes derived from Actor.
+    return dynamic_cast<_Actor *>(raw);
 }
 
 template <typename _ServiceActor>
@@ -71,7 +93,11 @@ VirtualCore::getService() const noexcept {
 template <typename _Actor>
 void
 VirtualCore::registerCallback(_Actor &actor) noexcept {
-    _actor_callbacks.insert({actor.id(), &actor});
+    auto [it, inserted] = _actor_callbacks.insert({actor.id(), &actor});
+    if (inserted) {
+        // Maintain the flat snapshot for the workflow loop (2.6).
+        _callback_list.push_back(&actor);
+    }
 }
 
 // Event API

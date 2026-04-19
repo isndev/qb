@@ -260,9 +260,15 @@ function(qb_add_test)
     else()
         qb_error_message("qb_add_test: no GTest target (enable QB_BUILD_TESTS and FetchContent/system GTest)")
     endif()
-    
+
+    # qb_add_test already links gtest_main; strip it from DEPENDS to avoid duplicate -lgtest_main (ld warning).
+    set(_test_depends_filtered ${TEST_DEPENDS})
+    if(_test_depends_filtered)
+        list(REMOVE_ITEM _test_depends_filtered gtest_main)
+    endif()
+
     # Apply dependencies
-    _qb_apply_dependencies(${TEST_NAME} "${TEST_DEPENDS}")
+    _qb_apply_dependencies(${TEST_NAME} "${_test_depends_filtered}")
     
     # Apply additional includes
     if(TEST_INCLUDES)

@@ -106,17 +106,24 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     , _pipes(engine.getNbCore())
     , _mono_pipe_swap(_pipes[_resolved_index])
     , _mono_pipe(std::make_unique<VirtualPipe>()) {
-    for (auto i = _nb_service + 1; i < ActorId::BroadcastSid; ++i) {
-        _ids.insert(static_cast<ServiceId>(i));
-    }
+    _ids.init(static_cast<ServiceId>(_nb_service + 1));
 }
 
 VirtualCore::~VirtualCore() noexcept = default;
 
+void
+VirtualCore::__set_stop_token__(std::stop_token token) noexcept {
+    _stop_token = std::move(token);
+}
+
 ActorId
 VirtualCore::__generate_id__() noexcept {
-    return _ids.empty() ? ActorId(ActorId::NotFound)
-                        : ActorId(_ids.extract(_ids.begin()).value(), _index);
+    if (_ids.empty())
+        return ActorId(ActorId::NotFound);
+    const auto sid = _ids.acquire();
+    if (sid == ActorId::BroadcastSid)
+        return ActorId(ActorId::NotFound);
+    return ActorId(sid, _index);
 }
 
 // Event Management
@@ -131,12 +138,13 @@ VirtualCore::__getPipe__(CoreId const core) noexcept {
 }
 
 void
-VirtualCore::__receive_events__(EventBucket *buffer, std::size_t const nb_events) {
-    std::size_t i = 0;
+VirtualCore::__receive_events__(std::span<EventBucket> events) {
+    const std::size_t nb_events = events.size();
+    std::size_t       i         = 0;
     while (i < nb_events) {
-        // Safe reinterpret_cast: buffer is EventBucket array, Event is aligned within it
-        // This is a low-level event reconstruction from raw memory
-        auto event = reinterpret_cast<Event *>(buffer + i);
+        // Safe reinterpret_cast: `events` is a contiguous view over EventBucket
+        // storage, and Event objects are placement-constructed within it.
+        auto event = reinterpret_cast<Event *>(events.data() + i);
 
         event->state.alive = 0;
         _router.route(*event, [this](auto &event) {
@@ -154,12 +162,12 @@ void
 VirtualCore::__receive__() {
     // from same core
     _mono_pipe->swap(_mono_pipe_swap);
-    __receive_events__(_mono_pipe->begin(), _mono_pipe->size());
+    __receive_events__(std::span<EventBucket>{_mono_pipe->begin(), _mono_pipe->size()});
     _mono_pipe->reset();
     // global_core_events
     _mail_box.dequeue(
         [this](EventBucket *buffer, std::size_t const nb_events) {
-            __receive_events__(buffer, nb_events);
+            __receive_events__(std::span<EventBucket>{buffer, nb_events});
         },
         _event_buffer->data(), MaxRingEvents);
 }
@@ -275,12 +283,21 @@ VirtualCore::__workflow__() {
         _metrics._nanotimer = Timestamp::nano();
 
         // Poll for pending signal (async-signal-safe: volatile sig_atomic_t read)
-        if (auto sig = Main::_signal_pending; sig && !_signal_consumed) {
+        // OR for a C++20 cooperative cancellation request coming from the
+        // engine's `std::stop_source` (finding 2.17 — jthread/stop_token).
+        // The stop_token path is checked only when no signal is already pending
+        // so the existing signum semantics are preserved: we synthesise a
+        // virtual SIGINT to reuse the same shutdown plumbing (SignalEvent
+        // broadcast + actors' `onSignal` / `kill()` chain).
+        const bool signal_pending = (Main::_signal_pending != 0);
+        const bool stop_requested =
+            _stop_token.stop_possible() && _stop_token.stop_requested();
+        if ((signal_pending || stop_requested) && !_signal_consumed) {
             _signal_consumed = true;
             SignalEvent sig_event;
             fill_event<SignalEvent>(sig_event, BroadcastId(_index),
                                    BroadcastId(_index));
-            sig_event.signum = sig;
+            sig_event.signum = signal_pending ? Main::_signal_pending : SIGINT;
             auto &pipe = __getPipe__(_index);
             pipe.recycle(sig_event, sig_event.bucket_size);
         }
@@ -297,14 +314,15 @@ VirtualCore::__workflow__() {
         // check if reception killed actors
         if (unlikely(!_actor_to_remove.empty()))
             goto removeActors;
-        // Snapshot callback pointers before iteration because onCallback()
-        // may indirectly modify _actor_callbacks (e.g. via addRefActor)
+        // Dispatch callbacks from a flat, cache-friendly snapshot (2.6). The
+        // master list `_callback_list` is kept in sync with the hashmap on
+        // register / unregister, so building the per-iteration snapshot is now a
+        // single contiguous copy instead of an `unordered_map` walk. A local
+        // snapshot is still required because `onCallback()` may register or
+        // unregister actors during dispatch (e.g. via `addRefActor`).
         {
             thread_local std::vector<ICallback *> cb_snapshot;
-            cb_snapshot.clear();
-            cb_snapshot.reserve(_actor_callbacks.size());
-            for (const auto &[_, cb] : _actor_callbacks)
-                cb_snapshot.push_back(cb);
+            cb_snapshot = _callback_list;
             for (auto *cb : cb_snapshot)
                 cb->onCallback();
         }
@@ -319,11 +337,12 @@ VirtualCore::__workflow__() {
                 break;
             }
         }
-        // reset metrics
-        _metrics.reset();
+        // Adaptive backoff: a busy iteration refills the spin credit; otherwise we
+        // burn through the remaining credit before blocking on the mailbox (2.15).
+        _metrics.carry_over();
         if (_mail_box.getLatency()) {
-            if (likely(_metrics._sleep_count))
-                --_metrics._sleep_count;
+            if (likely(_metrics._spin_credit))
+                --_metrics._spin_credit;
             else
                 _mail_box.wait();
         }
@@ -381,7 +400,7 @@ VirtualCore::removeActor(ActorId const id) noexcept {
         LOG_INFO("Delete " << *actor);
         _actors.erase(it);
         if (id._service_id > _nb_service)
-            _ids.insert(id._service_id);
+            _ids.release(id._service_id);
     }
 }
 
@@ -394,8 +413,16 @@ VirtualCore::killActor(ActorId const id) noexcept {
 void
 VirtualCore::__unregisterCallback(ActorId const id) noexcept {
     auto it = _actor_callbacks.find(id);
-    if (it != _actor_callbacks.end())
+    if (it != _actor_callbacks.end()) {
+        auto *cb = it->second;
         _actor_callbacks.erase(it);
+        // Keep the flat callback snapshot in sync (2.6).
+        auto vit = std::find(_callback_list.begin(), _callback_list.end(), cb);
+        if (vit != _callback_list.end()) {
+            *vit = _callback_list.back();
+            _callback_list.pop_back();
+        }
+    }
 }
 
 void

@@ -46,6 +46,11 @@ if(QB_BUILD_TESTS)
         FetchContent_MakeAvailable(googletest)
         set(QB_HAS_GTEST TRUE)
         qb_status_message("Google Test: FetchContent (tag ${QB_GOOGLETEST_GIT_TAG})")
+        # Clang -Wcharacter-conversion on char8_t printing in gtest-printers.h (third-party).
+        if(TARGET gtest)
+            target_compile_options(gtest PRIVATE
+                $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>:-Wno-character-conversion>)
+        endif()
     endif()
 
     include(GoogleTest)

@@ -25,6 +25,7 @@
 #ifndef QB_ACTOR_H
 #define QB_ACTOR_H
 #include <atomic>
+#include <cassert>
 #include <map>
 #include <memory>
 #include <tuple>
@@ -53,6 +54,25 @@ class Service;
 class Event;
 class ICallback;
 class Actor;  // Forward declaration for concepts
+template <typename _Actor> class RefActorHandle;  // Forward for Actor::addRefHandle
+
+/**
+ * @brief Tag type used to opt out of registering the four default event handlers
+ *        (KillEvent, SignalEvent, UnregisterCallbackEvent, PingEvent) on construction.
+ * @ingroup Actor
+ * @details
+ * Pass `qb::no_default_events` to the protected `Actor` constructor to create a
+ * lightweight actor that registers no system events. This is useful for pools of
+ * short-lived actors where the router bookkeeping is a measurable overhead.
+ * Power users opting in are expected to register the events they actually need in
+ * `onInit()` (typically at least `KillEvent` for graceful shutdown).
+ */
+struct no_default_events_t {
+    explicit constexpr no_default_events_t() noexcept = default;
+};
+
+/** @brief Inline constexpr tag value; see `qb::no_default_events_t`. @ingroup Actor */
+inline constexpr no_default_events_t no_default_events{};
 
 /**
  * @brief Concept for event types that derive from qb::Event
@@ -218,6 +238,21 @@ protected:
      * assigned when the actor is registered with a VirtualCore.
      */
     Actor() noexcept;
+
+    /**
+     * @brief Lightweight constructor that skips the default event registrations.
+     * @param tag `qb::no_default_events` — selects this overload.
+     * @details
+     * Unlike the default constructor, this overload does **not** register handlers for
+     * `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, or `PingEvent`.
+     * The derived class is fully responsible for registering in `onInit()` any
+     * system events it expects to receive (it is strongly recommended to at least
+     * register `KillEvent` to enable graceful shutdown via `Main::stop()`).
+     *
+     * Intended for high-throughput scenarios where actors are short-lived and the
+     * four default subscriptions per actor become measurable overhead.
+     */
+    explicit Actor(no_default_events_t tag) noexcept;
 
     /**
      * @brief Virtual destructor
@@ -895,6 +930,24 @@ public:
     _Actor *addRefActor(_Args &&...args) const;
 
     /**
+     * @brief Create a referenced actor and wrap it in a safe `RefActorHandle<T>` (finding 2.9).
+     * @tparam _Actor Actor type to create.
+     * @tparam _Args  Constructor argument types.
+     * @param args Constructor arguments.
+     * @return `RefActorHandle<_Actor>` — empty if creation failed.
+     *
+     * @details
+     * Prefer this over the raw `addRefActor<T>()` whenever the parent actor keeps
+     * the handle across event-handler boundaries: the handle performs an O(1)
+     * liveness check on dereference, avoiding dangling-pointer UB if the referenced
+     * actor kills itself.
+     */
+    template <typename _Actor, typename... _Args>
+    [[nodiscard]] RefActorHandle<_Actor> addRefHandle(_Args &&...args) const {
+        return RefActorHandle<_Actor>(addRefActor<_Actor>(std::forward<_Args>(args)...));
+    }
+
+    /**
      * @name Coroutine Support
      * C++23 coroutine integration for async I/O operations.
      * @{
@@ -999,13 +1052,20 @@ private:
     mutable qb::io::async::CoroutineScheduler* coro_scheduler_ = nullptr;
 
     /**
-     * @brief Shared count of active coroutines
+     * @brief Shared count of active coroutines.
      *
-     * Uses shared_ptr so coroutine RAII guards can safely decrement even
-     * after the actor is destroyed (the shared_ptr keeps the counter alive).
-     * Lazily allocated on first spawn_async() call.
+     * Uses `shared_ptr` so coroutine RAII guards can safely decrement even
+     * after the actor is destroyed (the shared_ptr keeps the counter alive
+     * until the last orphaned coroutine frame is destroyed).
+     *
+     * @note Eagerly allocated in the Actor constructor (finding 2.12) — this
+     *       trades one heap allocation per actor construction for the removal
+     *       of a `nullptr` check on every `spawn_async()` hot path. A single
+     *       `make_shared` is a negligible cost compared to the rest of actor
+     *       construction and guarantees branch-predicted coroutine spawning.
      */
-    mutable std::shared_ptr<std::atomic<std::size_t>> active_coroutines_;
+    mutable std::shared_ptr<std::atomic<std::size_t>> active_coroutines_ =
+        std::make_shared<std::atomic<std::size_t>>(0);
 };
 
 /**
@@ -1094,6 +1154,78 @@ public:
 };
 
 /**
+ * @class RefActorHandle
+ * @ingroup Actor
+ * @brief Type-safe weak reference to a referenced actor hosted on the **same** VirtualCore.
+ *
+ * @tparam _Actor Concrete actor type this handle resolves to.
+ *
+ * @details
+ * `addRefActor<T>()` returns a raw `T*` whose lifetime is tied to the enclosing
+ * `VirtualCore`. That pointer becomes dangling as soon as the referenced actor
+ * calls `kill()` — any subsequent dereference is Undefined Behaviour (finding 2.9).
+ *
+ * `RefActorHandle<T>` captures both the `ActorId` **and** the cached raw pointer at
+ * creation time, so callers can:
+ *
+ * - Cheaply send events to the referenced actor via `id()` without resolving the
+ *   pointer (events are safe to dispatch to ids whose actors have died — they are
+ *   simply dropped by the router).
+ * - Safely dereference via `get()` / `operator->()` / `operator*()`, which re-query
+ *   `VirtualCore::_handler` to confirm the actor is still registered and alive on
+ *   the current core before returning the cached pointer.
+ *
+ * Thread-model: must only be dereferenced from the owning VirtualCore's worker
+ * thread (the same thread that created the referenced actor). Cross-thread use
+ * is a logic error and is asserted on in debug builds.
+ */
+template <typename _Actor>
+class RefActorHandle {
+    ActorId  _id;
+    _Actor  *_cached = nullptr;
+
+public:
+    RefActorHandle() noexcept = default;
+
+    /**
+     * @brief Wrap a pointer returned by `Actor::addRefActor<_Actor>(...)`.
+     * @param actor Pointer to a live actor on the current VirtualCore (may be nullptr).
+     */
+    explicit RefActorHandle(_Actor *actor) noexcept
+        : _id(actor ? actor->id() : ActorId{})
+        , _cached(actor) {}
+
+    /** @brief The ActorId of the referenced actor (may be invalid). */
+    [[nodiscard]] ActorId id() const noexcept { return _id; }
+
+    /** @brief True iff constructed with a non-null actor. */
+    [[nodiscard]] bool valid() const noexcept { return _id.is_valid(); }
+
+    /**
+     * @brief Safe pointer accessor.
+     * @return Cached pointer if the actor is still alive on the current
+     *         VirtualCore, otherwise `nullptr`.
+     */
+    [[nodiscard]] _Actor *get() const noexcept;
+
+    /** @brief `get()` but asserted non-null in debug builds. */
+    [[nodiscard]] _Actor *operator->() const noexcept {
+        auto *p = get();
+        assert(p && "RefActorHandle dereferenced after referenced actor was destroyed");
+        return p;
+    }
+
+    /** @brief Dereference (undefined if `get() == nullptr`). */
+    [[nodiscard]] _Actor &operator*() const noexcept {
+        auto *p = get();
+        assert(p && "RefActorHandle dereferenced after referenced actor was destroyed");
+        return *p;
+    }
+
+    explicit operator bool() const noexcept { return get() != nullptr; }
+};
+
+/**
  * @interface IActorFactory
  * @brief Interface for actor factory classes.
  * @ingroup Actor
@@ -1153,6 +1285,22 @@ public:
 #else
         return typeid(_Type).name();
 #endif
+    }
+
+    /**
+     * @brief Set both the type id and demangled name of an actor in one call.
+     * @tparam _Type The concrete actor type.
+     * @param actor The actor instance whose metadata should be populated.
+     * @details
+     * Convenience public helper so non-friend code paths (e.g. `VirtualCore::addReferencedActor`)
+     * can consistently tag actors with their concrete type without duplicating the
+     * `setType`/`setName` access pattern. Grants both operations via a single call.
+     */
+    template <typename _Type>
+    static void
+    setTypeInfo(Actor &actor) {
+        actor.id_type = ActorProxy::getType<_Type>();
+        actor.name    = ActorProxy::getName<_Type>();
     }
 };
 
@@ -1252,6 +1400,40 @@ template <typename T>
 }
 
 /**
+ * @brief Customization point for actor allocation.
+ * @ingroup Actor
+ * @tparam _Actor The actor type to allocate.
+ * @tparam _Args  The forwarded constructor argument types.
+ * @param  args   The constructor arguments for `_Actor`.
+ * @return Pointer to a newly constructed `_Actor`, owned by the caller.
+ *
+ * @details
+ * The default implementation simply calls `new _Actor(args...)`. Users may provide
+ * their own specialization (for a specific actor type) or replace this function via
+ * an overload discoverable by ADL to plug in a memory pool, arena, or
+ * `std::pmr::polymorphic_allocator` for hot-path actor factories.
+ *
+ * The returned pointer **must be destructible via `delete` using the matching deallocator**
+ * for whatever allocation strategy the override uses, because `std::unique_ptr<Actor>`
+ * with the default deleter is used downstream. If a custom allocator requires a specific
+ * deleter, wrap it via an intrusive `operator delete` override or request framework-level
+ * customization beyond this hook.
+ *
+ * @code
+ * // Example: specialize for a specific actor to use a pool.
+ * template <>
+ * MyHotActor* qb::allocate_actor<MyHotActor>(MyHotActor::Args args) {
+ *     return my_pool<MyHotActor>::acquire(std::move(args));
+ * }
+ * @endcode
+ */
+template <typename _Actor, typename... _Args>
+[[nodiscard]] inline _Actor *
+allocate_actor(_Args &&...args) {
+    return new _Actor(std::forward<_Args>(args)...);
+}
+
+/**
  * @class TActorFactory
  * @brief Templated actor factory implementation.
  * @ingroup Actor
@@ -1284,9 +1466,10 @@ public:
 private:
     template <std::size_t... Is>
     Actor* create_impl(std::index_sequence<Is...>) {
-        auto actor = new _Actor(std::get<Is>(_parameters)...);
-        ActorProxy::setType<_Actor>(*actor);
-        ActorProxy::setName<_Actor>(*actor);
+        // Routes through the `qb::allocate_actor` customization point so users
+        // can plug in pool / arena / PMR strategies without forking the framework.
+        auto* actor = qb::allocate_actor<_Actor>(std::get<Is>(_parameters)...);
+        ActorProxy::setTypeInfo<_Actor>(*actor);
         return actor;
     }
 };

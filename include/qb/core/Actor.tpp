@@ -67,6 +67,21 @@ Actor::addRefActor(_Args &&...args) const {
         std::forward<_Args>(args)...);
 }
 
+template <typename _Actor>
+_Actor *
+RefActorHandle<_Actor>::get() const noexcept {
+    if (!_id.is_valid())
+        return nullptr;
+    // Must be resolved from the owning VirtualCore's worker thread.
+    auto *handler = VirtualCore::_handler;
+    if (!handler)
+        return nullptr;
+    auto *resolved = handler->template findActor<_Actor>(_id);
+    // Keep the cache fresh if it drifted (e.g. handle copied after kill).
+    const_cast<RefActorHandle<_Actor> *>(this)->_cached = resolved;
+    return resolved;
+}
+
 template <typename _Event, typename... _Args>
 _Event &
 Actor::push(ActorId const &dest, _Args &&...args) const noexcept {
@@ -181,11 +196,11 @@ qb::io::async::task<void> actor_coro_wrapper(
 
 template <typename Func>
 void Actor::spawn_async(Func&& func) const {
-    if (!coro_scheduler_) {
+    // `active_coroutines_` is initialized in the member-initializer (finding 2.12),
+    // so only the scheduler lookup remains on the slow path. Once cached, the hot
+    // path is branch-predicted: atomic inc → scheduler->spawn().
+    if (unlikely(!coro_scheduler_)) {
         coro_scheduler_ = &qb::io::async::listener::current.coro_scheduler();
-    }
-    if (!active_coroutines_) {
-        active_coroutines_ = std::make_shared<std::atomic<std::size_t>>(0);
     }
 
     active_coroutines_->fetch_add(1, std::memory_order_relaxed);

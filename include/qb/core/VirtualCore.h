@@ -26,7 +26,11 @@
 
 #ifndef QB_CORE_H
 #define QB_CORE_H
-#include <set>
+#include <array>
+#include <bit>
+#include <cstdint>
+#include <span>
+#include <stop_token>
 #include <thread>
 #include <vector>
 
@@ -100,6 +104,7 @@ private:
     friend class Service;
     friend class CoreInitializer;
     friend class Main;
+    template <typename> friend class RefActorHandle;
     ////////////
     constexpr static const uint64_t MaxRingEvents =
         ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_EVENT_BUCKET_BYTES;
@@ -110,7 +115,95 @@ private:
     using CallbackMap     = qb::unordered_map<ActorId, ICallback *>;
     using PipeMap         = std::vector<VirtualPipe>;
     using RemoveActorList = qb::unordered_set<ActorId>;
-    using AvailableIdList = std::set<ServiceId>;
+
+    /**
+     * @class ServiceIdPool
+     * @ingroup Engine
+     * @brief O(1) bitset-based pool of free `ServiceId` slots.
+     * @details
+     * Replaces the historical `std::set<ServiceId>` free-list with a contiguous
+     * bitset (8 KiB per VirtualCore) allowing branch-predicted, allocation-free,
+     * constant-time `acquire` / `release` operations, plus efficient empty checks.
+     *
+     * A word-level cursor (`_next_word`) accelerates `acquire()` by resuming the
+     * scan from the last known word containing a free bit instead of rescanning
+     * from index 0. `std::countr_zero` extracts the first free bit per word in
+     * a single CPU instruction on modern targets.
+     *
+     * Thread-model: owned exclusively by a single `VirtualCore` worker thread;
+     * no synchronization is performed.
+     */
+    class ServiceIdPool {
+    public:
+        static constexpr std::size_t kBits  = ActorId::BroadcastSid; // 65535 usable SIDs.
+        static constexpr std::size_t kWords = (kBits + 63u) / 64u;   // 1024 × 64-bit words.
+
+    private:
+        std::array<std::uint64_t, kWords> _bits{}; ///< Bit = 1 → SID free, bit = 0 → SID taken.
+        std::size_t                        _next_word = 0; ///< Scan cursor for fast `acquire()`.
+        std::size_t                        _count     = 0; ///< Cached population count.
+
+    public:
+        /**
+         * @brief Mark all service ids in the closed range `[min_sid, kBits)` as free.
+         * @param min_sid First service id to make available (typically `_nb_service + 1`).
+         */
+        void
+        init(ServiceId min_sid) noexcept {
+            _bits.fill(0u);
+            _count     = 0;
+            _next_word = 0;
+            // Set bits [min_sid, kBits) to 1.
+            for (std::size_t sid = static_cast<std::size_t>(min_sid); sid < kBits; ++sid) {
+                _bits[sid / 64u] |= (std::uint64_t{1} << (sid % 64u));
+                ++_count;
+            }
+            // Prime the cursor to the first word that contains a free bit.
+            _next_word = static_cast<std::size_t>(min_sid) / 64u;
+        }
+
+        /**
+         * @brief Acquire the smallest free service id available.
+         * @return A valid `ServiceId` or `ActorId::BroadcastSid` if the pool is exhausted.
+         */
+        [[nodiscard]] ServiceId
+        acquire() noexcept {
+            if (!_count)
+                return ActorId::BroadcastSid;
+            for (std::size_t w = _next_word; w < kWords; ++w) {
+                if (auto word = _bits[w]; word) {
+                    const auto bit = static_cast<std::size_t>(std::countr_zero(word));
+                    _bits[w]       = word & (word - 1u); // Clear lowest set bit.
+                    _next_word     = w;                   // Remember for next acquire.
+                    --_count;
+                    return static_cast<ServiceId>(w * 64u + bit);
+                }
+            }
+            return ActorId::BroadcastSid;
+        }
+
+        /**
+         * @brief Return a service id to the pool.
+         * @param sid A previously acquired service id.
+         */
+        void
+        release(ServiceId sid) noexcept {
+            if (sid >= kBits)
+                return;
+            const std::size_t w    = static_cast<std::size_t>(sid) / 64u;
+            const std::uint64_t m  = std::uint64_t{1} << (static_cast<std::size_t>(sid) % 64u);
+            if (!(_bits[w] & m)) {
+                _bits[w] |= m;
+                ++_count;
+                if (w < _next_word)
+                    _next_word = w; // Backtrack cursor so smallest SID reuse is preferred.
+            }
+        }
+
+        [[nodiscard]] bool        empty() const noexcept { return _count == 0; }
+        [[nodiscard]] std::size_t size()  const noexcept { return _count; }
+    };
+    using AvailableIdList = ServiceIdPool;
 
     //! Types
 
@@ -131,32 +224,86 @@ private:
     AvailableIdList _ids;
     ActorMap        _actors;
     CallbackMap     _actor_callbacks;
+    /**
+     * @brief Flat, cache-friendly snapshot of registered callbacks.
+     * @details
+     * Maintained in sync with `_actor_callbacks` on register / unregister so the
+     * workflow loop can iterate without rebuilding a thread-local vector on every
+     * iteration (finding 2.6). Stored as raw pointers owned by the actor instances.
+     */
+    std::vector<ICallback *> _callback_list;
     RemoveActorList _actor_to_remove;
     // --- loop
 
-    struct {
-        uint64_t _sleep_count        = 0;
-        uint64_t _nb_event_io        = 0;
-        uint64_t _nb_event_received  = 0;
-        uint64_t _nb_bucket_received = 0;
-        uint64_t _nb_event_sent_try  = 0;
-        uint64_t _nb_event_sent      = 0;
-        uint64_t _nb_bucket_sent     = 0;
-        uint64_t _nanotimer          = 0;
-        //
-        inline void
-        reset() {
-            //*this = {};
-            *this = {((_sleep_count + _nb_event_sent + _nb_event_received +
-                       _nb_event_io + _nb_event_sent_try))};
+    /**
+     * @struct Metrics
+     * @brief Per-core event-loop instrumentation and adaptive idle-backoff state.
+     * @details
+     * Tracks activity counters (events received, sent, I/O, bucket sizes, etc.) plus
+     * an integer `_spin_credit` used to amortize the cost of blocking waits on an
+     * empty mailbox. `_spin_credit` is seeded with the total work observed during
+     * the previous iteration whenever the loop made progress (see `carry_over()`),
+     * so a burst of activity buys a few additional lock-free polls before the core
+     * is allowed to park itself on `mailbox.wait()`.
+     */
+    struct Metrics {
+        std::uint64_t _spin_credit       = 0; ///< Remaining lock-free polls before blocking wait.
+        std::uint64_t _nb_event_io        = 0;
+        std::uint64_t _nb_event_received  = 0;
+        std::uint64_t _nb_bucket_received = 0;
+        std::uint64_t _nb_event_sent_try  = 0;
+        std::uint64_t _nb_event_sent      = 0;
+        std::uint64_t _nb_bucket_sent     = 0;
+        std::uint64_t _nanotimer          = 0;
+
+        /**
+         * @brief Any evidence of work performed or attempted during this iteration?
+         */
+        [[nodiscard]] bool had_activity() const noexcept {
+            return (_nb_event_sent + _nb_event_received + _nb_event_io +
+                    _nb_event_sent_try) != 0;
         }
-        //
+
+        /**
+         * @brief Refresh the spin credit and clear per-iteration event counters.
+         * @details
+         * Keeps `_spin_credit` at the total work observed this iteration (plus any
+         * leftover credit), so a busy loop always stays on the lock-free fast path.
+         * `_nanotimer` is intentionally preserved across iterations.
+         */
+        void carry_over() noexcept {
+            const auto activity = _nb_event_sent + _nb_event_received + _nb_event_io +
+                                  _nb_event_sent_try;
+            const auto ts  = _nanotimer;
+            const auto credit = _spin_credit + activity;
+            *this = {};
+            _spin_credit = credit;
+            _nanotimer   = ts;
+        }
     } _metrics;
-    bool _signal_consumed = false;
+    bool            _signal_consumed = false;
+    /**
+     * @brief Optional C++20 cancellation token wired from `qb::Main::_stop_source`.
+     * @details
+     * When a cancellation is requested (either via `~Main()` or an explicit
+     * `std::stop_source::request_stop()`), the workflow synthesises a virtual
+     * `SIGINT` in the next iteration, providing a signal-free shutdown path
+     * that also works on platforms without a POSIX signal mechanism.
+     */
+    std::stop_token _stop_token;
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
     ~VirtualCore() noexcept;
+
+    /**
+     * @brief Install a cancellation token for this VirtualCore.
+     * @param token The `std::stop_token` produced by the owning `Main`
+     *              instance's `std::stop_source`.
+     * @details Must be called by the worker thread function before entering
+     *          `__workflow__`. The token is polled once per iteration.
+     */
+    void __set_stop_token__(std::stop_token token) noexcept;
 
     /*!
      * @brief Generate a new actor ID
@@ -176,7 +323,14 @@ private:
      * @return Reference to the virtual pipe for communication with the target core
      */
     [[nodiscard]] VirtualPipe &__getPipe__(CoreId core) noexcept;
-    void __receive_events__(EventBucket *buffer, std::size_t nb_events);
+    /**
+     * @brief Dispatch a contiguous batch of events from a raw bucket buffer.
+     * @param events A `std::span` view of the event buckets to route.
+     * @details Accepts a `std::span` rather than a raw pointer + size pair
+     *          (C++20, finding 2.17) so call sites benefit from bounds-aware
+     *          construction and aggregate iteration without any runtime cost.
+     */
+    void __receive_events__(std::span<EventBucket> events);
     void __receive__();
     bool __flush_all__() noexcept;
     //! Event Management
@@ -222,6 +376,17 @@ private:
      */
     template <typename _ServiceActor>
     [[nodiscard]] _ServiceActor *getService() const noexcept;
+
+    /*!
+     * @brief Safely resolve an `ActorId` to a live actor pointer on this core.
+     * @tparam _Actor Expected dynamic type of the resolved actor.
+     * @param id The actor identifier to look up.
+     * @return Pointer to the live actor if `id` matches an alive actor of the
+     *         expected type on this core, `nullptr` otherwise.
+     * @details Backs `qb::RefActorHandle<T>::get()` (finding 2.9).
+     */
+    template <typename _Actor>
+    [[nodiscard]] _Actor *findActor(ActorId id) const noexcept;
 
     void killActor(ActorId id) noexcept;
 
