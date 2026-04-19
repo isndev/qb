@@ -61,17 +61,19 @@ public:
     /**
      * @brief Handler for disconnection events
      *
-     * This method is called when the acceptor is disconnected.
-     * If the derived class has a handler for disconnection events,
-     * it forwards the event to that handler. Otherwise, it throws
-     * a runtime error.
+     * Forwarded to @p _Derived only when it genuinely overrides
+     * `on(event::disconnected ...)` (detected via `qb::has_own_on`, which
+     * distinguishes a real user override from the one merely inherited from
+     * this acceptor through CRTP — the naive `qb::has_on` would always be
+     * `true` and cause infinite recursion). Otherwise a `std::runtime_error`
+     * is raised so the listener can propagate the fatal condition upward.
      *
      * @param e The disconnection event
      * @throws std::runtime_error If the derived class doesn't handle disconnection
      */
     void
     on(event::disconnected &&e) {
-        if constexpr (qb::has_on<_Derived, event::disconnected>)
+        if constexpr (qb::has_own_on<_Derived, acceptor, event::disconnected>)
             static_cast<_Derived &>(*this).on(std::forward<event::disconnected>(e));
         else
             throw std::runtime_error("Acceptor has been disconnected");
@@ -114,12 +116,41 @@ public:
     /**
      * @brief Listen for incoming connections on a given URI.
      * @param uri The URI to listen on.
-     * @param cert_file The path to the certificate file.
-     * @param key_file The path to the key file.
-     * @param alpn_protocols The ALPN protocols to support.
-     * @return True if the server is listening, false otherwise.
+     * @param cert_file The path to the certificate file (SSL transports only).
+     * @param key_file The path to the private key file (SSL transports only).
+     * @param alpn_protocols The ALPN protocols to advertise (SSL transports only).
+     * @return `true` if the listening socket has been successfully bound and started,
+     *         `false` otherwise.
+     *
+     * @note **Auto-start.** Once the underlying socket is bound, this method also
+     *       calls `this->start()` so that the acceptor is wired into the event loop
+     *       without the caller having to remember the second step. Callers that
+     *       need to defer the watcher registration (for example, to finish some
+     *       server-side setup before the first accept fires) can call
+     *       `listen_no_start()` instead.
      */
     [[nodiscard]] bool listen(qb::io::uri uri,
+                [[maybe_unused]] std::filesystem::path cert_file = {},
+                [[maybe_unused]] std::filesystem::path key_file = {},
+                [[maybe_unused]] std::vector<std::string> alpn_protocols = {}) {
+        if (!listen_no_start(std::move(uri),
+                             std::move(cert_file),
+                             std::move(key_file),
+                             std::move(alpn_protocols)))
+            return false;
+        this->start();
+        return true;
+    }
+
+    /**
+     * @brief Listen on a given URI without registering the accept watcher.
+     *
+     * Identical to `listen()` but leaves the acceptor idle until the caller explicitly
+     * invokes `this->start()`. Useful for servers that need to perform additional
+     * initialisation (plug protocol upgraders, register lifecycle hooks, …) before
+     * the first accept fires.
+     */
+    [[nodiscard]] bool listen_no_start(qb::io::uri uri,
                 [[maybe_unused]] std::filesystem::path cert_file = {},
                 [[maybe_unused]] std::filesystem::path key_file = {},
                 [[maybe_unused]] std::vector<std::string> alpn_protocols = {}) {

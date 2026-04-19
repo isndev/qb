@@ -190,13 +190,64 @@ private:
  * provided callable (function, lambda, functor). It automatically manages its own lifetime,
  * deleting itself after the function is executed or if the timeout is explicitly cancelled.
  *
+ * **Allocation strategy (QB_IO_PLAN 2.15):** every `Timeout<F>` instantiation
+ * keeps a thread-local LIFO freelist so that successive `async::callback()`
+ * invocations reuse the same storage. Combined with the `RegisteredKernelEvent`
+ * slab (QB_IO_PLAN 2.13), a steady-state `callback()` burns exactly zero
+ * `malloc`/`free` calls.
+ *
  * @tparam _Func The function type (or callable object type) to execute after the timeout.
  */
 template <typename _Func>
 class Timeout : public with_timeout<Timeout<_Func>> {
     _Func _func; /**< The callable (function, lambda, functor) to execute upon timeout. */
 
+    // ---- Thread-local freelist (QB_IO_PLAN 2.15) ---------------------------
+    // `Timeout<_Func>` is self-deleting (`delete this` on fire), so we can
+    // safely intercept `operator new` / `operator delete` on a per-
+    // instantiation basis. The listener is thread-local and all
+    // `async::callback` traffic flows through it, so this pool sees zero
+    // contention. The pool is deliberately not drained at thread exit — the
+    // OS reclaims the thread's memory, and releasing the chain from a TLS
+    // destructor would race with late `delete this` calls from already-fired
+    // timers whose loop iteration outlives the listener.
+    struct FreeList {
+        void *head = nullptr;
+    };
+
+    static FreeList &
+    _freelist() noexcept {
+        thread_local FreeList fl;
+        return fl;
+    }
+
 public:
+    static void *
+    operator new(std::size_t sz) {
+        auto &fl = _freelist();
+        if (fl.head) {
+            void *p = fl.head;
+            fl.head = *static_cast<void **>(p);
+            return p;
+        }
+        return ::operator new(sz);
+    }
+
+    static void
+    operator delete(void *p) noexcept {
+        if (!p)
+            return;
+        auto &fl = _freelist();
+        *static_cast<void **>(p) = fl.head;
+        fl.head                  = p;
+    }
+
+    // C++14 sized-delete forward.
+    static void
+    operator delete(void *p, std::size_t) noexcept {
+        Timeout::operator delete(p);
+    }
+
     /**
      * @brief Constructor that schedules a function to be called after a timeout.
      * @param func The function to execute. It will be moved into the Timeout object.
@@ -245,6 +296,15 @@ callback(_Func &&func, double timeout = 0.) {
         func();
         return;
     }
+    // libev caches the monotonic "now" at the start of each loop iteration.
+    // When the caller schedules a timer from a context that has been idle for
+    // a long time (e.g. a user thread that just returned from a blocking
+    // `sleep_for`), that cache can be arbitrarily stale, which makes the new
+    // timer expire far earlier than requested — `expire = ev_mn_now + timeout`
+    // becomes `(t_now - delta) + timeout`, triggering on the very next
+    // `ev_run`. Refreshing the cache here guarantees the requested delay is
+    // honoured regardless of how long the owning thread slept outside the loop.
+    ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
     new Timeout<_Func>(std::forward<_Func>(func), timeout);
 }
 
@@ -252,6 +312,91 @@ template <typename _Func, typename Rep, typename Period>
 void callback(_Func&& func, std::chrono::duration<Rep, Period> timeout_duration) {
     double seconds = std::chrono::duration_cast<std::chrono::duration<double>>(timeout_duration).count();
     callback(std::forward<_Func>(func), seconds);
+}
+
+/**
+ * @class ScopedTimeout
+ * @ingroup Async
+ * @brief RAII one-shot timer whose lifetime is owned by the caller.
+ *
+ * Unlike `Timeout<_Func>` (which `delete`s itself after firing), `ScopedTimeout`
+ * is owned by the caller via `std::unique_ptr` (or direct stack placement as a
+ * member variable). This avoids the heap allocation + self-delete dance on hot
+ * paths where the caller already keeps the timer handle around (retry loops,
+ * watchdogs, per-connection deadlines, …) and makes cancellation trivial:
+ * destroying the object stops the watcher and releases its registration.
+ *
+ * If `timeout <= 0`, the callback is executed inline at construction time (to
+ * match `callback()`'s "fire immediately" semantics).
+ *
+ * @tparam _Func Callable invoked when the timer expires.
+ */
+template <typename _Func>
+class ScopedTimeout : public with_timeout<ScopedTimeout<_Func>> {
+    _Func _func;
+    bool  _fired = false;
+
+public:
+    ScopedTimeout(_Func &&func, double timeout)
+        : with_timeout<ScopedTimeout<_Func>>(timeout > 0. ? timeout : 0.)
+        , _func(std::forward<_Func>(func)) {
+        if (timeout <= 0.) {
+            _fired = true;
+            try { _func(); } catch (...) {}
+        }
+    }
+
+    /** @brief Whether the scheduled callback has already executed. */
+    [[nodiscard]] bool fired() const noexcept { return _fired; }
+
+    /** @brief Cancel the scheduled callback if it has not fired yet. */
+    void cancel() noexcept { this->setTimeout(0.0); }
+
+    /**
+     * @brief Internal libev timer callback. Users should not call this directly.
+     * @private
+     */
+    void
+    on(event::timer const & /*event*/) {
+        if (_fired)
+            return;
+        _fired = true;
+        try { _func(); } catch (...) {}
+    }
+};
+
+/**
+ * @brief Create an owned one-shot timer without relying on the self-deleting
+ *        `Timeout<_Func>` pattern used by `callback()`.
+ * @ingroup Async
+ *
+ * @tparam _Func Callable invoked when the timer expires.
+ * @param  func  The callable to execute.
+ * @param  timeout Timer duration in seconds (0 or less → fires immediately).
+ * @return `std::unique_ptr<ScopedTimeout<std::decay_t<_Func>>>` owning the timer.
+ *
+ * Prefer this over `async::callback()` on hot paths: destroying (or reusing) the
+ * returned pointer cancels the pending callback without touching the heap twice.
+ */
+template <typename _Func>
+[[nodiscard]] auto
+scoped_callback(_Func &&func, double timeout = 0.) {
+    using Timer = ScopedTimeout<std::decay_t<_Func>>;
+    return std::make_unique<Timer>(std::forward<_Func>(func), timeout);
+}
+
+/**
+ * @brief `std::chrono` overload of `scoped_callback`.
+ * @ingroup Async
+ */
+template <typename _Func, typename Rep, typename Period>
+[[nodiscard]] auto
+scoped_callback(_Func &&func,
+                std::chrono::duration<Rep, Period> timeout_duration) {
+    const double seconds =
+        std::chrono::duration_cast<std::chrono::duration<double>>(timeout_duration)
+            .count();
+    return scoped_callback(std::forward<_Func>(func), seconds);
 }
 
 /**
@@ -993,11 +1138,29 @@ public:
      * 
      * @note This method is safe to call multiple times; subsequent calls will update the reason code
      *       but the disconnection process will only occur once.
+     *
+     * @note **Reason `0` caveat.** Internally, `_reason == 0` is the sentinel meaning
+     *       "no disconnect pending". An explicit user call of `disconnect(0)` is therefore
+     *       remapped to `disconnect_reason::user_initiated` (`1`), which is semantically
+     *       closer to what the caller meant (the `0` / `peer_closed` code is generated
+     *       automatically when the kernel reports EOF on the socket). Use the
+     *       `disconnect(disconnect_reason)` overload for the strongly-typed path.
      */
     void
     disconnect(int reason = 1) noexcept {
-        _reason = reason ? reason : 1;
+        _reason = reason ? reason : static_cast<int>(event::disconnect_reason::user_initiated);
         this->_async_event.feed_event(EV_UNDEF);
+    }
+
+    /**
+     * @brief Strongly-typed overload accepting a `disconnect_reason` enum value.
+     * @param reason Typed reason code. Equivalent to calling the `int` overload with
+     *               `static_cast<int>(reason)`, with the same `peer_closed`→`user_initiated`
+     *               remap when the caller explicitly chose `peer_closed`.
+     */
+    void
+    disconnect(event::disconnect_reason reason) noexcept {
+        disconnect(static_cast<int>(reason));
     }
 
 private:
@@ -1504,11 +1667,24 @@ public:
      * 
      * @note This method is safe to call multiple times; subsequent calls will update the reason code
      *       but the disconnection process will only occur once.
+     *
+     * @note **Reason `0` caveat.** Explicit `disconnect(0)` is remapped to
+     *       `disconnect_reason::user_initiated` because `_reason == 0` is the internal
+     *       sentinel for "not disconnecting". Use the `disconnect(disconnect_reason)`
+     *       overload for the strongly-typed path.
      */
     void
     disconnect(int reason = 1) noexcept {
-        _reason = reason ? reason : 1;
+        _reason = reason ? reason : static_cast<int>(event::disconnect_reason::user_initiated);
         this->_async_event.feed_event(EV_UNDEF);
+    }
+
+    /**
+     * @brief Strongly-typed overload accepting a `disconnect_reason` enum value.
+     */
+    void
+    disconnect(event::disconnect_reason reason) noexcept {
+        disconnect(static_cast<int>(reason));
     }
 
 private:
@@ -2145,11 +2321,24 @@ public:
      * 
      * @note This method is safe to call multiple times; subsequent calls will update the reason code
      *       but the disconnection process will only occur once.
+     *
+     * @note **Reason `0` caveat.** Explicit `disconnect(0)` is remapped to
+     *       `disconnect_reason::user_initiated` because `_reason == 0` is the internal
+     *       sentinel for "not disconnecting". Use the `disconnect(disconnect_reason)`
+     *       overload for the strongly-typed path.
      */
     void
     disconnect(int reason = 1) noexcept {
-        _reason = reason ? reason : 1;
+        _reason = reason ? reason : static_cast<int>(event::disconnect_reason::user_initiated);
         this->_async_event.feed_event(EV_UNDEF);
+    }
+
+    /**
+     * @brief Strongly-typed overload accepting a `disconnect_reason` enum value.
+     */
+    void
+    disconnect(event::disconnect_reason reason) noexcept {
+        disconnect(static_cast<int>(reason));
     }
 
 private:

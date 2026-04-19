@@ -74,11 +74,26 @@ namespace qb::io {
  */
 template <typename _Derived>
 struct use {
-    template <typename _Protocol>
+    /**
+     * @brief CRTP-based asynchronous input helper.
+     *
+     * The protocol is picked up automatically from `_Derived::Protocol` when that
+     * nested alias exists (handled inside `async::input`'s constructor via
+     * `switch_protocol`). The previous `template <typename _Protocol>` parameter was
+     * never consumed and is kept here only as a defaulted template for backward
+     * compatibility; new code should simply write `use<Self>::input`.
+     */
+    template <typename _Protocol = void>
     using input = async::input<_Derived>;
-    template <typename _Protocol>
+    /**
+     * @brief CRTP-based asynchronous output helper (see `input` note for `_Protocol`).
+     */
+    template <typename _Protocol = void>
     using output = async::output<_Derived>;
-    template <typename _Protocol>
+    /**
+     * @brief CRTP-based asynchronous bidirectional I/O helper (see `input` note for `_Protocol`).
+     */
+    template <typename _Protocol = void>
     using io = async::io<_Derived>;
 
     /** @brief Provides type aliases for TCP-based asynchronous components. */
@@ -111,20 +126,20 @@ struct use {
 #endif
     };
 
-    /** @brief Provides type aliases for UDP-based asynchronous components. */
+    /**
+     * @brief Provides type aliases for UDP-based asynchronous components.
+     *
+     * UDP servers are currently datagram-oriented (no per-peer session
+     * demultiplexing): all datagrams funnel through the same `_Derived`
+     * instance. If per-`identity` session demultiplexing is required, use
+     * `transport::udp::identity` as a map key inside your own handler.
+     */
     struct udp {
         using server = async::udp::server<_Derived>;
         using client = async::udp::client<_Derived>;
 
-        //        template <typename _Client>
-        //        using server = async::udp::server<_Derived, _Client>;
-        //
-        //        template <template <typename _BaseProtocol> typename _Protocol,
-        //                  typename _Server = void>
-        //        using client = async::udp::client<_Derived, _Protocol, _Server>;
-
 #ifdef QB_HAS_SSL
-        // Todo: implement dtls
+        // TODO(qb): implement DTLS once the underlying transport exposes it.
 #endif
     };
 

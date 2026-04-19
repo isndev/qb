@@ -29,6 +29,8 @@
 
 namespace qb::io::async {
 
+class listener; // fwd-decl for friendship
+
 /**
  * @interface IRegisteredKernelEvent
  * @ingroup Async
@@ -38,8 +40,22 @@ namespace qb::io::async {
  * with the `listener` to handle specific kernel-level events (wrapped by libev).
  * When a monitored event occurs, the `listener` calls the `invoke()` method
  * of the corresponding `IRegisteredKernelEvent` implementation.
+ *
+ * **Intrusive bookkeeping (QB_IO_PLAN 2.20):** every registered event is also a
+ * node in the owning `listener`'s doubly-linked list. The list links live in
+ * the interface itself to keep `registerEvent` / `unregisterEvent` O(1) without
+ * an extra hash-table indirection (the previous `std::unordered_set<void *>`
+ * implied one heap allocation *and* one hash computation per registration).
+ * Only the `listener` may touch the links — users of this interface never see
+ * them.
  */
 class IRegisteredKernelEvent {
+    friend class listener;
+
+    // Intrusive list links (null when not currently registered).
+    IRegisteredKernelEvent *_list_prev = nullptr;
+    IRegisteredKernelEvent *_list_next = nullptr;
+
 public:
     /**
      * @brief Virtual destructor.

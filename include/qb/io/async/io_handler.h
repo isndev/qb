@@ -103,6 +103,16 @@ public:
 private:
     session_map_t _sessions; /**< Map of active sessions */
     std::size_t _max_sessions = QB_DEFAULT_MAX_SESSIONS; /**< Maximum number of sessions allowed */
+    /**
+     * @brief Reusable scratch buffer for `stream()` / `stream_if()` broadcast fan-outs.
+     *
+     * Broadcasting must snapshot active sessions (so that a handler that disconnects
+     * *us* during iteration cannot invalidate the map). Keeping the snapshot vector as
+     * a member lets us reuse its backing storage across broadcast calls instead of
+     * reallocating on every fan-out.
+     * @note Thread-affine: this handler is single-threaded by design (see class docs).
+     */
+    mutable std::vector<std::shared_ptr<_Session>> _broadcast_scratch;
 
 public:
     /**
@@ -171,45 +181,50 @@ public:
     }
 
     /**
-     * @brief Register a new session
+     * @brief Register a new session.
      *
-     * Creates and registers a new session with the given IO object and
-     * additional arguments. The session is started immediately after
+     * Creates and registers a new session backed by the given transport I/O object and
+     * additional constructor arguments. The session is started immediately after
      * registration.
      *
-     * @tparam Args Types of additional arguments for session construction
-     * @param new_io The IO object for the new session
-     * @param args Additional arguments for session construction
-     * @return Reference to the newly created session
-     * 
-     * @note **Session Limit:** If `_max_sessions > 0`, this method will check if the
-     *       current number of sessions is below the limit before registering a new session.
-     *       If the limit is reached, the incoming connection is closed immediately and the
-     *       session is registered then immediately disconnected (it will be cleaned up by the
-     *       next event loop iteration). This prevents resource exhaustion in high-load scenarios.
-     * 
-     * @note **Usage:** The session limit can be configured via `set_max_sessions()` or
-     *       by defining `QB_DEFAULT_MAX_SESSIONS` before including this header.
-     *       The default is 0 (unlimited) for backward compatibility.
+     * @tparam Args Types of additional arguments forwarded to the session constructor.
+     * @param new_io The transport I/O object (e.g. accepted socket) for the new session.
+     * @param args  Additional arguments forwarded to the session constructor.
+     * @return Pointer to the newly created session on success, or `nullptr` if the session
+     *         limit has been reached (in which case `new_io` is closed and no session is
+     *         allocated).
+     *
+     * @note **Session limit / DoS hardening.** If `_max_sessions > 0` and the registry is
+     *       already full, this method closes `new_io` *before* any allocation takes place
+     *       and returns `nullptr`. The previous implementation allocated and registered a
+     *       `_Session` just to immediately `disconnect()` it, which amplified the cost of
+     *       each rejected connection under a connection-flood scenario.
+     *
+     * @note **Usage.** The session limit can be configured via `set_max_sessions()` or by
+     *       defining `QB_DEFAULT_MAX_SESSIONS` before including this header. The default is
+     *       `0` (unlimited) for backward compatibility.
      */
     template <typename... Args>
-    _Session &
+    _Session *
     registerSession(typename _Session::transport_io_type &&new_io, Args &&...args) {
-        auto session = std::make_shared<_Session>(static_cast<_Derived &>(*this),
-                                                  std::forward<Args>(args)...);
-        sessions().emplace(session->id(), session);
-        session->transport() = std::move(new_io);
-
-        // Check session limit after transport is moved in so we can close it gracefully
-        if (_max_sessions > 0 && _sessions.size() > _max_sessions) {
-            session->disconnect(0);
-            return *session;
+        // DoS hardening: enforce the session cap *before* allocating the session.
+        // `new_io` already owns an open FD (and possibly an `SSL*`), so closing it
+        // here is O(1) and frees kernel resources immediately.
+        if (_max_sessions > 0 && _sessions.size() >= _max_sessions) {
+            new_io.close();
+            return nullptr;
         }
 
-        session->start();
+        auto session = std::make_shared<_Session>(static_cast<_Derived &>(*this),
+                                                  std::forward<Args>(args)...);
+        session->transport() = std::move(new_io);
+        auto [it, _] = _sessions.emplace(session->id(), std::move(session));
+
+        auto &registered = *it->second;
+        registered.start();
         if constexpr (qb::has_on<_Derived, _Session &>)
-            static_cast<_Derived &>(*this).on(*session);
-        return *session;
+            static_cast<_Derived &>(*this).on(registered);
+        return &registered;
     }
 
     /**
@@ -259,12 +274,16 @@ public:
     template <typename... _Args>
     _Derived &
     stream(_Args &&...args) {
-        std::vector<std::shared_ptr<_Session>> snapshot;
-        snapshot.reserve(_sessions.size());
+        // Reuse the member scratch vector to amortise the allocation across broadcasts.
+        // The snapshot is still mandatory to keep session shared-ptrs alive if a
+        // handler disconnects the broadcaster's peers mid-iteration.
+        _broadcast_scratch.clear();
+        _broadcast_scratch.reserve(_sessions.size());
         for (auto &[key, session] : _sessions)
-            snapshot.push_back(session);
-        for (auto &session : snapshot)
+            _broadcast_scratch.push_back(session);
+        for (auto &session : _broadcast_scratch)
             (*session << ... << args);
+        _broadcast_scratch.clear();
         return static_cast<_Derived &>(*this);
     }
 
@@ -282,13 +301,14 @@ public:
     template <typename _Func, typename... _Args>
     _Derived &
     stream_if(_Func const &func, _Args &&...args) {
-        std::vector<std::shared_ptr<_Session>> snapshot;
-        snapshot.reserve(_sessions.size());
+        _broadcast_scratch.clear();
+        _broadcast_scratch.reserve(_sessions.size());
         for (auto &[key, session] : _sessions)
-            snapshot.push_back(session);
-        for (auto &session : snapshot)
+            _broadcast_scratch.push_back(session);
+        for (auto &session : _broadcast_scratch)
             if (func(*session))
                 (*session << ... << args);
+        _broadcast_scratch.clear();
         return static_cast<_Derived &>(*this);
     }
 };

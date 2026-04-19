@@ -45,6 +45,16 @@ class IProtocol {
     bool _should_flush = true; /**< Flag indicating whether the protocol should flush the input buffer after processing a message. */
 public:
     /**
+     * @brief Sentinel value returned by `getMessageSize()` to indicate that the buffer
+     *        does not yet contain a complete message for this protocol.
+     *
+     * Kept as a named constant so that callers can write
+     * `if (size == IProtocol::kNoMessage)` instead of magic `0`s. It is explicitly
+     * `constexpr` and evaluated at compile time.
+     */
+    static constexpr std::size_t kNoMessage = 0;
+
+    /**
      * @brief Virtual destructor.
      * Ensures proper cleanup for derived protocol classes.
      */
@@ -58,11 +68,24 @@ public:
      * if a complete message is available according to the protocol's framing rules.
      *
      * @return Size of the next complete message in bytes (including any headers or delimiters
-     *         that are part of the message unit). Returns `0` if no complete message is yet
+     *         that are part of the message unit).
+     *         Returns `IProtocol::kNoMessage` (i.e. `0`) if no complete message is yet
      *         available in the buffer, indicating more data is needed.
-     * 
+     *
+     *         Values greater than `IProtocol::kNoMessage` must satisfy
+     *         `size <= _io.pendingRead()` — the framework trusts the protocol's report
+     *         and will consume exactly that many bytes on the matching `onMessage()`
+     *         call.
+     *
+     *         Returning a value that exceeds the I/O component's configured
+     *         `max_message_size()` is treated as a protocol error (the framework
+     *         will disconnect with `disconnect_reason::message_too_large`).
+     *
      * @note **Inspection Only:** This method should not consume data from the buffer; it only inspects it.
      *       The actual consumption happens when `onMessage()` is called with the returned size.
+     *       It must also be **side-effect-free**: do not drive transport state
+     *       machines, schedule callbacks, or call back into the I/O component from
+     *       here.
      * 
      * @note **Error Handling:** If the protocol detects an invalid message format during inspection
      *       (e.g., malformed header, invalid size field), it should call `not_ok()` to mark itself

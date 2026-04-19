@@ -28,34 +28,44 @@
 namespace qb::io::async::event {
 
 /**
- * @struct eof
+ * @struct input_drained
  * @ingroup AsyncEvent
- * @brief Event triggered when no more data is available for reading from an input stream.
+ * @brief Event triggered when the input buffer has been fully consumed by the protocol.
  *
- * This event is passed to the derived class's `on(qb::io::async::event::eof&&)` method when
- * an attempt to read from an input I/O object (e.g., TCP socket, file) yields no new data,
- * and the input buffer (after protocol processing) is also empty. It signals that the end
- * of the input stream has been reached or the read operation would block.
+ * This event is passed to the derived class's `on(qb::io::async::event::input_drained&&)`
+ * method by asynchronous input components (`qb::io::async::input` or
+ * `qb::io::async::io`) once all complete messages have been parsed from the buffer and
+ * `pendingRead()` reports zero bytes remaining.
  *
- * This is distinct from `qb::io::async::event::disconnected`, which signals a connection closure.
- * An `eof` might occur on a still-open connection if the peer has simply stopped sending data.
+ * **This is not an end-of-stream notification.** The connection may still be perfectly
+ * healthy — the peer has merely paused sending. For an actual connection closure, use
+ * `qb::io::async::event::disconnected` instead.
+ *
+ * @see eof Backward-compatible type alias retained for existing code.
+ * @see pending_read For the complementary event indicating leftover bytes in the buffer.
  *
  * Usage Example:
  * @code
- * class MyInputHandler : public qb::io::async::input<MyInputHandler> { // Or similar base
+ * class MyInputHandler : public qb::io::async::input<MyInputHandler> {
  * public:
- *   // ... protocol definition and other methods ...
- *
- *   void on(qb::io::async::event::eof &&) {
- *     LOG_INFO("End of file/stream reached for input.");
- *     // Optionally, close the input stream or take other actions.
- *     // For example, if this is a client, it might decide to disconnect.
- *     // this->disconnect(); 
+ *   void on(qb::io::async::event::input_drained &&) {
+ *     LOG_INFO("Input buffer drained; waiting for more data.");
  *   }
  * };
  * @endcode
  */
-struct eof {};
+struct input_drained {};
+
+/**
+ * @typedef eof
+ * @ingroup AsyncEvent
+ * @brief Backward-compatibility alias for @ref input_drained.
+ *
+ * The historical name suggested end-of-file / end-of-stream semantics, which was
+ * misleading: this event fires on any successful read that empties the buffer,
+ * even on a still-open connection. New code should prefer @ref input_drained.
+ */
+using eof = input_drained;
 
 } // namespace qb::io::async::event
 

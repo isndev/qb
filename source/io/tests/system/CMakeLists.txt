@@ -38,6 +38,7 @@ set(CORE_TESTS
         test-async-io.cpp
         test-session-text.cpp
         test-session-json.cpp
+        test-io-plan.cpp
 )
 
 # Create core test targets
@@ -57,6 +58,17 @@ foreach (TEST_SOURCE ${CORE_TESTS})
             FOLDER "Tests/IO/System"
     )
 endforeach ()
+
+# -----------------------------------------------------------------------------
+# Micro-benchmarks (not registered with ctest on purpose — run manually to
+# establish baselines and measure perf deltas from QB_IO_PLAN.md)
+# -----------------------------------------------------------------------------
+add_executable(${PROJECT_NAME}-bench-io-plan bench-io-plan.cpp)
+target_link_libraries(${PROJECT_NAME}-bench-io-plan PRIVATE ${PROJECT_NAME})
+set_target_properties(${PROJECT_NAME}-bench-io-plan PROPERTIES
+        FOLDER "Benches/IO"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/benches"
+)
 
 # -----------------------------------------------------------------------------
 # Optional feature tests

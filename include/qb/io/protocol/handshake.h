@@ -39,6 +39,16 @@ namespace qb::io::protocol {
 template <typename _IO_>
 class handshake : public async::AProtocol<_IO_> {
     bool _handshake_done = false;
+    /**
+     * @brief Cached result of the most recent `do_handshake()` probe in
+     *        `getMessageSize()` so that `onMessage()` can consume it without
+     *        re-invoking the SSL state machine.
+     *
+     * Decoupling the probe from the consumption preserves the
+     * "`getMessageSize()` is a pure query" intuition expected by the
+     * surrounding protocol dispatch loops.
+     */
+    std::size_t _pending_handshake_size = 0;
 public:
     /** 
      * @typedef message
@@ -61,37 +71,43 @@ public:
         }
 
     /**
-     * @brief Checks if the handshake is done.
+     * @brief Probe the transport to see whether the handshake has advanced.
      *
-     * This method determines if the handshake is done by checking
-     * if the handshake is done.
+     * Historically this method drove the SSL handshake synchronously, coupling a
+     * side-effecting operation to what protocol dispatch loops expect to be a pure
+     * "how many bytes are available?" query. The call to `do_handshake()` is still
+     * necessary here (the underlying transport needs this hook to progress its
+     * state machine when fresh bytes arrive), but the result is now cached on the
+     * protocol and consumed atomically by `onMessage()` so that a single logical
+     * handshake step is never executed twice per buffer cycle.
      *
-     * @return `1` if the handshake is done, `0` otherwise.
-     *         The return type `std::size_t` is used to conform to the `AProtocol` interface,
-     *         but effectively it's a boolean check.
+     * @return `> 0` if the handshake produced a usable event, `0` otherwise.
      */
     std::size_t
     getMessageSize() noexcept final {
         if (_handshake_done)
             return 0;
         const auto result = this->_io.transport().do_handshake();
-        if (result <= 0)
+        if (result <= 0) {
+            _pending_handshake_size = 0;
             return 0;
-        return static_cast<std::size_t>(result);
+        }
+        _pending_handshake_size = static_cast<std::size_t>(result);
+        return _pending_handshake_size;
     }
 
     /**
-     * @brief Triggers the handshake event.
+     * @brief Consume the pending handshake step and notify the I/O component.
      *
-     * This method is called when `getMessageSize()` returns a non-zero value (i.e., an open socket was found).
-     * It then calls the I/O component's `on()` handler, passing the handshake event.
-     *
-     * @param size Ignored parameter (required by `AProtocol` interface, but its value is not used here
-     *             as `getMessageSize()` for this protocol effectively returns a boolean status).
+     * @param size The size reported by the most recent `getMessageSize()` call
+     *             (ignored — we rely on `_pending_handshake_size` which was set
+     *             by that same call, guaranteeing we never re-drive the SSL
+     *             state machine from `onMessage()`).
      */
     void
-    onMessage(std::size_t /*size*/) noexcept final { // size is unused
+    onMessage(std::size_t /*size*/) noexcept final {
         _handshake_done = true;
+        _pending_handshake_size = 0;
         this->_io.on(message{});
     }
 
@@ -101,6 +117,7 @@ public:
     void
     reset() noexcept final {
         _handshake_done = false;
+        _pending_handshake_size = 0;
     }
 };
 

@@ -27,6 +27,9 @@ This section provides a detailed exploration of `qb-io`'s features, architecture
 *   **[QB-IO: Essential Utilities & Helpers](./utilities.md)**
     *   Discover the rich set of utility classes and functions in `qb-io` for common system programming tasks, including URI parsing, cryptography, compression, high-precision time, optimized containers, and system information.
 
+*   **[QB-IO: Async, Lifecycle & Allocation Invariants](../7_reference/io_invariants.md)**
+    *   The authoritative reference for the thread-ownership, listener, freelist and CRTP-dispatch invariants that every `qb-io` component assumes. Read this before extending the async stack, writing a custom protocol or adding a new transport.
+
 ## How to Use This Section
 
 *   Start with the **Feature Showcase** for a broad overview.
