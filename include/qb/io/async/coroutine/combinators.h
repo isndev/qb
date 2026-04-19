@@ -40,11 +40,15 @@
 #include "task.h"
 #include "utils.h"
 #include <any>
+#include <chrono>
+#include <cstddef>
 #include <exception>
 #include <memory>
-#include <tuple>
-#include <variant>
 #include <optional>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <variant>
 #include <vector>
 
 namespace qb::io::async {
@@ -257,6 +261,18 @@ struct tuple_element<1, qb::io::async::when_any_result> {
     using type = const any;
 };
 } // namespace std
+
+namespace qb::io::async::detail {
+// Finding 2.B.14: tuple_size<> exposes index + value as the structured-binding
+// surface of when_any_result. The struct also carries a non-binding
+// `exception` field (accessed via `get<T>()`), which is intentionally NOT
+// exposed via tuple_element. This static_assert locks the arity so an
+// accidental addition of a third binding field breaks the build instead of
+// silently shifting existing bindings.
+static_assert(std::tuple_size<when_any_result>::value == 2,
+              "when_any_result must expose exactly (index, value) for "
+              "structured bindings; adjust tuple_element specialisations too");
+}
 
 namespace qb::io::async {
 
@@ -523,6 +539,14 @@ public:
  * @param timeout Maximum time to wait
  * @return Awaiter that returns task result or throws timeout_error
  * @throws timeout_error if operation exceeds timeout
+ *
+ * Finding 2.B.4 — cancellation semantics:
+ *   When the timeout fires before the task completes, the awaiter throws
+ *   `timeout_error` to the caller but **does not interrupt** the inner
+ *   task: it keeps running in the background until it finishes naturally
+ *   (its result is then dropped). If you need cooperative interruption,
+ *   compose with `with_deadline` and a `cancellation_token` instead.
+ *
  * @ingroup Coroutine
  */
 template <typename T>
@@ -606,7 +630,13 @@ inline auto coro_with_timeout(task<void>&& t, std::chrono::milliseconds timeout)
 
 /**
  * @brief Race multiple tasks, return first result
- * Similar to when_any but semantically clearer for racing operations
+ *
+ * Semantic alias for `when_any` (first winner wins). The losers are **not**
+ * cancelled: they keep running to completion in the background, owned by
+ * the scheduler. If you need true cancellation of the losers, wrap each
+ * task in a `cancellable_operation` and call `cancel()` on the tokens from
+ * the winner's continuation (finding 2.B.3).
+ *
  * @ingroup Coroutine
  */
 template <typename... Tasks>
@@ -616,6 +646,8 @@ auto race(Tasks... tasks) {
 
 /**
  * @brief Race vector of tasks
+ *
+ * See `race(Tasks...)`. Same non-cancelling semantics (finding 2.B.3).
  * @ingroup Coroutine
  */
 template <typename T>

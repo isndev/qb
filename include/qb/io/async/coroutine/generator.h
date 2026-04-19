@@ -23,10 +23,11 @@
 #ifndef QB_IO_ASYNC_COROUTINE_GENERATOR_H
 #define QB_IO_ASYNC_COROUTINE_GENERATOR_H
 
+#include <cassert>
 #include <coroutine>
-#include <optional>
-#include <exception>
 #include <cstdio>
+#include <exception>
+#include <optional>
 
 /** Set QB_DEBUG_AGEN=1 (compile flag or before the include) to enable
  *  async_generator trace prints that show the yield/next/suspend flow. */
@@ -160,10 +161,17 @@ public:
         }
 
         const T& operator*() const {
+            // Finding 2.A.4: operator* must not dereference a null optional.
+            // Callers are supposed to check `it != end()` first, but misuse
+            // should fail loudly instead of silently returning garbage.
+            assert(_handle && _handle.promise().current_value.has_value()
+                   && "generator::iterator operator* on exhausted iterator");
             return *_handle.promise().current_value;
         }
 
         const T* operator->() const {
+            assert(_handle && _handle.promise().current_value.has_value()
+                   && "generator::iterator operator-> on exhausted iterator");
             return &*_handle.promise().current_value;
         }
     };
@@ -367,12 +375,25 @@ std::vector<T> collect_to_vector(generator<T>& gen) {
 /**
  * @brief Create generator from range
  * @tparam Range Range type
- * @param range Source range
+ * @param range Source range (taken by value — see note)
  * @return Generator yielding range elements
+ *
+ * Finding 2.A.8 — lifetime contract:
+ *   The parameter is taken **by value** so that the range is copied/moved
+ *   into the coroutine frame. Taking a forwarding reference here would
+ *   dangle: coroutine frames only extend the lifetime of function
+ *   parameters *passed by value*, so a reference to a temporary like
+ *   `from_range(std::vector{1,2,3})` would be pointing at freed memory
+ *   by the time the first `co_yield` suspends.
+ *
+ *   If you want to iterate without copying, pass a `std::reference_wrapper`
+ *   or a view type (`std::span`, `std::ranges::subrange`) and ensure the
+ *   underlying container outlives the generator.
+ *
  * @ingroup Coroutine
  */
 template <typename Range>
-auto from_range(Range&& range)
+auto from_range(Range range)
     -> generator<typename std::remove_cvref_t<Range>::value_type> {
     for (auto& item : range) {
         co_yield item;

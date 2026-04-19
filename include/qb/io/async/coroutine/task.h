@@ -75,12 +75,17 @@
 #ifndef QB_IO_ASYNC_COROUTINE_TASK_H
 #define QB_IO_ASYNC_COROUTINE_TASK_H
 
-#include <coroutine>
-#include <exception>
-#include <variant>
-#include <utility>
+#include <array>
 #include <atomic>
+#include <coroutine>
+#include <cstddef>
+#include <cstdlib>
+#include <exception>
+#include <new>
+#include <stdexcept>
 #include <type_traits>
+#include <utility>
+#include <variant>
 
 // Debug trace macro (defined early for use in promise_type)
 #ifdef QB_DEBUG_COROUTINES
@@ -95,6 +100,101 @@ namespace qb::io::async {
 
 // Forward declaration
 class CoroutineScheduler;
+
+// ============================================================================
+// Coroutine frame freelist allocator (Finding 2.A.9)
+// ============================================================================
+//
+// Coroutine frames are churned at very high rate on the hot path
+// (spawn → await → complete → free). Because the framework is strictly
+// mono-thread per worker, a *thread-local* size-bucketed freelist can serve
+// the vast majority of new/delete pairs without any lock or atomic, and
+// without going through the global allocator.
+//
+// Design:
+//   * Bucket size = ceil(frame_size / kAlign). kAlign = 32 B matches the
+//     typical cache-line sub-block and most libc malloc min-alignment.
+//   * kMaxBucket buckets → frames up to kAlign * kMaxBucket (= 2 KiB by
+//     default) are pooled; larger frames fall through to ::operator new
+//     (these are rare — they'd correspond to coroutines that hold a large
+//     by-value state, which is discouraged anyway).
+//   * Freed blocks are intrusively linked via their first 8 B, LIFO.
+//   * No destructor / no draining: the OS reclaims the freelist when the
+//     thread exits.
+//
+// The allocator is used by `task<T>::promise_type::operator new/delete`.
+// Both sized and unsized delete are provided; sized delete is used by
+// coroutine frame deallocation in C++20 (sized deallocation is enabled by
+// default on clang/gcc in C++14+).
+namespace detail {
+
+class CoroutineFrameAllocator {
+public:
+    static constexpr std::size_t kAlign     = 32;
+    static constexpr std::size_t kMaxBucket = 64;   // up to 2 KiB
+
+    [[nodiscard]] static void* allocate(std::size_t size) {
+        const std::size_t idx = bucket_index(size);
+        if (idx == 0 || idx > kMaxBucket) {
+            return ::operator new(size);
+        }
+        auto& head = buckets()[idx - 1];
+        if (head) {
+            void* p = head;
+            head = *static_cast<void**>(p);
+            return p;
+        }
+        return ::operator new(idx * kAlign);
+    }
+
+    static void deallocate(void* p, std::size_t size) noexcept {
+        if (!p) return;
+        const std::size_t idx = bucket_index(size);
+        if (idx == 0 || idx > kMaxBucket) {
+            ::operator delete(p);
+            return;
+        }
+        auto& head = buckets()[idx - 1];
+        *static_cast<void**>(p) = head;
+        head = p;
+    }
+
+private:
+    static std::size_t bucket_index(std::size_t size) noexcept {
+        // Guarantee that each slot can store the intrusive `void*` that we
+        // overlay when free.
+        if (size < sizeof(void*)) size = sizeof(void*);
+        return (size + kAlign - 1) / kAlign;
+    }
+
+    // kMaxBucket slots — each slot is a LIFO head pointer for its size class.
+    using BucketArray = std::array<void*, kMaxBucket>;
+    static BucketArray& buckets() noexcept {
+        thread_local BucketArray b{};
+        return b;
+    }
+};
+
+// Mixin helper: inherit from this (or paste via explicit forwarding) to get
+// the pooled new/delete pair. We inject the operators via a macro rather
+// than a CRTP base to keep the promise layout identical (coroutine frames
+// are sensitive to promise size / alignment).
+#define QB_CORO_PROMISE_POOLED_NEW_DELETE()                                     \
+    static void* operator new(std::size_t sz) {                                 \
+        return ::qb::io::async::detail::CoroutineFrameAllocator::allocate(sz);  \
+    }                                                                           \
+    static void operator delete(void* p, std::size_t sz) noexcept {             \
+        ::qb::io::async::detail::CoroutineFrameAllocator::deallocate(p, sz);    \
+    }                                                                           \
+    static void operator delete(void* p) noexcept {                             \
+        /* Unsized delete fallback (used when sized-deallocation is off).   */  \
+        /* We cannot recover the original bucket index, so we surrender the */  \
+        /* block to the global allocator — correct but slower. Modern C++20 */  \
+        /* compilers default to sized deallocation, so this path is cold.   */  \
+        ::operator delete(p);                                                   \
+    }
+
+} // namespace detail
 
 // schedule_via_current is defined in scheduler.h - include after this file
 // or use the externally defined version
@@ -169,6 +269,9 @@ public:
      * Implements the coroutine protocol for integration with libev.
      */
     struct promise_type {
+        // Finding 2.A.9: pooled frame allocation (see detail::CoroutineFrameAllocator).
+        QB_CORO_PROMISE_POOLED_NEW_DELETE()
+
         /**
          * @brief Storage for the coroutine result
          *
@@ -383,12 +486,27 @@ public:
      * @brief Awaitable: get the result
      * @return The return value
      * @throws Any exception thrown by the coroutine
+     *
+     * Finding 2.A.3: the variant index is consulted explicitly. The old
+     * path called `value()` → `std::get<1>(result_)`, which would throw
+     * `std::bad_variant_access` if the coroutine happened to complete via
+     * `unhandled_exception()` **and** the caller forgot to check
+     * `has_exception()`. That can hide the real error. Here we always
+     * surface the stored exception first.
      */
     T await_resume() {
-        if (handle_.promise().has_exception()) {
-            std::rethrow_exception(handle_.promise().exception());
+        auto& promise = handle_.promise();
+        if (promise.has_exception()) {
+            std::rethrow_exception(promise.exception());
         }
-        return std::move(handle_.promise().value());
+        if (!promise.is_ready()) {
+            // Should never happen: await_suspend must have kept us
+            // suspended until the promise completed. Fail loudly rather
+            // than hand back a garbage T via an uninitialised variant.
+            throw std::logic_error(
+                "task<T>::await_resume called before the coroutine completed");
+        }
+        return std::move(promise.value());
     }
 
     /**
@@ -436,6 +554,9 @@ public:
      * @brief Promise type for task<void>
      */
     struct promise_type {
+        // Finding 2.A.9: pooled frame allocation (see detail::CoroutineFrameAllocator).
+        QB_CORO_PROMISE_POOLED_NEW_DELETE()
+
         /**
          * @brief Stored exception (if any)
          */

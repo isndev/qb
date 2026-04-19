@@ -29,8 +29,14 @@
 // NOTE: No <mutex> — the channel is used exclusively within a single qb-io
 // thread under the cooperative scheduler. "Multi-Producer" here means multiple
 // coroutines; they are all on the same thread and never run concurrently.
-#include <queue>
+#include <chrono>
+#include <deque>
+#include <exception>
+#include <memory>
 #include <optional>
+#include <queue>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace qb::io::async {
@@ -146,8 +152,17 @@ public:
 
         // No lock: single-thread cooperative — state is stable between
         // await_ready() and await_suspend() (no other coroutine can run).
+        //
+        // Closed-channel semantics: a closed channel must **reject** every
+        // subsequent `send` by throwing `channel_closed` from `await_resume`.
+        // We take the synchronous fast-path (await_ready returns true) so the
+        // throw happens without an intermediate suspension — this mirrors
+        // `try_send` which returns `false` on a closed channel (Finding 2.C.1).
         [[nodiscard]] bool await_ready() {
-            if (ch._closed) return false;
+            if (ch._closed) {
+                // Stay !_completed so await_resume throws channel_closed.
+                return true;
+            }
             // 1. Satisfy a direct recv waiter
             if (!ch._recv_waiters.empty()) {
                 auto [recv_h, result_ptr] = ch._recv_waiters.front();
@@ -178,7 +193,14 @@ public:
         }
 
         void await_suspend(std::coroutine_handle<> h) {
-            if (ch._closed) { _completed = true; schedule_via_current(h); return; }
+            // Channel was closed while we were queued or between await_ready()
+            // and await_suspend() (cannot actually happen under the cooperative
+            // model since no other code runs, but guard defensively).
+            if (ch._closed) {
+                // Do NOT mark _completed: await_resume will throw.
+                schedule_via_current(h);
+                return;
+            }
             if (!ch._recv_waiters.empty()) {
                 auto [recv_h, result_ptr] = ch._recv_waiters.front();
                 ch._recv_waiters.pop_front();
@@ -209,6 +231,10 @@ public:
         }
 
         void await_resume() {
+            // Finding 2.C.1: after a close() has happened (before or after the
+            // suspension), the value must be rejected loudly rather than
+            // silently dropped. This matches try_send's boolean-false contract
+            // and the Doxygen "@throws channel_closed" on send().
             if (ch._closed && !_completed) {
                 throw channel_closed();
             }
@@ -572,10 +598,26 @@ auto make_channel(size_t capacity = 0) {
 }
 
 /**
- * @brief Range-based for loop helper for channels
+ * @brief Range-based for loop helper for channels — **non-blocking** drain
+ *
+ * Finding 2.C.9 — scope & naming:
+ *   This helper does **not** suspend: it calls `try_recv()` and stops at
+ *   the first empty slot, so it is really a "drain everything currently
+ *   buffered" loop, not a coroutine-aware iteration. It cannot be used
+ *   inside a `for (auto v : channel_range(ch))` to wait for new items;
+ *   for that use `async_stream::from_channel(ch)` with a `while (auto v
+ *   = co_await stream._next())` pattern, or iterate manually with
+ *   `co_await ch.recv()`.
+ *
+ *   `operator*` returns by value (moved out of the iterator's private
+ *   optional). This is intentional: the iterator owns the value until
+ *   `operator++` overwrites it, so moving into the loop variable is
+ *   safe and cheaper than a copy. The method is no longer `const` to
+ *   reflect the logical ownership transfer.
  *
  * Usage:
  * @code
+ * // Only drains what is already buffered; stops on the first empty slot.
  * for (auto val : channel_range(ch)) {
  *     process(val);
  * }
@@ -601,7 +643,8 @@ public:
         }
 
         void advance() {
-            // This would need to be async - simplified version
+            // Non-blocking: see class doc. Use async_stream for true async
+            // iteration.
             _current = _ch.try_recv();
             if (!_current) {
                 _done = true;
@@ -617,7 +660,7 @@ public:
             return *this;
         }
 
-        T operator*() const {
+        T operator*() {
             return std::move(*_current);
         }
     };
