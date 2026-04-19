@@ -32,6 +32,7 @@
 #include <condition_variable>
 #include <csignal>
 #include <qb/system/container/unordered_map.h>
+#include <stop_token>
 #include <thread>
 #include <vector>
 // include from qb
@@ -394,6 +395,16 @@ struct CoreSpawnerParameter {
     
     /** @brief Atomic counter for synchronizing core startup */
     std::atomic<uint64_t>   &sync_start;
+
+    /**
+     * @brief C++20 stop token wired to the engine's `std::stop_source`.
+     * @details
+     * Each worker polls it from its event loop. Combined with the legacy
+     * `Main::_signal_pending` path, it provides a deterministic, signal-free
+     * cancellation channel (e.g. when `Main` is destroyed without any POSIX
+     * signal being delivered).
+     */
+    std::stop_token          stop_token;
 };
 
 /*!
@@ -425,7 +436,17 @@ class Main {
                                                     std::atomic<uint64_t> &sync_start) noexcept;
 
 private:
-    std::vector<std::thread> _cores;
+    /**
+     * @brief Cancellation channel shared with all core workers.
+     * @details
+     * Tokens are dispatched through `CoreSpawnerParameter::stop_token` to each
+     * `std::jthread` in `_cores`. A `request_stop()` is issued on destruction
+     * (and may be triggered programmatically) so worker loops exit cleanly
+     * without requiring a POSIX signal. The destructor of `std::jthread`
+     * additionally joins the worker, making RAII-based shutdown automatic.
+     */
+    std::stop_source           _stop_source;
+    std::vector<std::jthread>  _cores;
     // Core Factory
     CoreInitializerMap                       _core_initializers;
     std::unique_ptr<SharedCoreCommunication> _shared_com;

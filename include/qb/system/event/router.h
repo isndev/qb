@@ -227,68 +227,55 @@ public:
 };
 
 /**
- * @brief Single-Event Multiple-Handler router (heterogeneous version)
+ * @brief Single-Event Multiple-Handler router (heterogeneous version).
  *
  * Specialization that supports different handler types for the same event type.
  *
  * @tparam _RawEvent The event type
+ *
+ * @details
+ * **Dispatch strategy (finding 2.7):** instead of storing a virtual
+ * `IHandlerResolver` per subscribed handler — which costs one heap allocation
+ * per subscription and one vtable lookup per dispatch — this implementation
+ * stores a pair `{ void* handler, trampoline_fn }`. The trampoline is a
+ * `static` function instantiated per handler type that performs the
+ * `static_cast<_Handler*>` and calls `handler.on(event)` directly.
+ *
+ * This saves:
+ * - 1 heap allocation per `subscribe<_Handler>()` call.
+ * - 1 indirect virtual call per routed event.
+ * - A vtable pointer (8 bytes) in every subscription entry.
  */
 template <typename _RawEvent>
 class semh<_RawEvent, void> : public internal::EventPolicy {
     using _EventId   = typename _RawEvent::id_type;
     using _HandlerId = typename _RawEvent::id_handler_type;
 
-    /**
-     * @brief Interface for handler resolution
-     *
-     * Abstracts the process of resolving and invoking a handler
-     * for heterogeneous handler types.
-     */
-    class IHandlerResolver {
-    public:
-        virtual ~IHandlerResolver() = default;
+    using Trampoline = void (*)(void *, _RawEvent &) noexcept;
 
-        /**
-         * @brief Resolve and invoke a handler for the event
-         *
-         * @param event The event to route
-         */
-        virtual void resolve(_RawEvent &event) = 0;
+    struct Entry {
+        void      *handler    = nullptr;
+        Trampoline dispatch   = nullptr;
     };
 
     /**
-     * @brief Concrete handler resolver for a specific handler type
-     *
-     * @tparam _Handler The handler type
+     * @brief Typed trampoline: performs the `void*` → `_Handler*` recast and
+     *        invokes the handler's `on(event)` method, honouring the
+     *        `has_is_alive` protocol.
      */
     template <typename _Handler>
-    class HandlerResolver
-        : public IHandlerResolver
-        , public sesh<_RawEvent, _Handler> {
-    public:
-        HandlerResolver()  = delete;
-        ~HandlerResolver() = default;
-
-        /**
-         * @brief Constructor with a handler
-         *
-         * @param handler The handler to resolve
-         */
-        explicit HandlerResolver(_Handler &handler) noexcept
-            : sesh<_RawEvent, _Handler>(handler) {}
-
-        /**
-         * @brief Resolve and invoke the handler
-         *
-         * @param event The event to route
-         */
-        void
-        resolve(_RawEvent &event) final {
-            sesh<_RawEvent, _Handler>::template route<false>(event);
+    static void
+    dispatch_trampoline(void *opaque_handler, _RawEvent &event) noexcept {
+        auto &handler = *static_cast<_Handler *>(opaque_handler);
+        if constexpr (qb::has_is_alive<_RawEvent>) {
+            if (handler.is_alive())
+                handler.on(event);
+        } else {
+            handler.on(event);
         }
-    };
+    }
 
-    qb::unordered_map<_HandlerId, std::unique_ptr<IHandlerResolver>> _subscribed_handlers;
+    qb::unordered_map<_HandlerId, Entry> _subscribed_handlers;
 
 public:
     semh() = default;
@@ -308,8 +295,19 @@ public:
     route(_RawEvent &event) const noexcept {
         if constexpr (qb::has_is_broadcast<_HandlerId>) {
             if (event.getDestination().is_broadcast()) {
-                for (const auto &it : _subscribed_handlers)
-                    it.second->resolve(event);
+                for (const auto &it : _subscribed_handlers) {
+                    // `subscribe()` always sets both fields atomically, so the
+                    // function pointer is never null for a live entry. Hint
+                    // the optimiser so it can elide the runtime null check in
+                    // the indirect-call sequence (finding 2.17, C++23
+                    // `[[assume]]`). The load is materialised into locals so
+                    // the assumption predicate is side-effect-free (Clang's
+                    // `-Wassume` requires this).
+                    const auto dispatch = it.second.dispatch;
+                    auto *const target  = it.second.handler;
+                    QB_ASSUME(dispatch != nullptr);
+                    dispatch(target, event);
+                }
 
                 if constexpr (_CleanEvent)
                     dispose(event);
@@ -319,8 +317,12 @@ public:
         }
 
         const auto &it = _subscribed_handlers.find(event.getDestination());
-        if (likely(it != _subscribed_handlers.cend()))
-            it->second->resolve(event);
+        if (likely(it != _subscribed_handlers.cend())) {
+            const auto dispatch = it->second.dispatch;
+            auto *const target  = it->second.handler;
+            QB_ASSUME(dispatch != nullptr);
+            dispatch(target, event);
+        }
 
         if constexpr (_CleanEvent)
             dispose(event);
@@ -335,9 +337,8 @@ public:
     template <typename _Handler>
     void
     subscribe(_Handler &handler) noexcept {
-        _subscribed_handlers.erase(handler.id());
-        _subscribed_handlers.emplace(
-            handler.id(), std::make_unique<HandlerResolver<_Handler>>(handler));
+        _subscribed_handlers[handler.id()] =
+            Entry{static_cast<void *>(&handler), &dispatch_trampoline<_Handler>};
     }
 
     /**
@@ -572,10 +573,16 @@ public:
     void
     route(_RawEvent &event, _Func const &onError) const {
         const auto &it = _registered_events.find(event.getID());
-        if (likely(it != _registered_events.cend()))
-            it->second->resolve(event);
-        else
+        if (likely(it != _registered_events.cend())) {
+            // Registered entries always own a valid unique_ptr; materialise the
+            // raw pointer into a local so `QB_ASSUME` sees a side-effect-free
+            // predicate (Clang's `-Wassume`) and can elide the null check.
+            auto *const resolver = it->second.get();
+            QB_ASSUME(resolver != nullptr);
+            resolver->resolve(event);
+        } else {
             onError(event);
+        }
     }
 
     /**
@@ -792,9 +799,15 @@ public:
     void
     route(_RawEvent &event, _Func const &onError) const {
         const auto &it = _registered_events.find(event.getID());
-        if (likely(it != _registered_events.cend()))
-            it->second->resolve(event);
-        else {
+        if (likely(it != _registered_events.cend())) {
+            // Every entry inserted via `subscribe()` owns a valid resolver:
+            // materialise the raw pointer into a local so `QB_ASSUME` sees a
+            // side-effect-free predicate and can elide the null check around
+            // the virtual call (finding 2.17).
+            auto *const resolver = it->second.get();
+            QB_ASSUME(resolver != nullptr);
+            resolver->resolve(event);
+        } else {
             onError(event);
             if constexpr (_CleanEvent) {
                 std::lock_guard lk(_disposers_mtx);

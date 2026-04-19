@@ -64,4 +64,39 @@ unlikely(bool expr) noexcept {
 
 } /* namespace qb */
 
+/**
+ * @def QB_ASSUME(cond)
+ * @brief Optimiser-only assumption that `cond` holds at this program point.
+ *
+ * Uses the standard C++23 `[[assume]]` attribute when available, falling back
+ * to vendor-specific built-ins (`__builtin_assume` on Clang, `__assume` on
+ * MSVC, `__builtin_unreachable()` gated on `!(cond)` on GCC < 13) to remain
+ * portable across compilers that have not yet shipped the attribute.
+ *
+ * Unlike an `assert`, the expression MUST NOT have side effects: it is not
+ * evaluated at runtime. Use `QB_ASSUME` on hot paths to help the optimiser
+ * eliminate dead branches (e.g. default-case unreachable after a router
+ * lookup, range invariants).
+ */
+#if defined(__has_cpp_attribute)
+#  if __has_cpp_attribute(assume) >= 202207L
+#    define QB_ASSUME(cond) [[assume(cond)]]
+#  endif
+#endif
+#ifndef QB_ASSUME
+#  if defined(__clang__)
+#    define QB_ASSUME(cond) __builtin_assume(cond)
+#  elif defined(_MSC_VER)
+#    define QB_ASSUME(cond) __assume(cond)
+#  elif defined(__GNUC__)
+#    define QB_ASSUME(cond)                                                   \
+        do {                                                                  \
+            if (!(cond))                                                      \
+                __builtin_unreachable();                                      \
+        } while (0)
+#  else
+#    define QB_ASSUME(cond) static_cast<void>(0)
+#  endif
+#endif
+
 #endif /* QB_UTILS_BRANCH_HINTS_H */

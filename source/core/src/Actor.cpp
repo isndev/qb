@@ -30,7 +30,11 @@
 namespace qb {
 
 Actor::Actor() noexcept
-    : _id(VirtualCore::_handler->__generate_id__()) {
+    : _id((assert(VirtualCore::_handler != nullptr
+                  && "Actor must be constructed from within a VirtualCore worker thread "
+                     "(use Main::core(idx).addActor<T>(...) or addRefActor<T>()), never "
+                     "from the main thread or an arbitrary user thread."),
+           VirtualCore::_handler->__generate_id__())) {
     registerEvent<KillEvent>(*this);
     registerEvent<SignalEvent>(*this);
     registerEvent<UnregisterCallbackEvent>(*this);
@@ -39,10 +43,21 @@ Actor::Actor() noexcept
 
 Actor::Actor(ActorId const id) noexcept
     : _id(id) {
+    assert(VirtualCore::_handler != nullptr
+           && "Service actors must be constructed from within their owning VirtualCore "
+              "worker thread.");
     registerEvent<KillEvent>(*this);
     registerEvent<SignalEvent>(*this);
     registerEvent<UnregisterCallbackEvent>(*this);
     registerEvent<PingEvent>(*this);
+}
+
+Actor::Actor(no_default_events_t) noexcept
+    : _id((assert(VirtualCore::_handler != nullptr
+                  && "Actor must be constructed from within a VirtualCore worker thread."),
+           VirtualCore::_handler->__generate_id__())) {
+    // Intentionally no default event registrations — derived class owns its wiring.
+    // Register at minimum KillEvent in onInit() for graceful shutdown.
 }
 
 void
