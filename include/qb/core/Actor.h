@@ -193,6 +193,28 @@ class Actor : nocopy {
 
     const char   *name = "unnamed";
     ActorId       _id;
+    /**
+     * @brief Liveness flag — drives actor destruction in the workflow loop.
+     *
+     * @note Thread-ownership model (finding 2.9)
+     *       - This flag is **single-writer / single-reader**: both sides
+     *         always run on the exact same `VirtualCore` worker thread (the
+     *         one that hosts this actor). `VirtualCore` is strictly
+     *         thread-affine — an actor never migrates between cores, and
+     *         remote senders only enqueue `KillEvent`s into the core's
+     *         mailbox; they never flip this flag directly.
+     *       - Therefore no atomicity, no memory fence and no lock is
+     *         required: the owning core reads/writes `_alive` under the
+     *         sequential semantics of a single thread, exactly like any
+     *         other member of `Actor`.
+     *       - `mutable` lets `kill() const` flip it while preserving a
+     *         *const-correct* public API (handlers commonly receive events
+     *         by value/ref under a const `this`).
+     *       - External observers **must not** read this flag. They should
+     *         use `qb::RefActorHandle<T>` (finding 2.9) which resolves
+     *         liveness through `VirtualCore::findActor<T>()` on the
+     *         owning core.
+     */
     mutable bool  _alive  = true;
     std::uint32_t id_type = 0u;
 

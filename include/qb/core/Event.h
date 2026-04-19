@@ -28,6 +28,7 @@
 
 #ifndef QB_EVENT_H
 #define QB_EVENT_H
+#include <atomic>
 #include <bitset>
 #include <qb/system/allocator/pipe.h>
 #include <utility>
@@ -37,18 +38,52 @@
 
 namespace qb {
 
+namespace detail {
+/**
+ * @brief Global, monotonically-increasing counter of distinct C++ types
+ *        registered in the event/service system.
+ * @details
+ * Finding 2.1 — the legacy implementation derived the per-type `TypeId` from
+ * the low 16 bits of the address of a static data member. With ASLR that is
+ * effectively a random draw from 0..65535, and the birthday paradox makes
+ * collisions ~50% likely around ~300 types in a single process. A silent
+ * collision silently breaks event routing (two distinct types collapse to the
+ * same slot in `router::memh`).
+ *
+ * The new strategy mirrors the `ServiceActor` registration fix (2.3): each
+ * distinct `T` triggers a *single* post-increment of this atomic through the
+ * magic-static barrier in `type_id_for<T>`. The resulting ID space is
+ * sequential, dense and deterministic; collisions are impossible unless the
+ * application registers strictly more than `std::numeric_limits<TypeId>::max()`
+ * (65535) distinct event/service types — several orders of magnitude beyond
+ * any realistic codebase.
+ */
+inline std::atomic<TypeId> _type_id_counter{0};
+
+/**
+ * @brief Per-type, magic-static unique identifier.
+ * @details
+ * Incrementing the global counter inside the initialiser of a function-local
+ * static guarantees (per the C++ standard) that the bump happens exactly once
+ * per `T`, even when multiple TUs race on first instantiation.
+ */
+template <typename T>
+[[nodiscard]] inline TypeId
+type_id_for() noexcept {
+    static const TypeId id =
+        _type_id_counter.fetch_add(1, std::memory_order_relaxed) + 1;
+    return id;
+}
+} // namespace detail
+
 /**
  * @struct type
- * @brief Template struct used for type identification in the event system
+ * @brief Tag template kept for source compatibility with legacy code.
  * @details
- * Each specialization of this template has a unique static data member `id`.
- * The address of that data member is used as a globally unique type identifier.
- *
- * Using a static DATA member (not a function) is critical for correctness under
- * MSVC Release builds: the linker's Identical COMDAT Folding (/OPT:ICF) merges
- * functions with identical machine code (all empty `void id(){}` bodies would
- * collapse to one address, destroying type identity). Data members are never
- * subject to ICF — each specialization retains its own unique address.
+ * The original design encoded per-type identity in `&type<T>::id`. Identity
+ * is now provided by `detail::type_id_for<T>()` (a dense counter-based ID),
+ * but this empty tag is preserved so downstream code that may partial-
+ * specialise `qb::type<T>` for traits continues to build unchanged.
  *
  * @tparam T The type to identify
  * @ingroup EventCore
@@ -59,21 +94,22 @@ struct type {
 };
 
 /**
- * @brief Function to get a unique type identifier for a given type
+ * @brief Return a unique 16-bit identifier for type `T`.
  * @details
- * This function obtains a unique TypeId for the template parameter type T
- * by taking the address of the static data member `type<T>::id` and converting
- * it to a TypeId. Each specialization has a distinct address, providing a
- * consistent mechanism for generating unique type identifiers at link time.
- * 
+ * Assigns a dense, collision-free `TypeId` the first time this function is
+ * instantiated for `T` within the process. Identity is stable for the entire
+ * program lifetime and safe across concurrent first calls (the magic-static
+ * init barrier serialises the counter bump). Replaces the address-based
+ * narrowing that was subject to ASLR collisions (finding 2.1).
+ *
  * @tparam T The type to get an identifier for
- * @return A unique TypeId corresponding to the type T
+ * @return A unique `TypeId` corresponding to the type `T`
  * @ingroup EventCore
  */
 template <typename T>
-constexpr TypeId
-type_id() {
-    return static_cast<TypeId>(reinterpret_cast<std::size_t>(&type<T>::id));
+[[nodiscard]] inline TypeId
+type_id() noexcept {
+    return detail::type_id_for<T>();
 }
 
 /*!
@@ -102,11 +138,16 @@ public:
      * @brief Get the type identifier at compile time
      * @tparam T Type to get the ID for
      * @return Type identifier for the specified type
+     * @details Delegates to the collision-free, magic-static counter in
+     *          `qb::detail::type_id_for<T>()` (finding 2.1). The previous
+     *          ASLR-derived address narrowing is gone; event routing via
+     *          `router::memh` is now immune to `EventId` collisions up to
+     *          the 65535 distinct-types ceiling.
      */
     template <typename T>
-    [[nodiscard]] constexpr static id_type
-    type_to_id() {
-        return static_cast<id_type>(reinterpret_cast<std::size_t>(&qb::type<T>::id));
+    [[nodiscard]] static id_type
+    type_to_id() noexcept {
+        return qb::detail::type_id_for<T>();
     }
 #else
     using id_type = const char *;
