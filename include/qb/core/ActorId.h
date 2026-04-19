@@ -103,8 +103,13 @@ public:
      * @ingroup Actor
      */
     explicit CoreIdBitSet(const qb::unordered_set<CoreId> &coreIds) {
+        // Silently skip out-of-range CoreIds (notably the public sentinel
+        // `qb::NoAffinity = CoreId::max()`) so that `CoreIdSet{NoAffinity}`
+        // evaluates to "no pinning" rather than throwing `std::out_of_range`
+        // from `std::bitset::set` (finding 2.11).
         for (const auto id : coreIds) {
-            _bits.set(id);
+            if (id < static_cast<CoreId>(MaxCores))
+                _bits.set(id);
         }
     }
 
@@ -114,8 +119,12 @@ public:
      * @ingroup Actor
      */
     CoreIdBitSet(std::initializer_list<CoreId> ids) {
+        // Out-of-range ids (notably `qb::NoAffinity`) are silently skipped
+        // so the constructor mirrors the runtime filter in
+        // `VirtualCore::__init__` (finding 2.11).
         for (const auto id : ids) {
-            _bits.set(id);
+            if (id < static_cast<CoreId>(MaxCores))
+                _bits.set(id);
         }
     }
 

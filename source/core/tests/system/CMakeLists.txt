@@ -54,6 +54,7 @@ set(ACTOR_SYSTEM_TESTS
         test-actor-lifecycle-hooks.cpp
         test-actor-coroutine.cpp
         test-actor-coroutine-advanced.cpp
+        test-core-improvements.cpp
 )
 
 # -----------------------------------------------------------------------------

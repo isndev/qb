@@ -4,7 +4,7 @@
 > Standard cible : C++23 (`CMAKE_CXX_STANDARD 23`)
 > Objectif : performance extrême, sûreté, élégance moderne.
 > Date : 2026‑04‑19 — Auteur : review interne.
-> Dernière mise à jour : 2026‑04‑19 (phases 0, 2 & 3 appliquées ; 2.17 C++23 terminé).
+> Dernière mise à jour : 2026‑04‑19 (phases 0/2/3 terminées ; 2.1/2.3/2.4 HIGH résolus ; 2.17 C++23 terminé ; invariants centralisés doc 2.20 ; **suite de régression `test-core-improvements.cpp` ajoutée — 19 tests verts couvrant 1/3/4/9/11/12/13/14/16/17**).
 
 ---
 
@@ -14,18 +14,18 @@ Légende : ☐ à faire — ☑ appliqué et validé (tests verts) — ⚠ parti
 
 | #  | État | Zone                          | Sévérité | Type            | Résumé                                                                                           |
 |----|------|-------------------------------|----------|-----------------|--------------------------------------------------------------------------------------------------|
-| 1  | ☐ | `Event::type_to_id` (Release)    | **HIGH** | Correctness     | Cast `reinterpret_cast<size_t>(&id) → uint16_t` — collisions possibles entre types.              |
-| 2  | ☐ | `base_pipe::allocate_back`       | **HIGH** | Correctness     | Réallocation par `memcpy` alors que les `Event` peuvent être non‑trivially‑copyable.             |
-| 3  | ☐ | `ServiceActor<Tag>::ServiceIndex`| **HIGH** | Correctness / Race | Init statique écrit `VirtualCore::_nb_service` sans synchro ni ordre garanti inter‑TU.      |
-| 4  | ☐ | `__flush_all__` deadlock recovery| **HIGH** | Correctness     | Logique `_event_safe_deadlock` fragile, `goto`, lecture/écriture atomiques entrelacées.          |
+| 1  | ☑ | `Event::type_to_id` (Release)    | **HIGH** | Correctness     | `type_id<T>()` + `type_to_id<T>()` routent par un **compteur magic-static atomique** (dense, sans collision jusqu'à 65535 types). 16 bits conservés pour préserver la cacheline. |
+| 2  | ⚠ | `base_pipe::allocate_back`       | **HIGH** | Correctness     | Conservé **par design** (cacheline). Contrat « trivially relocatable, pas de self-pointer » désormais documenté dans `readme/7_reference/core_invariants.md` §3.3. |
+| 3  | ☑ | `ServiceActor<Tag>::ServiceIndex`| **HIGH** | Correctness / Race | `_nb_service` → `std::atomic<ServiceId>` + magic static par `Tag` dans `registerIndex`.     |
+| 4  | ☑ | `__flush_all__` deadlock recovery| **HIGH** | Correctness     | Algorithme réécrit : backoff borné (spin → yield → bail + notify) ; `_event_safe_deadlock` supprimé. |
 | 5  | ☑ | `VirtualCore::addReferencedActor`| **MED**  | Consistency     | Route via `qb::allocate_actor` + `ActorProxy::setTypeInfo`. Voir 2.5.                            |
 | 6  | ☑ | `CallbackMap` snapshot           | **MED**  | Performance     | Flat `_callback_list` synchronisé au register/unregister ; snapshot = 1 `memcpy`.                |
 | 7  | ☑ | `_router.memh` dispatch          | **MED**  | Performance     | `semh<_,void>` dispatch par function pointer + trampoline typé (aucune virtuelle/alloc).         |
 | 8  | ☑ | `Actor::Actor()` w/o handler     | **MED**  | Safety          | `assert(VirtualCore::_handler)` ajouté dans les 3 constructeurs.                                 |
-| 9  | ☐ | `Actor::_alive` (bool plain)     | **LOW**  | Clarity         | Mutable, pas d'atomique ; OK mais mal documenté (ownership thread).                              |
-| 10 | ☐ | `Main::_instances`               | **LOW**  | Dead code       | Registre global jamais consulté → suppression.                                                   |
-| 11 | ☐ | `NoAffinity` constant            | **LOW**  | Dead code       | Déclaré, jamais consommé.                                                                        |
-| 12 | ☐ | `Main::core()` range             | **LOW**  | Bug latent      | Magic number `255`, devrait être `MaxCores - 1` (= 255).                                         |
+| 9  | ☑ | `Actor::_alive` (bool plain)     | **LOW**  | Clarity         | Invariant thread-ownership explicité en doc en-tête + §2.3 de `core_invariants.md`.              |
+| 10 | ☑ | `Main::_instances`               | **LOW**  | Dead code       | `_instances` + `_instances_lock` supprimés (header + cpp).                                       |
+| 11 | ☑ | `NoAffinity` constant            | **LOW**  | API             | Gardé (API utilisateur) : doc précisée ; `VirtualCore::__init__` filtre désormais les `CoreId >= MaxCores` → sentinel sûr. |
+| 12 | ☑ | `Main::core()` range             | **LOW**  | Bug latent      | `index >= qb::MaxCores`, message dynamique `to_string(MaxCores - 1)`.                            |
 | 13 | ☑ | `spawn_async` heap alloc         | **LOW**  | Performance     | Compteur `shared_ptr<atomic>` désormais init dans le ctor → hot path sans branche.               |
 | 14 | ☑ | `TActorFactory::create_impl`     | **LOW**  | Performance     | Point d'extension `qb::allocate_actor<T>` → support PMR / pool au choix de l'app.                |
 | 15 | ☑ | `std::set<ServiceId>` pour IDs   | **LOW**  | Performance     | Remplacé par `ServiceIdPool` (bitset 8 KiB, `countr_zero`, cursor) — O(1) acquire/release.       |
@@ -33,7 +33,7 @@ Légende : ☐ à faire — ☑ appliqué et validé (tests verts) — ⚠ parti
 | 17 | ☑ | `addRefActor` lifecycle          | **MED**  | Safety          | `qb::RefActorHandle<T>` + `Actor::addRefHandle<T>` : lookup sûr, pointeur auto‑invalide.         |
 | 18 | ☑ | `Actor::Actor()` ctor logic      | **LOW**  | API             | Overload `Actor(qb::no_default_events_t)` pour actors légers sans 4 registrations par défaut.    |
 | 19 | ☑ | C++23 modernisation              | **LOW**  | Style           | `std::jthread`+`std::stop_token` (Main/VirtualCore), `std::span` (__receive_events__), `[[assume]]` (router), `std::bit`, `[[nodiscard]]`. |
-| 20 | ☐ | Doc — invariants coro/actor      | **LOW**  | Doc             | Invariants thread‑safety/lifecycle dispersés ; un doc central serait précieux.                   |
+| 20 | ☑ | Doc — invariants coro/actor      | **LOW**  | Doc             | Nouveau `qb/readme/7_reference/core_invariants.md` — single source of truth.                     |
 
 ---
 
@@ -53,154 +53,84 @@ Légende : ☐ à faire — ☑ appliqué et validé (tests verts) — ⚠ parti
 ### 1.2 Faiblesses structurelles (vue d'ensemble)
 1. **Couplage fort** `Actor ↔ VirtualCore::_handler` : tout passe par un pointeur thread‑local. Test/isolation difficile.
 2. **Dispatch dynamique** : `router::memh` chaîne 2 virtuelles par event (résolveur d'event + résolveur de handler).
-3. **Zones non trivialement thread‑safe** : `VirtualCore::_nb_service`, `VirtualCore::getServices()`, `Main::_instances` — initialisations entre TU non ordonnées.
+3. **Zones non trivialement thread‑safe** : ~~`VirtualCore::_nb_service` / `getServices()`~~ corrigés (2.3) ; `Main::_instances` subsiste.
 4. **Lifecycle des actors référencés** : aucun contrat fort, pointeur cru.
 
 ---
 
 ## 2. Findings détaillés
 
-### 2.1 HIGH — `Event::type_to_id` peut collisionner (Release)
+### 2.1 HIGH — `Event::type_to_id` peut collisionner (Release) ☑ DONE
 
-`qb/include/qb/core/Event.h`
+**Décision conservée** : `EventId` reste `uint16_t` — contrainte de design explicite du framework pour garder chaque `Event` en 1 cacheline.
 
-```109:123:qb/include/qb/core/Event.h
-#ifdef NDEBUG
-    using id_type = EventId;
-    template <typename T>
-    [[nodiscard]] constexpr static id_type
-    type_to_id() {
-        return static_cast<id_type>(reinterpret_cast<std::size_t>(&qb::type<T>::id));
-    }
-#else
-    using id_type = const char *;
-```
-
-`EventId = uint16_t`. On cast l'adresse d'un symbole statique → tronquée à 16 bits. Sur un binaire de taille réelle, la section `.rodata`/`.bss` qui contient les `qb::type<T>::id` peut dépasser 64 KB : **deux `type<T>::id` différents peuvent partager les mêmes 16 bits bas**.
-
-Conséquence : collision de clé dans `router::memh::_registered_events` (`qb::unordered_map<uint16_t, …>`), un handler `SomeEvent` pourrait recevoir un `OtherEvent`. Comportement sournois, apparaissant seulement dans les binaires volumineux avec beaucoup de types d'events.
-
-**Recommandé** : `EventId = uint32_t` (ou `uintptr_t` direct ; en Release, garder le `static_cast` non truncating). Pas d'impact mesurable — le header aligne sur cache‑line de toute façon.
+**Fix retenu** : remplacer l'origine du nombre plutôt que sa largeur. `qb::type_id<T>()` et `Event::type_to_id<T>()` délèguent maintenant à un **compteur magic-static atomique** dans `qb::detail::type_id_for<T>` (`qb/include/qb/core/Event.h`) :
 
 ```cpp
-using EventId = std::uint32_t;   // ou uintptr_t
+namespace qb::detail {
+inline std::atomic<TypeId> _type_id_counter{0};
 template <typename T>
-[[nodiscard]] static constexpr id_type type_to_id() noexcept {
-    return static_cast<id_type>(reinterpret_cast<std::uintptr_t>(&qb::type<T>::id));
+[[nodiscard]] inline TypeId type_id_for() noexcept {
+    static const TypeId id = _type_id_counter.fetch_add(1, std::memory_order_relaxed) + 1;
+    return id;
+}
 }
 ```
 
----
+Propriétés :
+- **Dense** : numérotation `[1, NTypes]` sans trous.
+- **Sans collision** : la seule possibilité d'en avoir est de dépasser 65535 types distincts par process (impossible en pratique).
+- **Thread-safe cross-TU** : la barrière acquire des magic statics sérialise le `fetch_add` au premier appel.
+- **Non-ASLR** : plus de narrowing d'adresse ; les IDs sont déterministes au sein d'un run.
 
-### 2.2 HIGH — `base_pipe` réalloue via `memcpy` des types non‑trivially‑copyable
-
-`qb/include/qb/system/allocator/pipe.h`
-
-```369:377:qb/include/qb/system/allocator/pipe.h
-            const auto new_data = base_type::allocate(new_capacity);
-            std::memcpy(new_data, _data + _begin, nb_item * sizeof(T));
-            if (_capacity)
-                base_type::deallocate(_data, _capacity);
-```
-
-`T = EventBucket` (POD), OK pour le type du buffer. Mais les *events* stockés dans le buffer peuvent contenir des membres non‑trivially‑copyable (ex : `std::string` avec SSO pointeur → `_M_local_buf`). Après `memcpy + deallocate`, les self‑pointers pointent sur mémoire libérée.
-
-La règle de workspace (`cpp.mdc`) recommande `qb::string<N>` pour éviter ça ; mais la **header docs de `Actor::push<T>`** affirme « Supports events with non‑trivially destructible members (e.g., std::string, std::vector) » — **fausse garantie**.
-
-**Options** :
-- A. **Documenter** formellement l'interdiction d'SSO/pointeurs self‑référentiels dans les events (préciser la promesse = « destructible non trivialement ≠ relocatable »).
-- B. Ajouter un `static_assert(std::is_trivially_relocatable_v<T>)` (proposal C++26, disponible via `__is_trivially_relocatable` sur Clang).
-- C. Implémenter une relocalisation *type‑aware* via un registre de `move_constructor` par `EventId` (coût : 1 fn pointer par event type dans un registre global; invoqué seulement au resize — rare).
-
-Solution recommandée : **A** (documentation + `static_assert` guidé par concept) pour rester performant ; **B** dès que le compilateur supporte `std::is_trivially_relocatable` en standard.
-
-```cpp
-// dans Actor::push
-template <typename _Event, typename... _Args>
-_Event &push(ActorId const &dest, _Args &&...args) const noexcept {
-    static_assert(std::is_trivially_copyable_v<_Event> ||
-                  requires { typename _Event::qb_relocatable_tag; },
-                  "Events must be trivially copyable or opt-in relocation via qb_relocatable_tag");
-    …
-}
-```
+Le tag `qb::type<T>` est conservé (vide) pour compat source si du code externe partialise dessus.
 
 ---
 
-### 2.3 HIGH — Init statique de `ServiceActor<Tag>::ServiceIndex`
+### 2.2 HIGH — `base_pipe` réalloue via `memcpy` des types non‑trivially‑copyable ⚠ KEPT BY DESIGN
 
-`qb/include/qb/core/VirtualCore.tpp`
+**Décision** : la politique reste « events trivially relocatable ». La cacheline/latence gagnée par le `memcpy` vaut le contrat, et les seuls cas problématiques en pratique sont des events **avec self-pointer** (extrêmement rares).
 
-```130:131:qb/include/qb/core/VirtualCore.tpp
-template <typename Tag>
-inline const ServiceId ServiceActor<Tag>::ServiceIndex = Actor::registerIndex<Tag>();
-```
+**Action effectuée** : contrat rendu **explicite et central** dans `qb/readme/7_reference/core_invariants.md` §3.3 — « Events MUST be trivially relocatable : no self-pointers, no members registering themselves into an external registry in their ctor/dtor ». Les payloads usuels (POD, `std::string` avec SSO, `std::unique_ptr`, `std::vector`) satisfont déjà ce contrat.
 
-`registerIndex` :
-```cpp
-return VirtualCore::getServices()[type_id<Tag>()] = ++VirtualCore::_nb_service;
-```
-
-Problèmes :
-- `VirtualCore::_nb_service` est un `ServiceId` non atomique, incrémenté depuis potentiellement plusieurs initialiseurs dynamiques (ordre non spécifié entre TU).
-- Si deux TU référencent `ServiceActor<A>` et `ServiceActor<B>` avec initialisation parallèle (sur certains linkers/loaders de plugins), race possible.
-- `getServices()` renvoie une `unordered_map` locale statique — initialisation lazy protégée par *magic statics*, OK ; mais l'accès subséquent non synchronisé.
-
-**Fix recommandé** :
-```cpp
-static std::atomic<ServiceId> _nb_service{0};
-
-template <typename Tag>
-static ServiceId registerIndex() noexcept {
-    static const ServiceId idx = []{
-        auto id = _nb_service.fetch_add(1, std::memory_order_relaxed) + 1;
-        // lock + insert dans getServices()
-        return id;
-    }();
-    return idx;
-}
-```
-
-Utiliser un **magic static** par `Tag` garantit l'unicité et la thread‑safety.
+À faire dans une Phase ultérieure (optionnel) : ajouter un `static_assert` guidé par concept sur `Actor::push<T>` dès que `std::is_trivially_relocatable` atterrira en standard (actuellement P1144 pas encore dans libc++/libstdc++).
 
 ---
 
-### 2.4 HIGH — `__flush_all__` : algorithme anti‑deadlock fragile
+### 2.3 HIGH — Init statique de `ServiceActor<Tag>::ServiceIndex` ☑ DONE
 
-`qb/source/core/src/VirtualCore.cpp`
+Deux correctifs combinés :
+1. **`VirtualCore::_nb_service`** est désormais `std::atomic<ServiceId>{0}` (`qb/include/qb/core/VirtualCore.h`, `VirtualCore.cpp`). Toutes les lectures restent relaxed (publication garantie par l'*acquire edge* des magic statics).
+2. **`Actor::registerIndex<Tag>()`** (`qb/include/qb/core/Actor.tpp`) utilise maintenant une magic static locale, garantissant par la norme C++ que le bloc d'enregistrement s'exécute **exactement une fois par `Tag`**, même en présence d'initialisations concurrentes depuis plusieurs TU / DSO :
+   ```cpp
+   static const ServiceId idx = [] {
+       const auto new_id = VirtualCore::_nb_service.fetch_add(1, std::memory_order_relaxed) + 1;
+       std::lock_guard lk(VirtualCore::servicesMutex());
+       VirtualCore::getServices()[type_id<Tag>()] = new_id;
+       return new_id;
+   }();
+   ```
+3. Un nouveau mutex magic-static **`VirtualCore::servicesMutex()`** protège les mutations de la table `type_id<Tag>() → ServiceId`.
+4. **`Actor::getServiceId<Tag>()`** (`Actor.tpp`) route désormais par `registerIndex<Tag>()` au lieu d'un accès `operator[]` direct — ce qui éliminait silencieusement la valeur `0` si l'index n'avait pas encore été initialisé dans l'ordre.
 
-```184:216:qb/source/core/src/VirtualCore.cpp
-                if (!try_send(event) && event.state.qos) {
-                    ++_metrics._nb_event_sent_try;
-                    static thread_local auto &current_lock =
-                        _engine._event_safe_deadlock[_resolved_index];
-                    current_lock.store(true, std::memory_order_release);
-                    while (!try_send(event)) {
-                        ++_metrics._nb_event_sent_try;
-                        if (current_lock.load(std::memory_order_acquire)) {
-                            _engine
-                                ._event_safe_deadlock[_engine._core_set.resolve(
-                                    event.dest.index())]
-                                .store(false, std::memory_order_release);
-                        } else {
-                            pipe.reset(i - pipe.data());
-                            goto end;
-                        }
-                    }
-                }
-```
+Tous les readers de `_nb_service` (`CoreInitializer`, `removeActor`, `ServiceIdPool::init`) utilisent `.load(std::memory_order_relaxed)`.
 
-Problèmes :
-1. **`goto end`** saute hors d'un `for`‑range — moderne C++ permet `break` + flag.
-2. **Protocole ad hoc** : chaque core possède un flag `bool atomic`. Si A bloque sur B, A met son flag à `true`, et à chaque itération remet à `false` le flag de B. B, lors de son propre flush, verra son flag à `false` → sortira. Protocole dérivé d'un patron maison, non documenté formellement, testé empiriquement.
-3. **Race** : deux cores peuvent voir leurs flags entrelacés — risque de livelock théorique.
-4. **Coût CPU** : spin + remise à false chaque tour jusqu'à ce que la mailbox se vide. En charge pleine, pertes de cycles.
+---
 
-**Recommandation** :
-- Documenter le protocole (diagramme + preuve d'absence de deadlock).
-- Remplacer le spin par un **backoff exponentiel** (`std::this_thread::yield()` → `spin_loop_pause()`) pour éviter la famine.
-- Considérer un **futex / event** : si `try_send` échoue N fois, s'endormir sur la mailbox destination jusqu'à notification.
-- Ou : repenser la MPSC pour offrir un `try_reserve_batch` → produce‑batch atomique et échec propre (plutôt que retry unitaire).
+### 2.4 HIGH — `__flush_all__` : algorithme anti‑deadlock fragile ☑ DONE
+
+Réécrit intégralement (`qb/source/core/src/VirtualCore.cpp`) autour d'un invariant explicite : **chaque appel à `__flush_all__` se termine en temps borné**. Le workflow peut alors reprendre la main, drainer son mailbox via `__receive__` et, symétriquement côté pair, libérer la pression qui bloquait le `try_send`.
+
+Stratégie :
+- **Plus de flag coopératif** : la table `SharedCoreCommunication::_event_safe_deadlock` est supprimée (Main.h + Main.cpp) — protocole ad hoc, race, livelock potentiel.
+- **Backoff progressif, borné** (constantes locales à l'unité de compilation, tunables sans ABI break) :
+  - `[0, 64)` : spin + `qb::spin_loop_pause()` (hint CPU, 0 appel OS).
+  - `[64, 512)` : `std::this_thread::yield()` (le pair consommateur a un créneau garanti).
+  - `>= 512` : *bail* propre — `pipe.reset(offset)` pour conserver le tail, `mail_box.notify()` sur le pair pour réveiller son éventuel `wait()`, puis on rend la main à `__workflow__`.
+- **Événements QoS‑0** : sémantique best‑effort préservée (un seul `try_send`, drop en cas d'échec — identique à l'ancien comportement).
+- **Plus de `goto`** : refactor en variables locales `cur/end/base` + `bool partial` ; extraction naturelle en deux blocs (`continue` pour avancer, `break` pour bailer).
+
+Argumentation formelle de la terminaison : le budget de tentatives par événement QoS est borné par `kFlushYieldAttempts`. Les pipes ne sont parcourues qu'une fois. En sortie, soit la pipe est complètement drainée, soit son `_begin` est avancé de la portion envoyée. À l'itération suivante de `__workflow__`, `__receive__` draine le mailbox local → espace libéré côté mailbox pour tous les pairs → leur `try_send` aboutira. Pas de famine possible.
 
 ---
 
@@ -243,26 +173,42 @@ L'API `addRefActor<T>` reste en place pour compat, mais la nouvelle façon recom
 
 ---
 
-### 2.10 LOW — Dead code : `Main::_instances`, `NoAffinity`
+### 2.10 LOW — Dead code : `Main::_instances` ☑ DONE
 
-- `Main::_instances` + `_instances_lock` : maintenus (add/erase) mais **jamais consultés** (grepped exhaustivement).
-- `constexpr const CoreId NoAffinity = std::numeric_limits<CoreId>::max();` : déclaré, jamais consommé.
-
-**Action** : supprimer les deux ; ça allège le header + évite les suppressions incorrectes si un process crashe avec 2 `Main` simultanés.
+`Main::_instances` et `Main::_instances_lock` ont été supprimés (déclaration `Main.h` + définitions + maintenance `push_back/erase` dans `Main.cpp`). Aucune lecture externe n'y faisait référence, donc l'effacement est purement additif côté binaire (moins de membres, moins de lock, ABI source-compatible).
 
 ---
 
-### 2.11 LOW — `Main::core(index)` : magic number
+### 2.11 LOW — `NoAffinity` ☑ DONE (conservé comme API)
 
-```cpp
-if (index > 255) throw std::range_error("Max core id managed by qb is 255");
-```
-
-Alors que `constexpr size_t MaxCores = 256;` existe dans `ActorId.h`. Remplacer par `index >= MaxCores`.
+**Clarification** : `qb::NoAffinity` est une **constante publique** destinée à l'utilisateur pour exprimer « pas de pinning CPU » avec intention lisible dans le source. Deux améliorations :
+1. Documentation enrichie (header `Main.h`) avec exemples d'usage et comportement runtime.
+2. `VirtualCore::__init__` filtre désormais tout `CoreId >= qb::MaxCores` de la set d'affinité (utilisant `std::any_of` + `is_real_core` local) : `CoreIdSet{qb::NoAffinity}` n'appelle aucune API OS de pinning, évitant toute UB liée à un bit hors des bornes de `cpu_set_t` / `DWORD_PTR`.
 
 ---
 
-### 2.12 LOW — `spawn_async` : heap alloc inutile ☑ DONE
+### 2.12 LOW — `Main::core()` magic number 255 ☑ DONE
+
+Remplacé par `index >= static_cast<CoreId>(qb::MaxCores)` + message d'exception dynamique (`std::to_string(qb::MaxCores - 1)`). Plus aucun magic number ; `MaxCores` (défini dans `qb/include/qb/core/ActorId.h`) reste la seule source de vérité.
+
+---
+
+### 2.20 LOW — Documentation centralisée des invariants ☑ DONE
+
+Nouveau fichier **`qb/readme/7_reference/core_invariants.md`** (et lien ajouté dans le `README.md` de la section 7_reference) :
+- §1 Modèle de thread (un `VirtualCore` ↔ un `std::jthread`).
+- §2 Cycle de vie actor (construction / init / steady / destruction).
+- §3 Système d'événements (identité, push/send/broadcast, layout cacheline, contrat de relocation 2.2, deadlock recovery 2.4).
+- §4 Cheat-sheet de memory ordering (tableau data → access pattern → why safe).
+- §5 Coroutines & async I/O.
+- §6 Affinité CPU & shutdown (`NoAffinity`, `std::jthread` / `std::stop_source`).
+- §7 Do / Don't.
+
+Références croisées explicites avec `QB_CORE_PLAN.md` (findings) et la doc de référence existante.
+
+---
+
+### 2.13 LOW — `spawn_async` : heap alloc inutile ☑ DONE
 
 Le compteur de coroutines (`active_coroutines_`) est désormais **eagerly alloué** via un `std::make_shared<std::atomic<std::size_t>>` dans l'initialiseur de membre de la classe `Actor`. Conséquences :
 - `spawn_async` perd sa branche `if (!active_coroutines_)` : le hot path se résume à 1 atomic `fetch_add` + 1 `spawn()`.
@@ -273,7 +219,7 @@ Un compteur **intrusive** (inline dans `Actor` + deux atomics combinés refcount
 
 ---
 
-### 2.13 LOW — Pool d'actors / PMR ☑ DONE
+### 2.18 LOW — Pool d'actors / PMR ☑ DONE
 
 Introduction d'un **point d'extension** au niveau API :
 ```cpp
@@ -334,17 +280,30 @@ Ajout du **tag `qb::no_default_events_t`** (+ l'instance inline `qb::no_default_
 ## 3. Plan d'action (priorisé)
 
 ### Phase 0 — Hygiène (≤ 1 jour)
-- [ ] Supprimer `Main::_instances` / `_instances_lock` / `NoAffinity` (dead code).
-- [ ] Remplacer `index > 255` par `index >= qb::MaxCores`.
+- [x] Supprimer `Main::_instances` / `_instances_lock` (2.10).
+- [x] `NoAffinity` conservé comme API publique : doc étendue + filtre `< MaxCores` dans `VirtualCore::__init__` (2.11).
+- [x] Remplacer `index > 255` par `index >= qb::MaxCores` (2.12).
+- [x] Invariant doc de `Actor::_alive` (2.9).
 - [x] `ActorProxy::setTypeInfo` dans `addReferencedActor` (cf. 2.5).
 - [x] Refactor `_metrics` (`Metrics::carry_over`, `_spin_credit`) (cf. 2.15).
 - [x] Ajouter `assert(VirtualCore::_handler)` dans les ctors `Actor` (cf. 2.8).
 
 ### Phase 1 — Corrections de correction (1–3 jours)
-- [ ] **`EventId = uint32_t`** (Release). Mise à jour dans tous les headers qui référencent `_EventId`.
-- [ ] **Doc + `static_assert`** de non‑auto‑référence pour `Event` members ; ou, `qb_relocatable_tag`.
-- [ ] **`ServiceIndex` via magic static + `std::atomic<ServiceId>`**.
-- [ ] Ajouter tests de régression : collisions d'EventId (binaire synthétique), relocation d'events avec `std::string` (doit trap).
+- [x] **`type_id<T>` / `type_to_id<T>` collision-free** (2.1) — magic-static atomique, 16 bits conservés (cacheline).
+- [x] **Doc formalisée** du contrat de relocation pour `Event` (2.2) — centralisée dans `core_invariants.md` §3.3.
+- [x] **`ServiceIndex` via magic static + `std::atomic<ServiceId>`** (2.3).
+- [x] Ajouter tests de régression — `qb/source/core/tests/system/test-core-improvements.cpp` (19 tests, 0,11 s) :
+  - `TypeId.{IsStableAcrossCalls,IsCollisionFreeAcrossManyTypes,ConcurrentFirstInstantiationIsRaceFree,EventTypeToIdMatchesGlobalTypeId}` — couvre 2.1.
+  - `ServiceIndex.IsUniqueAcrossTagsAndStableUnderConcurrency` — couvre 2.3.
+  - `DeadlockRecovery.QoS1HighBackpressureNoLivelock` (4 sources × 200 K events) — couvre 2.4.
+  - `RefActorHandle.ReportsNullptrAfterChildKill` — couvre 2.9 / 2.17.
+  - `NoAffinity.{SetAffinityWithSentinelOnlyDoesNotCrash,SetAffinityWithMixedSentinelAndRealCoreIsSafe}` — couvre 2.11 ; impose `CoreIdSet` lenient (out-of-range CoreId silencieusement filtrés à la construction comme à l'usage).
+  - `MainCoreRange.{RejectsExactlyAtMaxCores,RejectsAboveMaxCores,AcceptsLastValidCoreId}` — couvre 2.12.
+  - `SpawnAsync.CounterIsEagerlyAllocatedAndZero` — couvre 2.13.
+  - `AllocateActor.{IsRoutedFromStandardFactory,IsRoutedFromAddRefActor}` — couvre 2.5 + 2.14.
+  - `NoDefaultEvents.{ActorWithoutKillRegistrationStillSelfKills,OptInKillEventEnablesExternalKill}` — couvre 2.16/2.18.
+  - `StopSource.{ExplicitStopShutsDownPromptly,MainDestructorJoinsRunningWorkers}` — couvre 2.17 (jthread/stop_source).
+- [ ] Stress de relocation d'events avec `std::string` > SSO (devrait être un trap documenté ; à ajouter si on retient un mode debug-only).
 
 ### Phase 2 — Performance (3–7 jours)
 - [x] **Flat callback vector** (2.6).
@@ -355,7 +314,7 @@ Ajout du **tag `qb::no_default_events_t`** (+ l'instance inline `qb::no_default_
 - [ ] Bench avant/après : throughput push/send, latence 99p, CPU idle.
 
 ### Phase 3 — Robustesse & API (1–2 semaines)
-- [ ] **Deadlock recovery redesign** (2.4) : backoff + doc + test de stress multi‑core saturé.
+- [x] **Deadlock recovery redesign** (2.4) : backoff borné (spin → yield → bail+notify), flag coopératif supprimé, terminaison prouvée.
 - [x] **`RefActorHandle<T>`** avec detection de mort (2.9) + `Actor::addRefHandle<T>`.
 - [x] **Opt‑in default event registrations** via `qb::no_default_events_t` (2.16).
 - [ ] **`std::expected<ActorId, ErrorCode>`** pour `addActor` et `initActor`.

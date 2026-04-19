@@ -27,8 +27,10 @@
 #ifndef QB_CORE_H
 #define QB_CORE_H
 #include <array>
+#include <atomic>
 #include <bit>
 #include <cstdint>
+#include <mutex>
 #include <span>
 #include <stop_token>
 #include <thread>
@@ -77,11 +79,37 @@ namespace qb {
  */
 class VirtualCore {
     thread_local static VirtualCore *_handler;
-    static ServiceId                 _nb_service;
+    /**
+     * @brief Global, race-free counter of registered service types.
+     * @details
+     * Finding 2.3 — each `ServiceActor<Tag>` triggers a single registration
+     * through `Actor::registerIndex<Tag>()` whose magic-static barrier guards
+     * an `std::atomic` increment here. All subsequent reads are relaxed
+     * (no happens-before needed: writes are published under the magic static
+     * acquire edge).
+     */
+    static std::atomic<ServiceId>    _nb_service;
+    /**
+     * @brief Access the `Tag → ServiceId` registration map (lazy singleton).
+     * @details
+     * Reads are safe once all static initialisers have run. Writes are only
+     * performed under `servicesMutex()` from `Actor::registerIndex<Tag>()`
+     * inside a magic static, guaranteeing at most one insertion per `Tag`
+     * regardless of the number of concurrent TU initialisations.
+     */
     static qb::unordered_map<TypeId, ServiceId> &
     getServices() {
         static qb::unordered_map<TypeId, ServiceId> service_ids;
         return service_ids;
+    }
+    /**
+     * @brief Mutex protecting mutating access to `getServices()`.
+     * @details Magic static → safe to call from any TU's static initialiser.
+     */
+    static std::mutex &
+    servicesMutex() noexcept {
+        static std::mutex mtx;
+        return mtx;
     }
 
 public:

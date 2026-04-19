@@ -12,6 +12,9 @@ These documents are intended to provide specific, factual information and quick 
 *   **[QB Framework: Detailed API Overview](./api_overview.md)**
     *   A detailed mapping of key classes from `qb-core` and `qb-io`, their essential public methods, and core functionalities. Use this as a quick way to find relevant APIs.
 
+*   **[QB-Core: Thread-Safety & Lifecycle Invariants](./core_invariants.md)**
+    *   Consolidated reference of the thread-ownership, memory-ordering, event-relocation, deadlock-recovery, coroutine and shutdown invariants upheld by `qb-core`. Required reading before writing actor, coroutine or event-router code.
+
 *   **[Reference: Building the QB Actor Framework](./building.md)**
     *   Comprehensive guide to building the QB Actor Framework from source using CMake, including prerequisites, standard build steps, key CMake options, build targets, and platform-specific notes.
 

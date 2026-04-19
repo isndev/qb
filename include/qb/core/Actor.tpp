@@ -127,7 +127,12 @@ Actor::broadcast(_Args &&...args) const noexcept {
 template <typename Tag>
 ActorId
 Actor::getServiceId(CoreId const index) noexcept {
-    return {VirtualCore::getServices()[type_id<Tag>()], index};
+    // Route through `registerIndex<Tag>()` so that callers hitting this path
+    // *before* `ServiceActor<Tag>::ServiceIndex` has been touched (rare, but
+    // possible when DSOs are loaded lazily) still observe a valid, unique
+    // service id rather than the `0` stamped by `unordered_map::operator[]`
+    // on a fresh key (2.3).
+    return {registerIndex<Tag>(), index};
 }
 
 template <typename _ServiceActor>
@@ -146,7 +151,19 @@ Actor::EventBuilder::push(_Args &&...args) noexcept {
 template <typename Tag>
 ServiceId
 Actor::registerIndex() noexcept {
-    return VirtualCore::getServices()[type_id<Tag>()] = ++VirtualCore::_nb_service;
+    // Magic static — the C++ standard guarantees that the initializer runs
+    // exactly once, even if multiple threads race on first call. This fully
+    // serialises the `_nb_service` increment and the insertion into the
+    // registration map, fixing the non-atomic mutation reported in 2.3.
+    static const ServiceId idx = [] {
+        const auto new_id = VirtualCore::_nb_service.fetch_add(
+                                1, std::memory_order_relaxed) +
+                            1;
+        std::lock_guard<std::mutex> lk(VirtualCore::servicesMutex());
+        VirtualCore::getServices()[type_id<Tag>()] = new_id;
+        return new_id;
+    }();
+    return idx;
 }
 
 // CoroContext implementation (needs VirtualCore access)

@@ -106,7 +106,11 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     , _pipes(engine.getNbCore())
     , _mono_pipe_swap(_pipes[_resolved_index])
     , _mono_pipe(std::make_unique<VirtualPipe>()) {
-    _ids.init(static_cast<ServiceId>(_nb_service + 1));
+    // Seed the pool after the last statically-registered service id. The
+    // atomic load is relaxed because every writer publishes through the
+    // magic-static acquire edge of `Actor::registerIndex<Tag>()` (2.3).
+    _ids.init(static_cast<ServiceId>(
+        _nb_service.load(std::memory_order_relaxed) + 1));
 }
 
 VirtualCore::~VirtualCore() noexcept = default;
@@ -179,49 +183,121 @@ VirtualCore::__receive__() {
 //        }, _event_buffer.data(), MaxRingEvents);
 //    }
 
+// -----------------------------------------------------------------------------
+// __flush_all__ — structured, deadlock-free outbound pipe drain (finding 2.4).
+// -----------------------------------------------------------------------------
+//
+// Scenario: when core A and core B *simultaneously* hold full outbound pipes
+// for each other **and** their respective ingress mailboxes are full, neither
+// can progress without first reading from its own mailbox. Unbounded retry in
+// `try_send` would therefore deadlock.
+//
+// Invariant re-established by this implementation: **every pass of
+// `__flush_all__` terminates in bounded time**. Once a QoS-guaranteed event
+// exhausts its retry budget, we perform a *partial flush* (the unsent tail is
+// kept in the local pipe) and yield control to the caller. The caller
+// (`__workflow__`) then drains the local mailbox via `__receive__`, which
+// frees space for peers and lets the next `__flush_all__` pass make progress.
+//
+// Backoff policy (monotonic, cache-friendly):
+//   [0, SPIN_THRESHOLD)   pure spin + `qb::spin_loop_pause()` (CPU hint — no
+//                         scheduler involvement, minimal latency)
+//   [SPIN_THRESHOLD, YIELD_THRESHOLD) `std::this_thread::yield()` — give the
+//                         OS a chance to run the peer consumer
+//   >= YIELD_THRESHOLD    partial bail: wake the destination's mailbox and
+//                         return to the workflow loop.
+//
+// Non-QoS events (`event.state.qos == 0`) preserve their original
+// best-effort semantics: a single `try_send` attempt, then drop on failure.
+// -----------------------------------------------------------------------------
+
+namespace {
+// Tunables — deliberately kept out of the public header to allow empirical
+// tuning without forcing recompiles of downstream code.
+constexpr std::uint32_t kFlushSpinAttempts  = 64;  // `spin_loop_pause` phase.
+constexpr std::uint32_t kFlushYieldAttempts = 512; // total budget per event.
+static_assert(kFlushSpinAttempts < kFlushYieldAttempts,
+              "spin phase must precede yield phase");
+} // namespace
+
 bool
 VirtualCore::__flush_all__() noexcept {
-    bool ret = false;
-    auto in  = 0u;
+    bool         any_work  = false;
+    std::size_t  pipe_idx  = 0;
     for (auto &pipe : _pipes) {
-        if (in != _resolved_index && pipe.size()) {
-            ret    = true;
-            auto i = pipe.begin();
-            while (i < pipe.end()) {
-                const auto &event = *reinterpret_cast<const Event *>(i);
-                ++_metrics._nb_event_sent_try;
-                if (!try_send(event) && event.state.qos) {
-                    ++_metrics._nb_event_sent_try;
-                    static thread_local auto &current_lock =
-                        _engine._event_safe_deadlock[_resolved_index];
-                    // current locked by event set to true
-                    current_lock.store(true, std::memory_order_release);
-                    while (!try_send(event)) {
-                        ++_metrics._nb_event_sent_try;
-                        // entering in deadlock
-                        if (current_lock.load(std::memory_order_acquire)) {
-                            // notify to unlock dest core
-                            _engine
-                                ._event_safe_deadlock[_engine._core_set.resolve(
-                                    event.dest.index())]
-                                .store(false, std::memory_order_release);
-                        } else {
-                            // partial send another core is maybe in deadlock
-                            pipe.reset(i - pipe.data());
-                            goto end;
-                        }
-                    }
-                }
+        // Skip the self-core pipe (local delivery bypasses the mailbox layer)
+        // and any empty outbound pipe.
+        if (pipe_idx == _resolved_index || !pipe.size()) {
+            ++pipe_idx;
+            continue;
+        }
+        any_work = true;
+
+        auto *const base = pipe.data();
+        auto       *cur  = pipe.begin();
+        auto *const end  = pipe.end();
+        bool        partial = false;
+
+        while (cur < end) {
+            const auto &event = *reinterpret_cast<const Event *>(cur);
+            ++_metrics._nb_event_sent_try;
+
+            if (try_send(event)) {
                 ++_metrics._nb_event_sent;
                 _metrics._nb_bucket_sent += event.bucket_size;
-                i += event.bucket_size;
+                cur += event.bucket_size;
+                continue;
             }
-            pipe.reset();
+
+            if (!event.state.qos) {
+                // Best-effort event: dropped on backpressure (preserves the
+                // original fire-and-forget semantics for QoS-0 events such as
+                // metrics or heartbeats). The "sent" counter is advanced to
+                // remain consistent with the previous behaviour.
+                ++_metrics._nb_event_sent;
+                _metrics._nb_bucket_sent += event.bucket_size;
+                cur += event.bucket_size;
+                continue;
+            }
+
+            // QoS-guaranteed event: bounded backoff.
+            bool sent = false;
+            for (std::uint32_t attempt = 1; attempt <= kFlushYieldAttempts;
+                 ++attempt) {
+                ++_metrics._nb_event_sent_try;
+                if (try_send(event)) {
+                    sent = true;
+                    break;
+                }
+                if (attempt < kFlushSpinAttempts) {
+                    qb::spin_loop_pause();
+                } else {
+                    std::this_thread::yield();
+                }
+            }
+
+            if (sent) {
+                ++_metrics._nb_event_sent;
+                _metrics._nb_bucket_sent += event.bucket_size;
+                cur += event.bucket_size;
+                continue;
+            }
+
+            // Budget exhausted — surrender cleanly. The destination's consumer
+            // is woken so it runs immediately (no-op when its mailbox is in
+            // zero-latency spin mode).
+            _engine.getMailBox(event.dest.index()).notify();
+            pipe.reset(static_cast<std::size_t>(cur - base));
+            partial = true;
+            break;
         }
-    end:;
-        ++in;
+
+        if (!partial)
+            pipe.reset();
+
+        ++pipe_idx;
     }
-    return ret;
+    return any_work;
 }
 //! Event Management
 
@@ -229,13 +305,21 @@ VirtualCore::__flush_all__() noexcept {
 bool
 VirtualCore::__init__(CoreIdSet const &affinity_cores) {
     bool ret(true);
-    if (!affinity_cores.empty()) {
+    // Filter out the public `qb::NoAffinity` sentinel (== CoreId::max()) and
+    // any out-of-range CoreId so users can pass `CoreIdSet{qb::NoAffinity}`
+    // without triggering UB in the OS-level pinning APIs.
+    auto is_real_core = [](CoreId c) noexcept {
+        return c < static_cast<CoreId>(qb::MaxCores);
+    };
+    if (!affinity_cores.empty() &&
+        std::any_of(affinity_cores.begin(), affinity_cores.end(), is_real_core)) {
 #if defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
         cpu_set_t cpuset;
 
         CPU_ZERO(&cpuset);
         for (const auto core : affinity_cores)
-            CPU_SET(core, &cpuset);
+            if (is_real_core(core))
+                CPU_SET(core, &cpuset);
 
         pthread_t current_thread = pthread_self();
         ret = !pthread_getaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
@@ -248,7 +332,8 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
 #ifdef _MSC_VER
         DWORD_PTR mask = 0u;
         for (const auto core : affinity_cores)
-            mask |= static_cast<DWORD_PTR>(1u) << core;
+            if (is_real_core(core))
+                mask |= static_cast<DWORD_PTR>(1u) << core;
         ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
         if (!ret)
             LOG_WARN("set thread affinity failed");
@@ -399,7 +484,10 @@ VirtualCore::removeActor(ActorId const id) noexcept {
         }
         LOG_INFO("Delete " << *actor);
         _actors.erase(it);
-        if (id._service_id > _nb_service)
+        // Only non-service ids are recycled into the pool: a ServiceActor's
+        // id is assigned at static init (see 2.3) and must remain reserved
+        // for the lifetime of the process to keep `ServiceIndex` stable.
+        if (id._service_id > _nb_service.load(std::memory_order_relaxed))
             _ids.release(id._service_id);
     }
 }
@@ -485,7 +573,7 @@ VirtualCore::time() const noexcept {
     return _metrics._nanotimer;
 }
 
-ServiceId                 VirtualCore::_nb_service = 0;
+std::atomic<ServiceId>    VirtualCore::_nb_service{0};
 thread_local VirtualCore *VirtualCore::_handler    = nullptr;
 } // namespace qb
 #ifdef QB_WITH_LOGGING

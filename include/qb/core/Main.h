@@ -48,12 +48,30 @@ class IActorFactory;
 
 /**
  * @var NoAffinity
- * @brief Special constant indicating that no CPU affinity is desired
+ * @brief Public sentinel `CoreId` value meaning "no CPU affinity requested".
  * @details
- * Used with setAffinity functions to indicate that a VirtualCore should
- * not be restricted to specific CPU cores, letting the operating system
- * handle thread scheduling.
- * 
+ * Named, expressive opt-out for CPU pinning. Use it inside a `CoreIdSet`
+ * passed to `CoreInitializer::setAffinity` when you want the OS scheduler
+ * to remain in charge of thread placement while still making intent clear:
+ *
+ * @code
+ * // Explicit "no pinning, OS decides" — preserves intent in source.
+ * engine.core(0).setAffinity(qb::CoreIdSet{qb::NoAffinity});
+ *
+ * // Mixed: let the sentinel be harmless filler in a set of real ids.
+ * engine.core(1).setAffinity(qb::CoreIdSet{2, qb::NoAffinity});
+ * @endcode
+ *
+ * Runtime behaviour: `VirtualCore::__init__` filters out any `CoreId >=
+ * qb::MaxCores` (which includes `NoAffinity`). If the resulting set contains
+ * zero real core ids, no `pthread_setaffinity_np` /
+ * `SetThreadAffinityMask` call is issued — semantics identical to passing an
+ * empty `CoreIdSet`. This makes `NoAffinity` a safe, well-defined sentinel.
+ *
+ * Implementation detail: value is `std::numeric_limits<CoreId>::max()`,
+ * deliberately strictly greater than `qb::MaxCores`, so it can never be
+ * mistaken for a legitimate hardware core id.
+ *
  * @ingroup Engine
  */
 constexpr const CoreId NoAffinity = std::numeric_limits<CoreId>::max();
@@ -332,7 +350,6 @@ class SharedCoreCommunication : nocopy {
     };
 
     const CoreSet                                _core_set;
-    std::vector<std::atomic<bool>>               _event_safe_deadlock;
     std::vector<std::unique_ptr<Mailbox>>         _mail_boxes;
 
 public:
@@ -423,9 +440,6 @@ class Main {
         (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
     //////// Types
     using Mailbox = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
-
-    static std::vector<Main *> _instances;
-    static std::mutex          _instances_lock;
 
     static volatile std::sig_atomic_t _signal_pending;
 

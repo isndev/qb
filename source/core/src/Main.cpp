@@ -24,6 +24,7 @@
 
 #include <csignal>
 #include <iostream>
+#include <string>
 #include <qb/core/Main.h>
 #include <qb/core/VirtualCore.h>
 #include <qb/io/async/listener.h>
@@ -33,7 +34,12 @@ namespace qb {
 // CoreInitializer
 CoreInitializer::CoreInitializer(CoreId const index)
     : _index(index)
-    , _next_id(VirtualCore::_nb_service + 1)
+    // 2.3: `_nb_service` is now a `std::atomic<ServiceId>`. A relaxed load is
+    // sufficient here — every writer (see `Actor::registerIndex<Tag>()`) has
+    // already published its value through the associated magic-static
+    // acquire edge before this constructor runs.
+    , _next_id(static_cast<ServiceId>(
+          VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1))
     , _affinity{index}
     , _latency(0) {}
 
@@ -43,7 +49,8 @@ CoreInitializer::~CoreInitializer() noexcept {
 
 void
 CoreInitializer::clear() noexcept {
-    _next_id = VirtualCore::_nb_service + 1;
+    _next_id = static_cast<ServiceId>(
+        VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1);
     _affinity.clear();
     _actor_factories.clear();
     _registered_services.clear();
@@ -114,7 +121,6 @@ set_from_core_initializers(CoreInitializerMap const &core_initializers) {
 SharedCoreCommunication::SharedCoreCommunication(
     CoreInitializerMap const &core_initializers) noexcept
     : _core_set(set_from_core_initializers(core_initializers))
-    , _event_safe_deadlock(_core_set.getNbCore())
     , _mail_boxes(_core_set.getSize()) {
     for (const auto &[index, initializer] : core_initializers) {
         const auto nb_producers = _core_set.getNbCore();
@@ -151,8 +157,6 @@ SharedCoreCommunication::getNbCore() const noexcept {
 }
 // !SharedCoreCommunication
 
-std::vector<Main *>           Main::_instances      = {};
-std::mutex                    Main::_instances_lock = {};
 volatile std::sig_atomic_t    Main::_signal_pending = 0;
 
 void
@@ -163,10 +167,7 @@ Main::onSignal(int const signum) noexcept {
 Main::Main() noexcept
     : _stop_source()
     , _shared_com(nullptr)
-    , _is_running(false) {
-    std::lock_guard lock(_instances_lock);
-    Main::_instances.push_back(this);
-}
+    , _is_running(false) {}
 
 Main::~Main() noexcept {
     if (_is_running) {
@@ -177,9 +178,6 @@ Main::~Main() noexcept {
         _stop_source.request_stop();
         join();
     }
-    std::lock_guard lock(_instances_lock);
-    Main::_instances.erase(
-        std::find(Main::_instances.cbegin(), Main::_instances.cend(), this));
 }
 
 void
@@ -347,9 +345,14 @@ Main::core(CoreId const index) {
     const auto &it = _core_initializers.find(index);
     if (it != _core_initializers.cend())
         return it->second;
-    // Todo : not sure to be kept, max core id should be max uint16
-    if (index > 255)
-        throw std::range_error("Max core id managed by qb is 255");
+    // Reject `qb::NoAffinity`, overflow values, and anything past the bitset
+    // capacity used by `CoreSet` / `CoreIdBitSet`. `qb::MaxCores` is the
+    // single source of truth (see `qb/include/qb/core/ActorId.h`), so no
+    // magic number ever shows up at a call site (finding 2.12).
+    if (index >= static_cast<CoreId>(qb::MaxCores))
+        throw std::range_error(
+            "Max core id managed by qb is " +
+            std::to_string(qb::MaxCores - 1));
     return _core_initializers.emplace(index, index).first->second;
 }
 
