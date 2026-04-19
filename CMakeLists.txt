@@ -168,8 +168,46 @@ endif()
 # -----------------------------------------------------------------------------
 if(QB_INSTALL)
     include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
     
-    # Install headers
+    # Collect the library targets that should be installed.
+    # Bundled dependencies (ev, stduuid) MUST be in the same export set so
+    # CMake rewrites their names with the qb:: namespace in the transitive
+    # dependency list of qb::io / qb::core.
+    set(_QB_INSTALL_TARGETS)
+    if(TARGET qb-io)
+        list(APPEND _QB_INSTALL_TARGETS qb-io)
+    endif()
+    if(TARGET qb-core)
+        list(APPEND _QB_INSTALL_TARGETS qb-core)
+    endif()
+    if(TARGET ev)
+        list(APPEND _QB_INSTALL_TARGETS ev)
+    endif()
+    if(TARGET stduuid)
+        list(APPEND _QB_INSTALL_TARGETS stduuid)
+    endif()
+    
+    # Install library targets with an EXPORT set so CMake can generate
+    # the *Targets.cmake files required by find_package(qb).
+    if(_QB_INSTALL_TARGETS)
+        install(TARGETS ${_QB_INSTALL_TARGETS}
+            EXPORT qbTargets
+            RUNTIME  DESTINATION ${CMAKE_INSTALL_BINDIR}
+            LIBRARY  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE  DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        )
+    endif()
+    
+    # Install the export set
+    install(EXPORT qbTargets
+        FILE        qbTargets.cmake
+        NAMESPACE   qb::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+    )
+    
+    # Install public headers
     install(
         DIRECTORY "${QB_INCLUDE_DIR}/"
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
@@ -179,30 +217,48 @@ if(QB_INSTALL)
             PATTERN "*.tpp"
     )
     
-    # Generate and install CMake package configuration files
-    include(CMakePackageConfigHelpers)
+    # Install header-only internal modules (nlohmann, ska_hash, nanolog)
+    foreach(_hdr_mod ${QB_HEADER_ONLY_MODULES})
+        set(_hdr_mod_dir "${QB_MODULES_DIR}/${_hdr_mod}")
+        if(IS_DIRECTORY "${_hdr_mod_dir}")
+            install(
+                DIRECTORY "${_hdr_mod_dir}/"
+                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${_hdr_mod}
+                FILES_MATCHING
+                    PATTERN "*.h"
+                    PATTERN "*.hpp"
+            )
+        endif()
+    endforeach()
     
-    # Create version file
+    # Version compatibility file
     write_basic_package_version_file(
         "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
         VERSION ${QB_FRAMEWORK_VERSION}
         COMPATIBILITY SameMajorVersion
     )
     
-    # Create config file
+    # Package config file (from template, for find_package(qb))
     configure_package_config_file(
         "${QB_CMAKE_DIR}/qbConfig.cmake.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/qbConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/qbInstallConfig.cmake"
         INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
     )
     
-    # Install config files
-    install(
-        FILES
-            "${CMAKE_CURRENT_BINARY_DIR}/qbConfig.cmake"
-            "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/qbInstallConfig.cmake"
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+        RENAME qbConfig.cmake
+    )
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/qbConfigVersion.cmake"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
     )
+    
+    # Install FindArgon2 module so consumers can resolve the Argon2 dependency
+    if(QB_HAS_ARGON2)
+        install(FILES "${QB_CMAKE_DIR}/FindArgon2.cmake"
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+        )
+    endif()
     
     qb_status_message("Installation configured:")
     qb_status_message("  Prefix: ${CMAKE_INSTALL_PREFIX}")

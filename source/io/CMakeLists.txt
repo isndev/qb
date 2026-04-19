@@ -81,7 +81,7 @@ if(QB_HAS_SSL)
     qb_debug_message("Building with OpenSSL SSL/TLS support")
     
     if(QB_HAS_ARGON2)
-        list(APPEND IO_DEPENDENCIES ${ARGON2_LIBRARIES})
+        list(APPEND IO_DEPENDENCIES Argon2::Argon2)
         list(APPEND IO_DEFINITIONS QB_HAS_ARGON2=1)
         qb_debug_message("Building with Argon2 advanced crypto support")
     endif()

@@ -470,9 +470,10 @@ function(qb_register_module)
         # Apply dependencies
         _qb_apply_dependencies(${module_target} "${MOD_DEPENDS}")
         
-        # Apply additional includes
+        # Module include directories are PUBLIC so consumers can
+        # reach the module's headers through target_link_libraries.
         if(MOD_INCLUDES)
-            target_include_directories(${module_target} PRIVATE ${MOD_INCLUDES})
+            target_include_directories(${module_target} PUBLIC ${MOD_INCLUDES})
         endif()
         
         # Apply definitions
@@ -526,8 +527,6 @@ function(qb_load_modules modules_dir)
         endif()
     endforeach()
     
-    # Add modules directory to include path
-    include_directories("${modules_dir}")
 endfunction()
 
 # -----------------------------------------------------------------------------
@@ -636,7 +635,7 @@ function(qb_copy_resources)
     set(copy_target "${RES_TARGET}_copy_resources")
     
     add_custom_target(${copy_target}
-        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${RES_RESOURCES} ${RES_DESTINATION}
         COMMENT "Copying resources for ${RES_TARGET}"
     )
