@@ -257,6 +257,15 @@ struct timer_awaiter : awaiter_base {
             scheduler_ = &CoroutineScheduler::current();
         }
         register_suspended();  // Track this coroutine as suspended
+        // Finding 2.C.3: libev caches the current monotonic time in `mn_now`
+        // at loop iteration boundaries. If the worker thread has been out of
+        // the loop for a while (e.g. a blocking `std::this_thread::sleep_for`
+        // from user code, or a synchronous I/O client call), that cache is
+        // stale — a newly started `ev_timer` computes its expiration relative
+        // to the stale time and may fire immediately. We fix that by forcing
+        // a time-cache refresh before starting the watcher, mirroring the
+        // same fix we landed in `async::callback` (io.h).
+        ev_now_update(static_cast<struct ev_loop *>(loop_));
         ev_timer_start(loop_, &watcher_);
         started_ = true;
     }

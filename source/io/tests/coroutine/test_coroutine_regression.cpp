@@ -950,6 +950,399 @@ TEST_F(CoroutineRegression, ChannelCloseWakesPendingSenders) {
 }
 
 // =============================================================================
+// Finding 2.C.1: channel::send on a closed channel must raise channel_closed
+// =============================================================================
+
+TEST_F(CoroutineRegression, ChannelSendOnClosedThrowsImmediately) {
+    bool caught = false;
+    bool finished = false;
+
+    auto test = [&]() -> task<void> {
+        channel<int> ch(4);
+        ch.close();
+        try {
+            co_await ch.send(42);
+        } catch (const channel_closed&) {
+            caught = true;
+        }
+        finished = true;
+    };
+
+    coro_scheduler().spawn(test());
+    run_for(100ms);
+
+    EXPECT_TRUE(caught);
+    EXPECT_TRUE(finished);
+}
+
+// =============================================================================
+// Finding 2.A.1: co_await on a default-constructed shared_task must fail loudly
+// =============================================================================
+
+TEST_F(CoroutineRegression, SharedTaskNullStateThrowsLogicError) {
+    bool caught = false;
+    bool finished = false;
+
+    auto test = [&]() -> task<void> {
+        shared_task<int> empty;  // no state
+        try {
+            co_await empty;
+        } catch (const std::logic_error&) {
+            caught = true;
+        }
+        finished = true;
+    };
+
+    coro_scheduler().spawn(test());
+    run_for(100ms);
+
+    EXPECT_TRUE(caught);
+    EXPECT_TRUE(finished);
+}
+
+// =============================================================================
+// Finding 2.B.5: with_deadline — already-past deadline must throw timeout_error
+// =============================================================================
+
+TEST_F(CoroutineRegression, WithDeadlineInThePastThrowsTimeoutImmediately) {
+    bool caught = false;
+    bool finished = false;
+
+    auto make_task = []() -> task<int> {
+        co_await sleep(50ms);
+        co_return 7;
+    };
+
+    auto test = [&]() -> task<void> {
+        auto deadline = std::chrono::steady_clock::now() - 1ms;
+        try {
+            co_await with_deadline(make_task(), deadline);
+        } catch (const timeout_error&) {
+            caught = true;
+        }
+        finished = true;
+    };
+
+    coro_scheduler().spawn(test());
+    run_for(200ms);
+
+    EXPECT_TRUE(caught);
+    EXPECT_TRUE(finished);
+}
+
+// =============================================================================
+// Finding 2.B.6: active_count() should include suspended coroutines
+// =============================================================================
+
+TEST_F(CoroutineRegression, ActiveCountIncludesSuspendedFrames) {
+    size_t count_while_sleeping = 0;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await sleep(30ms);
+    }());
+
+    // Let the coroutine suspend on the sleep watcher before we measure.
+    run_for(5ms);
+    count_while_sleeping = coro_scheduler().active_count();
+
+    run_for(100ms);
+
+    EXPECT_GE(count_while_sleeping, 1u)
+        << "active_count() silently ignored suspended frames";
+}
+
+// =============================================================================
+// Finding 2.A.8: from_range must not dangle when fed with a temporary
+// =============================================================================
+
+TEST_F(CoroutineRegression, FromRangeWithTemporaryDoesNotDangle) {
+    auto gen = qb::io::async::from_range(std::vector<int>{1, 2, 3, 4, 5});
+    int sum = 0;
+    while (auto v = gen.next()) {
+        sum += *v;
+    }
+    EXPECT_EQ(sum, 15);
+}
+
+// =============================================================================
+// Finding 2.C.16: zip short-circuits when the first stream ends
+// =============================================================================
+
+TEST_F(CoroutineRegression, ZipShortCircuitsOnFirstStreamEnd) {
+    bool finished = false;
+
+    auto test = [&]() -> task<void> {
+        auto short_stream = async_stream<int>::from_vector({1, 2, 3});
+        auto long_stream  = async_stream<int>::from_vector({10, 11, 12, 13, 14});
+
+        auto zipped = zip(std::move(short_stream), std::move(long_stream));
+
+        auto collected = co_await zipped.collect();
+        EXPECT_EQ(collected.size(), 3u);
+        finished = true;
+    };
+
+    coro_scheduler().spawn(test());
+    run_for(300ms);
+
+    EXPECT_TRUE(finished);
+}
+
+// =============================================================================
+// Finding 2.A.3: task<T>::await_resume must rethrow stored exception instead
+// of silently reading an uninitialised variant slot.
+// =============================================================================
+
+TEST_F(CoroutineRegression, TaskAwaitResumeRethrowsStoredException) {
+    bool caught = false;
+    bool finished = false;
+
+    auto inner = []() -> task<int> {
+        throw std::runtime_error("inner-exploded");
+        co_return 0;
+    };
+
+    auto test = [&]() -> task<void> {
+        try {
+            int v = co_await inner();
+            (void)v;
+        } catch (const std::runtime_error& e) {
+            caught = std::string(e.what()) == "inner-exploded";
+        }
+        finished = true;
+    };
+
+    coro_scheduler().spawn(test());
+    run_for(100ms);
+
+    EXPECT_TRUE(caught);
+    EXPECT_TRUE(finished);
+}
+
+// =============================================================================
+// Finding 2.C.2: linear backoff — first retry must wait base_delay (1-based
+// retry_number), not 0ms.
+// =============================================================================
+
+TEST_F(CoroutineRegression, LinearBackoffFirstRetryUsesBaseDelay) {
+    retry_policy policy{
+        .base_delay = 25ms,
+        .max_delay = std::chrono::seconds(1),
+        .strategy = backoff_strategy::linear
+    };
+
+    auto d1 = detail::calculate_delay(1, policy);
+    auto d2 = detail::calculate_delay(2, policy);
+
+    EXPECT_GE(d1, 25ms)
+        << "linear backoff first retry must sleep at least base_delay";
+    EXPECT_GE(d2, 50ms);
+}
+
+// =============================================================================
+// Finding 2.C.13/14: retry with exponential strategy must NEVER overflow AND
+// must catch non-std::exception throwables.
+// =============================================================================
+
+TEST_F(CoroutineRegression, WithRetryCatchesNonStdExceptionThrow) {
+    int attempts = 0;
+    bool caught_exhausted = false;
+    bool finished = false;
+
+    auto flaky = [&]() -> task<int> {
+        ++attempts;
+        throw 42;    // non-std::exception (int) — pre-fix would escape
+        co_return 0;
+    };
+
+    retry_policy fast{
+        .max_attempts = 3,
+        .base_delay = 1ms,
+        .max_delay = 5ms,
+        .strategy = backoff_strategy::fixed
+    };
+
+    auto test = [&]() -> task<void> {
+        try {
+            auto r = co_await with_retry(flaky, fast);
+            (void)r;
+        } catch (const retry_exhausted&) {
+            caught_exhausted = true;
+        }
+        finished = true;
+    };
+
+    coro_scheduler().spawn(test());
+    run_for(500ms);
+
+    EXPECT_EQ(attempts, 3);
+    EXPECT_TRUE(caught_exhausted)
+        << "with_retry must treat non-std::exception throwables as retriable";
+    EXPECT_TRUE(finished);
+}
+
+// =============================================================================
+// Finding 2.B.2: cancellable_operation<T> must propagate exceptions from the
+// inner task instead of returning T{}.
+// =============================================================================
+
+TEST_F(CoroutineRegression, CancellableOperationPropagatesInnerException) {
+    bool caught = false;
+    bool finished = false;
+
+    auto exploding_task = []() -> task<int> {
+        co_await sleep(5ms);
+        throw std::runtime_error("inner-cancellable-boom");
+        co_return 0;
+    };
+
+    auto test = [&]() -> task<void> {
+        cancellation_token tok;
+        try {
+            int v = co_await make_cancellable(exploding_task(), tok, false);
+            (void)v;
+        } catch (const std::runtime_error& e) {
+            caught = std::string(e.what()) == "inner-cancellable-boom";
+        }
+        finished = true;
+    };
+
+    coro_scheduler().spawn(test());
+    run_for(200ms);
+
+    EXPECT_TRUE(caught) << "make_cancellable must not swallow inner exceptions";
+    EXPECT_TRUE(finished);
+}
+
+// =============================================================================
+// Finding 2.C.4: debounce must surface exceptions from the source stream
+// instead of converting them into a silent end-of-stream.
+// =============================================================================
+
+TEST_F(CoroutineRegression, DebouncePropagatesSourceException) {
+    bool caught = false;
+    bool finished = false;
+
+    auto test = [&]() -> task<void> {
+        // Build a stream whose _next() itself throws on the second pull.
+        // debounce's producer loop awaits _next() directly; any exception
+        // there must be captured and surfaced on the consumer side.
+        auto counter = std::make_shared<int>(0);
+        async_stream<int> src([counter]() -> task<std::optional<int>> {
+            ++(*counter);
+            if (*counter == 1) {
+                co_return 42;
+            }
+            throw std::runtime_error("upstream-boom");
+            co_return std::nullopt;
+        });
+
+        auto debounced = std::move(src).debounce(5ms);
+
+        try {
+            auto collected = co_await std::move(debounced).collect();
+            (void)collected;
+        } catch (const std::runtime_error& e) {
+            caught = std::string(e.what()) == "upstream-boom";
+        }
+        finished = true;
+    };
+
+    coro_scheduler().spawn(test());
+    run_for(500ms);
+
+    EXPECT_TRUE(caught) << "debounce must rethrow source exceptions";
+    EXPECT_TRUE(finished);
+}
+
+// =============================================================================
+// Finding 2.C.5: backpressure must release the acquired semaphore permit on
+// EOF so a shared semaphore does not starve over successive streams.
+// =============================================================================
+
+TEST_F(CoroutineRegression, BackpressureReleasesPermitOnEof) {
+    bool finished = false;
+
+    auto test = [&]() -> task<void> {
+        // External shared semaphore: if EOF leaks a permit, a second pass
+        // will hang forever waiting for the missing slot.
+        auto sem = std::make_shared<semaphore>(1);
+
+        auto drain_one_pass = [&]() -> task<void> {
+            auto src = async_stream<int>::from_vector({10, 20, 30});
+            auto buffered = std::move(src).backpressure(1, sem);
+            auto result = co_await std::move(buffered).collect();
+            EXPECT_EQ(result.size(), 3u);
+        };
+
+        co_await drain_one_pass();
+        co_await drain_one_pass();   // would hang if 2.C.5 regresses
+        finished = true;
+    };
+
+    coro_scheduler().spawn(test());
+    run_for(1000ms);
+
+    EXPECT_TRUE(finished)
+        << "backpressure EOF leaked a permit on the shared semaphore";
+}
+
+// =============================================================================
+// Finding 2.C.10: semaphore::acquire must use the fast-path (await_ready)
+// when a permit is available, avoiding a suspend/resume round-trip.
+// =============================================================================
+
+TEST_F(CoroutineRegression, SemaphoreAcquireFastPathIsSynchronous) {
+    bool finished = false;
+    bool acquired_synchronously = false;
+
+    auto test = [&]() -> task<void> {
+        semaphore sem(1);
+
+        // Check await_ready() directly so we can observe synchronous acquire.
+        auto awaiter = sem.acquire();
+        acquired_synchronously = awaiter.await_ready();
+
+        // Clean up by releasing explicitly; await_resume only decrements if
+        // await_ready returned true.
+        if (acquired_synchronously) {
+            sem.release();
+        }
+        finished = true;
+        co_return;
+    };
+
+    coro_scheduler().spawn(test());
+    run_for(100ms);
+
+    EXPECT_TRUE(acquired_synchronously)
+        << "semaphore fast-path regressed — acquire suspended unnecessarily";
+    EXPECT_TRUE(finished);
+}
+
+// =============================================================================
+// Finding 2.D.4: Actor::spawn_async must revalidate its cached scheduler
+// pointer against the current TLS scheduler. Directly driving the scheduler
+// here simulates the essence: after resetting the TLS scheduler, the new one
+// must be reachable through current_ptr().
+// =============================================================================
+
+TEST_F(CoroutineRegression, SchedulerCurrentPtrReflectsListenerReset) {
+    auto* before = CoroutineScheduler::current_ptr();
+    ASSERT_NE(before, nullptr);
+
+    qb::io::async::listener::current.clear();
+    qb::io::async::init();
+
+    auto* after = CoroutineScheduler::current_ptr();
+    ASSERT_NE(after, nullptr);
+
+    // After reset we always have *some* scheduler and it is reachable via
+    // the TLS accessor — a cached stale pointer would be stale here.
+    EXPECT_EQ(after, &qb::io::async::listener::current.coro_scheduler());
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 

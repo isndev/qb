@@ -25,10 +25,16 @@
 
 #include "task.h"
 #include "channel.h"
+#include <chrono>
+#include <cstddef>
+#include <exception>
 #include <functional>
 #include <limits>
-#include <vector>
+#include <memory>
 #include <optional>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace qb::io::async {
 
@@ -68,9 +74,22 @@ public:
      * @brief Create stream from channel (borrowed reference)
      *
      * @pre The channel @p ch must outlive the returned stream AND every
-     *      coroutine that consumes it.  Breaking this precondition is
-     *      undefined behaviour (use-after-free).  When you cannot
-     *      guarantee the lifetime, prefer from_channel_shared().
+     *      coroutine that consumes it. Breaking this precondition is
+     *      undefined behaviour (use-after-free).
+     *
+     * Finding 2.C.8 — lifetime contract:
+     *   This overload exists for the performance-critical path where the
+     *   caller already guarantees the channel outlives the stream (e.g.
+     *   a channel member of the same owning object, or a stack-allocated
+     *   channel in a single coroutine's scope). For anything that crosses
+     *   coroutine boundaries or stores the stream in a member, **use
+     *   `from_channel_shared()`** instead — it is only a single `shared_ptr`
+     *   copy per stream and removes the UAF footgun entirely.
+     *
+     * @note We considered making this overload private. We kept it public
+     *       because several callers (Redis streaming, pgsql cursors) rely
+     *       on the zero-shared_ptr-overhead variant; the precondition is
+     *       explicitly documented instead.
      */
     static async_stream from_channel(channel<T>& ch) {
         channel<T>* ch_ptr = &ch;
@@ -234,31 +253,52 @@ public:
      */
     async_stream debounce(std::chrono::milliseconds delay) {
         auto source  = _next;
-        // Effectively unbounded: producer never blocks, consumer drains on wake.
-        auto ch      = std::make_shared<channel<T>>(std::numeric_limits<size_t>::max());
+        // Finding 2.C.6: a truly unbounded channel lets a fast producer race
+        // arbitrarily far ahead of a slow debounced consumer, defeating the
+        // point of "debounce" and exposing an OOM surface. A small bounded
+        // channel + cooperative backpressure from the producer is the right
+        // default — the consumer's debounce loop drains what accumulates
+        // during each quiet period anyway.
+        constexpr size_t kDebounceChannelCapacity = 64;
+        auto ch      = std::make_shared<channel<T>>(kDebounceChannelCapacity);
         auto started = std::make_shared<bool>(false);
+        // Finding 2.C.4: surface source-stream exceptions to the consumer
+        // instead of silently turning them into end-of-stream.
+        auto source_error = std::make_shared<std::exception_ptr>();
 
-        return async_stream([source, ch, started, delay]() -> task<std::optional<T>> {
+        return async_stream(
+            [source, ch, started, delay, source_error]() -> task<std::optional<T>> {
             // Lazy start: spawn producer on first pull
             if (!*started) {
                 *started = true;
                 coro_scheduler().spawn(
                     [](std::function<task<std::optional<T>>()> src,
-                       std::shared_ptr<channel<T>> c) -> task<void> {
+                       std::shared_ptr<channel<T>> c,
+                       std::shared_ptr<std::exception_ptr> err) -> task<void> {
                         try {
                             while (true) {
                                 auto opt = co_await src();
                                 if (!opt) break;
                                 co_await c->send(std::move(*opt));
                             }
-                        } catch (...) {}
+                        } catch (const channel_closed&) {
+                            // Consumer closed the channel; this is the
+                            // terminal state, not an error — stay silent.
+                        } catch (...) {
+                            *err = std::current_exception();
+                        }
                         c->close();
-                    }(source, ch));
+                    }(source, ch, source_error));
             }
 
             // Block until at least one value arrives
             auto first = co_await ch->recv();
-            if (!first) co_return std::nullopt;
+            if (!first) {
+                // Producer ended: propagate a pending error (if any) before
+                // reporting end-of-stream to the consumer.
+                if (*source_error) std::rethrow_exception(*source_error);
+                co_return std::nullopt;
+            }
 
             T latest = std::move(*first);
 
@@ -513,6 +553,12 @@ public:
 
     // Static free function: fn, buffer, sem are VALUE parameters in the
     // coroutine frame — no dangling-lambda risk even after backpressure() returns.
+    //
+    // Finding 2.C.5: the EOF branch now releases the already-acquired
+    // permit before closing the buffer. Without this, the semaphore ends
+    // each stream short by one permit; repeatedly re-using the same
+    // semaphore (when the caller passes their own) would slowly starve
+    // subsequent producers.
     static task<void> backpressure_fill_task(
         std::function<task<std::optional<T>>()> fn,
         std::shared_ptr<channel<T>> buffer,
@@ -522,6 +568,7 @@ public:
             co_await sem->acquire();
             auto opt = co_await fn();
             if (!opt) {
+                sem->release();
                 buffer->close();
                 co_return;
             }
@@ -596,10 +643,16 @@ async_stream<std::pair<T, U>> zip(async_stream<T> a, async_stream<U> b) {
     auto next_b = std::move(b.next_fn());
 
     return async_stream<std::pair<T, U>>([next_a, next_b]() -> task<std::optional<std::pair<T, U>>> {
+        // Finding 2.C.16: short-circuit on the first stream's end-of-stream.
+        // The previous implementation awaited `b` even after `a` was known
+        // to be exhausted, which could block forever on a slow second
+        // stream and waste one extra value from `b` (advances its cursor
+        // without ever consuming). Evaluating left-to-right and bailing
+        // early is the natural zip semantic.
         auto opt_a = co_await next_a();
+        if (!opt_a) co_return std::nullopt;
         auto opt_b = co_await next_b();
-
-        if (!opt_a || !opt_b) co_return std::nullopt;
+        if (!opt_b) co_return std::nullopt;
         co_return std::make_pair(std::move(*opt_a), std::move(*opt_b));
     });
 }

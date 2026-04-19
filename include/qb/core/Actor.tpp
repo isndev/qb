@@ -25,6 +25,8 @@
 #include "VirtualCore.h"
 #include "VirtualCore.tpp"
 
+#include <cassert>
+
 #ifndef QB_ACTOR_TPL
 #define QB_ACTOR_TPL
 
@@ -196,6 +198,20 @@ namespace detail {
  *
  * The shared_ptr<atomic> counter is decremented via RAII when the wrapper
  * completes or is destroyed (even if the owning actor has been deleted).
+ *
+ * Finding 2.D.6 — decision log:
+ *   Two coroutine frames per spawn_async are inherent to the design
+ *   (wrapper frame + user body frame). We **intentionally** keep the
+ *   wrapper because:
+ *     1. Frame allocation cost is already amortised by the thread-local
+ *        pooled allocator (Finding 2.A.9) — a steady-state spawn/despawn
+ *        cycle burns zero `malloc`/`free`.
+ *     2. Removing the wrapper would require either embedding a completion
+ *        hook in every `task<void>::promise_type` (taxes all coroutines
+ *        in the codebase, even non-actor ones) or a scheduler-side
+ *        completion map (extra hash lookup per frame teardown).
+ *     3. The wrapper is the single point that enforces actor lifetime
+ *        safety (counter RAII + value-capture of func/ctx).
  */
 template <typename Func>
 qb::io::async::task<void> actor_coro_wrapper(
@@ -213,12 +229,33 @@ qb::io::async::task<void> actor_coro_wrapper(
 
 template <typename Func>
 void Actor::spawn_async(Func&& func) const {
-    // `active_coroutines_` is initialized in the member-initializer (finding 2.12),
-    // so only the scheduler lookup remains on the slow path. Once cached, the hot
-    // path is branch-predicted: atomic inc → scheduler->spawn().
-    if (unlikely(!coro_scheduler_)) {
+    // Finding 2.D.4: revalidate the cached scheduler pointer on every spawn
+    // by comparing it against the current TLS scheduler. Caching alone is
+    // unsafe because the listener-owned scheduler can be torn down and
+    // rebuilt (e.g. tests calling `listener::reset_coro_scheduler()`, or a
+    // core that is destroyed and later re-initialized). Revalidation is
+    // essentially free: `current_ptr()` is a plain `thread_local*` load,
+    // and the comparison fits in one cmp+jne.
+    auto* expected = qb::io::async::CoroutineScheduler::current_ptr();
+    if (likely(expected != nullptr)) {
+        if (unlikely(coro_scheduler_ != expected)) {
+            coro_scheduler_ = expected;
+        }
+    } else if (unlikely(!coro_scheduler_)) {
+        // Extremely rare path: spawn called before any TLS scheduler exists
+        // on this thread. Fall back to the listener to create one.
         coro_scheduler_ = &qb::io::async::listener::current.coro_scheduler();
     }
+
+    // Finding 2.D.5: debug-only guard against cross-thread spawn. The actor
+    // system is strictly mono-thread per VirtualCore; calling spawn_async
+    // from another thread would interleave with the owner's scheduler and
+    // is UB. We can't differentiate which VirtualCore owns this actor at
+    // this layer, but we CAN verify a TLS scheduler exists on the caller
+    // thread, which excludes calls from unrelated std::thread contexts.
+    assert(qb::io::async::CoroutineScheduler::current_ptr() != nullptr
+           && "Actor::spawn_async called from a thread without a coroutine "
+              "scheduler — are you calling this from outside the VirtualCore?");
 
     active_coroutines_->fetch_add(1, std::memory_order_relaxed);
     CoroContext ctx(this);

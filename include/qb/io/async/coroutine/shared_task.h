@@ -29,10 +29,11 @@
 #ifndef QB_IO_ASYNC_COROUTINE_SHARED_TASK_H
 #define QB_IO_ASYNC_COROUTINE_SHARED_TASK_H
 
-#include <any>
+#include <cassert>
 #include <exception>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 #include "task.h"
 #include "scheduler.h"
@@ -59,6 +60,14 @@ class shared_task {
         std::optional<T>      _value;
         std::exception_ptr    _error;
         std::vector<std::coroutine_handle<>> _waiters;
+
+        state() {
+            // Finding 2.A.6: pre-reserve a small capacity so that the
+            // common "1–4 concurrent awaiters" case never reallocates in
+            // `await_suspend`, which must be noexcept (throwing after
+            // suspension is implementation-defined and unsafe).
+            _waiters.reserve(4);
+        }
 
         void complete(T val) {
             _value.emplace(std::move(val));
@@ -121,14 +130,35 @@ public:
     struct awaiter {
         std::shared_ptr<state> s;
 
-        [[nodiscard]] bool await_ready() const noexcept { return s->is_done(); }
-
-        void await_suspend(std::coroutine_handle<> h) {
-            if (s->is_done()) schedule_via_current(h);
-            else              s->_waiters.push_back(h);
+        [[nodiscard]] bool await_ready() const noexcept {
+            // Finding 2.A.1: reject `co_await` on a default-constructed /
+            // moved-from shared_task loudly. Returning `true` here would
+            // make `await_resume` dereference a null state (UB). We return
+            // false so the suspend path can throw instead.
+            return s ? s->is_done() : false;
         }
 
-        T await_resume() { return s->get(); }
+        void await_suspend(std::coroutine_handle<> h) {
+            // Same safety check — if the state is null, the caller
+            // `co_await`ed an invalid handle. Fail loudly rather than
+            // silently corrupt.
+            if (!s) {
+                throw std::logic_error(
+                    "co_await on default-constructed shared_task<T>");
+            }
+            if (s->is_done()) { schedule_via_current(h); return; }
+            // Pre-reserved capacity (see state::state) makes push_back
+            // effectively noexcept for the common case.
+            s->_waiters.push_back(h);
+        }
+
+        T await_resume() {
+            if (!s) {
+                throw std::logic_error(
+                    "co_await on default-constructed shared_task<T>");
+            }
+            return s->get();
+        }
     };
 
     awaiter operator co_await() const {
@@ -149,6 +179,12 @@ class shared_task<void> {
         status             _status{status::pending};
         std::exception_ptr _error;
         std::vector<std::coroutine_handle<>> _waiters;
+
+        state() {
+            // Finding 2.A.6: pre-reserve to keep await_suspend noexcept for
+            // the common case (see the non-void specialisation for details).
+            _waiters.reserve(4);
+        }
 
         void complete() {
             _status = status::ready;
@@ -193,12 +229,25 @@ public:
 
     struct awaiter {
         std::shared_ptr<state> s;
-        [[nodiscard]] bool await_ready() const noexcept { return s->is_done(); }
-        void await_suspend(std::coroutine_handle<> h) {
-            if (s->is_done()) schedule_via_current(h);
-            else              s->_waiters.push_back(h);
+        [[nodiscard]] bool await_ready() const noexcept {
+            // Finding 2.A.1: same null-state guard as shared_task<T>.
+            return s ? s->is_done() : false;
         }
-        void await_resume() { s->get(); }
+        void await_suspend(std::coroutine_handle<> h) {
+            if (!s) {
+                throw std::logic_error(
+                    "co_await on default-constructed shared_task<void>");
+            }
+            if (s->is_done()) { schedule_via_current(h); return; }
+            s->_waiters.push_back(h);
+        }
+        void await_resume() {
+            if (!s) {
+                throw std::logic_error(
+                    "co_await on default-constructed shared_task<void>");
+            }
+            s->get();
+        }
     };
 
     awaiter operator co_await() const { return awaiter{_state}; }

@@ -33,10 +33,14 @@
 // use only (one qb-io VirtualCore thread). Cross-thread cancellation must go
 // through the qb actor event system — an actor on Thread B sends a Cancel event
 // to the actor on Thread A, which then calls token.cancel() on its own thread.
-#include <memory>
-#include <functional>
-#include <vector>
+#include <chrono>
 #include <exception>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <stdexcept>
+#include <utility>
+#include <vector>
 
 namespace qb::io::async {
 
@@ -209,6 +213,7 @@ class cancellable_operation {
     struct shared_state {
         task<T> inner_task;
         std::optional<T> result;
+        std::exception_ptr error;       ///< inner task exception, propagated on resume
         bool task_done{false};  // single-thread: no atomic needed
         std::coroutine_handle<> continuation;
 
@@ -242,18 +247,34 @@ public:
         }
 
         T await_resume() {
+            // Cancellation takes priority: if the caller asked for throwing
+            // cancellation and a cancel signal raced with completion, we
+            // honor the cancellation contract.
             if (token.is_cancelled() && throw_on_cancel) {
                 throw cancelled_error();
             }
+            // Finding 2.B.2: propagate inner-task exceptions. The previous
+            // version silently discarded them and returned `T{}` — data
+            // corruption for every non-void return type.
+            if (state->error) {
+                std::rethrow_exception(state->error);
+            }
             if (state->result) return std::move(*state->result);
-            return T{};
+            // No result, no error, not cancelled → the inner task completed
+            // by returning a value that was not transferred. This should
+            // never happen in practice; fail loudly rather than silently.
+            throw std::logic_error(
+                "cancellable_operation: inner task completed without "
+                "delivering a value or an exception");
         }
 
     private:
         static task<void> task_runner(std::shared_ptr<shared_state> state) {
             try {
                 state->result = co_await state->inner_task;
-            } catch (...) {}
+            } catch (...) {
+                state->error = std::current_exception();
+            }
             if (!state->task_done) {
                 state->task_done = true;
                 if (state->continuation) schedule_via_current(state->continuation);
@@ -271,6 +292,7 @@ template <>
 class cancellable_operation<void> {
     struct shared_state {
         task<void> inner_task;
+        std::exception_ptr error;       ///< inner task exception, propagated on resume
         bool task_done{false};  // single-thread
         std::coroutine_handle<> continuation;
 
@@ -306,13 +328,19 @@ public:
         void await_resume() {
             if (token.is_cancelled() && throw_on_cancel)
                 throw cancelled_error();
+            // Finding 2.B.2: propagate inner-task exceptions (void overload).
+            if (state->error) {
+                std::rethrow_exception(state->error);
+            }
         }
 
     private:
         static task<void> task_runner(std::shared_ptr<shared_state> state) {
             try {
                 co_await state->inner_task;
-            } catch (...) {}
+            } catch (...) {
+                state->error = std::current_exception();
+            }
             if (!state->task_done) {
                 state->task_done = true;
                 if (state->continuation) schedule_via_current(state->continuation);
@@ -492,7 +520,17 @@ inline task<int> with_deadline_run_timeout(
 template <typename T>
 task<T> with_deadline(task<T>&& operation, std::chrono::steady_clock::time_point deadline,
                       cancellation_token token = {}) {
-    // Do not throw before co_await: can cause use-after-free when the caller awaits.
+    // Early short-circuit: if the deadline is already in the past when we
+    // enter, the contract is already violated — no point running the
+    // operation. Throwing synchronously here is safe and matches user
+    // expectations ("must complete **before** deadline"). Finding 2.B.5
+    // is strictly about not reclassifying a *winning* operation after the
+    // race has already been resolved; this pre-check runs *before* the
+    // race and has a different intent.
+    if (std::chrono::steady_clock::now() >= deadline) {
+        throw timeout_error();
+    }
+
     auto state = std::make_shared<detail::with_deadline_timeout_state>();
 
     // Use a free function (not a lambda) to avoid the dangling-lambda-pointer bug:
@@ -502,11 +540,12 @@ task<T> with_deadline(task<T>&& operation, std::chrono::steady_clock::time_point
     auto res = co_await when_any(std::move(operation),
                                  detail::with_deadline_run_timeout(state, deadline, token));
 
+    // Finding 2.B.5: the operation branch **won** the race — that is
+    // authoritative. Do not second-guess it against wall-clock time here:
+    // the old code could reclassify a completed result as a timeout under
+    // load or at the millisecond boundary, silently discarding a valid
+    // value. `when_any` already guarantees that the loser is irrelevant.
     if (res.index == 0) {
-        // Operation finished first; if deadline already passed, treat as timeout
-        if (std::chrono::steady_clock::now() >= deadline) {
-            throw timeout_error();
-        }
         co_return res.template get<T>();
     }
     if (res.template get<int>() == 1) {

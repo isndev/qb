@@ -26,6 +26,7 @@
 #include "task.h"
 #include "utils.h"
 #include "cancellation.h"
+#include <algorithm>
 #include <vector>
 #include <memory>
 // NOTE: No <mutex> / <atomic> needed here — coroutine_scope and all its
@@ -153,6 +154,16 @@ public:
 
     /**
      * @brief Destructor - applies cleanup policy
+     *
+     * Finding 2.B.12/2.B.13:
+     *   - `join_all` is *best-effort*: if the caller forgot to `co_await
+     *     join_all()` before the scope goes out of scope, spawned tasks
+     *     keep running via `scope_impl` (they hold a shared_ptr to it).
+     *     We now emit a debug-only warning so the misuse is discoverable.
+     *   - `detach` clears our list; tasks keep running because
+     *     `scope_impl` is shared.
+     *   - `cancel_all` signals the scope's token; coroutines that honour
+     *     cancellation terminate cooperatively.
      */
     ~coroutine_scope() {
         QB_SCOPE_TRACE("dtor policy=%d tasks=%zu", (int)_policy,
@@ -160,9 +171,15 @@ public:
         if (!_impl) return;
         switch (_policy) {
             case cleanup_policy::join_all:
-                // Best-effort: do not block destructor. Caller should co_await join_all()
-                // before scope is destroyed, or run the event loop after (e.g. run_for) to
-                // let spawned tasks complete.
+#ifndef NDEBUG
+                if (_impl->active_count != 0) {
+                    std::fprintf(stderr,
+                        "[scope][warn] ~coroutine_scope(join_all) destroyed with "
+                        "%zu active tasks — you should `co_await join_all()` before "
+                        "the scope goes out of scope.\n",
+                        _impl->active_count);
+                }
+#endif
                 break;
 
             case cleanup_policy::cancel_all:
@@ -170,7 +187,6 @@ public:
                 break;
 
             case cleanup_policy::detach:
-                // Clear our reference; tasks continue running via scope_impl
                 _impl->tasks.clear();
                 break;
         }

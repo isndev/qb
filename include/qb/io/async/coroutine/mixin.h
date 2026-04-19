@@ -60,9 +60,20 @@ namespace qb::io::async {
  * }
  * @endcode
  *
+ * Finding 2.D.9 — relationship with qb::Actor::spawn_async:
+ *   `coro_mixin` only exposes a `.coro()` accessor that turns an existing
+ *   synchronous client into a coroutine-producing one; it does **not** own
+ *   a scheduler and does not spawn tasks by itself. Inside an actor the
+ *   returned task must still be driven through `Actor::spawn_async(...)`
+ *   (or awaited from an already-spawned coroutine) so that the scheduler
+ *   lifetime and the `active_coroutines_` counter are tracked correctly.
+ *   Never call `run_sync()` on a task obtained through `.coro()` from an
+ *   actor handler — it would block the VirtualCore thread.
+ *
  * @tparam Derived The derived class (CRTP pattern)
  * @ingroup Coroutine
  * @see async_awaiter
+ * @see qb::Actor::spawn_async
  */
 template <typename Derived>
 class coro_mixin {

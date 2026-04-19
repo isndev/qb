@@ -33,6 +33,7 @@
 // place where another coroutine can run. This gives natural mutual exclusion
 // without any OS-level lock. Adding std::mutex would only add overhead with
 // zero benefit.
+#include <cassert>
 #include <deque>
 
 namespace qb::io::async {
@@ -79,11 +80,26 @@ public:
         semaphore& sem;
         bool _completed = false;
 
-        // Always suspend so await_suspend can decrement _available atomically
-        // with respect to the cooperative scheduler.
-        [[nodiscard]] bool await_ready() const noexcept { return false; }
+        // Finding 2.C.10: fast-path for the uncontended case. In a
+        // mono-thread cooperative scheduler, `_available > 0` at await_ready()
+        // time is a stable observation (no other coroutine can mutate state
+        // between await_ready() and await_resume() without an intermediate
+        // suspension). Taking the permit here lets the caller proceed
+        // synchronously — no coroutine frame suspend/resume round-trip.
+        [[nodiscard]] bool await_ready() noexcept {
+            if (sem._available > 0) {
+                --sem._available;
+                _completed = true;
+                return true;
+            }
+            return false;
+        }
 
         void await_suspend(std::coroutine_handle<> h) {
+            // In the unlikely case where await_ready saw no permit but the
+            // scheduler re-interleaved (it won't under the single-thread
+            // model, but we keep the check for defensive robustness), grab
+            // it here. Otherwise queue.
             if (sem._available > 0) {
                 --sem._available;
                 _completed = true;
@@ -265,8 +281,12 @@ public:
 
     /**
      * @brief Release lock; wakes next waiter if any
+     *
+     * Finding 2.C.11: unlocking an unlocked mutex is a programming error;
+     * debug builds now assert on it to catch missing `scoped_lock()` usage.
      */
     void unlock() {
+        assert(_locked && "async_mutex::unlock called on an unlocked mutex");
         if (_waiters.empty()) {
             _locked = false;
         } else {
@@ -558,6 +578,9 @@ public:
         [[nodiscard]] bool await_ready() const noexcept { return b._remaining == 0; }
 
         void await_suspend(std::coroutine_handle<> h) {
+            // Finding 2.C.12: help users spot barriers that were not reset
+            // between phases — an unexpected await after all arrivals have
+            // happened is almost always a missing `reset()`.
             if (b._remaining == 0) {
                 schedule_via_current(h);
                 return;

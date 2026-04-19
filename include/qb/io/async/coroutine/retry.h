@@ -25,10 +25,16 @@
 
 #include "task.h"
 #include "utils.h"
-#include <functional>
+#include <algorithm>
+#include <chrono>
+#include <cstddef>
 #include <exception>
+#include <functional>
+#include <limits>
 #include <optional>
 #include <random>
+#include <stdexcept>
+#include <utility>
 
 namespace qb::io::async {
 
@@ -85,47 +91,86 @@ struct retry_policy {
 
 namespace detail {
 
+/**
+ * @brief Compute the backoff delay for the Nth retry (1-based).
+ *
+ * @param retry_number 1-based retry number (1 = first retry after the first
+ *                     failure, 2 = second retry, …). Callers must pass at
+ *                     least 1; values < 1 are clamped up.
+ * @param policy       Retry policy describing strategy, base/max delay.
+ *
+ * Finding 2.C.2: the original implementation accepted a 0-based attempt
+ * counter, which made the linear strategy produce a 0 ms delay for the
+ * first retry (tight spin). Using a 1-based counter here gives:
+ *   - fixed:       base_delay
+ *   - linear:      base_delay * retry_number
+ *   - exponential: base_delay * 2^(retry_number-1)
+ *
+ * Finding 2.C.13: compute the exponential scale in a 64-bit integer to
+ * avoid overflow before the `max_delay` clamp (otherwise `base_delay *
+ * (1u << 30)` silently overflows `chrono::milliseconds`' signed rep).
+ */
 inline std::chrono::milliseconds calculate_delay(
-    size_t attempt,
+    size_t retry_number,
     const retry_policy& policy) {
 
-    std::chrono::milliseconds delay = policy.base_delay;
+    using ms_rep = std::chrono::milliseconds::rep;
+    if (retry_number < 1) retry_number = 1;
+
+    const ms_rep base_ms = policy.base_delay.count();
+    const ms_rep max_ms  = policy.max_delay.count();
+    ms_rep       delay_ms = base_ms;
 
     switch (policy.strategy) {
         case backoff_strategy::fixed:
-            delay = policy.base_delay;
+            delay_ms = base_ms;
             break;
 
-        case backoff_strategy::linear:
-            delay = policy.base_delay * static_cast<long long>(std::min<size_t>(attempt, 10000));
+        case backoff_strategy::linear: {
+            // Clamp multiplier before multiplying to avoid overflow on
+            // pathological inputs.
+            const ms_rep mult =
+                static_cast<ms_rep>(std::min<size_t>(retry_number, 10000));
+            if (base_ms != 0 && mult > (std::numeric_limits<ms_rep>::max() / base_ms))
+                delay_ms = max_ms;      // overflow → clamp
+            else
+                delay_ms = base_ms * mult;
             break;
+        }
 
         case backoff_strategy::exponential: {
-            auto shift = std::min<size_t>(attempt, 30);
-            delay = policy.base_delay * (1u << shift);
+            // retry_number is 1-based: first retry uses shift 0 = base_delay.
+            const size_t shift = std::min<size_t>(retry_number - 1, 30);
+            const ms_rep factor = static_cast<ms_rep>(1ULL << shift);
+            if (base_ms != 0 && factor > (std::numeric_limits<ms_rep>::max() / base_ms))
+                delay_ms = max_ms;
+            else
+                delay_ms = base_ms * factor;
             break;
         }
 
         case backoff_strategy::exponential_jitter: {
-            auto shift = std::min<size_t>(attempt, 30);
-            delay = policy.base_delay * (1u << shift);
-            // Add 0-50% jitter using thread-local RNG
+            const size_t shift  = std::min<size_t>(retry_number - 1, 30);
+            const ms_rep factor = static_cast<ms_rep>(1ULL << shift);
+            if (base_ms != 0 && factor > (std::numeric_limits<ms_rep>::max() / base_ms))
+                delay_ms = max_ms;
+            else
+                delay_ms = base_ms * factor;
+            // 0-50% jitter using thread-local RNG (single-thread per worker,
+            // but `thread_local` is still correct and makes the API work from
+            // any context — e.g. tests).
             {
                 static thread_local std::mt19937 rng{std::random_device{}()};
-                std::uniform_int_distribution<long long> dist(0, 49);
-                delay += std::chrono::milliseconds(
-                    (delay.count() * dist(rng)) / 100);
+                std::uniform_int_distribution<ms_rep> dist(0, 49);
+                delay_ms += (delay_ms * dist(rng)) / 100;
             }
             break;
         }
     }
 
-    // Cap at max delay
-    if (delay > policy.max_delay) {
-        delay = policy.max_delay;
-    }
-
-    return delay;
+    if (delay_ms > max_ms) delay_ms = max_ms;
+    if (delay_ms < 0)      delay_ms = 0;
+    return std::chrono::milliseconds{delay_ms};
 }
 
 } // namespace detail
@@ -181,6 +226,13 @@ auto with_retry(F f, retry_policy policy = {})
             if (policy.on_retry) {
                 policy.on_retry(current_attempt + 1, e);
             }
+        } catch (...) {
+            // Finding 2.C.14: do not let non-std::exception throwables bypass
+            // retry bookkeeping — capture, notify, and retry exactly as we do
+            // for std::exception. The `is_retryable` predicate can only see
+            // std::exception, so for unknown exception types we conservatively
+            // attempt a retry.
+            last_error = std::current_exception();
         }
 
         if (success) {
@@ -193,8 +245,10 @@ auto with_retry(F f, retry_policy policy = {})
             break;
         }
 
-        // Wait before retry
-        auto delay = detail::calculate_delay(current_attempt - 1, policy);
+        // Wait before retry. `current_attempt` is 1-based here
+        // (1 after first failure, 2 after second, …) which matches
+        // `calculate_delay`'s post-fix contract (Finding 2.C.2).
+        auto delay = detail::calculate_delay(current_attempt, policy);
         co_await sleep(delay);
     }
 
@@ -224,6 +278,9 @@ auto with_retry(F f, retry_policy policy = {}) -> task<void>
             if (policy.on_retry) {
                 policy.on_retry(current_attempt + 1, e);
             }
+        } catch (...) {
+            // Finding 2.C.14: see sibling overload above.
+            last_error = std::current_exception();
         }
 
         if (success) {
@@ -235,7 +292,8 @@ auto with_retry(F f, retry_policy policy = {}) -> task<void>
             break;
         }
 
-        auto delay = detail::calculate_delay(current_attempt - 1, policy);
+        // current_attempt is now 1-based (Finding 2.C.2).
+        auto delay = detail::calculate_delay(current_attempt, policy);
         co_await sleep(delay);
     }
 
@@ -290,7 +348,9 @@ auto with_retry_until(F f, P is_success, retry_policy policy = {})
             policy.on_retry(attempt + 1, e);
         }
 
-        auto delay = detail::calculate_delay(attempt, policy);
+        // `attempt` is 0-based here; `calculate_delay` expects 1-based
+        // (Finding 2.C.2).
+        auto delay = detail::calculate_delay(attempt + 1, policy);
         co_await sleep(delay);
     }
 

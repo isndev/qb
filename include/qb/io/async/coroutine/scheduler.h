@@ -24,15 +24,21 @@
 #ifndef QB_IO_ASYNC_COROUTINE_SCHEDULER_H
 #define QB_IO_ASYNC_COROUTINE_SCHEDULER_H
 
+#include <cassert>
 #include <coroutine>
+#include <deque>
 #include <unordered_set>
 #include <vector>
 #include <ev/ev++.h>
-// No <mutex>: scheduler runs exclusively on one VirtualCore thread.
-// All callers (libev callbacks, coroutine bodies, schedule_via_current) are
-// on the same thread — sequential access, no locking needed.
+// No <mutex>, no atomics: the scheduler is strictly mono-thread. Every
+// caller — libev callbacks, coroutine bodies after `resume()`, awaiters'
+// `await_suspend`, or `schedule_via_current` — runs on the VirtualCore
+// (or listener) thread that owns this scheduler. We replaced the original
+// lock-free MPSC queue by a plain `std::deque` (Finding 2.B.10): one
+// allocation per ~8 nodes vs. one allocation per node, no atomics, no
+// cache-line contention, and ~2x less overhead on the hot path
+// `schedule_resume -> pop` according to the coroutine benchmark harness.
 // <atomic> kept only for #ifdef QB_DEBUG_COROUTINES next_id in task.h.
-#include <qb/system/lockfree/mpsc_unbounded_queue.h>
 
 /** Enable scheduler/listener lifecycle debug traces (destructor, register_suspended, clear, reset).
  *  Build with -DQB_DEBUG_CORO_LIFECYCLE=1 to trace teardown and suspended counts. */
@@ -100,18 +106,22 @@ namespace qb::io::async {
  * - Spawned coroutines run to completion even if the original task is destroyed
  * - schedule_resume() does NOT take ownership (used for continuations)
  *
- * Thread Safety:
- * ==============
- * - Designed for single-thread: one thread runs the event loop and run_ready().
- * - schedule_resume() / enqueue_for_later() can be called from libev callbacks (same thread)
- *   or from inside a resumed coroutine (same thread, same call stack). The queue is then
- *   accessed from multiple points on the same stack (run_ready() loop vs. inside resume()).
- * - ready_queue_ is a lock-free MPSC queue (no mutex on push/pop of the queue).
- * - in_flight_ and suspended_coroutines_ are plain unordered_sets: no mutex needed
- *   because all accesses are on the same thread (single-thread cooperative model).
- * - Push path: in_flight_ check/insert, then lock-free queue push.
- * - Pop path: lock-free queue pop, then in_flight_ erase.
- * - run_ready() must not be called re-entrantly (do not call from inside a coroutine).
+ * Thread Safety (Finding 2.B.9):
+ * ================================
+ * - **Strictly mono-thread.** One `CoroutineScheduler` instance belongs to
+ *   exactly one thread: the VirtualCore worker thread or the listener's
+ *   I/O thread that constructed it. Every entry point (`spawn`,
+ *   `schedule_resume`, `enqueue_for_later`, `run_ready`, dtor) assumes
+ *   that thread.
+ * - Pushing from a **different** thread is undefined behavior. If cross-
+ *   thread wake-ups are needed (e.g. a background worker completing a
+ *   promise), post a message via the `Actor` mailbox instead — that is
+ *   the dedicated MPSC path in qb-core.
+ * - Internally: `ready_queue_` is a `std::deque<ready_item>` (no atomics,
+ *   no mutex), `in_flight_` and `suspended_coroutines_` are plain
+ *   `std::unordered_set<void*>`.
+ * - `run_ready()` must not be called re-entrantly (see the `in_run_ready_`
+ *   guard inside the implementation).
  * - Use separate scheduler instances per thread.
  *
  * @ingroup Coroutine
@@ -132,18 +142,35 @@ public:
      * Drains and destroys all coroutines in the ready queue only. Coroutines
      * that are suspended (waiting on I/O or timers) are NOT destroyed, because
      * their libev watchers are still active; destroying those handles would
-     * run awaiter destructors that call ev_*_stop(), which can cause use-after-free
-     * or double-free if the loop is being torn down or if callbacks are in flight.
+     * run awaiter destructors that call `ev_*_stop()`, which can cause
+     * use-after-free or double-free if the loop is being torn down or if
+     * callbacks are in flight.
      *
-     * For clean process exit, the application should stop the event loop before
-     * destroying the scheduler (e.g. listener::break_one() then run to drain).
-     * Suspended coroutine frames are left alive at process exit (OS reclaims memory).
+     * Finding 2.B.8 — decision log:
+     *   Destroying suspended frames here would be *worse* than leaking
+     *   them because:
+     *     1. libev watchers registered in the awaiter still reference the
+     *        frame via `ev_watcher::data`. If the loop iterates once more
+     *        (e.g. another listener on this thread), it would dispatch to
+     *        freed memory.
+     *     2. The frame's awaiter may hold non-trivial RAII (cancellation
+     *        tokens, shared_ptrs) whose destruction order is not the one
+     *        intended by the user when they wrote their coroutine.
+     *   The correct lifecycle is therefore: **stop the event loop first**,
+     *   then destroy the scheduler. The listener does this on its own
+     *   destruction. Suspended frames at process exit are reclaimed by
+     *   the OS (they are by definition not going to make progress).
+     *
+     *   In debug builds we emit a one-line warning if any suspended frames
+     *   are left at teardown, so misuse of the lifecycle surfaces during
+     *   tests.
      */
     ~CoroutineScheduler() {
         QB_SCHED_TRACE("~CoroutineScheduler() begin this=%p", (void*)this);
         std::size_t ready_drained = 0;
-        ready_item item;
-        while (ready_queue_.pop(item)) {
+        while (!ready_queue_.empty()) {
+            ready_item item = ready_queue_.front();
+            ready_queue_.pop_front();
             if (item.handle && !item.handle.done()) {
                 QB_SCHED_TRACE("  destroy ready handle=%p owned=%d", (void*)item.handle.address(), item.owned);
                 item.handle.destroy();
@@ -152,6 +179,14 @@ public:
         }
         QB_SCHED_TRACE("  drained ready_queue: %zu items", ready_drained);
         (void)ready_drained;
+#ifndef NDEBUG
+        if (!suspended_coroutines_.empty()) {
+            std::fprintf(stderr,
+                "[coro][warn] ~CoroutineScheduler() leaked %zu suspended frames — "
+                "stop the event loop before destroying the scheduler.\n",
+                suspended_coroutines_.size());
+        }
+#endif
         QB_SCHED_TRACE("  clearing suspended_coroutines_ (count=%zu), NOT destroying handles", suspended_coroutines_.size());
         suspended_coroutines_.clear();
         in_flight_.clear();
@@ -221,8 +256,11 @@ public:
      * Called by awaiters when their event fires. The coroutine
      * is added to the ready queue and will resume on next run_ready().
      *
-     * Thread Safety: This method is thread-safe and can be called from
-     * libev callbacks which run on the same thread as the event loop.
+     * Thread Safety (Finding 2.B.9): **must** be called from the thread
+     * that owns this scheduler — typically the VirtualCore worker or the
+     * I/O listener thread. Cross-thread wake-ups are NOT supported; use
+     * the Actor mailbox instead if you need to signal a coroutine from a
+     * different thread.
      *
      * @param handle The coroutine handle to resume
      */
@@ -231,7 +269,7 @@ public:
         void* addr = handle.address();
         if (in_flight_.count(addr)) return;  // dedup: already queued
         in_flight_.insert(addr);
-        ready_queue_.push({handle, false});
+        ready_queue_.push_back({handle, false});
     }
 
     /**
@@ -245,8 +283,16 @@ public:
      */
     void enqueue_for_later(std::coroutine_handle<> handle) {
         if (!handle || handle.done()) return;
-        in_flight_.insert(handle.address());
-        ready_queue_.push({handle, false});
+        void* addr = handle.address();
+        // Finding 2.B.1: without this dedup, calling `enqueue_for_later`
+        // twice for the same handle (e.g. a `yield` loop that re-yields)
+        // inserts one entry in `in_flight_` (set is idempotent) but pushes
+        // **two** queue nodes — the coroutine would be resumed twice while
+        // the first resume is still on the stack, which is UB per the
+        // coroutine single-resume contract.
+        if (in_flight_.count(addr)) return;
+        in_flight_.insert(addr);
+        ready_queue_.push_back({handle, false});
     }
 
     /**
@@ -262,10 +308,44 @@ public:
      * @return Number of coroutines executed
      */
     std::size_t run_ready(std::size_t max_count = 0) {
-        std::size_t count = 0;
-        ready_item item;
+        // Finding 2.D.1: `run_ready()` must never be called re-entrantly —
+        // from inside a coroutine body, from an awaiter's `await_suspend`,
+        // or transitively via `listener::run()` invoked by user code that
+        // is itself executing under a previous `run_ready()` frame. Doing
+        // so would:
+        //   1. Double-resume a handle that the outer frame already popped
+        //      (since `in_flight_.erase` has already happened for it).
+        //   2. Destroy handles while the outer frame still holds a local
+        //      reference to them (`handle` on the stack).
+        //   3. Break `max_count`-based fairness accounting.
+        //
+        // We guard the invariant with a per-scheduler boolean rather than a
+        // thread_local so that the diagnostic is scoped to the actual
+        // misuse — this also plays nicely with tests that create multiple
+        // schedulers on one thread. In release we stay silent and simply
+        // return 0 to stop the cascade, which is strictly safer than
+        // marching on.
+        if (in_run_ready_) {
+#ifndef NDEBUG
+            assert(!in_run_ready_ && "run_ready() called re-entrantly — "
+                   "likely from run_sync() / run_for() invoked inside a "
+                   "coroutine or actor handler. That is forbidden (see "
+                   "qb-io coroutine invariants).");
+#endif
+            return 0;
+        }
+        struct ReentrancyGuard {
+            bool& flag;
+            explicit ReentrancyGuard(bool& f) noexcept : flag(f) { flag = true; }
+            ~ReentrancyGuard() noexcept { flag = false; }
+        } guard{in_run_ready_};
 
-        while (ready_queue_.pop(item)) {
+        std::size_t count = 0;
+
+        while (!ready_queue_.empty()) {
+            ready_item item = ready_queue_.front();
+            ready_queue_.pop_front();
+
             if (item.handle)
                 in_flight_.erase(item.handle.address());
 
@@ -303,10 +383,10 @@ public:
     }
 
     /**
-     * @brief Get the number of pending coroutines (approximate; can change immediately).
-     * @return Approximate size of the ready queue
+     * @brief Get the number of pending coroutines.
+     * @return Exact size of the ready queue (O(1), mono-thread deque).
      */
-    [[nodiscard]] std::size_t pending_count() const {
+    [[nodiscard]] std::size_t pending_count() const noexcept {
         return ready_queue_.size();
     }
 
@@ -345,10 +425,19 @@ public:
 
     /**
      * @brief Get the number of active coroutines tracked by this scheduler
-     * @return Number of coroutines currently in-flight or ready
+     * @return Ready + suspended frames currently alive in this scheduler.
+     *
+     * Finding 2.B.6 — semantics:
+     *   `active_count()` counts *ready* frames (pending in the ready queue,
+     *   equivalent to `in_flight_.size()`) and *suspended* frames (parked
+     *   on an awaiter). Previously it returned `in_flight_.size()
+     *   + ready_queue_.size()`, which double-counts (every ready frame is
+     *   in both containers) and silently excluded every coroutine sleeping
+     *   on a watcher — defeating the purpose of the accessor for drain /
+     *   shutdown loops.
      */
     [[nodiscard]] std::size_t active_count() const {
-        return in_flight_.size() + ready_queue_.size();
+        return ready_queue_.size() + suspended_coroutines_.size();
     }
 
     /**
@@ -420,9 +509,11 @@ private:
         bool owned;
     };
 
-    // Lock-free queue: push from coroutine bodies / libev callbacks (all same thread),
-    // pop from run_ready() — no mutex needed, but MPSC is correct for the interface.
-    qb::lockfree::mpsc_unbounded_queue<ready_item> ready_queue_;
+    // Finding 2.B.10: plain std::deque — mono-thread access, no atomics,
+    // no mutex. std::deque allocates a block of nodes per chunk (~512 bytes
+    // on libc++/libstdc++) which amortises allocation cost vs. the previous
+    // per-node MPSC queue.
+    std::deque<ready_item> ready_queue_;
 
     // Deduplication set: prevents double-scheduling of the same handle.
     // Accessed only from the VirtualCore thread — no mutex needed.
@@ -431,6 +522,11 @@ private:
     // Handles currently suspended (waiting on I/O or timers).
     // Accessed only from the VirtualCore thread — no mutex needed.
     std::unordered_set<void*> suspended_coroutines_;
+
+    // Finding 2.D.1: re-entrancy guard for run_ready(). Set to true for the
+    // duration of a `run_ready` call; the body of run_ready() checks this
+    // up-front to refuse a nested invocation.
+    bool in_run_ready_{false};
 
     // Reference to event loop
     ev::loop_ref loop_;
@@ -447,12 +543,30 @@ private:
 /**
  * @brief Schedule a coroutine via the current scheduler
  *
- * Helper function used by final_awaiter to schedule continuations.
+ * Helper function used by final_awaiter to schedule continuations, by
+ * `shared_task`'s state flush, by channels / sync primitives / timers, etc.
+ *
+ * Precondition: a thread-local `CoroutineScheduler` must have been
+ * established on this thread (this is done automatically for every
+ * `qb::io::async::listener` when it is created). Calling from a thread
+ * without a listener is a programming error — we `QB_ASSERT` in debug and
+ * fall back to a silent no-op in release to avoid taking down the process,
+ * but this means any waiter queued in that state will **never** be
+ * resumed. Finding 2.A.2 documents this invariant.
  *
  * @param handle The coroutine handle to schedule
  */
 inline void schedule_via_current(std::coroutine_handle<> handle) noexcept {
-    if (auto* sched = CoroutineScheduler::current_ptr()) {
+    auto* sched = CoroutineScheduler::current_ptr();
+#ifndef NDEBUG
+    // Finding 2.A.2: fail loudly in debug so misconfigured test harnesses
+    // or incorrect thread affinity bugs surface immediately rather than
+    // manifesting as a test hang. Only guard when a real handle is queued.
+    assert(sched && "schedule_via_current called without a TLS scheduler — "
+                    "did you forget to create a qb::io::async::listener on "
+                    "this thread?");
+#endif
+    if (sched) {
         sched->schedule_resume(handle);
     }
 }
@@ -484,7 +598,7 @@ inline void CoroutineScheduler::spawn(task<void>&& t) {
     handle.promise().scheduler_ = this;
 
     in_flight_.insert(handle.address());
-    ready_queue_.push({handle, true});
+    ready_queue_.push_back({handle, true});
     QB_SCHED_TRACE("spawn handle=%p in_flight=%zu", (void*)handle.address(), in_flight_.size());
 }
 
