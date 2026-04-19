@@ -27,7 +27,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <qb/system/container/unordered_set.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 #include <thread>
@@ -131,17 +130,123 @@ public:
             } else
                 _actor.on(_event);
         }
+
+        // ---- Thread-local freelist (QB_IO_PLAN 2.13) -----------------------
+        // Each RegisteredKernelEvent<E, A> instantiation gets its own
+        // thread-local LIFO pool. Because the listener itself is thread-local
+        // and every registration is routed through it, allocator contention
+        // is zero and the pool size naturally converges to the steady-state
+        // number of concurrently registered watchers of this exact type.
+        //
+        // Freed blocks are re-linked in place using their own first
+        // `sizeof(void*)` bytes (which is always ≥ `alignof(void*)` — the
+        // class carries two intrusive-list pointers, so the storage is
+        // available). No per-block header, no extra allocation.
+        //
+        // The pool deliberately does *not* release its blocks on thread
+        // termination: the operating system reclaims the entire thread
+        // allocation at exit, and the class's operator delete may outlive
+        // the listener TLS slot, so chaining to a destroyed TLS would risk
+        // use-after-free. The cost of keeping the pool linked is O(N)
+        // pointers — negligible.
+        struct FreeList {
+            void *head = nullptr;
+        };
+
+        static FreeList &
+        _freelist() noexcept {
+            thread_local FreeList fl;
+            return fl;
+        }
+
+    public:
+        static void *
+        operator new(std::size_t sz) {
+            auto &fl = _freelist();
+            if (fl.head) {
+                void *p = fl.head;
+                fl.head = *static_cast<void **>(p);
+                return p;
+            }
+            return ::operator new(sz);
+        }
+
+        static void
+        operator delete(void *p) noexcept {
+            if (!p)
+                return;
+            auto &fl = _freelist();
+            *static_cast<void **>(p) = fl.head;
+            fl.head                  = p;
+        }
+
+        // C++14 sized-delete: forward to the unsized version so the pool
+        // logic always applies (sizes are identical for a given instantiation).
+        static void
+        operator delete(void *p, std::size_t) noexcept {
+            RegisteredKernelEvent::operator delete(p);
+        }
     };
 
 private:
     ev::dynamic_loop _loop; /**< The libev event loop */
-    qb::unordered_set<IRegisteredKernelEvent *>
-                _registeredEvents;      /**< Set of registered event handlers */
+
+    // ---- Registered events (QB_IO_PLAN 2.20) --------------------------------
+    // Intrusive doubly-linked list of every `IRegisteredKernelEvent *` this
+    // listener currently owns. Was a `qb::unordered_set<void *>` previously,
+    // which cost one extra heap allocation + one hash computation per
+    // `registerEvent`/`unregisterEvent`. Since the listener is strictly
+    // single-threaded (thread-local) and every registration is already backed
+    // by a heap-allocated handler, piggy-backing the list links on the
+    // interface is optimal — insertion and removal become a handful of
+    // pointer swaps, and membership tests disappear entirely.
+    IRegisteredKernelEvent *_registered_head  = nullptr;
+    std::size_t             _registered_count = 0;
+
     std::size_t _nb_invoked_events = 0; /**< Counter for the number of invoked events */
     std::size_t _total_events_processed = 0; /**< Total number of events processed since listener creation */
 
     // Coroutine support
     std::unique_ptr<class CoroutineScheduler> _coro_scheduler; /**< Coroutine scheduler */
+
+    /** @brief Prepend `e` to the registered-events list. O(1), no alloc. */
+    inline void
+    _link(IRegisteredKernelEvent *e) noexcept {
+        e->_list_prev = nullptr;
+        e->_list_next = _registered_head;
+        if (_registered_head)
+            _registered_head->_list_prev = e;
+        _registered_head = e;
+        ++_registered_count;
+    }
+
+    /**
+     * @brief Detach `e` from the list if it is currently linked.
+     * @return `true` when `e` was linked (and is now detached); `false` when it
+     *         was either never registered with this listener or already
+     *         unlinked (idempotency safety net for double-unregister bugs).
+     */
+    [[nodiscard]] inline bool
+    _unlink(IRegisteredKernelEvent *e) noexcept {
+        // A node is linked iff it is the current head OR its `_list_prev`
+        // points somewhere. This check is robust against already-detached
+        // pointers (double `unregisterEvent`).
+        if (e->_list_prev == nullptr && _registered_head != e)
+            return false;
+
+        auto *prev = e->_list_prev;
+        auto *next = e->_list_next;
+        if (prev)
+            prev->_list_next = next;
+        else
+            _registered_head = next;
+        if (next)
+            next->_list_prev = prev;
+        e->_list_prev = nullptr;
+        e->_list_next = nullptr;
+        --_registered_count;
+        return true;
+    }
 
 public:
     /**
@@ -164,11 +269,20 @@ public:
     void
     clear() {
         QB_LISTENER_TRACE("clear() begin registeredEvents=%zu has_coro_scheduler=%d",
-            _registeredEvents.size(), _coro_scheduler != nullptr);
-        if (!_registeredEvents.empty()) {
-            for (auto it : _registeredEvents)
-                delete it;
-            _registeredEvents.clear();
+            _registered_count, _coro_scheduler != nullptr);
+        if (_registered_head) {
+            // Iterate the intrusive list and delete every handler. Each
+            // RegisteredKernelEvent's destructor stops its libev watcher, so
+            // the list is safely drained before we run the loop once more to
+            // flush pending libev cleanup.
+            IRegisteredKernelEvent *cur = _registered_head;
+            _registered_head  = nullptr;
+            _registered_count = 0;
+            while (cur) {
+                auto *next = cur->_list_next;
+                delete cur;
+                cur = next;
+            }
             run(EVRUN_ONCE);
         }
         QB_LISTENER_TRACE("clear() end (scheduler NOT reset)");
@@ -236,7 +350,7 @@ public:
         if constexpr (sizeof...(_Args) > 0)
             revent->_event.set(std::forward<_Args>(args)...);
 
-        _registeredEvents.emplace(revent);
+        _link(revent);
         return revent->_event;
     }
 
@@ -253,7 +367,7 @@ public:
      */
     void
     unregisterEvent(IRegisteredKernelEvent *kevent) {
-        if (kevent && _registeredEvents.erase(kevent))
+        if (kevent && _unlink(kevent))
             delete kevent;
     }
 
@@ -332,7 +446,7 @@ public:
      */
     [[nodiscard]] inline std::size_t
     size() const {
-        return _registeredEvents.size();
+        return _registered_count;
     }
 
     /**

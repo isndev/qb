@@ -32,6 +32,25 @@
 namespace qb::io::async::event {
 
 /**
+ * @enum disconnect_reason
+ * @ingroup AsyncEvent
+ * @brief Typed enumeration of the standard disconnection reason codes used by `qb-io`.
+ *
+ * The underlying type is `int` so that this enum is 100% ABI-compatible with the
+ * historical `int reason` field carried by `disconnected`: callers may still pass raw
+ * integers (including application-specific positive codes) or one of these named
+ * constants interchangeably. Internally, `qb-io` uses only the negative codes (reserved
+ * for the framework) plus `peer_closed` and `user_initiated`.
+ */
+enum class disconnect_reason : int {
+    peer_closed        =  0, /**< Normal shutdown — peer closed or we closed cleanly. */
+    user_initiated     =  1, /**< Explicit `disconnect()` call from user code. */
+    protocol_error     = -1, /**< Protocol marked itself `not_ok()`. */
+    message_too_large  = -2, /**< DoS guard: incoming message exceeded `max_message_size()`. */
+    buffer_overflow    = -3, /**< DoS guard: read/write buffer exceeded configured max size. */
+};
+
+/**
  * @struct disconnected
  * @ingroup AsyncEvent
  * @brief Event triggered when a connection is closed or lost.

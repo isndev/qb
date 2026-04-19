@@ -25,6 +25,9 @@
 
 #ifndef QB_IO_TRANSPORT_UDP_H_
 #define QB_IO_TRANSPORT_UDP_H_
+#include <cerrno>
+#include <cstring>
+#include <limits>
 #include <qb/utility/functional.h>
 #include "../stream.h"
 #include "../udp/socket.h"
@@ -45,8 +48,14 @@ class udp : public stream<io::udp::socket> {
     using base_t = stream<io::udp::socket>;
 
 public:
-    /** @brief Indicates that this transport implementation is not secure */
-    constexpr bool is_secure() const noexcept { return false; }
+    /**
+     * @brief Indicates that this transport implementation is not secure.
+     * @note Declared `static constexpr` for consistency with `transport::tcp`,
+     *       `transport::stcp`, `transport::accept` and `transport::saccept`
+     *       so that generic code can evaluate `Transport::is_secure()` at
+     *       compile time without instantiating an object.
+     */
+    static constexpr bool is_secure() noexcept { return false; }
     /**
      * @brief Indicates that this transport implementation resets its input buffer state
      *        when a read operation is pending (characteristic of datagram processing).
@@ -86,6 +95,13 @@ public:
              * @brief Hash operator.
              * @param id The `udp::identity` to hash.
              * @return `std::size_t` hash value.
+             *
+             * @note The `endpoint` base class (`qb::io::endpoint`) always
+             *       `zeroset()`s its storage on construction and on every
+             *       `as_*()` mutation, so the first `id.len()` bytes cover the
+             *       active `sockaddr` union without any uninitialised padding.
+             *       Hashing via a `string_view` over these bytes is therefore
+             *       deterministic and safe.
              */
             std::size_t
             operator()(const identity &id) const noexcept {
@@ -95,9 +111,12 @@ public:
         };
 
         /**
-         * @brief Inequality operator
-         * @param rhs Right-hand side identity
-         * @return true if identities differ, false otherwise
+         * @brief Equality operator.
+         *
+         * Compares only the meaningful `sockaddr` bytes (first `len()` bytes of
+         * the zero-initialised endpoint storage). `memcmp` would behave
+         * identically but the `string_view` comparison preserves the existing
+         * contract with the hasher above.
          */
         bool
         operator==(identity const &rhs) const noexcept {
@@ -146,9 +165,9 @@ public:
             auto      &out_buffer = static_cast<udp::base_t &>(proxy).out();
             const auto start_size = out_buffer.size();
             out_buffer << std::forward<T>(data);
-            auto p = reinterpret_cast<udp::pushed_message *>(out_buffer.begin() +
-                                                             proxy._last_pushed_offset);
-            p->size += (out_buffer.size() - start_size);
+            auto p = reinterpret_cast<udp::pushed_message *>(
+                out_buffer.begin() + proxy._last_pushed_offset);
+            p->size += static_cast<std::size_t>(out_buffer.size() - start_size);
             return *this;
         }
 
@@ -174,14 +193,32 @@ private:
      * @struct pushed_message
      * @brief Internal structure representing a datagram message in the output buffer.
      * @private
+     *
+     * @note UDP is a datagram protocol: `sendto(2)` either transmits the whole
+     *       datagram or fails — partial sends do not exist. The previous
+     *       implementation carried an `offset` field that modelled partial
+     *       sends (inherited from TCP stream logic) and could loop forever on
+     *       `EMSGSIZE`. That field has been removed; a single `write()` call
+     *       either consumes the whole datagram or reports the error to the
+     *       caller.
      */
     struct pushed_message {
-        udp::identity ident;      /**< Destination identity */
-        int           size   = 0; /**< Size of the message in bytes */
-        int           offset = 0; /**< Current offset in the message for partial sends */
+        udp::identity ident;     /**< Destination identity. */
+        std::size_t   size = 0;  /**< Size of the payload (excluding this header). */
     };
 
-    int _last_pushed_offset = -1; /**< Offset of the last pushed message in the buffer */
+    /**
+     * @brief Sentinel offset meaning "no datagram currently under construction".
+     *
+     * When `_last_pushed_offset == kNoPendingMessage` a subsequent call to
+     * `out()` (stream-style append) will allocate a fresh `pushed_message`
+     * header and start a new datagram. Otherwise the value is the byte offset
+     * of the current in-progress `pushed_message` inside `_out_buffer`.
+     */
+    static constexpr std::size_t kNoPendingMessage =
+        (std::numeric_limits<std::size_t>::max)();
+
+    std::size_t _last_pushed_offset = kNoPendingMessage;
 
 public:
     /**
@@ -205,7 +242,7 @@ public:
     setDestination(udp::identity const &to) noexcept {
         if (to != _remote_dest || !_out_buffer.size()) {
             _remote_dest        = to;
-            _last_pushed_offset = -1;
+            _last_pushed_offset = kNoPendingMessage;
         }
     }
 
@@ -218,8 +255,8 @@ public:
      */
     auto &
     out() {
-        if (_last_pushed_offset < 0) {
-            _last_pushed_offset = static_cast<int>(_out_buffer.size());
+        if (_last_pushed_offset == kNoPendingMessage) {
+            _last_pushed_offset = _out_buffer.size();
             auto &m             = _out_buffer.allocate_back<pushed_message>();
             m.ident             = _remote_dest;
             m.size              = 0;
@@ -254,39 +291,45 @@ public:
 
     /**
      * @brief Write the next complete datagram from the output buffer to its destination.
-     * @return Number of bytes successfully written from the datagram.
-     *         Returns a negative value on error (e.g., from `socket::sendto`).
+     * @return Number of bytes successfully written on success.
      *         Returns 0 if the output buffer is empty.
-     * @details Attempts to send the first datagram queued in the `_out_buffer`.
-     *          A datagram might be sent in multiple chunks if it exceeds `io::udp::socket::MaxDatagramSize`,
-     *          though typically UDP sends entire datagrams or fails.
-     *          If a datagram is completely sent, it's removed from the `_out_buffer`.
-     *          Manages partial sends by updating `pushed_message::offset`.
+     *         Returns a negative value on error (e.g., from `socket::sendto`).
+     * @details UDP is a datagram protocol: `sendto(2)` either transmits the whole
+     *          datagram or fails. There is no such thing as a partial send, so this
+     *          method always either consumes the whole `pushed_message` on success or
+     *          propagates the error code to the caller (to be turned into an
+     *          `event::disconnected` with a system error by the async layer).
+     *
+     *          A datagram whose size exceeds the socket's maximum is clamped to
+     *          `io::udp::socket::MaxDatagramSize`; callers that need to send bigger
+     *          payloads are expected to fragment at the application level.
      */
     int
     write() noexcept {
         if (!_out_buffer.size())
             return 0;
 
-        auto &msg   = *reinterpret_cast<pushed_message *>(_out_buffer.begin());
-        auto  begin = _out_buffer.begin() + sizeof(pushed_message) + msg.offset;
+        auto      &msg       = *reinterpret_cast<pushed_message *>(_out_buffer.begin());
+        const auto send_size = std::min(msg.size, io::udp::socket::MaxDatagramSize);
+        auto      *begin     = _out_buffer.begin() + sizeof(pushed_message);
 
-        const auto ret = transport().write(
-            begin,
-            std::min(msg.size - msg.offset,
-                     static_cast<int>(io::udp::socket::MaxDatagramSize)),
-            msg.ident);
-        if (qb::likely(ret > 0)) {
-            msg.offset += ret;
+        const auto ret =
+            transport().write(begin, send_size, msg.ident);
 
-            if (msg.offset == msg.size) {
-                _out_buffer.free_front(msg.size + sizeof(pushed_message));
-                if (_out_buffer.size()) {
-                    _out_buffer.reorder();
-                    _last_pushed_offset = -1;
-                } else
-                    _out_buffer.reset();
+        if (qb::likely(ret >= 0)) {
+            // UDP is all-or-nothing: the whole pushed_message is consumed on success,
+            // even if the kernel truncated the payload (it was >= MaxDatagramSize).
+            _out_buffer.free_front(msg.size + sizeof(pushed_message));
+            if (_out_buffer.size()) {
+                _out_buffer.reorder();
+                _last_pushed_offset = kNoPendingMessage;
+            } else {
+                _out_buffer.reset();
+                _last_pushed_offset = kNoPendingMessage;
             }
+            // Report the number of bytes the kernel actually accepted so the async
+            // layer can keep accurate write-throughput statistics.
+            return ret;
         }
 
         return ret;
@@ -318,7 +361,11 @@ public:
     publish_to(udp::identity const &to, char const *data, std::size_t size) noexcept {
         auto &m = _out_buffer.allocate_back<pushed_message>();
         m.ident = to;
-        m.size  = static_cast<int>(size);
+        m.size  = size;
+        // A fresh pushed_message header has just been appended as a stand-alone
+        // datagram; the stream-style builder should start a new one on its next
+        // append rather than coalescing with this one.
+        _last_pushed_offset = kNoPendingMessage;
 
         return static_cast<char *>(
             std::memcpy(_out_buffer.allocate_back(size), data, size));

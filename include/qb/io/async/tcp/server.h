@@ -74,15 +74,18 @@ public:
     /**
      * @brief Handler for server disconnection events
      *
-     * This method is called when the server is disconnected.
-     * The default implementation does nothing, but it can be overridden
-     * in derived classes to handle server disconnection.
+     * Forwarded to @p _Derived only when it genuinely overrides
+     * `on(event::disconnected ...)` (detected via `qb::has_own_on`, which
+     * distinguishes a true user override from the handler inherited from this
+     * server through CRTP). Otherwise the event is logged at `LOG_CRIT`
+     * severity as a terminal notice — the plain `qb::has_on` was causing
+     * infinite recursion because the inherited overload was always visible.
      *
-     * @param Disconnected event
+     * @param e Disconnected event
      */
     void
     on(event::disconnected &&e) {
-        if constexpr (qb::has_on<_Derived, event::disconnected>)
+        if constexpr (qb::has_own_on<_Derived, server, event::disconnected>)
             static_cast<_Derived &>(*this).on(std::move(e));
         else
             LOG_CRIT("Server acceptor disconnected (reason=" << e.reason << ")");

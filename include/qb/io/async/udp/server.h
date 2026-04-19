@@ -66,73 +66,12 @@ public:
     }
 };
 
-// Note: The following code is commented out in the original file but preserved
-// for reference. It represents an alternative implementation of a UDP server
-// that tracks client sessions.
-
-///**
-// * @class server
-// * @brief Alternative UDP server implementation with session tracking
-// *
-// * This template class implements a more complex UDP server that tracks
-// * client sessions based on their endpoint identity.
-// *
-// * @tparam _Derived The derived class type (CRTP pattern)
-// * @tparam _Session The session class type for handling client communications
-// */
-// template <typename _Derived, typename _Session>
-// class server : public io<server<_Derived, _Session>> {
-// public:
-//    using base_t = io<server<_Derived, _Session>>;
-//    using session_map_t = qb::unordered_map<transport::udp::identity, _Session,
-//                                            transport::udp::identity::hasher>;
-//
-// private:
-//    session_map_t _sessions{};
-//
-// public:
-//    using IOSession = _Session;
-//    server() = default;
-//
-//    session_map_t &
-//    sessions() {
-//        return _sessions;
-//    }
-//
-//    void
-//    on(transport::udp::message message, std::size_t size) {
-//        auto it = _sessions.find(message.ident);
-//        if (it == _sessions.end()) {
-//            it = _sessions.emplace(message.ident, static_cast<_Derived
-//            &>(*this)).first; it->second.ident() = message.ident;
-//        }
-//        //                            return; // drop the message
-//
-//        memcpy(it->second.buffer().allocate_back(size), message.data, size);
-//        auto ret = 0;
-//        while ((ret = it->second.getMessageSize()) > 0) {
-//            it->second.on(it->second.getMessage(ret), ret);
-//            it->second.flush(ret);
-//        }
-//    }
-//
-//    void
-//    stream(char const *message, std::size_t size) {
-//        for (auto &session : sessions())
-//            session.second.publish(message, size);
-//    }
-//
-//    bool
-//    disconnected() const {
-//        throw std::runtime_error("Server had been disconnected");
-//        return true;
-//    }
-//
-//    void
-//    disconnected(transport::udp::identity ident) {
-//        _sessions.erase(ident);
-//    }
-//};
+// NOTE: A per-peer session-tracking UDP server (keyed by transport::udp::identity)
+// was prototyped historically but never finished. It has been removed to keep the
+// public surface lean. Users needing per-peer state can keep a
+// qb::unordered_map<transport::udp::identity, ...> inside their own _Derived
+// subclass and look it up in on(..., std::size_t size). See
+// qb/QB_IO_PLAN.md finding 2.7 for background.
 
 } // namespace qb::io::async::udp
 

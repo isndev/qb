@@ -79,15 +79,23 @@ public:
     }
 
     /**
-     * @brief Reset the accepted socket
-     * @param Unused parameter
+     * @brief Release the native handle of the accepted SSL socket.
+     * @param Unused parameter (required by the stream/protocol contract).
      *
-     * Resets the last accepted socket by replacing it with a new default-constructed
-     * socket, effectively releasing the previous connection.
+     * This mirrors `transport::accept::flush()`: at this point
+     * `protocol::accept::onMessage()` has already `std::move()`d the
+     * accepted `ssl::socket` into the user session, so `_accepted_io` is in a
+     * moved-from (empty) state. We simply release the native handle to make
+     * that fact explicit rather than reassigning a fresh `ssl::socket()` — the
+     * previous approach destroyed a default-constructed temporary on the hot
+     * accept path and obscured the moved-from semantics.
+     *
+     * The `SSL*` owned by the previously accepted socket has already been
+     * transferred by the move; no additional work is required here.
      */
     void
     flush(std::size_t) noexcept {
-        _accepted_io = io::tcp::ssl::socket();
+        _accepted_io.release_handle();
     }
 
     /**

@@ -1,12 +1,15 @@
 /**
  * @file qb/io/async/epoll.h
- * @brief Epoll-based event polling for Linux systems
+ * @brief Standalone Linux epoll helper (NOT wired into the qb-io event loop).
  *
- * This file provides classes for efficient event polling using the Linux epoll API.
- * The epoll API allows for scalable I/O event notification and is optimized for
- * handling many file descriptors.
+ * @deprecated This header provides a thin `epoll_create1`/`epoll_ctl`/`epoll_wait`
+ *             wrapper that **is not used** by the `qb::io::async::listener`
+ *             (which runs on libev). It is retained only as a building block for
+ *             users who need direct epoll access outside of the async framework.
+ *             New code should prefer the unified `qb::io::async::listener` API.
+ *             See `qb/QB_IO_PLAN.md` finding 2.10.
  *
- * Note: This file is only available on Linux systems, as epoll is a Linux-specific API.
+ * This file is only available on Linux systems, as epoll is a Linux-specific API.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)

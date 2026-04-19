@@ -792,5 +792,91 @@ QB_DEFINE_MEMBER_TRAIT(shared_from_this);
 // Nested-type member trait
 QB_DEFINE_TYPE_TRAIT(Protocol);
 
+// ============================================================================
+// Own-override detection (CRTP-safe `on(Evt)` routing)
+// ============================================================================
+//
+// `qb::has_on<D, Evt>` is an *existence* check: it returns `true` as soon as
+// the expression `d.on(Evt{})` compiles for some `d` of type `D`. When `D`
+// participates in a CRTP base/derived relationship where the base class
+// *also* defines `on(Evt)`, the concept still evaluates to `true` even when
+// `D` did not override it — because the base overload is visible through
+// inheritance. Relying on `qb::has_on` to drive a
+// `static_cast<D&>(*this).on(e)` re-dispatch therefore produces silent
+// *infinite recursion*, a real runtime stack-overflow bug (historically
+// masked by clang's `-Winfinite-recursion` diagnostic).
+//
+// `qb::has_own_on<D, Base, Evt>` closes that hole. It answers the precise
+// question: "does @p D carry its own `on(Evt)` implementation, distinct
+// from the one inherited from @p Base?". It returns `true` iff one of the
+// following holds:
+//
+//   1. @p D declares `on(Evt&&)` and its member-function pointer differs
+//      from @p Base's (compared via pointers cast to `D::*`).
+//   2. @p D declares `on(Evt const&)` — an overload that would not exist in
+//      @p D by pure inheritance, because @p Base does not expose one.
+//
+// Non-const lvalue overloads (`on(Evt&)`) are deliberately *not* detected:
+// the framework dispatches using `std::move(e)`, which cannot bind to a
+// mutable lvalue reference, so such a signature would be an incompatible
+// user API.
+//
+// Usage:
+//
+//   if constexpr (qb::has_own_on<_Derived, this_type, event::disconnected>)
+//       static_cast<_Derived&>(*this).on(std::move(e));
+//   else
+//       /* fallback: log, throw, ignore, ... */;
+//
+// @tparam D    Derived user class (the final type in the CRTP chain).
+// @tparam Base CRTP base that itself defines `on(Evt...)` (e.g. the
+//              framework class performing the dispatch).
+// @tparam Evt  Event parameter type (without cv/ref qualifiers).
+// ----------------------------------------------------------------------------
+
+namespace qb::detail {
+
+template <typename D, typename Base, typename Evt>
+consteval bool compute_has_own_on() {
+    // (1) rvalue-reference signature — compare PMFs cast to D::*.
+    if constexpr (requires {
+                      static_cast<void (D::*)(Evt &&)>(&D::on);
+                      static_cast<void (D::*)(Evt &&)>(&Base::on);
+                  }) {
+        constexpr auto d_pmf = static_cast<void (D::*)(Evt &&)>(&D::on);
+        constexpr auto b_pmf = static_cast<void (D::*)(Evt &&)>(&Base::on);
+        if (d_pmf != b_pmf)
+            return true;
+    }
+    // (2) const lvalue-reference overload — absent from Base by contract,
+    //     so its presence on D is necessarily a user-defined override.
+    if constexpr (requires(D &d, const Evt &ev) { d.on(ev); })
+        return true;
+    return false;
+}
+
+} // namespace qb::detail
+
+namespace qb {
+
+/**
+ * @brief CRTP-safe detector: does @p D carry its own `on(Evt ...)` handler
+ *        (rather than merely inheriting one from @p Base)?
+ *
+ * Use this instead of `qb::has_on` whenever you are about to
+ * `static_cast<D&>(*this).on(e)` from within @p Base — otherwise the
+ * redispatch turns into infinite recursion for users that do not override.
+ *
+ * @tparam D    Derived (user) class.
+ * @tparam Base Direct CRTP base that declares an `on(Evt&&)` fallback.
+ * @tparam Evt  Event type to route.
+ *
+ * @see qb::has_on for the plain existence concept.
+ * @ingroup TypeTraits
+ */
+template <typename D, typename Base, typename Evt>
+inline constexpr bool has_own_on = detail::compute_has_own_on<D, Base, Evt>();
+
+} // namespace qb
 
 #endif // QB_TYPE_TRAITS_H

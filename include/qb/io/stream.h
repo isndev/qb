@@ -365,6 +365,17 @@ public:
  *
  * This is the primary base class for most transport implementations in the library.
  *
+ * @note **Why this class duplicates `ostream`'s buffer state rather than inheriting
+ *       from it.** `ostream<_IO_>` owns its own `_out` transport instance (for
+ *       unidirectional output-only streams such as `transport::file` in write-only
+ *       mode). `stream<_IO_>` instead reuses the `_in` transport inherited from
+ *       `istream<_IO_>` for both directions (the usual bidirectional socket case).
+ *       Inheriting from `ostream<_IO_>` would therefore introduce a second,
+ *       unused `_out` transport object per instance. Keeping the buffer-level
+ *       state (`_out_buffer` / `_max_write_buffer_size`) local here is the
+ *       smallest footprint that preserves correct semantics; any change to
+ *       either field must be mirrored in `ostream<_IO_>`.
+ *
  * @tparam _IO_ The IO type that implements the actual transport operations
  */
 template <typename _IO_>
