@@ -134,10 +134,31 @@ TEST(TypeId, ConcurrentFirstInstantiationIsRaceFree) {
 }
 
 TEST(TypeId, EventTypeToIdMatchesGlobalTypeId) {
-    // `Event::type_to_id<T>()` must agree with `qb::type_id<T>()` so that the
-    // router (`memh::route()`) keys events with the same id used at register.
+    // `Event::type_to_id<T>()` must produce a stable, unique identifier for
+    // every distinct event type so that the router (`memh::route()`) keys
+    // events with the same id used at register. The *representation* of that
+    // id is build-mode dependent (intentional):
+    //
+    //   - NDEBUG builds collapse identity to the dense 16-bit counter that
+    //     backs `qb::type_id<T>()`, which lets us assert strict equality.
+    //   - Debug builds keep `typeid(T).name()` so invalid routing shows up
+    //     with a human-readable tag; equality with `qb::type_id<T>()` is
+    //     therefore not meaningful (different types by design) and we
+    //     instead validate self-consistency: non-null, stable across calls,
+    //     and distinct across distinct event types.
+#ifdef NDEBUG
     EXPECT_EQ(qb::Event::type_to_id<qb::KillEvent>(), qb::type_id<qb::KillEvent>());
     EXPECT_EQ(qb::Event::type_to_id<qb::SignalEvent>(), qb::type_id<qb::SignalEvent>());
+#else
+    const auto kill_a   = qb::Event::type_to_id<qb::KillEvent>();
+    const auto kill_b   = qb::Event::type_to_id<qb::KillEvent>();
+    const auto signal_a = qb::Event::type_to_id<qb::SignalEvent>();
+    ASSERT_NE(kill_a, nullptr);
+    ASSERT_NE(signal_a, nullptr);
+    EXPECT_EQ(kill_a, kill_b) << "type_to_id<T>() must be stable across calls";
+    EXPECT_STRNE(kill_a, signal_a)
+        << "distinct event types must map to distinct ids";
+#endif
 }
 
 // =============================================================================
