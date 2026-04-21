@@ -25,7 +25,7 @@ using namespace qb::io::async;
 using namespace std::chrono_literals;
 
 // Convenience: print a separator so each test is clearly delimited
-#define TLOG(fmt, ...) std::fprintf(stderr, "[test ] " fmt "\n" __VA_OPT__(, ) __VA_ARGS__)
+#define TLOG(fmt, ...) std::fprintf(stderr, "[test ] " fmt "\n", ##__VA_ARGS__)
 
 // =============================================================================
 // TEST SUITE: Coroutine Scope Basic

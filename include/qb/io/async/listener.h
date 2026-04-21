@@ -36,7 +36,7 @@
 #include <cstdio>
 
 #if defined(QB_DEBUG_CORO_LIFECYCLE) && QB_DEBUG_CORO_LIFECYCLE
-#define QB_LISTENER_TRACE(fmt, ...) std::fprintf(stderr, "[listener] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
+#define QB_LISTENER_TRACE(fmt, ...) std::fprintf(stderr, "[listener] " fmt "\n", ##__VA_ARGS__)
 #else
 #define QB_LISTENER_TRACE(fmt, ...) ((void)0)
 #endif

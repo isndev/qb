@@ -142,7 +142,8 @@ Actor::reply(Event &event) const noexcept {
 
 void
 Actor::forward(ActorId const dest, Event &event) const noexcept {
-    event.source = id();
+    // Do not overwrite event.source: reply() routes via swap(dest, source); the
+    // original sender must remain the logical client (matches Actor.h contract).
     if (unlikely(event.dest.is_broadcast())) {
         LOG_WARN(*this << " failed to forward broadcast event");
         return;

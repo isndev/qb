@@ -15,6 +15,7 @@ template <std::uint64_t TMaxDurationNs, std::uint64_t TBucketCount = 1000000>
 class latency {
 private:
     size_t                           count{0};
+    std::chrono::nanoseconds         sum_duration{0};
     std::chrono::nanoseconds         bucketDuration{TMaxDurationNs / TBucketCount};
     std::array<size_t, TBucketCount> buckets{0};
     size_t                           outOufBoundCount{0};
@@ -26,9 +27,13 @@ public:
     add(T duration) {
         count++;
 
-        auto bucketIndex = (std::uint64_t) (duration / bucketDuration);
-        if (bucketIndex <= TBucketCount) {
-            buckets[bucketIndex]++;
+        const auto as_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
+        sum_duration += as_ns;
+
+        auto const bucketIndex =
+            static_cast<std::uint64_t>(as_ns.count() / bucketDuration.count());
+        if (bucketIndex < TBucketCount) {
+            buckets[static_cast<std::size_t>(bucketIndex)]++;
             return;
         }
 
@@ -37,9 +42,22 @@ public:
             maxDuration = duration;
     }
 
+    [[nodiscard]] std::size_t
+    sample_count() const {
+        return count;
+    }
+
+    [[nodiscard]] double
+    mean_nanoseconds() const {
+        return count ? static_cast<double>(sum_duration.count()) / static_cast<double>(count)
+                     : 0.;
+    }
+
     template <typename O, typename TRatio = std::chrono::microseconds>
     void
     generate(O &output, const char *unit) {
+        if (!count)
+            return;
         //            output  << std::setw(20) << "duration"
         //                    << std::setw(21) << "percentile"
         //                    << std::setw(20) << "count"

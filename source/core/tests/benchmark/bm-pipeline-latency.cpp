@@ -2,9 +2,16 @@
  * @file qb/core/tests/benchmark/bm-pipeline-latency.cpp
  * @brief Pipeline latency benchmark for the QB Actor Framework
  *
- * This file contains benchmark tests measuring the latency of unicast communication
- * in a pipeline pattern in the QB Actor Framework. It tests how efficiently events
- * can flow through a chain of actors across different cores.
+ * This file measures producer→consumer→… **pipeline chain** latency: one producer at
+ * core \c 0, \c NB_ACTORS consumers chained so each event walks the full pipeline.
+ *
+ * \c NB_CORE is the placement divisor for the consumer chain (see multicast benchmark).
+ *
+ * Uses \c Main::start(true) so the benchmark thread never runs a core’s workflow inline.
+ *
+ * Google Benchmark counters (per iteration): \c source_events_per_s, \c deliveries_per_s
+ * (\c NB_EVENTS * NB_ACTORS hops in the chain), \c mean_rtt_ns, \c latency_samples. Optional
+ * percentile dump: set environment variable \c QB_ACTOR_BENCH_HISTOGRAM=1.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -24,48 +31,58 @@
 
 #include <benchmark/benchmark.h>
 #include <qb/main.h>
+
+#include "BenchmarkActorArgs.h"
 #include "../shared/TestConsumer.h"
 #include "../shared/TestEvent.h"
 #include "../shared/TestProducer.h"
 
 template <typename Event>
 static void
-BM_Unicast_Latency(benchmark::State &state) {
+BM_Pipeline_Chain_Latency(benchmark::State &state) {
     for (auto _ : state) {
-        const auto nb_events = state.range(0);
-        const auto nb_actor  = state.range(1);
-        const auto nb_core   = static_cast<uint32_t>(state.range(2));
-        qb::Main   main;
+        qb::bench::reset_last_latency_stats();
+        const auto nb_events = static_cast<std::uint64_t>(state.range(0));
+        const auto nb_actor  = static_cast<std::uint32_t>(state.range(1));
+        const auto nb_core   = static_cast<std::uint32_t>(state.range(2));
+        state.PauseTiming();
+        qb::Main main;
 
         qb::ActorIdList ids = {};
-        // C++23: Using 'uz' suffix for size_t literals
         for (auto i = 0uz; i < static_cast<std::size_t>(nb_actor); ++i) {
-            const auto coreid = (i % (nb_core - (nb_core > 1))) + (nb_core > 1);
+            const auto coreid =
+                qb::bench::multicast_consumer_core_for_index(i, nb_core);
             ids = {main.addActor<ConsumerActor<Event>>(coreid, qb::ActorIdList(ids))};
         }
         main.addActor<ProducerActor<Event>>(0, qb::ActorIdList(ids), nb_events);
+        state.ResumeTiming();
 
-        main.start(false);
+        main.start(true);
         main.join();
-    }
-}
 
-static void
-CustomArguments(benchmark::internal::Benchmark *b) {
-    auto nb_core = std::thread::hardware_concurrency();
-    for (auto i = 1u; i <= nb_core; i *= 2) {
-        for (int j = i - 1; j <= static_cast<int>(nb_core * 10); j *= 10) {
-            if (!j)
-                j = 1;
-            b->Args({1000000, j, i});
+        const double source_events = static_cast<double>(nb_events);
+        const double deliveries =
+            static_cast<double>(nb_events) * static_cast<double>(nb_actor);
+        state.counters["source_events_per_s"] =
+            benchmark::Counter(source_events,
+                               benchmark::Counter::kIsIterationInvariantRate);
+        state.counters["deliveries_per_s"] =
+            benchmark::Counter(deliveries,
+                               benchmark::Counter::kIsIterationInvariantRate);
+        const auto lat = qb::bench::last_latency_stats_snapshot();
+        if (lat.samples) {
+            state.counters["mean_rtt_ns"] =
+                benchmark::Counter(lat.mean_round_trip_ns, benchmark::Counter::kAvgIterations);
+            state.counters["latency_samples"] =
+                static_cast<double>(lat.samples);
         }
     }
 }
 
-// Register the function as a benchmark
-BENCHMARK_TEMPLATE(BM_Unicast_Latency, LightEvent)
-    ->Apply(CustomArguments)
+BENCHMARK_TEMPLATE(BM_Pipeline_Chain_Latency, LightEvent)
+    ->Apply(qb::bench::apply_pipeline_multicast_args)
     ->ArgNames({"NB_EVENTS", "NB_ACTORS", "NB_CORE"})
-    ->Unit(benchmark::kMillisecond);
+    ->Unit(benchmark::kMillisecond)
+    ->UseRealTime();
 
 BENCHMARK_MAIN();

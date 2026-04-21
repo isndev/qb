@@ -35,9 +35,19 @@ set(MESSAGING_BENCHMARKS
 
 # Throughput pattern benchmarks
 set(THROUGHPUT_BENCHMARKS
+        bm-allocated-push.cpp
+        bm-broadcast-fanout.cpp
+        bm-core-distance.cpp
         bm-disruptor-latency.cpp
+        bm-fan-in.cpp
+        bm-forward-reply.cpp
+        bm-messaging-api.cpp
         bm-multicast-latency.cpp
+        bm-mpsc-mailbox-sweep.cpp
+        bm-mpsc-router-mailbox.cpp
+        bm-payload-throughput.cpp
         bm-pipeline-latency.cpp
+        bm-producer-burst.cpp
         bm-producer-consumer.cpp
 )
 
@@ -58,9 +68,9 @@ function(create_benchmark BENCHMARK_SOURCE CATEGORY)
 
     # Create benchmark target
     qb_add_benchmark(
-        NAME ${PROJECT_NAME}-benchmark-${BENCHMARK_TARGET_NAME}
-        SOURCES ${BENCHMARK_SOURCE}
-        DEPENDS ${PROJECT_NAME}
+            NAME ${PROJECT_NAME}-benchmark-${BENCHMARK_TARGET_NAME}
+            SOURCES ${BENCHMARK_SOURCE}
+            DEPENDS ${PROJECT_NAME}
     )
 
     # Set properties for organization in IDEs
