@@ -48,7 +48,9 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
-#define QB_SCHED_TRACE(fmt, ...) std::fprintf(stderr, "[sched] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
+/* MSVC legacy preprocessor does not handle __VA_OPT__ here; ##__VA_ARGS__ elides the
+ * preceding comma when empty (MSVC + GNU), matching prior __VA_OPT__ behavior. */
+#define QB_SCHED_TRACE(fmt, ...) std::fprintf(stderr, "[sched] " fmt "\n", ##__VA_ARGS__)
 #if defined(__clang__) || defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif
@@ -57,7 +59,7 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
-#define QB_SCHED_TRACE(fmt, ...) std::fprintf(stderr, "[sched] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
+#define QB_SCHED_TRACE(fmt, ...) std::fprintf(stderr, "[sched] " fmt "\n", ##__VA_ARGS__)
 #if defined(__clang__) || defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif

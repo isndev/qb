@@ -43,7 +43,7 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 #endif
-#define QB_SCOPE_TRACE(fmt, ...) std::fprintf(stderr, "[scope] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
+#define QB_SCOPE_TRACE(fmt, ...) std::fprintf(stderr, "[scope] " fmt "\n", ##__VA_ARGS__)
 #if defined(__clang__) || defined(__GNUC__)
 #pragma GCC diagnostic pop
 #endif

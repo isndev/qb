@@ -11,15 +11,15 @@
 #define QB_TESTEVENT_H
 
 struct LightEvent : public qb::Event {
-    std::chrono::high_resolution_clock::time_point _timepoint;
-    uint32_t                                       _ttl;
+    std::chrono::steady_clock::time_point _timepoint;
+    uint32_t                             _ttl;
 
     LightEvent()
-        : _timepoint(std::chrono::high_resolution_clock::now())
+        : _timepoint(std::chrono::steady_clock::now())
         , _ttl(0) {}
 
     explicit LightEvent(uint32_t const ttl)
-        : _timepoint(std::chrono::high_resolution_clock::now())
+        : _timepoint(std::chrono::steady_clock::now())
         , _ttl(ttl) {}
 };
 

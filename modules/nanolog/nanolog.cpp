@@ -413,11 +413,10 @@ class RingBuffer : public BufferBase {
 public:
     struct alignas(64) Item {
         Item()
-            : flag{0}
-            , written(0)
+            : written(0)
             , logline(LogLevel::INFO, nullptr, nullptr, 0) {}
 
-        std::atomic_flag flag;
+        std::atomic_flag flag{};
         char written;
         char
             padding[256 - sizeof(std::atomic_flag) - sizeof(char) - sizeof(NanoLogLine)];
@@ -537,7 +536,6 @@ public:
     QueueBuffer()
         : m_current_read_buffer{nullptr}
         , m_write_index(0)
-        , m_flag{0}
         , m_read_index(0) {
         setup_next_write_buffer();
     }
@@ -602,7 +600,7 @@ private:
     std::atomic<Buffer *> m_current_write_buffer;
     Buffer *m_current_read_buffer;
     std::atomic<unsigned int> m_write_index;
-    std::atomic_flag m_flag;
+    std::atomic_flag m_flag{};
     unsigned int m_read_index;
 };
 

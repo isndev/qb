@@ -23,8 +23,10 @@
  * @ingroup Core
  */
 
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <numeric>
+#include <thread>
 #include <qb/actor.h>
 #include <qb/main.h>
 #include <random>
@@ -185,6 +187,16 @@ constexpr uint32_t MAX_ACTORS = 8u;
 constexpr uint32_t MAX_EVENTS = 8u;
 #endif
 
+/** Cap multi-core system tests so CI and large machines do not spawn excessive cores. */
+constexpr uint32_t MAX_TEST_CORES = 8u;
+
+[[nodiscard]] inline uint32_t
+testSystemCoreCount() {
+    const unsigned hw = std::thread::hardware_concurrency();
+    const uint32_t n  = hw == 0u ? 1u : static_cast<uint32_t>(hw);
+    return std::min(n, MAX_TEST_CORES);
+}
+
 template <typename ActorSender>
 class ActorEventMono : public testing::Test {
 protected:
@@ -207,7 +219,7 @@ protected:
     const uint32_t max_core;
     qb::Main       main;
     ActorEventMulti()
-        : max_core(std::thread::hardware_concurrency()) {}
+        : max_core(testSystemCoreCount()) {}
 
     void
     SetUp() final {
@@ -229,7 +241,7 @@ protected:
     const uint32_t max_core;
     qb::Main       main;
     ActorEventMultiHighLatency()
-        : max_core(std::thread::hardware_concurrency()) {}
+        : max_core(testSystemCoreCount()) {}
 
     void
     SetUp() final {
@@ -268,7 +280,7 @@ protected:
     const uint32_t max_core;
     qb::Main       main;
     ActorEventBroadcastMulti()
-        : max_core(std::thread::hardware_concurrency()) {}
+        : max_core(testSystemCoreCount()) {}
 
     void
     SetUp() final {

@@ -202,9 +202,9 @@ if(QB_ENABLE_OPTIMIZATIONS)
     qb_debug_message("Enabling high-performance optimizations")
     
     if(QB_COMPILER_MSVC)
-        # MSVC optimizations
+        # MSVC optimizations (/favor:speed is not a cl.exe switch; /Ot favors fast code)
         list(APPEND QB_CXX_FLAGS_RELEASE
-            "/favor:speed"      # Favor speed over size
+            "/Ot"              # Favor fast code (speed over size within /O2 budget)
         )
         if(QB_ENABLE_FAST_MATH)
             list(APPEND QB_CXX_FLAGS_RELEASE "/fp:fast")
