@@ -166,6 +166,41 @@ TEST_F(ChannelEdgeCases, SendToClosed) {
     EXPECT_FALSE(ch.try_send(2));
 }
 
+/**
+ * @test Unbuffered rendezvous sender-first
+ * @brief sender parks first on channel(0), receiver arrives later and must wake it
+ */
+TEST_F(ChannelEdgeCases, UnbufferedSenderFirstRendezvous) {
+    channel<int> ch(0);
+    std::atomic<bool> sender_done{false};
+    std::atomic<bool> receiver_done{false};
+    std::atomic<int> received{-1};
+
+    auto sender = [&]() -> task<void> {
+        co_await ch.send(7);
+        sender_done = true;
+    };
+
+    auto receiver = [&]() -> task<void> {
+        auto v = co_await ch.recv();
+        if (v) received = *v;
+        receiver_done = true;
+    };
+
+    auto orchestrator = [&]() -> task<void> {
+        coro_scheduler().spawn(sender());
+        co_await sleep(5ms); // ensure sender suspends first
+        coro_scheduler().spawn(receiver());
+    };
+
+    coro_scheduler().spawn(orchestrator());
+    run_for(200ms);
+
+    EXPECT_TRUE(sender_done.load());
+    EXPECT_TRUE(receiver_done.load());
+    EXPECT_EQ(received.load(), 7);
+}
+
 // =============================================================================
 // TEST SUITE: Channel Fast Path (await_ready avoids suspend)
 // =============================================================================

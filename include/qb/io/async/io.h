@@ -1637,9 +1637,34 @@ public:
     publish(_Args &&...args) {
         if (unlikely(_is_disposed || _reason))
             return Derived.out();
+        const auto max_write = Derived.max_write_buffer_size();
+        if (unlikely(max_write != static_cast<std::size_t>(-1) &&
+                     Derived.pendingWrite() >= max_write)) {
+            _system_error = 0;
+            disconnect(event::disconnect_reason::buffer_overflow);
+            return Derived.out();
+        }
+
         ready_to_write();
-        if constexpr (sizeof...(_Args))
+        if constexpr (sizeof...(_Args)) {
+            const auto before = Derived.pendingWrite();
             (Derived.out() << ... << std::forward<_Args>(args));
+            const auto after = Derived.pendingWrite();
+            if (unlikely(max_write != static_cast<std::size_t>(-1) &&
+                         after > max_write)) {
+                // Best-effort rollback of the just-appended tail to keep the
+                // write buffer bounded even when callers stream without
+                // checking publish(char*, size) return codes.
+                const auto added    = after - before;
+                const auto overflow = after - max_write;
+                if constexpr (requires { Derived.out().free_back(std::size_t{}); }) {
+                    if (overflow <= added)
+                        Derived.out().free_back(overflow);
+                }
+                _system_error = 0;
+                disconnect(event::disconnect_reason::buffer_overflow);
+            }
+        }
         return Derived.out();
     }
 
@@ -2291,9 +2316,31 @@ public:
     publish(_Args &&...args) {
         if (unlikely(_is_disposed || _reason))
             return Derived.out();
+        const auto max_write = Derived.max_write_buffer_size();
+        if (unlikely(max_write != static_cast<std::size_t>(-1) &&
+                     Derived.pendingWrite() >= max_write)) {
+            _system_error = 0;
+            disconnect(event::disconnect_reason::buffer_overflow);
+            return Derived.out();
+        }
+
         ready_to_write();
-        if constexpr (sizeof...(_Args))
+        if constexpr (sizeof...(_Args)) {
+            const auto before = Derived.pendingWrite();
             (Derived.out() << ... << std::forward<_Args>(args));
+            const auto after = Derived.pendingWrite();
+            if (unlikely(max_write != static_cast<std::size_t>(-1) &&
+                         after > max_write)) {
+                const auto added    = after - before;
+                const auto overflow = after - max_write;
+                if constexpr (requires { Derived.out().free_back(std::size_t{}); }) {
+                    if (overflow <= added)
+                        Derived.out().free_back(overflow);
+                }
+                _system_error = 0;
+                disconnect(event::disconnect_reason::buffer_overflow);
+            }
+        }
         return Derived.out();
     }
 

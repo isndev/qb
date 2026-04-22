@@ -314,11 +314,17 @@ connect(Socket_&& existing_socket, uri const &remote, Func_ &&func, double timeo
  */
 template <typename Socket_>
 class connect_awaiter {
+    struct state_t {
+        std::optional<Socket_> result;
+        std::coroutine_handle<> handle{};
+        ::qb::io::async::CoroutineScheduler* scheduler{nullptr};
+        bool ready{false};
+        bool active{true};
+    };
+
     uri _remote;
     std::chrono::milliseconds _timeout;
-    std::optional<Socket_> _result;
-    std::coroutine_handle<> _handle;
-    bool _ready = false;
+    std::shared_ptr<state_t> _state{std::make_shared<state_t>()};
 
 public:
     explicit connect_awaiter(uri remote,
@@ -326,28 +332,41 @@ public:
         : _remote(std::move(remote))
         , _timeout(timeout) {}
 
-    [[nodiscard]] bool await_ready() const noexcept { return _ready; }
+    [[nodiscard]] bool await_ready() const noexcept { return _state->ready; }
 
     void await_suspend(std::coroutine_handle<> h) {
-        _handle = h;
+        _state->handle = h;
+        _state->scheduler = ::qb::io::async::CoroutineScheduler::current_ptr();
+        if (!_state->scheduler)
+            _state->scheduler = &::qb::io::async::CoroutineScheduler::current();
 
         double timeout_sec = _timeout.count() > 0
             ? static_cast<double>(_timeout.count()) / 1000.0
             : 0.0;
 
-        ::qb::io::async::tcp::connect<Socket_>(_remote, [this](Socket_&& socket) {
+        auto state = _state;
+        ::qb::io::async::tcp::connect<Socket_>(_remote, [state](Socket_&& socket) {
+            if (!state->active)
+                return;
             if (socket.is_open()) {
-                _result = std::move(socket);
+                state->result = std::move(socket);
             }
-            _ready = true;
-            if (_handle) {
-                ::qb::io::async::CoroutineScheduler::current().schedule_resume(_handle);
+            state->ready = true;
+            if (state->scheduler && state->handle) {
+                state->scheduler->schedule_resume(state->handle);
             }
         }, timeout_sec);
     }
 
     [[nodiscard]] std::optional<Socket_> await_resume() {
-        return std::move(_result);
+        _state->active = false;
+        _state->handle = {};
+        return std::move(_state->result);
+    }
+
+    ~connect_awaiter() {
+        _state->active = false;
+        _state->handle = {};
     }
 };
 
@@ -373,12 +392,18 @@ template <typename Transport = qb::io::transport::tcp>
  */
 template <typename Socket_>
 class connect_with_socket_awaiter {
+    struct state_t {
+        std::optional<Socket_> result;
+        std::coroutine_handle<> handle{};
+        ::qb::io::async::CoroutineScheduler* scheduler{nullptr};
+        bool ready{false};
+        bool active{true};
+    };
+
     Socket_ _socket;
     uri _remote;
     std::chrono::milliseconds _timeout;
-    std::optional<Socket_> _result;
-    std::coroutine_handle<> _handle;
-    bool _ready = false;
+    std::shared_ptr<state_t> _state{std::make_shared<state_t>()};
 
 public:
     connect_with_socket_awaiter(Socket_&& sock, uri remote, std::chrono::milliseconds timeout)
@@ -386,28 +411,41 @@ public:
         , _remote(std::move(remote))
         , _timeout(timeout) {}
 
-    [[nodiscard]] bool await_ready() const noexcept { return _ready; }
+    [[nodiscard]] bool await_ready() const noexcept { return _state->ready; }
 
     void await_suspend(std::coroutine_handle<> h) {
-        _handle = h;
+        _state->handle = h;
+        _state->scheduler = ::qb::io::async::CoroutineScheduler::current_ptr();
+        if (!_state->scheduler)
+            _state->scheduler = &::qb::io::async::CoroutineScheduler::current();
 
         double timeout_sec = _timeout.count() > 0
             ? static_cast<double>(_timeout.count()) / 1000.0
             : 0.0;
 
-        ::qb::io::async::tcp::connect<Socket_>(std::move(_socket), _remote, [this](Socket_&& socket) {
+        auto state = _state;
+        ::qb::io::async::tcp::connect<Socket_>(std::move(_socket), _remote, [state](Socket_&& socket) {
+            if (!state->active)
+                return;
             if (socket.is_open()) {
-                _result = std::move(socket);
+                state->result = std::move(socket);
             }
-            _ready = true;
-            if (_handle) {
-                ::qb::io::async::CoroutineScheduler::current().schedule_resume(_handle);
+            state->ready = true;
+            if (state->scheduler && state->handle) {
+                state->scheduler->schedule_resume(state->handle);
             }
         }, timeout_sec);
     }
 
     [[nodiscard]] std::optional<Socket_> await_resume() {
-        return std::move(_result);
+        _state->active = false;
+        _state->handle = {};
+        return std::move(_state->result);
+    }
+
+    ~connect_with_socket_awaiter() {
+        _state->active = false;
+        _state->handle = {};
     }
 };
 

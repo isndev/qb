@@ -26,6 +26,7 @@
 #define QB_IO_ASYNC_LISTENER_H_
 
 #include <algorithm>
+#include <chrono>
 #include <memory>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
@@ -559,7 +560,12 @@ run_until(bool const &status) {
     std::size_t nb_invoked_events = 0;
     while (status) {
         listener::current.run(EVRUN_NOWAIT);
-        nb_invoked_events += listener::current.nb_invoked_event();
+        const auto processed = listener::current.nb_invoked_event();
+        nb_invoked_events += processed;
+        if (!processed) {
+            // Avoid busy spinning when the loop is temporarily idle.
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
+        }
     }
     return nb_invoked_events;
 }
