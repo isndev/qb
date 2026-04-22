@@ -296,6 +296,10 @@ public:
                 schedule_via_current(h);
             } else {
                 ch._recv_waiters.push_back({h, &_result});
+                // Rendezvous fix (capacity==0 sender-first):
+                // if a sender was already suspended, wake one immediately so it
+                // can hand off directly to this newly parked receiver.
+                ch.wake_one_sender();
             }
         }
 

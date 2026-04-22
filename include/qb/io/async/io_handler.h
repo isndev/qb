@@ -113,6 +113,7 @@ private:
      * @note Thread-affine: this handler is single-threaded by design (see class docs).
      */
     mutable std::vector<std::shared_ptr<_Session>> _broadcast_scratch;
+    mutable bool _broadcast_in_progress = false;
 
 public:
     /**
@@ -274,16 +275,34 @@ public:
     template <typename... _Args>
     _Derived &
     stream(_Args &&...args) {
+        if (_broadcast_in_progress) {
+            std::vector<std::shared_ptr<_Session>> local_snapshot;
+            local_snapshot.reserve(_sessions.size());
+            for (auto &[key, session] : _sessions)
+                local_snapshot.push_back(session);
+            for (auto &session : local_snapshot)
+                (*session << ... << args);
+            return static_cast<_Derived &>(*this);
+        }
+
+        _broadcast_in_progress = true;
         // Reuse the member scratch vector to amortise the allocation across broadcasts.
         // The snapshot is still mandatory to keep session shared-ptrs alive if a
         // handler disconnects the broadcaster's peers mid-iteration.
-        _broadcast_scratch.clear();
-        _broadcast_scratch.reserve(_sessions.size());
-        for (auto &[key, session] : _sessions)
-            _broadcast_scratch.push_back(session);
-        for (auto &session : _broadcast_scratch)
-            (*session << ... << args);
-        _broadcast_scratch.clear();
+        try {
+            _broadcast_scratch.clear();
+            _broadcast_scratch.reserve(_sessions.size());
+            for (auto &[key, session] : _sessions)
+                _broadcast_scratch.push_back(session);
+            for (auto &session : _broadcast_scratch)
+                (*session << ... << args);
+            _broadcast_scratch.clear();
+            _broadcast_in_progress = false;
+        } catch (...) {
+            _broadcast_scratch.clear();
+            _broadcast_in_progress = false;
+            throw;
+        }
         return static_cast<_Derived &>(*this);
     }
 
@@ -301,14 +320,33 @@ public:
     template <typename _Func, typename... _Args>
     _Derived &
     stream_if(_Func const &func, _Args &&...args) {
-        _broadcast_scratch.clear();
-        _broadcast_scratch.reserve(_sessions.size());
-        for (auto &[key, session] : _sessions)
-            _broadcast_scratch.push_back(session);
-        for (auto &session : _broadcast_scratch)
-            if (func(*session))
-                (*session << ... << args);
-        _broadcast_scratch.clear();
+        if (_broadcast_in_progress) {
+            std::vector<std::shared_ptr<_Session>> local_snapshot;
+            local_snapshot.reserve(_sessions.size());
+            for (auto &[key, session] : _sessions)
+                local_snapshot.push_back(session);
+            for (auto &session : local_snapshot)
+                if (func(*session))
+                    (*session << ... << args);
+            return static_cast<_Derived &>(*this);
+        }
+
+        _broadcast_in_progress = true;
+        try {
+            _broadcast_scratch.clear();
+            _broadcast_scratch.reserve(_sessions.size());
+            for (auto &[key, session] : _sessions)
+                _broadcast_scratch.push_back(session);
+            for (auto &session : _broadcast_scratch)
+                if (func(*session))
+                    (*session << ... << args);
+            _broadcast_scratch.clear();
+            _broadcast_in_progress = false;
+        } catch (...) {
+            _broadcast_scratch.clear();
+            _broadcast_in_progress = false;
+            throw;
+        }
         return static_cast<_Derived &>(*this);
     }
 };
