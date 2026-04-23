@@ -28,6 +28,8 @@
 #include <qb/io.h>
 #include <qb/io/async.h>
 #include <qb/main.h>
+#include <functional>
+#include <memory>
 #include <stdexcept>
 
 // Define test events
@@ -148,6 +150,7 @@ class MonitorActor : public qb::Actor {
     std::vector<qb::ActorId> _monitored_actors;
     int                      _num_actors_to_monitor;
     int                      _num_actors_checked;
+    std::unique_ptr<qb::io::async::ScopedTimeout<std::function<void()>>> _timeout;
 
 public:
     explicit MonitorActor(int num_actors)
@@ -159,16 +162,14 @@ public:
         registerEvent<StatusEvent>(*this);
         // KillEvent est déjà enregistré par défaut pour tous les acteurs
 
-        // Add timeout handling for cases where actors don't respond
-        // Use async callback to broadcast KillEvent to terminate all actors after
-        // timeout
-        qb::io::async::callback(
-            [this]() {
-                // Force terminate all actors if monitoring takes too long
+        // Keep the timeout owned by the actor so it is cancelled automatically
+        // when the actor dies. A fire-and-forget callback capturing `this`
+        // can outlive the actor and dereference freed memory on Windows.
+        _timeout = qb::io::async::scoped_callback(
+            std::function<void()>{[this]() {
                 broadcast<qb::KillEvent>();
-                // Kill self as well
                 kill();
-            },
+            }},
             0.5); // 500ms timeout (0.5 seconds)
 
         return true;
@@ -193,6 +194,7 @@ public:
 
         // If we've checked all actors, terminate
         if (_num_actors_checked >= _num_actors_to_monitor) {
+            broadcast<qb::KillEvent>();
             kill();
         }
     }

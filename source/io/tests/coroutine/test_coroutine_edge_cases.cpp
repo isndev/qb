@@ -24,6 +24,19 @@
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 
+template <typename Predicate>
+bool wait_until(Predicate &&predicate, std::chrono::milliseconds timeout,
+                std::chrono::milliseconds step = 10ms) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!predicate()) {
+        qb::io::async::run_for(step);
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return predicate();
+        }
+    }
+    return true;
+}
+
 // =============================================================================
 // TEST SUITE: Deep Nesting
 // =============================================================================
@@ -34,6 +47,10 @@ protected:
         qb::io::async::init();
     }
     void TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
         qb::io::async::listener::current.clear();
     }
 };
@@ -65,7 +82,7 @@ TEST_F(CoroutineDeepNesting, VeryDeepNesting) {
     auto starter = coro_fn();
     
     coro_scheduler().spawn(std::move(starter));
-    run_for(500ms);
+    EXPECT_TRUE(wait_until([&result]() { return result.load() == depth + 1; }, 1500ms));
     
     EXPECT_EQ(result, depth + 1);
 }
@@ -100,7 +117,7 @@ TEST_F(CoroutineDeepNesting, MutualRecursion) {
     };
     
     coro_scheduler().spawn(coro_a(true));
-    run_for(100ms);
+    EXPECT_TRUE(wait_until([&counter]() { return counter.load() >= max_count; }, 500ms));
     
     EXPECT_GE(counter, max_count);
 }
@@ -115,6 +132,10 @@ protected:
         qb::io::async::init();
     }
     void TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
         qb::io::async::listener::current.clear();
     }
 };
@@ -181,6 +202,10 @@ protected:
         qb::io::async::init();
     }
     void TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
         qb::io::async::listener::current.clear();
     }
 };
@@ -259,6 +284,10 @@ protected:
         qb::io::async::init();
     }
     void TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
         qb::io::async::listener::current.clear();
     }
 };
@@ -337,6 +366,10 @@ protected:
         qb::io::async::init();
     }
     void TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
         qb::io::async::listener::current.clear();
     }
 };
@@ -450,6 +483,10 @@ protected:
         qb::io::async::init();
     }
     void TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
         qb::io::async::listener::current.clear();
     }
 };

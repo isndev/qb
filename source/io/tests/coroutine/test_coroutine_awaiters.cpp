@@ -18,6 +18,19 @@
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 
+template <typename Predicate>
+bool wait_until(Predicate &&predicate, std::chrono::milliseconds timeout,
+                std::chrono::milliseconds step = 5ms) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!predicate()) {
+        qb::io::async::run_for(step);
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return predicate();
+        }
+    }
+    return true;
+}
+
 // =============================================================================
 // TEST FIXTURE
 // =============================================================================
@@ -29,6 +42,10 @@ protected:
     }
     
     void TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
         qb::io::async::listener::current.clear();
     }
 };
@@ -432,7 +449,7 @@ TEST_F(CoroutineAwaiterTests, ZeroDurationSleep) {
     };
     
     coro_scheduler().spawn(fn());
-    run_for(10ms);
+    EXPECT_TRUE(wait_until([order_ptr]() { return order_ptr->load() == 2; }, 100ms));
     
     EXPECT_EQ(execution_order.load(), 2);
 }
@@ -455,7 +472,7 @@ TEST_F(CoroutineAwaiterTests, MultipleSleepsAccumulate) {
     };
     
     coro_scheduler().spawn(fn());
-    run_for(100ms);
+    EXPECT_TRUE(wait_until([completed_ptr]() { return completed_ptr->load(); }, 250ms));
     
     auto elapsed = std::chrono::steady_clock::now() - start;
     
@@ -492,7 +509,7 @@ TEST_F(CoroutineAwaiterTests, MixedAwaiterTypes) {
     };
     
     coro_scheduler().spawn(fn());
-    run_for(50ms);
+    EXPECT_TRUE(wait_until([result_ptr]() { return result_ptr->load() == 111; }, 200ms));
     
     // 1 + 10 + 100 = 111
     EXPECT_EQ(result.load(), 111);

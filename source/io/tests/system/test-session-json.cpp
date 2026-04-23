@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
 #include <qb/json.h>
@@ -26,13 +27,39 @@ using namespace qb::io;
 
 constexpr const std::size_t NB_ITERATION          = 4096;
 constexpr const char        STRING_MESSAGE[]      = "Here is my content test";
+constexpr unsigned short    JSON_TCP_PORT         = 22991;
+constexpr unsigned short    JSON_SECURE_TCP_PORT  = 22992;
+constexpr unsigned short    JSON_MALFORMED_PORT   = 22993;
 std::atomic<std::size_t>    msg_count_server_side = 0;
 std::atomic<std::size_t>    msg_count_client_side = 0;
+
+namespace {
+
+std::filesystem::path
+ssl_resource_path(const char *file_name) {
+    return std::filesystem::path(__FILE__).parent_path() / "resources" / "ssl" /
+           file_name;
+}
+
+} // namespace
 
 bool
 all_done() {
     return msg_count_server_side == (NB_ITERATION) &&
            msg_count_client_side == NB_ITERATION;
+}
+
+template <typename Predicate>
+bool
+pump_until(Predicate &&predicate, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!predicate()) {
+        async::run(EVRUN_NOWAIT);
+        if (std::chrono::steady_clock::now() >= deadline)
+            return predicate();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
 }
 
 // OVER TCP
@@ -45,10 +72,6 @@ public:
 
     explicit TestServerClient(IOServer &server)
         : client(server) {}
-
-    ~TestServerClient() {
-        EXPECT_EQ(msg_count_server_side, NB_ITERATION);
-    }
 
     void
     on(Protocol::message &&msg) {
@@ -63,23 +86,20 @@ class TestServer : public use<TestServer>::tcp::server<TestServerClient> {
     std::size_t connection_count = 0u;
 
 public:
-    ~TestServer() {
-        EXPECT_EQ(connection_count, 1u);
-    }
-
     void
     on(IOSession &) {
         ++connection_count;
+    }
+
+    [[nodiscard]] std::size_t
+    connectionCount() const noexcept {
+        return connection_count;
     }
 };
 
 class TestClient : public use<TestClient>::tcp::client<> {
 public:
     using Protocol = qb::protocol::json<TestClient>;
-
-    ~TestClient() {
-        EXPECT_EQ(msg_count_client_side, NB_ITERATION);
-    }
 
     void
     on(Protocol::message &&msg) {
@@ -95,27 +115,29 @@ TEST(Session, JSON_OVER_TCP) {
     msg_count_client_side = 0;
 
     TestServer server;
-    server.transport().listen_v4(9999);
+    ASSERT_EQ(server.transport().listen_v4(JSON_TCP_PORT), 0);
     server.start();
 
     std::thread t([]() {
         async::init();
         TestClient client;
-        if (SocketStatus::Done !=
-            client.transport().connect(uri{"tcp://localhost:9999"})) {
-            throw std::runtime_error("could not connect");
-        }
+        ASSERT_EQ(client.transport().connect(uri{"tcp://127.0.0.1:" +
+                                                 std::to_string(JSON_TCP_PORT)}),
+                  SocketStatus::Done);
         client.start();
 
         for (auto i = 0u; i < NB_ITERATION; ++i) {
             client.publish(qb::json{{"message", STRING_MESSAGE}}, '\0');
         }
 
-        while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
+        EXPECT_TRUE(pump_until(all_done, std::chrono::seconds(10)));
     });
 
-    while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
+    EXPECT_TRUE(pump_until(all_done, std::chrono::seconds(10)));
     t.join();
+    EXPECT_EQ(msg_count_server_side.load(), NB_ITERATION);
+    EXPECT_EQ(msg_count_client_side.load(), NB_ITERATION);
+    EXPECT_GE(server.connectionCount(), 1u);
 }
 
 // OVER SECURE TCP
@@ -132,10 +154,6 @@ public:
     explicit TestSecureServerClient(IOServer &server)
         : client(server) {}
 
-    ~TestSecureServerClient() {
-        EXPECT_EQ(msg_count_server_side, NB_ITERATION);
-    }
-
     void
     on(Protocol::message &&msg) {
         EXPECT_EQ(msg.json["message"].get<std::string>().size(),
@@ -150,23 +168,20 @@ class TestSecureServer
     std::size_t connection_count = 0u;
 
 public:
-    ~TestSecureServer() {
-        EXPECT_EQ(connection_count, 1u);
-    }
-
     void
     on(IOSession &) {
         ++connection_count;
+    }
+
+    [[nodiscard]] std::size_t
+    connectionCount() const noexcept {
+        return connection_count;
     }
 };
 
 class TestSecureClient : public use<TestSecureClient>::tcp::ssl::client<> {
 public:
     using Protocol = qb::protocol::json_packed<TestSecureClient>;
-
-    ~TestSecureClient() {
-        EXPECT_EQ(msg_count_client_side, NB_ITERATION);
-    }
 
     void
     on(Protocol::message &&msg) {
@@ -180,17 +195,22 @@ TEST(Session, JSON_OVER_SECURE_TCP) {
     async::init();
     msg_count_server_side = 0;
     msg_count_client_side = 0;
+    const auto cert_file = ssl_resource_path("cert.pem");
+    const auto key_file  = ssl_resource_path("key.pem");
+    ASSERT_TRUE(std::filesystem::exists(cert_file));
+    ASSERT_TRUE(std::filesystem::exists(key_file));
 
     TestSecureServer server;
-    server.transport().init(
-        ssl::create_server_context(SSLv23_server_method(), "cert.pem", "key.pem"));
-    server.transport().listen_v6(9999);
+    server.transport().init(ssl::create_server_context(
+        SSLv23_server_method(), cert_file.string(), key_file.string()));
+    ASSERT_EQ(server.transport().listen_v6(JSON_SECURE_TCP_PORT), 0);
     server.start();
 
     std::thread t([]() {
         async::init();
         TestSecureClient client;
-        if (SocketStatus::Done != client.transport().connect_v6("::1", 9999)) {
+        if (SocketStatus::Done !=
+            client.transport().connect_v6("::1", JSON_SECURE_TCP_PORT)) {
             throw std::runtime_error("could not connect");
         }
         client.start();
@@ -200,11 +220,14 @@ TEST(Session, JSON_OVER_SECURE_TCP) {
                    << '\0';
         }
 
-        while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
+        EXPECT_TRUE(pump_until(all_done, std::chrono::seconds(10)));
     });
 
-    while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
+    EXPECT_TRUE(pump_until(all_done, std::chrono::seconds(10)));
     t.join();
+    EXPECT_EQ(msg_count_server_side.load(), NB_ITERATION);
+    EXPECT_EQ(msg_count_client_side.load(), NB_ITERATION);
+    EXPECT_GE(server.connectionCount(), 1u);
 }
 
 #endif
@@ -248,12 +271,13 @@ TEST(Session, JSON_MALFORMED_RESILIENCE) {
     async::init();
 
     MalformedJsonServer server;
-    server.transport().listen_v4(9998);
+    ASSERT_EQ(server.transport().listen_v4(JSON_MALFORMED_PORT), 0);
     server.start();
 
     std::thread t([]() {
         qb::io::tcp::socket sock;
-        ASSERT_EQ(sock.connect_v4("127.0.0.1", 9998), qb::io::SocketStatus::Done);
+        ASSERT_EQ(sock.connect_v4("127.0.0.1", JSON_MALFORMED_PORT),
+                  qb::io::SocketStatus::Done);
 
         const char good_json[] = "{\"key\":\"value\"}\0";
         sock.write(good_json, sizeof(good_json) - 1);

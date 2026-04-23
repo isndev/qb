@@ -330,12 +330,18 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
             LOG_WARN("set thread affinity failed: " << strerror(errno));
 #elif defined(_WIN32) || defined(_WIN64)
 #ifdef _MSC_VER
+        constexpr auto kAffinityBits =
+            static_cast<CoreId>(sizeof(DWORD_PTR) * 8u);
         DWORD_PTR mask = 0u;
         for (const auto core : affinity_cores)
-            if (is_real_core(core))
+            if (is_real_core(core) && core < kAffinityBits)
                 mask |= static_cast<DWORD_PTR>(1u) << core;
-        ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
-        if (!ret)
+        // QB CoreIds are logical ids; they may exceed the affinity width of a
+        // single Windows processor group. In that case, skip OS pinning rather
+        // than failing VirtualCore init for an otherwise legal QB core id.
+        if (mask != 0u)
+            ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
+        if (mask != 0u && !ret)
             LOG_WARN("set thread affinity failed");
 #else
 #warning "Cannot set affinity on windows with GNU Compiler"

@@ -225,6 +225,17 @@ struct timer_awaiter : awaiter_base {
     ev::loop_ref loop_;
 
     /**
+     * @brief Zero/negative sleep is a cooperative yield, not a real timer.
+     *
+     * On Windows, a 1ms libev timer is often quantized to the system timer
+     * resolution (~15.6ms). For `sleep(0ms)` callers expect "yield and resume
+     * on the next scheduler turn", not "arm a kernel timer". We therefore
+     * bypass libev entirely in that case and simply enqueue the coroutine at
+     * the back of the ready queue.
+     */
+    bool yield_only_ = false;
+
+    /**
      * @brief Flag to track if watcher was started
      */
     bool started_ = false;
@@ -235,11 +246,13 @@ struct timer_awaiter : awaiter_base {
      * @param loop The event loop (defaults to current)
      */
     timer_awaiter(std::chrono::milliseconds duration, ev::loop_ref loop = ev::get_default_loop())
-        : loop_(loop) {
-        // Minimum 1ms to avoid issues with 0 duration
-        double after = (duration.count() <= 0) ? 0.001 : (duration.count() / 1000.0);
-        ev_timer_init(&watcher_, timer_callback, after, 0.0);
-        watcher_.data = this;
+        : loop_(loop)
+        , yield_only_(duration.count() <= 0) {
+        if (!yield_only_) {
+            double after = duration.count() / 1000.0;
+            ev_timer_init(&watcher_, timer_callback, after, 0.0);
+            watcher_.data = this;
+        }
     }
 
     /**
@@ -255,6 +268,10 @@ struct timer_awaiter : awaiter_base {
         if (!scheduler_) {
             // Fallback: create/get the current scheduler
             scheduler_ = &CoroutineScheduler::current();
+        }
+        if (yield_only_) {
+            enqueue_for_later_via_current(h);
+            return;
         }
         register_suspended();  // Track this coroutine as suspended
         // Finding 2.C.3: libev caches the current monotonic time in `mn_now`
@@ -277,6 +294,10 @@ struct timer_awaiter : awaiter_base {
      * Also marks the awaiter as resumed and unregisters from suspended set.
      */
     void await_resume() override {
+        if (yield_only_) {
+            awaiter_base::await_resume();
+            return;
+        }
         if (started_ && ev_is_active(&watcher_)) {
             ev_timer_stop(loop_, &watcher_);
             started_ = false;
@@ -296,6 +317,9 @@ struct timer_awaiter : awaiter_base {
      * use-after-free.
      */
     ~timer_awaiter() override {
+        if (yield_only_) {
+            return;
+        }
         if (started_ && ev_is_active(&watcher_)) {
             ev_timer_stop(loop_, &watcher_);
             started_ = false;
