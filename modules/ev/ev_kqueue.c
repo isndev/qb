@@ -39,6 +39,7 @@
 
 #include <sys/types.h>
 #include <sys/time.h>
+#include <stdint.h>
 #include <sys/event.h>
 #include <string.h>
 #include <errno.h>
@@ -99,7 +100,7 @@ kqueue_poll (EV_P_ ev_tstamp timeout)
 
   EV_RELEASE_CB;
   EV_TS_SET (ts, timeout);
-  res = kevent (backend_fd, kqueue_changes, kqueue_changecnt, kqueue_events, kqueue_eventmax, &ts);
+  res = kevent ((int)(uintptr_t)backend_fd, kqueue_changes, kqueue_changecnt, kqueue_events, kqueue_eventmax, &ts);
   EV_ACQUIRE_CB;
   kqueue_changecnt = 0;
 
@@ -163,12 +164,16 @@ inline_size
 int
 kqueue_init (EV_P_ int flags)
 {
+  int kq;
+
   /* initialize the kernel queue */
   kqueue_fd_pid = getpid ();
-  if ((backend_fd = kqueue ()) < 0)
+  if ((kq = kqueue ()) < 0)
     return 0;
 
-  fcntl (backend_fd, F_SETFD, FD_CLOEXEC); /* not sure if necessary, hopefully doesn't hurt */
+  backend_fd = (uintptr_t)(unsigned)kq;
+
+  fcntl (kq, F_SETFD, FD_CLOEXEC); /* not sure if necessary, hopefully doesn't hurt */
 
   backend_mintime = EV_TS_CONST (1e-9); /* apparently, they did the right thing in freebsd */
   backend_modify  = kqueue_modify;
@@ -207,13 +212,19 @@ kqueue_fork (EV_P)
   pid_t newpid = getpid ();
 
   if (newpid == kqueue_fd_pid)
-    close (backend_fd);
+    close ((int)(uintptr_t)backend_fd);
 
   kqueue_fd_pid = newpid;
-  while ((backend_fd = kqueue ()) < 0)
-    ev_syserr ("(libev) kqueue");
+  {
+    int kq2;
 
-  fcntl (backend_fd, F_SETFD, FD_CLOEXEC);
+    while ((kq2 = kqueue ()) < 0)
+      ev_syserr ("(libev) kqueue");
+
+    backend_fd = (uintptr_t)(unsigned)kq2;
+  }
+
+  fcntl ((int)(uintptr_t)backend_fd, F_SETFD, FD_CLOEXEC);
 
   /* re-register interest in fds */
   fd_rearm_all (EV_A);

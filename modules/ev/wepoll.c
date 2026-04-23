@@ -50,19 +50,6 @@ enum events {
     EPOLLONESHOT = (int)(1U << 31)
 };
 
-#define EPOLLIN (1U << 0)
-#define EPOLLPRI (1U << 1)
-#define EPOLLOUT (1U << 2)
-#define EPOLLERR (1U << 3)
-#define EPOLLHUP (1U << 4)
-#define EPOLLRDNORM (1U << 6)
-#define EPOLLRDBAND (1U << 7)
-#define EPOLLWRNORM (1U << 8)
-#define EPOLLWRBAND (1U << 9)
-#define EPOLLMSG (1U << 10)
-#define EPOLLRDHUP (1U << 13)
-#define EPOLLONESHOT (1U << 31)
-
 #define EPOLL_CTL_ADD 1
 #define EPOLL_CTL_MOD 2
 #define EPOLL_CTL_DEL 3
@@ -411,7 +398,7 @@ WEPOLL_INTERNAL ts_tree_node_t *port_state_to_handle_tree_node(port_state_t *por
  * "destroy" returns, the calling thread may assume that no other threads have
  * a reference to the lock.
  *
- * Attemmpting to lock or destroy a lock after reflock_unref_and_destroy() has
+ * Attempting to lock or destroy a lock after reflock_unref_and_destroy() has
  * been called is invalid and results in undefined behavior. Therefore the user
  * should use another lock to guarantee that this can't happen.
  */
@@ -501,7 +488,8 @@ epoll__create(void) {
 
     tree_node = port_state_to_handle_tree_node(port_state);
     if (ts_tree_add(&epoll__handle_tree, tree_node, (uintptr_t)ephnd) < 0) {
-        /* This should never happen. */
+        /* Extremely unlikely (IOCP handle collision). Must close IOCP before port_delete. */
+        port_close(port_state);
         port_delete(port_state);
         return_set_error(NULL, ERROR_ALREADY_EXISTS);
     }
@@ -560,6 +548,9 @@ epoll_ctl(HANDLE ephnd, int op, SOCKET sock, struct epoll_event *ev) {
     if (init() < 0)
         return -1;
 
+    if ((op == EPOLL_CTL_ADD || op == EPOLL_CTL_MOD) && ev == NULL)
+        return_set_error(-1, ERROR_INVALID_PARAMETER);
+
     tree_node = ts_tree_find_and_ref(&epoll__handle_tree, (uintptr_t)ephnd);
     if (tree_node == NULL) {
         err_set_win_error(ERROR_INVALID_PARAMETER);
@@ -591,6 +582,9 @@ epoll_wait(HANDLE ephnd, struct epoll_event *events, int maxevents, int timeout)
     int num_events;
 
     if (maxevents <= 0)
+        return_set_error(-1, ERROR_INVALID_PARAMETER);
+
+    if (events == NULL)
         return_set_error(-1, ERROR_INVALID_PARAMETER);
 
     if (init() < 0)
@@ -1191,9 +1185,16 @@ port_wait(port_state_t *port_state, struct epoll_event *events, int maxevents,
      * memory for it on the heap. */
     if ((size_t)maxevents <= array_count(stack_iocp_events)) {
         iocp_events = stack_iocp_events;
-    } else if ((iocp_events = malloc((size_t)maxevents * sizeof *iocp_events)) == NULL) {
-        iocp_events = stack_iocp_events;
-        maxevents = array_count(stack_iocp_events);
+    } else {
+        size_t nbytes;
+
+        if ((size_t)maxevents > SIZE_MAX / sizeof *iocp_events)
+            return_set_error(-1, ERROR_INVALID_PARAMETER);
+
+        nbytes = (size_t)maxevents * sizeof *iocp_events;
+        iocp_events = malloc(nbytes);
+        if (iocp_events == NULL)
+            return_set_error(-1, ERROR_NOT_ENOUGH_MEMORY);
     }
 
     /* Compute the timeout for GetQueuedCompletionStatus, and the wait end

@@ -85,6 +85,7 @@
  */
 
 #include <sys/time.h> /* actually linux/time.h, but we must assume they are compatible */
+#include <stdint.h>
 #include <poll.h>
 #include <linux/aio_abi.h>
 
@@ -241,7 +242,7 @@ linuxaio_modify (EV_P_ int fd, int oev, int nev)
     {
       /* we handed this fd over to epoll, so undo this first */
       /* we do it manually because the optimisations on epoll_modify won't do us any good */
-      epoll_ctl (backend_fd, EPOLL_CTL_DEL, fd, 0);
+      epoll_ctl ((int)(uintptr_t)backend_fd, EPOLL_CTL_DEL, fd, 0);
       anfd->emask = 0;
       iocb->io.aio_reqprio = 0;
     }
@@ -568,7 +569,7 @@ linuxaio_init (EV_P_ int flags)
       return 0;
     }
 
-  ev_io_init  (&linuxaio_epoll_w, linuxaio_epoll_cb, backend_fd, EV_READ);
+  ev_io_init  (&linuxaio_epoll_w, linuxaio_epoll_cb, (int)(uintptr_t)backend_fd, EV_READ);
   ev_set_priority (&linuxaio_epoll_w, EV_MAXPRI);
   ev_io_start (EV_A_ &linuxaio_epoll_w);
   ev_unref (EV_A); /* watcher should not keep loop alive */
@@ -614,7 +615,7 @@ linuxaio_fork (EV_P)
   /*fd_rearm_all (EV_A);*/
 
   ev_io_stop  (EV_A_ &linuxaio_epoll_w);
-  ev_io_set   (EV_A_ &linuxaio_epoll_w, backend_fd, EV_READ);
+  ev_io_set   (EV_A_ &linuxaio_epoll_w, (int)(uintptr_t)backend_fd, EV_READ);
   ev_io_start (EV_A_ &linuxaio_epoll_w);
 }
 

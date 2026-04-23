@@ -209,6 +209,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include <stdio.h>
 
@@ -3161,6 +3162,11 @@ ev_embeddable_backends (void) EV_NOEXCEPT
 {
   int flags = EVBACKEND_EPOLL | EVBACKEND_KQUEUE | EVBACKEND_PORT | EVBACKEND_IOURING;
 
+#ifdef _WIN32
+  /* Epoll is implemented by wepoll (IOCP); backend_fd is a HANDLE-like token, not a
+   * small integer fd that the outer loop can watch with ev_io (see ev_embed_start). */
+  flags &= ~EVBACKEND_EPOLL;
+#endif
   /* epoll embeddability broken on all linux versions up to at least 2.6.23 */
   if (ev_linux_version () < 0x020620) /* disable it on linux < 2.6.32 */
     flags &= ~EVBACKEND_EPOLL;
@@ -3278,7 +3284,7 @@ loop_init (EV_P_ unsigned int flags) EV_NOEXCEPT
       io_blocktime       = 0.;
       timeout_blocktime  = 0.;
       backend            = 0;
-      backend_fd         = -1;
+      backend_fd         = (uintptr_t)-1;
       sig_pending        = 0;
 #if EV_ASYNC_ENABLE
       async_pending      = 0;
@@ -3388,10 +3394,13 @@ ev_loop_destroy (EV_P)
     close (fs_fd);
 #endif
 #ifndef _WIN32
-  if (backend_fd >= 0)
-    close (backend_fd);
+  if (backend_fd != (uintptr_t)-1)
+    close ((int)(uintptr_t)backend_fd);
 #else
-    epoll_close(backend_fd);
+# if EV_USE_EPOLL
+  if (backend == EVBACKEND_EPOLL && backend_fd != (uintptr_t)-1)
+    epoll_close ((HANDLE)(void *)backend_fd);
+# endif
 #endif
 #if EV_USE_IOCP
   if (backend == EVBACKEND_IOCP    ) iocp_destroy     (EV_A);
@@ -4379,7 +4388,7 @@ ev_io_stop (EV_P_ ev_io *w) EV_NOEXCEPT
     SOCKET sock = (w->fd >= 0 && w->fd < anfdmax)
                   ? anfds[w->fd].handle
                   : (SOCKET)(unsigned int)w->fd;
-    epoll_ctl(backend_fd, EPOLL_CTL_DEL, sock, &ev);
+    epoll_ctl ((HANDLE)(void *)backend_fd, EPOLL_CTL_DEL, sock, &ev);
   }
 #endif
 }
@@ -5273,7 +5282,7 @@ ev_embed_start (EV_P_ ev_embed *w) EV_NOEXCEPT
   {
     EV_P = w->other;
     assert (("libev: loop to be embedded is not embeddable", backend & ev_embeddable_backends ()));
-    ev_io_init (&w->io, embed_io_cb, backend_fd, EV_READ);
+    ev_io_init (&w->io, embed_io_cb, (int)(uintptr_t)backend_fd, EV_READ);
   }
 
   EV_FREQUENT_CHECK;
