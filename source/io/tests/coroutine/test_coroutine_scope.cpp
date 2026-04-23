@@ -44,6 +44,7 @@ protected:
         TLOG("    has_coro_scheduler=%d, draining...", (int)has_sched);
         if (has_sched) {
             qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
         }
         TLOG("    drain done, clearing listener...");
         qb::io::async::listener::current.clear();
@@ -313,6 +314,7 @@ protected:
     void TearDown() override {
         if (qb::io::async::listener::current.has_coro_scheduler()) {
             qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
         }
         qb::io::async::listener::current.clear();
     }
@@ -354,6 +356,7 @@ protected:
     void TearDown() override {
         if (qb::io::async::listener::current.has_coro_scheduler()) {
             qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
         }
         qb::io::async::listener::current.clear();
     }
@@ -421,6 +424,7 @@ protected:
     void TearDown() override {
         if (qb::io::async::listener::current.has_coro_scheduler()) {
             qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
         }
         qb::io::async::listener::current.clear();
     }
@@ -526,7 +530,13 @@ TEST_F(ParallelMapTests, LargeInput) {
 class ScopeEventDrivenTests : public ::testing::Test {
 protected:
     void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(ScopeEventDrivenTests, JoinAll_WakesImmediatelyWhenEmpty) {
@@ -675,6 +685,8 @@ protected:
     void TearDown() override {
         if (qb::io::async::listener::current.has_coro_scheduler())
             qb::io::async::run_for(5ms);
+        if (qb::io::async::listener::current.has_coro_scheduler())
+            qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
 };

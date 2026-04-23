@@ -298,11 +298,16 @@ socket::is_bound() const noexcept {
 
 int
 socket::bind(qb::io::endpoint const &ep) noexcept {
-    if (is_open()) {
-        if (local_endpoint().af() != ep.af())
-            return -1;
-    } else
+    if (!is_open())
         init(ep.af());
+    else {
+        const auto local = local_endpoint();
+        // On Windows an open-but-not-yet-bound UDP socket reports an empty
+        // local endpoint. Treat that as "family unknown" so the first bind is
+        // accepted instead of rejected as a mismatched address family.
+        if (local.af() != AF_UNSPEC && local.af() != ep.af())
+            return -1;
+    }
 
     return qb::io::inet::socket::bind(ep);
 }

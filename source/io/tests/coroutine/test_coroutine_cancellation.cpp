@@ -508,8 +508,11 @@ TEST_F(CancellationCoroutineTests, MakeCancellableMultipleSequential) {
 
     coro_scheduler().spawn(coro_fn());
 
-    // Cancel after 2 tasks should have had time to finish.
-    run_for(50ms);
+    // Windows can schedule two successive 20ms sleeps a bit later than 50ms.
+    // Wait until 2 completions are observed, or until a generous bound is hit.
+    for (int i = 0; i < 12 && completed.load() < 2; ++i) {
+        run_for(10ms);
+    }
     token.cancel();
     run_for(200ms);
 

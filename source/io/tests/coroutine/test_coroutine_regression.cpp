@@ -26,7 +26,13 @@ using namespace std::chrono_literals;
 class CoroutineRegression : public ::testing::Test {
 protected:
     void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void TearDown() override {
+        if (qb::io::async::listener::current.has_coro_scheduler()) {
+            qb::io::async::run_for(5ms);
+            qb::io::async::listener::current.reset_coro_scheduler();
+        }
+        qb::io::async::listener::current.clear();
+    }
 };
 
 // =============================================================================
@@ -1328,17 +1334,15 @@ TEST_F(CoroutineRegression, SemaphoreAcquireFastPathIsSynchronous) {
 // =============================================================================
 
 TEST_F(CoroutineRegression, SchedulerCurrentPtrReflectsListenerReset) {
-    auto* before = CoroutineScheduler::current_ptr();
-    ASSERT_NE(before, nullptr);
+    auto* before = &qb::io::async::listener::current.coro_scheduler();
+    ASSERT_EQ(before, CoroutineScheduler::current_ptr());
 
-    qb::io::async::listener::current.clear();
-    qb::io::async::init();
+    qb::io::async::listener::current.reset_coro_scheduler();
+    EXPECT_EQ(CoroutineScheduler::current_ptr(), nullptr);
 
-    auto* after = CoroutineScheduler::current_ptr();
+    auto* after = &qb::io::async::listener::current.coro_scheduler();
     ASSERT_NE(after, nullptr);
-
-    // After reset we always have *some* scheduler and it is reachable via
-    // the TLS accessor — a cached stale pointer would be stale here.
+    EXPECT_EQ(after, CoroutineScheduler::current_ptr());
     EXPECT_EQ(after, &qb::io::async::listener::current.coro_scheduler());
 }
 

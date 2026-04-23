@@ -24,6 +24,7 @@
 
 #include <atomic>
 #include <csignal>
+#include <filesystem>
 #include <fcntl.h>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -38,6 +39,16 @@
 #include <thread>
 
 using namespace qb::io;
+
+namespace {
+
+std::filesystem::path
+ssl_resource_path(const char *file_name) {
+    return std::filesystem::path(__FILE__).parent_path() / "resources" / "ssl" /
+           file_name;
+}
+
+} // namespace
 
 // Test fixture for async I/O tests
 class AsyncIOTest : public ::testing::Test {
@@ -653,8 +664,8 @@ TEST_F(AsyncIOTest, SSLCommunication) {
     std::cout << "Starting SSLCommunication test" << std::endl;
 
     // Check for certificate files
-    const std::string cert_file = "./cert.pem";
-    const std::string key_file  = "./key.pem";
+    const auto cert_file = ssl_resource_path("cert.pem");
+    const auto key_file  = ssl_resource_path("key.pem");
 
     std::ifstream cert_check(cert_file);
     std::ifstream key_check(key_file);
@@ -670,8 +681,8 @@ TEST_F(AsyncIOTest, SSLCommunication) {
 
     // Set up server
     SecureServer server;
-    server.transport().init(
-        ssl::create_server_context(SSLv23_server_method(), cert_file, key_file));
+    server.transport().init(ssl::create_server_context(
+        SSLv23_server_method(), cert_file.string(), key_file.string()));
     server.transport().listen_v4(9878);
     server.start();
 

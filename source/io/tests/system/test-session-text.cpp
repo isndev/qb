@@ -24,6 +24,7 @@
  */
 
 #include <atomic>
+#include <filesystem>
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
 #include <qb/io/protocol/text.h>
@@ -35,8 +36,22 @@ constexpr const std::size_t NB_ITERATION          = 1000;
 constexpr const std::size_t NB_CLIENTS            = 5;
 constexpr const char        STRING_MESSAGE[]      = "Here is my content test";
 constexpr const char        UNIX_SOCK_PATH[]      = "qb-test.sock";
+constexpr unsigned short    COMMAND_TCP_PORT      = 21991;
+constexpr unsigned short    COMMAND_SECURE_TCP_PORT = 21992;
+constexpr unsigned short    BINARY16_TCP_PORT     = 21993;
+constexpr unsigned short    PROTO_SWITCH_TCP_PORT = 21994;
 std::atomic<std::size_t>    msg_count_server_side = 0;
 std::atomic<std::size_t>    msg_count_client_side = 0;
+
+namespace {
+
+std::filesystem::path
+ssl_resource_path(const char *file_name) {
+    return std::filesystem::path(__FILE__).parent_path() / "resources" / "ssl" /
+           file_name;
+}
+
+} // namespace
 
 bool
 all_done() {
@@ -54,6 +69,24 @@ client_done() {
     return msg_count_client_side == NB_ITERATION;
 }
 
+bool
+client_received_expected_messages() {
+    return msg_count_client_side >= NB_ITERATION;
+}
+
+template <typename Predicate>
+bool
+pump_until(Predicate &&predicate, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!predicate()) {
+        async::run(EVRUN_NOWAIT);
+        if (std::chrono::steady_clock::now() >= deadline)
+            return predicate();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
+
 // OVER TCP
 
 class TestServer;
@@ -64,10 +97,6 @@ public:
 
     explicit TestServerClient(IOServer &server)
         : client(server) {}
-
-    ~TestServerClient() {
-        EXPECT_EQ(msg_count_server_side, NB_ITERATION);
-    }
 
     void
     on(Protocol::message &&msg) {
@@ -81,23 +110,20 @@ class TestServer : public use<TestServer>::tcp::server<TestServerClient> {
     std::size_t connection_count = 0u;
 
 public:
-    ~TestServer() {
-        EXPECT_EQ(connection_count, 1u);
-    }
-
     void
     on(IOSession &) {
         ++connection_count;
+    }
+
+    [[nodiscard]] std::size_t
+    connectionCount() const noexcept {
+        return connection_count;
     }
 };
 
 class TestClient : public use<TestClient>::tcp::client<> {
 public:
     using Protocol = qb::protocol::text::command<TestClient>;
-
-    ~TestClient() {
-        EXPECT_EQ(msg_count_client_side, NB_ITERATION);
-    }
 
     void
     on(Protocol::message &&msg) {
@@ -112,28 +138,28 @@ TEST(Session, COMMAND_OVER_TCP) {
     msg_count_client_side = 0;
 
     TestServer server;
-    server.transport().listen_v4(9999);
+    ASSERT_EQ(server.transport().listen_v4(COMMAND_TCP_PORT), 0);
     server.start();
 
     std::thread t([]() {
         async::init();
         TestClient client;
-        if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", 9999)) {
-            throw std::runtime_error("could not connect");
-        }
+        ASSERT_EQ(client.transport().connect_v4("127.0.0.1", COMMAND_TCP_PORT),
+                  SocketStatus::Done);
         client.start();
 
         for (auto i = 0u; i < NB_ITERATION; ++i) {
             client << STRING_MESSAGE << '\n';
         }
 
-        for (auto i = 0uz; i < (NB_ITERATION * 5) && !all_done(); ++i)
-            async::run(EVRUN_ONCE);
+        EXPECT_TRUE(pump_until(all_done, std::chrono::seconds(10)));
     });
 
-    for (auto i = 0uz; i < (NB_ITERATION * 5) && !all_done(); ++i)
-        async::run(EVRUN_ONCE);
+    EXPECT_TRUE(pump_until(all_done, std::chrono::seconds(10)));
     t.join();
+    EXPECT_EQ(msg_count_server_side.load(), NB_ITERATION);
+    EXPECT_EQ(msg_count_client_side.load(), NB_ITERATION);
+    EXPECT_GE(server.connectionCount(), 1u);
 }
 
 #ifndef _WIN32
@@ -182,10 +208,6 @@ public:
     explicit TestSecureServerClient(IOServer &server)
         : client(server) {}
 
-    ~TestSecureServerClient() {
-        EXPECT_EQ(msg_count_server_side % NB_ITERATION, 0);
-    }
-
     void
     on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(STRING_MESSAGE) - 1);
@@ -199,23 +221,20 @@ class TestSecureServer
     std::size_t connection_count = 0u;
 
 public:
-    ~TestSecureServer() {
-        EXPECT_EQ(connection_count, NB_CLIENTS);
-    }
-
     void
     on(IOSession &) {
         ++connection_count;
+    }
+
+    [[nodiscard]] std::size_t
+    connectionCount() const noexcept {
+        return connection_count;
     }
 };
 
 class TestSecureClient : public use<TestSecureClient>::tcp::ssl::client<> {
 public:
     using Protocol = qb::protocol::text::command<TestSecureClient>;
-
-    ~TestSecureClient() {
-        EXPECT_EQ(msg_count_client_side % NB_ITERATION, 0);
-    }
 
     void
     on(Protocol::message &&msg) {
@@ -227,11 +246,15 @@ public:
 TEST(Session, COMMAND_OVER_SECURE_TCP) {
     async::init();
     msg_count_server_side = 0;
+    const auto cert_file = ssl_resource_path("cert.pem");
+    const auto key_file  = ssl_resource_path("key.pem");
+    ASSERT_TRUE(std::filesystem::exists(cert_file));
+    ASSERT_TRUE(std::filesystem::exists(key_file));
 
     TestSecureServer server;
-    server.transport().init(
-        ssl::create_server_context(SSLv23_server_method(), "cert.pem", "key.pem"));
-    server.transport().listen_v4(9999);
+    server.transport().init(ssl::create_server_context(
+        SSLv23_server_method(), cert_file.string(), key_file.string()));
+    ASSERT_EQ(server.transport().listen_v4(COMMAND_SECURE_TCP_PORT), 0);
     server.start();
 
     std::thread tc([]() {
@@ -239,7 +262,8 @@ TEST(Session, COMMAND_OVER_SECURE_TCP) {
         for (auto i = 0uz; i < NB_CLIENTS; ++i) {
             msg_count_client_side = 0;
             TestSecureClient client;
-            if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", 9999)) {
+            if (SocketStatus::Done !=
+                client.transport().connect_v4("127.0.0.1", COMMAND_SECURE_TCP_PORT)) {
                 throw std::runtime_error("could not connect");
             }
             client.start();
@@ -248,12 +272,16 @@ TEST(Session, COMMAND_OVER_SECURE_TCP) {
                 client << STRING_MESSAGE << '\n';
             }
 
-            while (async::run(EVRUN_NOWAIT) > 0 || (!client_done()));
+            EXPECT_TRUE(pump_until(client_done, std::chrono::seconds(10)));
         }
     });
 
-    while (async::run(EVRUN_NOWAIT) > 0 || (!server_done() || !client_done()));
+    EXPECT_TRUE(pump_until([]() { return server_done() && client_done(); },
+                           std::chrono::seconds(10)));
     tc.join();
+    EXPECT_EQ(msg_count_server_side.load(), NB_ITERATION * NB_CLIENTS);
+    EXPECT_EQ(msg_count_client_side.load(), NB_ITERATION);
+    EXPECT_GE(server.connectionCount(), NB_CLIENTS);
 }
 
 #ifndef _WIN32
@@ -262,10 +290,14 @@ TEST(Session, COMMAND_OVER_SECURE_UTCP) {
     unlink(UNIX_SOCK_PATH);
     async::init();
     msg_count_server_side = 0;
+    const auto cert_file = ssl_resource_path("cert.pem");
+    const auto key_file  = ssl_resource_path("key.pem");
+    ASSERT_TRUE(std::filesystem::exists(cert_file));
+    ASSERT_TRUE(std::filesystem::exists(key_file));
 
     TestSecureServer server;
-    server.transport().init(
-        ssl::create_server_context(SSLv23_server_method(), "cert.pem", "key.pem"));
+    server.transport().init(ssl::create_server_context(
+        SSLv23_server_method(), cert_file.string(), key_file.string()));
     server.transport().listen_un(UNIX_SOCK_PATH);
     server.start();
     std::thread tc([]() {
@@ -354,13 +386,14 @@ TEST(Session, BINARY16_OVER_TCP) {
     bin_msg_count_client = 0;
 
     BinaryServer server;
-    server.transport().listen_v4(9997);
+    ASSERT_EQ(server.transport().listen_v4(BINARY16_TCP_PORT), 0);
     server.start();
 
     std::thread t([]() {
         async::init();
         BinaryClient client;
-        if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", 9997)) {
+        if (SocketStatus::Done !=
+            client.transport().connect_v4("127.0.0.1", BINARY16_TCP_PORT)) {
             throw std::runtime_error("could not connect");
         }
         client.start();
@@ -430,13 +463,14 @@ TEST(Session, PROTOCOL_SWITCH_TEXT_TO_BINARY) {
     switch_bin_count = 0;
 
     ProtoSwitchServer server;
-    server.transport().listen_v4(9996);
+    ASSERT_EQ(server.transport().listen_v4(PROTO_SWITCH_TCP_PORT), 0);
     server.start();
 
     std::atomic<bool> done{false};
     std::thread t([&done]() {
         qb::io::tcp::socket sock;
-        ASSERT_EQ(sock.connect_v4("127.0.0.1", 9996), SocketStatus::Done);
+        ASSERT_EQ(sock.connect_v4("127.0.0.1", PROTO_SWITCH_TCP_PORT),
+                  SocketStatus::Done);
 
         sock.write("hello\n", 6);
         char buf[512]{};

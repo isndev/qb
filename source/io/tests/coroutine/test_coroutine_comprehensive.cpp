@@ -27,16 +27,36 @@
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 
-// =============================================================================
-// TEST SUITE 1: Basic Coroutine Lifecycle
-// =============================================================================
-
-class CoroutineLifecycle : public ::testing::Test {
+class CoroutineComprehensiveTestBase : public ::testing::Test {
 protected:
     void SetUp() override {
         qb::io::async::init();
     }
+
+    void TearDown() override {
+        qb::io::async::listener::current.reset_coro_scheduler();
+        qb::io::async::listener::current.clear();
+    }
 };
+
+template <typename Predicate>
+bool wait_until(Predicate &&predicate, std::chrono::milliseconds timeout,
+                std::chrono::milliseconds step = 10ms) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!predicate()) {
+        qb::io::async::run_for(step);
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return predicate();
+        }
+    }
+    return true;
+}
+
+// =============================================================================
+// TEST SUITE 1: Basic Coroutine Lifecycle
+// =============================================================================
+
+class CoroutineLifecycle : public CoroutineComprehensiveTestBase {};
 
 // Test 1.1: Coroutine creation and immediate execution
 TEST_F(CoroutineLifecycle, CoroutineIsCreatedAndExecutes) {
@@ -156,12 +176,7 @@ TEST_F(CoroutineLifecycle, CoroutineDestructionCancelsOperation) {
 // TEST SUITE 2: Timer and Sleep Operations
 // =============================================================================
 
-class CoroutineTimers : public ::testing::Test {
-protected:
-    void SetUp() override {
-        qb::io::async::init();
-    }
-};
+class CoroutineTimers : public CoroutineComprehensiveTestBase {};
 
 // Test 2.1: Sleep with duration
 TEST_F(CoroutineTimers, SleepWaitsForDuration) {
@@ -298,12 +313,7 @@ TEST_F(CoroutineTimers, TimerPrecisionWithinTolerance) {
 // TEST SUITE 3: Coroutine Composition
 // =============================================================================
 
-class CoroutineComposition : public ::testing::Test {
-protected:
-    void SetUp() override {
-        qb::io::async::init();
-    }
-};
+class CoroutineComposition : public CoroutineComprehensiveTestBase {};
 
 // Test 3.1: Await another coroutine
 TEST_F(CoroutineComposition, CanAwaitAnotherCoroutine) {
@@ -419,12 +429,7 @@ TEST_F(CoroutineComposition, MultipleParallelCoroutines) {
 // TEST SUITE 4: Exception Handling
 // =============================================================================
 
-class CoroutineExceptions : public ::testing::Test {
-protected:
-    void SetUp() override {
-        qb::io::async::init();
-    }
-};
+class CoroutineExceptions : public CoroutineComprehensiveTestBase {};
 
 // Test 4.1: Exception propagates to caller
 TEST_F(CoroutineExceptions, ExceptionPropagatesToAwaiter) {
@@ -560,12 +565,7 @@ TEST_F(CoroutineExceptions, ExceptionInSpawnedCoroutineHandled) {
 // TEST SUITE 5: Edge Cases and Stress Tests
 // =============================================================================
 
-class CoroutineEdgeCases : public ::testing::Test {
-protected:
-    void SetUp() override {
-        qb::io::async::init();
-    }
-};
+class CoroutineEdgeCases : public CoroutineComprehensiveTestBase {};
 
 // Test 5.1: Very short duration timer
 TEST_F(CoroutineEdgeCases, VeryShortTimer) {
@@ -668,7 +668,11 @@ TEST_F(CoroutineEdgeCases, ManySuspensionPoints) {
     auto t = coro_fn();
 
     coro_scheduler().spawn(std::move(t));
-    run_for(200ms);
+    // Sequential 2ms timers are much coarser on Windows than on Linux/macOS.
+    // Give the chain enough wall-clock budget so the test validates behavior
+    // rather than host timer resolution.
+    EXPECT_TRUE(wait_until(
+        [&counter]() { return counter.load() == num_suspensions; }, 1500ms));
 
     // Then
     EXPECT_EQ(counter, num_suspensions);
@@ -703,12 +707,7 @@ TEST_F(CoroutineEdgeCases, DeepCoroutineNesting) {
 // TEST SUITE 6: Real-World Scenarios (Pure QB-IO, No Actor)
 // =============================================================================
 
-class CoroutineRealWorld : public ::testing::Test {
-protected:
-    void SetUp() override {
-        qb::io::async::init();
-    }
-};
+class CoroutineRealWorld : public CoroutineComprehensiveTestBase {};
 
 // Test 6.1: Async operation with timeout simulation
 TEST_F(CoroutineRealWorld, OperationWithTimeout) {
@@ -780,7 +779,7 @@ TEST_F(CoroutineRealWorld, SequentialAsyncOperations) {
     auto t = coro_fn();
 
     coro_scheduler().spawn(std::move(t));
-    run_for(100ms);
+    EXPECT_TRUE(wait_until([&operations]() { return operations.size() >= 3u; }, 400ms));
 
     EXPECT_GE(operations.size(), 2u);
     EXPECT_EQ(operations[0], "query1");
@@ -820,7 +819,7 @@ TEST_F(CoroutineRealWorld, RetryWithBackoff) {
     auto t = coro_fn();
 
     coro_scheduler().spawn(std::move(t));
-    run_for(100ms);
+    EXPECT_TRUE(wait_until([&]() { return succeeded.load(); }, 250ms));
 
     // Then
     EXPECT_TRUE(succeeded);
@@ -865,7 +864,7 @@ TEST_F(CoroutineRealWorld, ProducerConsumerPattern) {
     coro_scheduler().spawn(std::move(producer));
     coro_scheduler().spawn(std::move(consumer));
 
-    run_for(200ms);
+    EXPECT_TRUE(wait_until([&]() { return done.load(); }, 500ms));
 
     // Then
     EXPECT_TRUE(done);
@@ -876,12 +875,7 @@ TEST_F(CoroutineRealWorld, ProducerConsumerPattern) {
 // TEST SUITE 7: Performance and Benchmarks
 // =============================================================================
 
-class CoroutinePerformance : public ::testing::Test {
-protected:
-    void SetUp() override {
-        qb::io::async::init();
-    }
-};
+class CoroutinePerformance : public CoroutineComprehensiveTestBase {};
 
 // Test 7.1: Spawn many coroutines quickly
 // Fixed: Added co_return to make it a valid coroutine
@@ -967,7 +961,8 @@ TEST_F(CoroutinePerformance, MemoryStabilityUnderLoad) {
             coro_scheduler().spawn(std::move(t));
         }
 
-        run_for(100ms);
+        EXPECT_TRUE(wait_until([&completed]() { return completed.load() == per_batch; },
+                               300ms));
 
         // Then - each batch should complete
         EXPECT_EQ(completed, per_batch);
