@@ -188,7 +188,7 @@ inline_size int iouring_init(EV_P_ int flags)
 
   iouring_to_submit = 0;
 
-  backend_fd     = iouring_fd;
+  backend_fd     = (uintptr_t)(unsigned)iouring_fd;
   backend_modify = iouring_modify;
   backend_poll   = iouring_poll;
   backend_mintime = EV_TS_CONST(1e-3);

@@ -94,9 +94,8 @@ event_get_method (void)
 void *event_init (void)
 {
 #if EV_MULTIPLICITY
-  if (ev_x_cur)
-    ev_x_cur = (struct event_base *)ev_loop_new (EVFLAG_AUTO);
-  else
+  /* Idempotent: attach to the process-wide default loop once (libevent 1.x semantics). */
+  if (!ev_x_cur)
     ev_x_cur = (struct event_base *)ev_default_loop (EVFLAG_AUTO);
 #else
   assert (("libev: multiple event bases not supported when not compiled with EV_MULTIPLICITY", !ev_x_cur));
@@ -129,13 +128,16 @@ void event_base_free (struct event_base *base)
   dLOOPbase;
 
 #if EV_MULTIPLICITY
-  if (!ev_is_default_loop (loop))
+  if (base && !ev_is_default_loop (loop))
     ev_loop_destroy (loop);
 #endif
 }
 
 int event_dispatch (void)
 {
+  if (!ev_x_cur)
+    return -1;
+
   return event_base_dispatch (ev_x_cur);
 }
 
@@ -148,11 +150,17 @@ void event_set_log_callback (event_log_cb cb)
 
 int event_loop (int flags)
 {
+  if (!ev_x_cur)
+    return -1;
+
   return event_base_loop (ev_x_cur, flags);
 }
 
 int event_loopexit (struct timeval *tv)
 {
+  if (!ev_x_cur)
+    return -1;
+
   return event_base_loopexit (ev_x_cur, tv);
 }
 
@@ -205,6 +213,8 @@ ev_x_cb_to (EV_P_ struct ev_timer *w, int revents)
 
 void event_set (struct event *ev, int fd, short events, void (*cb)(int, short, void *), void *arg)
 {
+  assert (("libev: call event_init before event_set", ev_x_cur));
+
   if (events & EV_SIGNAL)
     ev_init (&ev->iosig.sig, ev_x_cb_sig);
   else
@@ -224,12 +234,17 @@ void event_set (struct event *ev, int fd, short events, void (*cb)(int, short, v
 
 int event_once (int fd, short events, void (*cb)(int, short, void *), void *arg, struct timeval *tv)
 {
+  if (!ev_x_cur)
+    return -1;
+
   return event_base_once (ev_x_cur, fd, events, cb, arg, tv);
 }
 
 int event_add (struct event *ev, struct timeval *tv)
 {
   dLOOPev;
+
+  assert (("libev: call event_init or event_base_set before event_add", ev->ev_base));
 
   if (ev->ev_events & EV_SIGNAL)
     {
@@ -273,6 +288,9 @@ int event_del (struct event *ev)
 {
   dLOOPev;
 
+  if (!ev->ev_base)
+    return 0;
+
   if (ev->ev_events & EV_SIGNAL)
     ev_signal_stop (EV_A_ &ev->iosig.sig);
   else if (ev->ev_events & (EV_READ | EV_WRITE))
@@ -290,6 +308,9 @@ void event_active (struct event *ev, int res, short ncalls)
 {
   dLOOPev;
 
+  if (!ev->ev_base)
+    return;
+
   if (res & EV_TIMEOUT)
     ev_feed_event (EV_A_ &ev->to, res & EV_TIMEOUT);
 
@@ -304,6 +325,9 @@ int event_pending (struct event *ev, short events, struct timeval *tv)
 {
   short revents = 0;
   dLOOPev;
+
+  if (!ev->ev_base)
+    return 0;
 
   if (ev->ev_events & EV_SIGNAL)
     {
@@ -325,9 +349,10 @@ int event_pending (struct event *ev, short events, struct timeval *tv)
       if (tv)
         {
           ev_tstamp at = ev_now (EV_A);
+          long sec = (long)at;
 
-          tv->tv_sec  = (long)at;
-          tv->tv_usec = (long)((at - (ev_tstamp)tv->tv_sec) * 1e6);
+          tv->tv_sec  = sec;
+          tv->tv_usec = (long)((at - (ev_tstamp)sec) * 1e6);
         }
     }
 
@@ -336,6 +361,9 @@ int event_pending (struct event *ev, short events, struct timeval *tv)
 
 int event_priority_init (int npri)
 {
+  if (!ev_x_cur)
+    return -1;
+
   return event_base_priority_init (ev_x_cur, npri);
 }
 
@@ -357,6 +385,9 @@ int event_base_loop (struct event_base *base, int flags)
 {
   dLOOPbase;
 
+  if (!loop)
+    return -1;
+
   return !ev_run (EV_A_ flags);
 }
 
@@ -377,6 +408,9 @@ int event_base_loopexit (struct event_base *base, struct timeval *tv)
 {
   ev_tstamp after = ev_tv_get (tv);
   dLOOPbase;
+
+  if (!loop)
+    return -1;
 
   ev_once (EV_A_ -1, 0, after >= 0. ? after : 0., ev_x_loopexit_cb, (void *)base);
 
@@ -403,6 +437,9 @@ int event_base_once (struct event_base *base, int fd, short events, void (*cb)(i
 {
   struct ev_x_once *once = (struct ev_x_once *)malloc (sizeof (struct ev_x_once));
   dLOOPbase;
+
+  if (!loop)
+    return -1;
 
   if (!once)
     return -1;

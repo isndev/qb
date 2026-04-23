@@ -59,7 +59,8 @@ namespace qb::io::async {
  *       exclusively within a single thread (VirtualCore). They must not be shared between threads.
  *       This is enforced by the thread-local nature of `listener::current`. All event handlers
  *       (`on()` methods) are called sequentially within the same thread, eliminating the need
- *       for synchronization primitives.
+ *       for synchronization primitives. On Windows, libev’s epoll path uses wepoll (IOCP); keep
+ *       the whole loop lifecycle on that thread (see `listener` documentation).
  *
  * @tparam _Derived The derived class type (CRTP pattern).
  * @tparam _EV_EVENT The specific `qb::io::async::event::*` type (which wraps a libev watcher, e.g., `event::io`, `event::timer`).

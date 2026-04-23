@@ -66,6 +66,9 @@ namespace qb::io::async {
  *         isolation rather than synchronization.
  *       - If you need to use qb-io objects across different threads, each thread must have its own
  *         listener instance (via `async::init()`) and objects must not be shared.
+ *       - On Windows the libev epoll backend is wepoll (IOCP). The loop must not call
+ *         `epoll_wait` / `ev_run` on one thread while another thread closes the same loop or its
+ *         epoll handle. Staying on one thread per `listener` satisfies that contract.
  */
 class listener {
 public:

@@ -108,10 +108,9 @@ poll_poll (EV_P_ ev_tstamp timeout)
         ev_syserr ("(libev) poll");
     }
   else
-    for (p = polls; res; ++p)
+    /* Bound the scan: if the kernel's `res` disagrees with revents bits, avoid walking past the array. */
+    for (p = polls; res && p < polls + pollcnt; ++p)
       {
-        assert (("libev: poll returned illegal result, broken BSD kernel?", p < polls + pollcnt));
-
         if (ecb_expect_false (p->revents)) /* this expect is debatable */
           {
             --res;

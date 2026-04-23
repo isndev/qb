@@ -60,12 +60,16 @@
 extern "C" {
 #endif
 
-/* we need sys/time.h for struct timeval only */
-#if !defined (WIN32) || defined (__MINGW32__)
+/* struct timeval: POSIX headers, or Winsock 2 on MSVC (avoid winsock.h vs winsock2.h clash). */
+#if !defined (_WIN32) || defined (__MINGW32__)
 # include <time.h> /* mingw seems to need this, for whatever reason */
 # include <sys/time.h>
 #else
-# include <winsock.h>
+# ifndef WIN32_LEAN_AND_MEAN
+#  define WIN32_LEAN_AND_MEAN
+# endif
+# include <winsock2.h>
+# include <ws2tcpip.h>
 #endif
 
 struct event_base;

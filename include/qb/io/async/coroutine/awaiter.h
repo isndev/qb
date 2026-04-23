@@ -35,9 +35,9 @@
  *
  * THREAD SAFETY:
  * ==============
- * - Awaiters use atomic flags to prevent race conditions
- * - libev callbacks can safely call on_event_ready()
- * - All operations are thread-safe with respect to the event loop
+ * - Awaiters are used from a single OS thread per `listener::current` (VirtualCore worker).
+ *   `on_event_ready()` runs on that same thread when libev invokes the watcher callback.
+ * - Do not share an awaiter or its watcher across threads; use one listener per thread.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -150,7 +150,7 @@ struct awaiter_base {
      * @brief Called by libev when event fires
      *
      * Schedules the coroutine for resumption via the scheduler.
-     * Thread-safe: uses atomic flags to prevent race conditions.
+     * Must run on the thread that owns `listener::current` (libev callback thread).
      */
     void on_event_ready() noexcept {
         ready_ = true;

@@ -50,6 +50,7 @@
 
 #include <sys/types.h>
 #include <sys/time.h>
+#include <stdint.h>
 #include <poll.h>
 #include <port.h>
 #include <string.h>
@@ -61,7 +62,7 @@ port_associate_and_check (EV_P_ int fd, int ev)
 {
   if (0 >
       port_associate (
-         backend_fd, PORT_SOURCE_FD, fd,
+         (int)(uintptr_t)backend_fd, PORT_SOURCE_FD, fd,
          (ev & EV_READ ? POLLIN : 0)
          | (ev & EV_WRITE ? POLLOUT : 0),
          0
@@ -87,7 +88,7 @@ port_modify (EV_P_ int fd, int oev, int nev)
   if (!nev)
     {
       if (oev)
-        port_dissociate (backend_fd, PORT_SOURCE_FD, fd);
+        port_dissociate ((int)(uintptr_t)backend_fd, PORT_SOURCE_FD, fd);
     }
   else
     port_associate_and_check (EV_A_ fd, nev);
@@ -107,7 +108,7 @@ port_poll (EV_P_ ev_tstamp timeout)
 
   EV_RELEASE_CB;
   EV_TS_SET (ts, timeout);
-  res = port_getn (backend_fd, port_events, port_eventmax, &nget, &ts);
+  res = port_getn ((int)(uintptr_t)backend_fd, port_events, port_eventmax, &nget, &ts);
   EV_ACQUIRE_CB;
 
   /* port_getn may or may not set nget on error */
@@ -144,13 +145,17 @@ inline_size
 int
 port_init (EV_P_ int flags)
 {
+  int portfd;
+
   /* Initialize the kernel queue */
-  if ((backend_fd = port_create ()) < 0)
+  if ((portfd = port_create ()) < 0)
     return 0;
+
+  backend_fd = (uintptr_t)(unsigned)portfd;
 
   assert (("libev: PORT_SOURCE_FD must not be zero", PORT_SOURCE_FD));
 
-  fcntl (backend_fd, F_SETFD, FD_CLOEXEC); /* not sure if necessary, hopefully doesn't hurt */
+  fcntl (portfd, F_SETFD, FD_CLOEXEC); /* not sure if necessary, hopefully doesn't hurt */
 
   /* if my reading of the opensolaris kernel sources are correct, then
    * opensolaris does something very stupid: it checks if the time has already
@@ -179,12 +184,16 @@ inline_size
 void
 port_fork (EV_P)
 {
-  close (backend_fd);
+  int portfd;
 
-  while ((backend_fd = port_create ()) < 0)
+  close ((int)(uintptr_t)backend_fd);
+
+  while ((portfd = port_create ()) < 0)
     ev_syserr ("(libev) port");
 
-  fcntl (backend_fd, F_SETFD, FD_CLOEXEC);
+  backend_fd = (uintptr_t)(unsigned)portfd;
+
+  fcntl (portfd, F_SETFD, FD_CLOEXEC);
 
   /* re-register interest in fds */
   fd_rearm_all (EV_A);

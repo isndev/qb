@@ -69,6 +69,18 @@
 #include <sys/epoll.h>
 #endif // WIN32
 
+/*
+ * qb-io / VirtualCore execution model (this tree vendors libev for qb):
+ * - One struct ev_loop per OS thread; all ev_* calls and watcher callbacks for
+ *   that loop run on that thread only (see qb::io::async::listener::current).
+ * - On Windows, wepoll is therefore used in the intended single-threaded mode:
+ *   no concurrent epoll_wait vs epoll_close on the same handle from different
+ *   threads, which sidesteps IOCP lifetime races that multi-threaded misuse could
+ *   otherwise create.
+ * - ev_embeddable_backends() clears EVBACKEND_EPOLL on _WIN32 so ev_embed is not
+ *   advertised for wepoll-backed inner loops (HANDLE is not an embeddable int fd).
+ */
+
 #define EV_EMASK_EPERM 0x80
 
 /* On Windows wepoll expects a full SOCKET handle (uintptr_t), whereas libev
@@ -81,6 +93,46 @@
 #else
 # define EV_FD_TO_SOCK(fd) (fd)
 #endif
+
+/* backend_fd holds a uintptr_t: Linux epoll fd, or Windows wepoll HANDLE address bits. */
+#ifdef _WIN32
+# define EV_EPOLL_API_HND ((HANDLE)(void *)(uintptr_t)backend_fd)
+#else
+# define EV_EPOLL_API_HND ((int)(uintptr_t)backend_fd)
+#endif
+
+#define EV_BACKEND_FD_INVALID ((uintptr_t)-1)
+
+static uintptr_t
+epoll_epoll_create (void)
+{
+#ifndef _WIN32
+  int fd;
+
+#if defined EPOLL_CLOEXEC && !defined __ANDROID__
+  fd = epoll_create1 (EPOLL_CLOEXEC);
+
+  if (fd < 0 && (errno == EINVAL || errno == ENOSYS))
+#endif
+    {
+      fd = epoll_create (256);
+      if (fd >= 0)
+        fcntl (fd, F_SETFD, FD_CLOEXEC);
+    }
+
+  if (fd < 0)
+    return EV_BACKEND_FD_INVALID;
+  return (uintptr_t)(unsigned)fd;
+#else
+  {
+    HANDLE h = epoll_create (256);
+
+    if (!h)
+      return EV_BACKEND_FD_INVALID;
+    return (uintptr_t)(void *)h;
+  }
+#endif
+}
 
 static void
 epoll_modify (EV_P_ int fd, int oev, int nev)
@@ -108,7 +160,7 @@ epoll_modify (EV_P_ int fd, int oev, int nev)
   ev.events   = (nev & EV_READ  ? EPOLLIN  : 0)
               | (nev & EV_WRITE ? EPOLLOUT : 0);
 
-  if (ecb_expect_true (!epoll_ctl (backend_fd, oev && oldmask != nev ? EPOLL_CTL_MOD : EPOLL_CTL_ADD, EV_FD_TO_SOCK(fd), &ev)))
+  if (ecb_expect_true (!epoll_ctl (EV_EPOLL_API_HND, oev && oldmask != nev ? EPOLL_CTL_MOD : EPOLL_CTL_ADD, EV_FD_TO_SOCK(fd), &ev)))
     return;
 
   if (ecb_expect_true (errno == ENOENT))
@@ -117,7 +169,7 @@ epoll_modify (EV_P_ int fd, int oev, int nev)
       if (!nev)
         goto dec_egen;
 
-      if (!epoll_ctl (backend_fd, EPOLL_CTL_ADD, EV_FD_TO_SOCK(fd), &ev))
+      if (!epoll_ctl (EV_EPOLL_API_HND, EPOLL_CTL_ADD, EV_FD_TO_SOCK(fd), &ev))
         return;
     }
   else if (ecb_expect_true (errno == EEXIST))
@@ -127,9 +179,8 @@ epoll_modify (EV_P_ int fd, int oev, int nev)
       if (oldmask == nev)
         goto dec_egen;
 
-      if (!epoll_ctl(backend_fd, EPOLL_CTL_MOD, EV_FD_TO_SOCK(fd), &ev))
+      if (!epoll_ctl(EV_EPOLL_API_HND, EPOLL_CTL_MOD, EV_FD_TO_SOCK(fd), &ev))
         return;
-//#endif
     }
   else if (ecb_expect_true (errno == EPERM))
     {
@@ -168,7 +219,7 @@ epoll_poll (EV_P_ ev_tstamp timeout)
   /* epoll wait times cannot be larger than (LONG_MAX - 999UL) / HZ msecs, which is below */
   /* the default libev max wait time, however. */
   EV_RELEASE_CB;
-  eventcnt = epoll_wait (backend_fd, epoll_events, epoll_eventmax, EV_TS_TO_MSEC (timeout));
+  eventcnt = epoll_wait (EV_EPOLL_API_HND, epoll_events, epoll_eventmax, EV_TS_TO_MSEC (timeout));
   EV_ACQUIRE_CB;
 
   if (ecb_expect_false (eventcnt < 0))
@@ -221,7 +272,7 @@ epoll_poll (EV_P_ ev_tstamp timeout)
 
           /* pre-2.6.9 kernels require a non-null pointer with EPOLL_CTL_DEL, */
           /* which is fortunately easy to do for us. */
-          if (epoll_ctl (backend_fd, want ? EPOLL_CTL_MOD : EPOLL_CTL_DEL, EV_FD_TO_SOCK(fd), ev))
+          if (epoll_ctl (EV_EPOLL_API_HND, want ? EPOLL_CTL_MOD : EPOLL_CTL_DEL, EV_FD_TO_SOCK(fd), ev))
             {
               postfork |= 2; /* an error occurred, recreate kernel state */
               continue;
@@ -255,32 +306,11 @@ epoll_poll (EV_P_ ev_tstamp timeout)
     }
 }
 
-static int
-epoll_epoll_create (void)
-{
-  int fd;
-
-#if defined EPOLL_CLOEXEC && !defined __ANDROID__
-  fd = epoll_create1 (EPOLL_CLOEXEC);
-
-  if (fd < 0 && (errno == EINVAL || errno == ENOSYS))
-#endif
-    {
-      fd = epoll_create (256);
-#ifndef _WIN32
-      if (fd >= 0)
-        fcntl (fd, F_SETFD, FD_CLOEXEC);
-#endif
-    }
-
-  return fd;
-}
-
 inline_size
 int
 epoll_init (EV_P_ int flags)
 {
-  if ((backend_fd = epoll_epoll_create ()) < 0)
+  if ((backend_fd = epoll_epoll_create ()) == EV_BACKEND_FD_INVALID)
     return 0;
 
   backend_mintime = EV_TS_CONST (1e-3); /* epoll does sometimes return early, this is just to avoid the worst */
@@ -305,9 +335,13 @@ ecb_cold
 static void
 epoll_fork (EV_P)
 {
-  close (backend_fd);
+#ifndef _WIN32
+  close ((int)(uintptr_t)backend_fd);
+#else
+  epoll_close (EV_EPOLL_API_HND);
+#endif
 
-  while ((backend_fd = epoll_epoll_create ()) < 0)
+  while ((backend_fd = epoll_epoll_create ()) == EV_BACKEND_FD_INVALID)
     ev_syserr ("(libev) epoll_create");
 
   fd_rearm_all (EV_A);

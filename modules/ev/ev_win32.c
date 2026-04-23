@@ -88,9 +88,8 @@ ev_pipe (int filedes [2])
   if (connect (sock [0], (struct sockaddr *)&addr, addr_size))
     goto fail;
 
-  /* TODO: returns INVALID_SOCKET on winsock accept, not < 0. fix it */
-  /* when convenient, probably by just removing error checking altogether? */
-  if ((sock [1] = accept (listener, 0, 0)) < 0)
+  sock [1] = accept (listener, 0, 0);
+  if (sock [1] == INVALID_SOCKET)
     goto fail;
 
   /* windows vista returns fantasy port numbers for sockets:
