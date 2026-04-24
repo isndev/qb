@@ -38,6 +38,12 @@
  */
 
 /*
+ * qb-io: loop_destroy skips close(backend_fd) when this backend is active so
+ * linuxaio_destroy can ev_io_stop the internal epoll watcher before closing the
+ * epoll fd (see ev.c). io_setup failure after epoll_init closes that fd here.
+ */
+
+/*
  * general notes about linux aio:
  *
  * a) at first, the linux aio IOCB_CMD_POLL functionality introduced in
@@ -89,8 +95,12 @@
 #include <poll.h>
 #include <linux/aio_abi.h>
 
+#ifndef POLLRDHUP
+# define POLLRDHUP 0
+#endif
+
 /*****************************************************************************/
-/* syscall wrapdadoop - this section has the raw api/abi definitions */
+/* syscall wrappers — raw api/abi definitions */
 
 #include <sys/syscall.h> /* no glibc wrappers */
 
@@ -271,7 +281,7 @@ linuxaio_modify (EV_P_ int fd, int oev, int nev)
       ++anfd->egen;
     }
 
-  iocb->io.aio_buf = (nev & EV_READ  ? POLLIN  : 0)
+  iocb->io.aio_buf = (nev & EV_READ  ? POLLIN | POLLRDHUP : 0)
                    | (nev & EV_WRITE ? POLLOUT : 0);
 
   if (nev)
@@ -306,8 +316,8 @@ linuxaio_parse_events (EV_P_ struct io_event *ev, int nr)
 {
   while (nr)
     {
-      int fd       = ev->data & 0xffffffff;
-      uint32_t gen = ev->data >> 32;
+      int fd       = (int)(uint32_t)(ev->data & 0xffffffffU);
+      uint32_t gen = (uint32_t)(ev->data >> 32);
       int res      = ev->res;
 
       assert (("libev: iocb fd must be in-bounds", fd >= 0 && fd < anfdmax));
@@ -320,7 +330,7 @@ linuxaio_parse_events (EV_P_ struct io_event *ev, int nr)
             EV_A_
             fd,
             (res & (POLLOUT | POLLERR | POLLHUP) ? EV_WRITE : 0)
-            | (res & (POLLIN | POLLERR | POLLHUP) ? EV_READ : 0)
+            | (res & (POLLIN | POLLERR | POLLHUP | POLLRDHUP) ? EV_READ : 0)
           );
 
           /* linux aio is oneshot: rearm fd. TODO: this does more work than strictly needed */
@@ -433,7 +443,7 @@ linuxaio_get_events (EV_P_ ev_tstamp timeout)
               break;
             }
           else if (res < want)
-            /* otherwise, if there were fewere events than we wanted, we assume there are no more */
+            /* otherwise, if there were fewer events than we wanted, we assume there are no more */
             break;
         }
       else
@@ -466,23 +476,24 @@ linuxaio_poll (EV_P_ ev_tstamp timeout)
       int res = evsys_io_submit (linuxaio_ctx, linuxaio_submitcnt - submitted, linuxaio_submits + submitted);
 
       if (ecb_expect_false (res < 0))
-        if (errno == EINVAL)
-          {
-            /* This happens for unsupported fds, officially, but in my testing,
-             * also randomly happens for supported fds. We fall back to good old
-             * poll() here, under the assumption that this is a very rare case.
-             * See https://lore.kernel.org/patchwork/patch/1047453/ to see
-             * discussion about such a case (ttys) where polling for POLLIN
-             * fails but POLLIN|POLLOUT works.
-             */
-            struct iocb *iocb = linuxaio_submits [submitted];
-            epoll_modify (EV_A_ iocb->aio_fildes, 0, anfds [iocb->aio_fildes].events);
-            iocb->aio_reqprio = -1; /* mark iocb as epoll */
+        {
+          if (errno == EINVAL)
+            {
+              /* This happens for unsupported fds, officially, but in my testing,
+               * also randomly happens for supported fds. We fall back to good old
+               * poll() here, under the assumption that this is a very rare case.
+               * See https://lore.kernel.org/patchwork/patch/1047453/ to see
+               * discussion about such a case (ttys) where polling for POLLIN
+               * fails but POLLIN|POLLOUT works.
+               */
+              struct iocb *iocb = linuxaio_submits [submitted];
+              epoll_modify (EV_A_ iocb->aio_fildes, 0, anfds [iocb->aio_fildes].events);
+              iocb->aio_reqprio = -1; /* mark iocb as epoll */
 
-            res = 1; /* skip this iocb - another iocb, another chance */
-          }
-        else if (errno == EAGAIN)
-          {
+              res = 1; /* skip this iocb - another iocb, another chance */
+            }
+          else if (errno == EAGAIN)
+            {
             /* This happens when the ring buffer is full, or some other shit we
              * don't know and isn't documented. Most likely because we have too
              * many requests and linux aio can't be assed to handle them.
@@ -537,6 +548,7 @@ linuxaio_poll (EV_P_ ev_tstamp timeout)
             ev_syserr ("(libev) linuxaio io_submit");
             res = 0;
           }
+        }
 
       submitted += res;
     }
@@ -566,6 +578,11 @@ linuxaio_init (EV_P_ int flags)
   if (linuxaio_io_setup (EV_A) < 0)
     {
       epoll_destroy (EV_A);
+      if (backend_fd != (uintptr_t)-1)
+        {
+          close ((int)(uintptr_t)backend_fd);
+          backend_fd = (uintptr_t)-1;
+        }
       return 0;
     }
 
@@ -591,9 +608,15 @@ inline_size
 void
 linuxaio_destroy (EV_P)
 {
+  ev_io_stop (EV_A_ &linuxaio_epoll_w);
   epoll_destroy (EV_A);
   linuxaio_free_iocbp (EV_A);
   evsys_io_destroy (linuxaio_ctx); /* fails in child, aio context is destroyed */
+  if (backend_fd != (uintptr_t)-1)
+    {
+      close ((int)(uintptr_t)backend_fd);
+      backend_fd = (uintptr_t)-1;
+    }
 }
 
 ecb_cold

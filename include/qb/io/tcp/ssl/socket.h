@@ -35,6 +35,17 @@
 namespace qb::io::ssl {
 
 /**
+ * @brief Attach a native socket handle to an OpenSSL `SSL` object.
+ * @ingroup SSL
+ * @param ssl The SSL connection object.
+ * @param native_socket The platform-native socket handle.
+ * @return true on success, false on failure.
+ * @details Centralizes the Windows `SOCKET` to OpenSSL `int` conversion so the
+ *          rest of qb-io does not have to scatter narrowing conversions.
+ */
+bool attach_socket(SSL *ssl, ::socket_type native_socket);
+
+/**
  * @struct Certificate
  * @ingroup SSL
  * @brief Structure to hold essential SSL certificate information.
@@ -323,6 +334,8 @@ namespace qb::io::tcp::ssl {
 class QB_API socket : public tcp::socket {
     std::unique_ptr<SSL, void (*)(SSL *)> _ssl_handle; /**< Unique pointer managing the OpenSSL `SSL` object. */
     bool _connected; /**< Flag indicating if the SSL handshake has successfully completed. */
+    std::string _pending_sni_hostname; /**< Desired SNI hostname to apply to the next/client SSL handle. */
+    std::vector<std::string> _pending_alpn_protocols; /**< Desired ALPN offers to apply before handshake starts. */
 
     /**
      * @brief Performs the SSL handshake check after a non-blocking connect.
@@ -356,6 +369,12 @@ class QB_API socket : public tcp::socket {
      * @private
      */
     int n_connect_in(int af, std::string const &host, uint16_t port) noexcept;
+
+    /**
+     * @brief Applies any cached pre-handshake client settings to the current SSL handle.
+     * @return true when all requested settings are applied successfully or nothing is pending.
+     */
+    bool apply_pending_client_settings() noexcept;
 
 public:
     /** @brief Indicates that this socket implementation is secure */
@@ -642,7 +661,9 @@ public:
 
     /**
      * @brief Set the Server Name Indication (SNI) hostname for this SSL connection.
-     * @details Must be called before the SSL handshake (e.g., before `connect()` or `connected()`).
+     * @details Must be called before the SSL handshake. The value is cached on the socket and
+     *          applied to the underlying `SSL` object as soon as it exists, so it is valid to
+     *          call this before `connect()` / `n_connect()` create the `SSL` handle.
      *          This overrides any SNI set by connect methods if called after them but before handshake.
      * @param hostname The hostname to use for SNI.
      * @return true if SNI was set successfully and an SSL handle exists, false otherwise.
@@ -651,7 +672,10 @@ public:
 
     /**
      * @brief Set the ALPN protocols to offer for this specific SSL connection (client-side).
-     * @details Must be called before the SSL handshake. Overrides ALPN protocols set on the SSL_CTX for this connection.
+     * @details Must be called before the SSL handshake. The offered protocol list is cached on
+     *          the socket and applied to the `SSL` object once it exists, so callers may set it
+     *          before `connect()` / `n_connect()`. Overrides ALPN protocols set on the SSL_CTX
+     *          for this connection.
      * @param protocols A vector of protocol strings (e.g., {"h2", "http/1.1"}).
      * @return true if ALPN protocols were set successfully and an SSL handle exists, false otherwise.
      */

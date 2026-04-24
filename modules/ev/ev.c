@@ -157,6 +157,13 @@
 #  define EV_USE_PORT 0
 # endif
 
+# ifndef EV_RECOMMEND_LINUXAIO
+#  define EV_RECOMMEND_LINUXAIO 0
+# endif
+# ifndef EV_RECOMMEND_IOURING
+#  define EV_RECOMMEND_IOURING 0
+# endif
+
 # if HAVE_INOTIFY_INIT && HAVE_SYS_INOTIFY_H
 #  ifndef EV_USE_INOTIFY
 #   define EV_USE_INOTIFY EV_FEATURE_OS
@@ -1873,14 +1880,321 @@ static EV_ATOMIC_T have_realtime; /* did clock_gettime (CLOCK_REALTIME) work? */
 static EV_ATOMIC_T have_monotonic; /* did clock_gettime (CLOCK_MONOTONIC) work? */
 #endif
 
-#ifndef EV_FD_TO_WIN32_HANDLE
-# define EV_FD_TO_WIN32_HANDLE(fd) _get_osfhandle (fd)
-#endif
-#ifndef EV_WIN32_HANDLE_TO_FD
-# define EV_WIN32_HANDLE_TO_FD(handle) _open_osfhandle (handle, 0)
-#endif
-#ifndef EV_WIN32_CLOSE_FD
-# define EV_WIN32_CLOSE_FD(fd) close (fd)
+#ifdef _WIN32
+typedef struct ev_win32_fd_entry
+{
+  int fd;
+  SOCKET handle;
+  unsigned int refcount;
+  unsigned char owned;
+  struct ev_win32_fd_entry *next;
+} ev_win32_fd_entry;
+
+#define EV_WIN32_FD_BUCKETS 4096u
+
+static INIT_ONCE ev_win32_fd_once = INIT_ONCE_STATIC_INIT;
+static CRITICAL_SECTION ev_win32_fd_lock;
+static ev_win32_fd_entry **ev_win32_fd_buckets;
+static ev_win32_fd_entry **ev_win32_fd_by_fd;
+static int *ev_win32_fd_free;
+static int ev_win32_fd_by_fdmax;
+static int ev_win32_fd_freemax;
+static int ev_win32_fd_freecnt;
+static int ev_win32_fd_next;
+
+static unsigned int
+ev_win32_fd_hash (SOCKET handle)
+{
+  uintptr_t value = (uintptr_t)handle;
+  return (unsigned int)((value ^ (value >> 11) ^ (value >> 23)) & (EV_WIN32_FD_BUCKETS - 1u));
+}
+
+static BOOL CALLBACK
+ev_win32_fd_init_once (PINIT_ONCE once, PVOID param, PVOID *ctx)
+{
+  (void)once;
+  (void)param;
+  (void)ctx;
+
+  InitializeCriticalSection (&ev_win32_fd_lock);
+  ev_win32_fd_buckets = (ev_win32_fd_entry **)calloc (EV_WIN32_FD_BUCKETS, sizeof (*ev_win32_fd_buckets));
+
+  return ev_win32_fd_buckets != 0;
+}
+
+static int
+ev_win32_fd_init (void)
+{
+  if (!InitOnceExecuteOnce (&ev_win32_fd_once, ev_win32_fd_init_once, 0, 0))
+    {
+      errno = ENOMEM;
+      return -1;
+    }
+
+  if (!ev_win32_fd_buckets)
+    {
+      errno = ENOMEM;
+      return -1;
+    }
+
+  return 0;
+}
+
+static int
+ev_win32_fd_reserve (int fd)
+{
+  ev_win32_fd_entry **by_fd;
+
+  if (fd < ev_win32_fd_by_fdmax)
+    return 0;
+
+  by_fd = (ev_win32_fd_entry **)realloc (ev_win32_fd_by_fd, (size_t)(fd + 1) * sizeof (*by_fd));
+  if (!by_fd)
+    {
+      errno = ENOMEM;
+      return -1;
+    }
+
+  memset (by_fd + ev_win32_fd_by_fdmax, 0, (size_t)(fd + 1 - ev_win32_fd_by_fdmax) * sizeof (*by_fd));
+  ev_win32_fd_by_fd = by_fd;
+  ev_win32_fd_by_fdmax = fd + 1;
+
+  return 0;
+}
+
+static ev_win32_fd_entry *
+ev_win32_fd_find_handle_unlocked (SOCKET handle)
+{
+  ev_win32_fd_entry *ent = ev_win32_fd_buckets [ev_win32_fd_hash (handle)];
+
+  while (ent)
+    {
+      if (ent->handle == handle)
+        return ent;
+
+      ent = ent->next;
+    }
+
+  return 0;
+}
+
+static ev_win32_fd_entry *
+ev_win32_fd_find_fd_unlocked (int fd)
+{
+  return fd >= 0 && fd < ev_win32_fd_by_fdmax ? ev_win32_fd_by_fd [fd] : 0;
+}
+
+static int
+ev_win32_fd_alloc_unlocked (void)
+{
+  if (ev_win32_fd_freecnt)
+    return ev_win32_fd_free [--ev_win32_fd_freecnt];
+
+  return ev_win32_fd_next++;
+}
+
+static int
+ev_win32_fd_push_free_unlocked (int fd)
+{
+  int *freefds;
+
+  if (ev_win32_fd_freecnt < ev_win32_fd_freemax)
+    {
+      ev_win32_fd_free [ev_win32_fd_freecnt++] = fd;
+      return 0;
+    }
+
+  ev_win32_fd_freemax = ev_win32_fd_freemax ? ev_win32_fd_freemax * 2 : 64;
+  freefds = (int *)realloc (ev_win32_fd_free, (size_t)ev_win32_fd_freemax * sizeof (*freefds));
+  if (!freefds)
+    {
+      errno = ENOMEM;
+      return -1;
+    }
+
+  ev_win32_fd_free = freefds;
+  ev_win32_fd_free [ev_win32_fd_freecnt++] = fd;
+  return 0;
+}
+
+static int
+ev_win32_fd_acquire (SOCKET handle, int owned)
+{
+  ev_win32_fd_entry *ent;
+  unsigned int bucket;
+  int fd;
+
+  if (handle == 0 || handle == INVALID_SOCKET)
+    {
+      errno = EBADF;
+      return -1;
+    }
+
+  if (ev_win32_fd_init () < 0)
+    return -1;
+
+  EnterCriticalSection (&ev_win32_fd_lock);
+
+  ent = ev_win32_fd_find_handle_unlocked (handle);
+  if (ent)
+    {
+      ++ent->refcount;
+      LeaveCriticalSection (&ev_win32_fd_lock);
+      return ent->fd;
+    }
+
+  fd = ev_win32_fd_alloc_unlocked ();
+  if (ev_win32_fd_reserve (fd) < 0)
+    {
+      LeaveCriticalSection (&ev_win32_fd_lock);
+      return -1;
+    }
+
+  ent = (ev_win32_fd_entry *)calloc (1, sizeof (*ent));
+  if (!ent)
+    {
+      ev_win32_fd_push_free_unlocked (fd);
+      LeaveCriticalSection (&ev_win32_fd_lock);
+      errno = ENOMEM;
+      return -1;
+    }
+
+  ent->fd = fd;
+  ent->handle = handle;
+  ent->refcount = 1;
+  ent->owned = !!owned;
+
+  bucket = ev_win32_fd_hash (handle);
+  ent->next = ev_win32_fd_buckets [bucket];
+  ev_win32_fd_buckets [bucket] = ent;
+  ev_win32_fd_by_fd [fd] = ent;
+
+  LeaveCriticalSection (&ev_win32_fd_lock);
+  return fd;
+}
+
+static SOCKET
+ev_win32_fd_to_handle (int fd)
+{
+  SOCKET handle = INVALID_SOCKET;
+  ev_win32_fd_entry *ent;
+
+  if (ev_win32_fd_init () < 0)
+    return INVALID_SOCKET;
+
+  EnterCriticalSection (&ev_win32_fd_lock);
+  ent = ev_win32_fd_find_fd_unlocked (fd);
+  if (ent)
+    handle = ent->handle;
+  LeaveCriticalSection (&ev_win32_fd_lock);
+
+  if (handle == INVALID_SOCKET)
+    errno = EBADF;
+
+  return handle;
+}
+
+static int
+ev_win32_fd_release (int fd, int close_handle)
+{
+  ev_win32_fd_entry **link;
+  ev_win32_fd_entry *ent;
+  SOCKET handle;
+  int owned;
+
+  if (ev_win32_fd_init () < 0)
+    return -1;
+
+  EnterCriticalSection (&ev_win32_fd_lock);
+
+  ent = ev_win32_fd_find_fd_unlocked (fd);
+  if (!ent)
+    {
+      LeaveCriticalSection (&ev_win32_fd_lock);
+      errno = EBADF;
+      return -1;
+    }
+
+  if (--ent->refcount)
+    {
+      LeaveCriticalSection (&ev_win32_fd_lock);
+      return 0;
+    }
+
+  link = &ev_win32_fd_buckets [ev_win32_fd_hash (ent->handle)];
+  while (*link && *link != ent)
+    link = &(*link)->next;
+
+  if (*link)
+    *link = ent->next;
+
+  ev_win32_fd_by_fd [fd] = 0;
+  handle = ent->handle;
+  owned = ent->owned;
+  free (ent);
+  ev_win32_fd_push_free_unlocked (fd);
+
+  LeaveCriticalSection (&ev_win32_fd_lock);
+
+  if (close_handle && owned)
+    closesocket (handle);
+
+  return 0;
+}
+
+static int
+ev_win32_fd_valid (int fd)
+{
+  SOCKET handle;
+  int so_error;
+  int len;
+  int rc;
+
+  handle = ev_win32_fd_to_handle (fd);
+  if (handle == INVALID_SOCKET)
+    return 0;
+
+  so_error = 0;
+  len = sizeof (so_error);
+  rc = getsockopt (handle, SOL_SOCKET, SO_ERROR, (char *)&so_error, &len);
+
+  if (rc == 0)
+    return 1;
+
+  if (WSAGetLastError () == WSAENOTSOCK)
+    {
+      errno = EBADF;
+      return 0;
+    }
+
+  return 1;
+}
+
+int
+ev_win32_socket_fd (uintptr_t handle) EV_NOEXCEPT
+{
+  return ev_win32_fd_acquire ((SOCKET)handle, 0);
+}
+
+# ifndef EV_FD_TO_WIN32_HANDLE
+#  define EV_FD_TO_WIN32_HANDLE(fd) ev_win32_fd_to_handle (fd)
+# endif
+# ifndef EV_WIN32_HANDLE_TO_FD
+#  define EV_WIN32_HANDLE_TO_FD(handle) ev_win32_fd_acquire ((SOCKET)(handle), 1)
+# endif
+# ifndef EV_WIN32_CLOSE_FD
+#  define EV_WIN32_CLOSE_FD(fd) ev_win32_fd_release ((fd), 1)
+# endif
+#else
+# ifndef EV_FD_TO_WIN32_HANDLE
+#  define EV_FD_TO_WIN32_HANDLE(fd) _get_osfhandle (fd)
+# endif
+# ifndef EV_WIN32_HANDLE_TO_FD
+#  define EV_WIN32_HANDLE_TO_FD(handle) _open_osfhandle (handle, 0)
+# endif
+# ifndef EV_WIN32_CLOSE_FD
+#  define EV_WIN32_CLOSE_FD(fd) close (fd)
+# endif
 #endif
 
 #ifdef _WIN32
@@ -2481,7 +2795,7 @@ inline_size ecb_cold int
 fd_valid (int fd)
 {
 #ifdef _WIN32
-  return EV_FD_TO_WIN32_HANDLE (fd) != -1;
+  return ev_win32_fd_valid (fd);
 #else
   return fcntl (fd, F_GETFD) != -1;
 #endif
@@ -3057,30 +3371,30 @@ evtimerfd_init (EV_P)
 
 /*****************************************************************************/
 
-// #if EV_USE_IOCP
-// # include "ev_iocp.c"
-// #endif
-// #if EV_USE_PORT
-// # include "ev_port.c"
-// #endif
+#if EV_USE_IOCP
+# include "ev_iocp.c"
+#endif
+#if EV_USE_PORT
+# include "ev_port.c"
+#endif
 #if EV_USE_KQUEUE
 # include "ev_kqueue.c"
 #endif
 #if EV_USE_EPOLL
 # include "ev_epoll.c"
 #endif
-// #if EV_USE_LINUXAIO
-// # include "ev_linuxaio.c"
-// #endif
+#if EV_USE_LINUXAIO
+# include "ev_linuxaio.c"
+#endif
 #if EV_USE_IOURING
 # include "ev_iouring.c"
 #endif
-// #if EV_USE_POLL
-// # include "ev_poll.c"
-// #endif
-// #if EV_USE_SELECT
-// # include "ev_select.c"
-// #endif
+#if EV_USE_POLL
+# include "ev_poll.c"
+#endif
+#if EV_USE_SELECT
+# include "ev_select.c"
+#endif
 
 ecb_cold int
 ev_version_major (void) EV_NOEXCEPT
@@ -3127,33 +3441,30 @@ ecb_cold
 unsigned int
 ev_recommended_backends (void) EV_NOEXCEPT
 {
-  return ev_supported_backends();
-//   unsigned int flags = ev_supported_backends ();
+  unsigned int flags = ev_supported_backends ();
 
-// #ifndef __NetBSD__
-//   /* kqueue is borked on everything but netbsd apparently */
-//   /* it usually doesn't work correctly on anything but sockets and pipes */
-//   flags &= ~EVBACKEND_KQUEUE;
-// #endif
-// #ifdef __APPLE__
-//   /* only select works correctly on that "unix-certified" platform */
-//   flags &= ~EVBACKEND_KQUEUE; /* horribly broken, even for sockets */
-//   flags &= ~EVBACKEND_POLL;   /* poll is based on kqueue from 10.5 onwards */
-// #endif
-// #ifdef __FreeBSD__
-//   flags &= ~EVBACKEND_POLL;   /* poll return value is unusable (http://forums.freebsd.org/archive/index.php/t-10270.html) */
-// #endif
+#ifndef __NetBSD__
+  /* kqueue is borked on everything but netbsd apparently */
+  /* it usually doesn't work correctly on anything but sockets and pipes */
+  flags &= ~EVBACKEND_KQUEUE;
+#endif
+#ifdef __APPLE__
+  /* only select works correctly on that "unix-certified" platform */
+  flags &= ~EVBACKEND_KQUEUE; /* horribly broken, even for sockets */
+  flags &= ~EVBACKEND_POLL;   /* poll is based on kqueue from 10.5 onwards */
+#endif
+#ifdef __FreeBSD__
+  flags &= ~EVBACKEND_POLL;   /* poll return value is unusable */
+#endif
 
-//   /* TODO: linuxaio is very experimental */
-// #if !EV_RECOMMEND_LINUXAIO
-//   flags &= ~EVBACKEND_LINUXAIO;
-// #endif
-//   /* TODO: iouring is super experimental */
-// #if !EV_RECOMMEND_IOURING
-//   flags &= ~EVBACKEND_IOURING;
-// #endif
+#if !EV_RECOMMEND_LINUXAIO
+  flags &= ~EVBACKEND_LINUXAIO;
+#endif
+#if !EV_RECOMMEND_IOURING
+  flags &= ~EVBACKEND_IOURING;
+#endif
 
-//   return flags;
+  return flags;
 }
 
 ecb_cold
@@ -3394,7 +3705,17 @@ ev_loop_destroy (EV_P)
     close (fs_fd);
 #endif
 #ifndef _WIN32
-  if (backend_fd != (uintptr_t)-1)
+  /* io_uring: iouring_destroy must munmap ring memory then close the uring fd.
+   * linux aio: linuxaio_destroy must ev_io_stop on the epoll fd before close.
+   * Closing backend_fd here first would double-close or use a dead fd in destroy. */
+  if (backend_fd != (uintptr_t)-1
+# if EV_USE_IOURING
+      && backend != EVBACKEND_IOURING
+# endif
+# if EV_USE_LINUXAIO
+      && backend != EVBACKEND_LINUXAIO
+# endif
+      )
     close ((int)(uintptr_t)backend_fd);
 #else
 # if EV_USE_EPOLL
@@ -4333,6 +4654,17 @@ ev_io_start (EV_P_ ev_io *w) EV_NOEXCEPT
   if (ecb_expect_false (ev_is_active (w)))
     return;
 
+#if defined(_WIN32)
+  if (fd < 0 && w->handle)
+    {
+      fd = ev_win32_socket_fd (w->handle);
+      if (ecb_expect_false (fd < 0))
+        return;
+
+      w->fd = fd;
+    }
+#endif
+
   assert (("libev: ev_io_start called with negative fd", fd >= 0));
   assert (("libev: ev_io_start called with illegal event mask", !(w->events & ~(EV__IOFDSET | EV_READ | EV_WRITE))));
 
@@ -4349,8 +4681,8 @@ ev_io_start (EV_P_ ev_io *w) EV_NOEXCEPT
   assert (("libev: ev_io_start called with corrupted watcher", ((WL)w)->next != (WL)w));
 
 #if EV_SELECT_IS_WINSOCKET
-  /* Store the full SOCKET handle (zero-extended from int) for use by epoll_ctl/wepoll. */
-  anfds[fd].handle = (SOCKET)(unsigned int)fd;
+  /* Preserve the native socket handle so win32 backends never have to infer it from the fd. */
+  anfds[fd].handle = w->handle ? (SOCKET)w->handle : EV_FD_TO_WIN32_HANDLE (fd);
 #endif
 
   fd_change (EV_A_ fd, w->events & EV__IOFDSET | EV_ANFD_REIFY);
@@ -4381,15 +4713,24 @@ ev_io_stop (EV_P_ ev_io *w) EV_NOEXCEPT
 
   EV_FREQUENT_CHECK;
 #if defined(_WIN32) && EV_USE_EPOLL
-  {
+  if (backend == EVBACKEND_EPOLL)
+    {
     struct epoll_event ev;
     memset(&ev, 0, sizeof ev);
     /* Use the stored handle to avoid narrowing-conversion artifacts on x64. */
     SOCKET sock = (w->fd >= 0 && w->fd < anfdmax)
                   ? anfds[w->fd].handle
-                  : (SOCKET)(unsigned int)w->fd;
+                  : EV_FD_TO_WIN32_HANDLE (w->fd);
     epoll_ctl ((HANDLE)(void *)backend_fd, EPOLL_CTL_DEL, sock, &ev);
   }
+#endif
+
+#if defined(_WIN32)
+  if (w->handle)
+    {
+      ev_win32_fd_release (w->fd, 0);
+      w->fd = -1;
+    }
 #endif
 }
 
@@ -5494,10 +5835,20 @@ once_cb_to (EV_P_ ev_timer *w, int revents)
   once_cb (EV_A_ once, revents | ev_clear_pending (EV_A_ &once->io));
 }
 
+/* See ev.h: no-op when cb is NULL, or when fd < 0 and timeout < 0. (nothing could fire). */
 void
 ev_once (EV_P_ int fd, int events, ev_tstamp timeout, void (*cb)(int revents, void *arg), void *arg) EV_NOEXCEPT
 {
-  struct ev_once *once = (struct ev_once *)ev_malloc (sizeof (struct ev_once));
+  struct ev_once *once;
+
+  if (ecb_expect_false (!cb))
+    return;
+
+  /* No I/O and no timer: once_cb would never run and the allocation would leak. */
+  if (ecb_expect_false (fd < 0 && timeout < 0.))
+    return;
+
+  once = (struct ev_once *)ev_malloc (sizeof (struct ev_once));
 
   once->cb  = cb;
   once->arg = arg;

@@ -14,6 +14,10 @@ set(LIBEV_VERSION_REVISION 0)
 # ----------------------------------------------------------------------------
 option(BUILD_STATIC_LIBS "Build libev as a static library" ON)
 option(BUILD_PIC_STATIC_LIBS "Build static lib as PIC" OFF)
+# Default OFF: matches legacy ev_config.h (#define EV_USE_TIMERFD 0). Enabling makes
+# ev_run use MAX_BLOCKTIME2 when timerfd is active and timercnt==0, which stalls
+# epoll_wait (regression #1 on event I/O tests). Opt in with -D QB_LIBEV_USE_TIMERFD=ON.
+option(QB_LIBEV_USE_TIMERFD "Enable libev timerfd (time-jump detection; affects idle waittime)" OFF)
 
 # ----------------------------------------------------------------------------
 # Feature Detection
@@ -87,31 +91,66 @@ check_c_source_compiles("
 # Include directories
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-# Reset all backends
+# Reset all backends/helpers
+set(EV_USE_SELECT 0)
+set(EV_USE_POLL 0)
 set(EV_USE_EPOLL 0)
 set(EV_USE_KQUEUE 0)
+set(EV_USE_PORT 0)
+set(EV_USE_LINUXAIO 0)
 set(EV_USE_IOURING 0)
 set(EV_USE_WSAPOLL 0)
+set(EV_USE_INOTIFY 0)
+set(EV_USE_EVENTFD 0)
+set(EV_USE_SIGNALFD 0)
+set(EV_USE_TIMERFD 0)
 
 # Detect backend support based on platform
 if(WIN32)
     set(HAVE_EPOLL_CTL 1)
     set(HAVE_SYS_EPOLL_H 1)
     set(EV_USE_EPOLL 1)  # We use wepoll on Windows as epoll backend
+    set(EV_USE_SELECT 1) # Keep a low-performance fallback available for forced/debug loops.
     list(APPEND PLATFORM_LIBS ws2_32)
 elseif(APPLE)
-    check_include_file(sys/event.h HAVE_SYS_EVENT_H)
-    check_symbol_exists(kqueue sys/event.h HAVE_KQUEUE)
     if(HAVE_KQUEUE)
         set(EV_USE_KQUEUE 1)
-    else()
-        message(FATAL_ERROR "kqueue is required on macOS")
     endif()
-elseif(UNIX)
+    if(HAVE_SELECT AND HAVE_SYS_SELECT_H)
+        set(EV_USE_SELECT 1)
+    endif()
+    if(HAVE_POLL AND HAVE_POLL_H)
+        set(EV_USE_POLL 1)
+    endif()
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    if(HAVE_SELECT AND HAVE_SYS_SELECT_H)
+        set(EV_USE_SELECT 1)
+    endif()
+    if(HAVE_POLL AND HAVE_POLL_H)
+        set(EV_USE_POLL 1)
+    endif()
+    if(HAVE_EPOLL_CTL AND HAVE_SYS_EPOLL_H)
+        set(EV_USE_EPOLL 1)
+    endif()
+    if(HAVE_LINUX_AIO_ABI_H AND HAVE_LINUX_FS_H AND HAVE_EPOLL_CTL AND HAVE_SYS_EPOLL_H)
+        set(EV_USE_LINUXAIO 1)
+    endif()
+    if(HAVE_INOTIFY_INIT AND HAVE_SYS_INOTIFY_H)
+        set(EV_USE_INOTIFY 1)
+    endif()
+    if(HAVE_EVENTFD AND HAVE_SYS_EVENTFD_H)
+        set(EV_USE_EVENTFD 1)
+    endif()
+    if(HAVE_SIGNALFD AND HAVE_SYS_SIGNALFD_H)
+        set(EV_USE_SIGNALFD 1)
+    endif()
+    if(QB_LIBEV_USE_TIMERFD AND HAVE_SYS_TIMERFD_H)
+        set(EV_USE_TIMERFD 1)
+    endif()
     # Check for io_uring
     check_include_file(linux/io_uring.h HAVE_LINUX_IO_URING_H)
     if(HAVE_LINUX_IO_URING_H)
-    check_c_source_compiles("
+      check_c_source_compiles("
         #include <unistd.h>
         #include <sys/syscall.h>
         #include <linux/io_uring.h>
@@ -121,13 +160,22 @@ elseif(UNIX)
             return fd >= 0 ? 0 : 1;
         }" HAVE_IO_URING_SYSCALL)
     endif()
-    set(EV_USE_EPOLL 1)
-    # if(HAVE_LINUX_IO_URING_H AND HAVE_IO_URING_SYSCALL)
-    #     message(STATUS "io_uring detected and supported")
-    #     set(EV_USE_IOURING 1)
-    # else()
-    #     message(STATUS "Falling back to epoll (no usable io_uring)")
-    # endif()
+    if(HAVE_LINUX_IO_URING_H AND HAVE_IO_URING_SYSCALL AND EV_USE_EPOLL)
+        set(EV_USE_IOURING 1)
+    endif()
+elseif(UNIX)
+    if(HAVE_SELECT AND HAVE_SYS_SELECT_H)
+        set(EV_USE_SELECT 1)
+    endif()
+    if(HAVE_POLL AND HAVE_POLL_H)
+        set(EV_USE_POLL 1)
+    endif()
+    if(HAVE_PORT_CREATE AND HAVE_PORT_H)
+        set(EV_USE_PORT 1)
+    endif()
+    if(HAVE_KQUEUE AND HAVE_SYS_EVENT_H)
+        set(EV_USE_KQUEUE 1)
+    endif()
 else()
     message(FATAL_ERROR "Unsupported platform")
 endif()

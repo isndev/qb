@@ -609,6 +609,14 @@ set(int fd, int events) EV_NOEXCEPT {
     ev_io_set(static_cast<ev_io *>(this), fd, events);
 }
 
+#if defined _WIN32
+void
+set(uintptr_t handle, int events) EV_NOEXCEPT {
+    freeze_guard freeze(this);
+    ev_io_set_sock(static_cast<ev_io *>(this), handle, events);
+}
+#endif
+
 void
 set(int events) EV_NOEXCEPT {
     freeze_guard freeze(this);
@@ -620,6 +628,14 @@ start(int fd, int events) EV_NOEXCEPT {
     set(fd, events);
     start();
 }
+
+#if defined _WIN32
+void
+start(uintptr_t handle, int events) EV_NOEXCEPT {
+    set(handle, events);
+    start();
+}
+#endif
 EV_END_WATCHER(io, io)
 
 EV_BEGIN_WATCHER(timer, timer)

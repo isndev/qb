@@ -54,6 +54,7 @@
 
 #include <atomic>
 #include <memory>
+#include <type_traits>
 
 #include <qb/io.h>
 #include <qb/io/system/sys__socket.h>
@@ -116,6 +117,16 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
         func_(std::move(s));
     }
 
+    [[nodiscard]] bool
+    finalize_transport_connect() noexcept {
+        if constexpr (std::is_same_v<decltype(std::declval<Socket_ &>().connected()), int>) {
+            return socket_.connected() == 0;
+        } else {
+            socket_.connected();
+            return true;
+        }
+    }
+
 public:
     /**
      * @brief Constructs a connector and stores parameters (does not connect yet).
@@ -151,9 +162,16 @@ public:
         LOG_DEBUG("Started async connect to " << remote_.source());
         auto ret = socket_.n_connect(remote_);
         if (!ret) {
-            LOG_DEBUG("Connected directly to " << remote_.source());
-            if (mark_completed_once())
-                deliver(std::move(socket_));
+            if (mark_completed_once()) {
+                if (finalize_transport_connect()) {
+                    LOG_DEBUG("Connected directly to " << remote_.source());
+                    deliver(std::move(socket_));
+                } else {
+                    socket_.disconnect();
+                    LOG_DEBUG("Failed to finalize direct connect to " << remote_.source());
+                    deliver(Socket_{});
+                }
+            }
             return;
         }
         if (socket_no_error(qb::io::socket::get_last_errno())) {
@@ -202,14 +220,17 @@ public:
             return;
 
         if (!err || err == EISCONN) {
-            LOG_DEBUG("Connected async to " << remote_.source());
-            socket_.connected();
-            deliver(std::move(socket_));
-        } else {
+            if (finalize_transport_connect()) {
+                LOG_DEBUG("Connected async to " << remote_.source());
+                deliver(std::move(socket_));
+                return;
+            }
+
             socket_.disconnect();
-            LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << err);
-            deliver(Socket_{});
         }
+
+        LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << err);
+        deliver(Socket_{});
     }
 
     /**

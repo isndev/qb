@@ -31,41 +31,33 @@
 #include <openssl/bn.h>     // For BIGNUM, needed for DH parameters file loading if not using PEM_read_bio_DHparams
 #include <openssl/asn1.h>   // For ASN1_INTEGER, ASN1_TIME
 #include <fstream>          // For reading DH parameters file if needed
+#include <ctime>
 #include <vector>
 #include <iomanip> // For std::hex, std::setw, std::setfill
 #include <sstream> // For std::ostringstream
 
+namespace {
+
+time_t
+utc_tm_to_time_t(struct tm *tm_utc) {
+#if defined(_WIN32)
+    return _mkgmtime(tm_utc);
+#else
+    return timegm(tm_utc);
+#endif
+}
+
+} // namespace
+
 // Helper function to convert ASN1_TIME to time_t
 static time_t asn1_time_to_time_t(const ASN1_TIME *time) {
-    if (!time || !time->data || time->length < 1)
+    if (!time)
         return 0;
 
-    const auto len = static_cast<std::size_t>(time->length);
-    const char *str = reinterpret_cast<const char *>(time->data);
-    std::size_t i = 0;
     struct tm t{};
-
-    const std::size_t min_len = (time->type == V_ASN1_UTCTIME) ? 12 : 14;
-    if (len < min_len)
+    if (ASN1_TIME_to_tm(time, &t) != 1)
         return 0;
-
-    if (time->type == V_ASN1_UTCTIME) {
-        t.tm_year = (str[i++] - '0') * 10; t.tm_year += (str[i++] - '0');
-        if (t.tm_year < 70) t.tm_year += 100;
-    } else if (time->type == V_ASN1_GENERALIZEDTIME) {
-        t.tm_year = (str[i++] - '0') * 1000; t.tm_year += (str[i++] - '0') * 100;
-        t.tm_year += (str[i++] - '0') * 10; t.tm_year += (str[i++] - '0');
-        t.tm_year -= 1900;
-    } else {
-        return 0;
-    }
-    t.tm_mon  = (str[i++] - '0') * 10; t.tm_mon  += (str[i++] - '0'); --t.tm_mon;
-    t.tm_mday = (str[i++] - '0') * 10; t.tm_mday += (str[i++] - '0');
-    t.tm_hour = (str[i++] - '0') * 10; t.tm_hour += (str[i++] - '0');
-    t.tm_min  = (str[i++] - '0') * 10; t.tm_min  += (str[i++] - '0');
-    t.tm_sec  = (str[i++] - '0') * 10; t.tm_sec  += (str[i++] - '0');
-
-    return mktime(&t);
+    return utc_tm_to_time_t(&t);
 }
 
 // Helper to convert ASN1_INTEGER to hex string
@@ -80,6 +72,21 @@ static std::string asn1_integer_to_hex_string(const ASN1_INTEGER *bs) {
 }
 
 namespace qb::io::ssl {
+
+bool
+attach_socket(SSL *ssl, ::socket_type native_socket) {
+    if (!ssl || native_socket == static_cast<::socket_type>(-1))
+        return false;
+
+#if defined(_WIN32)
+    if (native_socket > static_cast<::socket_type>((std::numeric_limits<int>::max)())) {
+        WSASetLastError(WSAEINVAL);
+        return false;
+    }
+#endif
+
+    return SSL_set_fd(ssl, static_cast<int>(native_socket)) == 1;
+}
 
 Certificate
 get_certificate(SSL *ssl) {
@@ -447,6 +454,32 @@ bool enable_post_handshake_auth_server(SSL_CTX* ctx) {
 
 namespace qb::io::tcp::ssl {
 
+namespace {
+
+bool
+apply_sni_hostname(SSL *ssl_handle, const std::string &hostname) noexcept {
+    return hostname.empty() || SSL_set_tlsext_host_name(ssl_handle, hostname.c_str()) == 1;
+}
+
+bool
+apply_alpn_protocols(SSL *ssl_handle,
+                     const std::vector<std::string> &protocols) noexcept {
+    if (protocols.empty())
+        return true;
+
+    std::vector<unsigned char> serialized = qb::io::ssl::serialize_alpn_protocols(protocols);
+    if (serialized.empty())
+        return false;
+
+    return SSL_set_alpn_protos(
+               ssl_handle,
+               serialized.data(),
+               static_cast<unsigned int>(serialized.size()))
+        == 0;
+}
+
+} // namespace
+
 socket::socket() noexcept
     : tcp::socket()
     , _ssl_handle(nullptr, SSL_free)
@@ -473,12 +506,10 @@ void
 socket::init(SSL *handle) noexcept {
     _connected = false;
     if (!_ssl_handle) {
-        auto *ctx = SSL_CTX_new(TLS_client_method());
-        _ssl_handle.reset(SSL_new(ctx));
-        if (!_ssl_handle) {
-            SSL_CTX_free(ctx);
-            return;
-        }
+        _ssl_handle.reset(handle);
+        if (_ssl_handle)
+            apply_pending_client_settings();
+        return;
     } else {
         auto *old_ssl = _ssl_handle.get();
         auto *old_ctx = SSL_get_SSL_CTX(old_ssl);
@@ -486,7 +517,19 @@ socket::init(SSL *handle) noexcept {
         _ssl_handle.reset(handle);
         if (was_client && old_ctx)
             SSL_CTX_free(old_ctx);
+        if (_ssl_handle)
+            apply_pending_client_settings();
     }
+}
+
+bool
+socket::apply_pending_client_settings() noexcept {
+    if (!_ssl_handle)
+        return true;
+
+    auto *ssl = ssl_handle();
+    return apply_sni_hostname(ssl, _pending_sni_hostname) &&
+           apply_alpn_protocols(ssl, _pending_alpn_protocols);
 }
 
 int
@@ -561,9 +604,15 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
     }
     const auto h_ssl = ssl_handle();
     SSL_set_quiet_shutdown(h_ssl, 1);
-    SSL_set_tlsext_host_name(h_ssl, hostname.c_str());
+    if (!hostname.empty())
+        _pending_sni_hostname = hostname;
+    if (!apply_pending_client_settings()) {
+        tcp::socket::disconnect();
+        return SocketStatus::Error;
+    }
     SSL_set_connect_state(h_ssl);
-    SSL_set_fd(h_ssl, static_cast<int>(native_handle()));
+    if (!qb::io::ssl::attach_socket(h_ssl, native_handle()))
+        return SocketStatus::Error;
     if (ret != 0 && socket_no_error(err))
         return ret;
     return handCheck() < 0 ? -1 : 0;
@@ -587,9 +636,15 @@ socket::connect(endpoint const &ep, std::string const &hostname,
     }
     const auto h_ssl = ssl_handle();
     SSL_set_quiet_shutdown(h_ssl, 1);
-    SSL_set_tlsext_host_name(h_ssl, hostname.c_str());
+    if (!hostname.empty())
+        _pending_sni_hostname = hostname;
+    if (!apply_pending_client_settings()) {
+        tcp::socket::disconnect();
+        return SocketStatus::Error;
+    }
     SSL_set_connect_state(h_ssl);
-    SSL_set_fd(h_ssl, static_cast<int>(native_handle()));
+    if (!qb::io::ssl::attach_socket(h_ssl, native_handle()))
+        return SocketStatus::Error;
     if (ret != 0 && socket_no_error(err))
         return ret;
     return handCheck() < 0 ? -1 : 0;
@@ -670,7 +725,12 @@ socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
     }
     const auto h_ssl = ssl_handle();
     SSL_set_quiet_shutdown(h_ssl, 1);
-    SSL_set_tlsext_host_name(h_ssl, hostname.c_str());
+    if (!hostname.empty())
+        _pending_sni_hostname = hostname;
+    if (!apply_pending_client_settings()) {
+        tcp::socket::disconnect();
+        return SocketStatus::Error;
+    }
     SSL_set_connect_state(h_ssl);
 
     return ret;
@@ -682,7 +742,8 @@ socket::connected() noexcept {
     if (!_ssl_handle)
         return -1;
     const auto h_ssl = ssl_handle();
-    SSL_set_fd(h_ssl, static_cast<int>(native_handle()));
+    if (!qb::io::ssl::attach_socket(h_ssl, native_handle()))
+        return SocketStatus::Error;
     return handCheck() < 0 ? -1 : 0;
 }
 
@@ -718,7 +779,6 @@ socket::n_connect_un(std::string const &path) noexcept {
 int
 socket::disconnect() noexcept {
     _connected = false;
-    //    SSL_shutdown(ssl_handle());
     return tcp::socket::disconnect();
 }
 
@@ -969,38 +1029,20 @@ bool socket::request_client_post_handshake_auth() noexcept {
 #endif
 }
 
-namespace {
-    // Local helper if not accessible from qb::io::ssl - ensure it's defined if needed
-    static std::vector<unsigned char> serialize_alpn_protocols_for_socket(const std::vector<std::string>& protocols) {
-        std::vector<unsigned char> out;
-        for (const auto& proto : protocols) {
-            if (proto.length() > 255) continue; // Protocol too long, skip
-            out.push_back(static_cast<unsigned char>(proto.length()));
-            out.insert(out.end(), proto.begin(), proto.end());
-        }
-        return out;
-    }
-}
-
 bool socket::set_sni_hostname(const std::string& hostname) noexcept {
-    if (!_ssl_handle || hostname.empty()) return false;
-    // Convert hostname to C-string. Check for embedded nulls if necessary.
-    if (SSL_set_tlsext_host_name(_ssl_handle.get(), hostname.c_str()) == 1) {
-        return true;
-    }
-    return false;
+    if (hostname.empty())
+        return false;
+
+    _pending_sni_hostname = hostname;
+    return !_ssl_handle || apply_sni_hostname(_ssl_handle.get(), _pending_sni_hostname);
 }
 
 bool socket::set_alpn_protocols(const std::vector<std::string>& protocols) noexcept {
-    if (!_ssl_handle || protocols.empty()) return false;
-    std::vector<unsigned char> serialized_protos = serialize_alpn_protocols_for_socket(protocols);
-    if (serialized_protos.empty()) return false; 
+    if (protocols.empty())
+        return false;
 
-    if (SSL_set_alpn_protos(_ssl_handle.get(), serialized_protos.data(), static_cast<unsigned int>(serialized_protos.size())) == 0) {
-        // SSL_set_alpn_protos returns 0 on success for SSL object, non-0 on failure.
-        return true;
-    }
-    return false;
+    _pending_alpn_protocols = protocols;
+    return !_ssl_handle || apply_alpn_protocols(_ssl_handle.get(), _pending_alpn_protocols);
 }
 
 bool socket::set_verify_callback(int (*callback)(int, X509_STORE_CTX *), int verification_mode) noexcept {

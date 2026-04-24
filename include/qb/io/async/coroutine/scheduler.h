@@ -385,6 +385,16 @@ public:
     }
 
     /**
+     * @brief Check whether this scheduler is currently draining ready coroutines.
+     *
+     * Used by sync bridge helpers (`run_sync`, `run_for`) to reject nested event-loop
+     * pumping from inside a coroutine/body already executing under `run_ready()`.
+     */
+    [[nodiscard]] bool is_draining_ready() const noexcept {
+        return in_run_ready_;
+    }
+
+    /**
      * @brief Get the number of pending coroutines.
      * @return Exact size of the ready queue (O(1), mono-thread deque).
      */

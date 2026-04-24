@@ -37,6 +37,11 @@
  * either the BSD or the GPL.
  */
 
+/*
+ * qb-io: bounded EINTR retry around select() (re-copies fdsets and restores tv);
+ * same timeout-not-recomputed tradeoff as kqueue EINTR cap.
+ */
+
 #ifndef _WIN32
 /* for unix systems */
 # include <inttypes.h>
@@ -142,9 +147,7 @@ select_poll (EV_P_ ev_tstamp timeout)
   struct timeval tv;
   int res;
   int fd_setsize;
-
-  EV_RELEASE_CB;
-  EV_TV_SET (tv, timeout);
+  int eintr;
 
 #if EV_SELECT_USE_FD_SET
   fd_setsize = sizeof (fd_set);
@@ -152,27 +155,35 @@ select_poll (EV_P_ ev_tstamp timeout)
   fd_setsize = vec_max * NFDBYTES;
 #endif
 
-  memcpy (vec_ro, vec_ri, fd_setsize);
-  memcpy (vec_wo, vec_wi, fd_setsize);
+  for (eintr = 0; ; ++eintr)
+    {
+      EV_RELEASE_CB;
+      EV_TV_SET (tv, timeout);
+
+      memcpy (vec_ro, vec_ri, fd_setsize);
+      memcpy (vec_wo, vec_wi, fd_setsize);
 
 #ifdef _WIN32
-  /* pass in the write set as except set.
-   * the idea behind this is to work around a windows bug that causes
-   * errors to be reported as an exception and not by setting
-   * the writable bit. this is so uncontrollably lame.
-   */
-  memcpy (vec_eo, vec_wi, fd_setsize);
-  res = select (vec_max * NFDBITS, (fd_set *)vec_ro, (fd_set *)vec_wo, (fd_set *)vec_eo, &tv);
+      /* pass in the write set as except set.
+       * the idea behind this is to work around a windows bug that causes
+       * errors to be reported as an exception and not by setting
+       * the writable bit. this is so uncontrollably lame.
+       */
+      memcpy (vec_eo, vec_wi, fd_setsize);
+      res = select (vec_max * NFDBITS, (fd_set *)vec_ro, (fd_set *)vec_wo, (fd_set *)vec_eo, &tv);
 #elif EV_SELECT_USE_FD_SET
-  fd_setsize = anfdmax < FD_SETSIZE ? anfdmax : FD_SETSIZE;
-  res = select (fd_setsize, (fd_set *)vec_ro, (fd_set *)vec_wo, 0, &tv);
+      {
+        int select_nfds = anfdmax < FD_SETSIZE ? anfdmax : FD_SETSIZE;
+        res = select (select_nfds, (fd_set *)vec_ro, (fd_set *)vec_wo, 0, &tv);
+      }
 #else
-  res = select (vec_max * NFDBITS, (fd_set *)vec_ro, (fd_set *)vec_wo, 0, &tv);
+      res = select (vec_max * NFDBITS, (fd_set *)vec_ro, (fd_set *)vec_wo, 0, &tv);
 #endif
-  EV_ACQUIRE_CB;
+      EV_ACQUIRE_CB;
 
-  if (ecb_expect_false (res < 0))
-    {
+      if (ecb_expect_true (res >= 0))
+        break;
+
       #if EV_SELECT_IS_WINSOCKET
       errno = WSAGetLastError ();
       #endif
@@ -209,7 +220,14 @@ select_poll (EV_P_ ev_tstamp timeout)
         fd_ebadf (EV_A);
       else if (errno == ENOMEM && !syserr_cb)
         fd_enomem (EV_A);
-      else if (errno != EINTR)
+      else if (errno == EINTR)
+        {
+          if (ecb_expect_false (eintr >= 255))
+            return;
+
+          continue;
+        }
+      else
         ev_syserr ("(libev) select");
 
       return;

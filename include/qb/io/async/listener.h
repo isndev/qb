@@ -28,6 +28,8 @@
 #include <algorithm>
 #include <chrono>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 #include <thread>
@@ -266,8 +268,10 @@ public:
      * @brief Clear all registered events from this listener.
      *
      * Removes and deletes all registered event handlers (IRegisteredKernelEvent instances).
-     * It also runs the event loop once with `EVRUN_ONCE` to process any pending libev events
-     * before fully clearing, which might be necessary for proper cleanup of some watchers.
+     * It then runs the loop with `EVRUN_NOWAIT` (a few passes) to flush pending libev work
+     * without blocking. Do not use `EVRUN_ONCE` here: with monotonic + timerfd enabled in
+     * libev, `ev_run` can choose a ~1.5e6 s waittime when `timercnt == 0`, which would wedge
+     * thread teardown (`~listener` / explicit `clear()`).
      * @note This is automatically called by the listener's destructor.
      */
     void
@@ -287,7 +291,8 @@ public:
                 delete cur;
                 cur = next;
             }
-            run(EVRUN_ONCE);
+            for (int i = 0; i < 4; ++i)
+                run(EVRUN_NOWAIT);
         }
         QB_LISTENER_TRACE("clear() end (scheduler NOT reset)");
     }
@@ -300,7 +305,8 @@ public:
     ~listener() noexcept {
         QB_LISTENER_TRACE("~listener() begin");
         clear();
-        QB_LISTENER_TRACE("~listener() about to destroy _coro_scheduler (unique_ptr reset)");
+        QB_LISTENER_TRACE("~listener() about to reset _coro_scheduler");
+        reset_coro_scheduler();
     }
 
     /**
@@ -521,6 +527,22 @@ init() noexcept {
     // breaks accept sockets, I/O watchers, and timeouts.
 }
 
+inline void
+ensure_not_inside_ready_drain(char const *api_name) {
+    if (listener::current.has_coro_scheduler() &&
+        listener::current.coro_scheduler().is_draining_ready()) {
+#ifndef NDEBUG
+        assert(!listener::current.coro_scheduler().is_draining_ready() &&
+               "async::run/run_once/run_until must not be called from inside a "
+               "coroutine or actor handler already executing under "
+               "CoroutineScheduler::run_ready()");
+#endif
+        throw std::logic_error(std::string(api_name) +
+                               " must not be called from inside a coroutine or actor "
+                               "handler already executing under run_ready()");
+    }
+}
+
 /**
  * @brief Run the event loop for the current thread.
  *
@@ -533,6 +555,7 @@ init() noexcept {
  */
 inline std::size_t
 run(int flag = 0) {
+    ensure_not_inside_ready_drain("async::run()");
     listener::current.run(flag);
     return listener::current.nb_invoked_event();
 }
@@ -541,11 +564,18 @@ run(int flag = 0) {
  * @brief Run the event loop once for the current thread, waiting for at least one event.
  *
  * Equivalent to `listener::current.run(EVRUN_ONCE)`.
+ *
+ * @warning With libev monotonic clock and timerfd enabled (`QB_LIBEV_USE_TIMERFD=ON`),
+ *          `EVRUN_ONCE` can block for libev's internal maximum waittime when there are
+ *          only `ev_io` watchers and no heap timers (`timercnt == 0`). Prefer
+ *          `run_until` / `run(EVRUN_NOWAIT)` in pumps, or keep timerfd disabled (default).
+ *
  * @return The number of events invoked.
  * @ingroup Async
  */
 inline std::size_t
 run_once() {
+    ensure_not_inside_ready_drain("async::run_once()");
     listener::current.run(EVRUN_ONCE);
     return listener::current.nb_invoked_event();
 }
@@ -560,6 +590,7 @@ run_once() {
  */
 inline std::size_t
 run_until(bool const &status) {
+    ensure_not_inside_ready_drain("async::run_until()");
     std::size_t nb_invoked_events = 0;
     while (status) {
         listener::current.run(EVRUN_NOWAIT);
