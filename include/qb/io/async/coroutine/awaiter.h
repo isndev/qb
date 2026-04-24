@@ -190,6 +190,19 @@ struct awaiter_base {
     }
 
     /**
+     * @brief Remove the coroutine from the suspended set if it is still tracked.
+     *
+     * Safe to call multiple times: the scheduler-side erase is idempotent.
+     * This is needed both on normal resume and on awaiter destruction paths
+     * where the coroutine frame goes away before the event fires.
+     */
+    void unregister_suspended() noexcept {
+        if (scheduler_ && handle_) {
+            scheduler_->unregister_suspended(handle_);
+        }
+    }
+
+    /**
      * @brief Virtual destructor
      */
     virtual ~awaiter_base() = default;
@@ -303,9 +316,7 @@ struct timer_awaiter : awaiter_base {
             started_ = false;
         }
         // Unregister from suspended set (in case on_event_ready wasn't called)
-        if (scheduler_ && handle_) {
-            scheduler_->unregister_suspended(handle_);
-        }
+        unregister_suspended();
         awaiter_base::await_resume();
     }
 
@@ -317,6 +328,7 @@ struct timer_awaiter : awaiter_base {
      * use-after-free.
      */
     ~timer_awaiter() override {
+        unregister_suspended();
         if (yield_only_) {
             return;
         }
@@ -399,6 +411,14 @@ struct socket_awaiter : awaiter_base {
         watcher_.data = this;
     }
 
+#if defined(_WIN32)
+    socket_awaiter(uintptr_t handle, int events, ev::loop_ref loop = ev::get_default_loop())
+        : events_(events), loop_(loop) {
+        ev_io_init_sock(&watcher_, io_callback, handle, events);
+        watcher_.data = this;
+    }
+#endif
+
     /**
      * @brief Suspend and start I/O watcher
      * @param h The coroutine handle
@@ -429,9 +449,7 @@ struct socket_awaiter : awaiter_base {
             started_ = false;
         }
         // Unregister from suspended set (in case on_event_ready wasn't called)
-        if (scheduler_ && handle_) {
-            scheduler_->unregister_suspended(handle_);
-        }
+        unregister_suspended();
         awaiter_base::await_resume();
     }
 
@@ -443,6 +461,7 @@ struct socket_awaiter : awaiter_base {
      * use-after-free.
      */
     ~socket_awaiter() override {
+        unregister_suspended();
         if (started_ && ev_is_active(&watcher_)) {
             ev_io_stop(loop_, &watcher_);
             started_ = false;
@@ -551,14 +570,13 @@ struct async_awaiter : awaiter_base {
     }
 
     ResultType await_resume() {
-        if (scheduler_ && handle_) {
-            scheduler_->unregister_suspended(handle_);
-        }
+        unregister_suspended();
         awaiter_base::await_resume();
         return std::move(*result_);
     }
 
     ~async_awaiter() override {
+        unregister_suspended();
         if (valid_) {
             *valid_ = false;
         }

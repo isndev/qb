@@ -1,6 +1,9 @@
 /*
  * libev kqueue backend
  *
+ * qb-io: kevent() EINTR retries without clearing kqueue_changecnt first, so a signal
+ * during kevent does not drop pending changelist entries before the kernel applies them.
+ *
  * Copyright (c) 2007,2008,2009,2010,2011,2012,2013,2016,2019 Marc Alexander Lehmann <libev@schmorp.de>
  * All rights reserved.
  *
@@ -99,22 +102,40 @@ kqueue_poll (EV_P_ ev_tstamp timeout)
     }
 
   EV_RELEASE_CB;
-  EV_TS_SET (ts, timeout);
-  res = kevent ((int)(uintptr_t)backend_fd, kqueue_changes, kqueue_changecnt, kqueue_events, kqueue_eventmax, &ts);
+  {
+    int eintr;
+    for (eintr = 0;; ++eintr)
+      {
+        EV_TS_SET (ts, timeout);
+        res = kevent ((int)(uintptr_t)backend_fd, kqueue_changes, kqueue_changecnt, kqueue_events, kqueue_eventmax, &ts);
+        if (ecb_expect_true (res >= 0) || errno != EINTR)
+          break;
+        /* Do not clear kqueue_changecnt until kevent consumes the changelist; retry bounded EINTR storms. */
+        if (ecb_expect_false (eintr >= 255))
+          break;
+      }
+  }
   EV_ACQUIRE_CB;
-  kqueue_changecnt = 0;
 
   if (ecb_expect_false (res < 0))
     {
-      if (errno != EINTR)
-        ev_syserr ("(libev) kqueue kevent");
+      if (errno == EINTR)
+        return;
 
-      return;
+      ev_syserr ("(libev) kqueue kevent");
     }
+
+  kqueue_changecnt = 0;
 
   for (i = 0; i < res; ++i)
     {
       int fd = kqueue_events [i].ident;
+
+#if EV_VERIFY >= 2
+      assert (("libev: kqueue event fd out of range", fd >= 0 && fd < anfdmax));
+#endif
+      if (ecb_expect_false (fd < 0 || fd >= anfdmax))
+        continue;
 
       if (ecb_expect_false (kqueue_events [i].flags & EV_ERROR))
         {

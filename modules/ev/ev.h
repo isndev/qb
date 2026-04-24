@@ -39,6 +39,7 @@
 
 #ifndef EV_H_
 #define EV_H_
+#  include <stdint.h>
 #  include "ev_config.h"
 #ifdef __cplusplus
 # define EV_CPP(x) x
@@ -324,6 +325,9 @@ typedef struct ev_io
 
   int fd;     /* ro */
   int events; /* ro */
+#if defined _WIN32
+  uintptr_t handle; /* ro: native win32 socket/handle for fd mapping */
+#endif
 } ev_io;
 
 /* invoked after a specific time, repeatable (based on monotonic clock) */
@@ -651,8 +655,10 @@ EV_API_DECL void ev_ref   (EV_P) EV_NOEXCEPT;
 EV_API_DECL void ev_unref (EV_P) EV_NOEXCEPT;
 
 /*
- * convenience function, wait for a single event, without registering an event watcher
- * if timeout is < 0, do wait indefinitely
+ * One-shot: register temporary I/O and/or a timer, invoke cb once, then tear down.
+ * - fd >= 0: watch that fd for (events & EV_READ|EV_WRITE); fd < 0 skips I/O.
+ * - timeout >= 0.: one-shot timer after that delay; timeout < 0. skips the timer (no "wait forever" here).
+ * - If cb is NULL, or both I/O and timer are skipped (fd < 0 and timeout < 0.), the call does nothing.
  */
 EV_API_DECL void ev_once (EV_P_ int fd, int events, ev_tstamp timeout, void (*cb)(int revents, void *arg), void *arg) EV_NOEXCEPT;
 
@@ -695,7 +701,13 @@ EV_API_DECL void ev_resume  (EV_P) EV_NOEXCEPT;
 } while (0)
 
 #define ev_io_modify(ev,events_)             do { (ev)->events = ((ev)->events & EV__IOFDSET) | (events_); } while (0)
-#define ev_io_set(ev,fd_,events_)            do { (ev)->fd = (fd_); (ev)->events = (events_) | EV__IOFDSET; } while (0)
+#if defined _WIN32
+EV_API_DECL int ev_win32_socket_fd (uintptr_t handle) EV_NOEXCEPT;
+# define ev_io_set(ev,fd_,events_)            do { (ev)->fd = (fd_); (ev)->events = (events_) | EV__IOFDSET; (ev)->handle = 0; } while (0)
+# define ev_io_set_sock(ev,sock_,events_)     do { (ev)->fd = -1; (ev)->events = (events_) | EV__IOFDSET; (ev)->handle = (uintptr_t)(sock_); } while (0)
+#else
+# define ev_io_set(ev,fd_,events_)            do { (ev)->fd = (fd_); (ev)->events = (events_) | EV__IOFDSET; } while (0)
+#endif
 #ifdef __cplusplus
 #define ev_timer_set(ev,after_,repeat_)      do { (ev)->at = (after_); (ev)->repeat = (repeat_); } while (0)
 #else
@@ -714,6 +726,9 @@ EV_API_DECL void ev_resume  (EV_P) EV_NOEXCEPT;
 #define ev_async_set(ev)                     /* nop, yes, this is a serious in-joke */
 
 #define ev_io_init(ev,cb,fd,events)          do { ev_init ((ev), (cb)); ev_io_set ((ev),(fd),(events)); } while (0)
+#if defined _WIN32
+# define ev_io_init_sock(ev,cb,sock,events)  do { ev_init ((ev), (cb)); ev_io_set_sock ((ev),(sock),(events)); } while (0)
+#endif
 #define ev_timer_init(ev,cb,after,repeat)    do { ev_init ((ev), (cb)); ev_timer_set ((ev),(after),(repeat)); } while (0)
 #define ev_periodic_init(ev,cb,ofs,ival,rcb) do { ev_init ((ev), (cb)); ev_periodic_set ((ev),(ofs),(ival),(rcb)); } while (0)
 #define ev_signal_init(ev,cb,signum)         do { ev_init ((ev), (cb)); ev_signal_set ((ev), (signum)); } while (0)

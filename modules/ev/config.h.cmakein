@@ -2,6 +2,10 @@
 #define EV_CONFIG_H_
 
 /* Backend support flags */
+#cmakedefine01 EV_USE_INOTIFY
+#cmakedefine01 EV_USE_SIGNALFD
+#cmakedefine01 EV_USE_EVENTFD
+#cmakedefine01 EV_USE_TIMERFD
 #cmakedefine01 EV_USE_SELECT
 #cmakedefine01 EV_USE_EPOLL
 #cmakedefine01 EV_USE_KQUEUE
@@ -51,7 +55,6 @@
 #cmakedefine01 EV_GENWRAP
 
 #define EV_MULTIPLICITY 1
-#define EV_USE_TIMERFD 0
 #define EV_FEATURES 0x7f
 
 /* Project and version macros */

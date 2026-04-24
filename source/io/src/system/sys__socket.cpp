@@ -875,7 +875,11 @@ socket::select(socket_type s, fd_set *readfds, fd_set *writefds, fd_set *exceptf
             static_cast<decltype(timeval::tv_sec)>(wtimeout.count() / std::micro::den),
             static_cast<decltype(timeval::tv_usec)>(wtimeout.count() % std::micro::den)};
         long long start = highp_clock();
+#if defined(_WIN32)
+        n               = ::select(0, readfds, writefds, exceptfds, &waitd_tv);
+#else
         n               = ::select(s + 1, readfds, writefds, exceptfds, &waitd_tv);
+#endif
         wtimeout -= std::chrono::microseconds(highp_clock() - start);
 
         if (n < 0 && socket::get_last_errno() == EINTR) {

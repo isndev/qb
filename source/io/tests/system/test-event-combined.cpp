@@ -132,6 +132,13 @@ send_signal_to_self() {
 // inotify/kqueue equivalent is available.  With interval=0 the default poll
 // period is ~5 seconds (DEF_STAT_INTERVAL), so the 1-second test window
 // never captures an event.
+//
+// Linux + inotify: ev_stat on a local FS sets the internal stat timer repeat to
+// 0 and stops it (libev ev.c infy_add).  Then timercnt can be 0 while only the
+// inotify-backed ev_io remains; waittime stays at MAX_BLOCKTIME2 and a single
+// EVRUN_ONCE blocks until an inotify event or that huge timeout — ignoring the
+// outer wall-clock loop.  Use EVRUN_NOWAIT here so each iteration returns and
+// the test's millisecond budget is meaningful.
 TEST(KernelEventsCombined, FileEvent) {
     reinitialize_libev();
     qb::io::async::listener handler;
@@ -154,7 +161,7 @@ TEST(KernelEventsCombined, FileEvent) {
 
     // Run for a bit to see if file event is detected
     while (std::chrono::steady_clock::now() - start_time < duration) {
-        handler.run(EVRUN_ONCE);
+        handler.run(EVRUN_NOWAIT);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
@@ -165,7 +172,7 @@ TEST(KernelEventsCombined, FileEvent) {
     // Run for a bit more to detect the modification
     start_time = std::chrono::steady_clock::now();
     while (std::chrono::steady_clock::now() - start_time < duration) {
-        handler.run(EVRUN_ONCE);
+        handler.run(EVRUN_NOWAIT);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
         // Print event count
@@ -275,7 +282,13 @@ TEST(KernelEventsCombined, TimerOnly) {
     event.stop();
 }
 
-// Test IO events - should be last test to avoid libev assertion failures
+// Test IO events — POSIX only (matches KernelEvents::BasicIO in test-event.cpp).
+// On Windows, libev uses wepoll/IOCP: readiness on a CRT regular-file descriptor
+// is not delivered like a socket, so EVRUN_ONCE can block forever with only an
+// ev_io on that fd.
+// On Linux, the same "no heap timers, only ev_io" pattern can yield MAX_BLOCKTIME2
+// in libev's waittime (see FileEvent comment); use EVRUN_NOWAIT in the timed loop.
+#ifndef _WIN32
 TEST(KernelEventsCombined, IOEvents) {
     reinitialize_libev();
     qb::io::async::listener handler;
@@ -304,7 +317,7 @@ TEST(KernelEventsCombined, IOEvents) {
     auto duration   = std::chrono::milliseconds(300);
 
     while (std::chrono::steady_clock::now() - start_time < duration) {
-        handler.run(EVRUN_ONCE);
+        handler.run(EVRUN_NOWAIT);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
         // Break if we got the IO event to avoid running too long
@@ -324,3 +337,4 @@ TEST(KernelEventsCombined, IOEvents) {
 
     // Already stopped by the handler
 }
+#endif // !_WIN32

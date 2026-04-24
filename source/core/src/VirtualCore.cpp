@@ -393,9 +393,12 @@ VirtualCore::__workflow__() {
             pipe.recycle(sig_event, sig_event.bucket_size);
         }
 
-        if (io::async::listener::current.has_coro_scheduler() || 
+        if (io::async::listener::current.has_coro_scheduler() ||
             io::async::listener::current.size()) {
-            _metrics._nb_event_io = io::async::run(EVRUN_NOWAIT);
+            // Hot path: call `listener::run` directly — no `async::run` wrapper
+            // (avoids redundant checks; metrics match `nb_invoked_event()` contract).
+            io::async::listener::current.run(EVRUN_NOWAIT);
+            _metrics._nb_event_io = io::async::listener::current.nb_invoked_event();
         }
         
         // send core events

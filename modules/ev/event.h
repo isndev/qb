@@ -110,10 +110,10 @@ event_callback_fn event_get_callback (const struct event *ev);
 #define EV_PERSIST                 0x10
 #define EV_ET                      0x20 /* nop */
 
-#define EVENT_SIGNAL(ev)           ((int) (ev)->ev_fd)
-#define EVENT_FD(ev)               ((int) (ev)->ev_fd)
+#define EVENT_SIGNAL(ev)           ((ev) ? (int)(ev)->ev_fd : -1)
+#define EVENT_FD(ev)               ((ev) ? (int)(ev)->ev_fd : -1)
 
-#define event_initialized(ev)      ((ev)->ev_flags & EVLIST_INIT)
+#define event_initialized(ev)      ((ev) && ((ev)->ev_flags & EVLIST_INIT))
 
 #define evtimer_add(ev,tv)         event_add (ev, tv)
 #define evtimer_set(ev,cb,data)    event_set (ev, -1, 0, cb, data)
@@ -170,7 +170,7 @@ int event_base_loop (struct event_base *base, int);
 int event_base_loopexit (struct event_base *base, struct timeval *tv);
 int event_base_dispatch (struct event_base *base);
 int event_base_once (struct event_base *base, int fd, short events, void (*cb)(int, short, void *), void *arg, struct timeval *tv);
-int event_base_priority_init (struct event_base *base, int fd);
+int event_base_priority_init (struct event_base *base, int npri);
 
 /* next line is different in the libevent+libev version */
 /*libevent-include*/

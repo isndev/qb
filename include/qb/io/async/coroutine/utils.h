@@ -70,6 +70,7 @@
 
 #include <chrono>
 #include <optional>
+#include <stdexcept>
 #include <thread>
 #include <type_traits>
 #include <utility>
@@ -125,6 +126,12 @@ inline socket_awaiter wait_readable(int fd) {
     return socket_awaiter{fd, EV_READ, listener::current.loop()};
 }
 
+#if defined(_WIN32)
+inline socket_awaiter wait_readable(uintptr_t handle) {
+    return socket_awaiter{handle, EV_READ, listener::current.loop()};
+}
+#endif
+
 /**
  * @brief Suspend until socket is writable
  *
@@ -148,6 +155,12 @@ inline socket_awaiter wait_writable(int fd) {
     return socket_awaiter{fd, EV_WRITE, listener::current.loop()};
 }
 
+#if defined(_WIN32)
+inline socket_awaiter wait_writable(uintptr_t handle) {
+    return socket_awaiter{handle, EV_WRITE, listener::current.loop()};
+}
+#endif
+
 /**
  * @brief Suspend until socket is readable or writable
  *
@@ -161,6 +174,12 @@ inline socket_awaiter wait_writable(int fd) {
 inline socket_awaiter wait_for_io(int fd, int events) {
     return socket_awaiter{fd, events, listener::current.loop()};
 }
+
+#if defined(_WIN32)
+inline socket_awaiter wait_for_io(uintptr_t handle, int events) {
+    return socket_awaiter{handle, events, listener::current.loop()};
+}
+#endif
 
 /**
  * @brief Get reference to the current thread's coroutine scheduler
@@ -196,6 +215,7 @@ inline CoroutineScheduler& coro_scheduler() {
  * @ingroup Coroutine
  */
 inline void run_for(std::chrono::milliseconds duration) {
+    ensure_not_inside_ready_drain("run_for()");
     auto end = std::chrono::steady_clock::now() + duration;
     // Process any already-queued coroutines (e.g. from spawn) before the timed loop
     if (listener::current.has_coro_scheduler()) {
@@ -259,6 +279,7 @@ auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
                                                            void,
                                                            std::remove_cvref_t<decltype(
                                                                std::declval<std::remove_cvref_t<Awaitable>>().await_resume())>> {
+    ensure_not_inside_ready_drain("run_sync()");
     using raw_awaitable = std::remove_cvref_t<Awaitable>;
     using return_type   = decltype(std::declval<raw_awaitable>().await_resume());
     using value_type    = std::remove_cvref_t<return_type>;
@@ -280,29 +301,49 @@ auto run_sync(Awaitable&& awaitable) -> std::conditional_t<std::is_void_v<
                         break;
                 }
             } else {
-                // Block until at least one event fires (avoids 100% CPU spin)
-                listener::current.run(EVRUN_ONCE);
+                // Do not use EVRUN_ONCE here: when libev uses timerfd-based time-jump
+                // detection, waittime can become MAX_BLOCKTIME2 while timercnt==0 (only
+                // ev_io watchers). One EVRUN_ONCE then blocks epoll_wait for ~10^6 seconds,
+                // freezing run_sync() and any test SetUp/TearDown that uses it.
+                listener::current.run(EVRUN_NOWAIT);
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
     };
 
     if constexpr (std::is_void_v<return_type>) {
         bool done = false;
+        std::exception_ptr error;
         coro_scheduler().spawn(
-            [&awaitable, &done]() -> task<void> {
-                co_await awaitable;
+            [&awaitable, &done, &error]() -> task<void> {
+                try {
+                    co_await awaitable;
+                } catch (...) {
+                    error = std::current_exception();
+                }
                 done = true;
             });
         pump(done);
+        if (error) {
+            std::rethrow_exception(error);
+        }
     } else {
         std::optional<value_type> result;
         bool                      done = false;
+        std::exception_ptr        error;
         coro_scheduler().spawn(
-            [&awaitable, &result, &done]() -> task<void> {
-                result = co_await awaitable;
-                done   = true;
+            [&awaitable, &result, &done, &error]() -> task<void> {
+                try {
+                    result = co_await awaitable;
+                } catch (...) {
+                    error = std::current_exception();
+                }
+                done = true;
             });
         pump(done);
+        if (error) {
+            std::rethrow_exception(error);
+        }
         return std::move(*result);
     }
 }

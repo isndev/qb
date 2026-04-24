@@ -312,7 +312,7 @@ TEST_F(IoPlanTest, T_REGISTER_SESSION_DOS_RejectsBeforeAllocation) {
         qb::io::tcp::socket sock;
         ASSERT_EQ(sock.init(AF_INET), 0)
             << "could not init test socket #" << i;
-        const int fd = sock.native_handle();
+        const auto fd = sock.native_handle();
         ASSERT_GE(fd, 0);
 
         auto *registered = handler.registerSession(std::move(sock));

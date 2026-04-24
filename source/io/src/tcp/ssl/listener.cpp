@@ -51,7 +51,11 @@ listener::accept() const noexcept {
         sock.close();
         return {};
     }
-    SSL_set_fd(ctx, static_cast<int>(sock.native_handle()));
+    if (!qb::io::ssl::attach_socket(ctx, sock.native_handle())) {
+        SSL_free(ctx);
+        sock.close();
+        return {};
+    }
     SSL_set_accept_state(ctx);
     return {ctx, sock};
 }
@@ -67,7 +71,11 @@ listener::accept(ssl::socket &ssock) const noexcept {
             return -1;
         }
         SSL_set_accept_state(ctx);
-        SSL_set_fd(ctx, static_cast<int>(sock.native_handle()));
+        if (!qb::io::ssl::attach_socket(ctx, sock.native_handle())) {
+            SSL_free(ctx);
+            sock.close();
+            return -1;
+        }
         ssock = ssl::socket{ctx, sock};
     }
     return ret;

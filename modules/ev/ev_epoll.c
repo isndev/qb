@@ -67,7 +67,11 @@
 #include "wepoll.c"
 #else
 #include <sys/epoll.h>
-#endif // WIN32
+#endif /* _WIN32 */
+
+#ifndef EPOLLRDHUP
+# define EPOLLRDHUP 0
+#endif
 
 /*
  * qb-io / VirtualCore execution model (this tree vendors libev for qb):
@@ -79,6 +83,12 @@
  *   otherwise create.
  * - ev_embeddable_backends() clears EVBACKEND_EPOLL on _WIN32 so ev_embed is not
  *   advertised for wepoll-backed inner loops (HANDLE is not an embeddable int fd).
+ * - Build with EV_VERIFY >= 2 (see ev.c) to enable extra epoll_poll asserts; default
+ *   release paths avoid per-event defensive branches for latency.
+ * - wepoll waits inside GetQueuedCompletionStatusEx while the port CRITICAL_SECTION is
+ *   released; another thread calling epoll_close / CloseHandle on that IOCP is therefore
+ *   unsafe. One loop per thread (qb-io) matches wepoll's intended use.
+ * - EV_READ registrations use EPOLLRDHUP when available (Linux + wepoll) for TCP half-close.
  */
 
 #define EV_EMASK_EPERM 0x80
@@ -157,7 +167,7 @@ epoll_modify (EV_P_ int fd, int oev, int nev)
   /* store the generation counter in the upper 32 bits, the fd in the lower 32 bits */
   ev.data.u64 = (uint64_t)(uint32_t)fd
               | ((uint64_t)(uint32_t)++anfds [fd].egen << 32);
-  ev.events   = (nev & EV_READ  ? EPOLLIN  : 0)
+  ev.events   = (nev & EV_READ  ? EPOLLIN | EPOLLRDHUP : 0)
               | (nev & EV_WRITE ? EPOLLOUT : 0);
 
   if (ecb_expect_true (!epoll_ctl (EV_EPOLL_API_HND, oev && oldmask != nev ? EPOLL_CTL_MOD : EPOLL_CTL_ADD, EV_FD_TO_SOCK(fd), &ev)))
@@ -235,9 +245,12 @@ epoll_poll (EV_P_ ev_tstamp timeout)
       struct epoll_event *ev = epoll_events + i;
 
       int fd = (uint32_t)ev->data.u64; /* mask out the lower 32 bits */
+#if EV_VERIFY >= 2
+      assert (("libev: epoll event fd out of range", fd >= 0 && fd < anfdmax));
+#endif
       int want = anfds [fd].events;
       int got  = (ev->events & (EPOLLOUT | EPOLLERR | EPOLLHUP) ? EV_WRITE : 0)
-               | (ev->events & (EPOLLIN  | EPOLLERR | EPOLLHUP) ? EV_READ  : 0);
+               | (ev->events & (EPOLLIN  | EPOLLERR | EPOLLHUP | EPOLLRDHUP) ? EV_READ  : 0);
 
       /*
        * check for spurious notification.
@@ -267,7 +280,7 @@ epoll_poll (EV_P_ ev_tstamp timeout)
            * note: for events such as POLLHUP, where we can't know whether it refers
            * to EV_READ or EV_WRITE, we might issue redundant EPOLL_CTL_MOD calls.
            */
-          ev->events = (want & EV_READ  ? EPOLLIN  : 0)
+          ev->events = (want & EV_READ  ? EPOLLIN | EPOLLRDHUP : 0)
                      | (want & EV_WRITE ? EPOLLOUT : 0);
 
           /* pre-2.6.9 kernels require a non-null pointer with EPOLL_CTL_DEL, */
@@ -294,6 +307,9 @@ epoll_poll (EV_P_ ev_tstamp timeout)
   for (i = epoll_epermcnt; i--; )
     {
       int fd = epoll_eperms [i];
+#if EV_VERIFY >= 2
+      assert (("libev: epoll_eperms fd out of range", fd >= 0 && fd < anfdmax));
+#endif
       unsigned char events = anfds [fd].events & (EV_READ | EV_WRITE);
 
       if (anfds [fd].emask & EV_EMASK_EPERM && events)

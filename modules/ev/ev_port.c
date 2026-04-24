@@ -1,6 +1,9 @@
 /*
  * libev solaris event port backend
  *
+ * qb-io: on port_getn failure (EINTR/ETIME), force nget=0 before scanning — nget is
+ * undefined on those paths; scanning with the initial nget==1 could read stale events.
+ *
  * Copyright (c) 2007,2008,2009,2010,2011,2019 Marc Alexander Lehmann <libev@schmorp.de>
  * All rights reserved.
  *
@@ -56,6 +59,10 @@
 #include <string.h>
 #include <errno.h>
 
+#ifndef POLLRDHUP
+# define POLLRDHUP 0
+#endif
+
 inline_speed
 void
 port_associate_and_check (EV_P_ int fd, int ev)
@@ -63,7 +70,7 @@ port_associate_and_check (EV_P_ int fd, int ev)
   if (0 >
       port_associate (
          (int)(uintptr_t)backend_fd, PORT_SOURCE_FD, fd,
-         (ev & EV_READ ? POLLIN : 0)
+         (ev & EV_READ ? POLLIN | POLLRDHUP : 0)
          | (ev & EV_WRITE ? POLLOUT : 0),
          0
       )
@@ -111,10 +118,13 @@ port_poll (EV_P_ ev_tstamp timeout)
   res = port_getn ((int)(uintptr_t)backend_fd, port_events, port_eventmax, &nget, &ts);
   EV_ACQUIRE_CB;
 
-  /* port_getn may or may not set nget on error */
-  /* so we rely on port_events [0].portev_source not being updated */
-  if (res == -1 && errno != ETIME && errno != EINTR)
-    ev_syserr ("(libev) port_getn (see http://bugs.opensolaris.org/view_bug.do?bug_id=6268715, try LIBEV_FLAGS=3 env variable)");
+  if (ecb_expect_false (res == -1))
+    {
+      if (errno != ETIME && errno != EINTR)
+        ev_syserr ("(libev) port_getn (see http://bugs.opensolaris.org/view_bug.do?bug_id=6268715, try LIBEV_FLAGS=3 env variable)");
+      /* nget is undefined on error; do not scan port_events with stale nget. */
+      nget = 0;
+    }
 
   for (i = 0; i < nget; ++i)
     {
@@ -126,7 +136,7 @@ port_poll (EV_P_ ev_tstamp timeout)
             EV_A_
             fd,
             (port_events [i].portev_events & (POLLOUT | POLLERR | POLLHUP) ? EV_WRITE : 0)
-            | (port_events [i].portev_events & (POLLIN | POLLERR | POLLHUP) ? EV_READ : 0)
+            | (port_events [i].portev_events & (POLLIN | POLLERR | POLLHUP | POLLRDHUP) ? EV_READ : 0)
           );
 
           fd_change (EV_A_ fd, EV__IOFDSET);

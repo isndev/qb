@@ -39,6 +39,11 @@
 
 #include <poll.h>
 
+/* Linux: half-close detection (parity with epoll EPOLLRDHUP path in libev). */
+#ifndef POLLRDHUP
+# define POLLRDHUP 0
+#endif
+
 inline_size
 void
 array_needsize_pollidx (int *base, int offset, int count)
@@ -74,8 +79,8 @@ poll_modify (EV_P_ int fd, int oev, int nev)
 
   if (nev)
     polls [idx].events =
-        (nev & EV_READ ? POLLIN : 0)
-        | (nev & EV_WRITE ? POLLOUT : 0);
+        (short)((nev & EV_READ ? POLLIN | POLLRDHUP : 0)
+        | (nev & EV_WRITE ? POLLOUT : 0));
   else /* remove pollfd */
     {
       pollidxs [fd] = -1;
@@ -93,7 +98,7 @@ poll_poll (EV_P_ ev_tstamp timeout)
 {
   struct pollfd *p;
   int res;
-  
+
   EV_RELEASE_CB;
   res = poll (polls, pollcnt, EV_TS_TO_MSEC (timeout));
   EV_ACQUIRE_CB;
@@ -125,7 +130,7 @@ poll_poll (EV_P_ ev_tstamp timeout)
                 EV_A_
                 p->fd,
                 (p->revents & (POLLOUT | POLLERR | POLLHUP) ? EV_WRITE : 0)
-                | (p->revents & (POLLIN | POLLERR | POLLHUP) ? EV_READ : 0)
+                | (p->revents & (POLLIN | POLLERR | POLLHUP | POLLRDHUP) ? EV_READ : 0)
               );
           }
       }

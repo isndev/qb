@@ -264,6 +264,7 @@ WEPOLL_INTERNAL int afd_cancel_poll(HANDLE afd_device_handle,
 WEPOLL_INTERNAL void err_map_win_error(void);
 WEPOLL_INTERNAL void err_set_win_error(DWORD error);
 WEPOLL_INTERNAL int err_check_handle(HANDLE handle);
+WEPOLL_INTERNAL int err_check_socket(SOCKET socket);
 
 #define IOCTL_AFD_POLL 0x00012024
 
@@ -571,7 +572,7 @@ err:
     /* On Linux, in the case of epoll_ctl(), EBADF takes priority over other
      * errors. Wepoll mimics this behavior. */
     err_check_handle(ephnd);
-    err_check_handle((HANDLE)sock);
+    err_check_socket(sock);
     return -1;
 }
 
@@ -754,6 +755,26 @@ err_check_handle(HANDLE handle) {
     return 0;
 }
 
+int
+err_check_socket(SOCKET socket) {
+    int so_error;
+    int len;
+
+    if (socket == 0 || socket == INVALID_SOCKET)
+        return_set_error(-1, WSAENOTSOCK);
+
+    so_error = 0;
+    len = sizeof so_error;
+
+    if (getsockopt(socket, SOL_SOCKET, SO_ERROR, (char*)&so_error, &len) == 0)
+        return 0;
+
+    if (WSAGetLastError() == WSAENOTSOCK)
+        return_set_error(-1, WSAENOTSOCK);
+
+    return 0;
+}
+
 #include <stddef.h>
 
 #define array_count(a) (sizeof(a) / (sizeof((a)[0])))
@@ -796,7 +817,7 @@ init(void) {
         /* `InitOnceExecuteOnce()` itself is infallible, and it doesn't set any
          * error code when the once-callback returns FALSE. We return -1 here to
          * indicate that global initialization failed; the failing init function is
-         * resposible for setting `errno` and calling `SetLastError()`. */
+         * responsible for setting `errno` and calling `SetLastError()`. */
         return -1;
 
     return 0;
