@@ -8,18 +8,36 @@ The `qb-io` library is a versatile and powerful **C++23** toolkit designed for b
 ## 1. Core Asynchronous System (`qb::io::async`)
 
 *   **Event Loop (`listener`):** At its core, `qb-io` provides a high-performance event loop (leveraging `libev`) for managing all asynchronous operations on a per-thread basis.
-*   **Delayed Callbacks (`callback`):** Easily schedule functions or lambdas for asynchronous execution after a specified delay, or for the next event loop iteration.
+*   **Delayed Callbacks (`callback`, `scoped_callback`):** Schedule functions or lambdas for asynchronous execution after a specified delay. `callback()` is fire-and-forget (zero heap traffic at steady state); `scoped_callback()` returns an RAII handle that cancels the timer when destroyed.
 *   **Integrated Timers (`with_timeout`, `event::timer`):** Build classes with inherent timeout logic or create periodic timers for recurring tasks.
 *   **Comprehensive Event Handling (`event::*`):** A rich set of predefined event types for:
     *   I/O readiness (socket readable/writable).
-    *   Connection lifecycle (disconnections).
-    *   Stream status (end-of-file, end-of-stream).
+    *   Connection lifecycle (disconnections with typed reason codes).
+    *   Stream status (end-of-file/end-of-stream).
     *   Pending data notifications.
     *   File system changes.
+    *   SSL/TLS handshake progress.
 *   **Asynchronous Signal Handling (`event::signal`):** Process system signals (e.g., SIGINT, SIGTERM) gracefully within the event loop.
 *   **File System Monitoring (`file_watcher`, `directory_watcher`):** Asynchronously watch files and directories for changes (modifications, creation, deletion).
 
-## 2. Networking Capabilities
+## 2. C++23 Coroutines (`qb::io::async` coroutine layer)
+
+`qb-io` provides a **complete, batteries-included** C++23 coroutine ecosystem layered on top of the `listener` event loop. Both programming styles — callbacks and coroutines — share the same single-threaded execution model and are fully interoperable.
+
+*   **`task<T>` / `shared_task<T>`:** Lazy, move-only coroutine return types. `shared_task<T>` allows multiple coroutines to `co_await` the same result.
+*   **Awaiters:** `sleep()`, `wait_readable()`, `wait_writable()`, `async_awaiter<T>` (bridge any callback API to `co_await`). TCP connector awaiter (`co_await tcp::connect(uri, timeout)`).
+*   **Combinators:** `when_all()` (scatter-gather), `when_any()` (first wins), `race()`, `coro_with_timeout()` (deadline wrapper returning `std::optional<T>`).
+*   **Cancellation:** `cancellation_token`, `cancellable_sleep()`, `with_deadline()`. Tokens are single-threaded; cross-thread cancellation is routed through actor events.
+*   **Synchronisation primitives (non-blocking):** `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch`.
+*   **`channel<T>`:** MPSC communication channel with `send`/`recv`, timed operations, `select()` across multiple channels, and functional pipeline utilities.
+*   **Structured concurrency (`coroutine_scope`):** Group coroutines, `join_all()`/`join_any()`/`join_all_for()`, cancellation propagation, `parallel_map()`, `repeat_while()`.
+*   **Generators:** `generator<T>` (sync, range-for compatible), `async_generator<T>` (`co_yield` + `co_await`). Full set of consumers: `ag_for_each`, `ag_collect`, `ag_map`, `ag_filter`, `ag_reduce`.
+*   **Async streams:** `async_stream<T>` — lazy functional pipeline with `map`, `filter`, `take`, `skip`, terminal consumers (`collect`, `first`, `reduce`, `any`, `all`, `find`, `drain_to`), `merge_streams`, `zip`, `interval`.
+*   **Retry policies:** `with_retry()`, `with_retry_until()`, `make_retryable()` with configurable back-off strategies (linear, exponential, exponential-jitter).
+
+**(Reference:** [QB-IO: C++23 Coroutines](./coroutines.md) for the complete guide.)**
+
+## 3. Networking Capabilities
 
 *   **Unified Socket API (`qb::io::socket`):** A cross-platform (POSIX & Winsock) abstraction for raw socket operations.
 *   **TCP Communication (`qb::io::tcp`, `qb::io::transport::tcp`):
@@ -40,7 +58,7 @@ The `qb-io` library is a versatile and powerful **C++23** toolkit designed for b
     *   `qb::io::uri`: RFC 3986 compliant URI parsing and manipulation.
     *   `socket::resolve()` family: Asynchronous and synchronous hostname resolution.
 
-## 3. Protocol Framework & Built-in Parsers
+## 4. Protocol Framework & Built-in Parsers
 
 *   **Extensible Protocol Interface (`qb::io::async::AProtocol`):** A clear C++ interface (using CRTP) for defining custom message framing and parsing logic.
 *   **Ready-to-Use Protocols:**
@@ -48,13 +66,13 @@ The `qb-io` library is a versatile and powerful **C++23** toolkit designed for b
     *   **Size-Prefixed:** `text::binary8`, `text::binary16`, `text::binary32` for messages preceded by a 1, 2, or 4-byte length header (handles network byte order).
     *   **JSON Support:** `protocol::json` (for null-terminated JSON strings) and `protocol::json_packed` (for null-terminated MessagePack-encoded JSON), both integrating with `nlohmann::json`.
 
-## 4. File System Operations
+## 5. File System Operations
 
 *   **Direct File Access (`qb::io::sys::file`):** Cross-platform, descriptor-based synchronous file I/O.
 *   **Efficient Bulk Transfers (`qb::io::sys::file_to_pipe`, `pipe_to_file`):** Streamline reading entire files into memory pipes or writing pipe contents to files.
 *   **Asynchronous Monitoring:** (See Core Asynchronous System: `file_watcher`, `directory_watcher`).
 
-## 5. Essential Utilities
+## 6. Essential Utilities
 
 *   **High-Precision Time (`qb::Timestamp`, `qb::Duration`):** Nanosecond-accurate time points and durations for measurements and scheduling.
 *   **Cryptography (Optional: `QB_IO_WITH_SSL`):
@@ -83,4 +101,4 @@ The `qb-io` library is a versatile and powerful **C++23** toolkit designed for b
 
 This rich feature set makes `qb-io` a solid foundation for building a wide range of demanding C++ applications.
 
-**(Next:** [QB-IO: Async System (`qb::io::async`)](./async_system.md) or explore other specific feature pages.**) 
+**(Next:** [QB-IO: Async System (`qb::io::async`)](./async_system.md) | [QB-IO: C++23 Coroutines](./coroutines.md) | explore other specific feature pages.**) 

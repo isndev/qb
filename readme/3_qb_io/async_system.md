@@ -1,9 +1,14 @@
 @page qb_io_async_system_md QB-IO: The Asynchronous Engine (`qb::io::async`)
-@brief A deep dive into `qb-io`'s event loop, timers, callbacks, and event management for standalone asynchronous programming.
+@brief A deep dive into `qb-io`'s event loop, timers, callbacks, scoped timers, signal handling, and event management for standalone asynchronous programming.
 
 # QB-IO: The Asynchronous Engine (`qb::io::async`)
 
-The `qb::io::async` namespace is the powerhouse behind `qb-io`'s non-blocking capabilities. It provides a complete, event-driven asynchronous programming model built around a high-performance event loop. While it seamlessly integrates with the `qb-core` actor system, `qb::io::async` is also designed to be fully usable as a standalone toolkit for any **C++23** application requiring efficient asynchronous operations (including **C++20/23 coroutines** where enabled).
+The `qb::io::async` namespace is the powerhouse behind `qb-io`'s non-blocking capabilities. It provides a complete, event-driven asynchronous programming model built around a high-performance event loop. While it seamlessly integrates with the `qb-core` actor system, `qb::io::async` is also designed to be fully usable as a standalone toolkit for any **C++23** application requiring efficient asynchronous operations — including native **C++23 coroutines** (`co_await`/`co_return`).
+
+> **Two async programming models, one event loop.** You can mix event-driven callbacks
+> (`on(Event&&)` handlers) and coroutines (`co_await`) freely; both run on the same
+> `listener` and are never concurrent within a thread.  See the dedicated
+> [C++23 Coroutines guide](./coroutines.md) for the full coroutine reference.
 
 ## The Event Loop: `qb::io::async::listener`
 
@@ -32,6 +37,7 @@ For the `listener` to process events, its loop must be actively run:
     *   `EVRUN_NOWAIT`: Checks for any immediately pending events, processes them, and returns without waiting if none are pending.
 *   **`qb::io::async::run_once()`:** Convenience for `run(EVRUN_ONCE)`.
 *   **`qb::io::async::run_until(const bool& status_flag)`:** Runs the loop with `EVRUN_NOWAIT` repeatedly as long as `status_flag` is true.
+*   **`qb::io::async::run_for(duration)`:** Runs the loop for a fixed wall-clock duration, then returns — useful in tests and coroutine drivers.
 *   **`qb::io::async::break_parent()`:** Signals `listener::current` to stop its current `run()` cycle.
 
 ```cpp
@@ -92,11 +98,44 @@ Most `qb-io` components designed for asynchronous operations (e.g., those inheri
 This utility function provides a straightforward way to schedule a callable (lambda, function pointer, functor) for execution by the current thread's event loop, optionally after a delay.
 
 *   **Execution:** The callback runs on the same thread that scheduled it.
-*   **Lifetime:** The internal timer object (`qb::io::async::Timeout`) created by `callback` is self-managing; it registers with the listener and deletes itself after the callback is invoked.
+*   **Lifetime:** The internal timer object (`qb::io::async::Timeout`) created by `callback` is **self-managing** — it registers with the listener and deletes itself after the callback fires. A **thread-local LIFO freelist** ensures steady-state zero `malloc`/`free` calls.
 *   **Usage:** `qb::io::async::callback(my_function, delay_seconds);` or `qb::io::async::callback([]{ /* lambda body */ });`
 *   **Use Cases:** Delaying operations, breaking work into smaller non-blocking chunks, scheduling retries, and simple periodic tasks (by re-scheduling from within the callback).
 
+> **Note:** `callback()` uses a self-deleting `Timeout<F>` object. If you need to **cancel** the timer or keep a handle to it, use `scoped_callback()` instead.
+
 **(See practical examples in:** [Core Concepts: Asynchronous I/O Model in QB](./../2_core_concepts/async_io.md) for actor-centric usage, and `example1_async_io.cpp` for general usage.**)**
+
+## Owned / Cancellable Timers: `qb::io::async::scoped_callback`
+
+(`qb/io/async/io.h`)
+
+`scoped_callback` is the RAII alternative to `callback()`. It returns a `std::unique_ptr<ScopedTimeout<F>>` that the caller owns. Destroying (or resetting) the pointer cancels the pending callback without any extra bookkeeping.
+
+```cpp
+// Schedule work in 2 seconds, but keep a cancellation handle
+auto handle = qb::io::async::scoped_callback([]() {
+    std::cout << "2 seconds elapsed\n";
+}, 2.0);
+
+// Cancel before it fires:
+handle.reset(); // timer is stopped and unregistered cleanly
+
+// std::chrono overload
+using namespace std::chrono_literals;
+auto h2 = qb::io::async::scoped_callback(my_cleanup, 500ms);
+```
+
+Key differences from `callback()`:
+
+| | `callback()` | `scoped_callback()` |
+|---|---|---|
+| Ownership | Self-deleting (`Timeout<F>`) | Caller-owned (`unique_ptr<ScopedTimeout<F>>`) |
+| Cancellation | Not possible | `handle.reset()` or `handle->cancel()` |
+| Heap traffic | Zero (freelist) | One allocation per call |
+| Best for | Fire-and-forget tasks | Watchdogs, retry loops, cancellable deadlines |
+
+**(See also:** `ScopedTimeout<F>` in `qb/io/async/io.h`.**)**
 
 ## Timeout Management: `qb::io::async::with_timeout<Derived>`
 
@@ -119,17 +158,60 @@ This mechanism is ideal for implementing inactivity timeouts in network sessions
 
 (`qb/io/async/event/all.h`)
 
-`qb-io` defines a suite of event structures used to notify components about various asynchronous occurrences. When building custom I/O components (often by inheriting from `qb::io::async::input`, `qb::io::async::output`, or `qb::io::async::io`), you will typically override `on(SpecificEvent&)` methods to handle these:
+`qb-io` defines a suite of strongly-typed event structures. When building custom I/O components (those inheriting from `qb::io::async::input`, `output`, or `io`), you override `on(SpecificEvent&&)` methods to react to these.
 
-*   `disconnected`: A network connection was closed or an error occurred.
-*   `eof`: End-of-file reached on an input stream; no more data to read.
-*   `eos`: End-of-stream reached on an output stream; all buffered data has been sent.
-*   `file`: Attributes of a monitored file or directory have changed (used by `file_watcher`).
-*   `io`: Raw low-level I/O readiness on a file descriptor (e.g., socket is readable/writable).
-*   `pending_read`/`pending_write`: Data remains in input/output buffers after a partial operation.
-*   `signal`: An OS signal was caught.
-*   `timer`/`timeout`: A previously set timer or timeout has expired.
+| Event type | Trigger | Key fields |
+|---|---|---|
+| `disconnected` | Connection closed or I/O error | `int reason`, `std::error_code error_code`, `std::string message` |
+| `eof` *(alias: `input_drained`)* | Input stream fully consumed | — |
+| `eos` | Output stream fully flushed | — |
+| `file` | Watched file/directory attributes changed | `ev_statdata attr`, `ev_statdata prev` |
+| `handshake` | SSL/TLS handshake progress | — |
+| `io` | Raw fd readiness (read or write) | `int fd`, `int events` |
+| `pending_read` | Unprocessed bytes remain in input buffer | `std::size_t size` |
+| `pending_write` | Unsent bytes remain in output buffer | `std::size_t size` |
+| `signal` | OS signal caught | `int signum` |
+| `timer` | Timer or inactivity timeout expired | loop timestamp |
+| `extracted` | Connection was extracted from a server | — |
+| `dispose` | Component is about to be destroyed | — |
 
-These events form the backbone of communication between the `listener` and the I/O handling components, enabling a fully event-driven architecture.
+### Disconnect Reason Codes
 
-**(Next:** [QB-IO: Transports](./transports.md) to see how these async mechanisms are applied to TCP, UDP, etc.**) 
+The `disconnected` event carries a `reason` field of type `disconnect_reason` (an `int`-backed enum):
+
+| Code | Named constant | Meaning |
+|---|---|---|
+| `0` | `peer_closed` | Normal peer shutdown or graceful `disconnect()` |
+| `1` | `user_initiated` | Explicit `disconnect()` call from application code |
+| `> 1` | *(application-defined)* | Custom application codes (e.g., HTTP status codes) |
+| `-1` | `protocol_error` | Protocol called `not_ok()` |
+| `-2` | `message_too_large` | Incoming frame exceeded `max_message_size()` |
+| `-3` | `buffer_overflow` | Read/write buffer exceeded configured limit |
+
+```cpp
+void on(qb::io::async::event::disconnected&& ev) {
+    using R = qb::io::async::event::disconnect_reason;
+    switch (static_cast<R>(ev.reason)) {
+        case R::peer_closed:       /* normal */       break;
+        case R::protocol_error:    /* bad frame */    break;
+        case R::message_too_large: /* DoS guard */    break;
+        default:
+            if (ev.error_code)
+                std::cerr << "System error: " << ev.error_code.message() << '\n';
+    }
+}
+```
+
+### Handler Signature Rules
+
+Event handlers in CRTP-derived classes must use a compatible signature:
+
+*   `void on(event::X&&)` — preferred (rvalue, move-enabled).
+*   `void on(const event::X&)` — accepted.
+*   `void on(event::X&)` — **not accepted** for rvalue-only events; will silently fail to bind.
+
+**(See also:** [QB-IO: Async, Lifecycle & Allocation Invariants](../7_reference/io_invariants.md) §4 for CRTP dispatch rules.**)**
+
+These events form the backbone of communication between the `listener` and I/O handling components.
+
+**(Next:** [QB-IO: C++23 Coroutines](./coroutines.md) for the `co_await` programming model, or [QB-IO: Transports](./transports.md) for network transports.**) 
