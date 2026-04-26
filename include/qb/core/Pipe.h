@@ -126,16 +126,44 @@ public:
     _Event &push(_Args &&...args) const noexcept;
 
     /*!
-     * @brief Push an event with pre-allocated size to the pipe
-     * @tparam _Event Type of event to push
-     * @tparam _Args Argument types for event construction
-     * @param size Pre-allocated size for the event
-     * @param args Arguments for event construction
-     * @return Reference to the constructed event
+     * @brief Construct and enqueue an event with a caller-supplied buffer size hint.
+     *
+     * @tparam _Event  Event type to construct and send (must derive from `qb::Event`).
+     * @tparam _Args   Types of constructor arguments forwarded to `_Event`.
+     * @param  size    Total byte size to pre-allocate for this event in the pipe buffer.
+     *                 Typically `sizeof(_Event) + dynamic_payload_bytes`. Providing an
+     *                 accurate value avoids internal reallocation when the event carries
+     *                 a large dynamic payload (e.g. a `std::shared_ptr<std::vector<T>>`).
+     * @param  args    Arguments forwarded to the `_Event` constructor.
+     * @return Mutable reference to the newly constructed event in the pre-allocated slot.
+     *
      * @details
-     * This function creates a new event of type _Event with a pre-allocated size
-     * and sends it through the pipe. The event will be delivered to the destination
-     * actor.
+     * Use this overload instead of `push()` when the event's **effective in-pipe size**
+     * exceeds `sizeof(_Event)` — for example when `_Event` owns a `shared_ptr` to a
+     * large heap-allocated container that you want the framework to account for during
+     * buffer growth decisions.
+     *
+     * Ordering guarantees are identical to `push()`.
+     *
+     * ### Example
+     * @code
+     * // 1 MB binary blob forwarded to a processing actor
+     * auto blob = std::make_shared<std::vector<std::byte>>(1024 * 1024);
+     * // ... fill blob ...
+     *
+     * struct BlobEvent : qb::Event {
+     *     std::shared_ptr<std::vector<std::byte>> data;
+     *     explicit BlobEvent(std::shared_ptr<std::vector<std::byte>> d)
+     *         : data(std::move(d)) {}
+     * };
+     *
+     * qb::Pipe pipe = getPipe(processor_id);
+     * std::size_t hint = sizeof(BlobEvent) + blob->size();
+     * auto& ev = pipe.allocated_push<BlobEvent>(hint, blob);
+     * @endcode
+     *
+     * @note If `size` is smaller than `sizeof(_Event)` the framework silently uses
+     *       `sizeof(_Event)` as the minimum allocation.
      */
     template <typename _Event, typename... _Args>
     [[nodiscard]] _Event &allocated_push(std::size_t size,
