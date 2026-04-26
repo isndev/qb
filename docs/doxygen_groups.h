@@ -10,11 +10,13 @@
 //--------------------------------------------------------------------------------------------------
 /**
  * @defgroup QB QB Actor Framework
- * @brief The QB Actor Framework is a C++17 library for building high-performance,
+ * @brief The QB Actor Framework is a modern **C++23** library for building high-performance,
  * concurrent, and distributed systems based on the Actor Model.
  *
- * It combines an efficient actor engine with a robust asynchronous I/O library
- * to simplify complex application development.
+ * It combines an efficient actor engine (`qb-core`) with a robust asynchronous I/O library
+ * (`qb-io`) and native C++20/23 coroutine support to simplify complex application development.
+ * Actors communicate exclusively via typed events, guaranteeing data isolation and
+ * eliminating the need for manual locking within an actor's own state.
  */
 
 // Core Actor System Modules
@@ -24,8 +26,9 @@
  * @ingroup QB
  * @brief Fundamental components implementing the Actor Model.
  *
- * This module includes the actor base class, event system, engine controller,
- * virtual cores for scheduling, and actor communication primitives.
+ * This module includes the actor base class (`qb::Actor`), the event system (`qb::Event`),
+ * the engine controller (`qb::Main`), virtual cores for scheduling (`qb::VirtualCore`),
+ * actor communication primitives (`qb::Pipe`), and lifecycle utilities.
  */
 
 /**
@@ -33,8 +36,38 @@
  * @ingroup Core
  * @brief Defines actors, their identification, and lifecycle management.
  *
- * Includes \`qb::Actor\`, \`qb::ActorId\`, \`qb::ServiceActor\`, and related concepts
- * for creating and managing concurrent entities.
+ * Includes `qb::Actor`, `qb::ActorId`, `qb::ServiceActor`, `qb::RefActorHandle`,
+ * `qb::CoroContext`, and related concepts for creating and managing concurrent entities.
+ *
+ * ### Quick start
+ * ```cpp
+ * class MyActor : public qb::Actor {
+ * public:
+ *     bool onInit() override {
+ *         registerEvent<MyEvent>(*this);
+ *         return true;
+ *     }
+ *     void on(MyEvent const& e) { /* handle */ }
+ * };
+ * ```
+ */
+
+/**
+ * @defgroup Concepts C++20 Concepts
+ * @ingroup Core
+ * @brief C++20 concepts used for compile-time constraint enforcement throughout qb-core.
+ *
+ * These concepts provide statically-checked requirements on template parameters,
+ * enabling clearer compiler diagnostics and safer generic code.
+ *
+ * Key concepts:
+ * - `qb::event_type<T>` — T must derive from `qb::Event`
+ * - `qb::actor_type<T>` — T must derive from `qb::Actor`
+ * - `qb::service_type<T>` — T must derive from `qb::Service`
+ * - `qb::callback_type<T>` — T must derive from `qb::ICallback`
+ * - `qb::trivial_event<T>` — T must be an `event_type` and trivially destructible
+ * - `qb::event_qos0_type<T>` — T must derive from `qb::EventQOS0`
+ * - `qb::service_event_type<T>` — T must derive from `qb::ServiceEvent`
  */
 
 /**
@@ -42,8 +75,13 @@
  * @ingroup Core
  * @brief Base event types and core system events for actors.
  *
- * Defines \`qb::Event\` and essential system events like \`qb::KillEvent\`.
- * This group is for actor-level events.
+ * Defines `qb::Event` and essential system events:
+ * - `qb::KillEvent` — graceful actor termination
+ * - `qb::SignalEvent` — OS signal delivery
+ * - `qb::PingEvent` / `qb::RequireEvent` — actor discovery protocol
+ * - `qb::UnregisterCallbackEvent` — dynamic callback removal
+ *
+ * This group covers actor-level events; for I/O events see @ref AsyncEvent.
  */
 
 /**
@@ -60,8 +98,17 @@
  * @ingroup Core
  * @brief Manages actor execution, virtual cores, and system lifecycle.
  *
- * Contains \`qb::Main\` for engine control, \`qb::VirtualCore\` for actor execution,
- * and \`qb::CoreSet\` for CPU affinity.
+ * Contains `qb::Main` for engine control, `qb::VirtualCore` for per-thread actor
+ * execution, `qb::CoreInitializer` for pre-start configuration, `qb::CoreSet` for
+ * CPU affinity, and `qb::SharedCoreCommunication` for lock-free inter-core messaging.
+ *
+ * ### Minimal engine bootstrap
+ * ```cpp
+ * qb::Main engine;
+ * engine.addActor<MyActor>(0 /* core id */);
+ * engine.start();      // async by default
+ * engine.join();
+ * ```
  */
 
 /**
@@ -69,7 +116,10 @@
  * @ingroup Core
  * @brief Support for periodic callbacks within actors.
  *
- * Includes the \`qb::ICallback\` interface.
+ * Includes the `qb::ICallback` interface. Actors that inherit from it can register
+ * themselves with `registerCallback(*this)` to have `onCallback()` invoked on every
+ * iteration of their `VirtualCore`'s event loop. The callback must be fast and
+ * non-blocking.
  */
 
 /**
@@ -77,7 +127,10 @@
  * @ingroup Core
  * @brief Primitives for direct actor-to-actor communication channels.
  *
- * Focuses on the \`qb::Pipe\` class used for optimized event sending.
+ * Focuses on the `qb::Pipe` class, which is the low-level communication channel
+ * returned by `Actor::getPipe()`. Using `Pipe` directly enables:
+ * - Fluent multi-event sending via method chaining
+ * - `allocated_push()` to pre-size the buffer for large payloads
  */
 
 // IO System Modules
