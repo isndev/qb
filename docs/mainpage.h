@@ -16,16 +16,17 @@
  */
 
 /*!
- * @mainpage QB Actor Framework: High-Performance C++17 Concurrent Systems
+ * @mainpage QB Actor Framework: High-Performance C++23 Concurrent Systems
  * @image html template/static/logo.svg width=250px
  * 
- * Welcome to the official documentation for the **QB Actor Framework** – your C++17 toolkit 
+ * Welcome to the official documentation for the **QB Actor Framework** – your C++23 toolkit 
  * for crafting powerful, scalable, and maintainable concurrent and distributed applications.
  *
  * QB empowers developers to build responsive, high-performance systems by elegantly integrating 
  * the **Actor Model** with a robust **Asynchronous I/O Engine**. Whether you're tackling 
  * real-time data processing, complex network services, or large-scale distributed computations, 
- * QB provides the tools and abstractions to simplify development and maximize efficiency.
+ * QB provides the tools and abstractions to simplify development and maximize efficiency —
+ * including first-class **C++23 coroutine** support for sequential async code without callbacks.
  *
  * This site offers a comprehensive guide, from foundational concepts and API details to 
  * practical examples and advanced usage patterns.
@@ -58,6 +59,7 @@
  *      - @subpage qb_io_readme_md "QB-IO Overview"
  *      - @subpage qb_io_features_md "QB-IO Features"
  *      - @subpage qb_io_async_system_md "QB-IO Async Engine"
+ *      - @subpage qb_io_coroutines_md "QB-IO C++23 Coroutines"
  *      - @subpage qb_io_transports_md "QB-IO Transports"
  *      - @subpage qb_io_protocols_md "QB-IO Protocols"
  *      - @subpage qb_io_ssl_transport_md "QB-IO SSL/TLS"
@@ -100,6 +102,7 @@
  *      - @subpage ref_faq_md "FAQ"
  *      - @subpage ref_glossary_md "Glossary"
  *      - @subpage ref_lockfree_primitives_md "Lock-Free Primitives"
+ *      - @subpage reference_io_invariants "QB-IO: Async & Lifecycle Invariants"
  *
  * @section main_build_status Build Status
  *   |              | linux | Windows | Coverage |

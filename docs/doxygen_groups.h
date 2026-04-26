@@ -10,11 +10,12 @@
 //--------------------------------------------------------------------------------------------------
 /**
  * @defgroup QB QB Actor Framework
- * @brief The QB Actor Framework is a C++17 library for building high-performance,
+ * @brief The QB Actor Framework is a C++23 library for building high-performance,
  * concurrent, and distributed systems based on the Actor Model.
  *
  * It combines an efficient actor engine with a robust asynchronous I/O library
- * to simplify complex application development.
+ * (including first-class C++23 coroutine support) to simplify complex application
+ * development.
  */
 
 // Core Actor System Modules
@@ -96,8 +97,69 @@
  * @ingroup IO
  * @brief Core mechanisms for event-driven asynchronous programming.
  *
- * Includes the event listener (\`qb::io::async::listener\`), base async I/O classes
- * (\`qb::io::async::io\`), and timed callbacks (\`qb::io::async::callback\`).
+ * Includes the event listener (`qb::io::async::listener`), base async I/O classes
+ * (`qb::io::async::input`, `qb::io::async::output`, `qb::io::async::io`),
+ * timed callbacks (`qb::io::async::callback`, `qb::io::async::scoped_callback`),
+ * timeout helpers (`qb::io::async::with_timeout`, `qb::io::async::Timeout`,
+ * `qb::io::async::ScopedTimeout`), and file/directory watchers.
+ *
+ * The async system supports two complementary programming models that share
+ * the same single-threaded event loop:
+ * - **Event-driven callbacks** — override `on(event::X&&)` methods.
+ * - **C++23 coroutines** — use `co_await` with `task<T>`, sleep(), and awaiters.
+ *
+ * @see Coroutine
+ */
+
+/**
+ * @defgroup Coroutine C++23 Coroutine Support
+ * @ingroup Async
+ * @brief First-class C++23 coroutine infrastructure for `qb-io`.
+ *
+ * Provides a complete coroutine ecosystem layered on top of the `listener`/libev
+ * event loop. All coroutines on a thread share a single `CoroutineScheduler` and
+ * are **never concurrent** — interleaving occurs only at `co_await` points.
+ *
+ * ### Key components
+ *
+ * | Header | Exports |
+ * |--------|---------|
+ * | `coroutine/task.h`       | `task<T>` — lazy, move-only coroutine return type |
+ * | `coroutine/shared_task.h`| `shared_task<T>` — multi-consumer shared result |
+ * | `coroutine/scheduler.h`  | `CoroutineScheduler`, `coro_scheduler()` |
+ * | `coroutine/awaiter.h`    | `timer_awaiter`, `socket_awaiter`, `async_awaiter<T>` |
+ * | `coroutine/utils.h`      | `sleep()`, `wait_readable()`, `wait_writable()`, `run_for()` |
+ * | `coroutine/combinators.h`| `when_all()`, `when_any()`, `race()`, `coro_with_timeout()` |
+ * | `coroutine/cancellation.h`| `cancellation_token`, `cancellable_sleep()`, `with_deadline()` |
+ * | `coroutine/sync.h`       | `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch` |
+ * | `coroutine/channel.h`    | `channel<T>`, `select()`, pipeline utilities |
+ * | `coroutine/scope.h`      | `coroutine_scope`, `with_scope()`, `parallel_map()` |
+ * | `coroutine/generator.h`  | `generator<T>`, `async_generator<T>`, consumers |
+ * | `coroutine/stream.h`     | `async_stream<T>`, `interval()`, `merge_streams()`, `zip()` |
+ * | `coroutine/retry.h`      | `retry_policy`, `with_retry()`, `make_retryable()` |
+ * | `coroutine/mixin.h`      | `coro_mixin<Derived>` — CRTP helper |
+ * | `coroutine.h`            | Umbrella include |
+ *
+ * ### Quick start
+ * @code
+ * #include <qb/io/async/coroutine.h>
+ *
+ * qb::io::async::task<int> fetch_data() {
+ *     co_await qb::io::async::sleep(std::chrono::milliseconds(100));
+ *     co_return 42;
+ * }
+ *
+ * int main() {
+ *     qb::io::async::init();
+ *     qb::io::async::coro_scheduler().spawn(fetch_data());
+ *     qb::io::async::run();
+ * }
+ * @endcode
+ *
+ * @see task
+ * @see CoroutineScheduler
+ * @see timer_awaiter
+ * @see socket_awaiter
  */
 
 /**
