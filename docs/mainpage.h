@@ -16,45 +16,66 @@
  */
 
 /*!
- * @mainpage QB Actor Framework: High-Performance C++17 Concurrent Systems
+ * @mainpage QB Actor Framework: High-Performance C++23 Concurrent Systems
  * @image html template/static/logo.svg width=250px
- * 
- * Welcome to the official documentation for the **QB Actor Framework** – your C++17 toolkit 
- * for crafting powerful, scalable, and maintainable concurrent and distributed applications.
  *
- * QB empowers developers to build responsive, high-performance systems by elegantly integrating 
- * the **Actor Model** with a robust **Asynchronous I/O Engine**. Whether you're tackling 
- * real-time data processing, complex network services, or large-scale distributed computations, 
- * QB provides the tools and abstractions to simplify development and maximize efficiency.
+ * Welcome to the official documentation for the **QB Actor Framework** — a modern **C++23**
+ * toolkit for crafting powerful, scalable, and maintainable concurrent and distributed
+ * applications.
  *
- * This site offers a comprehensive guide, from foundational concepts and API details to 
+ * QB empowers developers to build responsive, high-performance systems by elegantly integrating
+ * the **Actor Model** with a robust **Asynchronous I/O Engine** and native **C++20/23
+ * coroutine support**. Whether you are tackling real-time data processing, complex network
+ * services, or large-scale distributed computations, QB provides the abstractions and tooling
+ * to simplify development and maximise efficiency.
+ *
+ * This site offers a comprehensive guide — from foundational concepts and API reference to
  * practical examples and advanced usage patterns.
  *
+ * ---
+ *
+ * @section main_highlights Key Highlights
+ *
+ * | Feature | Description |
+ * |---------|-------------|
+ * | **Actor Model** | Isolated, message-driven concurrent entities (`qb::Actor`) |
+ * | **Event System** | Type-safe, zero-copy inter-actor messaging (`qb::Event`) |
+ * | **Multi-Core Engine** | Lock-free MPSC scheduling across `qb::VirtualCore` threads |
+ * | **Async I/O** | Integrated non-blocking I/O (TCP, UDP, SSL, files) via `qb-io` |
+ * | **C++23 Coroutines** | `actor.spawn_async()` for co-routine-based async flows |
+ * | **Service Actors** | Singleton actors per core with automatic discovery |
+ * | **CPU Affinity** | Fine-grained thread-to-core pinning via `CoreInitializer` |
+ * | **Graceful Shutdown** | Stop-token + signal-based clean teardown (`qb::Main::stop()`) |
+ *
+ * ---
+ *
  * @section main_project_readme Project README
- *   For a comprehensive overview, features, a quick code example, and top-level navigation, 
+ *   For a broad overview, features, a quick code example, and top-level navigation,
  *   please start with the main **[Project README](../README.md)**.
  *
  * @section main_getting_started Getting Started Fast
  * - **New to QB?** Begin with the **[Introduction Section Overview](../readme/1_introduction/README.md)**.
  * - Jump right in: **[Step-by-Step Getting Started Guide](../readme/6_guides/getting_started.md)**.
  *
+ * ---
+ *
  * @section main_documentation_structure Navigating The Documentation
  *
- * The documentation is organized into the following key areas:
+ * The documentation is organised into the following key areas:
  *
- * - **1. Introduction **
+ * - **1. Introduction**
  *      - @subpage introduction_readme "Introduction Overview"
  *      - @subpage intro_overview_md "Framework Overview"
  *      - @subpage intro_philosophy_md "Core Philosophy"
  *
- * - **2. Core Concepts **
+ * - **2. Core Concepts**
  *      - @subpage core_concepts_readme "Core Concepts Overview"
  *      - @subpage core_concepts_actor_model_md "Actor Model"
  *      - @subpage core_concepts_event_system_md "Event System"
  *      - @subpage core_concepts_async_io_md "Async I/O Model"
  *      - @subpage core_concepts_concurrency_md "Concurrency & Parallelism"
  *
- * - **3. QB-IO Module (Asynchronous I/O & Utilities) **
+ * - **3. QB-IO Module (Asynchronous I/O & Utilities)**
  *      - @subpage qb_io_readme_md "QB-IO Overview"
  *      - @subpage qb_io_features_md "QB-IO Features"
  *      - @subpage qb_io_async_system_md "QB-IO Async Engine"
@@ -63,7 +84,7 @@
  *      - @subpage qb_io_ssl_transport_md "QB-IO SSL/TLS"
  *      - @subpage qb_io_utilities_md "QB-IO Utilities"
  *
- * - **4. QB-Core Module (Actor Engine) **
+ * - **4. QB-Core Module (Actor Engine)**
  *      - @subpage qb_core_readme_md "QB-Core Overview"
  *      - @subpage qb_core_features_md "QB-Core Features"
  *      - @subpage qb_core_actor_md "Mastering qb::Actor"
@@ -71,11 +92,11 @@
  *      - @subpage qb_core_engine_md "Engine: Main & VirtualCore"
  *      - @subpage qb_core_patterns_md "Actor Patterns & Utilities"
  *
- * - **5. Core & IO Integration **
+ * - **5. Core & IO Integration**
  *      - @subpage core_io_integration_readme_md "Core & IO Integration Overview"
  *      - @subpage core_io_async_in_actors_md "Async Ops in Actors"
  *      - @subpage core_io_network_actors_md "Network-Enabled Actors"
- *      - **Example Analyses **
+ *      - **Example Analyses**
  *          - @subpage core_io_example_analyses_readme "Example Analyses Overview"
  *          - @subpage example_analysis_chat_tcp_md "Example: TCP Chat"
  *          - @subpage example_analysis_dist_comp_md "Example: Distributed Computing"
@@ -83,7 +104,7 @@
  *          - @subpage example_analysis_file_processor_md "Example: File Processor"
  *          - @subpage example_analysis_msg_broker_md "Example: Message Broker"
  *
- * - **6. Developer Guides **
+ * - **6. Developer Guides**
  *      - @subpage guides_readme "Developer Guides Overview"
  *      - @subpage guides_getting_started_md "Getting Started"
  *      - @subpage guides_patterns_cookbook_md "Design Patterns Cookbook"
@@ -92,7 +113,7 @@
  *      - @subpage guides_error_handling_md "Error Handling"
  *      - @subpage guides_resource_management_md "Resource Management"
  *
- * - **7. Reference **
+ * - **7. Reference**
  *      - @subpage reference_readme "Reference Overview"
  *      - @subpage ref_api_overview_md "API Overview"
  *      - @subpage ref_building_md "Building QB"
@@ -100,6 +121,8 @@
  *      - @subpage ref_faq_md "FAQ"
  *      - @subpage ref_glossary_md "Glossary"
  *      - @subpage ref_lockfree_primitives_md "Lock-Free Primitives"
+ *
+ * ---
  *
  * @section main_build_status Build Status
  *   |              | linux | Windows | Coverage |
