@@ -5,174 +5,424 @@
 
 (`qb/core/Actor.h`)
 
-The `qb::Actor` class is the cornerstone of applications built with the QB Actor Framework. It's the base class from which all your custom actors will inherit, providing the structure for encapsulated state, message-driven behavior, and controlled lifecycle management. This guide delves into the practical aspects of working with `qb::Actor`.
+`qb::Actor` is the cornerstone of every application built with the QB Actor Framework. All your custom actors inherit from it, gaining encapsulated state, message-driven behaviour, controlled lifecycle management, and optionally C++23 coroutine support. This guide covers the complete actor API.
 
-## Defining Your Actor
+---
 
-Creating a custom actor involves several key steps:
+## 1. Defining Your Actor
 
-1.  **Public Inheritance:** Your class must publicly inherit from `qb::Actor`.
-    ```cpp
-    class MyWorker : public qb::Actor {
-        // ... actor implementation ...
-    };
-    ```
+### 1.1 Minimal Actor
 
-2.  **State Encapsulation:** Define member variables (`private` or `protected`) to hold the actor's internal state. This state is accessible only by the actor itself, ensuring data integrity in a concurrent environment.
-    ```cpp
-    class MyStatefulActor : public qb::Actor {
-    private:
-        int _counter = 0;
-        std::string _status_message;
-        std::vector<double> _data_points;
-        // Potentially RAII wrappers for external resources
-        // std::unique_ptr<DatabaseConnection> _db_conn;
-    public:
-        // ...
-    };
-    ```
+```cpp
+#include <qb/actor.h>
 
-3.  **Constructor (Optional but Common):** You can define constructors to initialize your actor's state, often taking parameters passed during actor creation (e.g., via `main.addActor<MyActor>(core_id, arg1, arg2)`).
-    ```cpp
-    class ConfigurableActor : public qb::Actor {
-    private:
-        const std::string _config_path;
-        int _initial_value;
-    public:
-        ConfigurableActor(std::string config_path, int initial_val)
-            : _config_path(std::move(config_path)), _initial_value(initial_val) {}
-        // ...
-    };
-    ```
-
-4.  **`onInit()` - Essential Initialization & Event Registration (Override):**
-    This virtual method is **critical**. It's called by the framework *after* your actor is constructed and *after* its unique `qb::ActorId` has been assigned, but *before* it begins processing any events.
-
-    *   **Purpose:** Perform essential setup that might depend on the actor having an ID or needing to interact with the framework (like registering for events).
-    *   **Event Registration:** **You must call `registerEvent<EventType>(*this);` within `onInit()` for every type of event your actor intends to handle.** Failure to do so means the corresponding `on(const EventType&)` handlers will never be invoked.
-    *   **Resource Acquisition:** Initialize resources, load configurations, establish connections to helper services (e.g., get `ActorId` of a `ServiceActor`).
-    *   **Return Value:** `onInit()` must return `bool`. 
-        *   `true`: Initialization was successful; the actor will proceed to its active state.
-        *   `false`: Initialization failed; the actor will **not** be started, and its destructor will be called shortly after. This is a way to gracefully abort an actor's launch if preconditions aren't met.
-
-    ```cpp
-    // Inside ConfigurableActor from above
+class MyWorker : public qb::Actor {
+public:
     bool onInit() override {
-        qb::io::cout() << "Actor [" << id() << "] onInit on Core " << getIndex() << ".\n";
-        
-        // Example: Load configuration from _config_path (pseudo-code)
-        // if (!loadConfiguration(_config_path)) {
-        //     qb::io::cout() << "Actor [" << id() << "] failed to load config: " << _config_path << ".\n";
-        //     return false; // Signal initialization failure
-        // }
-        _status_message = "Initialized with value: " + std::to_string(_initial_value);
-
-        // *** Register Event Handlers ***
-        registerEvent<ProcessDataEvent>(*this);
-        registerEvent<UpdateRequestEvent>(*this);
-        registerEvent<qb::KillEvent>(*this); // Always handle KillEvent
-
-        qb::io::cout() << "Actor [" << id() << "] initialized successfully.\n";
+        registerEvent<WorkEvent>(*this);
+        registerEvent<qb::KillEvent>(*this);
         return true;
     }
-    ```
 
-5.  **Event Handlers - Defining Behavior (`on(const EventType&)` or `on(EventType&)`):**
-    For each event type registered in `onInit()`, you must implement a corresponding public `on()` method. This is where your actor's primary logic resides.
+    void on(WorkEvent const& ev) { /* handle */ }
+    void on(qb::KillEvent const&) { kill(); }
+};
+```
 
-    *   **Signature:** `void on(const YourEventType& event)` or `void on(YourEventType& event)`.
-    *   **`const&` vs. `&`:**
-        *   Use `const YourEventType& event` if your handler only needs to read the event's data.
-        *   Use `YourEventType& event` (non-const reference) if you intend to modify the event (e.g., to fill in result fields) **before using `reply(event)` or `forward(destination, event)`**. Modifying an event that isn't being replied or forwarded has no effect on other potential recipients if it were a broadcast, for example.
+### 1.2 State Encapsulation
 
-    ```cpp
-    // Inside an actor
-    void on(const ProcessDataEvent& event) {
-        // Process event.payload, but cannot modify event itself
-        // Example: _internal_state += event.value_to_add;
+Actor member variables are private to the actor. The QB runtime guarantees sequential execution of handlers — no locks needed for self-state:
+
+```cpp
+class StatefulActor : public qb::Actor {
+private:
+    int                _counter = 0;
+    std::string        _name;
+    std::vector<float> _history;
+public:
+    // ...
+};
+```
+
+### 1.3 Constructor Parameters
+
+Pass configuration at actor creation time. Constructor args flow via `Main::addActor<A>(core, ...)`:
+
+```cpp
+class ConfiguredActor : public qb::Actor {
+    const std::string _config_path;
+    int               _initial_value;
+public:
+    ConfiguredActor(std::string path, int val)
+        : _config_path(std::move(path)), _initial_value(val) {}
+    // ...
+};
+
+// In main():
+engine.addActor<ConfiguredActor>(0, "/etc/app.cfg", 42);
+```
+
+### 1.4 Lightweight Actors — `no_default_events`
+
+By default every actor automatically subscribes to four system events: `KillEvent`, `SignalEvent`, `PingEvent`, and `UnregisterCallbackEvent`. For actors that never handle those events (e.g. a pool of short-lived compute workers), passing `qb::no_default_events` to the base constructor skips those subscriptions and reduces setup cost:
+
+```cpp
+class ComputeTask : public qb::Actor {
+public:
+    ComputeTask() : qb::Actor(qb::no_default_events) {}
+
+    bool onInit() override {
+        registerEvent<InputEvent>(*this);
+        return true;
     }
 
-    void on(UpdateRequestEvent& event) { // Non-const for reply
-        // Process event.query
-        event.response_data = "Processed: " + event.query;
-        reply(event); // Send the modified event back to its source
+    void on(InputEvent const& ev) {
+        // Process and push result, then self-terminate
+        push<ResultEvent>(ev.getSource(), compute(ev.data));
+        kill();
     }
-    ```
+};
+```
 
-6.  **`on(const qb::KillEvent&)` - Graceful Shutdown (Override):**
-    It is crucial to register for and handle `qb::KillEvent`.
-    *   Perform any necessary cleanup or final actions specific to *your actor* before it fully terminates.
-    *   **You MUST call the base `kill()` method** at the end of your handler to signal the framework to complete the termination process.
+> ⚠️ When using `no_default_events`, the actor will **not** respond to `KillEvent` or system signals unless you explicitly subscribe to them.
 
-    ```cpp
-    // Inside an actor
-    void on(const qb::KillEvent& /*event*/) { // event parameter often unused
-        qb::io::cout() << "Actor [" << id() << "] received KillEvent. Performing cleanup...\n";
-        // Example: notify other actors, flush pending data, etc.
-        // if (_manager_id.is_valid()) {
-        //     push<WorkerStoppingEvent>(_manager_id, id());
-        // }
-        kill(); // Essential: signals framework to proceed with termination
+---
+
+## 2. Actor Lifecycle
+
+```
+addActor<A>(core, ...)
+      │
+      ▼
+ Constructor (A::A(...))
+      │
+      ▼
+ onInit()  ←── register events, acquire resources
+      │
+ ┌────┴──── return false ──► destructor (A::~A()) — not started
+ │
+ return true
+      │
+      ▼
+ [Running: on(Event&) / onCallback()]
+      │
+ kill() called
+      │
+      ▼
+ Pending events drained (current handler finishes)
+      │
+      ▼
+ Destructor (A::~A()) ← RAII cleanup here
+```
+
+### 2.1 `onInit()` — Initialization Checkpoint
+
+`onInit()` runs **after** the actor has been assigned its unique `ActorId` but **before** it processes any messages. It is the only safe place to call `registerEvent<T>()`.
+
+```cpp
+bool onInit() override {
+    // Must register ALL event types the actor will handle
+    registerEvent<DataEvent>(*this);
+    registerEvent<QueryEvent>(*this);
+    registerEvent<qb::KillEvent>(*this);
+
+    // Acquire resources, load configs, find service actors
+    auto logger_id = getServiceId<LoggerTag>(getIndex());
+    if (!logger_id.is_valid()) {
+        return false;  // fail startup — actor will be destroyed
     }
-    ```
+    _logger_id = logger_id;
+    return true;
+}
+```
 
-7.  **Destructor (`virtual ~MyActor()` - Override, Optional but Good Practice):**
-    The destructor is called *after* the actor has been fully terminated (i.e., after `kill()` has completed its work and the actor is removed from the `VirtualCore`'s management).
-    *   **RAII Cleanup:** This is the primary place for RAII-managed resources (like `std::unique_ptr` members, `std::fstream`, etc.) to be automatically cleaned up.
-    *   Avoid complex logic or sending messages from the destructor, as the actor is no longer active in the system.
+### 2.2 Event Handlers
 
-    ```cpp
-    // Inside ConfigurableActor
-    ~ConfigurableActor() override {
-        qb::io::cout() << "Actor [" << id() << "] named '" << _config_path 
-                       << "' destroyed. Final status: " << _status_message << ".\n";
-        // _db_conn (if it was a unique_ptr) would be automatically released here.
+For each registered event type, implement a matching public `on()` method:
+
+```cpp
+// Read-only handler — const reference
+void on(DataEvent const& ev) {
+    process(ev.payload);
+}
+
+// Mutable handler — required for reply() and forward()
+void on(QueryEvent& ev) {
+    ev.result = lookup(ev.key);
+    reply(ev);  // sends ev back to its source
+}
+```
+
+### 2.3 Graceful Shutdown — `on(KillEvent)`
+
+```cpp
+void on(qb::KillEvent const& /*ev*/) {
+    // Optional: notify peers, flush state
+    push<ShutdownNotice>(_manager_id, id());
+    kill();  // mandatory — marks actor for removal
+}
+```
+
+The base `Actor::on(KillEvent)` already calls `kill()`. Override only if you need custom cleanup.
+
+### 2.4 Destructor
+
+The destructor is called **after** `kill()` has taken full effect and the actor is removed from the `VirtualCore`:
+
+```cpp
+~MyActor() override {
+    // RAII members (_file, _conn, etc.) auto-cleaned here
+    // DO NOT send events from the destructor
+}
+```
+
+---
+
+## 3. Key Accessor Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `id()` | `qb::ActorId` | Unique system-wide actor ID |
+| `getIndex()` | `qb::CoreId` | VirtualCore this actor runs on |
+| `getName()` | `std::string_view` | Demangled class name |
+| `getCoreSet()` | `const CoreIdSet&` | All cores in the engine |
+| `time()` | `uint64_t` | Cached nanosecond timestamp (per loop tick) |
+| `is_alive()` | `bool` | True until `kill()` takes effect |
+
+---
+
+## 4. Sending Events
+
+### 4.1 `push<E>(dest, args...)` — Primary Method
+
+Ordered delivery; handles non-trivially destructible events:
+
+```cpp
+push<DataEvent>(target_id, value, label);
+auto& ev = push<BatchEvent>(target_id);
+ev.items.push_back(item1);   // modify after construction
+```
+
+### 4.2 `send<E>(dest, args...)` — Unordered, Trivial Events Only
+
+Lower latency for same-core signals, but **no ordering guarantee**:
+
+```cpp
+// FireForgetSignal must be trivially destructible
+send<FireForgetSignal>(monitor_id);
+```
+
+### 4.3 `broadcast<E>(args...)` — System-Wide
+
+Sends to every actor on every core:
+
+```cpp
+broadcast<SystemAlertEvent>("disk full");
+```
+
+### 4.4 `reply(event)` / `forward(dest, event)`
+
+Efficiently reuse the received event object:
+
+```cpp
+void on(RequestEvent& req) {
+    req.result = compute(req.input);
+    reply(req);               // back to sender
+}
+
+void on(WorkOrder& order) {
+    forward(_worker_id, order);  // redirect, preserve source
+}
+```
+
+### 4.5 `to(dest).push<E>(...)` — EventBuilder (Chained)
+
+Avoids repeated pipe lookups when sending multiple events to the same destination:
+
+```cpp
+to(stats_id)
+    .push<CountEvent>("logins")
+    .push<TimerEvent>("session");
+```
+
+### 4.6 `getPipe(dest)` / `pipe.allocated_push<E>(hint, ...)` — Low Level
+
+Pre-size the buffer when carrying large payloads:
+
+```cpp
+auto blob = std::make_shared<std::vector<char>>(256 * 1024);
+qb::Pipe pipe = getPipe(processor_id);
+pipe.allocated_push<BlobEvent>(sizeof(BlobEvent) + blob->size(), blob);
+```
+
+---
+
+## 5. Periodic Callbacks — `qb::ICallback`
+
+Actors that need to run code on every loop iteration inherit from `qb::ICallback`:
+
+```cpp
+class PollingActor : public qb::Actor, public qb::ICallback {
+    int _poll_count = 0;
+public:
+    bool onInit() override {
+        registerCallback(*this);   // activate
+        return true;
     }
-    ```
 
-## Actor State Management: The Core Principles
+    void onCallback() override {
+        ++_poll_count;
+        if (pollExternalSystem())
+            push<DataReadyEvent>(id());
+        if (_poll_count > 1000) {
+            unregisterCallback();  // deactivate
+            kill();
+        }
+    }
+};
+```
 
-*   **Isolation & Encapsulation:** An actor's member variables are its private world. No other actor or external code should directly access or modify them. All interactions that affect state should occur via received events.
-*   **Sequential Processing, Inherent Thread Safety (for self-state):** The QB framework guarantees that for any single actor instance, its `on(Event&)` handlers and `onCallback()` (if using `qb::ICallback`) are executed sequentially by its assigned `VirtualCore`. This means you do not need to use mutexes or other synchronization primitives to protect the actor's *own* member variables from race conditions *caused by its own methods*.
-*   **Non-Blocking Operations:** Event handlers and callbacks **must not block**. Avoid long-running computations, synchronous I/O calls (like direct file reads/writes that might block), or waiting indefinitely on external locks. Such blocking behavior will stall the entire `VirtualCore`, preventing other actors on that core from making progress. Use `qb::io::async::callback` to offload work or design your interactions to be fully asynchronous (e.g., using I/O actors).
+> ⚠️ `onCallback()` runs on the VirtualCore event-loop thread. **It must be fast and non-blocking.**
 
-## Key `qb::Actor` Methods for Everyday Use
+---
 
-Beyond lifecycle and event handling, `qb::Actor` provides several utility methods:
+## 6. Referenced Actors & `RefActorHandle<T>`
 
-*   **Identification:**
-    *   `id() const noexcept -> qb::ActorId`: Returns the actor's unique ID.
-    *   `getIndex() const noexcept -> qb::CoreId`: Returns the ID of the `VirtualCore` this actor is running on.
-    *   `getName() const noexcept -> std::string_view`: Returns the demangled class name of the actor.
-*   **Lifecycle & Status:**
-    *   `kill() const noexcept`: Initiates the actor's termination sequence.
-    *   `is_alive() const noexcept -> bool`: Checks if the actor is still active and processing events (i.e., `kill()` has not yet fully taken effect).
-*   **Event Handling Registration (typically in `onInit()`):**
-    *   `registerEvent<EventType>(*this) const noexcept`: Subscribes the actor to handle `EventType`.
-    *   `unregisterEvent<EventType>(*this) const noexcept`: Unsubscribes from `EventType`.
-*   **Periodic Callbacks (requires inheriting `qb::ICallback` additionally):**
-    *   `registerCallback(DerivedActor& actor) const noexcept`: Registers `actor.onCallback()` to be called by the `VirtualCore` loop.
-    *   `unregisterCallback(DerivedActor& actor) const noexcept`: Stops periodic calls.
-    *   `unregisterCallback() const noexcept`: Unregisters self from callbacks.
-    *   `virtual void onCallback() = 0;` (to be implemented by derived class).
-*   **Sending Messages (Events):**
-    *   `push<Event>(dest, args...) const noexcept -> Event&`: Ordered, default send.
-    *   `send<Event>(dest, args...) const noexcept`: Unordered, requires trivially destructible `Event`.
-    *   `broadcast<Event>(args...) const noexcept`: Send to all actors on all cores.
-    *   `reply(Event& event) const noexcept`: Efficiently send `event` back to its source.
-    *   `forward(ActorId dest, Event& event) const noexcept`: Efficiently redirect `event` to `dest`.
-    *   `to(ActorId dest) const noexcept -> EventBuilder`: Get a builder for chained `push` calls.
-    *   `getPipe(ActorId dest) const noexcept -> qb::Pipe`: Get a direct communication pipe for optimized sending (e.g., `allocated_push`).
-*   **Actor Creation & Discovery:**
-    *   `addRefActor<ChildActorType>(args...) const -> ChildActorType*`: Creates a child actor on the *same core*. Parent gets a raw pointer but doesn't own the child.
-    *   `getService<ServiceActorType>() const noexcept -> ServiceActorType*`: Gets a raw pointer to a `ServiceActor` instance *on the same core*. Returns `nullptr` if not found.
-    *   `static getServiceId<ServiceTag>(CoreId core_idx) noexcept -> qb::ActorId`: Gets the `ActorId` of a `ServiceActor` (identified by `ServiceTag`) on a potentially different `core_idx`.
-    *   `require<ActorType...>() const noexcept`: Broadcasts a request to discover live instances of the specified `ActorType`(s). Responses arrive as `qb::RequireEvent`.
-*   **Framework Interaction:**
-    *   `time() const noexcept -> uint64_t`: Get the current cached time (nanoseconds since epoch) from the `VirtualCore`.
-    *   `getCoreSet() const noexcept -> const qb::CoreIdSet&`: Get the set of `CoreId`s this actor's `VirtualCore` can communicate with.
+### 6.1 Raw `addRefActor<T>()` — Use with Caution
 
-By mastering these aspects of `qb::Actor`, you can effectively build modular, concurrent, and robust components for your applications.
+Creates a child actor on the **same VirtualCore** and returns a raw pointer:
 
-**(Next:** [QB-Core: Event Messaging](./messaging.md) to delve deeper into how actors communicate.**)
-**(See also:** [Core Concepts: The Actor Model in QB](./../2_core_concepts/actor_model.md), [QB-Core: Actor Lifecycle (TBD)](), [QB-Core: Actor Patterns & Utilities](./patterns.md)**) 
+```cpp
+HelperActor* _helper = addRefActor<HelperActor>(id());
+if (!_helper) { return false; }  // onInit() failed
+```
+
+**Problem:** if `_helper` calls `kill()`, the pointer becomes dangling. Any subsequent dereference is Undefined Behaviour.
+
+### 6.2 Safe `addRefHandle<T>()` — Recommended
+
+Wraps the raw pointer in a `RefActorHandle<T>` that performs an O(1) liveness check on every dereference:
+
+```cpp
+class ParentActor : public qb::Actor {
+    qb::RefActorHandle<HelperActor> _helper;
+
+public:
+    bool onInit() override {
+        _helper = addRefHandle<HelperActor>(id());
+        if (!_helper) return false;       // creation failed
+
+        registerEvent<ResultEvent>(*this);
+        return true;
+    }
+
+    void dispatch(int x) {
+        if (_helper) {                    // liveness check — O(1)
+            push<TaskEvent>(_helper->id(), x);  // safe actor-model send
+        }
+    }
+
+    void on(ResultEvent const& ev) {
+        qb::io::cout() << "result = " << ev.value << "\n";
+    }
+};
+```
+
+`RefActorHandle<T>` is copyable and default-constructible (empty handle). Its `operator->()` and `operator*()` assert non-null in debug builds.
+
+---
+
+## 7. C++23 Coroutines — `spawn_async`
+
+### 7.1 Overview
+
+`spawn_async()` is the **only** safe way to use coroutines inside an actor. It launches a `qb::io::async::task<void>` that runs concurrently with the actor's normal event processing. While the coroutine is suspended (at any `co_await` point), the actor continues to receive and process events normally.
+
+### 7.2 Safety Contract
+
+> **Rule 1 — No actor state after `co_await`**
+> The actor may be destroyed while the coroutine is suspended. Accessing `this->_member` after a `co_await` is **Undefined Behaviour**.
+>
+> **Rule 2 — Copy everything needed before spawn**
+> Capture all required data by value before the first `co_await`.
+>
+> **Rule 3 — Use only `CoroContext` after suspension**
+> `ctx.push<E>(...)` and `ctx.push_to<E>(dest, ...)` are safe regardless of the actor's lifetime.
+
+### 7.3 ✅ Safe Pattern
+
+```cpp
+void on(FetchRequest& req) {
+    // --- Copy ALL needed data BEFORE spawning ---
+    std::string url    = req.url;
+    ActorId     sender = req.getSource();
+    ActorId     me     = id();
+
+    spawn_async([url, sender, me](auto ctx) -> qb::io::async::task<void> {
+        // After this co_await, 'this' may be gone — only ctx is safe
+        auto body = co_await http_get(url);
+
+        ctx.template push_to<FetchResult>(sender, me, body);
+    });
+}
+```
+
+### 7.4 ❌ Dangerous Anti-pattern
+
+```cpp
+void on(FetchRequest& req) {
+    spawn_async([this](auto ctx) -> qb::io::async::task<void> {
+        co_await sleep(100ms);
+        this->_result = compute();  // ❌ 'this' may be dangling — CRASH
+    });
+}
+```
+
+### 7.5 Coroutine Introspection
+
+```cpp
+bool    has_active_coroutines()  const; // any pending co_await?
+std::size_t active_coroutine_count() const; // how many?
+```
+
+---
+
+## 8. Actor Discovery — `require<T>()`
+
+Broadcast a ping to discover running actors of a specific type:
+
+```cpp
+bool onInit() override {
+    registerEvent<qb::RequireEvent>(*this);
+    require<LoggerService>();   // will trigger on(RequireEvent&) for each live instance
+    return true;
+}
+
+void on(qb::RequireEvent const& ev) {
+    if (is<LoggerService>(ev) && ev.status == qb::ActorStatus::Alive) {
+        _logger_id = ev.getSource();
+    }
+}
+```
+
+---
+
+## 9. Quick Reference
+
+| Category | Method | Notes |
+|----------|--------|-------|
+| **Identity** | `id()`, `getIndex()`, `getName()` | Read-only accessors |
+| **Lifecycle** | `kill()`, `is_alive()` | Non-blocking |
+| **Events** | `registerEvent<E>(*this)`, `unregisterEvent<E>(*this)` | Call from `onInit()` |
+| **Send** | `push<E>(dest, ...)`, `send<E>(dest, ...)`, `broadcast<E>(...)` | Choose based on ordering need |
+| **Reuse** | `reply(ev)`, `forward(dest, ev)` | Non-const event& required |
+| **Fluent** | `to(dest).push<E>(...)` | Multiple events to same dest |
+| **Low level** | `getPipe(dest).push<E>(...)` / `allocated_push<E>(hint, ...)` | Bulk / large payloads |
+| **Callback** | `registerCallback(*this)`, `unregisterCallback()` | Needs `ICallback` mixin |
+| **Child** | `addRefHandle<A>(...)` / `addRefActor<A>(...)` | Same core only |
+| **Discovery** | `require<A...>()`, `getService<A>()`, `getServiceId<Tag>(core)` | Actor lookup |
+| **Coroutine** | `spawn_async(func)`, `has_active_coroutines()` | C++23 only |
+| **Time** | `time()` | Cached ns timestamp — stable within one tick |
+
+**(Next:** [QB-Core: Event Messaging](./messaging.md) — deep dive into the event system.)**
+**(See also:** [QB-Core: Actor Patterns & Utilities](./patterns.md), [Core Concepts: The Actor Model](./../2_core_concepts/actor_model.md))**
