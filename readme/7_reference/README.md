@@ -30,6 +30,9 @@ These documents are intended to provide specific, factual information and quick 
 *   **[QB Framework: Lock-Free Primitives Reference](./lockfree_primitives.md)**
     *   An overview of the lock-free data structures (SpinLock, SPSC & MPSC Queues) used internally by QB for high-performance concurrency, primarily for informational purposes.
 
+*   **[QB-IO: Async, Lifecycle & Allocation Invariants](./io_invariants.md)**
+    *   The single source of truth for the thread-ownership, listener registration, freelist, and CRTP-dispatch invariants upheld by every `qb-io` component. Required reading before writing a custom protocol, transport, or async base class.
+
 ## How to Use This Section
 
 *   Use the **API Overview** as a quick lookup for primary classes and methods.

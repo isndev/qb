@@ -79,6 +79,7 @@
  *      - @subpage qb_io_readme_md "QB-IO Overview"
  *      - @subpage qb_io_features_md "QB-IO Features"
  *      - @subpage qb_io_async_system_md "QB-IO Async Engine"
+ *      - @subpage qb_io_coroutines_md "QB-IO C++23 Coroutines"
  *      - @subpage qb_io_transports_md "QB-IO Transports"
  *      - @subpage qb_io_protocols_md "QB-IO Protocols"
  *      - @subpage qb_io_ssl_transport_md "QB-IO SSL/TLS"
@@ -121,6 +122,9 @@
  *      - @subpage ref_faq_md "FAQ"
  *      - @subpage ref_glossary_md "Glossary"
  *      - @subpage ref_lockfree_primitives_md "Lock-Free Primitives"
+ *      - @subpage reference_io_invariants "QB-IO: Async & Lifecycle Invariants"
+ *
+ * ---
  *
  * ---
  *
