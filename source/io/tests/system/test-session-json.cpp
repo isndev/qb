@@ -21,9 +21,12 @@
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
 #include <qb/json.h>
+#include <qb/uuid.h>
 #include <thread>
 
 using namespace qb::io;
+
+// Per-TEST() wall time: run this binary with --gtest_print_time=1 (Google Test).
 
 constexpr const std::size_t NB_ITERATION          = 4096;
 constexpr const char        STRING_MESSAGE[]      = "Here is my content test";
@@ -57,7 +60,10 @@ pump_until(Predicate &&predicate, std::chrono::milliseconds timeout) {
         async::run(EVRUN_NOWAIT);
         if (std::chrono::steady_clock::now() >= deadline)
             return predicate();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // Sleep only when the loop is idle; a fixed 1 ms sleep every iteration made this
+        // file dominate CI time (~tens of seconds for NB_ITERATION=4096 × two bulk tests).
+        if (async::listener::current.nb_invoked_event() == 0)
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
     }
     return true;
 }
@@ -260,11 +266,24 @@ public:
 class MalformedJsonServer
     : public use<MalformedJsonServer>::tcp::server<MalformedJsonSession> {
 public:
-    bool session_connected = false;
+    bool session_connected    = false;
     bool session_disconnected = false;
 
-    void on(IOSession &) { session_connected = true; }
-    void on(qb::io::async::event::disconnected &&) { session_disconnected = true; }
+    void
+    on(IOSession &) {
+        session_connected = true;
+    }
+
+    /**
+     * Peer hangup / session dispose removes the session from the map via io_handler.
+     * This is NOT the same as tcp::server::on(event::disconnected&&), which is for the
+     * acceptor transport only.
+     */
+    void
+    disconnected(qb::uuid ident) {
+        session_disconnected = true;
+        io_handler<MalformedJsonServer, MalformedJsonSession>::disconnected(ident);
+    }
 };
 
 TEST(Session, JSON_MALFORMED_RESILIENCE) {
@@ -291,10 +310,11 @@ TEST(Session, JSON_MALFORMED_RESILIENCE) {
         sock.disconnect();
     });
 
-    for (auto i = 0; i < 50 && !server.session_disconnected; ++i) {
-        async::run(EVRUN_ONCE);
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
+    // Wait until io_handler removes the session after peer close (see MalformedJsonServer::disconnected).
+    // Do not use EVRUN_ONCE here: with timerfd-based libev, a lone ev_io workload can block
+    // EVRUN_ONCE for an extremely long waittime (see async::run_once() docs).
+    EXPECT_TRUE(pump_until([&] { return server.session_disconnected; }, std::chrono::seconds(5)))
+        << "peer close should invoke server::disconnected(uuid) and unregister the session";
 
     t.join();
     EXPECT_TRUE(server.session_connected);
