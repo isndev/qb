@@ -32,7 +32,9 @@
 
 using namespace qb::io;
 
-constexpr const std::size_t NB_ITERATION          = 1000;
+// Per-TEST() wall time: run this binary with --gtest_print_time=1 (Google Test).
+
+constexpr const std::size_t NB_ITERATION          = 4096;
 constexpr const std::size_t NB_CLIENTS            = 5;
 constexpr const char        STRING_MESSAGE[]      = "Here is my content test";
 constexpr const char        UNIX_SOCK_PATH[]      = "qb-test.sock";
@@ -82,7 +84,8 @@ pump_until(Predicate &&predicate, std::chrono::milliseconds timeout) {
         async::run(EVRUN_NOWAIT);
         if (std::chrono::steady_clock::now() >= deadline)
             return predicate();
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (async::listener::current.nb_invoked_event() == 0)
+            std::this_thread::sleep_for(std::chrono::microseconds(50));
     }
     return true;
 }
@@ -186,11 +189,14 @@ TEST(Session, COMMAND_OVER_UTCP) {
             client << STRING_MESSAGE << '\n';
         }
 
-        while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
+        EXPECT_TRUE(pump_until(all_done, std::chrono::seconds(10)));
     });
 
-    while (async::run(EVRUN_NOWAIT) > 0 || (!all_done()));
+    EXPECT_TRUE(pump_until(all_done, std::chrono::seconds(10)));
     t.join();
+    EXPECT_EQ(msg_count_server_side.load(), NB_ITERATION);
+    EXPECT_EQ(msg_count_client_side.load(), NB_ITERATION);
+    EXPECT_GE(server.connectionCount(), 1u);
 }
 
 #endif
@@ -314,12 +320,16 @@ TEST(Session, COMMAND_OVER_SECURE_UTCP) {
                 client << STRING_MESSAGE << '\n';
             }
 
-            while (async::run(EVRUN_NOWAIT) > 0 || (!client_done()));
+            EXPECT_TRUE(pump_until(client_done, std::chrono::seconds(10)));
         }
     });
 
-    while (async::run(EVRUN_NOWAIT) > 0 || (!server_done() || !client_done()));
+    EXPECT_TRUE(pump_until([]() { return server_done() && client_done(); },
+                           std::chrono::seconds(10)));
     tc.join();
+    EXPECT_EQ(msg_count_server_side.load(), NB_ITERATION * NB_CLIENTS);
+    EXPECT_EQ(msg_count_client_side.load(), NB_ITERATION);
+    EXPECT_GE(server.connectionCount(), NB_CLIENTS);
 }
 
 #endif
@@ -404,10 +414,10 @@ TEST(Session, BINARY16_OVER_TCP) {
                            std::string_view(STRING_MESSAGE, sizeof(STRING_MESSAGE) - 1));
         }
 
-        while (async::run(EVRUN_NOWAIT) > 0 || !bin_all_done());
+        EXPECT_TRUE(pump_until(bin_all_done, std::chrono::seconds(10)));
     });
 
-    while (async::run(EVRUN_NOWAIT) > 0 || !bin_all_done());
+    EXPECT_TRUE(pump_until(bin_all_done, std::chrono::seconds(10)));
     t.join();
 
     EXPECT_EQ(bin_msg_count_server, BIN_ITERATIONS);
@@ -501,10 +511,11 @@ TEST(Session, PROTOCOL_SWITCH_TEXT_TO_BINARY) {
         done = true;
     });
 
-    for (auto i = 0; i < 100 && !done; ++i) {
-        async::run(EVRUN_ONCE);
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    }
+    // Do not use EVRUN_ONCE here: with timerfd-based libev, a lone ev_io workload can block
+    // EVRUN_ONCE for an extremely long waittime (see async::run_once() docs).
+    EXPECT_TRUE(pump_until([&] { return done.load(); }, std::chrono::seconds(5)))
+        << "client thread should finish (protocol switch + disconnect)";
+
     t.join();
 
     EXPECT_GE(switch_text_count, 1u);
