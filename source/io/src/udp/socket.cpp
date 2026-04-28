@@ -24,9 +24,41 @@
  */
 
 #include <qb/io/udp/socket.h>
+#include <charconv>
 #include <cstring>
+#if !defined(_WIN32)
+#include <net/if.h>
+#endif
 
 namespace qb::io::udp {
+
+namespace {
+// Resolves an interface specification (numeric index or name like "eth0") to
+// an interface index in a noexcept-safe way. The previous implementation used
+// std::stoi(iface), which throws on non-numeric input — fatal here because
+// join/leave_multicast_group are declared noexcept (terminate() on throw).
+// Returns 0 ("any interface") when the spec is empty or cannot be resolved.
+unsigned int
+resolve_iface_index(const std::string &iface) noexcept {
+    if (iface.empty())
+        return 0;
+
+    unsigned int idx = 0;
+    const char  *first = iface.data();
+    const char  *last  = first + iface.size();
+    auto [ptr, ec]     = std::from_chars(first, last, idx);
+    if (ec == std::errc{} && ptr == last)
+        return idx;
+
+#if !defined(_WIN32)
+    // POSIX: translate "eth0" / "wlan0" / "en0" / ... to its kernel index.
+    return ::if_nametoindex(iface.c_str());
+#else
+    // Windows: callers must supply a numeric index; fall back to "any".
+    return 0;
+#endif
+}
+} // namespace
 
 socket::socket(io::socket &&sock) noexcept
     : io::socket(sock.release_handle()) {}
@@ -175,9 +207,10 @@ socket::join_multicast_group(const std::string &group,
             return -1;
         }
         
-        // Set interface index (0 means any interface)
-        mreq6.ipv6mr_interface = !iface.empty() ? static_cast<unsigned int>(std::stoi(iface)) : 0;
-        
+        // Set interface index (0 means any interface).
+        // Accepts both numeric indices and POSIX interface names (e.g. "eth0").
+        mreq6.ipv6mr_interface = resolve_iface_index(iface);
+
         return set_optval(IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq6, sizeof(mreq6));
     }
     
@@ -222,9 +255,10 @@ socket::leave_multicast_group(const std::string &group,
             return -1;
         }
         
-        // Set interface index (0 means any interface)
-        mreq6.ipv6mr_interface = !iface.empty() ? static_cast<unsigned int>(std::stoi(iface)) : 0;
-        
+        // Set interface index (0 means any interface).
+        // Accepts both numeric indices and POSIX interface names (e.g. "eth0").
+        mreq6.ipv6mr_interface = resolve_iface_index(iface);
+
         return set_optval(IPPROTO_IPV6, IPV6_LEAVE_GROUP, &mreq6, sizeof(mreq6));
     }
     

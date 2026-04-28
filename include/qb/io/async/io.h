@@ -117,8 +117,10 @@ public:
     explicit with_timeout(ev_tstamp timeout = 3)
         : _timeout(timeout)
         , _last_activity(0) {
-        if (timeout > 0.)
+        if (timeout > 0.) {
+            ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
             this->_async_event.start(_timeout);
+        }
     }
 
     /**
@@ -129,6 +131,7 @@ public:
      */
     void
     updateTimeout() noexcept {
+        ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
         _last_activity = this->_async_event.loop.now();
     }
 
@@ -142,6 +145,7 @@ public:
     setTimeout(ev_tstamp timeout) noexcept {
         _timeout = timeout;
         if (_timeout > 0.) { // Check against 0, not just if(_timeout)
+            ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
             _last_activity = this->_async_event.loop.now();
             this->_async_event.set(_timeout);
             this->_async_event.start();
@@ -202,6 +206,7 @@ private:
 template <typename _Func>
 class Timeout : public with_timeout<Timeout<_Func>> {
     _Func _func; /**< The callable (function, lambda, functor) to execute upon timeout. */
+    bool  _delete_only = false;
 
     // ---- Thread-local freelist (QB_IO_PLAN 2.15) ---------------------------
     // `Timeout<_Func>` is self-deleting (`delete this` on fire), so we can
@@ -260,8 +265,9 @@ public:
         : with_timeout<Timeout<_Func>>(timeout > 0. ? timeout : 0.)
         , _func(std::forward<_Func>(func)) {
         if (timeout <= 0.) {
-            _func();
-            delete this;
+            try { _func(); } catch (...) {}
+            _delete_only = true;
+            this->_async_event.start(0.);
         }
     }
 
@@ -273,7 +279,9 @@ public:
      */
     void
     on(event::timer const & /*event*/) {
-        try { _func(); } catch (...) {}
+        if (!_delete_only) {
+            try { _func(); } catch (...) {}
+        }
         delete this;
     }
 };
@@ -1178,8 +1186,16 @@ private:
 
         _on_message = true;
         while ((ret = this->_protocol->getMessageSize()) > 0) {
+            const auto frame_exceeds_pending = [&]() noexcept {
+                if (!this->_protocol->should_flush())
+                    return false;
+                if constexpr (requires { Derived.in(); Derived.pendingRead(); })
+                    return ret > Derived.pendingRead();
+                else
+                    return false;
+            }();
             // Security check: prevent DoS via oversized messages
-            if (unlikely(ret > _max_message_size)) {
+            if (unlikely(ret > _max_message_size || frame_exceeds_pending)) {
                 this->_protocol->not_ok();
                 _system_error = 0;
                 _reason = -2; // Message too large (DoS protection)
@@ -1193,6 +1209,12 @@ private:
             protocol->onMessage(ret);
             // Update statistics: message successfully processed
             ++_messages_processed;
+            if (unlikely(_reason)) {
+                if (likely(protocol->should_flush()))
+                    Derived.flush(ret);
+                _on_message = false;
+                return false;
+            }
             // Check if the CURRENT (potentially new) protocol became invalid
             if (unlikely(!this->_protocol->ok())) {
                 _system_error = 0;
@@ -1243,18 +1265,33 @@ private:
     void
     on(event::io const &event) {
         constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
-        // Keep a strong reference to prevent UAF when process_messages() triggers
-        // extractSession() (e.g. WebSocket upgrade), which removes the session from the
-        // io_handler and can drop the last shared_ptr reference, destroying *this before
-        // onMessage() / Derived.eof() / handle_post_read() finish executing.
+        // Keep a strong reference to prevent UAF for the entire duration of
+        // this handler:
+        //   - When process_messages() triggers extractSession() (e.g. WebSocket
+        //     upgrade), the io_handler drops the last shared_ptr to *this.
+        //   - When dispose() invokes Derived.on(event::disconnected) and the
+        //     user handler decides to release the last shared_ptr (typical
+        //     "self-managing" actor pattern), *this would be destroyed before
+        //     dispose() reaches `_async_event.stop()` further down the call
+        //     stack.
+        // The guard MUST be acquired before any branch that can reach
+        // dispose() — including the goto-error path triggered by an external
+        // disconnect() — not only the EV_READ branch.
         // Stored as shared_ptr<void> so it works when _Derived inherits from
         // enable_shared_from_this<Base> where Base != _Derived (e.g. HTTP CRTP sessions).
         // Declaration is at function scope (above all goto targets) to satisfy
-        // C++ goto-past-initialization rules; assignment is only reached in the EV_READ path.
+        // C++ goto-past-initialization rules.
         std::shared_ptr<void> _self_guard;
 
         if (_on_message)
             return;
+
+        if constexpr (qb::has_shared_from_this<_Derived>) {
+            try { _self_guard = Derived.shared_from_this(); } catch (std::bad_weak_ptr const&) {}
+        } else if constexpr (requires { Derived.shared(); }) {
+            _self_guard = Derived.shared();
+        }
+
         if (_reason || !_protocol || !_protocol->ok()) {
             // Protocol error: capture it before disposing
             if (_protocol && !_protocol->ok()) {
@@ -1265,13 +1302,12 @@ private:
         }
 
         if (likely(event._revents & EV_READ)) {
-            if constexpr (qb::has_shared_from_this<_Derived>) {
-                try { _self_guard = Derived.shared_from_this(); } catch (std::bad_weak_ptr const&) {}
-            }
-
             auto ret = static_cast<std::size_t>(Derived.read());
-            if (unlikely(ret == invalid_ret))
+            if (unlikely(ret == invalid_ret)) {
+                if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
+                    return;
                 goto error;
+            }
             
             // Check for buffer size limit exceeded (DoS protection)
             if (unlikely(ret == static_cast<std::size_t>(-2))) {
@@ -1531,7 +1567,7 @@ public:
      */
     [[nodiscard]] bool
     has_pending_data() const noexcept {
-        return Derived.pendingWrite() > 0;
+        return static_cast<_Derived const &>(*this).pendingWrite() > 0;
     }
 
     /**
@@ -1733,18 +1769,35 @@ private:
      */
     void
     on(event::io const &event) {
+        // Keep a strong reference for the entire handler: dispose() invokes
+        // Derived.on(event::disconnected) which may release the last
+        // shared_ptr to *this; without this guard, the post-on(disconnected)
+        // statements in dispose() (`_async_event.stop()`, `Derived.on(dispose)`)
+        // would dereference freed memory. See the equivalent guard in io::on.
+        std::shared_ptr<void> _self_guard;
+        if constexpr (qb::has_shared_from_this<_Derived>) {
+            try { _self_guard = Derived.shared_from_this(); } catch (std::bad_weak_ptr const&) {}
+        } else if constexpr (requires { Derived.shared(); }) {
+            _self_guard = Derived.shared();
+        }
+
         if (_reason)
             goto error;
 
         if (likely(event._revents & EV_WRITE)) {
             {
                 auto ret = Derived.write();
-                if (unlikely(ret < 0))
+                if (unlikely(ret < 0)) {
+                    if (qb::io::socket::not_send_error(qb::io::socket::get_last_errno())) {
+                        ready_to_write();
+                        return;
+                    }
                     goto error;
+                }
                 if (likely(ret > 0))
                     _bytes_written += static_cast<std::size_t>(ret);
             }
-            
+
             if (!Derived.pendingWrite()) {
                 this->_async_event.set(EV_NONE);
                 if constexpr (qb::has_on<_Derived, event::eos>) {
@@ -2116,7 +2169,7 @@ public:
      */
     [[nodiscard]] bool
     has_pending_write() const noexcept {
-        return Derived.pendingWrite() > 0;
+        return static_cast<_Derived const &>(*this).pendingWrite() > 0;
     }
 
     /**
@@ -2404,7 +2457,15 @@ private:
 
         _on_message = true;
         while ((ret = this->_protocol->getMessageSize()) > 0) {
-            if (unlikely(ret > _max_message_size)) {
+            const auto frame_exceeds_pending = [&]() noexcept {
+                if (!this->_protocol->should_flush())
+                    return false;
+                if constexpr (requires { Derived.in(); Derived.pendingRead(); })
+                    return ret > Derived.pendingRead();
+                else
+                    return false;
+            }();
+            if (unlikely(ret > _max_message_size || frame_exceeds_pending)) {
                 this->_protocol->not_ok();
                 _system_error = 0;
                 _reason = -2;
@@ -2414,7 +2475,20 @@ private:
             auto *protocol = this->_protocol;
             protocol->onMessage(ret);
             ++_messages_processed;
+            if (unlikely(_reason)) {
+                if (likely(protocol->should_flush()))
+                    Derived.flush(ret);
+                if (Derived.pendingWrite()) {
+                    this->ready_to_write();
+                    _on_message = false;
+                    return true;
+                }
+                _on_message = false;
+                return false;
+            }
             if (unlikely(!this->_protocol->ok())) {
+                if (likely(protocol->should_flush()))
+                    Derived.flush(ret);
                 if (Derived.pendingWrite()) {
                     this->ready_to_write();
                     _on_message = false;
@@ -2459,14 +2533,19 @@ private:
     bool
     handle_write() noexcept {
         auto raw_ret = Derived.write();
-        if (unlikely(raw_ret < 0))
+        if (unlikely(raw_ret < 0)) {
+            if (qb::io::socket::not_send_error(qb::io::socket::get_last_errno())) {
+                ready_to_write();
+                return true;
+            }
             return false;
+        }
         auto ret = static_cast<std::size_t>(raw_ret);
         
         _bytes_written += ret;
         
         if (!Derived.pendingWrite()) {
-            if (unlikely(!_protocol || !_protocol->ok()))
+            if (unlikely(_reason || !_protocol || !_protocol->ok()))
                 return false;
             this->_async_event.set(EV_READ);
             if constexpr (qb::has_on<_Derived, event::eos>) {
@@ -2502,6 +2581,8 @@ private:
 
         if constexpr (qb::has_shared_from_this<_Derived>) {
             try { _self_guard = Derived.shared_from_this(); } catch (std::bad_weak_ptr const&) {}
+        } else if constexpr (requires { Derived.shared(); }) {
+            _self_guard = Derived.shared();
         }
 
         if (_reason)
@@ -2511,8 +2592,11 @@ private:
             constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
 
             auto ret = static_cast<std::size_t>(Derived.read());
-            if (unlikely(ret == invalid_ret))
+            if (unlikely(ret == invalid_ret)) {
+                if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
+                    return;
                 goto error;
+            }
 
             // Check for buffer size limit exceeded (DoS protection)
             if (unlikely(ret == static_cast<std::size_t>(-2))) {
@@ -2526,18 +2610,33 @@ private:
 
             if (!process_messages())
                 goto error;
-            
+
             Derived.eof();
             handle_post_read();
             ok = true;
         }
-        
-        if (event._revents & EV_WRITE) {
+
+        // Drain any output that piled up during process_messages() in the same
+        // invocation, instead of waiting for libev to fire a separate EV_WRITE.
+        // Rationale: on bidirectional sessions where the server echoes every
+        // request (or any responder pattern), each EV_READ wakeup adds N
+        // messages to the output buffer. With epoll/kqueue under sustained
+        // EV_READ pressure (notably SSL-over-UDS on macOS, where the kernel
+        // socket buffer is much smaller than TCP loopback), EV_WRITE
+        // notifications can be starved and the output buffer grows without
+        // bound across many cycles, eventually triggering a hard close on the
+        // peer side. Issuing a non-blocking handle_write() here keeps the
+        // outgoing pipe flowing as long as the kernel has space; if the
+        // socket would block (or SSL needs a renegotiation read), handle_write
+        // simply leaves bytes in the buffer and the watcher's EV_WRITE
+        // registration takes over for the next round.
+        if ((event._revents & EV_WRITE) ||
+            (ok && Derived.pendingWrite() > 0)) {
             if (!handle_write())
                 goto error;
             ok = true;
         }
-        
+
         if (ok)
             return;
     error:

@@ -501,6 +501,18 @@ public:
     int connected() noexcept;
 
     /**
+     * @brief Progress the TLS handshake and report its precise state.
+     * @return 1 when the TLS handshake is complete, 0 when OpenSSL needs more
+     *         socket readiness (WANT_READ/WANT_WRITE), -1 on fatal error.
+     */
+    int handshake_status() noexcept;
+
+    /**
+     * @brief Whether the TLS handshake has completed successfully.
+     */
+    [[nodiscard]] bool handshake_complete() const noexcept;
+
+    /**
      * @brief Initiate a non-blocking SSL/TLS connection to a remote URI.
      * @param u The `qb::io::uri` of the remote server. Host from URI is used for SNI.
      * @return 0 on TCP connection progress/success, non-zero error on immediate failure.

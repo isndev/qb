@@ -220,6 +220,14 @@ public:
         *this << msg.text << Protocol::end;
         ++msg_count_server_side;
     }
+
+    void on(qb::io::async::event::disconnected const &ev) {
+        std::fprintf(stderr,
+                     "[UTCP DIAG] server-session disconnected reason=%d sysErr=%d msgServerRecv=%zu pendingWrite=%zu\n",
+                     ev.reason, this->system_error(), msg_count_server_side.load(),
+                     this->has_pending_write() ? 1 : 0);
+        std::fflush(stderr);
+    }
 };
 
 class TestSecureServer
@@ -246,6 +254,14 @@ public:
     on(Protocol::message &&msg) {
         EXPECT_EQ(msg.text.size(), sizeof(STRING_MESSAGE) - 1);
         ++msg_count_client_side;
+    }
+
+    void on(qb::io::async::event::disconnected const &ev) {
+        std::fprintf(stderr,
+                     "[UTCP DIAG] client disconnected reason=%d sysErr=%d msgRecv=%zu pendingWrite=%zu\n",
+                     ev.reason, this->system_error(), msg_count_client_side.load(),
+                     this->has_pending_write() ? 1 : 0);
+        std::fflush(stderr);
     }
 };
 
@@ -320,12 +336,26 @@ TEST(Session, COMMAND_OVER_SECURE_UTCP) {
                 client << STRING_MESSAGE << '\n';
             }
 
-            EXPECT_TRUE(pump_until(client_done, std::chrono::seconds(10)));
+            if (!pump_until(client_done, std::chrono::seconds(10))) {
+                std::fprintf(stderr,
+                             "[UTCP DIAG] client thread iter %zu timeout: client=%zu/%zu server=%zu (expected %zu)\n",
+                             i, msg_count_client_side.load(), NB_ITERATION,
+                             msg_count_server_side.load(), NB_ITERATION * (i + 1));
+                std::fflush(stderr);
+                ADD_FAILURE();
+            }
         }
     });
 
-    EXPECT_TRUE(pump_until([]() { return server_done() && client_done(); },
-                           std::chrono::seconds(10)));
+    if (!pump_until([]() { return server_done() && client_done(); },
+                    std::chrono::seconds(10))) {
+        std::fprintf(stderr,
+                     "[UTCP DIAG] main timeout: server=%zu/%zu client=%zu/%zu\n",
+                     msg_count_server_side.load(), NB_ITERATION * NB_CLIENTS,
+                     msg_count_client_side.load(), NB_ITERATION);
+        std::fflush(stderr);
+        ADD_FAILURE();
+    }
     tc.join();
     EXPECT_EQ(msg_count_server_side.load(), NB_ITERATION * NB_CLIENTS);
     EXPECT_EQ(msg_count_client_side.load(), NB_ITERATION);

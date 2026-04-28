@@ -575,6 +575,36 @@ TEST(UDPTransport, IdentityInUnorderedSet) {
     EXPECT_EQ(id_set.size(), 2u);
 }
 
+TEST(UDPTransport, SmallReadLimitAcceptsSmallDatagram) {
+    qb::io::transport::udp sender;
+    qb::io::transport::udp receiver;
+
+    ASSERT_TRUE(sender.transport().init());
+    ASSERT_TRUE(receiver.transport().init());
+
+    constexpr unsigned short recv_port = 19873;
+    ASSERT_EQ(receiver.transport().bind_v4(recv_port, "127.0.0.1"), 0);
+    receiver.set_max_read_buffer_size(16);
+
+    qb::io::transport::udp::identity dest{qb::io::endpoint("127.0.0.1", recv_port)};
+    sender.setDestination(dest);
+
+    constexpr char payload[] = "hello";
+    ASSERT_NE(sender.publish(payload, 5), nullptr);
+    ASSERT_EQ(sender.write(), 5);
+
+    int ret = 0;
+    for (int i = 0; i < 50 && ret <= 0; ++i) {
+        ret = receiver.read();
+        if (ret <= 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    EXPECT_EQ(ret, 5);
+    EXPECT_EQ(receiver.pendingRead(), 5u);
+    EXPECT_EQ(std::string_view(receiver.in().begin(), receiver.pendingRead()), "hello");
+}
+
 // Coroutine-based async TCP connection tests (C++23)
 //
 

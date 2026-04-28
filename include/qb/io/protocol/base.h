@@ -25,7 +25,10 @@
 
 #ifndef QB_IO_PROT_BASE_H_
 #define QB_IO_PROT_BASE_H_
+#include <cassert>
 #include <cstring>
+#include <limits>
+#include <stdexcept>
 #include <type_traits>
 #include <qb/system/allocator/pipe.h>
 #include "../async/protocol.h"
@@ -295,12 +298,14 @@ public:
      * @return Formatted size header
      */
     static _Size
-    Header(std::size_t size) noexcept {
+    Header(std::size_t size) {
         static_assert(std::is_unsigned_v<_Size>, "size header must be unsigned");
+        if (size > static_cast<std::size_t>(std::numeric_limits<_Size>::max()))
+            throw std::runtime_error("payload size exceeds binary protocol header capacity");
         if constexpr (SIZEOF == 2) {
-            return htons(static_cast<_Size>(size & 0xFFFF));
+            return htons(static_cast<_Size>(size));
         } else if constexpr (SIZEOF == 4) {
-            return htonl(static_cast<_Size>(size & 0xFFFFFFFF));
+            return htonl(static_cast<_Size>(size));
         } else {
             return static_cast<_Size>(size);
         }

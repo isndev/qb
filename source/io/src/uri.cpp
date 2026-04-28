@@ -386,7 +386,9 @@ bool uri::parse() noexcept {
     const char *p2 = p;
     
     // Scheme must start with a letter
-    if (isalpha(*p2)) {
+    // Cast to unsigned char: passing a negative `char` (a non-ASCII byte) to
+    // isalpha() is UB per the C standard.
+    if (isalpha(static_cast<unsigned char>(*p2))) {
         // Check for valid scheme characters (a-z, A-Z, 0-9, +, -, .)
         const char *potential_scheme_end = p2 + 1;
         while (potential_scheme_end < p_end && 
@@ -781,7 +783,7 @@ bool uri::from(std::string &&rhs) noexcept {
 
 // Helpers for parsing/constructing URIs
 bool uri::is_valid_scheme(std::string_view scheme) noexcept {
-    if (scheme.empty() || !isalpha(scheme[0])) 
+    if (scheme.empty() || !isalpha(static_cast<unsigned char>(scheme[0])))
         return false;
     
     for (char c : scheme) {

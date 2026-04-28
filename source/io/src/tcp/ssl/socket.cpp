@@ -78,6 +78,9 @@ attach_socket(SSL *ssl, ::socket_type native_socket) {
     if (!ssl || native_socket == static_cast<::socket_type>(-1))
         return false;
 
+    SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE |
+                          SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
+
 #if defined(_WIN32)
     if (native_socket > static_cast<::socket_type>((std::numeric_limits<int>::max)())) {
         WSASetLastError(WSAEINVAL);
@@ -745,6 +748,21 @@ socket::connected() noexcept {
     if (!qb::io::ssl::attach_socket(h_ssl, native_handle()))
         return SocketStatus::Error;
     return handCheck() < 0 ? -1 : 0;
+}
+
+int
+socket::handshake_status() noexcept {
+    if (!_ssl_handle)
+        return -1;
+    const auto h_ssl = ssl_handle();
+    if (!qb::io::ssl::attach_socket(h_ssl, native_handle()))
+        return -1;
+    return handCheck();
+}
+
+bool
+socket::handshake_complete() const noexcept {
+    return _connected;
 }
 
 int

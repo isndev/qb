@@ -24,6 +24,7 @@
 
 #ifndef QB_IO_PROTOCOL_JSON_H
 #define QB_IO_PROTOCOL_JSON_H
+#include <utility>
 #include "base.h"
 #include "nlohmann/json.hpp"
 
@@ -89,9 +90,12 @@ public:
         const auto parsed = this->shiftSize(size);
         const auto data   = this->_io.in().cbegin();
         try {
-            this->_io.on(message{
-                parsed, data,
-                nlohmann::json::parse(std::string_view(data, parsed), nullptr, false)});
+            auto json = nlohmann::json::parse(std::string_view(data, parsed), nullptr, false);
+            if (json.is_discarded()) {
+                this->not_ok();
+                return;
+            }
+            this->_io.on(message{parsed, data, std::move(json)});
         } catch (...) {
             this->not_ok();
         }
@@ -156,9 +160,13 @@ public:
         const auto parsed = this->shiftSize(size);
         const auto data   = this->_io.in().cbegin();
         try {
-            this->_io.on(message{
-                parsed, data,
-                nlohmann::json::from_msgpack(std::string_view(data, parsed), true, false)});
+            auto json =
+                nlohmann::json::from_msgpack(std::string_view(data, parsed), true, false);
+            if (json.is_discarded()) {
+                this->not_ok();
+                return;
+            }
+            this->_io.on(message{parsed, data, std::move(json)});
         } catch (...) {
             this->not_ok();
         }
