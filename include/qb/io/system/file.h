@@ -64,12 +64,38 @@ public:
     file() noexcept;
 
     /**
-     * @brief Copy constructor (defaulted, copies the file descriptor).
-     * @note Copying a file object results in shared ownership of the underlying file descriptor.
-     *       Closing one copied object will affect others if they share the same handle.
-     *       Consider using unique ownership or move semantics for safer resource management.
+     * @brief Copy operations are deleted — `sys::file` owns its descriptor.
+     *
+     * Previously copy-defaulted, which yielded shared-fd value semantics:
+     * two `file` objects holding the same native descriptor would each
+     * call `::close()` on destruction. On Linux the second close returns
+     * `EBADF` silently — which was “safe” only as long as no other
+     * thread had reopened the same fd in the meantime; on Windows the
+     * MSVC CRT raises a fast-fail (0xc0000409). Use move semantics or
+     * share via `std::shared_ptr<file>` if shared ownership is needed.
      */
-    file(file const &) = default;
+    file(file const &)            = delete;
+    file &operator=(file const &) = delete;
+
+    /**
+     * @brief Move constructor — transfers descriptor ownership.
+     * The moved-from `file` is left in the closed state (`is_open()` is false).
+     */
+    file(file &&other) noexcept;
+
+    /**
+     * @brief Move assignment — closes any current descriptor, then takes ownership of `other`'s.
+     * The moved-from `file` is left in the closed state.
+     */
+    file &operator=(file &&other) noexcept;
+
+    /**
+     * @brief Destructor — closes the underlying descriptor if still open.
+     * Without this, every direct user of `sys::file` (outside the
+     * `file_to_pipe` / `pipe_to_file` wrappers, which closed manually)
+     * leaked the descriptor on scope exit.
+     */
+    ~file() noexcept;
 
     /**
      * @brief Constructor from an existing native file descriptor.

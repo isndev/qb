@@ -39,6 +39,25 @@ file::file(std::string const &fname, int const flags) noexcept
     open(fname, flags);
 }
 
+file::file(file &&other) noexcept
+    : _handle(other._handle) {
+    other._handle = FD_INVALID;
+}
+
+file &
+file::operator=(file &&other) noexcept {
+    if (this != &other) {
+        close();
+        _handle       = other._handle;
+        other._handle = FD_INVALID;
+    }
+    return *this;
+}
+
+file::~file() noexcept {
+    close();
+}
+
 int
 file::native_handle() const noexcept {
     return _handle;

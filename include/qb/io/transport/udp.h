@@ -25,6 +25,7 @@
 
 #ifndef QB_IO_TRANSPORT_UDP_H_
 #define QB_IO_TRANSPORT_UDP_H_
+#include <array>
 #include <cerrno>
 #include <cstring>
 #include <limits>
@@ -165,9 +166,19 @@ public:
             auto      &out_buffer = static_cast<udp::base_t &>(proxy).out();
             const auto start_size = out_buffer.size();
             out_buffer << std::forward<T>(data);
+            const auto added = static_cast<std::size_t>(out_buffer.size() - start_size);
             auto p = reinterpret_cast<udp::pushed_message *>(
                 out_buffer.begin() + proxy._last_pushed_offset);
-            p->size += static_cast<std::size_t>(out_buffer.size() - start_size);
+            p->size += added;
+
+            const auto max_write = proxy.max_write_buffer_size();
+            if (p->size > io::udp::socket::MaxDatagramSize ||
+                (max_write != static_cast<std::size_t>(-1) &&
+                 out_buffer.size() > max_write)) {
+                out_buffer.free_back(added);
+                p->size -= added;
+                qb::io::socket::set_last_errno(EMSGSIZE);
+            }
             return *this;
         }
 
@@ -277,14 +288,33 @@ public:
      */
     [[nodiscard]] int
     read() noexcept {
+        if (this->_max_read_buffer_size < _in_buffer.size())
+            return ErrBufferLimitExceeded;
+
+        const auto remaining = this->_max_read_buffer_size - _in_buffer.size();
+        if (remaining >= io::udp::socket::MaxDatagramSize) {
+            const auto ret =
+                transport().read(_in_buffer.allocate_back(io::udp::socket::MaxDatagramSize),
+                                 io::udp::socket::MaxDatagramSize, _remote_source);
+            if (qb::likely(ret > 0)) {
+                _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
+                setDestination(_remote_source);
+            } else {
+                _in_buffer.free_back(io::udp::socket::MaxDatagramSize);
+            }
+            return ret;
+        }
+
+        std::array<char, io::udp::socket::MaxDatagramSize> datagram;
         const auto ret =
-            transport().read(_in_buffer.allocate_back(io::udp::socket::MaxDatagramSize),
-                             io::udp::socket::MaxDatagramSize, _remote_source);
-        if (qb::likely(ret > 0)) {
-            _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
+            transport().read(datagram.data(), datagram.size(), _remote_source);
+        if (qb::likely(ret > 0 && static_cast<std::size_t>(ret) <= remaining)) {
+            std::memcpy(_in_buffer.allocate_back(static_cast<std::size_t>(ret)),
+                        datagram.data(), static_cast<std::size_t>(ret));
             setDestination(_remote_source);
-        } else {
-            _in_buffer.free_back(io::udp::socket::MaxDatagramSize);
+        } else if (ret > 0) {
+            qb::io::socket::set_last_errno(EMSGSIZE);
+            return ErrBufferLimitExceeded;
         }
         return ret;
     }
@@ -310,15 +340,18 @@ public:
             return 0;
 
         auto      &msg       = *reinterpret_cast<pushed_message *>(_out_buffer.begin());
-        const auto send_size = std::min(msg.size, io::udp::socket::MaxDatagramSize);
         auto      *begin     = _out_buffer.begin() + sizeof(pushed_message);
 
+        if (msg.size > io::udp::socket::MaxDatagramSize) {
+            qb::io::socket::set_last_errno(EMSGSIZE);
+            return -1;
+        }
+
         const auto ret =
-            transport().write(begin, send_size, msg.ident);
+            transport().write(begin, msg.size, msg.ident);
 
         if (qb::likely(ret >= 0)) {
-            // UDP is all-or-nothing: the whole pushed_message is consumed on success,
-            // even if the kernel truncated the payload (it was >= MaxDatagramSize).
+            // UDP is all-or-nothing: the whole pushed_message is consumed on success.
             _out_buffer.free_front(msg.size + sizeof(pushed_message));
             if (_out_buffer.size()) {
                 _out_buffer.reorder();
@@ -359,6 +392,19 @@ public:
      */
     char *
     publish_to(udp::identity const &to, char const *data, std::size_t size) noexcept {
+        if (size > io::udp::socket::MaxDatagramSize) {
+            qb::io::socket::set_last_errno(EMSGSIZE);
+            return nullptr;
+        }
+
+        const auto max_write = this->max_write_buffer_size();
+        const auto required  = sizeof(pushed_message) + size;
+        if (max_write != static_cast<std::size_t>(-1) &&
+            (required > max_write || _out_buffer.size() > max_write - required)) {
+            qb::io::socket::set_last_errno(EMSGSIZE);
+            return nullptr;
+        }
+
         auto &m = _out_buffer.allocate_back<pushed_message>();
         m.ident = to;
         m.size  = size;

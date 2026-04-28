@@ -130,7 +130,7 @@ public:
      * @return Shared pointer to the client
      */
     [[nodiscard]] inline auto
-    shared() const {
+    shared() {
         return server().session(id());
     }
 

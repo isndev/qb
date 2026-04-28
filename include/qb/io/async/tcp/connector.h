@@ -53,6 +53,7 @@
 #define QB_IO_ASYNC_TCP_CONNECTOR_H
 
 #include <atomic>
+#include <concepts>
 #include <memory>
 #include <type_traits>
 
@@ -93,6 +94,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
     const double deadline_;
 
     bool                     completed_{false};
+    bool                     deadline_armed_{false};
     IRegisteredKernelEvent * io_iface_{nullptr};
     std::shared_ptr<connector> self_hold_;
 
@@ -117,13 +119,55 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
         func_(std::move(s));
     }
 
-    [[nodiscard]] bool
+    enum class finalize_result {
+        done,
+        pending,
+        failed
+    };
+
+    void
+    arm_io(int events) {
+        if (!self_hold_)
+            self_hold_ = this->shared_from_this();
+
+        if (io_iface_)
+            return;
+
+        auto &io_ev = listener::current.registerEvent<event::io>(
+            *this, socket_.native_handle(), events);
+        io_iface_ = io_ev._interface;
+        io_ev.start();
+    }
+
+    void
+    arm_deadline() {
+        if (deadline_ <= 0. || deadline_armed_)
+            return;
+        deadline_armed_ = true;
+        const double remain = deadline_ - ev_time();
+        std::weak_ptr<connector> w = this->shared_from_this();
+        qb::io::async::callback(
+            [w]() {
+                if (auto self = w.lock())
+                    self->on_deadline();
+            },
+            remain > 0. ? remain : 0.);
+    }
+
+    [[nodiscard]] finalize_result
     finalize_transport_connect() noexcept {
-        if constexpr (std::is_same_v<decltype(std::declval<Socket_ &>().connected()), int>) {
-            return socket_.connected() == 0;
+        if constexpr (requires(Socket_ &s) { { s.handshake_status() } -> std::same_as<int>; }) {
+            const auto status = socket_.handshake_status();
+            if (status > 0)
+                return finalize_result::done;
+            if (status == 0)
+                return finalize_result::pending;
+            return finalize_result::failed;
+        } else if constexpr (std::is_same_v<decltype(std::declval<Socket_ &>().connected()), int>) {
+            return socket_.connected() == 0 ? finalize_result::done : finalize_result::failed;
         } else {
             socket_.connected();
-            return true;
+            return finalize_result::done;
         }
     }
 
@@ -162,35 +206,29 @@ public:
         LOG_DEBUG("Started async connect to " << remote_.source());
         auto ret = socket_.n_connect(remote_);
         if (!ret) {
-            if (mark_completed_once()) {
-                if (finalize_transport_connect()) {
+            switch (finalize_transport_connect()) {
+                case finalize_result::done:
+                    if (!mark_completed_once())
+                        return;
                     LOG_DEBUG("Connected directly to " << remote_.source());
                     deliver(std::move(socket_));
-                } else {
+                    break;
+                case finalize_result::pending:
+                    arm_io(EV_READ | EV_WRITE);
+                    arm_deadline();
+                    break;
+                case finalize_result::failed:
+                    if (!mark_completed_once())
+                        return;
                     socket_.disconnect();
                     LOG_DEBUG("Failed to finalize direct connect to " << remote_.source());
                     deliver(Socket_{});
-                }
             }
             return;
         }
         if (socket_no_error(qb::io::socket::get_last_errno())) {
-            self_hold_ = this->shared_from_this();
-            auto &io_ev = listener::current.registerEvent<event::io>(
-                *this, socket_.native_handle(), EV_WRITE);
-            io_iface_ = io_ev._interface;
-            io_ev.start();
-
-            if (deadline_ > 0.) {
-                const double remain = deadline_ - ev_time();
-                std::weak_ptr<connector> w = this->shared_from_this();
-                qb::io::async::callback(
-                    [w]() {
-                        if (auto self = w.lock())
-                            self->on_deadline();
-                    },
-                    remain > 0. ? remain : 0.);
-            }
+            arm_io(EV_WRITE);
+            arm_deadline();
             return;
         }
 
@@ -208,27 +246,36 @@ public:
     void
     on(event::io const &event) {
         int err = 0;
-        if (!(event._revents & EV_WRITE) ||
+        if (!(event._revents & (EV_READ | EV_WRITE)) ||
             socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)) {
             socket_.disconnect();
             err = 1;
         }
-        listener::current.unregisterEvent(event._interface);
-        io_iface_ = nullptr;
-
-        if (!mark_completed_once())
-            return;
 
         if (!err || err == EISCONN) {
-            if (finalize_transport_connect()) {
-                LOG_DEBUG("Connected async to " << remote_.source());
-                deliver(std::move(socket_));
-                return;
+            switch (finalize_transport_connect()) {
+                case finalize_result::done:
+                    listener::current.unregisterEvent(event._interface);
+                    io_iface_ = nullptr;
+                    if (!mark_completed_once())
+                        return;
+                    LOG_DEBUG("Connected async to " << remote_.source());
+                    deliver(std::move(socket_));
+                    return;
+                case finalize_result::pending:
+                    static_cast<event::io &>(const_cast<event::io &>(event)).set(EV_READ | EV_WRITE);
+                    return;
+                case finalize_result::failed:
+                    break;
             }
 
             socket_.disconnect();
         }
 
+        listener::current.unregisterEvent(event._interface);
+        io_iface_ = nullptr;
+        if (!mark_completed_once())
+            return;
         LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << err);
         deliver(Socket_{});
     }

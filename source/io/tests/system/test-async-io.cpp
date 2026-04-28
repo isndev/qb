@@ -187,6 +187,18 @@ TEST_F(AsyncIOTest, ImmediateTimeoutUtility) {
     EXPECT_TRUE(callback_executed);
 }
 
+TEST_F(AsyncIOTest, ClearDetachesLiveAsyncObjectsSafely) {
+    {
+        TimerHandler timer(1.0);
+        EXPECT_EQ(async::listener::current.size(), 1u);
+
+        async::listener::current.clear();
+        EXPECT_EQ(async::listener::current.size(), 0u);
+    }
+
+    EXPECT_EQ(async::listener::current.size(), 0u);
+}
+
 #ifndef _WIN32
 // Test signal handling
 class SignalHandler {

@@ -137,6 +137,11 @@ public:
                 _actor.on(_event);
         }
 
+        void
+        stop() noexcept final {
+            _event.stop();
+        }
+
         // ---- Thread-local freelist (QB_IO_PLAN 2.13) -----------------------
         // Each RegisteredKernelEvent<E, A> instantiation gets its own
         // thread-local LIFO pool. Because the listener itself is thread-local
@@ -279,16 +284,20 @@ public:
         QB_LISTENER_TRACE("clear() begin registeredEvents=%zu has_coro_scheduler=%d",
             _registered_count, _coro_scheduler != nullptr);
         if (_registered_head) {
-            // Iterate the intrusive list and delete every handler. Each
-            // RegisteredKernelEvent's destructor stops its libev watcher, so
-            // the list is safely drained before we run the loop once more to
-            // flush pending libev cleanup.
+            // Detach every handler but do not delete it here: async::base stores
+            // a reference to the embedded event, so deleting the wrapper while
+            // the owning async object is still alive leaves a dangling
+            // `_async_event`. The owner's destructor will unregister and delete
+            // the detached wrapper later.
             IRegisteredKernelEvent *cur = _registered_head;
             _registered_head  = nullptr;
             _registered_count = 0;
             while (cur) {
                 auto *next = cur->_list_next;
-                delete cur;
+                cur->stop();
+                cur->_list_prev = nullptr;
+                cur->_list_next = nullptr;
+                cur->_detached_by_clear = true;
                 cur = next;
             }
             for (int i = 0; i < 4; ++i)
@@ -377,8 +386,12 @@ public:
      */
     void
     unregisterEvent(IRegisteredKernelEvent *kevent) {
-        if (kevent && _unlink(kevent))
+        if (!kevent)
+            return;
+        if (_unlink(kevent) || kevent->_detached_by_clear) {
+            kevent->_detached_by_clear = false;
             delete kevent;
+        }
     }
 
     /**

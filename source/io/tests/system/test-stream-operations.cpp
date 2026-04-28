@@ -49,21 +49,11 @@ protected:
 
     void
     SetUp() override {
-#ifdef _WIN32
-        // qb::io::sys::file has value/copy semantics (copyable int fd).  All
-        // stream tests assign a local file object into stream.transport(), so
-        // both the local variable and the stream's internal copy hold the same
-        // raw fd.  When the stream closes first and then the local variable's
-        // destructor fires, _close() is called on an already-closed descriptor.
-        // On Windows the MSVC CRT raises a fast-fail (STATUS_STACK_BUFFER_OVERRUN
-        // / 0xc0000409) for this — unlike POSIX where the second close returns
-        // EBADF gracefully.  The fix requires either making file non-copyable
-        // (breaking API) or auditing every test; skip the whole suite on Windows
-        // until that refactor is done.
-        GTEST_SKIP() << "Windows: qb::io::sys::file copy semantics cause double-close "
-                        "(MSVC CRT fast-fail 0xc0000409). Requires file ownership "
-                        "refactor before these tests can run on Windows.";
-#endif
+        // qb::io::sys::file is now move-only with a closing destructor, so the
+        // previous Windows skip (caused by copy-semantics double-close) is no
+        // longer needed: stream.transport() = std::move(file) transfers the fd
+        // and leaves the local file in a closed state.
+
         // Create test directory if it doesn't exist
         std::filesystem::create_directory(test_dir);
 
@@ -95,7 +85,7 @@ TEST_F(StreamTest, FileInputStream) {
 
     // Set up the istream - we need to create it and initialize it differently
     qb::io::istream<qb::io::sys::file> input_stream;
-    input_stream.transport() = file;
+    input_stream.transport() = std::move(file);
 
     // Test reading via read() which reads into the internal buffer first
     int read_result = input_stream.read();
@@ -134,7 +124,7 @@ TEST_F(StreamTest, FileOutputStream) {
 
     // Set up the ostream
     qb::io::ostream<qb::io::sys::file> output_stream;
-    output_stream.transport() = file;
+    output_stream.transport() = std::move(file);
 
     // Test writing from buffer
     const std::string write_content = "Testing output stream";
@@ -159,7 +149,7 @@ TEST_F(StreamTest, FileOutputStream) {
 
     // Reinitialize the stream with the new file
     output_stream.close();
-    output_stream.transport() = file;
+    output_stream.transport() = std::move(file);
 
     const std::string vec_content = "Vector content test";
     std::vector<char> vec_buffer(vec_content.begin(), vec_content.end());
@@ -191,7 +181,7 @@ TEST_F(StreamTest, FileBidirectionalStream) {
 
     // Set up the stream
     qb::io::stream<qb::io::sys::file> bidir_stream;
-    bidir_stream.transport() = file;
+    bidir_stream.transport() = std::move(file);
 
     // Test writing
     const std::string write_content = "Bidirectional stream test";
@@ -212,7 +202,7 @@ TEST_F(StreamTest, FileBidirectionalStream) {
         ASSERT_TRUE(file.is_open());
 
         // Reinitialize the stream with the new file
-        bidir_stream.transport() = file;
+        bidir_stream.transport() = std::move(file);
 
         // Test reading
         int read_result = bidir_stream.read();
@@ -250,7 +240,7 @@ TEST_F(StreamTest, FileTransport) {
 
     // Set up transport using the file
     qb::io::transport::file transport;
-    transport.transport() = file;
+    transport.transport() = std::move(file);
 
     // Test writing
     const std::string write_content = "Transport file test";
@@ -278,7 +268,7 @@ TEST_F(StreamTest, FileTransport) {
         ASSERT_TRUE(file.is_open());
 
         // Reinitialize the transport with the new file
-        transport.transport() = file;
+        transport.transport() = std::move(file);
 
         // Read into internal buffer
         int read_result = transport.read();
@@ -509,7 +499,7 @@ TEST_F(StreamTest, DISABLED_LargeDataTransfer) {
     ASSERT_TRUE(file.is_open());
 
     qb::io::stream<qb::io::sys::file> stream;
-    stream.transport() = file;
+    stream.transport() = std::move(file);
 
     // Write large buffer in chunks
     size_t       total_written = 0;
@@ -532,7 +522,7 @@ TEST_F(StreamTest, DISABLED_LargeDataTransfer) {
     ASSERT_TRUE(file.is_open());
 
     stream.close();
-    stream.transport() = file;
+    stream.transport() = std::move(file);
 
     std::vector<char> read_buffer(buffer_size);
     size_t            total_read = 0;
@@ -555,17 +545,22 @@ TEST_F(StreamTest, DISABLED_LargeDataTransfer) {
 
 // Test stream with error conditions
 TEST_F(StreamTest, StreamErrors) {
-    // Test reading from closed file
-    qb::io::sys::file                  closed_file;
+    // Test reading from closed file (move-only fd ownership)
     qb::io::istream<qb::io::sys::file> input_stream;
-    input_stream.transport() = closed_file;
+    {
+        qb::io::sys::file closed_file;
+        input_stream.transport() = std::move(closed_file);
+    }
 
     int result = input_stream.read();
     EXPECT_LT(result, 0);
 
     // Test writing to closed file
     qb::io::ostream<qb::io::sys::file> output_stream;
-    output_stream.transport() = closed_file;
+    {
+        qb::io::sys::file closed_file;
+        output_stream.transport() = std::move(closed_file);
+    }
 
     const std::string test_data = "Test data";
     std::ignore = output_stream.publish(test_data.c_str(), test_data.size());
@@ -686,7 +681,7 @@ TEST_F(StreamTest, StreamChaining) {
     ASSERT_TRUE(file_source.open(source_file, O_RDONLY) >= 0);
 
     qb::io::istream<qb::io::sys::file> input_stream;
-    input_stream.transport() = file_source;
+    input_stream.transport() = std::move(file_source);
 
     // Read from file to input stream's buffer
     int read_result = input_stream.read();
@@ -694,7 +689,6 @@ TEST_F(StreamTest, StreamChaining) {
         std::cout << "Warning: Failed to read from source file, got result: "
                   << read_result << std::endl;
         // Clean up and skip the rest of the test
-        file_source.close();
         return;
     }
 
@@ -703,7 +697,7 @@ TEST_F(StreamTest, StreamChaining) {
     ASSERT_TRUE(file_dest.open(dest_file, O_WRONLY | O_CREAT, 0644) >= 0);
 
     qb::io::ostream<qb::io::sys::file> output_stream;
-    output_stream.transport() = file_dest;
+    output_stream.transport() = std::move(file_dest);
 
     // Transfer from input buffer to output buffer
     size_t      content_size = input_stream.in().size();
@@ -762,11 +756,9 @@ TEST_F(StreamTest, NullStream) {
         }
     };
 
-    NullDevice null_dev;
-
-    // Create stream with null device
+    // Create stream with null device (NullDevice is copy-constructible).
     qb::io::stream<NullDevice> null_stream;
-    null_stream.transport() = null_dev;
+    null_stream.transport() = NullDevice{};
 
     // Test writing to null stream
     const std::string test_data = "This data should be discarded";
@@ -802,7 +794,7 @@ TEST_F(StreamTest, DISABLED_StreamBufferManagement) {
     ASSERT_GE(file.open(buffer_file, O_RDONLY), 0);
 
     qb::io::istream<qb::io::sys::file> input_stream;
-    input_stream.transport() = file;
+    input_stream.transport() = std::move(file);
 
     // Read file into buffer
     int read_result = input_stream.read();
@@ -873,7 +865,7 @@ TEST_F(StreamTest, AdvancedErrorHandling) {
     ASSERT_GE(read_file.open(temp_file, O_RDONLY), 0);
 
     qb::io::istream<qb::io::sys::file> input_stream;
-    input_stream.transport() = read_file;
+    input_stream.transport() = std::move(read_file);
 
     // Read should succeed
     int read_result = input_stream.read();
@@ -888,7 +880,7 @@ TEST_F(StreamTest, AdvancedErrorHandling) {
     ASSERT_GE(write_file.open(output_file, O_WRONLY | O_CREAT, 0644), 0);
 
     qb::io::ostream<qb::io::sys::file> output_stream;
-    output_stream.transport() = write_file;
+    output_stream.transport() = std::move(write_file);
 
     // Test error recovery - should be able to publish and write data
     // even though the input file was deleted
@@ -897,9 +889,8 @@ TEST_F(StreamTest, AdvancedErrorHandling) {
     int write_result = output_stream.write();
     EXPECT_GT(write_result, 0);
 
-    // Clean up
-    read_file.close();
-    write_file.close();
+    // Streams own their fd via move; no manual close on the local file
+    // copies (already moved-from) is needed.
 
     // Verify output file content
     std::ifstream check_file(output_file);
@@ -934,7 +925,7 @@ TEST_F(StreamTest, StreamPerformance) {
     ASSERT_GE(file.open(large_file, O_RDONLY), 0);
 
     qb::io::istream<qb::io::sys::file> input_stream;
-    input_stream.transport() = file;
+    input_stream.transport() = std::move(file);
 
     // Time the read operation
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -1043,7 +1034,7 @@ TEST_F(StreamTest, StreamComposition) {
     ASSERT_GE(source.open(source_file, O_RDONLY), 0);
 
     qb::io::istream<qb::io::sys::file> input_stream;
-    input_stream.transport() = source;
+    input_stream.transport() = std::move(source);
 
     // Create transform stream adapter
     TransformStream<qb::io::istream<qb::io::sys::file>> transform_stream(
@@ -1063,7 +1054,7 @@ TEST_F(StreamTest, StreamComposition) {
     ASSERT_GE(dest.open(dest_file, O_WRONLY | O_CREAT, 0644), 0);
 
     qb::io::ostream<qb::io::sys::file> output_stream;
-    output_stream.transport() = dest;
+    output_stream.transport() = std::move(dest);
 
     // Use the transform adapter for writing too
     TransformStream<qb::io::ostream<qb::io::sys::file>> transform_output(
@@ -1074,9 +1065,10 @@ TEST_F(StreamTest, StreamComposition) {
     int write_result = transform_output.write();
     ASSERT_GT(write_result, 0);
 
-    // Clean up
-    source.close();
-    dest.close();
+    // Streams own the descriptors after std::move; closing them here would
+    // be a no-op on the moved-from local variables.
+    input_stream.close();
+    output_stream.close();
 
     // Verify output file content (should be uppercase)
     std::ifstream check_file(dest_file);

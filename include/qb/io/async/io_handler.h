@@ -218,10 +218,15 @@ public:
 
         auto session = std::make_shared<_Session>(static_cast<_Derived &>(*this),
                                                   std::forward<Args>(args)...);
-        session->transport() = std::move(new_io);
-        auto [it, _] = _sessions.emplace(session->id(), std::move(session));
+        auto [it, inserted] = _sessions.emplace(session->id(), session);
 
-        auto &registered = *it->second;
+        if (!inserted) {
+            new_io.close();
+            return nullptr;
+        }
+
+        session->transport() = std::move(new_io);
+        auto &registered = *session;
         registered.start();
         if constexpr (qb::has_on<_Derived, _Session &>)
             static_cast<_Derived &>(*this).on(registered);
@@ -254,9 +259,10 @@ public:
     extractSession(uuid const &ident) {
         auto it = _sessions.find(ident);
         if (it != _sessions.cend()) {
+            auto keep_alive = it->second;
             if constexpr (qb::has_on<_Session, qb::io::async::event::extracted>)
-                (*it->second).on(qb::io::async::event::extracted{});
-            auto t_io = std::move(it->second->transport());
+                keep_alive->on(qb::io::async::event::extracted{});
+            auto t_io = std::move(keep_alive->transport());
             _sessions.erase(it);
             return {std::move(t_io), true};
         }

@@ -55,12 +55,22 @@ class IRegisteredKernelEvent {
     // Intrusive list links (null when not currently registered).
     IRegisteredKernelEvent *_list_prev = nullptr;
     IRegisteredKernelEvent *_list_next = nullptr;
+    bool _detached_by_clear = false;
 
 public:
     /**
      * @brief Virtual destructor.
      */
     virtual ~IRegisteredKernelEvent() = default;
+
+    /**
+     * @brief Stop the concrete libev watcher without destroying the wrapper.
+     *
+     * listener::clear() uses this to detach live async objects safely: the
+     * owning async::base still holds a reference to the embedded event and
+     * will unregister/delete the wrapper from its own destructor.
+     */
+    virtual void stop() noexcept = 0;
 
     /**
      * @brief Event invocation method, called by the listener when the event triggers.

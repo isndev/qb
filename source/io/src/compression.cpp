@@ -39,7 +39,12 @@
 static bool
 iequals(const std::string &a, const std::string &b) {
     return std::equal(a.begin(), a.end(), b.begin(), b.end(),
-                      [](char a, char b) { return tolower(a) == tolower(b); });
+                      [](char ca, char cb) {
+                          // Cast to unsigned char: tolower() with a negative
+                          // char is UB per the C standard.
+                          return tolower(static_cast<unsigned char>(ca)) ==
+                                 tolower(static_cast<unsigned char>(cb));
+                      });
 }
 
 namespace qb {
