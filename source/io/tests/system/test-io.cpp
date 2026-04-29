@@ -517,11 +517,11 @@ TEST(SocketUtils, EndpointOnInvalidFd) {
 
 TEST(SocketUtils, EndpointOnValidConnection) {
     qb::io::tcp::listener listener;
-    EXPECT_EQ(listener.listen_v4(64399), qb::io::SocketStatus::Done);
+    EXPECT_EQ(listener.listen_v4(64329), qb::io::SocketStatus::Done);
 
     std::thread t([]() {
         qb::io::tcp::socket sock;
-        EXPECT_EQ(sock.connect_v4("127.0.0.1", 64399), qb::io::SocketStatus::Done);
+        EXPECT_EQ(sock.connect_v4("127.0.0.1", 64329), qb::io::SocketStatus::Done);
 
         auto local = sock.local_endpoint();
         EXPECT_TRUE(local);
@@ -529,7 +529,7 @@ TEST(SocketUtils, EndpointOnValidConnection) {
 
         auto peer = sock.peer_endpoint();
         EXPECT_TRUE(peer);
-        EXPECT_EQ(peer.port(), 64399);
+        EXPECT_EQ(peer.port(), 64329);
 
         sock.disconnect();
     });
@@ -582,7 +582,7 @@ TEST(UDPTransport, SmallReadLimitAcceptsSmallDatagram) {
     ASSERT_TRUE(sender.transport().init());
     ASSERT_TRUE(receiver.transport().init());
 
-    constexpr unsigned short recv_port = 19873;
+    constexpr unsigned short recv_port = 64328;
     ASSERT_EQ(receiver.transport().bind_v4(recv_port, "127.0.0.1"), 0);
     receiver.set_max_read_buffer_size(16);
 

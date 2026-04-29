@@ -193,6 +193,15 @@ public:
         return session.get();
     }
 
+    [[nodiscard]] StreamSession *register_stream_session(std::uint64_t stream_id) {
+        return registerSession(stream_id);
+    }
+
+    [[nodiscard]] StreamSession *register_stream_session(std::uint64_t connection_id,
+                                                         std::uint64_t stream_id) {
+        return registerSession(connection_id, stream_id);
+    }
+
     void unregisterSession(std::uint64_t stream_id) {
         unregisterSession(0, stream_id);
     }

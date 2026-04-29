@@ -39,6 +39,12 @@ struct stream_data {
     bool fin = false;
 };
 
+struct stream_data_acked {
+    std::uint64_t connection_id = 0;
+    std::uint64_t id = 0;
+    std::uint64_t bytes = 0;
+};
+
 struct stream_closed {
     std::uint64_t connection_id = 0;
     std::uint64_t id = 0;

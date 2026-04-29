@@ -43,6 +43,7 @@ struct backend_event {
         connection_closed,
         stream_started,
         stream_data,
+        stream_data_acked,
         stream_closed,
         datagram
     };
@@ -80,6 +81,8 @@ public:
     virtual std::vector<backend_event> drain_events() = 0;
 
     [[nodiscard]] virtual std::uint64_t open_stream(stream_direction direction) = 0;
+    [[nodiscard]] virtual std::uint64_t open_stream(std::uint64_t connection_id,
+                                                    stream_direction direction) = 0;
     virtual void send_stream_data(std::uint64_t connection_id, std::uint64_t stream_id,
                                   std::span<const std::byte> data, bool fin) = 0;
     virtual void extend_stream_credit(std::uint64_t connection_id,
@@ -87,8 +90,13 @@ public:
                                       std::uint64_t bytes) = 0;
     virtual void reset_stream(std::uint64_t connection_id, std::uint64_t stream_id,
                               std::uint64_t application_error_code) = 0;
+    virtual void stop_stream(std::uint64_t connection_id, std::uint64_t stream_id,
+                             std::uint64_t application_error_code) = 0;
     virtual void send_datagram(std::uint64_t connection_id,
                                std::span<const std::byte> data) = 0;
+    virtual void close_connection(std::uint64_t connection_id,
+                                  std::uint64_t application_error_code,
+                                  std::string_view reason) = 0;
     virtual void close(std::uint64_t application_error_code, std::string_view reason) = 0;
 
     [[nodiscard]] virtual stats current_stats() const noexcept = 0;

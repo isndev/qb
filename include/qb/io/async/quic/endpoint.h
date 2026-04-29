@@ -57,8 +57,10 @@ protected:
     virtual void dispatch(event::connection_closed const&) {}
     virtual void dispatch(event::stream_started const&) {}
     virtual void dispatch(event::stream_data const&) {}
+    virtual void dispatch(event::stream_data_acked const&) {}
     virtual void dispatch(event::stream_closed const&) {}
     virtual void dispatch(event::datagram const&) {}
+    virtual void after_dispatch_events() {}
 
     [[nodiscard]] qb::io::quic::stream_direction stream_direction(std::uint64_t id) const noexcept {
         return (id & 0x2u) == 0
@@ -228,6 +230,12 @@ protected:
                     },
                     event.error_code != 0
                 });
+            } else if (event.type == qb::io::quic::backend_event::kind::stream_data_acked) {
+                dispatch(qb::io::async::quic::event::stream_data_acked{
+                    event.connection_id,
+                    event.stream_id,
+                    event.error_code
+                });
             } else if (event.type == qb::io::quic::backend_event::kind::stream_closed) {
                 dispatch(qb::io::async::quic::event::stream_closed{
                     event.connection_id,
@@ -248,6 +256,7 @@ protected:
             }
         }
         _stats = _backend->current_stats();
+        after_dispatch_events();
     }
 
 public:
@@ -353,18 +362,28 @@ public:
     }
 
     stream open_bidirectional_stream() {
+        return open_bidirectional_stream(0);
+    }
+
+    stream open_bidirectional_stream(std::uint64_t connection_id) {
         ensure_backend();
-        const auto id = _backend->open_stream(qb::io::quic::stream_direction::bidirectional);
+        const auto id = _backend->open_stream(connection_id,
+                                              qb::io::quic::stream_direction::bidirectional);
         _stats = _backend->current_stats();
-        return {id, qb::io::quic::stream_direction::bidirectional,
+        return {connection_id, id, qb::io::quic::stream_direction::bidirectional,
                 qb::io::quic::stream_origin::local};
     }
 
     stream open_unidirectional_stream() {
+        return open_unidirectional_stream(0);
+    }
+
+    stream open_unidirectional_stream(std::uint64_t connection_id) {
         ensure_backend();
-        const auto id = _backend->open_stream(qb::io::quic::stream_direction::unidirectional);
+        const auto id = _backend->open_stream(connection_id,
+                                              qb::io::quic::stream_direction::unidirectional);
         _stats = _backend->current_stats();
-        return {id, qb::io::quic::stream_direction::unidirectional,
+        return {connection_id, id, qb::io::quic::stream_direction::unidirectional,
                 qb::io::quic::stream_origin::local};
     }
 
@@ -415,6 +434,19 @@ public:
         drain_backend_events();
     }
 
+    void stop_stream(std::uint64_t stream_id,
+                     std::uint64_t application_error_code = 0) {
+        stop_stream(0, stream_id, application_error_code);
+    }
+
+    void stop_stream(std::uint64_t connection_id, std::uint64_t stream_id,
+                     std::uint64_t application_error_code) {
+        ensure_backend();
+        _backend->stop_stream(connection_id, stream_id, application_error_code);
+        drain_backend_packets();
+        drain_backend_events();
+    }
+
     void send_datagram(std::span<const std::byte> data) {
         send_datagram(0, data);
     }
@@ -435,6 +467,16 @@ public:
                       std::span<const std::byte>(
                           reinterpret_cast<const std::byte *>(data.data()),
                           data.size()));
+    }
+
+    void close_connection(std::uint64_t connection_id,
+                          std::uint64_t application_error_code = 0,
+                          std::string_view reason = {}) {
+        if (!_backend)
+            return;
+        _backend->close_connection(connection_id, application_error_code, reason);
+        drain_backend_packets();
+        drain_backend_events();
     }
 
     void close(std::uint64_t application_error_code = 0,

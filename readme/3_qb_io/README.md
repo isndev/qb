@@ -34,6 +34,9 @@ Both models share the same `listener`/libev event loop and are fully interoperab
 *   **[QB-IO: Secure TCP with SSL/TLS](./ssl_transport.md)**
     *   Enabling encrypted TCP communication with OpenSSL (`QB_IO_WITH_SSL`).
 
+*   **[QB-IO: Native QUIC](./quic_transport.md)**
+    *   Optional QUIC endpoints, connection-id routing, stream events, flow-control hooks, and the QB threading model.
+
 *   **[QB-IO: Essential Utilities & Helpers](./utilities.md)**
     *   URI parsing, cryptography, compression, high-precision time, containers, lock-free primitives, and UUID generation.
 
@@ -46,7 +49,8 @@ Both models share the same `listener`/libev event loop and are fully interoperab
 2.  **[Asynchronous Engine](./async_system.md)** — understand the event loop fundamentals.
 3.  **[C++23 Coroutines](./coroutines.md)** *(new)* — if you prefer `co_await`-style code.
 4.  **[Transports](./transports.md)** → **[Protocols](./protocols.md)** — for network or file I/O.
-5.  **[SSL/TLS](./ssl_transport.md)** and **[Utilities](./utilities.md)** — for specialized needs.
-6.  **[Invariants reference](../7_reference/io_invariants.md)** — before extending the stack.
+5.  **[SSL/TLS](./ssl_transport.md)** → **[Native QUIC](./quic_transport.md)** — for encrypted TCP and QUIC transports.
+6.  **[Utilities](./utilities.md)** — for specialized needs.
+7.  **[Invariants reference](../7_reference/io_invariants.md)** — before extending the stack.
 
-**(Next:** [QB-Core Module Overview](../4_qb_core/README.md) | [Core & IO Integration](../5_core_io_integration/README.md))** 
+**(Next:** [QB-Core Module Overview](../4_qb_core/README.md) | [Core & IO Integration](../5_core_io_integration/README.md))**
