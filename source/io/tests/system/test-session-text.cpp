@@ -945,7 +945,7 @@ TEST(Session, QUIC_WRITE_CAP_OVERFLOW_REJECTS_PUBLISH) {
     TextQuicSession session{0};
     session.set_max_write_buffer_size(4);
 
-    EXPECT_EQ(session.publish("hello", 5), nullptr);
+    EXPECT_EQ(session.publish("hello", std::size_t{5}), nullptr);
     EXPECT_EQ(session.pendingWrite(), 0u);
     EXPECT_EQ(session.disconnection_reason(),
               static_cast<int>(async::event::disconnect_reason::buffer_overflow));
