@@ -49,6 +49,7 @@
 #include "async/tcp/server.h"
 #include "async/udp/client.h"
 #include "async/udp/server.h"
+#include "async/quic.h"
 #include "async/coroutine.h"  // C++23 coroutine support
 #include "config.h"
 
@@ -141,6 +142,25 @@ struct use {
 #ifdef QB_HAS_SSL
         // TODO(qb): implement DTLS once the underlying transport exposes it.
 #endif
+    };
+
+    struct quic {
+        template <typename _StreamSession>
+        using io_handler = async::quic::io_handler<_Derived, _StreamSession>;
+
+        using session = async::quic::client<_Derived>;
+        using stream_session = async::quic::client<_Derived>;
+
+        template <typename _StreamSession>
+        using server = async::quic::server<_Derived, _StreamSession>;
+
+        template <typename _Server = void>
+        using client = async::quic::client<_Derived, _Server>;
+
+        template <typename _StreamSession = void>
+        using connector = async::quic::connector<_Derived, _StreamSession>;
+        using endpoint = async::quic::endpoint;
+        using stream = async::quic::stream;
     };
 
     using timeout = async::with_timeout<_Derived>;

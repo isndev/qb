@@ -27,6 +27,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
+#include <qb/io/async/quic.h>
 #include <qb/io/protocol/text.h>
 #include <thread>
 
@@ -225,7 +226,7 @@ public:
         std::fprintf(stderr,
                      "[UTCP DIAG] server-session disconnected reason=%d sysErr=%d msgServerRecv=%zu pendingWrite=%zu\n",
                      ev.reason, this->system_error(), msg_count_server_side.load(),
-                     this->has_pending_write() ? 1 : 0);
+                     static_cast<std::size_t>(this->has_pending_write() ? 1 : 0));
         std::fflush(stderr);
     }
 };
@@ -260,7 +261,7 @@ public:
         std::fprintf(stderr,
                      "[UTCP DIAG] client disconnected reason=%d sysErr=%d msgRecv=%zu pendingWrite=%zu\n",
                      ev.reason, this->system_error(), msg_count_client_side.load(),
-                     this->has_pending_write() ? 1 : 0);
+                     static_cast<std::size_t>(this->has_pending_write() ? 1 : 0));
         std::fflush(stderr);
     }
 };
@@ -617,4 +618,474 @@ TEST(Session, DISABLED_COMMAND_OVER_UDP) {
 
     while (async::run(EVRUN_NOWAIT) > 0 || (!server_done() || !client_done()));
     tc.join();
+}
+
+// OVER QUIC
+
+class TextQuicSession : public use<TextQuicSession>::quic::session {
+public:
+    using Protocol = qb::protocol::text::command<TextQuicSession>;
+
+    std::string last_message;
+
+    explicit TextQuicSession(std::uint64_t stream_id)
+        : client(stream_id) {}
+
+    void
+    on(Protocol::message &&message) {
+        last_message.assign(message.text);
+    }
+};
+
+class EchoTextQuicSession : public use<EchoTextQuicSession>::quic::session {
+public:
+    using Protocol = qb::protocol::text::command<EchoTextQuicSession>;
+
+    std::size_t messages = 0;
+
+    explicit EchoTextQuicSession(std::uint64_t stream_id)
+        : client(stream_id) {}
+
+    void
+    on(Protocol::message &&message) {
+        *this << message.text << Protocol::end;
+        ++messages;
+    }
+};
+
+class BinaryQuicSession : public use<BinaryQuicSession>::quic::session {
+public:
+    using Protocol = qb::protocol::text::binary16<BinaryQuicSession>;
+
+    std::string last_message;
+
+    explicit BinaryQuicSession(std::uint64_t stream_id)
+        : client(stream_id) {}
+
+    void
+    on(Protocol::message &&message) {
+        last_message.assign(message.data, message.size);
+    }
+};
+
+class SwitchQuicSession : public use<SwitchQuicSession>::quic::session {
+public:
+    using Protocol = qb::protocol::text::command<SwitchQuicSession>;
+
+    std::size_t text_messages = 0;
+    std::size_t binary_messages = 0;
+    std::string last_binary;
+
+    explicit SwitchQuicSession(std::uint64_t stream_id)
+        : client(stream_id) {}
+
+    void
+    on(Protocol::message &&message) {
+        ++text_messages;
+        if (message.text == "SWITCH") {
+            this->template switch_protocol<
+                qb::protocol::text::binary16<SwitchQuicSession>>(
+                static_cast<SwitchQuicSession &>(*this));
+        }
+    }
+
+    void
+    on(qb::protocol::text::binary16<SwitchQuicSession>::message &&message) {
+        ++binary_messages;
+        last_binary.assign(message.data, message.size);
+    }
+};
+
+class CloseAfterDeliverQuicSession
+    : public use<CloseAfterDeliverQuicSession>::quic::session {
+public:
+    using Protocol = qb::protocol::text::command<CloseAfterDeliverQuicSession>;
+
+    explicit CloseAfterDeliverQuicSession(std::uint64_t stream_id)
+        : client(stream_id) {}
+
+    void
+    on(Protocol::message &&message) {
+        *this << message.text << Protocol::end;
+        close_after_deliver();
+    }
+};
+
+class RawQuicSession : public use<RawQuicSession>::quic::session {
+public:
+    std::size_t pending_read_events = 0;
+    std::size_t last_pending_read = 0;
+
+    explicit RawQuicSession(std::uint64_t stream_id)
+        : client(stream_id) {}
+
+    void
+    on(async::event::pending_read &&event) {
+        ++pending_read_events;
+        last_pending_read = event.bytes;
+    }
+};
+
+class QuicDrainProbe
+    : public async::quic::io_handler<QuicDrainProbe, TextQuicSession> {
+public:
+    bool
+    feed(async::quic::event::stream_data const &event) {
+        return feed_stream_data(event);
+    }
+
+    bool
+    feed_with_credit(async::quic::event::stream_data const &event,
+                     std::uint64_t &credited) {
+        return feed_stream_data(event,
+                                [&credited](std::uint64_t, std::uint64_t,
+                                            std::uint64_t bytes) {
+                                    credited += bytes;
+                                });
+    }
+
+    template <typename Session>
+    void
+    drain(Session &session, std::size_t &sent) {
+        drain_stream_output(session,
+                            [&sent](std::uint64_t, std::uint64_t,
+                                    std::span<const std::byte> data, bool) {
+                                sent += data.size();
+                            });
+    }
+
+    template <typename Session, typename Send>
+    void
+    drain_with(Session &session, Send &&send) {
+        drain_stream_output(session, std::forward<Send>(send));
+    }
+};
+
+class ServerOwnedQuicProbe;
+
+class ServerOwnedTextQuicSession
+    : public use<ServerOwnedTextQuicSession>::quic::client<ServerOwnedQuicProbe> {
+public:
+    using Protocol = qb::protocol::text::command<ServerOwnedTextQuicSession>;
+
+    std::string last_message;
+
+    explicit ServerOwnedTextQuicSession(ServerOwnedQuicProbe &server)
+        : client(server) {}
+
+    void
+    on(Protocol::message &&message) {
+        last_message.assign(message.text);
+    }
+};
+
+class ServerOwnedQuicProbe
+    : public async::quic::io_handler<ServerOwnedQuicProbe,
+                                     ServerOwnedTextQuicSession> {
+public:
+    bool
+    feed(async::quic::event::stream_data const &event) {
+        return feed_stream_data(event);
+    }
+};
+
+template <typename StreamSession>
+class ProtocolQuicServer
+    : public async::quic::server<ProtocolQuicServer<StreamSession>, StreamSession> {
+public:
+    int connected = 0;
+
+    void
+    on(async::quic::event::connected const &) {
+        ++connected;
+    }
+};
+
+class TextProtocolQuicClient
+    : public use<TextProtocolQuicClient>::quic::connector<TextQuicSession> {};
+
+template <typename Predicate>
+bool
+pump_quic_until(Predicate &&predicate, std::chrono::milliseconds timeout) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!predicate()) {
+        async::run(EVRUN_NOWAIT);
+        if (std::chrono::steady_clock::now() >= deadline)
+            return predicate();
+        if (async::listener::current.nb_invoked_event() == 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
+
+template <typename Server, typename Client>
+void
+connect_local_quic_pair(Server &server, Client &client) {
+    ASSERT_TRUE(server.listen(uri{"quic://127.0.0.1:0"}, ssl_resource_path("cert.pem"),
+                              ssl_resource_path("key.pem"), {"qb-test"}));
+    ASSERT_GT(server.local_endpoint().port(), 0);
+
+    quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+
+    const auto endpoint_uri = std::string{"quic://127.0.0.1:"} +
+                              std::to_string(server.local_endpoint().port());
+    ASSERT_TRUE(client.connect(uri{endpoint_uri}, client_tls, {"qb-test"}));
+
+    ASSERT_TRUE(pump_quic_until([&] {
+        return server.current_state() == async::quic::endpoint::state::connected &&
+               client.current_state() == async::quic::endpoint::state::connected;
+    }, std::chrono::seconds(3)));
+}
+
+TEST(Session, COMMAND_OVER_QUIC) {
+#ifndef QB_HAS_QUIC
+    GTEST_SKIP() << "QUIC support is disabled";
+#else
+    if (!std::filesystem::exists(ssl_resource_path("cert.pem")) ||
+        !std::filesystem::exists(ssl_resource_path("key.pem")))
+        GTEST_SKIP() << "Test SSL certificates are not available";
+
+    async::init();
+
+    ProtocolQuicServer<EchoTextQuicSession> server;
+    TextProtocolQuicClient client;
+    connect_local_quic_pair(server, client);
+
+    auto stream = client.open_bidirectional_stream();
+    client.send_stream_data(stream.id(), "hello ", false);
+    client.send_stream_data(stream.id(), "quic\n", true);
+
+    EXPECT_TRUE(pump_quic_until([&] {
+        auto *response = client.stream_session(stream.id());
+        return response && response->last_message == "hello quic";
+    }, std::chrono::seconds(3)));
+
+    auto *server_session = server.stream_session(stream.id());
+    auto *client_session = client.stream_session(stream.id());
+    ASSERT_NE(server_session, nullptr);
+    ASSERT_NE(client_session, nullptr);
+    EXPECT_EQ(server_session->messages, 1u);
+    EXPECT_EQ(client_session->last_message, "hello quic");
+
+    client.close();
+    server.close();
+    async::listener::current.clear();
+#endif
+}
+
+TEST(Session, BINARY16_OVER_QUIC) {
+    BinaryQuicSession session{0};
+    const std::string payload = "binary-over-quic";
+    uint16_t len = htons(static_cast<uint16_t>(payload.size()));
+
+    session.append(std::string_view(reinterpret_cast<char const *>(&len), sizeof(len)));
+    EXPECT_TRUE(session.process());
+    EXPECT_TRUE(session.last_message.empty());
+
+    session.append(payload);
+    EXPECT_TRUE(session.process());
+    EXPECT_EQ(session.last_message, payload);
+    EXPECT_EQ(session.pendingRead(), 0u);
+}
+
+TEST(Session, PROTOCOL_SWITCH_TEXT_TO_BINARY_OVER_QUIC) {
+    SwitchQuicSession session{0};
+    session.append("SWITCH\n");
+    ASSERT_TRUE(session.process());
+    EXPECT_EQ(session.text_messages, 1u);
+
+    const std::string payload = "after-switch";
+    uint16_t len = htons(static_cast<uint16_t>(payload.size()));
+    session.append(std::string_view(reinterpret_cast<char const *>(&len), sizeof(len)));
+    session.append(payload);
+
+    ASSERT_TRUE(session.process());
+    EXPECT_EQ(session.binary_messages, 1u);
+    EXPECT_EQ(session.last_binary, payload);
+}
+
+TEST(Session, CLOSE_AFTER_DELIVER_FLUSHES_QUIC_INPUT_AND_KEEPS_OUTPUT) {
+    CloseAfterDeliverQuicSession session{0};
+
+    session.append("bye\n");
+
+    EXPECT_TRUE(session.process());
+    EXPECT_EQ(session.pendingRead(), 0u);
+    EXPECT_EQ(session.pendingWrite(), 4u);
+    EXPECT_EQ(std::string_view(session.out().begin(), session.out().size()), "bye\n");
+    EXPECT_FALSE(session.protocol()->ok());
+}
+
+TEST(Session, RAW_QUIC_SESSION_KEEPS_PENDING_INPUT_WITHOUT_PROTOCOL) {
+    RawQuicSession session{0};
+
+    session.append("raw-bytes");
+
+    EXPECT_TRUE(session.process());
+    EXPECT_EQ(session.pendingRead(), 9u);
+    EXPECT_EQ(session.pending_read_events, 1u);
+    EXPECT_EQ(session.last_pending_read, 9u);
+}
+
+TEST(Session, QUIC_READ_CAP_OVERFLOW_FAILS_PROTOCOL_PROCESSING) {
+    TextQuicSession session{0};
+    session.set_max_read_buffer_size(4);
+
+    session.append("hello");
+
+    EXPECT_FALSE(session.process());
+    EXPECT_EQ(session.disconnection_reason(),
+              static_cast<int>(async::event::disconnect_reason::buffer_overflow));
+}
+
+TEST(Session, QUIC_DRAIN_ACCOUNTS_WRITTEN_BYTES_AFTER_BACKEND_ACCEPTS_OUTPUT) {
+    TextQuicSession session{0};
+    QuicDrainProbe handler;
+    std::size_t sent = 0;
+
+    session << "typed" << TextQuicSession::Protocol::end;
+    ASSERT_EQ(session.bytes_written(), 0u);
+
+    handler.drain(session, sent);
+
+    EXPECT_EQ(sent, 6u);
+    EXPECT_EQ(session.pendingWrite(), 0u);
+    EXPECT_EQ(session.out().begin(), session.out().data());
+    EXPECT_EQ(session.bytes_written(), 6u);
+}
+
+TEST(Session, QUIC_OUTPUT_PIPE_REORDERS_WHEN_DRAIN_IS_REENTERED) {
+    TextQuicSession session{0};
+    QuicDrainProbe handler;
+    std::vector<std::string> chunks;
+    bool appended = false;
+
+    session << "first" << TextQuicSession::Protocol::end;
+
+    handler.drain_with(
+        session, [&](std::uint64_t, std::uint64_t, std::span<const std::byte> data, bool) {
+            chunks.emplace_back(reinterpret_cast<char const *>(data.data()), data.size());
+            if (!appended) {
+                appended = true;
+                session << "second" << TextQuicSession::Protocol::end;
+            }
+        });
+
+    ASSERT_EQ(chunks.size(), 2u);
+    EXPECT_EQ(chunks[0], "first\n");
+    EXPECT_EQ(chunks[1], "second\n");
+    EXPECT_EQ(session.pendingWrite(), 0u);
+    EXPECT_EQ(session.out().begin(), session.out().data());
+}
+
+TEST(Session, QUIC_SESSIONS_ARE_KEYED_BY_CONNECTION_AND_STREAM_ID) {
+    QuicDrainProbe handler;
+
+    ASSERT_TRUE(handler.feed({10, 0, "first\n", true}));
+    ASSERT_TRUE(handler.feed({11, 0, "second\n", true}));
+
+    auto *first = handler.session(10, 0);
+    auto *second = handler.session(11, 0);
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_NE(first, second);
+    EXPECT_EQ(first->connection_id(), 10u);
+    EXPECT_EQ(second->connection_id(), 11u);
+    EXPECT_EQ(first->last_message, "first");
+    EXPECT_EQ(second->last_message, "second");
+    EXPECT_EQ(handler.session_count(), 2u);
+}
+
+TEST(Session, QUIC_CONNECTION_CLOSE_ONLY_CLEARS_MATCHING_CONNECTION_STREAMS) {
+    QuicDrainProbe handler;
+
+    ASSERT_TRUE(handler.feed({10, 0, "first\n", true}));
+    ASSERT_TRUE(handler.feed({10, 4, "first-other\n", true}));
+    ASSERT_TRUE(handler.feed({11, 0, "second\n", true}));
+
+    handler.clearSessions(10);
+
+    EXPECT_EQ(handler.session(10, 0), nullptr);
+    EXPECT_EQ(handler.session(10, 4), nullptr);
+    auto *remaining = handler.session(11, 0);
+    ASSERT_NE(remaining, nullptr);
+    EXPECT_EQ(remaining->last_message, "second");
+    EXPECT_EQ(handler.session_count(), 1u);
+}
+
+TEST(Session, QUIC_SESSION_DISPOSE_REMOVES_MATCHING_CONNECTION_ONLY) {
+    ServerOwnedQuicProbe handler;
+
+    ASSERT_TRUE(handler.feed({10, 0, "first\n", true}));
+    ASSERT_TRUE(handler.feed({11, 0, "second\n", true}));
+
+    auto *first = handler.session(10, 0);
+    ASSERT_NE(first, nullptr);
+    first->dispose();
+
+    EXPECT_EQ(handler.session(10, 0), nullptr);
+    auto *remaining = handler.session(11, 0);
+    ASSERT_NE(remaining, nullptr);
+    EXPECT_EQ(remaining->last_message, "second");
+    EXPECT_EQ(handler.session_count(), 1u);
+}
+
+TEST(Session, QUIC_FLOW_CREDIT_IS_RETURNED_ONLY_AFTER_PROTOCOL_CONSUMES_BYTES) {
+    QuicDrainProbe handler;
+    std::uint64_t credited = 0;
+
+    ASSERT_TRUE(handler.feed_with_credit({10, 0, "hello", false}, credited));
+    auto *session = handler.session(10, 0);
+    ASSERT_NE(session, nullptr);
+    EXPECT_EQ(session->pendingRead(), 5u);
+    EXPECT_EQ(credited, 0u);
+
+    ASSERT_TRUE(handler.feed_with_credit({10, 0, " world\n", true}, credited));
+    EXPECT_EQ(session->pendingRead(), 0u);
+    EXPECT_EQ(session->last_message, "hello world");
+    EXPECT_EQ(credited, 12u);
+}
+
+TEST(Session, MANY_COMMAND_STREAMS_OVER_ONE_QUIC_CONNECTION) {
+#ifndef QB_HAS_QUIC
+    GTEST_SKIP() << "QUIC support is disabled";
+#else
+    if (!std::filesystem::exists(ssl_resource_path("cert.pem")) ||
+        !std::filesystem::exists(ssl_resource_path("key.pem")))
+        GTEST_SKIP() << "Test SSL certificates are not available";
+
+    async::init();
+
+    ProtocolQuicServer<EchoTextQuicSession> server;
+    TextProtocolQuicClient client;
+    connect_local_quic_pair(server, client);
+
+    std::vector<std::uint64_t> stream_ids;
+    constexpr std::size_t stream_count = 16;
+    stream_ids.reserve(stream_count);
+    for (std::size_t i = 0; i < stream_count; ++i) {
+        auto stream = client.open_bidirectional_stream();
+        stream_ids.push_back(stream.id());
+        auto payload = std::string{"stream-"} + std::to_string(i) + "\n";
+        client.send_stream_data(stream.id(), payload, true);
+    }
+
+    EXPECT_TRUE(pump_quic_until([&] {
+        for (std::size_t i = 0; i < stream_ids.size(); ++i) {
+            auto *session = client.stream_session(stream_ids[i]);
+            if (!session || session->last_message != std::string{"stream-"} + std::to_string(i))
+                return false;
+        }
+        return true;
+    }, std::chrono::seconds(5)));
+
+    EXPECT_EQ(server.session_count(), stream_count);
+    EXPECT_EQ(client.session_count(), stream_count);
+
+    client.close();
+    server.close();
+    async::listener::current.clear();
+#endif
 }

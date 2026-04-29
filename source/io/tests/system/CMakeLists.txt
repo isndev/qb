@@ -39,6 +39,7 @@ set(CORE_TESTS
         test-session-text.cpp
         test-session-json.cpp
         test-io-plan.cpp
+        test-quic.cpp
 )
 
 # Create core test targets
