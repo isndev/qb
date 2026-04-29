@@ -166,6 +166,32 @@ else()
     set(QB_HAS_COMPRESSION FALSE)
 endif()
 
+# QUIC transport (optional, via libngtcp2)
+if(QB_WITH_QUIC)
+    if(NOT QB_HAS_SSL)
+        qb_warning_message("QUIC requested but SSL/TLS support is disabled - QUIC support disabled")
+        set(QB_HAS_QUIC FALSE)
+        set(QB_WITH_QUIC OFF)
+    else()
+        find_package(Ngtcp2 QUIET)
+        if(Ngtcp2_FOUND)
+            qb_status_message("Found libngtcp2 QUIC transport stack")
+            list(APPEND QB_EXTERNAL_LIBRARIES
+                Ngtcp2::ngtcp2
+                Ngtcp2::crypto_ossl
+            )
+            set(QB_HAS_QUIC TRUE)
+        else()
+            qb_warning_message("libngtcp2 not found - QUIC support disabled")
+            set(QB_HAS_QUIC FALSE)
+            set(QB_WITH_QUIC OFF)
+        endif()
+    endif()
+else()
+    qb_status_message("QUIC transport support disabled")
+    set(QB_HAS_QUIC FALSE)
+endif()
+
 # Google Test / Google Benchmark: resolved in qbFetchGoogleDeps.cmake (FetchContent or
 # find_package when QB_USE_SYSTEM_* is ON). Defaults are set here for summary printing.
 if(NOT QB_BUILD_TESTS)
@@ -270,6 +296,10 @@ function(qb_resolve_dependencies target)
     if(QB_HAS_ARGON2)
         target_compile_definitions(${target} PRIVATE QB_HAS_ARGON2=1)
     endif()
+
+    if(QB_HAS_QUIC)
+        target_compile_definitions(${target} PRIVATE QB_HAS_QUIC=1)
+    endif()
     
     if(UUID_FOUND)
         target_compile_definitions(${target} PRIVATE QB_HAS_UUID=1)
@@ -334,6 +364,7 @@ function(qb_print_dependencies)
         qb_status_message("    Argon2: ${QB_HAS_ARGON2}")
     endif()
     qb_status_message("    ZLIB: ${QB_HAS_COMPRESSION}")
+    qb_status_message("    QUIC/libngtcp2: ${QB_HAS_QUIC}")
     qb_status_message("    Google Test: ${QB_HAS_GTEST}")
     qb_status_message("    Google Benchmark: ${QB_HAS_BENCHMARK}")
     qb_status_message("    gperftools: ${QB_HAS_PROFILING}")
@@ -355,6 +386,10 @@ if(QB_HAS_ARGON2)
     list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_ARGON2=1")
 endif()
 
+if(QB_HAS_QUIC)
+    list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_QUIC=1")
+endif()
+
 if(UUID_FOUND)
     list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_UUID=1")
 endif()
@@ -367,4 +402,4 @@ endif()
 set(QB_COMPILE_DEFINITIONS ${QB_COMPILE_DEFINITIONS} PARENT_SCOPE)
 
 # Mark dependencies as loaded
-set(QB_DEPENDENCIES_LOADED TRUE CACHE INTERNAL "qb dependencies loaded") 
+set(QB_DEPENDENCIES_LOADED TRUE CACHE INTERNAL "qb dependencies loaded")

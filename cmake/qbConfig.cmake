@@ -86,6 +86,7 @@ option(QB_BUILD_COVERAGE "Enable code coverage instrumentation (Debug builds onl
 option(QB_WITH_LOGGING "Enable logging support" ON)
 option(QB_WITH_SSL "Enable SSL/TLS support" ON)
 option(QB_WITH_COMPRESSION "Enable compression support" ON)
+option(QB_WITH_QUIC "Enable QUIC transport support via libngtcp2" OFF)
 option(QB_WITH_PROFILING "Enable profiling support" OFF)
 
 # Debug options
@@ -301,4 +302,4 @@ function(qb_print_configuration)
 endfunction()
 
 # Mark configuration as loaded
-set(QB_CONFIG_LOADED TRUE CACHE INTERNAL "qb configuration loaded") 
+set(QB_CONFIG_LOADED TRUE CACHE INTERNAL "qb configuration loaded")

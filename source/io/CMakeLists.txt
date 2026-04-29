@@ -36,6 +36,7 @@ project(qb-io
 set(IO_SOURCES
     src/cpu.cpp
     src/io.cpp
+    src/quic.cpp
 )
 
 # Collect dependencies
@@ -85,6 +86,15 @@ if(QB_HAS_SSL)
         list(APPEND IO_DEFINITIONS QB_HAS_ARGON2=1)
         qb_debug_message("Building with Argon2 advanced crypto support")
     endif()
+endif()
+
+if(QB_HAS_QUIC)
+    list(APPEND IO_DEPENDENCIES
+        Ngtcp2::ngtcp2
+        Ngtcp2::crypto_ossl
+    )
+    list(APPEND IO_DEFINITIONS QB_HAS_QUIC=1)
+    qb_debug_message("Building with libngtcp2 QUIC transport support")
 endif()
 
 # -----------------------------------------------------------------------------
