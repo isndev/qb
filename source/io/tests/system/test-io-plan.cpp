@@ -104,7 +104,7 @@ TEST_F(IoPlanTest, T_UDP_WRITE_NO_OFFSET_PartialSendFreeFromQueue) {
     ASSERT_TRUE(sender.transport().init());
     ASSERT_TRUE(receiver.transport().init());
 
-    constexpr unsigned short kRecvPort = 19871;
+    constexpr unsigned short kRecvPort = 64326;
     ASSERT_EQ(receiver.transport().bind_v4(kRecvPort, "127.0.0.1"), 0);
 
     qb::io::endpoint         bound_ep("127.0.0.1", kRecvPort);
@@ -149,7 +149,7 @@ TEST_F(IoPlanTest, T_UDP_WRITE_NO_OFFSET_BackToBackDatagrams) {
     transport::udp receiver;
     ASSERT_TRUE(sender.transport().init());
     ASSERT_TRUE(receiver.transport().init());
-    constexpr unsigned short kRecvPort = 19872;
+    constexpr unsigned short kRecvPort = 64330;
     ASSERT_EQ(receiver.transport().bind_v4(kRecvPort, "127.0.0.1"), 0);
     qb::io::endpoint         bound_ep("127.0.0.1", kRecvPort);
     transport::udp::identity dest{bound_ep};
@@ -216,7 +216,7 @@ TEST_F(IoPlanTest, T_INPUT_DRAINED_VS_EOF_AliasAndDispatch) {
     static_assert(std::is_same_v<async::event::eof, async::event::input_drained>,
                   "event::eof must be the input_drained alias");
 
-    constexpr unsigned short kPort = 9911;
+    constexpr unsigned short kPort = 64324;
 
     std::atomic<int> drained_counter{0};
     std::atomic<int> messages_seen{0};
@@ -515,7 +515,7 @@ inline autostart_session::autostart_session(autostart_server &srv) : client(srv)
 } // namespace plan_test
 
 TEST_F(IoPlanTest, T_ACCEPTOR_LISTEN_AutoStartsWatcher) {
-    constexpr unsigned short kPort = 9912;
+    constexpr unsigned short kPort = 64325;
 
     std::atomic<int>          connection_count{0};
     plan_test::autostart_server server;

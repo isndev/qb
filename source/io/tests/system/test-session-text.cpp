@@ -593,7 +593,7 @@ TEST(Session, DISABLED_COMMAND_OVER_UDP) {
 
     async::init();
     TestUDPServerClient server;
-    server.transport().bind_v4(9999);
+    server.transport().bind_v4(21995);
     server.start();
 
     std::thread tc([]() {
@@ -608,7 +608,7 @@ TEST(Session, DISABLED_COMMAND_OVER_UDP) {
             }
             client.start();
             for (auto j = 0u; j < NB_ITERATION; ++j) {
-                client.setDestination(endpoint().as_in("127.0.0.1", 9999));
+                client.setDestination(endpoint().as_in("127.0.0.1", 21995));
                 client << STRING_MESSAGE << '\n';
             }
 
@@ -933,9 +933,20 @@ TEST(Session, QUIC_READ_CAP_OVERFLOW_FAILS_PROTOCOL_PROCESSING) {
     TextQuicSession session{0};
     session.set_max_read_buffer_size(4);
 
-    session.append("hello");
+    EXPECT_FALSE(session.append("hello"));
+    EXPECT_EQ(session.pendingRead(), 0u);
 
     EXPECT_FALSE(session.process());
+    EXPECT_EQ(session.disconnection_reason(),
+              static_cast<int>(async::event::disconnect_reason::buffer_overflow));
+}
+
+TEST(Session, QUIC_WRITE_CAP_OVERFLOW_REJECTS_PUBLISH) {
+    TextQuicSession session{0};
+    session.set_max_write_buffer_size(4);
+
+    EXPECT_EQ(session.publish("hello", 5), nullptr);
+    EXPECT_EQ(session.pendingWrite(), 0u);
     EXPECT_EQ(session.disconnection_reason(),
               static_cast<int>(async::event::disconnect_reason::buffer_overflow));
 }

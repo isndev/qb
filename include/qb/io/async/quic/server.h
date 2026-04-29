@@ -35,6 +35,63 @@ public:
         return handler_type::session(connection_id, stream_id);
     }
 
+    [[nodiscard]] StreamSession *open_bidirectional_stream_session(std::uint64_t connection_id = 0) {
+        auto stream = this->open_bidirectional_stream(connection_id);
+        return handler_type::register_stream_session(stream.connection_id(), stream.id());
+    }
+
+    [[nodiscard]] StreamSession *open_unidirectional_stream_session(std::uint64_t connection_id = 0) {
+        auto stream = this->open_unidirectional_stream(connection_id);
+        return handler_type::register_stream_session(stream.connection_id(), stream.id());
+    }
+
+    bool flush_stream_session(std::uint64_t stream_id) {
+        auto session = handler_type::session_handle(stream_id);
+        if (!session)
+            return false;
+        flush_stream_session(*session);
+        return true;
+    }
+
+    bool flush_stream_session(std::uint64_t connection_id, std::uint64_t stream_id) {
+        auto session = handler_type::session_handle(connection_id, stream_id);
+        if (!session)
+            return false;
+        flush_stream_session(*session);
+        return true;
+    }
+
+    void flush_stream_session(StreamSession& session) {
+        handler_type::drain_stream_output(
+            session,
+            [this](std::uint64_t connection_id, std::uint64_t stream_id,
+                   std::span<const std::byte> data, bool fin) {
+                this->send_stream_data(connection_id, stream_id, data, fin);
+            });
+    }
+
+    bool finish_stream_session(std::uint64_t stream_id) {
+        auto session = handler_type::session_handle(stream_id);
+        if (!session)
+            return false;
+        finish_stream_session(*session);
+        return true;
+    }
+
+    bool finish_stream_session(std::uint64_t connection_id, std::uint64_t stream_id) {
+        auto session = handler_type::session_handle(connection_id, stream_id);
+        if (!session)
+            return false;
+        finish_stream_session(*session);
+        return true;
+    }
+
+    void finish_stream_session(StreamSession& session) {
+        flush_stream_session(session);
+        this->send_stream_data(session.connection_id(), session.id(),
+                               std::span<const std::byte>{}, true);
+    }
+
 protected:
     void dispatch(event::connected const& ev) override {
         if constexpr (requires(Derived& derived, event::connected const& event) { derived.on(event); })
@@ -72,6 +129,11 @@ protected:
                 });
         }
         if constexpr (requires(Derived& derived, event::stream_data const& event) { derived.on(event); })
+            static_cast<Derived&>(*this).on(ev);
+    }
+
+    void dispatch(event::stream_data_acked const& ev) override {
+        if constexpr (requires(Derived& derived, event::stream_data_acked const& event) { derived.on(event); })
             static_cast<Derived&>(*this).on(ev);
     }
 

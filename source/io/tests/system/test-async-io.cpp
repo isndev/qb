@@ -366,7 +366,7 @@ public:
 };
 
 TEST_F(AsyncIOTest, TCPNonBlockingIO) {
-    const unsigned short TEST_PORT        = 9876;
+    const unsigned short TEST_PORT        = 64378;
     const std::string    TEST_MESSAGE     = "Hello, QB Async IO!";
     const std::string    RESPONSE_MESSAGE = "Hello from server!";
 
@@ -513,7 +513,7 @@ TEST_F(AsyncIOTest, EventPriorities) {
 }
 
 // Constants for text-based communication test
-constexpr const unsigned short TEXT_PROTOCOL_PORT = 9877;
+constexpr const unsigned short TEXT_PROTOCOL_PORT = 64383;
 constexpr const char           TEXT_MESSAGE[]     = "Hello, Text Protocol!";
 std::atomic<std::size_t>       msg_count_server   = 0;
 std::atomic<std::size_t>       msg_count_client   = 0;
@@ -695,7 +695,9 @@ TEST_F(AsyncIOTest, SSLCommunication) {
     SecureServer server;
     server.transport().init(ssl::create_server_context(
         SSLv23_server_method(), cert_file.string(), key_file.string()));
-    server.transport().listen_v4(9878);
+    constexpr const unsigned short SECURE_TEXT_PROTOCOL_PORT = 64384;
+
+    server.transport().listen_v4(SECURE_TEXT_PROTOCOL_PORT);
     server.start();
 
     // Client thread
@@ -703,7 +705,8 @@ TEST_F(AsyncIOTest, SSLCommunication) {
         async::init();
         SecureClient client;
 
-        if (SocketStatus::Done != client.transport().connect_v4("127.0.0.1", 9878)) {
+        if (SocketStatus::Done !=
+            client.transport().connect_v4("127.0.0.1", SECURE_TEXT_PROTOCOL_PORT)) {
             throw std::runtime_error("could not connect to secure server");
         }
 
@@ -850,7 +853,7 @@ TEST_F(AsyncIOTest, AsyncFileOperations) {
 
 // Test UDP communication with datagram-based API
 TEST_F(AsyncIOTest, UDPDatagram) {
-    const unsigned short UDP_PORT    = 9879;
+    const unsigned short UDP_PORT    = 64385;
     const std::string    UDP_MESSAGE = "Hello, UDP Async IO!";
 
     // Create and bind a UDP socket for sending

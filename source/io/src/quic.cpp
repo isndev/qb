@@ -127,8 +127,10 @@ class native_backend final : public backend {
     std::deque<queued_datagram> _pending_datagrams;
     qb::unordered_map<std::uint64_t, std::uint64_t> _inflight_datagrams;
     qb::unordered_map<std::uint64_t, std::uint64_t> _next_stream_offsets;
+    qb::unordered_map<std::uint64_t, bool> _stream_fin_seen;
     qb::unordered_map<std::uint64_t, std::unique_ptr<native_backend>> _server_connections;
     qb::unordered_map<std::string, std::uint64_t> _server_cid_index;
+    std::vector<std::uint64_t> _server_closed_connections;
     std::uint64_t _queued_stream_bytes = 0;
     std::uint64_t _queued_stream_frames = 0;
     std::uint64_t _queued_datagram_bytes = 0;
@@ -153,6 +155,18 @@ class native_backend final : public backend {
     bool _server_parent = false;
     bool _started = false;
     bool _closing = false;
+    bool _close_event_queued = false;
+
+    [[nodiscard]] std::string negotiated_alpn() const {
+        if (!_ssl)
+            return {};
+        const unsigned char *data = nullptr;
+        unsigned int len = 0;
+        SSL_get0_alpn_selected(_ssl, &data, &len);
+        if (!data || len == 0)
+            return {};
+        return {reinterpret_cast<const char *>(data), len};
+    }
 
 public:
     native_backend() {
@@ -187,6 +201,8 @@ public:
         _wire_alpn = make_wire_alpn(_alpn);
         _server_tls = tls;
         validate_server_tls_config(tls);
+        _closing = false;
+        _close_event_queued = false;
         _started = true;
     }
 
@@ -202,6 +218,8 @@ public:
         make_ssl_context(tls, false);
         make_client_connection();
         ngtcp2_conn_set_tls_native_handle(_conn, _crypto_ctx);
+        _closing = false;
+        _close_event_queued = false;
         _started = true;
         _stats.active_connections = 1;
         drain_transport();
@@ -230,8 +248,11 @@ public:
         if (rv == 0) {
             ++_stats.packets_received;
             _stats.bytes_received += datagram.payload.size();
-        } else if (rv != NGTCP2_ERR_CLOSING && rv != NGTCP2_ERR_DRAINING) {
-            write_connection_close(rv, "QUIC packet read failed");
+        } else if (rv == NGTCP2_ERR_CLOSING || rv == NGTCP2_ERR_DRAINING) {
+            queue_close_event(disconnect_reason::application_close, 0,
+                              "QUIC connection close received");
+        } else {
+            write_connection_close(rv, "QUIC packet read failed: " + std::to_string(rv));
         }
         update_stats();
         drain_transport();
@@ -297,6 +318,17 @@ public:
 
     std::vector<backend_event> drain_events() override {
         if (_server_parent) {
+            for (auto id : _server_closed_connections) {
+                _server_connections.erase(id);
+                for (auto it = _server_cid_index.begin(); it != _server_cid_index.end();) {
+                    if (it->second == id)
+                        it = _server_cid_index.erase(it);
+                    else
+                        ++it;
+                }
+            }
+            _server_closed_connections.clear();
+
             std::vector<std::uint64_t> closed_connections;
             for (auto& entry : _server_connections) {
                 auto events = entry.second->drain_events();
@@ -307,15 +339,9 @@ public:
                     _events.push_back(std::move(event));
                 }
             }
-            for (auto id : closed_connections) {
-                _server_connections.erase(id);
-                for (auto it = _server_cid_index.begin(); it != _server_cid_index.end();) {
-                    if (it->second == id)
-                        it = _server_cid_index.erase(it);
-                    else
-                        ++it;
-                }
-            }
+            _server_closed_connections.insert(_server_closed_connections.end(),
+                                              closed_connections.begin(),
+                                              closed_connections.end());
         }
         auto out = std::move(_events);
         _events.clear();
@@ -323,6 +349,18 @@ public:
     }
 
     std::uint64_t open_stream(stream_direction direction) override {
+        return open_stream(0, direction);
+    }
+
+    std::uint64_t open_stream(std::uint64_t connection_id,
+                              stream_direction direction) override {
+        if (_server_parent) {
+            if (auto *connection = server_connection(connection_id))
+                return connection->open_stream(0, direction);
+            if (_server_connections.size() == 1)
+                return _server_connections.begin()->second->open_stream(0, direction);
+            throw std::runtime_error("Cannot open a QUIC stream on an unknown connection");
+        }
         if (!_conn)
             throw std::runtime_error("Cannot open a QUIC stream before a connection exists");
         int64_t stream_id = -1;
@@ -410,6 +448,21 @@ public:
                                  application_error_code, "stream reset");
     }
 
+    void stop_stream(std::uint64_t connection_id, std::uint64_t stream_id,
+                     std::uint64_t application_error_code) override {
+        if (_server_parent) {
+            if (auto *connection = server_connection(connection_id))
+                connection->stop_stream(0, stream_id, application_error_code);
+            return;
+        }
+        if (_conn)
+            (void)ngtcp2_conn_shutdown_stream_read(_conn, 0,
+                                                   static_cast<int64_t>(stream_id),
+                                                   application_error_code);
+        queue_stream_close_event(stream_id, stream_close_reason::stop_sending,
+                                 application_error_code, "stream stopped");
+    }
+
     void send_datagram(std::uint64_t connection_id, std::span<const std::byte> data) override {
         if (_server_parent) {
             if (auto *connection = server_connection(connection_id))
@@ -471,12 +524,26 @@ public:
         _started = false;
     }
 
+    void close_connection(std::uint64_t connection_id,
+                          std::uint64_t application_error_code,
+                          std::string_view reason) override {
+        if (_server_parent) {
+            if (auto *connection = server_connection(connection_id))
+                connection->close(application_error_code, reason);
+            return;
+        }
+        close(application_error_code, reason);
+    }
+
     stats current_stats() const noexcept override {
         if (_server_parent) {
             auto aggregate = _stats;
-            aggregate.active_connections = _server_connections.size();
+            aggregate.active_connections =
+                _server_connections.size() - deferred_closed_connection_count();
             aggregate.active_streams = 0;
             for (auto const& entry : _server_connections) {
+                if (is_deferred_closed_connection(entry.first))
+                    continue;
                 auto child = entry.second->current_stats();
                 aggregate.bytes_sent += child.bytes_sent;
                 aggregate.bytes_received += child.bytes_received;
@@ -500,14 +567,43 @@ public:
     }
 
 private:
+    bool is_deferred_closed_connection(std::uint64_t connection_id) const noexcept {
+        return std::find(_server_closed_connections.begin(),
+                         _server_closed_connections.end(),
+                         connection_id) != _server_closed_connections.end();
+    }
+
+    std::size_t deferred_closed_connection_count() const noexcept {
+        std::size_t count = 0;
+        for (std::size_t i = 0; i < _server_closed_connections.size(); ++i) {
+            auto const id = _server_closed_connections[i];
+            if (_server_connections.find(id) == _server_connections.end())
+                continue;
+            bool already_counted = false;
+            for (std::size_t j = 0; j < i; ++j) {
+                if (_server_closed_connections[j] == id) {
+                    already_counted = true;
+                    break;
+                }
+            }
+            if (!already_counted)
+                ++count;
+        }
+        return count;
+    }
+
     native_backend *server_connection(std::uint64_t connection_id) noexcept {
         auto it = _server_connections.find(connection_id);
-        return it == _server_connections.end() ? nullptr : it->second.get();
+        return it == _server_connections.end() || is_deferred_closed_connection(connection_id)
+            ? nullptr
+            : it->second.get();
     }
 
     native_backend const *server_connection(std::uint64_t connection_id) const noexcept {
         auto it = _server_connections.find(connection_id);
-        return it == _server_connections.end() ? nullptr : it->second.get();
+        return it == _server_connections.end() || is_deferred_closed_connection(connection_id)
+            ? nullptr
+            : it->second.get();
     }
 
     native_backend *find_or_accept_server_connection(packet_view datagram) {
@@ -561,6 +657,8 @@ private:
         _alpn = alpn_protocols;
         _wire_alpn = wire_alpn;
         make_ssl_context(tls, true);
+        _closing = false;
+        _close_event_queued = false;
         _started = true;
     }
 
@@ -783,8 +881,10 @@ private:
             if (!_pending_streams.empty()) {
                 auto& item = _pending_streams.front();
                 stream_id = static_cast<int64_t>(item.stream_id);
-                vec.base = reinterpret_cast<uint8_t *>(item.data.data() + item.sent_offset);
                 vec.len = item.data.size() - item.sent_offset;
+                vec.base = vec.len == 0
+                    ? nullptr
+                    : reinterpret_cast<uint8_t *>(item.data.data() + item.sent_offset);
                 if (item.fin)
                     flags |= NGTCP2_WRITE_STREAM_FLAG_FIN;
             } else if (!_pending_datagrams.empty()) {
@@ -802,7 +902,7 @@ private:
                       datagram->id, &vec, 1, now)
                 : ngtcp2_conn_writev_stream(
                       _conn, &ps.path, &pi, buf.data(), buf.size(), &datalen, flags,
-                      stream_id, vec.base ? &vec : nullptr, vec.base ? 1 : 0, now);
+                      stream_id, vec.len > 0 ? &vec : nullptr, vec.len > 0 ? 1 : 0, now);
 
             if (written == 0)
                 break;
@@ -820,6 +920,8 @@ private:
                 }
                 if (written == NGTCP2_ERR_STREAM_DATA_BLOCKED)
                     break;
+                if (written == NGTCP2_ERR_CLOSING || written == NGTCP2_ERR_DRAINING)
+                    break;
                 if (written == NGTCP2_ERR_STREAM_NOT_FOUND ||
                     written == NGTCP2_ERR_STREAM_SHUT_WR) {
                     if (!_pending_streams.empty()) {
@@ -833,7 +935,7 @@ private:
                 }
                 queue_close_event(disconnect_reason::transport_error,
                                   static_cast<std::uint64_t>(-written),
-                                  "QUIC packet write failed");
+                                  "QUIC packet write failed: " + std::to_string(written));
                 break;
             }
 
@@ -930,6 +1032,12 @@ private:
 
     void queue_close_event(disconnect_reason why, std::uint64_t code,
                            std::string_view reason) {
+        if (_close_event_queued)
+            return;
+        _close_event_queued = true;
+        _stats.active_connections = 0;
+        _stats.active_streams = 0;
+        _started = false;
         backend_event event;
         event.type = backend_event::kind::connection_closed;
         event.connection_id = _connection_id;
@@ -1015,6 +1123,8 @@ private:
         event.payload.assign(reinterpret_cast<const std::byte *>(data),
                              reinterpret_cast<const std::byte *>(data + datalen));
         event.error_code = (flags & NGTCP2_STREAM_DATA_FLAG_FIN) != 0 ? 1 : 0;
+        if (event.error_code != 0)
+            self->_stream_fin_seen[static_cast<std::uint64_t>(stream_id)] = true;
         self->_events.push_back(std::move(event));
         return 0;
     }
@@ -1025,6 +1135,14 @@ private:
         auto *self = static_cast<native_backend *>(user_data);
         const auto id = static_cast<std::uint64_t>(stream_id);
         const auto ack_end = offset + datalen;
+        if (datalen > 0) {
+            backend_event event;
+            event.type = backend_event::kind::stream_data_acked;
+            event.connection_id = self->_connection_id;
+            event.stream_id = id;
+            event.error_code = datalen;
+            self->_events.push_back(std::move(event));
+        }
         for (auto it = self->_inflight_streams.begin();
              it != self->_inflight_streams.end();) {
             const auto item_end = it->offset + it->data.size();
@@ -1056,6 +1174,15 @@ private:
         if (self->_stats.active_streams > 0)
             --self->_stats.active_streams;
         const auto id = static_cast<std::uint64_t>(stream_id);
+        if (app_error_code == 0 && !self->_stream_fin_seen[id]) {
+            backend_event fin_event;
+            fin_event.type = backend_event::kind::stream_data;
+            fin_event.connection_id = self->_connection_id;
+            fin_event.stream_id = id;
+            fin_event.error_code = 1;
+            self->_events.push_back(std::move(fin_event));
+        }
+        self->_stream_fin_seen.erase(id);
         self->erase_queued_stream_data(id);
         self->_next_stream_offsets.erase(id);
         self->queue_stream_close_event(
@@ -1113,8 +1240,16 @@ private:
 
     static int handshake_completed_cb(ngtcp2_conn *, void *user_data) {
         auto *self = static_cast<native_backend *>(user_data);
+        if (!self->_alpn.empty() && self->negotiated_alpn().empty()) {
+            self->write_application_close(
+                static_cast<std::uint64_t>(disconnect_reason::protocol_error),
+                "QUIC ALPN negotiation failed");
+            self->queue_close_event(disconnect_reason::handshake_failed, 0,
+                                    "QUIC ALPN negotiation failed");
+            return 0;
+        }
         self->_events.push_back(
-            {backend_event::kind::connected, self->_connection_id, 0, 0, {}, {}});
+            {backend_event::kind::connected, self->_connection_id, 0, 0, self->negotiated_alpn(), {}});
         return 0;
     }
 };
