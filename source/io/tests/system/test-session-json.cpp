@@ -216,6 +216,9 @@ TEST(Session, JSON_OVER_SECURE_TCP) {
     std::thread t([]() {
         async::init();
         TestSecureClient client;
+        // Self-signed test certificate on ::1: opt out of the secure-by-default
+        // peer verification for this local fixture.
+        client.transport().set_insecure();
         if (SocketStatus::Done !=
             client.transport().connect_v6("::1", JSON_SECURE_TCP_PORT)) {
             throw std::runtime_error("could not connect");

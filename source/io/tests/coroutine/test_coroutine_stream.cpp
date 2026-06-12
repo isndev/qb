@@ -609,7 +609,7 @@ TEST_F(StreamAdvancedTests, MergeStreamsInterleavesRoundRobin) {
     coro_scheduler().spawn([&]() -> task<void> {
         co_await coro_fn();
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -622,7 +622,7 @@ TEST_F(StreamAdvancedTests, MergeEmptyStreams) {
         auto result = co_await merged.collect();
         EXPECT_TRUE(result.empty());
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -642,7 +642,7 @@ TEST_F(StreamAdvancedTests, ZipPairsElements) {
         EXPECT_EQ(result[2].first, 3);
         EXPECT_EQ(result[2].second, "c");
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -658,7 +658,7 @@ TEST_F(StreamAdvancedTests, ZipStopsAtShorterStream) {
 
         EXPECT_EQ(result.size(), 2u);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -679,7 +679,7 @@ TEST_F(StreamAdvancedTests, DrainToChannel) {
         EXPECT_EQ(collected[0], 10);
         EXPECT_EQ(collected[2], 30);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -696,7 +696,7 @@ TEST_F(StreamAdvancedTests, FromGeneratorSync) {
         EXPECT_EQ(result[0], 0);
         EXPECT_EQ(result[4], 4);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -709,7 +709,7 @@ TEST_F(StreamAdvancedTests, TimerStreamEmitsOnceAfterDelay) {
         EXPECT_EQ(result.size(), 1u);
         EXPECT_EQ(result[0], 42);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -724,7 +724,7 @@ TEST_F(StreamAdvancedTests, IntervalStreamEmitsTicks) {
         EXPECT_EQ(result[1], 1u);
         EXPECT_EQ(result[2], 2u);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -739,7 +739,7 @@ TEST_F(StreamAdvancedTests, BackpressureRespectsBound) {
         EXPECT_EQ(result[0], 1);
         EXPECT_EQ(result[4], 5);
         done = true;
-    }());
+    });
     run_for(1000ms);
     EXPECT_TRUE(done);
 }
@@ -755,7 +755,7 @@ TEST_F(StreamAdvancedTests, ThrottleRateLimits) {
         EXPECT_EQ(result.size(), 3u);
         EXPECT_GE(elapsed, 50ms);
         done = true;
-    }());
+    });
     run_for(1000ms);
     EXPECT_TRUE(done);
 }
@@ -773,7 +773,7 @@ TEST_F(StreamAdvancedTests, FromChannelSharedMultipleConsumers) {
         auto result = co_await stream.collect();
         EXPECT_EQ(result.size(), 3u);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }

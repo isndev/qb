@@ -23,6 +23,8 @@
  */
 
 #include <algorithm>
+#include <cerrno>
+#include <limits>
 #include <qb/io/system/file.h>
 
 namespace qb::io::sys {
@@ -82,24 +84,39 @@ file::open(int const fd) noexcept {
 }
 
 int
-file::write(const char *data, std::size_t const size) const noexcept {
+file::write(const char *data, std::size_t size) const noexcept {
     if (!is_open())
         return -1;
+    // Clamp to INT_MAX so the size never wraps when narrowed for the platform
+    // syscall and the (int) return stays meaningful. Callers that need to move
+    // more than 2 GiB loop on the return value (see pipe_to_file::write_all).
+    if (size > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        size = static_cast<std::size_t>(std::numeric_limits<int>::max());
 #ifdef _WIN32
     return ::_write(_handle, data, static_cast<unsigned int>(size));
 #else
-    return ::write(_handle, data, static_cast<unsigned int>(size));
+    ssize_t ret;
+    do {
+        ret = ::write(_handle, data, size);
+    } while (ret < 0 && errno == EINTR); // retry on signal interruption
+    return static_cast<int>(ret);
 #endif
 }
 
 int
-file::read(char *data, std::size_t const size) const noexcept {
+file::read(char *data, std::size_t size) const noexcept {
     if (!is_open())
         return -1;
+    if (size > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        size = static_cast<std::size_t>(std::numeric_limits<int>::max());
 #ifdef _WIN32
     return ::_read(_handle, data, static_cast<unsigned int>(size));
 #else
-    return ::read(_handle, data, static_cast<unsigned int>(size));
+    ssize_t ret;
+    do {
+        ret = ::read(_handle, data, size);
+    } while (ret < 0 && errno == EINTR); // retry on signal interruption
+    return static_cast<int>(ret);
 #endif
 }
 
@@ -237,7 +254,9 @@ pipe_to_file::pipe_to_file(qb::allocator::pipe<char> const &in) noexcept
 bool
 pipe_to_file::open(std::string const &path, int const mode) noexcept {
     close();
-    _handle.open(path.c_str(), O_WRONLY | O_CREAT, mode);
+    // O_TRUNC matches the documented contract and prevents stale trailing bytes
+    // when overwriting an existing, larger file with a shorter payload.
+    _handle.open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, mode);
     if (is_open()) {
         _written_bytes = 0;
         return true;
@@ -247,7 +266,11 @@ pipe_to_file::open(std::string const &path, int const mode) noexcept {
 int
 pipe_to_file::write() noexcept {
     if (is_open()) {
-        auto ret = _handle.write(_pipe.cbegin() + _written_bytes, _pipe.size());
+        // Write only the not-yet-written remainder. Passing _pipe.size() here
+        // (the previous code) read _written_bytes bytes past the end of the
+        // pipe buffer after any partial write and duplicated/garbled output.
+        const auto remaining = _pipe.size() - _written_bytes;
+        auto ret = _handle.write(_pipe.cbegin() + _written_bytes, remaining);
         if (ret < 0)
             close();
         else

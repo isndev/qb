@@ -336,6 +336,7 @@ class QB_API socket : public tcp::socket {
     bool _connected; /**< Flag indicating if the SSL handshake has successfully completed. */
     std::string _pending_sni_hostname; /**< Desired SNI hostname to apply to the next/client SSL handle. */
     std::vector<std::string> _pending_alpn_protocols; /**< Desired ALPN offers to apply before handshake starts. */
+    bool _verify_peer = true; /**< Secure-by-default: verify the server certificate chain + hostname on the auto-created client context. Cleared by set_insecure(). */
 
     /**
      * @brief Performs the SSL handshake check after a non-blocking connect.
@@ -710,6 +711,31 @@ public:
      * @return true if the depth was set successfully and an SSL handle exists, false otherwise.
      */
     bool set_verify_depth(int depth) noexcept;
+
+    /**
+     * @brief Disable TLS peer verification for connections made on the
+     *        SSL context that qb-io creates automatically.
+     * @details qb-io is **secure by default**: when it builds the client
+     *          `SSL_CTX` itself (the usual `connect()` / `n_connect()` /
+     *          async-connector path), it loads the system trust store, enables
+     *          `SSL_VERIFY_PEER`, and checks the server certificate against the
+     *          target hostname (or IP). Call this **before** `connect()` /
+     *          `n_connect()` to opt out — e.g. for self-signed certificates in
+     *          tests, certificate pinning handled elsewhere, or trusted private
+     *          channels.
+     * @warning Disabling verification removes protection against
+     *          man-in-the-middle attacks. Only use it when the channel is
+     *          trusted through other means.
+     * @note When you supply your own `SSL` handle via `init(SSL*)`, qb-io does
+     *       not touch verification — your context's policy is used as-is.
+     */
+    void set_insecure() noexcept;
+
+    /**
+     * @brief Whether peer verification is enabled for the auto-created context.
+     * @return `true` (default) unless `set_insecure()` was called.
+     */
+    [[nodiscard]] bool verify_peer() const noexcept;
 
     inline int do_handshake() noexcept {
         return handCheck();

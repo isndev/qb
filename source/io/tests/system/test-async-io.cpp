@@ -705,6 +705,9 @@ TEST_F(AsyncIOTest, SSLCommunication) {
         async::init();
         SecureClient client;
 
+        // Test server uses a self-signed certificate on 127.0.0.1; opt out of
+        // the secure-by-default peer verification for this local fixture.
+        client.transport().set_insecure();
         if (SocketStatus::Done !=
             client.transport().connect_v4("127.0.0.1", SECURE_TEXT_PROTOCOL_PORT)) {
             throw std::runtime_error("could not connect to secure server");
@@ -739,6 +742,65 @@ TEST_F(AsyncIOTest, SSLCommunication) {
 
     EXPECT_EQ(msg_count_server, TEXT_ITERATIONS);
     EXPECT_EQ(msg_count_client, TEXT_ITERATIONS);
+}
+
+// Locks in the secure-by-default TLS behavior (MITM hardening): a default
+// client MUST reject a self-signed certificate, and set_insecure() MUST opt out.
+TEST_F(AsyncIOTest, SSLPeerVerificationSecureByDefault) {
+    const auto cert_file = ssl_resource_path("cert.pem");
+    const auto key_file  = ssl_resource_path("key.pem");
+    std::ifstream cert_check(cert_file), key_check(key_file);
+    if (!cert_check.good() || !key_check.good()) {
+        GTEST_SKIP() << "SSL certificate/key not found, skipping";
+    }
+
+    async::init();
+    constexpr unsigned short kPort = 64388;
+
+    // Self-signed server.
+    qb::io::tcp::ssl::listener srv;
+    srv.init(ssl::create_server_context(TLS_server_method(),
+                                        cert_file.string(), key_file.string()));
+    ASSERT_TRUE(srv.ssl_handle());
+    ASSERT_EQ(srv.listen_v4(kPort), 0);
+
+    std::atomic<bool> stop{false};
+    std::thread acceptor([&] {
+        // Drive the TLS handshake for whichever client connects.
+        for (int i = 0; i < 400 && !stop.load(); ++i) {
+            qb::io::tcp::ssl::socket s;
+            if (srv.accept(s) == 0) {
+                for (int j = 0; j < 200; ++j) {
+                    if (s.do_handshake() != 0)
+                        break;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+
+    // 1) Default (verifying) client MUST fail against the self-signed cert.
+    int verify_ret;
+    {
+        qb::io::tcp::ssl::socket c;
+        verify_ret = c.connect_v4("127.0.0.1", kPort);
+    }
+    EXPECT_NE(verify_ret, 0)
+        << "secure-by-default client accepted a self-signed certificate (MITM hole)";
+
+    // 2) set_insecure() client MUST connect.
+    int insecure_ret;
+    {
+        qb::io::tcp::ssl::socket c;
+        c.set_insecure();
+        insecure_ret = c.connect_v4("127.0.0.1", kPort);
+    }
+    EXPECT_EQ(insecure_ret, 0) << "set_insecure() failed to opt out of verification";
+
+    stop = true;
+    acceptor.join();
 }
 #endif
 

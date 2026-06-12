@@ -142,6 +142,17 @@ public:
 struct cancellation_awaiter {
     cancellation_token token;
     std::coroutine_handle<> _handle;
+    // Shared liveness flag: the on_cancel callback outlives this awaiter inside
+    // the token's callback list. If the awaiting coroutine frame is destroyed
+    // while still suspended here (e.g. a when_any loser or scope cancellation),
+    // a later cancel() would otherwise call schedule_via_current() on a freed
+    // handle. The destructor clears the flag so the stale callback no-ops.
+    std::shared_ptr<bool> _alive = std::make_shared<bool>(true);
+
+    // Explicit constructor: the user-declared destructor below makes this type a
+    // non-aggregate, so the brace-init in check_cancelled() needs a constructor.
+    cancellation_awaiter(cancellation_token t, std::coroutine_handle<> h)
+        : token(std::move(t)), _handle(h) {}
 
     [[nodiscard]] bool await_ready() const {
         return token.is_cancelled();
@@ -149,11 +160,18 @@ struct cancellation_awaiter {
 
     void await_suspend(std::coroutine_handle<> h) {
         _handle = h;
-        token.on_cancel([h]() { schedule_via_current(h); });
+        auto alive = _alive;
+        token.on_cancel([h, alive]() {
+            if (*alive) schedule_via_current(h);
+        });
     }
 
     void await_resume() {
         token.throw_if_cancelled();
+    }
+
+    ~cancellation_awaiter() {
+        if (_alive) *_alive = false;
     }
 };
 
@@ -242,8 +260,19 @@ public:
         void await_suspend(std::coroutine_handle<> h) {
             state->continuation = h;
             coro_scheduler().spawn(task_runner(state));
-            if (throw_on_cancel)
-                token.on_cancel([h]() { schedule_via_current(h); });
+            if (throw_on_cancel) {
+                // Route the cancel wake-up through the shared task_done guard so
+                // it cannot double-resume (or resume a destroyed frame) after the
+                // task_runner path already completed. Capture the shared_state
+                // (outlives the awaiter), never a bare handle.
+                auto s = state;
+                token.on_cancel([s]() {
+                    if (!s->task_done) {
+                        s->task_done = true;
+                        if (s->continuation) schedule_via_current(s->continuation);
+                    }
+                });
+            }
         }
 
         T await_resume() {
@@ -321,8 +350,17 @@ public:
         void await_suspend(std::coroutine_handle<> h) {
             state->continuation = h;
             coro_scheduler().spawn(task_runner(state));
-            if (throw_on_cancel)
-                token.on_cancel([h]() { schedule_via_current(h); });
+            if (throw_on_cancel) {
+                // See the non-void specialization: guard the cancel wake-up with
+                // the shared task_done flag to avoid double-resume / use-after-free.
+                auto s = state;
+                token.on_cancel([s]() {
+                    if (!s->task_done) {
+                        s->task_done = true;
+                        if (s->continuation) schedule_via_current(s->continuation);
+                    }
+                });
+            }
         }
 
         void await_resume() {

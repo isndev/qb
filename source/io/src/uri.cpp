@@ -348,6 +348,7 @@ uri::uri(std::string &&str, int af) noexcept
 
 // Enhanced parsing implementation
 bool uri::parse() noexcept {
+    _valid = true;
     _scheme = {};
     _user_info = {};
     _host = {};
@@ -416,6 +417,7 @@ bool uri::parse() noexcept {
         // Authority continues until '/', '?', '#', or end of string
         while (p < p_end && *p != '/' && *p != '?' && *p != '#') {
             if (!is_authority_character(*p)) {
+                _valid = false;
                 return false; // Invalid authority character
             }
             p++;
@@ -458,6 +460,7 @@ bool uri::parse() noexcept {
                 }
                 
                 if (!ipv6_end) {
+                    _valid = false;
                     return false; // Unclosed IPv6 bracket
                 }
                 
@@ -470,6 +473,7 @@ bool uri::parse() noexcept {
                     // Validate port (must be all digits)
                     for (const char *digit = port_begin; digit < port_end; digit++) {
                         if (!is_digit(*digit)) {
+                            _valid = false;
                             return false; // Invalid port
                         }
                     }
@@ -518,6 +522,7 @@ bool uri::parse() noexcept {
         
         while (p < p_end && *p != '?' && *p != '#') {
             if (!is_path_character(*p)) {
+                _valid = false;
                 return false; // Invalid path character
             }
             p++;

@@ -22,6 +22,7 @@
 #include <ngtcp2/ngtcp2_crypto_ossl.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
+#include <openssl/x509v3.h> // X509_CHECK_FLAG_* for client hostname verification
 #endif
 
 namespace qb::io::quic {
@@ -611,14 +612,23 @@ private:
             return nullptr;
 
         ngtcp2_version_cid decoded{};
-        if (ngtcp2_pkt_decode_version_cid(
-                &decoded, reinterpret_cast<const uint8_t *>(datagram.payload.data()),
-                datagram.payload.size(), NGTCP2_MIN_INITIAL_DCIDLEN) == 0 ||
-            decoded.dcidlen > 0) {
+        const auto decode_rv = ngtcp2_pkt_decode_version_cid(
+            &decoded, reinterpret_cast<const uint8_t *>(datagram.payload.data()),
+            datagram.payload.size(), NGTCP2_MIN_INITIAL_DCIDLEN);
+        // Malformed packet: drop it. The previous `== 0 || dcidlen > 0` guard
+        // let undecodable datagrams fall through to a full connection-accept
+        // attempt — per-packet allocation cost an off-path attacker controls.
+        if (decode_rv != 0 && decode_rv != NGTCP2_ERR_VERSION_NEGOTIATION)
+            return nullptr;
+        if (decoded.dcidlen > 0) {
             auto it = _server_cid_index.find(cid_key(decoded.dcid, decoded.dcidlen));
             if (it != _server_cid_index.end())
                 return server_connection(it->second);
         }
+        // Unsupported version with no matching connection: drop rather than
+        // attempting to accept (Version Negotiation is not implemented yet).
+        if (decode_rv != 0)
+            return nullptr;
 
         if (_config.max_connections > 0 &&
             _server_connections.size() >= _config.max_connections) {
@@ -719,8 +729,16 @@ private:
         } else {
             if (ngtcp2_crypto_ossl_configure_client_session(_ssl) != 0)
                 throw std::runtime_error("ngtcp2 client TLS session configuration failed");
-            if (!tls.server_name.empty())
+            if (!tls.server_name.empty()) {
                 SSL_set_tlsext_host_name(_ssl, tls.server_name.c_str());
+                // Bind hostname verification: SSL_VERIFY_PEER validates the
+                // chain but, without this, accepts any CA-trusted certificate
+                // for any host (MITM). Match the cert against the server name.
+                if (tls.verify_peer) {
+                    SSL_set_hostflags(_ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+                    SSL_set1_host(_ssl, tls.server_name.c_str());
+                }
+            }
             SSL_set_alpn_protos(_ssl, _wire_alpn.data(),
                                 static_cast<unsigned int>(_wire_alpn.size()));
             SSL_set_connect_state(_ssl);

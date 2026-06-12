@@ -192,3 +192,38 @@ TEST(Compression, Deflate_All) {
     EXPECT_EQ(from.size(), uncompressed_pipe.size());
     EXPECT_EQ(from, std::string(uncompressed_pipe.begin(), uncompressed_pipe.size()));
 }
+
+// Decompression-bomb guard: a small input that expands beyond `max` must throw
+// instead of allocating unboundedly.
+TEST(Compression, DecompressionBombBoundedByMax) {
+    std::string original(4 * 1024 * 1024, '\0'); // 4 MiB, compresses tiny
+    std::string compressed = qb::gzip::compress(original.c_str(), original.size());
+    ASSERT_LT(compressed.size(), original.size());
+
+    // 64 KiB output budget → decompression MUST be rejected.
+    qb::allocator::pipe<char> out;
+    EXPECT_THROW(
+        qb::gzip::uncompress(out, compressed.c_str(), compressed.size(),
+                             static_cast<std::size_t>(64 * 1024)),
+        std::runtime_error);
+
+    // Generous budget → succeeds and round-trips.
+    qb::allocator::pipe<char> out_ok;
+    EXPECT_NO_THROW(qb::gzip::uncompress(out_ok, compressed.c_str(), compressed.size(),
+                                         static_cast<std::size_t>(8 * 1024 * 1024)));
+    EXPECT_EQ(out_ok.size(), original.size());
+}
+
+// Truncated stream must be rejected (no silent partial output).
+TEST(Compression, TruncatedStreamRejected) {
+    std::string original = qb::crypto::generate_random_string(
+        100000, qb::crypto::range_alpha_numeric_special);
+    std::string compressed = qb::gzip::compress(original.c_str(), original.size());
+    ASSERT_GT(compressed.size(), 16u);
+
+    // Lop off the tail: the stream can no longer reach Z_STREAM_END.
+    std::string truncated = compressed.substr(0, compressed.size() - 8);
+    qb::allocator::pipe<char> out;
+    EXPECT_THROW(qb::gzip::uncompress(out, truncated.c_str(), truncated.size()),
+                 std::runtime_error);
+}

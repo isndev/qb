@@ -136,6 +136,7 @@ public:
             if (_handle && !_handle.done()) {
                 _handle.resume();
             }
+            rethrow_if_failed();
             // Empty generator: coroutine runs to co_return, no yields → treat as end
             if (!_handle || _handle.done()) {
                 _handle = nullptr;
@@ -154,6 +155,7 @@ public:
             if (_handle && !_handle.done()) {
                 _handle.resume();
             }
+            rethrow_if_failed();
             if (!_handle || _handle.done()) {
                 _handle = nullptr;
             }
@@ -174,10 +176,24 @@ public:
                    && "generator::iterator operator-> on exhausted iterator");
             return &*_handle.promise().current_value;
         }
+
+    private:
+        // Surface a generator-body exception to the consuming loop instead of
+        // silently ending iteration (the previous behavior made a throwing
+        // generator indistinguishable from a normally exhausted one).
+        void rethrow_if_failed() {
+            if (_handle && _handle.promise().exception) {
+                auto ex  = _handle.promise().exception;
+                _handle  = nullptr; // iteration ends; do not resume a failed frame
+                std::rethrow_exception(ex);
+            }
+        }
     };
 
     iterator begin() {
-        if (_handle.done()) {
+        // Null check first: a moved-from generator has a null handle and
+        // calling done() on it is undefined behavior.
+        if (!_handle || _handle.done()) {
             return end();
         }
         return iterator{_handle};
@@ -199,22 +215,34 @@ public:
      * @return Optional value - empty if done
      */
     std::optional<T> next() {
-        if (!_handle || _handle.done()) {
+        if (!_handle) {
             return std::nullopt;
         }
 
+        // Exception check must come BEFORE the done() check: a generator that
+        // threw is also done(), and the previous order returned nullopt forever
+        // without ever surfacing the stored exception.
         if (_handle.promise().exception) {
             std::rethrow_exception(_handle.promise().exception);
+        }
+        if (_handle.done()) {
+            return std::nullopt;
         }
 
         // At initial_suspend we have no value yet; resume to first yield
         if (!_handle.promise().current_value.has_value()) {
             _handle.resume();
+            if (_handle.promise().exception)
+                std::rethrow_exception(_handle.promise().exception);
             if (_handle.done()) return std::nullopt;
         }
 
         auto result = _handle.promise().current_value;
-        _handle.resume();  // Advance past this yield so has_next() is false after last value
+        _handle.resume();  // Advance past this yield so has_next() is false after
+                           // the last value. If this resume throws into the
+                           // promise, the exception surfaces on the NEXT call
+                           // (top-of-function check) — the value produced here
+                           // is still legitimately delivered.
         return result;
     }
 };

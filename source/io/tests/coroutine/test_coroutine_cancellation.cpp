@@ -547,7 +547,7 @@ TEST_F(CancellationAdvancedTests, YieldOrCancelYieldsAndThrows) {
         }
         EXPECT_EQ(iterations, 4);
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -563,7 +563,7 @@ TEST_F(CancellationAdvancedTests, YieldOrCancelYieldsWithoutCancel) {
         }
         EXPECT_EQ(iterations, 5);
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -585,7 +585,7 @@ TEST_F(CancellationAdvancedTests, WithDeadlineAlreadyCancelledToken) {
         } catch (const cancelled_error&) {
         }
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }

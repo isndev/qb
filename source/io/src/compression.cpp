@@ -620,7 +620,8 @@ uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size
             "size arg is too large to fit into unsigned int type x2");
     }
 #endif
-    if (max && (size > max || (size * 2) > max)) {
+    // Overflow-safe budget check (2 * size without wrapping size_t).
+    if (max && size > max / 2) {
         inflateEnd(&inflate_s);
         throw std::runtime_error(
             "size may use more memory than intended when decompressing");
@@ -628,27 +629,35 @@ uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size
     inflate_s.avail_in                  = static_cast<unsigned int>(size);
     const std::size_t out_size          = output.size();
     std::size_t       size_uncompressed = 0;
+    int               ret               = Z_OK;
     do {
-        std::size_t resize_to = size_uncompressed + 2 * size;
-        if (max && resize_to > max) {
+        // chunk = 2*size; check size_uncompressed + chunk against the budget
+        // overflow-safe (decompression-bomb guard).
+        const std::size_t chunk = 2 * size;
+        if (max && (size_uncompressed > max || chunk > max - size_uncompressed)) {
             inflateEnd(&inflate_s);
             throw std::runtime_error("size of output string will use more memory then"
                                      "intended when decompressing");
         }
-        output.allocate_back(2 * size);
-        inflate_s.avail_out = static_cast<unsigned int>(2 * size);
+        output.allocate_back(chunk);
+        inflate_s.avail_out = static_cast<unsigned int>(chunk);
         inflate_s.next_out =
             reinterpret_cast<Bytef *>(output.begin() + out_size + size_uncompressed);
-        int ret = inflate(&inflate_s, Z_FINISH);
+        ret = inflate(&inflate_s, Z_FINISH);
         if (ret != Z_STREAM_END && ret != Z_OK && ret != Z_BUF_ERROR) {
-            std::string error_msg = inflate_s.msg;
+            // inflate_s.msg may be null; never construct std::string from nullptr.
+            std::string error_msg = inflate_s.msg ? inflate_s.msg : "inflate error";
             inflateEnd(&inflate_s);
             throw std::runtime_error(error_msg);
         }
 
-        size_uncompressed += (2 * size - inflate_s.avail_out);
+        size_uncompressed += (chunk - inflate_s.avail_out);
     } while (inflate_s.avail_out == 0);
     inflateEnd(&inflate_s);
+    // Reject truncated/incomplete streams instead of returning partial output.
+    if (ret != Z_STREAM_END) {
+        throw std::runtime_error("incomplete or truncated compressed stream");
+    }
     output.free_back(output.size() - (size_uncompressed + out_size));
     return size_uncompressed;
 }

@@ -323,7 +323,7 @@ TEST_F(RetryAdvancedTests, WithRetryUntilPredicateSuccess) {
         EXPECT_EQ(result, 3);
         EXPECT_EQ(call_count, 3);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -342,7 +342,7 @@ TEST_F(RetryAdvancedTests, WithRetryUntilExhaustsAttempts) {
             EXPECT_EQ(e.attempts(), 3u);
         }
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -362,7 +362,7 @@ TEST_F(RetryAdvancedTests, MakeRetryableWrapper) {
         EXPECT_EQ(result, 42);
         EXPECT_EQ(call_count, 3);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -377,7 +377,7 @@ TEST_F(RetryAdvancedTests, RetryDefaultPolicy) {
         });
         EXPECT_EQ(result, 99);
         done = true;
-    }());
+    });
     run_for(2000ms);
     EXPECT_TRUE(done);
 }
@@ -409,7 +409,7 @@ TEST_F(RetryAdvancedTests, RetryExhaustedAccessors) {
             }
         }
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }

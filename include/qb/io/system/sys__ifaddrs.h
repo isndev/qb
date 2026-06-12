@@ -830,17 +830,19 @@ calculate_address_netmask(struct ifaddrs *ifa, struct ifaddrmsg *net_address) {
                 return -1;
             }
             postfix_bytes = data_length - prefix_bytes;
+            /* First prefix_bytes bytes are all-ones. */
             memset(netmask_data, 0xFF, prefix_bytes);
+            /* Remaining bytes (including the partial boundary byte) start at zero. */
             if (postfix_bytes > 0)
-                memset(netmask_data + prefix_bytes + 1, 0x00, postfix_bytes);
-            // QB_LOGV(
-                "   calculating netmask, prefix length is %u bits (%u bytes), data length is %u bytes",
-                prefix_length, prefix_bytes, data_length);
-                if (prefix_bytes + 2 < data_length)
-                    /* Set the rest of the mask bits in the byte following the last 0xFF
-                     * value */
-                    netmask_data[prefix_bytes + 1] =
-                        static_cast<unsigned char>(0xff << (8 - (prefix_length % 8)));
+                memset(netmask_data + prefix_bytes, 0x00, postfix_bytes);
+            /* Set the partial mask byte straddling the prefix boundary, if any.
+             * Writes index prefix_bytes, which is in-bounds whenever there are
+             * leftover bits. The previous code wrote prefix_bytes + 1, which both
+             * mislocated the byte and overran the buffer by one byte when
+             * prefix_length was a multiple of 8 (postfix memset hit data_length). */
+            if ((prefix_length % 8) != 0 && prefix_bytes < data_length)
+                netmask_data[prefix_bytes] =
+                    static_cast<unsigned char>(0xff << (8 - (prefix_length % 8)));
         }
     }
 

@@ -150,9 +150,9 @@ TEST_F(TaskLifecycle, SpawnedTaskContinuesAfterHandleReleased) {
             completed_ptr->store(true);
             co_return;
         };
-        auto t = coro_fn();
-
-        coro_scheduler().spawn(std::move(t));
+        // Pass the callable (owned-callable overload): coro_fn dies at the
+        // end of this block while the coroutine keeps running afterwards.
+        coro_scheduler().spawn(coro_fn);
         run_for(20ms);
 
         EXPECT_TRUE(started);
@@ -309,8 +309,7 @@ TEST_F(ConcurrentExecution, MultipleCoroutinesComplete) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
 
     run_for(200ms);
@@ -338,8 +337,7 @@ TEST_F(ConcurrentExecution, ConcurrentTimersAllComplete) {
             completed_ptr->fetch_add(1, std::memory_order_relaxed);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
 
     run_for(500ms);

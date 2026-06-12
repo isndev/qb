@@ -302,7 +302,7 @@ TEST_F(SharedTaskAdvancedTests, NonDefaultConstructibleType) {
         auto result = co_await st;
         EXPECT_EQ(result.value, 42);
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -322,7 +322,7 @@ TEST_F(SharedTaskAdvancedTests, SharedTaskCopyAndValidState) {
         EXPECT_TRUE(st.is_ready());
         EXPECT_TRUE(st_copy.is_ready());
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }

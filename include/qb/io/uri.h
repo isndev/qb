@@ -180,6 +180,7 @@ is_fragment_character(int c) {
  */
 class uri {
     int              _af = AF_INET; /**< Address family (AF_INET, AF_INET6, AF_UNIX) */
+    bool             _valid = true; /**< Whether the last parse() succeeded (see is_valid()). */
     std::string      _source;       /**< Source string of the URI */
     std::string_view _scheme;       /**< URI scheme (e.g., http, https, ftp) */
     std::string_view _user_info;    /**< User information in the URI */
@@ -408,6 +409,18 @@ public:
     [[nodiscard]] inline auto
     af() const {
         return _af;
+    }
+
+    /**
+     * @brief Whether the source string parsed into a structurally valid URI.
+     * @return `false` if the last `parse()` rejected the input (invalid authority,
+     *         path or port character, or an unclosed IPv6 bracket); `true` otherwise.
+     * @note The constructors and assignment operators always run `parse()`; this
+     *       accessor lets callers detect a malformed URI without re-parsing.
+     */
+    [[nodiscard]] inline bool
+    is_valid() const noexcept {
+        return _valid;
     }
 
     /**

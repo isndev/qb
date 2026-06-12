@@ -230,8 +230,7 @@ TEST_F(CoroutineConcurrencySafety, SharedDataAccess) {
             counter_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(100ms);
@@ -495,8 +494,7 @@ TEST_F(CoroutineMemorySafety, ManySmallAllocations) {
             }
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(200ms);

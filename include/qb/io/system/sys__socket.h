@@ -485,8 +485,16 @@ public:
 #if defined(QB_ENABLE_UDS) && QB__HAS_UDS
     endpoint &
     as_un(const char *name) {
-        int n = snprintf(un_.sun_path, sizeof(un_.sun_path) - 1, "%s", name);
+        // zeroset() like every other as_*() mutator: udp::identity's hasher
+        // hashes the first len() bytes and relies on no stale bytes from a
+        // previously stored (longer) address remaining in the union.
+        this->zeroset();
+        int n = snprintf(un_.sun_path, sizeof(un_.sun_path), "%s", name);
         if (n > 0) {
+            // snprintf returns the WOULD-BE length: clamp to what actually fit
+            // so len() never points past the truncated, null-terminated path.
+            if (static_cast<size_t>(n) > sizeof(un_.sun_path) - 1)
+                n = static_cast<int>(sizeof(un_.sun_path) - 1);
             un_.sun_family = AF_UNIX;
             this->len(offsetof(struct sockaddr_un, sun_path) + n + 1);
         } else {
@@ -560,7 +568,11 @@ public:
      */
     std::string
     ip() const {
-        std::string ipstring(IN_MAX_ADDRSTRLEN - 1, '\0');
+        // Full IN_MAX_ADDRSTRLEN: inaddr_to_string hands inet_ntop a size of
+        // INET6_ADDRSTRLEN, so the backing buffer must be at least that large
+        // (the previous N-1 sizing allowed a one-byte overflow on the longest
+        // IPv6 representations).
+        std::string ipstring(IN_MAX_ADDRSTRLEN, '\0');
 
         auto str = inaddr_to_string(
             &ipstring.front(), [](const in_addr *) { return true; },
@@ -1508,10 +1520,28 @@ namespace std { // VS2013 the operator must be at namespace std
 inline bool
 operator<(const qb::io::inet::ip::endpoint &lhs,
           const qb::io::inet::ip::endpoint &rhs) { // apply operator < to operands
-    if (lhs.af() == AF_INET)
-        return (static_cast<uint64_t>(lhs.in4_.sin_addr.s_addr) + lhs.in4_.sin_port) <
-               (static_cast<uint64_t>(rhs.in4_.sin_addr.s_addr) + rhs.in4_.sin_port);
-    return ::memcmp(&lhs, &rhs, sizeof(rhs)) < 0;
+    // Strict weak ordering over the meaningful bytes. The previous IPv4 path
+    // compared `addr + port` as a sum, which collides (e.g. {addr+1, port}
+    // vs {addr, port+256}) and made distinct endpoints compare "equal" via
+    // the derived operator== — breaking any ordered container keyed on
+    // endpoint. The non-INET path compared sizeof(*this) bytes including
+    // storage past len(), which is unstable.
+    if (lhs.af() != rhs.af())
+        return lhs.af() < rhs.af();
+    if (lhs.af() == AF_INET) {
+        const auto la = lhs.in4_.sin_addr.s_addr;
+        const auto ra = rhs.in4_.sin_addr.s_addr;
+        if (la != ra)
+            return la < ra;
+        return lhs.in4_.sin_port < rhs.in4_.sin_port;
+    }
+    const auto   ll = static_cast<size_t>(lhs.len());
+    const auto   rl = static_cast<size_t>(rhs.len());
+    const size_t n  = ll < rl ? ll : rl;
+    const int    c  = ::memcmp(&lhs, &rhs, n);
+    if (c != 0)
+        return c < 0;
+    return ll < rl;
 }
 inline bool
 operator==(const qb::io::inet::ip::endpoint &lhs,

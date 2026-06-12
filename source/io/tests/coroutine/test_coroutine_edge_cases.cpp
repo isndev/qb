@@ -224,8 +224,7 @@ TEST_F(CoroutineTimingEdgeCases, VeryShortTimers) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(50ms);
@@ -254,8 +253,7 @@ TEST_F(CoroutineTimingEdgeCases, DISABLED_TimerOrdering) {
             completion_order_ptr->push_back(i);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(500ms);
@@ -309,8 +307,7 @@ TEST_F(CoroutineResourceExhaustion, ManyConcurrentTimers) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(200ms);
@@ -347,8 +344,7 @@ TEST_F(CoroutineResourceExhaustion, LargeDataInCoroutine) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(500ms);
@@ -510,8 +506,7 @@ TEST_F(CoroutineRandomBehavior, RandomSleepDurations) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(200ms);
@@ -540,8 +535,7 @@ TEST_F(CoroutineRandomBehavior, BurstySpawnPattern) {
                 completed_ptr->fetch_add(1);
                 co_return;
             };
-            auto t = coro_fn();
-            coro_scheduler().spawn(std::move(t));
+            coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
             total_spawned.fetch_add(1);
         }
         

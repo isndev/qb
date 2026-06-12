@@ -59,7 +59,7 @@ TEST_F(CoroutineSchedulerTests, DISABLED_SchedulerTracksInFlightCoroutines) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        sched.spawn(fn());
+        sched.spawn(fn);
     }
     
     // Should have 3 active (in ready queue or in-flight)
@@ -89,7 +89,7 @@ TEST_F(CoroutineSchedulerTests, ReadyQueueProcessesAllCoroutines) {
             count_ptr->fetch_add(1);
             co_return;
         };
-        coro_scheduler().spawn(fn());
+        coro_scheduler().spawn(fn);
     }
     
     run_for(10ms);
@@ -554,8 +554,7 @@ TEST_F(CoroutineSchedulerTests, TaskDestructionCancelsPendingOperation) {
             co_return;
         };
         
-        auto t = fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(fn); // owned-callable: closure outlived by coroutine
         run_for(20ms);
         
         EXPECT_TRUE(started.load());
@@ -625,7 +624,7 @@ TEST_F(CoroutineSchedulerTests, ManySpawnsStressReadyQueue) {
             co_await sleep(1ms);
             done++;
         };
-        coro_scheduler().spawn(fn());
+        coro_scheduler().spawn(fn);
     }
 
     run_for(500ms);
@@ -687,7 +686,7 @@ TEST_F(CoroutineSchedulerTests, TaskDoneReflectsCompletion) {
         auto val = co_await std::move(t);
         EXPECT_EQ(val, 42);
         done = true;
-    }());
+    });
     run_for(50ms);
     EXPECT_TRUE(done);
 }
@@ -721,7 +720,7 @@ TEST_F(CoroutineSchedulerTests, PendingCountAfterSpawn) {
     sched.spawn([&finished]() -> task<void> {
         co_await sleep(50ms);
         finished = true;
-    }());
+    });
 
     run_for(200ms);
     EXPECT_TRUE(finished.load());

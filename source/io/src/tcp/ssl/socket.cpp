@@ -481,6 +481,40 @@ apply_alpn_protocols(SSL *ssl_handle,
         == 0;
 }
 
+// Secure-by-default peer verification for the client SSL handle created by
+// qb-io. When `insecure` is false (the default), the handshake must validate
+// the server certificate chain (SSL_VERIFY_PEER, against the trust store loaded
+// on the SSL_CTX) and the certificate must match the target hostname/IP. When
+// `insecure` is true (set_insecure()), verification is turned off.
+void
+apply_client_peer_verification(SSL *ssl, const std::string &hostname,
+                               bool insecure) noexcept {
+    if (!ssl)
+        return;
+    if (insecure) {
+        SSL_set_verify(ssl, SSL_VERIFY_NONE, nullptr);
+        return;
+    }
+    // On a client, SSL_VERIFY_PEER makes OpenSSL abort the handshake when the
+    // certificate chain cannot be verified against the trust store.
+    SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr);
+    if (hostname.empty())
+        return; // chain-only verification (e.g. Unix-domain transport)
+    X509_VERIFY_PARAM *param = SSL_get0_param(ssl);
+    if (!param)
+        return;
+    X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+    unsigned char ip_buf[sizeof(struct in6_addr)];
+    if (inet_pton(AF_INET, hostname.c_str(), ip_buf) == 1 ||
+        inet_pton(AF_INET6, hostname.c_str(), ip_buf) == 1) {
+        // Literal IP target: match against the certificate's IP SANs.
+        X509_VERIFY_PARAM_set1_ip_asc(param, hostname.c_str());
+    } else {
+        // DNS name target: match against the certificate's CN / DNS SANs.
+        X509_VERIFY_PARAM_set1_host(param, hostname.c_str(), 0);
+    }
+}
+
 } // namespace
 
 socket::socket() noexcept
@@ -598,6 +632,12 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
         return ret;
     if (!_ssl_handle) {
         const auto ctx = SSL_CTX_new(TLS_client_method());
+        // Secure-by-default: load the system trust store so the auto-created
+        // client context can verify the server certificate chain. Opt out via
+        // set_insecure(). When the caller brings their own SSL via init(), this
+        // branch is skipped and they own the verification policy.
+        if (ctx && _verify_peer)
+            SSL_CTX_set_default_verify_paths(ctx);
         _ssl_handle.reset(SSL_new(ctx));
         if (!_ssl_handle) {
             SSL_CTX_free(ctx);
@@ -613,6 +653,9 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
         tcp::socket::disconnect();
         return SocketStatus::Error;
     }
+    // Secure-by-default: enable certificate-chain + hostname verification for
+    // the auto-created context (no-op once set_insecure() cleared _verify_peer).
+    apply_client_peer_verification(h_ssl, _pending_sni_hostname, !_verify_peer);
     SSL_set_connect_state(h_ssl);
     if (!qb::io::ssl::attach_socket(h_ssl, native_handle()))
         return SocketStatus::Error;
@@ -630,6 +673,12 @@ socket::connect(endpoint const &ep, std::string const &hostname,
         return ret;
     if (!_ssl_handle) {
         const auto ctx = SSL_CTX_new(TLS_client_method());
+        // Secure-by-default: load the system trust store so the auto-created
+        // client context can verify the server certificate chain. Opt out via
+        // set_insecure(). When the caller brings their own SSL via init(), this
+        // branch is skipped and they own the verification policy.
+        if (ctx && _verify_peer)
+            SSL_CTX_set_default_verify_paths(ctx);
         _ssl_handle.reset(SSL_new(ctx));
         if (!_ssl_handle) {
             SSL_CTX_free(ctx);
@@ -645,6 +694,9 @@ socket::connect(endpoint const &ep, std::string const &hostname,
         tcp::socket::disconnect();
         return SocketStatus::Error;
     }
+    // Secure-by-default: enable certificate-chain + hostname verification for
+    // the auto-created context (no-op once set_insecure() cleared _verify_peer).
+    apply_client_peer_verification(h_ssl, _pending_sni_hostname, !_verify_peer);
     SSL_set_connect_state(h_ssl);
     if (!qb::io::ssl::attach_socket(h_ssl, native_handle()))
         return SocketStatus::Error;
@@ -719,6 +771,12 @@ socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
         return ret;
     if (!_ssl_handle) {
         const auto ctx = SSL_CTX_new(TLS_client_method());
+        // Secure-by-default: load the system trust store so the auto-created
+        // client context can verify the server certificate chain. Opt out via
+        // set_insecure(). When the caller brings their own SSL via init(), this
+        // branch is skipped and they own the verification policy.
+        if (ctx && _verify_peer)
+            SSL_CTX_set_default_verify_paths(ctx);
         _ssl_handle.reset(SSL_new(ctx));
         if (!_ssl_handle) {
             SSL_CTX_free(ctx);
@@ -734,6 +792,9 @@ socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
         tcp::socket::disconnect();
         return SocketStatus::Error;
     }
+    // Secure-by-default: enable certificate-chain + hostname verification for
+    // the auto-created context (no-op once set_insecure() cleared _verify_peer).
+    apply_client_peer_verification(h_ssl, _pending_sni_hostname, !_verify_peer);
     SSL_set_connect_state(h_ssl);
 
     return ret;
@@ -1073,6 +1134,18 @@ bool socket::set_verify_depth(int depth) noexcept {
     if (!_ssl_handle) return false;
     SSL_set_verify_depth(_ssl_handle.get(), depth);
     return true; // SSL_set_verify_depth does not return a success/failure.
+}
+
+void socket::set_insecure() noexcept {
+    _verify_peer = false;
+    // If a handle already exists (e.g. user called init() before connecting),
+    // drop verification immediately so a subsequent handshake does not enforce it.
+    if (_ssl_handle)
+        SSL_set_verify(_ssl_handle.get(), SSL_VERIFY_NONE, nullptr);
+}
+
+bool socket::verify_peer() const noexcept {
+    return _verify_peer;
 }
 
 } // namespace qb::io::tcp::ssl

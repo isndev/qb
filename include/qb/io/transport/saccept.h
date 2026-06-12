@@ -70,11 +70,23 @@ public:
      * Attempts to accept a new secure connection. If successful, returns the
      * native handle of the accepted socket which can be used for
      * further secure communication.
+     *
+     * @note **Transient accept errors.** Mirrors `transport::accept::read()`:
+     *       a peer-aborted pending connection (`ECONNABORTED` / `EPROTO`) is
+     *       remapped to `EWOULDBLOCK` so the acceptor retries instead of
+     *       disposing the whole listening server.
      */
     std::size_t
     read() noexcept {
-        if (_io.accept(_accepted_io) == io::SocketStatus::Done)
+        const auto ret = _io.accept(_accepted_io);
+        if (ret == io::SocketStatus::Done)
             return static_cast<std::size_t>(_accepted_io.native_handle());
+        if (ret == ECONNABORTED
+#ifdef EPROTO
+            || ret == EPROTO
+#endif
+        )
+            qb::io::socket::set_last_errno(EWOULDBLOCK);
         return static_cast<std::size_t>(-1);
     }
 

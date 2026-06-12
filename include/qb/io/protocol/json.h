@@ -31,6 +31,58 @@
 namespace qb {
 namespace protocol {
 
+namespace detail {
+/**
+ * @brief Default maximum JSON nesting depth accepted by the json protocol.
+ * @details nlohmann::json's parser is recursive-descent: a payload made of
+ *          thousands of nested `[`/`{` exhausts the stack (DoS) before any
+ *          message-size limit applies. 512 is far above any sane document.
+ */
+inline constexpr std::size_t kJsonMaxNestingDepth = 512;
+
+/**
+ * @brief Linear, string-aware pre-scan that bounds JSON nesting depth.
+ * @return true when the maximum nesting depth stays within @p max_depth.
+ */
+inline bool
+json_depth_within(const char *data, std::size_t size,
+                  std::size_t max_depth) noexcept {
+    std::size_t depth = 0;
+    bool in_string = false;
+    bool escaped   = false;
+    for (std::size_t i = 0; i < size; ++i) {
+        const char c = data[i];
+        if (in_string) {
+            if (escaped)
+                escaped = false;
+            else if (c == '\\')
+                escaped = true;
+            else if (c == '"')
+                in_string = false;
+            continue;
+        }
+        switch (c) {
+            case '"':
+                in_string = true;
+                break;
+            case '{':
+            case '[':
+                if (++depth > max_depth)
+                    return false;
+                break;
+            case '}':
+            case ']':
+                if (depth)
+                    --depth;
+                break;
+            default:
+                break;
+        }
+    }
+    return true;
+}
+} // namespace detail
+
 /**
  * @class json
  * @ingroup Protocol
@@ -89,6 +141,13 @@ public:
     onMessage(std::size_t size) noexcept final {
         const auto parsed = this->shiftSize(size);
         const auto data   = this->_io.in().cbegin();
+        // DoS guard: nlohmann's recursive parser can blow the stack on deeply
+        // nested input; reject pathological nesting before parsing.
+        if (!detail::json_depth_within(data, parsed,
+                                       detail::kJsonMaxNestingDepth)) {
+            this->not_ok();
+            return;
+        }
         try {
             auto json = nlohmann::json::parse(std::string_view(data, parsed), nullptr, false);
             if (json.is_discarded()) {
