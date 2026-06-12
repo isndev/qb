@@ -89,8 +89,7 @@ TEST_F(CoroutineTimerAccuracy, DISABLED_MultipleTimersOrdering) {
             completion_order_ptr->push_back(i);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(200ms);
@@ -123,8 +122,7 @@ TEST_F(CoroutineTimerAccuracy, DISABLED_RapidTimerCreation) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(150ms);
@@ -163,7 +161,8 @@ TEST_F(CoroutineTimerAccuracy, TimerDestruction) {
         };
         auto t2 = coro_fn_2();
         
-        coro_scheduler().spawn(std::move(t2));
+        coro_scheduler().spawn(coro_fn_2); // owned-callable: closure dies at block end
+        (void)t2;
         // t1 goes out of scope here - should be cancelled
     }
     
@@ -263,8 +262,7 @@ TEST_F(CoroutineTimerBenchmark, DISABLED_TimerOverheadRelaxed) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(300ms);
@@ -332,8 +330,7 @@ TEST_F(CoroutineTimerBenchmark, DISABLED_ConcurrentTimersScalability) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(200ms);
@@ -377,8 +374,7 @@ TEST_F(CoroutineTimerEdgeCases, VeryShortTimers) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(100ms);
@@ -401,8 +397,7 @@ TEST_F(CoroutineTimerEdgeCases, MixedDurationTimers) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
     
     run_for(100ms);

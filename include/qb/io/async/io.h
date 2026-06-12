@@ -439,14 +439,17 @@ public:
     file_watcher() = default;
 
     /**
-     * @brief Constructor with an externally managed protocol.
-     * @param protocol Pointer to an existing protocol instance. This `file_watcher` will use it
-     *                 but not take ownership unless it's the same instance later set via `switch_protocol`
-     *                 which would then add it to `_protocol_list`.
-     *                 If ownership by `file_watcher` is desired from construction, prefer using `switch_protocol` after default construction.
+     * @brief Constructor with an initial protocol instance.
+     * @param protocol Pointer to an existing protocol instance. The watcher takes
+     *                 ownership and will delete it on destruction — the same
+     *                 contract as `input(IProtocol*)` / `io(IProtocol*)` (the
+     *                 previous non-owning behavior here was the lone exception
+     *                 and leaked the instance unless callers tracked it manually).
      */
-    file_watcher(IProtocol *protocol) noexcept
-        : _protocol(protocol) {}
+    file_watcher(IProtocol *protocol)
+        : _protocol(protocol) {
+        _protocol_list.push_back(std::unique_ptr<IProtocol>(protocol));
+    }
 
     /**
      * @brief Deleted copy constructor to prevent unintended copying of watcher state and resources.
@@ -549,15 +552,20 @@ public:
             // Check protocol validity before and during message processing
             if (unlikely(!this->_protocol->ok()))
                 return -1;
-            while ((ret = this->_protocol->getMessageSize()) > 0) {
-                if (unlikely(ret > _max_message_size)) {
+            // Use a separate variable for the framing loop: reusing `ret` here
+            // (previous code) left it at 0 after the inner loop, so the outer
+            // do/while never iterated and only one read() chunk was processed
+            // per file event — files larger than one read buffer stalled.
+            std::size_t msg_size = 0u;
+            while ((msg_size = this->_protocol->getMessageSize()) > 0) {
+                if (unlikely(msg_size > _max_message_size)) {
                     this->_protocol->not_ok();
                     return -1;
                 }
-                this->_protocol->onMessage(ret);
+                this->_protocol->onMessage(msg_size);
                 if (unlikely(!this->_protocol->ok()))
                     return -1;
-                Derived.flush(ret);
+                Derived.flush(msg_size);
             }
             Derived.eof();
             if constexpr (qb::has_on<_Derived, event::pending_read> ||
@@ -681,16 +689,10 @@ private:
      */
     void
     on(event::file const &event) {
-        //        int ret = 0u;
-
         // forward event to Derived if desired
         if constexpr (qb::has_on<_Derived, event::file>) {
             Derived.on(event);
         }
-
-        //        if (ret < 0) {
-        //            this->_async_event.stop();
-        //        }
     }
 };
 
@@ -1328,7 +1330,12 @@ private:
         }
     error:
 #ifdef _WIN32
-        if (qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
+        // Ignore a spurious would-block only when no explicit reason is pending.
+        // When _reason is set (user disconnect(), protocol error, DoS guard), the
+        // last WSA error is unrelated/stale — letting it suppress dispose() would
+        // silently drop the disconnection and leave a zombie session.
+        if (!_reason &&
+            qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
             return;
 #endif
         if (!_reason)
@@ -1810,7 +1817,12 @@ private:
         }
     error:
 #ifdef _WIN32
-        if (qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
+        // Ignore a spurious would-block only when no explicit reason is pending.
+        // When _reason is set (user disconnect(), protocol error, DoS guard), the
+        // last WSA error is unrelated/stale — letting it suppress dispose() would
+        // silently drop the disconnection and leave a zombie session.
+        if (!_reason &&
+            qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
             return;
 #endif
         if (!_reason)
@@ -2641,7 +2653,12 @@ private:
             return;
     error:
 #ifdef _WIN32
-        if (qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
+        // Ignore a spurious would-block only when no explicit reason is pending.
+        // When _reason is set (user disconnect(), protocol error, DoS guard), the
+        // last WSA error is unrelated/stale — letting it suppress dispose() would
+        // silently drop the disconnection and leave a zombie session.
+        if (!_reason &&
+            qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
             return;
 #endif
         if (!_reason)

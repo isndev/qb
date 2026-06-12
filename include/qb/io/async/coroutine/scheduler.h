@@ -173,7 +173,12 @@ public:
         while (!ready_queue_.empty()) {
             ready_item item = ready_queue_.front();
             ready_queue_.pop_front();
-            if (item.handle && !item.handle.done()) {
+            // Only destroy frames the scheduler owns (spawned). Non-owned
+            // entries are continuations whose frame is owned by a task<T>
+            // object elsewhere — destroying them here would double-free when
+            // that task's destructor runs later. Leaking a queued continuation
+            // at teardown is strictly safer.
+            if (item.owned && item.handle && !item.handle.done()) {
                 QB_SCHED_TRACE("  destroy ready handle=%p owned=%d", (void*)item.handle.address(), item.owned);
                 item.handle.destroy();
             }

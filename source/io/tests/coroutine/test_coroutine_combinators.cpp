@@ -714,7 +714,7 @@ TEST_F(WhenAnyResultTests, GetExtractsTypedValue) {
         EXPECT_EQ(val, 42);
         EXPECT_EQ(result.index, 0u);
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -729,7 +729,7 @@ TEST_F(WhenAnyResultTests, HasExceptionReflectsState) {
         EXPECT_TRUE(result.has_exception());
         EXPECT_THROW(result.get<int>(), std::runtime_error);
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -743,7 +743,7 @@ TEST_F(WhenAnyResultTests, HasExceptionFalseOnSuccess) {
         );
         EXPECT_FALSE(result.has_exception());
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -759,7 +759,7 @@ TEST_F(WhenAnyResultTests, StructuredBindingDecomposition) {
         EXPECT_EQ(idx, 0u);
         EXPECT_EQ(std::any_cast<int>(val), 7);
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -777,7 +777,7 @@ TEST_F(WhenAnyResultTests, WhenAllWithExceptionPropagation) {
             EXPECT_STREQ(e.what(), "fail");
         }
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }

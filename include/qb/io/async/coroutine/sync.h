@@ -89,6 +89,7 @@ public:
         [[nodiscard]] bool await_ready() noexcept {
             if (sem._available > 0) {
                 --sem._available;
+                ++sem._held;
                 _completed = true;
                 return true;
             }
@@ -102,6 +103,7 @@ public:
             // it here. Otherwise queue.
             if (sem._available > 0) {
                 --sem._available;
+                ++sem._held;
                 _completed = true;
                 schedule_via_current(h);
             } else {
@@ -126,6 +128,7 @@ public:
     bool try_acquire() {
         if (_available > 0) {
             --_available;
+            ++_held;
             return true;
         }
         return false;
@@ -135,15 +138,23 @@ public:
      * @brief Release a permit
      *
      * If a waiter is queued, transfer the permit directly to it (no increment).
-     * Otherwise cap at _permits to guard against accidental over-release.
+     * Over-release (calling release() without a matching acquire) is a no-op:
+     * previously, a spurious release() while waiters were queued woke a waiter
+     * with a phantom permit, breaking the permit invariant.
      */
     void release() {
+        if (_held == 0)
+            return; // over-release: nothing is actually held
         if (!_waiters.empty()) {
             auto h = _waiters.front();
             _waiters.pop_front();
+            // Direct hand-off: the permit transfers holder-to-holder, _held
+            // stays constant (one releases, the woken waiter now holds it).
             schedule_via_current(h);
-        } else if (_available < _permits) {
-            ++_available;
+        } else {
+            --_held;
+            if (_available < _permits)
+                ++_available;
         }
     }
 
@@ -201,6 +212,7 @@ public:
 private:
     size_t _permits;
     size_t _available;
+    size_t _held = 0; /**< Permits currently held by acquirers (over-release guard). */
     std::deque<std::coroutine_handle<>> _waiters;
 };
 
@@ -444,6 +456,10 @@ public:
     }
 
     void unlock_read() {
+        assert(_readers > 0 &&
+               "async_rw_lock::unlock_read called with no read lock held");
+        if (_readers == 0)
+            return; // release build: ignore instead of size_t underflow
         --_readers;
         if (_readers == 0 && !_write_waiters.empty()) {
             auto h = _write_waiters.front();
@@ -454,6 +470,8 @@ public:
     }
 
     void unlock_write() {
+        assert(_write_locked &&
+               "async_rw_lock::unlock_write called with no write lock held");
         _write_locked = false;
         // Prefer pending readers; fall back to the next writer.
         if (!_read_waiters.empty()) {

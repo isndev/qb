@@ -70,11 +70,26 @@ public:
      * Attempts to accept a new connection. If successful, returns the
      * native handle of the accepted socket which can be used for
      * further communication.
+     *
+     * @note **Transient accept errors.** A connection aborted by the peer
+     *       between the kernel queueing it and accept() picking it up surfaces
+     *       as `ECONNABORTED` (or `EPROTO` on some platforms). That is not a
+     *       listener failure: it is remapped to `EWOULDBLOCK` so the async
+     *       accept loop retries on the next readiness event instead of
+     *       disposing the acceptor — which previously took the whole server
+     *       down for one aborted handshake.
      */
     std::size_t
     read() noexcept {
-        if (_io.accept(_accepted_io) == io::SocketStatus::Done)
+        const auto ret = _io.accept(_accepted_io);
+        if (ret == io::SocketStatus::Done)
             return static_cast<std::size_t>(_accepted_io.native_handle());
+        if (ret == ECONNABORTED
+#ifdef EPROTO
+            || ret == EPROTO
+#endif
+        )
+            qb::io::socket::set_last_errno(EWOULDBLOCK);
         return static_cast<std::size_t>(-1);
     }
 

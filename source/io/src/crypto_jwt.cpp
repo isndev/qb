@@ -438,18 +438,21 @@ jwt::ValidationResult jwt::verify(const std::string& token, const VerifyOptions&
         int64_t current_time = current_timestamp();
         int64_t skew = options.clock_skew.count();
         
-        // Verify expiration time
+        // Verify expiration time.
+        // Keep the +/- skew arithmetic on current_time (a bounded wall-clock
+        // value), never on the token-supplied claim: `exp + skew` overflows
+        // int64 (signed UB) for extreme claim values.
         if (options.verify_expiration && payload_json.contains("exp")) {
             int64_t exp = std::stoll(payload_json["exp"].get<std::string>());
-            if (current_time > exp + skew) {
+            if (current_time - skew > exp) {
                 return ValidationResult(ValidationError::TOKEN_EXPIRED);
             }
         }
-        
-        // Verify not before time
+
+        // Verify not before time (same overflow-safe form as above).
         if (options.verify_not_before && payload_json.contains("nbf")) {
             int64_t nbf = std::stoll(payload_json["nbf"].get<std::string>());
-            if (current_time < nbf - skew) {
+            if (current_time + skew < nbf) {
                 return ValidationResult(ValidationError::TOKEN_NOT_ACTIVE);
             }
         }

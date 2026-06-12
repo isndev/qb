@@ -26,6 +26,7 @@
 #include <gtest/gtest.h>
 #include <qb/io/tcp/listener.h>
 #include <qb/io/udp/socket.h>
+#include <qb/io/protocol/json.h>
 #include <qb/io/async.h>
 #include <qb/io/async/coroutine.h>
 #include <qb/io/async/tcp/connector.h>
@@ -1215,4 +1216,53 @@ TEST(URIRobustness, LongURIStress) {
     EXPECT_EQ(u.query("key0"), "value0");
     EXPECT_EQ(u.query("key99"), "value99");
     EXPECT_EQ(u.query("key199"), "value199");
+}
+
+// is_valid() must report structural parse failures the constructor swallows.
+TEST(URIRobustness, IsValidReportsParseFailures) {
+    // Well-formed URIs are valid.
+    EXPECT_TRUE(qb::io::uri("https://host:8080/path?a=b").is_valid());
+    EXPECT_TRUE(qb::io::uri("unix://name.sock/svc").is_valid());
+    EXPECT_TRUE(qb::io::uri("").is_valid()); // empty → path "/", still valid
+
+    // Unclosed IPv6 bracket → invalid.
+    EXPECT_FALSE(qb::io::uri("http://[::1/path").is_valid());
+    // Control character in the path → invalid.
+    EXPECT_FALSE(qb::io::uri(std::string("http://host/pa\x01th")).is_valid());
+
+    // Validity is recomputed on assignment (no stale state).
+    qb::io::uri u("http://[::1/bad");
+    EXPECT_FALSE(u.is_valid());
+    u = std::string("http://good/path");
+    EXPECT_TRUE(u.is_valid());
+}
+
+// JSON protocol DoS guard: pathologically nested input is rejected before the
+// recursive parser can blow the stack. String-aware so brackets inside strings
+// do not count toward depth.
+TEST(JsonProtocol, DepthGuard) {
+    using qb::protocol::detail::json_depth_within;
+    constexpr std::size_t kMax = qb::protocol::detail::kJsonMaxNestingDepth;
+
+    // Reasonable nesting passes.
+    std::string ok = R"({"a":{"b":[1,2,{"c":3}]}})";
+    EXPECT_TRUE(json_depth_within(ok.data(), ok.size(), kMax));
+
+    // Brackets inside strings must NOT count toward depth.
+    std::string in_string = R"({"k":"[[[[[[[[[[ not real nesting ]]]]]]]]]]"})";
+    EXPECT_TRUE(json_depth_within(in_string.data(), in_string.size(), 4));
+
+    // Escaped quote inside a string keeps the scanner in-string.
+    std::string esc = R"({"k":"a\"[[[[[[ b"})";
+    EXPECT_TRUE(json_depth_within(esc.data(), esc.size(), 2));
+
+    // Pathological nesting beyond the limit is rejected.
+    std::string bomb(kMax + 5, '[');
+    EXPECT_FALSE(json_depth_within(bomb.data(), bomb.size(), kMax));
+
+    // Exactly at the limit is accepted; one over is not.
+    std::string at_limit(kMax, '[');
+    EXPECT_TRUE(json_depth_within(at_limit.data(), at_limit.size(), kMax));
+    std::string over(kMax + 1, '[');
+    EXPECT_FALSE(json_depth_within(over.data(), over.size(), kMax));
 }

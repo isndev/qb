@@ -671,7 +671,7 @@ TEST_F(ChannelAdvancedTests, MPSCMultipleSenders) {
             EXPECT_EQ(received[i], i);
         }
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -686,7 +686,7 @@ TEST_F(ChannelAdvancedTests, SendForSuccessPath) {
         EXPECT_TRUE(v.has_value());
         if (v.has_value()) EXPECT_EQ(*v, 42);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -709,7 +709,7 @@ TEST_F(ChannelAdvancedTests, RecvDrainsBufferOnClose) {
         EXPECT_EQ(*v2, 20);
         EXPECT_FALSE(v3.has_value());
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }

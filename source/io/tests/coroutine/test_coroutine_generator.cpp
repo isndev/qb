@@ -538,7 +538,7 @@ TEST_F(GeneratorAdvancedTests, AsyncGeneratorMoveSemantics) {
         auto result = co_await ag_collect(std::move(gen2));
         EXPECT_EQ(result.size(), 3u);
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }

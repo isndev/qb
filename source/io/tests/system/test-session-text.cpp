@@ -285,6 +285,9 @@ TEST(Session, COMMAND_OVER_SECURE_TCP) {
         for (auto i = 0uz; i < NB_CLIENTS; ++i) {
             msg_count_client_side = 0;
             TestSecureClient client;
+            // Self-signed test certificate on 127.0.0.1: opt out of the
+            // secure-by-default peer verification for this local fixture.
+            client.transport().set_insecure();
             if (SocketStatus::Done !=
                 client.transport().connect_v4("127.0.0.1", COMMAND_SECURE_TCP_PORT)) {
                 throw std::runtime_error("could not connect");
@@ -328,6 +331,9 @@ TEST(Session, COMMAND_OVER_SECURE_UTCP) {
         for (auto i = 0uz; i < NB_CLIENTS; ++i) {
             msg_count_client_side = 0;
             TestSecureClient client;
+            // Self-signed test certificate over a Unix-domain socket: opt out
+            // of the secure-by-default peer verification for this local fixture.
+            client.transport().set_insecure();
             if (SocketStatus::Done != client.transport().connect_un(UNIX_SOCK_PATH)) {
                 throw std::runtime_error("could not connect");
             }

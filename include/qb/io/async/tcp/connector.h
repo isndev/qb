@@ -92,6 +92,8 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
     uri          remote_;  /**< URI of the remote endpoint */
     /** Absolute libev time `ev_time() + timeout` when `timeout > 0`; else `0` (no deadline). */
     const double deadline_;
+    /** When false, disable TLS peer verification on a secure socket (opt-out). */
+    bool         verify_peer_{true};
 
     bool                     completed_{false};
     bool                     deadline_armed_{false};
@@ -179,10 +181,11 @@ public:
      * @param timeout_sec Connection deadline in seconds from construction (`ev_time()`);
      *                    `0` means no deadline timer (wait indefinitely for writability).
      */
-    connector(Func_ &&func, uri remote, double timeout_sec)
+    connector(Func_ &&func, uri remote, double timeout_sec, bool verify_peer = true)
         : func_(std::forward<Func_>(func))
         , remote_(std::move(remote))
-        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.) {}
+        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
+        , verify_peer_(verify_peer) {}
 
     /**
      * @brief Constructs a connector with an existing socket (does not connect yet).
@@ -190,12 +193,15 @@ public:
      * @param existing Socket to use (moved from)
      * @param remote Remote URI
      * @param timeout_sec Same semantics as the other constructor
+     * @param verify_peer When false, disables TLS peer verification (secure sockets only).
      */
-    connector(Func_ &&func, Socket_ &&existing, uri remote, double timeout_sec)
+    connector(Func_ &&func, Socket_ &&existing, uri remote, double timeout_sec,
+              bool verify_peer = true)
         : func_(std::forward<Func_>(func))
         , socket_(std::move(existing))
         , remote_(std::move(remote))
-        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.) {}
+        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
+        , verify_peer_(verify_peer) {}
 
     /**
      * @brief Runs `n_connect` and either completes immediately or registers `EV_WRITE`
@@ -204,6 +210,12 @@ public:
     void
     run() {
         LOG_DEBUG("Started async connect to " << remote_.source());
+        // Apply the TLS verification policy before the (non-blocking) connect so
+        // it is in effect when the handshake starts. No-op for plain sockets.
+        if constexpr (requires { socket_.set_insecure(); }) {
+            if (!verify_peer_)
+                socket_.set_insecure();
+        }
         auto ret = socket_.n_connect(remote_);
         if (!ret) {
             switch (finalize_transport_connect()) {
@@ -311,12 +323,15 @@ public:
  * @param remote URI of the remote endpoint to connect to
  * @param func Callback function to call when connection completes
  * @param timeout Connection timeout in seconds (`0` = no deadline, same as before)
+ * @param verify_peer For secure transports, whether to verify the server
+ *                    certificate chain + hostname (default `true`, secure).
+ *                    Pass `false` only for trusted/self-signed channels.
  */
 template <typename Socket_, typename Func_>
 void
-connect(uri const &remote, Func_ &&func, double timeout = 0.) {
+connect(uri const &remote, Func_ &&func, double timeout = 0., bool verify_peer = true) {
     auto op = std::make_shared<connector<Socket_, Func_>>(
-        std::forward<Func_>(func), remote, timeout);
+        std::forward<Func_>(func), remote, timeout, verify_peer);
     LOG_DEBUG("Connector: Initializing for " << remote.source());
     op->run();
 }
@@ -336,9 +351,10 @@ connect(uri const &remote, Func_ &&func, double timeout = 0.) {
  */
 template <typename Socket_, typename Func_>
 void
-connect(Socket_&& existing_socket, uri const &remote, Func_ &&func, double timeout = 0.) {
+connect(Socket_&& existing_socket, uri const &remote, Func_ &&func, double timeout = 0.,
+        bool verify_peer = true) {
     auto op = std::make_shared<connector<Socket_, Func_>>(
-        std::forward<Func_>(func), std::move(existing_socket), remote, timeout);
+        std::forward<Func_>(func), std::move(existing_socket), remote, timeout, verify_peer);
     LOG_DEBUG("Connector: Initializing with existing socket for " << remote.source());
     op->run();
 }
@@ -392,13 +408,16 @@ class connect_awaiter {
 
     uri _remote;
     std::chrono::milliseconds _timeout;
+    bool _verify_peer{true};
     std::shared_ptr<state_t> _state{std::make_shared<state_t>()};
 
 public:
     explicit connect_awaiter(uri remote,
-                             std::chrono::milliseconds timeout = std::chrono::milliseconds{0})
+                             std::chrono::milliseconds timeout = std::chrono::milliseconds{0},
+                             bool verify_peer = true)
         : _remote(std::move(remote))
-        , _timeout(timeout) {}
+        , _timeout(timeout)
+        , _verify_peer(verify_peer) {}
 
     [[nodiscard]] bool await_ready() const noexcept { return _state->ready; }
 
@@ -423,7 +442,7 @@ public:
             if (state->scheduler && state->handle) {
                 state->scheduler->schedule_resume(state->handle);
             }
-        }, timeout_sec);
+        }, timeout_sec, _verify_peer);
     }
 
     [[nodiscard]] std::optional<Socket_> await_resume() {
@@ -448,9 +467,10 @@ public:
  */
 template <typename Transport = qb::io::transport::tcp>
 [[nodiscard]] auto connect(uri remote,
-                           std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) {
+                           std::chrono::milliseconds timeout = std::chrono::milliseconds{0},
+                           bool verify_peer = true) {
     using socket_type = typename Transport::transport_io_type;
-    return connect_awaiter<socket_type>{std::move(remote), timeout};
+    return connect_awaiter<socket_type>{std::move(remote), timeout, verify_peer};
 }
 
 /**

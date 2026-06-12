@@ -81,6 +81,12 @@ crypto::hkdf(const std::vector<unsigned char> &input_key_material,
     std::vector<unsigned char> temp;
 
     size_t digest_len = EVP_MD_size(md);
+    // RFC 5869: L must be <= 255 * HashLen — the block counter is a single
+    // byte; beyond 255 blocks it would wrap and silently repeat key stream.
+    if (output_length > 255 * digest_len) {
+        throw std::runtime_error(
+            "HKDF output_length exceeds RFC 5869 limit (255 * HashLen)");
+    }
     size_t n = (output_length + digest_len - 1) / digest_len; // Ceiling division
 
     for (auto i = 1uz; i <= n; ++i) {
@@ -603,12 +609,16 @@ crypto::decrypt_with_metadata(const std::string                &ciphertext,
             base64_decode(input["ciphertext"].get<std::string>());
         std::string metadata = input["metadata"].get<std::string>();
 
-        // Check algorithm if specified
+        // Algorithm is authoritatively the caller-supplied one. The "alg" field
+        // lives in the unauthenticated JSON envelope (only "metadata" is bound as
+        // AAD), so an attacker can flip it — e.g. to an unauthenticated mode like
+        // CBC — and bypass integrity. Never let the ciphertext dictate the
+        // algorithm: reject on mismatch instead of switching.
         if (input.contains("alg")) {
             SymmetricAlgorithm stored_alg =
                 static_cast<SymmetricAlgorithm>(input["alg"].get<int>());
             if (stored_alg != algorithm) {
-                algorithm = stored_alg; // Use the algorithm specified in the ciphertext
+                return std::nullopt; // envelope algorithm disagrees with expected
             }
         }
 

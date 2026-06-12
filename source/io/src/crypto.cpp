@@ -302,11 +302,17 @@ std::string
 crypto::pbkdf2(const std::string &password, const std::string &salt, int iterations,
                int key_size) noexcept {
     std::string key;
+    if (key_size <= 0)
+        return key;
     key.resize(static_cast<std::size_t>(key_size));
-    PKCS5_PBKDF2_HMAC_SHA1(password.c_str(), static_cast<int>(password.size()),
-                           reinterpret_cast<const unsigned char *>(salt.c_str()),
-                           static_cast<int>(salt.size()), iterations, key_size,
-                           reinterpret_cast<unsigned char *>(&key[0]));
+    // Check the return value: on failure the buffer would be returned
+    // uninitialized and silently used as key material.
+    if (PKCS5_PBKDF2_HMAC_SHA1(password.c_str(), static_cast<int>(password.size()),
+                               reinterpret_cast<const unsigned char *>(salt.c_str()),
+                               static_cast<int>(salt.size()), iterations, key_size,
+                               reinterpret_cast<unsigned char *>(&key[0])) != 1) {
+        key.clear(); // empty result signals failure (noexcept contract)
+    }
     return key;
 }
 

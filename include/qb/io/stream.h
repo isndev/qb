@@ -120,8 +120,10 @@ public:
     /**
      * @brief Set the maximum allowed size for the input buffer
      * @param size Maximum buffer size in bytes, or -1 (SIZE_MAX) for unlimited
-     * @note Setting this to -1 (SIZE_MAX) disables the limit (default).
-     *       This is a security-critical setting that prevents DoS attacks via buffer exhaustion.
+     * @note The default is `QB_MAX_READ_BUFFER_SIZE` (200 MB). Setting -1
+     *       (SIZE_MAX) disables the limit entirely — not recommended for
+     *       network-facing components. This is a security-critical setting
+     *       that prevents DoS attacks via buffer exhaustion.
      */
     void
     set_max_read_buffer_size(std::size_t size) noexcept {
@@ -465,8 +467,10 @@ public:
     /**
      * @brief Set the maximum allowed size for the output buffer
      * @param size Maximum buffer size in bytes, or -1 (SIZE_MAX) for unlimited
-     * @note Setting this to -1 (SIZE_MAX) disables the limit (default).
-     *       This is a security-critical setting that prevents DoS attacks via buffer exhaustion.
+     * @note The default is `QB_MAX_WRITE_BUFFER_SIZE` (200 MB). Setting -1
+     *       (SIZE_MAX) disables the limit entirely — not recommended for
+     *       network-facing components. This is a security-critical setting
+     *       that prevents DoS attacks via buffer exhaustion.
      */
     void
     set_max_write_buffer_size(std::size_t size) noexcept {

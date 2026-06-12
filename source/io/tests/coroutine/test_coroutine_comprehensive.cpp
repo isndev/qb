@@ -135,8 +135,9 @@ TEST_F(CoroutineLifecycle, MultipleCoroutinesExecuteIndependently) {
             ptr->fetch_add(1);
             co_return;
         };
-        auto t = fn();
-        coro_scheduler().spawn(std::move(t));
+        // Owned-callable overload: fn dies each loop iteration while the
+        // coroutine only runs later under run_for().
+        coro_scheduler().spawn(fn);
     }
 
     run_for(100ms);
@@ -159,9 +160,7 @@ TEST_F(CoroutineLifecycle, CoroutineDestructionCancelsOperation) {
             completed_ptr->store(true);
             co_return;
         };
-        auto t = fn();
-
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(fn); // owned-callable: closure dies before resume
         run_for(20ms);
 
         EXPECT_TRUE(started);
@@ -262,8 +261,7 @@ TEST_F(CoroutineTimers, ConcurrentTimersCompleteInOrder) {
             co_await sleep(std::chrono::milliseconds((num_timers - i) * 10));
             completed_count_ptr->fetch_add(1);
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
 
     run_for(500ms);
@@ -417,8 +415,7 @@ TEST_F(CoroutineComposition, MultipleParallelCoroutines) {
             co_await sleep(20ms);
             completed_ptr->fetch_add(1);
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
 
     run_for(100ms);
@@ -600,8 +597,7 @@ TEST_F(CoroutineEdgeCases, ManyConcurrentCoroutines) {
             co_await sleep(20ms);
             completed_ptr->fetch_add(1);
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
 
     run_for(100ms);
@@ -893,8 +889,7 @@ TEST_F(CoroutinePerformance, SpawnManyCoroutines) {
             completed_ptr->fetch_add(1);
             co_return;
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
 
     run_for(10ms);
@@ -924,8 +919,7 @@ TEST_F(CoroutinePerformance, CoroutineOverheadAcceptable) {
             co_await sleep(1ms);
             counter_ptr->fetch_add(1);
         };
-        auto t = coro_fn();
-        coro_scheduler().spawn(std::move(t));
+        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
     }
 
     run_for(200ms);
@@ -957,8 +951,7 @@ TEST_F(CoroutinePerformance, MemoryStabilityUnderLoad) {
                 co_await sleep(5ms);
                 completed_ptr->fetch_add(1);
             };
-            auto t = coro_fn();
-            coro_scheduler().spawn(std::move(t));
+            coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
         }
 
         EXPECT_TRUE(wait_until([&completed]() { return completed.load() == per_batch; },

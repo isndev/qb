@@ -149,6 +149,26 @@ public:
         channel& ch;
         T value;
         bool _completed = false;
+        std::coroutine_handle<> _parked{}; ///< set when queued in _send_waiters
+
+        // Explicit constructor: the user-declared destructor below makes this
+        // a non-aggregate, so send() needs a constructor for brace-init.
+        send_awaiter(channel& c, T v) : ch(c), value(std::move(v)) {}
+
+        // If this sender is still parked when its coroutine frame is destroyed,
+        // remove its entry from _send_waiters so a later wake_one_sender()/close()
+        // cannot schedule_via_current() a dangling handle (use-after-free).
+        ~send_awaiter() {
+            if (!_parked)
+                return;
+            auto& w = ch._send_waiters;
+            for (auto it = w.begin(); it != w.end(); ++it) {
+                if (it->handle == _parked) {
+                    w.erase(it);
+                    break;
+                }
+            }
+        }
 
         // No lock: single-thread cooperative — state is stable between
         // await_ready() and await_suspend() (no other coroutine can run).
@@ -226,6 +246,7 @@ public:
                 _completed = true;
                 schedule_via_current(h);
             } else {
+                _parked = h;
                 ch._send_waiters.push_back({h, nullptr});
             }
         }
@@ -273,6 +294,25 @@ public:
     struct recv_awaiter {
         channel& ch;
         std::optional<T> _result;
+
+        // Explicit constructor: the user-declared destructor below makes this a
+        // non-aggregate, so recv() needs a constructor for brace-init.
+        recv_awaiter(channel& c, std::optional<T> r)
+            : ch(c), _result(std::move(r)) {}
+
+        // If this receiver is still parked when its coroutine frame is destroyed
+        // (e.g. scheduler teardown / a cancelled parent), remove its entry from
+        // _recv_waiters so a later send()/try_send() cannot write through the
+        // now-dangling &_result into freed memory (use-after-free).
+        ~recv_awaiter() {
+            auto& w = ch._recv_waiters;
+            for (auto it = w.begin(); it != w.end(); ++it) {
+                if (it->second == &_result) {
+                    w.erase(it);
+                    break;
+                }
+            }
+        }
 
         [[nodiscard]] bool await_ready() {
             if (!ch._buffer.empty()) {
@@ -459,6 +499,22 @@ public:
             std::shared_ptr<channel_select_state> state;
             std::chrono::milliseconds timeout_ms;
 
+            timed_recv_awaiter(channel<T>& c,
+                               std::shared_ptr<channel_select_state> s,
+                               std::chrono::milliseconds t)
+                : ch(c), state(std::move(s)), timeout_ms(t) {}
+
+            // Frame-destruction guard: this awaiter lives inside the recv_for
+            // coroutine frame. If that frame is destroyed while parked, mark the
+            // shared state resolved so neither channel_timer nor a later sender
+            // schedules the now-dangling handle.
+            ~timed_recv_awaiter() {
+                if (state && !state->resolved) {
+                    state->resolved = true;
+                    state->outer    = {};
+                }
+            }
+
             [[nodiscard]] bool await_ready() const noexcept { return state->resolved; }
 
             void await_suspend(std::coroutine_handle<> h) {
@@ -505,6 +561,21 @@ public:
             std::shared_ptr<bool> guard;
             std::shared_ptr<bool> fired;
             std::chrono::milliseconds timeout_ms;
+            bool _resumed = false;
+
+            timed_send_awaiter(channel<T>& c, T v, std::shared_ptr<bool> g,
+                               std::shared_ptr<bool> f, std::chrono::milliseconds t)
+                : ch(c), val(std::move(v)), guard(std::move(g)),
+                  fired(std::move(f)), timeout_ms(t) {}
+
+            // Frame-destruction guard: if the send_for frame is destroyed while
+            // parked, set *guard so neither send_timer nor wake_one_sender()
+            // schedules the dangling handle (the stale _send_waiters entry is
+            // lazily discarded by the guard check).
+            ~timed_send_awaiter() {
+                if (!_resumed && guard && !*guard)
+                    *guard = true;
+            }
 
             [[nodiscard]] bool await_ready() const noexcept { return false; }
 
@@ -514,6 +585,7 @@ public:
             }
 
             bool await_resume() {
+                _resumed = true; // normal resume path: destructor must not re-arm guard
                 if (*fired) return false;
                 if (ch._closed) return false;
                 // Deliver directly to a pending receiver if one exists

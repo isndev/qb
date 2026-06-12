@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <cstring> // For memset
 #include <cstdlib> // For strerror
+#include <limits>  // For numeric_limits (timeval saturation)
 
 #if !defined(QB_HEADER_ONLY)
 #include <qb/io/system/sys__socket.h>
@@ -420,8 +421,15 @@ socket::~socket(void) {
 
 socket &
 socket::operator=(socket_type handle) {
-    if (!this->is_open())
+    // Take ownership of `handle` (per the documented contract). If a different
+    // descriptor was already held, close it first instead of silently dropping
+    // `handle` — the previous guard leaked the incoming fd when *this was open
+    // (e.g. re-accepting into an already-open socket, move-assign from
+    // tcp::socket / udp::socket via release_handle()).
+    if (this->fd != handle) {
+        this->close();
         this->fd = handle;
+    }
     return *this;
 }
 socket &
@@ -437,8 +445,20 @@ socket::swap(socket &rhs) {
 
 bool
 socket::open(int af, int type, int protocol) {
-    if (invalid_socket == this->fd)
+    if (invalid_socket == this->fd) {
         this->fd = ::socket(af, type, protocol);
+#if defined(SO_NOSIGPIPE) && !defined(__linux__) && !defined(_WIN32)
+        // BSD/macOS: writing to a socket whose peer has closed raises SIGPIPE,
+        // which by default terminates the process. MSG_NOSIGNAL is a no-op there
+        // (defined to 0), so set the socket-level SO_NOSIGPIPE instead. Linux uses
+        // MSG_NOSIGNAL on send(); Windows has no SIGPIPE.
+        if (this->fd != invalid_socket) {
+            int on = 1;
+            ::setsockopt(this->fd, SOL_SOCKET, SO_NOSIGPIPE,
+                         reinterpret_cast<const char *>(&on), sizeof(on));
+        }
+#endif
+    }
     return is_open();
 }
 
@@ -605,6 +625,13 @@ socket::accept_n(socket_type &new_sock) const {
         // Check if operation succeeded.
         if (new_sock != invalid_socket) {
             socket::set_nonblocking(new_sock, true);
+#if defined(SO_NOSIGPIPE) && !defined(__linux__) && !defined(_WIN32)
+            // Accepted sockets are created by ::accept (not open()), so apply the
+            // BSD/macOS SIGPIPE suppression here too.
+            int on = 1;
+            ::setsockopt(new_sock, SOL_SOCKET, SO_NOSIGPIPE,
+                         reinterpret_cast<const char *>(&on), sizeof(on));
+#endif
             return 0;
         }
 
@@ -866,13 +893,23 @@ socket::select(socket_type s, fd_set *readfds, fd_set *writefds, fd_set *exceptf
                std::chrono::microseconds wtimeout) {
     int n = 0;
 
+    // A negative timeval makes ::select fail with EINVAL on most platforms;
+    // clamp to zero (poll once) so a negative remaining timeout is well-defined.
+    if (wtimeout.count() < 0)
+        wtimeout = std::chrono::microseconds::zero();
+
     for (;;) {
         reregister_descriptor(s, readfds);
         reregister_descriptor(s, writefds);
         reregister_descriptor(s, exceptfds);
 
+        // Saturate the seconds field so a very large timeout cannot overflow
+        // timeval::tv_sec (32-bit long on Windows).
+        const long long secs    = wtimeout.count() / std::micro::den;
+        const long long max_sec = static_cast<long long>(
+            (std::numeric_limits<decltype(timeval::tv_sec)>::max)());
         timeval waitd_tv = {
-            static_cast<decltype(timeval::tv_sec)>(wtimeout.count() / std::micro::den),
+            static_cast<decltype(timeval::tv_sec)>(secs > max_sec ? max_sec : secs),
             static_cast<decltype(timeval::tv_usec)>(wtimeout.count() % std::micro::den)};
         long long start = highp_clock();
 #if defined(_WIN32)
@@ -1064,11 +1101,19 @@ socket::set_last_errno(int error) {
 bool
 socket::not_send_error(int error) {
     return (error == EWOULDBLOCK || error == EAGAIN || error == EINTR ||
+#ifdef _WIN32
+            // WSAGetLastError() reports WSAEINTR (10004), not the CRT EINTR (4).
+            error == WSAEINTR ||
+#endif
             error == ENOBUFS);
 }
 bool
 socket::not_recv_error(int error) {
-    return (error == EWOULDBLOCK || error == EAGAIN || error == EINTR);
+    return (error == EWOULDBLOCK || error == EAGAIN || error == EINTR
+#ifdef _WIN32
+            || error == WSAEINTR
+#endif
+    );
 }
 
 const char *

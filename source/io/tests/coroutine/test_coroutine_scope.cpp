@@ -702,7 +702,7 @@ TEST_F(ScopeAdvancedTests, CancellingScopePolicy) {
         co_await scope.join_all();
         EXPECT_EQ(scope.active_count(), 0u);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -734,7 +734,7 @@ TEST_F(ScopeAdvancedTests, CaptureResult) {
         EXPECT_TRUE(result.has_value());
         if (result.has_value()) EXPECT_EQ(*result, 42);
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -751,7 +751,7 @@ TEST_F(ScopeAdvancedTests, ParallelVariadic) {
         EXPECT_EQ(b, 2);
         EXPECT_EQ(c, 3);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -764,7 +764,7 @@ TEST_F(ScopeAdvancedTests, WithScopeHelper) {
         });
         EXPECT_EQ(result, 42);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -782,7 +782,7 @@ TEST_F(ScopeAdvancedTests, RepeatWhileStopsOnPredicate) {
         );
         EXPECT_EQ(iterations, 5);
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -803,7 +803,7 @@ TEST_F(ScopeAdvancedTests, RepeatWhileStopsOnCancelToken) {
         );
         EXPECT_EQ(iterations, 0);
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -822,7 +822,7 @@ TEST_F(ScopeAdvancedTests, TotalCountVsActiveCount) {
         scope.cancel_all();
         co_await scope.join_all();
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }

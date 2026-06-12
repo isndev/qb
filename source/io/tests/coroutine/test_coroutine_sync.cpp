@@ -542,7 +542,7 @@ TEST_F(SyncAdvancedTests, WithSemaphoreHelper) {
         EXPECT_EQ(result, 42);
         EXPECT_EQ(sem.available_permits(), 1u);
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -555,7 +555,7 @@ TEST_F(SyncAdvancedTests, WithLockHelper) {
         EXPECT_EQ(result, "hello");
         EXPECT_FALSE(mtx.is_locked());
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -585,7 +585,7 @@ TEST_F(SyncAdvancedTests, BarrierResetAndReuse) {
         EXPECT_EQ(phase, 1);
 
         done = true;
-    }());
+    });
     run_for(500ms);
     EXPECT_TRUE(done);
 }
@@ -613,7 +613,7 @@ TEST_F(SyncAdvancedTests, AsyncMutexWaitersCount) {
         mtx.unlock();
         EXPECT_FALSE(mtx.is_locked());
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }
@@ -639,7 +639,7 @@ TEST_F(SyncAdvancedTests, RWLockScopedReadWriteLock) {
             auto wg = co_await rw.scoped_write_lock();
         }
         done = true;
-    }());
+    });
     run_for(200ms);
     EXPECT_TRUE(done);
 }

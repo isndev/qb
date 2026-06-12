@@ -1045,7 +1045,7 @@ TEST_F(CoroutineRegression, ActiveCountIncludesSuspendedFrames) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         co_await sleep(30ms);
-    }());
+    });
 
     // Let the coroutine suspend on the sleep watcher before we measure.
     run_for(5ms);

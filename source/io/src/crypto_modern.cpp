@@ -238,9 +238,9 @@ crypto::encrypt(const std::vector<unsigned char> &plaintext,
 
         EVP_CIPHER_CTX_free(ctx);
         return ciphertext;
-    } catch (const std::exception &e) {
+    } catch (const std::exception &) {
         EVP_CIPHER_CTX_free(ctx);
-        throw e;
+        throw; // rethrow the original exception (throw e; slices derived types)
     }
 }
 
@@ -368,9 +368,9 @@ crypto::decrypt(const std::vector<unsigned char> &ciphertext,
 
         EVP_CIPHER_CTX_free(ctx);
         return plaintext;
-    } catch (const std::exception &e) {
+    } catch (const std::exception &) {
         EVP_CIPHER_CTX_free(ctx);
-        throw e;
+        throw; // rethrow the original exception (throw e; slices derived types)
     }
 }
 
@@ -409,9 +409,9 @@ crypto::hash(const std::vector<unsigned char> &data, DigestAlgorithm algorithm) 
         digest.resize(digest_len);
         EVP_MD_CTX_free(ctx);
         return digest;
-    } catch (const std::exception &e) {
+    } catch (const std::exception &) {
         EVP_MD_CTX_free(ctx);
-        throw e;
+        throw; // rethrow the original exception (throw e; slices derived types)
     }
 }
 
@@ -476,9 +476,9 @@ crypto::hmac(const std::vector<unsigned char> &data,
         EVP_PKEY_free(pkey);
         EVP_MD_CTX_free(mdctx);
         return hmac_value;
-    } catch (const std::exception &e) {
+    } catch (const std::exception &) {
         EVP_MD_CTX_free(mdctx);
-        throw e;
+        throw; // rethrow the original exception (throw e; slices derived types)
     }
 }
 

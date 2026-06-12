@@ -160,9 +160,18 @@ inline std::chrono::milliseconds calculate_delay(
             // but `thread_local` is still correct and makes the API work from
             // any context — e.g. tests).
             {
+                // Clamp to max BEFORE the jitter multiply so `delay_ms * 49`
+                // cannot overflow when the pre-jitter delay is already huge.
+                if (delay_ms > max_ms)
+                    delay_ms = max_ms;
                 static thread_local std::mt19937 rng{std::random_device{}()};
                 std::uniform_int_distribution<ms_rep> dist(0, 49);
-                delay_ms += (delay_ms * dist(rng)) / 100;
+                const ms_rep jitter_pct = dist(rng);
+                if (jitter_pct != 0 &&
+                    delay_ms > (std::numeric_limits<ms_rep>::max)() / jitter_pct / 2)
+                    delay_ms = max_ms; // would overflow → saturate
+                else
+                    delay_ms += (delay_ms * jitter_pct) / 100;
             }
             break;
         }

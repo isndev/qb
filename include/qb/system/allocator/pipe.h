@@ -139,7 +139,11 @@ public:
      */
     base_pipe &
     operator=(base_pipe &&rhs) noexcept {
-        base_type::deallocate(_data, _capacity);
+        // Guard against deallocating a moved-from buffer (_data == nullptr,
+        // _capacity == 0): std::allocator::deallocate requires a pointer that
+        // came from allocate(). The destructor already guards the same way.
+        if (_capacity)
+            base_type::deallocate(_data, _capacity);
         _begin      = rhs._begin;
         _end        = rhs._end;
         _flag_front = rhs._flag_front;
@@ -692,6 +696,11 @@ public:
     template <typename T>
     pipe &
     put(std::vector<T> const &vec) {
+        static_assert(sizeof(T) == 1,
+                      "pipe<char>::put(std::vector<T>) copies vec.size() BYTES; "
+                      "for multi-byte element types this silently truncates the "
+                      "data. Use put(reinterpret_cast<const char*>(vec.data()), "
+                      "vec.size() * sizeof(T)) explicitly instead.");
         memcpy(allocate_back(vec.size()), reinterpret_cast<const char *>(vec.data()),
                vec.size());
         return *this;
@@ -708,6 +717,11 @@ public:
     template <typename T, std::size_t _Size>
     pipe &
     put(std::array<T, _Size> const &arr) {
+        static_assert(sizeof(T) == 1,
+                      "pipe<char>::put(std::array<T,N>) copies N BYTES; for "
+                      "multi-byte element types this silently truncates the "
+                      "data. Use put(reinterpret_cast<const char*>(arr.data()), "
+                      "N * sizeof(T)) explicitly instead.");
         memcpy(allocate_back(arr.size()), reinterpret_cast<const char *>(arr.data()),
                arr.size());
         return *this;
