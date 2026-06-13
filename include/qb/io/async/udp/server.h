@@ -64,6 +64,18 @@ public:
             }
         }
     }
+
+    /**
+     * @brief Destructor — stop the watcher before the transport closes its fd.
+     *
+     * `transport::udp` is a sibling base listed after `io<_Derived>` and is
+     * destroyed first (closing the socket). Stopping the event watcher in this
+     * destructor body (which runs before any base) keeps `ev_io_stop` off a
+     * closed fd, avoiding libev per-fd bookkeeping corruption.
+     */
+    ~server() {
+        this->_async_event.stop();
+    }
 };
 
 // NOTE: A per-peer session-tracking UDP server (keyed by transport::udp::identity)

@@ -95,8 +95,20 @@ public:
 
     /**
      * @brief Destructor
+     *
+     * Stops the I/O event watcher while the transport socket is still open.
+     * See the standalone `client<_Derived, _Transport, void>` destructor for the
+     * full rationale: `_Transport` is a sibling base listed after `io<_Derived>`,
+     * so it is destroyed first (closing the fd) — the watcher must therefore be
+     * stopped here, in the destructor body, before any base is torn down.
+     * Server-associated sessions are especially exposed because `dispose()` does
+     * not stop their watcher (the server owns the lifecycle), so without this the
+     * watcher would routinely outlive its fd. Stopping an already-stopped (or
+     * never-started) watcher is a no-op.
      */
-    ~client() = default;
+    ~client() {
+        this->_async_event.stop();
+    }
 
     /**
      * @brief Get the associated server
@@ -203,11 +215,23 @@ public:
     /**
      * @brief Destructor
      *
-     * Ensures proper cleanup of resources.
-     * If the derived class does not have a dispose event handler
-     * and the transport is still open, it calls dispose.
+     * Stops the I/O event watcher while the transport socket is still open.
+     *
+     * @warning Base destruction order is the reverse of the base list above:
+     *          `_Transport` (the socket fd owner) is destroyed BEFORE the
+     *          `io<_Derived>` base (which owns the libev watcher). If the watcher
+     *          were left active until the `io<_Derived>` base destructor, libev's
+     *          `ev_io_stop` would run against an already-closed fd and corrupt its
+     *          per-fd bookkeeping (`anfds[fd]`), an intermittent
+     *          use-after-close that surfaces as a later crash in `clear_pending`/
+     *          `fd_change`. This destructor body runs *before* any base
+     *          destructor, i.e. while `_Transport` is still alive and the fd is
+     *          still valid, so stopping the watcher here is the only safe point.
+     *          Stopping an already-stopped (or never-started) watcher is a no-op.
      */
-    ~client() = default;
+    ~client() {
+        this->_async_event.stop();
+    }
 };
 
 } // namespace qb::io::async::tcp
