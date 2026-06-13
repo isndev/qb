@@ -95,9 +95,17 @@ public:
         : base_t(new Protocol(*this)) {}
 
     /**
-     * @brief Destructor
+     * @brief Destructor — stop the accept watcher before the listening fd closes.
+     *
+     * `_Prot` (which owns the listening socket) is a sibling base listed after
+     * `input<acceptor>`, so it is destroyed first and closes the fd. Stopping the
+     * watcher in this destructor body (runs before any base) prevents the
+     * `input<>` base destructor from calling `ev_io_stop` on a closed fd, which
+     * would corrupt libev's per-fd bookkeeping. A no-op if already stopped.
      */
-    ~acceptor() = default;
+    ~acceptor() {
+        this->_async_event.stop();
+    }
 
     /**
      * @brief Handler for new connections
