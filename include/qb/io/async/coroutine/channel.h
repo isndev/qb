@@ -948,6 +948,19 @@ public:
         : _state(std::make_shared<state_t>())
         , _channels(&chs...) {}
 
+    // If this select is destroyed while still parked (cancelled before any channel
+    // resolved it), mark the shared state resolved and drop the outer handle so a later
+    // sender that finds the stale _select_waiters entry skips it (resolve() is a no-op
+    // once resolved) instead of scheduling our now-destroyed coroutine handle — a
+    // use-after-free. Only the refcounted _state is touched, never the channels (which
+    // may already be freed).
+    ~channel_select_awaiter() {
+        if (_state) {
+            _state->resolved = true;
+            _state->outer    = {};
+        }
+    }
+
     [[nodiscard]] bool await_ready() { return try_immediate(); }
 
     void await_suspend(std::coroutine_handle<> h) {
@@ -995,6 +1008,16 @@ public:
     explicit channel_select_vector_awaiter(std::vector<channel<T>*> chs)
         : _state(std::make_shared<state_t>())
         , _channels(std::move(chs)) {}
+
+    // See channel_select_awaiter::~channel_select_awaiter: prevent a stale select
+    // waiter from scheduling a destroyed coroutine handle (use-after-free) when this
+    // awaiter is cancelled while parked. Touches only the refcounted shared state.
+    ~channel_select_vector_awaiter() {
+        if (_state) {
+            _state->resolved = true;
+            _state->outer    = {};
+        }
+    }
 
     [[nodiscard]] bool await_ready() {
         // Pass 1: prefer data over close signals (avoids starvation).
