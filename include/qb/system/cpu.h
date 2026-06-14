@@ -162,6 +162,9 @@ inline void spin_loop_pause() noexcept {
 } // namespace qb
 
 #elif defined(__aarch64__) || defined(_M_ARM64)
+#if defined(_MSC_VER)
+#include <intrin.h> // __dmb / _ARM64_BARRIER_SY intrinsics
+#endif
 namespace qb {
 inline void spin_loop_pause() noexcept {
 #if defined(__GNUC__) || defined(__clang__)

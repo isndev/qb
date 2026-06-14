@@ -110,7 +110,7 @@ typedef intptr_t ssize_t;
 #if (defined(__cplusplus) && __cplusplus >= 201402L) || \
     (defined(_MSC_VER) && _MSC_VER >= 1900 &&           \
      (defined(_MSVC_LANG) && (_MSVC_LANG >= 201402L)))
-#ifndef QB_HAS_CXX14
+#ifndef QB__HAS_CXX14
 #define QB__HAS_CXX14 1
 #endif // C++14 features macro
 #endif // C++14 features check
@@ -123,7 +123,7 @@ typedef intptr_t ssize_t;
     (defined(_MSC_VER) && _MSC_VER > 1900 &&            \
      ((defined(_HAS_CXX17) && _HAS_CXX17 == 1) ||       \
       (defined(_MSVC_LANG) && (_MSVC_LANG > 201402L))))
-#ifndef QB_HAS_CXX17
+#ifndef QB__HAS_CXX17
 #define QB__HAS_CXX17 1
 #endif // C++17 features macro
 #endif // C++17 features check
