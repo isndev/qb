@@ -607,7 +607,10 @@ private:
 class FileWriter {
 public:
     FileWriter(std::string const &log_file_path, uint32_t log_file_roll_size_mb)
-        : m_log_file_roll_size_bytes(log_file_roll_size_mb * 1024 * 1024)
+        // 64-bit multiply + storage: log_file_roll_size_mb * 1024 * 1024 would
+        // overflow uint32_t for roll sizes >= 4096 MB, wrapping to a tiny (or
+        // zero) byte budget that rolls the file on almost every write.
+        : m_log_file_roll_size_bytes(static_cast<uint64_t>(log_file_roll_size_mb) * 1024 * 1024)
         , m_name(log_file_path) {
         roll_file();
     }
@@ -643,7 +646,7 @@ private:
 private:
     uint32_t m_file_number = 0;
     std::streamoff m_bytes_written = 0;
-    uint32_t const m_log_file_roll_size_bytes;
+    uint64_t const m_log_file_roll_size_bytes;
     std::string const m_name;
     std::unique_ptr<std::ofstream> m_os;
 };
