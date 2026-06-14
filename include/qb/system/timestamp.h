@@ -691,7 +691,15 @@ public:
             if (iss.fail()) {
                 return std::nullopt;
             }
-            const auto time_since_epoch = std::mktime(&tm);
+            // The trailing 'Z' denotes UTC, so the broken-down time must be
+            // converted as UTC. std::mktime interprets tm as LOCAL time and
+            // would offset the epoch by the machine's timezone; timegm
+            // (_mkgmtime on Windows) interprets it as UTC.
+#ifdef _WIN32
+            const auto time_since_epoch = _mkgmtime(&tm);
+#else
+            const auto time_since_epoch = timegm(&tm);
+#endif
             if (time_since_epoch == -1) {
                 return std::nullopt;
             }
@@ -700,7 +708,7 @@ public:
             return std::nullopt;
         }
     }
-    
+
     /**
      * @brief Factory method to parse a string into a TimePoint
      * @param time_string Time string
@@ -712,8 +720,12 @@ public:
         try {
             std::tm tm = {};
             std::string str_time_string(time_string);
+            // Copy the format too: std::get_time needs a null-terminated C
+            // string, but string_view::data() is not guaranteed terminated
+            // (a substring view would read past the end — OOB).
+            std::string str_format(format);
             std::istringstream iss(str_time_string);
-            iss >> std::get_time(&tm, format.data());
+            iss >> std::get_time(&tm, str_format.c_str());
             if (iss.fail()) {
                 return std::nullopt;
             }
