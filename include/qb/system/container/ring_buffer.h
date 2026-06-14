@@ -480,16 +480,19 @@ private:
         if constexpr (std::is_trivially_copyable_v<T>) {
             std::memcpy(elements_, rhs.elements_, sizeof(elements_));
         } else {
+            // Track how many elements were actually constructed so a throwing
+            // copy constructor only destroys the constructed prefix. Relying on
+            // size_ (set to rhs.size_ above) would run ~T() on raw, never-
+            // constructed storage for the [constructed, size_) tail — UB.
+            size_type constructed = 0;
             try {
-                for (size_type i = 0; i < size_; ++i)
-                    new (elements_ + (((tail_ + i) % N) * sizeof(T)))
-                        T(rhs[(tail_ + i) % N]);
+                for (; constructed < size_; ++constructed)
+                    new (elements_ + (((tail_ + constructed) % N) * sizeof(T)))
+                        T(rhs[(tail_ + constructed) % N]);
             } catch (...) {
-                while (!empty()) {
-                    destroy_at(tail_);
-                    tail_ = ++tail_ % N;
-                    --size_;
-                }
+                for (size_type j = 0; j < constructed; ++j)
+                    destroy_at((tail_ + j) % N);
+                head_ = tail_ = size_ = 0;
                 throw;
             }
         }
