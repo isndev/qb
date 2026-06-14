@@ -1237,6 +1237,21 @@ TEST(URIRobustness, IsValidReportsParseFailures) {
     EXPECT_TRUE(u.is_valid());
 }
 
+TEST(URIRobustness, PortRejectsOutOfRangeTruncation) {
+    // Valid explicit ports parse exactly.
+    EXPECT_EQ(qb::io::uri("http://host:8080/").u_port(), 8080);
+    EXPECT_EQ(qb::io::uri("http://host:65535/").u_port(), 65535);
+
+    // Out-of-range explicit ports must NOT silently truncate (wrap-around):
+    // "99999" previously became static_cast<uint16_t>(99999) == 34463. It and
+    // any other all-digit value above 65535 must now be rejected as 0.
+    EXPECT_EQ(qb::io::uri("http://host:65536/").u_port(), 0);
+    EXPECT_EQ(qb::io::uri("http://host:99999/").u_port(), 0);
+    // Beyond INT_MAX too (from_chars reports result_out_of_range, not overflow).
+    EXPECT_EQ(qb::io::uri("http://host:4294967296/").u_port(), 0);
+    EXPECT_EQ(qb::io::uri("http://host:99999999999999999999/").u_port(), 0);
+}
+
 // JSON protocol DoS guard: pathologically nested input is rejected before the
 // recursive parser can blow the stack. String-aware so brackets inside strings
 // do not count toward depth.

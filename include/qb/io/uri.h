@@ -31,6 +31,7 @@
 
 #include <charconv>
 #include <iterator>
+#include <system_error>
 #include <qb/io/config.h>
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/build_macros.h>
@@ -474,9 +475,14 @@ public:
      */
     [[nodiscard]] uint16_t
     u_port() const {
+        const auto sv = port();
         int p = 0;
-
-        std::from_chars(port().data(), port().data() + port().size(), p);
+        const auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), p);
+        // Reject malformed or out-of-range ports rather than silently
+        // truncating: e.g. "99999" would otherwise wrap to 34463.
+        if (ec != std::errc{} || ptr != sv.data() + sv.size() || p < 0 || p > 65535) {
+            return 0;
+        }
         return static_cast<uint16_t>(p);
     }
 
