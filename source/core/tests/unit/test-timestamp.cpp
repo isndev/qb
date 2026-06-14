@@ -459,4 +459,14 @@ TEST_F(TimePointTest, ParsingFromStringTest) {
     EXPECT_FALSE(tp4.has_value());
 }
 
-} // namespace 
+TEST_F(TimePointTest, Iso8601UtcRoundTrip) {
+    // to_iso8601() emits UTC (gmtime + trailing 'Z'); from_iso8601() must parse
+    // the 'Z' time back as UTC (timegm), NOT local time (mktime) — otherwise the
+    // value is off by the host's timezone offset on any non-UTC machine, and the
+    // round-trip below would print a shifted hour. This regresses a real bug.
+    auto tp = qb::TimePoint::from_iso8601("2023-01-15T12:30:45Z");
+    ASSERT_TRUE(tp.has_value());
+    EXPECT_EQ(tp->to_iso8601(), "2023-01-15T12:30:45Z");
+}
+
+} // namespace
