@@ -26,6 +26,7 @@
 
 #ifndef QB_LOCKFREE_MPSC_H
 #define QB_LOCKFREE_MPSC_H
+#include <cassert>
 #include <mutex>
 #include "spinlock.h"
 #include "spsc.h"
@@ -171,7 +172,12 @@ public:
     dequeue(T *ret, size_t size) {
         const size_t save_size = size;
         for (auto &producer : _producers) {
-            size -= producer._ringbuffer.dequeue(ret, size);
+            // Advance ret by the amount taken so each producer appends after
+            // the previous one's items instead of overwriting them (silent
+            // data loss: items consumed from the ring but lost in the output).
+            const size_t n = producer._ringbuffer.dequeue(ret, size);
+            ret += n;
+            size -= n;
             if (!size)
                 break;
         }
@@ -271,7 +277,13 @@ public:
      */
     explicit ringbuffer(std::size_t const nb_producer)
         : _producers(nb_producer)
-        , _nb_producer(nb_producer) {}
+        , _nb_producer(nb_producer) {
+        // At least one producer is required: the round-robin enqueue paths
+        // compute `tl_index % _nb_producer`, which is division-by-zero (UB)
+        // when constructed with zero producers.
+        assert(nb_producer > 0 &&
+               "mpsc::ringbuffer requires at least one producer");
+    }
 
     /**
      * @brief Enqueue an item using a compile-time producer index
@@ -380,7 +392,12 @@ public:
         const size_t save_size = size;
         // C++23: Using 'uz' suffix for size_t literals
         for (auto i = 0uz; i < _nb_producer; ++i) {
-            size -= _producers[i]._ringbuffer.dequeue(ret, size);
+            // Advance ret by the amount taken so each producer appends after
+            // the previous one's items instead of overwriting them (silent
+            // data loss: items consumed from the ring but lost in the output).
+            const size_t n = _producers[i]._ringbuffer.dequeue(ret, size);
+            ret += n;
+            size -= n;
             if (!size)
                 break;
         }
