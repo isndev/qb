@@ -130,6 +130,11 @@ public:
      * @brief Destructor - closes the channel
      */
     ~channel() {
+        // Mark dead BEFORE close(): close() schedules deferred resumes of parked
+        // waiters; once this destructor returns the channel is freed, so those resumes
+        // (and the awaiters' own destructors) must see _alive == false and skip every
+        // access to this channel.
+        *_alive = false;
         close();
     }
 
@@ -150,16 +155,17 @@ public:
         T value;
         bool _completed = false;
         std::coroutine_handle<> _parked{}; ///< set when queued in _send_waiters
+        std::shared_ptr<bool> _ch_alive;   ///< channel liveness; skip ch access when false
 
         // Explicit constructor: the user-declared destructor below makes this
         // a non-aggregate, so send() needs a constructor for brace-init.
-        send_awaiter(channel& c, T v) : ch(c), value(std::move(v)) {}
+        send_awaiter(channel& c, T v) : ch(c), value(std::move(v)), _ch_alive(c._alive) {}
 
         // If this sender is still parked when its coroutine frame is destroyed,
         // remove its entry from _send_waiters so a later wake_one_sender()/close()
         // cannot schedule_via_current() a dangling handle (use-after-free).
         ~send_awaiter() {
-            if (!_parked)
+            if (!_parked || !*_ch_alive) // channel already freed: nothing to de-register
                 return;
             auto& w = ch._send_waiters;
             for (auto it = w.begin(); it != w.end(); ++it) {
@@ -252,6 +258,11 @@ public:
         }
 
         void await_resume() {
+            // The channel was destroyed while we were parked: the send could not be
+            // delivered, so fail it the same way a close() does — without touching the
+            // freed channel.
+            if (!*_ch_alive)
+                throw channel_closed();
             // Finding 2.C.1: after a close() has happened (before or after the
             // suspension), the value must be rejected loudly rather than
             // silently dropped. This matches try_send's boolean-false contract
@@ -294,17 +305,19 @@ public:
     struct recv_awaiter {
         channel& ch;
         std::optional<T> _result;
+        std::shared_ptr<bool> _ch_alive; ///< channel liveness; skip ch access when false
 
         // Explicit constructor: the user-declared destructor below makes this a
         // non-aggregate, so recv() needs a constructor for brace-init.
         recv_awaiter(channel& c, std::optional<T> r)
-            : ch(c), _result(std::move(r)) {}
+            : ch(c), _result(std::move(r)), _ch_alive(c._alive) {}
 
         // If this receiver is still parked when its coroutine frame is destroyed
         // (e.g. scheduler teardown / a cancelled parent), remove its entry from
         // _recv_waiters so a later send()/try_send() cannot write through the
         // now-dangling &_result into freed memory (use-after-free).
         ~recv_awaiter() {
+            if (!*_ch_alive) return; // channel already freed: nothing to de-register
             auto& w = ch._recv_waiters;
             for (auto it = w.begin(); it != w.end(); ++it) {
                 if (it->second == &_result) {
@@ -344,6 +357,11 @@ public:
         }
 
         std::optional<T> await_resume() {
+            // The channel was destroyed while we were parked (close() scheduled this
+            // resume, ~channel then freed the channel): return nullopt — the documented
+            // "channel closed" result — without touching the freed channel.
+            if (!*_ch_alive)
+                return std::move(_result);
             // If woken by close() while data is still in the buffer, drain it.
             if (!_result && !ch._buffer.empty()) {
                 _result = std::move(ch._buffer.front());
@@ -659,6 +677,15 @@ private:
     std::deque<recv_waiter_entry>       _recv_waiters;
     std::deque<select_waiter_entry>     _select_waiters;
     bool _closed = false;
+    // Liveness token, set false by ~channel. close() resumes parked waiters via the
+    // scheduler (deferred), and if the channel owner frees the channel before that
+    // resume runs — e.g. a coroutine suspended on `co_await consumer.receive()` while
+    // the consumer is destroyed — the resumed await_resume() and the awaiter destructor
+    // would touch freed channel state (_buffer / _recv_waiters / _send_waiters). Each
+    // awaiter captures this token by value and no-ops its channel access when it is
+    // false, so the deferred resume completes (recv → nullopt, send → channel_closed)
+    // without a use-after-free.
+    std::shared_ptr<bool> _alive{std::make_shared<bool>(true)};
 };
 
 /**
