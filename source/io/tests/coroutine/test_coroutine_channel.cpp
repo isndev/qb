@@ -66,6 +66,36 @@ TEST_F(ChannelBasicTests, BufferedSendReceive) {
 }
 
 /**
+ * @test Destroy a channel while a receiver is parked
+ * @brief A coroutine suspended on `co_await ch.recv()` must not use-after-free when the
+ *        channel is destroyed before the deferred close()-resume runs (the lifetime of a
+ *        `co_await consumer.receive()` that outlives the consumer). ~channel marks the
+ *        liveness token dead; the resumed await_resume() and the awaiter destructor then
+ *        skip the freed channel and the recv resolves to nullopt. Under AddressSanitizer
+ *        the unguarded code reports heap-use-after-free here.
+ */
+TEST_F(ChannelBasicTests, DestroyChannelWhileRecvParkedNoUAF) {
+    auto ch = std::make_unique<channel<int>>(4);
+    bool done = false;
+    bool got_value = true; // must become false (nullopt) once the channel is gone
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto r = co_await ch->recv(); // parks: buffer empty, channel open
+        got_value = r.has_value();
+        done = true;
+    });
+
+    run_for(10ms); // let the receiver park
+    EXPECT_FALSE(done);
+
+    ch.reset(); // destroy the channel while the receiver is parked
+
+    run_for(50ms); // deferred resume now runs against the freed channel
+    EXPECT_TRUE(done);
+    EXPECT_FALSE(got_value); // resolved to nullopt, no use-after-free
+}
+
+/**
  * @test Try send on buffered channel
  * @brief Non-blocking send when buffer has space
  */
