@@ -32,6 +32,8 @@
 #ifndef QB_UTILS_PREFIX_H
 #define QB_UTILS_PREFIX_H
 
+#include <cstdint> // uint32_t used by CacheLine / EventBucket below
+
 /* this file defines the following macros:
    QB_LOCKFREE_CACHELINE_BYTES: size of a cache line
    QB_LOCKFREE_EVENT_BUCKET_BYTES: size of a event partition
