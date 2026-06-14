@@ -467,8 +467,11 @@ public:
 template <typename T>
 class ringbuffer<T, 0> : public internal::ringbuffer<T> {
     using size_t = std::size_t;
-    const size_t        max_size_;
-    std::unique_ptr<T>  array_;
+    const size_t          max_size_;
+    // unique_ptr<T[]> (array form): the buffer is allocated with new T[...],
+    // so it must be released with delete[]. A scalar unique_ptr<T> would call
+    // scalar delete on an array allocation (alloc/dealloc-size mismatch, UB).
+    std::unique_ptr<T[]>  array_;
 
 public:
     /**
