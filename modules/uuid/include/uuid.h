@@ -727,9 +727,15 @@ namespace uuids
       uuid operator()()
       {
          uint8_t bytes[16];
-         // C++23: Using auto for type deduction
-         for (auto i = 0; i < 16; i += 4)
-            *reinterpret_cast<uint32_t*>(bytes + i) = distribution(*generator);
+         // memcpy the 32-bit draws into the byte array: writing a uint32_t
+         // directly through a uint8_t* (reinterpret_cast) is a strict-aliasing
+         // violation and an unaligned store — UB that can fault on
+         // alignment-strict targets and is flagged by UBSan. memcpy is
+         // well-defined and compiles to the same store on x86/ARM.
+         for (auto i = 0; i < 16; i += 4) {
+            const uint32_t v = distribution(*generator);
+            std::memcpy(bytes + i, &v, sizeof(v));
+         }
 
          // variant must be 10xxxxxx
          bytes[8] &= 0xBF;
