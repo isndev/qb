@@ -61,22 +61,36 @@ set(QB_SOURCE_DIR "${QB_ROOT_DIR}/source")
 option(QB_BUILD_TESTS "Build qb tests" ON)
 option(QB_BUILD_EXAMPLES "Build qb examples" ON)
 option(QB_BUILD_BENCHMARKS "Build qb benchmarks" OFF)
-# When OFF (default), GoogleTest is provided via FetchContent with QB_GOOGLETEST_GIT_TAG.
-option(QB_USE_SYSTEM_GTEST "Use find_package(GTest CONFIG) instead of FetchContent" OFF)
-# When OFF (default), Google Benchmark is provided via FetchContent with QB_GOOGLEBENCHMARK_GIT_TAG.
-option(QB_USE_SYSTEM_BENCHMARK "Use find_package(benchmark CONFIG) instead of FetchContent" OFF)
+# Dependency resolution strategy:
+#   QB_DEPS_FETCH_FALLBACK ON (default): each fetchable dependency is first looked up
+#     on the system (find_package); if absent, it is built from source via FetchContent.
+#     This is the "use system if present, else git" behavior.
+#   QB_USE_SYSTEM_* ON: force find_package(... REQUIRED) and never fetch (fail if absent).
+# Only CMake-native dependencies are fetchable (GoogleTest, Google Benchmark, Zlib).
+# OpenSSL / Argon2 / libngtcp2 are never fetched (no clean CMake source build) — they
+# must be provided by the system and gate optional features when absent.
+option(QB_DEPS_FETCH_FALLBACK "Build fetchable deps from source (FetchContent) when not found on the system" ON)
+# Force system packages (find_package REQUIRED, no FetchContent fallback) for these.
+option(QB_USE_SYSTEM_GTEST "Require a system GTest (find_package CONFIG REQUIRED), never fetch" OFF)
+option(QB_USE_SYSTEM_BENCHMARK "Require a system Google Benchmark (find_package CONFIG REQUIRED), never fetch" OFF)
 
 set(QB_GOOGLETEST_GIT_TAG "v1.15.2" CACHE STRING "Git tag (or SHA) for FetchContent googletest")
 set(QB_GOOGLEBENCHMARK_GIT_TAG "v1.9.2" CACHE STRING "Git tag (or SHA) for FetchContent googlebenchmark")
-mark_as_advanced(QB_GOOGLETEST_GIT_TAG QB_GOOGLEBENCHMARK_GIT_TAG)
+set(QB_ZLIB_GIT_TAG "v1.3.1" CACHE STRING "Git tag (or SHA) for the FetchContent zlib fallback build")
+mark_as_advanced(QB_GOOGLETEST_GIT_TAG QB_GOOGLEBENCHMARK_GIT_TAG QB_ZLIB_GIT_TAG)
 option(QB_BUILD_DOCS "Build qb documentation" OFF)
-option(QB_BUILD_SHARED_LIBS "Build shared libraries instead of static" OFF)
+# Defaults to the standard BUILD_SHARED_LIBS so `cmake -DBUILD_SHARED_LIBS=ON` also
+# switches qb to shared, while still allowing an explicit qb-only override.
+option(QB_BUILD_SHARED_LIBS "Build qb libraries as shared objects instead of static" ${BUILD_SHARED_LIBS})
 option(QB_INSTALL "Install qb framework" ON)
 
 # Performance options
 option(QB_ENABLE_OPTIMIZATIONS "Enable performance optimizations" ON)
 option(QB_ENABLE_LTO "Enable Link Time Optimization" OFF)
-option(QB_ENABLE_NATIVE_ARCH "Enable native architecture optimizations" OFF)
+# ON by default: tune codegen for the build-host CPU (-march=native / -mcpu=native).
+# Gives the best performance on the machine that built it. Turn OFF for portable/
+# distributable binaries that must run on a different (possibly older) CPU.
+option(QB_ENABLE_NATIVE_ARCH "Enable native architecture optimizations (-march=native)" ON)
 option(QB_ENABLE_FAST_MATH "Enable -ffast-math / /fp:fast (breaks IEEE-754 compliance)" OFF)
 
 # Coverage
@@ -93,9 +107,18 @@ set_property(CACHE QB_WITH_QUIC PROPERTY STRINGS AUTO ON OFF)
 option(QB_WITH_PROFILING "Enable profiling support" OFF)
 
 # Debug options
-option(QB_DEBUG_MEMORY "Enable memory debugging" OFF)
+option(QB_DEBUG_MEMORY "Enable memory debugging (legacy alias for QB_SANITIZE=address,undefined)" OFF)
 option(QB_DEBUG_ACTOR "Enable actor debugging" OFF)
 option(QB_STDOUT_LOGGING "Enable stdout logging fallback" OFF)
+
+# Sanitizers: comma-separated list applied to every qb / qbm / test target and their
+# link step (e.g. "address,undefined", "thread", "memory", "leak"). Empty = disabled.
+# Use the `sanitize` / `sanitize-thread` CMake presets for ready-made configurations.
+set(QB_SANITIZE "" CACHE STRING "Sanitizers to enable (comma-separated, e.g. address,undefined); empty = off")
+# Back-compat: QB_DEBUG_MEMORY historically turned on ASan + UBSan.
+if(QB_DEBUG_MEMORY AND NOT QB_SANITIZE)
+    set(QB_SANITIZE "address,undefined")
+endif()
 
 # -----------------------------------------------------------------------------
 # Platform Detection
@@ -133,6 +156,17 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|aarch64|ARM64)")
     endif()
 endif()
 
+# Publish platform/arch flags as CACHE INTERNAL so they are visible in EVERY scope,
+# including sibling subdirectories such as qbm/* (loaded from the top-level project).
+# qb's helper functions (qb_apply_linker_flags, etc.) run in those foreign scopes and
+# would otherwise see these as empty. See the same rationale for QB_CXX_FLAGS_* and
+# QB_COMPILE_DEFINITIONS in qbCompiler/qbDependencies.
+foreach(_v
+    QB_PLATFORM QB_PLATFORM_WINDOWS QB_PLATFORM_MACOS QB_PLATFORM_LINUX
+    QB_ARCH QB_ARCH_64 QB_ARCH_32 QB_ARCH_ARM QB_ARCH_ARM64 QB_ARCH_ARM32)
+    set(${_v} "${${_v}}" CACHE INTERNAL "")
+endforeach()
+
 # -----------------------------------------------------------------------------
 # Build Type Configuration
 # -----------------------------------------------------------------------------
@@ -143,12 +177,24 @@ endif()
 # Define available build types
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
 
+# Emit compile_commands.json for clangd / CLion / tooling. Polite: only set a default,
+# so a parent project embedding qb can still override it.
+if(NOT DEFINED CMAKE_EXPORT_COMPILE_COMMANDS)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+endif()
+
 # -----------------------------------------------------------------------------
 # Compiler Configuration
 # -----------------------------------------------------------------------------
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Build every object as position-independent. Required so the bundled static
+# dependencies (ev, llhttp) can be linked into a shared qb-io / qbm-* (or into
+# any consumer's shared library) without "recompile with -fPIC" link errors on
+# Linux. Negligible cost on modern targets even for fully-static builds.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Enable colored output if supported
 if(NOT WIN32)
@@ -176,21 +222,35 @@ set(QB_EXTERNAL_LIBRARIES)
 # -----------------------------------------------------------------------------
 # Output Directories
 # -----------------------------------------------------------------------------
+# Tidy bin/lib layout, but only when a parent project hasn't already chosen one.
+# This keeps qb polite when embedded via add_subdirectory (it won't hijack the
+# parent's output tree) while still giving a clean layout for standalone builds.
 set(QB_OUTPUT_DIR "${CMAKE_BINARY_DIR}/bin")
 set(QB_LIBRARY_DIR "${CMAKE_BINARY_DIR}/lib")
 set(QB_ARCHIVE_DIR "${CMAKE_BINARY_DIR}/lib")
 
-# Set runtime output directory
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${QB_OUTPUT_DIR}")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${QB_LIBRARY_DIR}")
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${QB_ARCHIVE_DIR}")
+if(NOT DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${QB_OUTPUT_DIR}")
+endif()
+if(NOT DEFINED CMAKE_LIBRARY_OUTPUT_DIRECTORY)
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${QB_LIBRARY_DIR}")
+endif()
+if(NOT DEFINED CMAKE_ARCHIVE_OUTPUT_DIRECTORY)
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${QB_ARCHIVE_DIR}")
+endif()
 
-# Per-configuration output directories
+# Per-configuration output directories (multi-config generators)
 foreach(config ${CMAKE_CONFIGURATION_TYPES})
     string(TOUPPER ${config} config_upper)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${QB_OUTPUT_DIR}")
-    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${config_upper} "${QB_LIBRARY_DIR}")
-    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${config_upper} "${QB_ARCHIVE_DIR}")
+    if(NOT DEFINED CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config_upper})
+        set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${config_upper} "${QB_OUTPUT_DIR}")
+    endif()
+    if(NOT DEFINED CMAKE_LIBRARY_OUTPUT_DIRECTORY_${config_upper})
+        set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_${config_upper} "${QB_LIBRARY_DIR}")
+    endif()
+    if(NOT DEFINED CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${config_upper})
+        set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY_${config_upper} "${QB_ARCHIVE_DIR}")
+    endif()
 endforeach()
 
 # -----------------------------------------------------------------------------

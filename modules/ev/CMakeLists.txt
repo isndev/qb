@@ -13,7 +13,15 @@ set(LIBEV_VERSION_REVISION 0)
 # Options
 # ----------------------------------------------------------------------------
 option(BUILD_STATIC_LIBS "Build libev as a static library" ON)
-option(BUILD_PIC_STATIC_LIBS "Build static lib as PIC" OFF)
+# Default ON: the bundled ev is consumed by qb-io, which may itself be built as a
+# shared library (QB_BUILD_SHARED_LIBS=ON). A non-PIC static ev cannot be linked
+# into a shared object on Linux. This also keeps the explicit target property
+# below from overriding the project-wide CMAKE_POSITION_INDEPENDENT_CODE.
+option(BUILD_PIC_STATIC_LIBS "Build static lib as PIC" ON)
+
+# qb always needs the static `ev` target to exist (qb-io DEPENDS ev). Force it on
+# even if a parent project set the generic BUILD_STATIC_LIBS cache entry to OFF.
+set(BUILD_STATIC_LIBS ON)
 # Default OFF: matches legacy ev_config.h (#define EV_USE_TIMERFD 0). Enabling makes
 # ev_run use MAX_BLOCKTIME2 when timerfd is active and timercnt==0, which stalls
 # epoll_wait (regression #1 on event I/O tests). Opt in with -D QB_LIBEV_USE_TIMERFD=ON.

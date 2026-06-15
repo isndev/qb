@@ -231,10 +231,29 @@ if(QB_ENABLE_OPTIMIZATIONS)
         
         # Architecture-specific optimizations
         if(QB_ENABLE_NATIVE_ARCH)
-            list(APPEND QB_CXX_FLAGS_RELEASE "-march=native")
-        elseif(QB_ARCH_ARM64)
+            # Tune for the build-host CPU. Verify support before using it: older
+            # Apple Clang rejects -march=native on arm64, where -mcpu=native is the
+            # accepted spelling. Fall back gracefully so the build never breaks.
+            check_cxx_compiler_flag("-march=native" QB_HAS_MARCH_NATIVE)
+            if(QB_HAS_MARCH_NATIVE)
+                list(APPEND QB_CXX_FLAGS_RELEASE "-march=native")
+            else()
+                check_cxx_compiler_flag("-mcpu=native" QB_HAS_MCPU_NATIVE)
+                if(QB_HAS_MCPU_NATIVE)
+                    list(APPEND QB_CXX_FLAGS_RELEASE "-mcpu=native")
+                else()
+                    qb_warning_message("QB_ENABLE_NATIVE_ARCH on, but neither -march=native nor -mcpu=native is supported; using compiler default target")
+                endif()
+            endif()
+        elseif(QB_ARCH_ARM64 AND NOT APPLE)
+            # Generic ARMv8 baseline for non-Apple ARM64 (e.g. Linux servers).
+            # On Apple Silicon, do NOT force -march=armv8-a: the toolchain already
+            # targets the native apple-mN CPU, and forcing the generic baseline
+            # downgrades codegen (loses LSE atomics and other extensions).
             list(APPEND QB_CXX_FLAGS_RELEASE "-march=armv8-a")
         elseif(QB_ARCH_64 AND NOT QB_ARCH_ARM)
+            # Portable x86-64 baseline (deliberately conservative for distributable
+            # binaries). Use QB_ENABLE_NATIVE_ARCH=ON to target the host CPU.
             list(APPEND QB_CXX_FLAGS_RELEASE "-march=x86-64")
         endif()
     endif()
@@ -285,19 +304,36 @@ if(QB_WITH_PROFILING)
 endif()
 
 # -----------------------------------------------------------------------------
-# Memory Debugging
+# Sanitizers (QB_SANITIZE)
 # -----------------------------------------------------------------------------
-if(QB_DEBUG_MEMORY)
-    qb_debug_message("Enabling memory debugging")
-    
+# QB_SANITIZE is a comma-separated list (e.g. "address,undefined", "thread", "memory",
+# "leak"). The flags are applied to EVERY qb / qbm / test target and their link step
+# via qb_apply_compiler_flags() / qb_apply_linker_flags() — not just to Debug — so the
+# whole instrumented set is consistent regardless of CMAKE_BUILD_TYPE.
+set(QB_SANITIZE_COMPILE_OPTS "")
+set(QB_SANITIZE_LINK_OPTS "")
+if(QB_SANITIZE)
+    if(QB_WITH_PROFILING)
+        qb_warning_message("QB_SANITIZE='${QB_SANITIZE}' is incompatible with QB_WITH_PROFILING (tcmalloc/gperftools intercept the same hooks); disable one")
+    endif()
+
     if(QB_COMPILER_GCC OR QB_COMPILER_CLANG)
-        list(APPEND QB_CXX_FLAGS_DEBUG
-            "-fsanitize=address"     # Address sanitizer
-            "-fsanitize=undefined"   # Undefined behavior sanitizer
-            "-fno-omit-frame-pointer"  # Keep frame pointer
+        list(APPEND QB_SANITIZE_COMPILE_OPTS
+            "-fsanitize=${QB_SANITIZE}"
+            "-fno-omit-frame-pointer"   # readable stack traces
+            "-fno-sanitize-recover=all" # abort on first error (CI-friendly)
+            "-g"                        # symbolized reports
         )
-        set(CMAKE_EXE_LINKER_FLAGS_DEBUG "${CMAKE_EXE_LINKER_FLAGS_DEBUG} -fsanitize=address -fsanitize=undefined")
-        set(CMAKE_SHARED_LINKER_FLAGS_DEBUG "${CMAKE_SHARED_LINKER_FLAGS_DEBUG} -fsanitize=address -fsanitize=undefined")
+        list(APPEND QB_SANITIZE_LINK_OPTS "-fsanitize=${QB_SANITIZE}")
+        qb_status_message("Sanitizers enabled: ${QB_SANITIZE}")
+    elseif(QB_COMPILER_MSVC)
+        # MSVC only ships AddressSanitizer.
+        if(QB_SANITIZE MATCHES "address")
+            list(APPEND QB_SANITIZE_COMPILE_OPTS "/fsanitize=address")
+            qb_status_message("Sanitizers enabled (MSVC): address")
+        else()
+            qb_warning_message("MSVC only supports /fsanitize=address; ignoring QB_SANITIZE='${QB_SANITIZE}'")
+        endif()
     endif()
 endif()
 
@@ -329,7 +365,13 @@ function(qb_apply_compiler_flags target)
     if(QB_CXX_FLAGS_MINSIZEREL)
         target_compile_options(${target} PRIVATE $<$<CONFIG:MinSizeRel>:${QB_CXX_FLAGS_MINSIZEREL}>)
     endif()
-    
+
+    # Sanitizer flags last so -fno-omit-frame-pointer wins over Release's
+    # -fomit-frame-pointer on the command line.
+    if(QB_SANITIZE_COMPILE_OPTS)
+        target_compile_options(${target} PRIVATE ${QB_SANITIZE_COMPILE_OPTS})
+    endif()
+
     # Apply compile definitions (PUBLIC for ABI consistency)
     target_compile_definitions(${target} PUBLIC ${QB_COMPILE_DEFINITIONS})
     
@@ -340,6 +382,11 @@ function(qb_apply_compiler_flags target)
 endfunction()
 
 function(qb_apply_linker_flags target)
+    # Sanitizer runtime must be on the link line of every instrumented target.
+    if(QB_SANITIZE_LINK_OPTS)
+        target_link_options(${target} PRIVATE ${QB_SANITIZE_LINK_OPTS})
+    endif()
+
     if(QB_COMPILER_MSVC)
         # MSVC linker optimizations
         target_link_options(${target} PRIVATE 
@@ -499,5 +546,21 @@ function(config_compiler_and_linker)
     qb_debug_message("Compiler configuration handled automatically")
 endfunction()
 
+# -----------------------------------------------------------------------------
+# Publish compiler state to CACHE INTERNAL (cross-scope visibility)
+# -----------------------------------------------------------------------------
+# qb_apply_compiler_flags() / qb_apply_linker_flags() are invoked from foreign
+# directory scopes (qbm/* modules, examples — added by the top-level project, not by
+# qb). Plain directory-scoped variables are invisible there, which previously left
+# qbm targets without qb's warning/optimization flags (no -march=native, -Wall, etc.).
+# Freezing the finalized flag set into the cache makes it visible everywhere.
+foreach(_v
+    QB_COMPILER_MSVC QB_COMPILER_GCC QB_COMPILER_CLANG QB_COMPILER_INTEL QB_COMPILER_NAME
+    QB_CXX_FLAGS_BASE QB_CXX_FLAGS_DEBUG QB_CXX_FLAGS_RELEASE
+    QB_CXX_FLAGS_RELWITHDEBINFO QB_CXX_FLAGS_MINSIZEREL
+    QB_SANITIZE_COMPILE_OPTS QB_SANITIZE_LINK_OPTS)
+    set(${_v} "${${_v}}" CACHE INTERNAL "")
+endforeach()
+
 # Mark compiler configuration as loaded
-set(QB_COMPILER_LOADED TRUE CACHE INTERNAL "qb compiler configuration loaded") 
+set(QB_COMPILER_LOADED TRUE CACHE INTERNAL "qb compiler configuration loaded")

@@ -28,7 +28,7 @@
 # Both methods provide the same targets: qb::core, qb::io
 # -----------------------------------------------------------------------------
 
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 3.24)
 
 # -----------------------------------------------------------------------------
 # Early Configuration
@@ -256,6 +256,14 @@ if(QB_INSTALL)
     # Install FindArgon2 module so consumers can resolve the Argon2 dependency
     if(QB_HAS_ARGON2)
         install(FILES "${QB_CMAKE_DIR}/FindArgon2.cmake"
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
+        )
+    endif()
+
+    # Install FindNgtcp2 so find_package(qb) consumers of a QUIC-enabled build can
+    # recreate the Ngtcp2:: imported targets that qb::io links transitively.
+    if(QB_HAS_QUIC)
+        install(FILES "${QB_CMAKE_DIR}/FindNgtcp2.cmake"
             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/qb
         )
     endif()
