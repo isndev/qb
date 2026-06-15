@@ -1207,12 +1207,18 @@ private:
             // Capture protocol pointer before onMessage() — onMessage() may call
             // switch_protocol() internally (e.g. handshake → HTTP/2 upgrade).
             // The OLD protocol's should_flush() must be used for flush(), not the new one.
+            // Snapshot should_flush() here as well: onMessage() may not only switch the
+            // protocol but also drop the old one from the protocol list (clear_protocols()),
+            // which would leave `protocol` dangling. should_flush() is a per-protocol
+            // invariant (no setter is ever called after construction), so reading it now
+            // is equivalent to reading it after and removes every post-onMessage deref.
             auto *protocol = this->_protocol;
+            const bool old_should_flush = protocol->should_flush();
             protocol->onMessage(ret);
             // Update statistics: message successfully processed
             ++_messages_processed;
             if (unlikely(_reason)) {
-                if (likely(protocol->should_flush()))
+                if (likely(old_should_flush))
                     Derived.flush(ret);
                 _on_message = false;
                 return false;
@@ -1225,7 +1231,7 @@ private:
                 return false;
             }
             // Use the OLD protocol's should_flush() to preserve protocol-switching semantics
-            if (likely(protocol->should_flush()))
+            if (likely(old_should_flush))
                 Derived.flush(ret);
         }
         _on_message = false;
@@ -2484,11 +2490,18 @@ private:
                 _on_message = false;
                 return false;
             }
+            // Snapshot the protocol pointer AND its should_flush() before onMessage():
+            // onMessage() may switch_protocol() (handshake → upgrade) or even
+            // clear_protocols(), either of which can leave `protocol` dangling. The OLD
+            // protocol's should_flush() governs flushing the bytes of THIS message, and
+            // should_flush() is a per-protocol invariant (no setter is ever called), so
+            // capturing it now is equivalent and removes every post-onMessage deref.
             auto *protocol = this->_protocol;
+            const bool old_should_flush = protocol->should_flush();
             protocol->onMessage(ret);
             ++_messages_processed;
             if (unlikely(_reason)) {
-                if (likely(protocol->should_flush()))
+                if (likely(old_should_flush))
                     Derived.flush(ret);
                 if (Derived.pendingWrite()) {
                     this->ready_to_write();
@@ -2499,7 +2512,7 @@ private:
                 return false;
             }
             if (unlikely(!this->_protocol->ok())) {
-                if (likely(protocol->should_flush()))
+                if (likely(old_should_flush))
                     Derived.flush(ret);
                 if (Derived.pendingWrite()) {
                     this->ready_to_write();
@@ -2511,7 +2524,7 @@ private:
                 _on_message = false;
                 return false;
             }
-            if (likely(protocol->should_flush()))
+            if (likely(old_should_flush))
                 Derived.flush(ret);
         }
         _on_message = false;

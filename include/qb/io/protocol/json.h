@@ -81,6 +81,57 @@ json_depth_within(const char *data, std::size_t size,
     }
     return true;
 }
+
+/**
+ * @brief Minimal SAX consumer that only validates container nesting depth.
+ * @details Implements the nlohmann json_sax interface (duck-typed) but builds
+ *          no DOM — every scalar callback is a no-op; start_array/start_object
+ *          return false once @ref kJsonMaxNestingDepth is exceeded. Driving a
+ *          MessagePack decode through this aborts the recursive binary reader
+ *          before it can exhaust the stack (a try/catch cannot recover a stack
+ *          overflow).
+ */
+struct msgpack_depth_sax {
+    using number_integer_t  = ::nlohmann::json::number_integer_t;
+    using number_unsigned_t = ::nlohmann::json::number_unsigned_t;
+    using number_float_t    = ::nlohmann::json::number_float_t;
+    using string_t          = ::nlohmann::json::string_t;
+    using binary_t          = ::nlohmann::json::binary_t;
+
+    std::size_t depth = 0;
+    std::size_t max_depth;
+    explicit msgpack_depth_sax(std::size_t md) noexcept : max_depth(md) {}
+
+    bool null() noexcept { return true; }
+    bool boolean(bool) noexcept { return true; }
+    bool number_integer(number_integer_t) noexcept { return true; }
+    bool number_unsigned(number_unsigned_t) noexcept { return true; }
+    bool number_float(number_float_t, const string_t &) noexcept { return true; }
+    bool string(string_t &) noexcept { return true; }
+    bool binary(binary_t &) noexcept { return true; }
+    bool key(string_t &) noexcept { return true; }
+    bool start_object(std::size_t) noexcept { return ++depth <= max_depth; }
+    bool end_object() noexcept { if (depth) --depth; return true; }
+    bool start_array(std::size_t) noexcept { return ++depth <= max_depth; }
+    bool end_array() noexcept { if (depth) --depth; return true; }
+    template <typename Ex>
+    bool parse_error(std::size_t, const std::string &, const Ex &) noexcept {
+        return false;
+    }
+};
+
+/**
+ * @brief Returns true if the MessagePack-encoded buffer nests no deeper than
+ *        @p max_depth (and is structurally parseable).
+ */
+inline bool
+msgpack_depth_within(const char *data, std::size_t size,
+                     std::size_t max_depth) noexcept {
+    msgpack_depth_sax sax(max_depth);
+    return ::nlohmann::json::sax_parse(std::string_view(data, size), &sax,
+                                       ::nlohmann::json::input_format_t::msgpack,
+                                       /*strict=*/true, /*ignore_comments=*/false);
+}
 } // namespace detail
 
 /**
@@ -218,6 +269,14 @@ public:
     onMessage(std::size_t size) noexcept final {
         const auto parsed = this->shiftSize(size);
         const auto data   = this->_io.in().cbegin();
+        // DoS guard: bound MessagePack nesting before from_msgpack()'s recursive
+        // binary reader can blow the stack (a try/catch cannot recover a stack
+        // overflow). Mirrors the text json protocol's json_depth_within pre-scan;
+        // the pre-scan itself aborts at kJsonMaxNestingDepth, so it is bounded too.
+        if (!detail::msgpack_depth_within(data, parsed, detail::kJsonMaxNestingDepth)) {
+            this->not_ok();
+            return;
+        }
         try {
             auto json =
                 nlohmann::json::from_msgpack(std::string_view(data, parsed), true, false);

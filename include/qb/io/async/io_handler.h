@@ -162,7 +162,8 @@ public:
      * @brief Set the maximum number of sessions allowed.
      * @param max The maximum number of sessions. Set to 0 to disable the limit (not recommended for production).
      * @note This limit is checked when registering new sessions via `registerSession()`.
-     *       If the limit is reached, `registerSession()` will throw a `std::runtime_error`.
+     *       If the limit is reached, `registerSession()` closes the incoming I/O and
+     *       returns `nullptr` (it does not throw).
      */
     void
     set_max_sessions(std::size_t max) noexcept {

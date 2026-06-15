@@ -1281,3 +1281,28 @@ TEST(JsonProtocol, DepthGuard) {
     std::string over(kMax + 1, '[');
     EXPECT_FALSE(json_depth_within(over.data(), over.size(), kMax));
 }
+
+TEST(JsonProtocol, MsgpackDepthGuard) {
+    using qb::protocol::detail::msgpack_depth_within;
+    constexpr std::size_t kMax = qb::protocol::detail::kJsonMaxNestingDepth;
+    // 0x91 = fixarray(1 element); 0xc0 = nil. N nested single-element arrays
+    // give nesting depth N. The msgpack json_packed protocol must bound this
+    // before from_msgpack()'s recursive reader blows the stack.
+
+    // Reasonable nesting passes: [[[42]]].
+    std::string ok = {char(0x91), char(0x91), char(0x91), char(0x2a)};
+    EXPECT_TRUE(msgpack_depth_within(ok.data(), ok.size(), kMax));
+
+    // Pathological nesting beyond the limit is rejected.
+    std::string bomb(kMax + 5, char(0x91));
+    bomb.push_back(char(0xc0));
+    EXPECT_FALSE(msgpack_depth_within(bomb.data(), bomb.size(), kMax));
+
+    // Exactly at the limit is accepted; one over is not.
+    std::string at_limit(kMax, char(0x91));
+    at_limit.push_back(char(0xc0));
+    EXPECT_TRUE(msgpack_depth_within(at_limit.data(), at_limit.size(), kMax));
+    std::string over_mp(kMax + 1, char(0x91));
+    over_mp.push_back(char(0xc0));
+    EXPECT_FALSE(msgpack_depth_within(over_mp.data(), over_mp.size(), kMax));
+}

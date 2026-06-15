@@ -85,6 +85,12 @@ public:
 #ifdef EPROTO
             || ret == EPROTO
 #endif
+            // Transient resource exhaustion (fd table / kernel buffers full):
+            // retryable, not a permanent acceptor failure. See accept.h.
+            || ret == EMFILE || ret == ENFILE || ret == ENOMEM
+#ifdef ENOBUFS
+            || ret == ENOBUFS
+#endif
         )
             qb::io::socket::set_last_errno(EWOULDBLOCK);
         return static_cast<std::size_t>(-1);

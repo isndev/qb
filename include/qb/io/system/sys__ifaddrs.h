@@ -545,7 +545,8 @@ parse_netlink_reply(netlink_session *session, struct ifaddrs **ifaddrs_head,
         reply_vector.iov_base = response;
 
         memset(&netlink_reply, 0, sizeof(netlink_reply));
-        netlink_reply.msg_namelen = sizeof(&session->them);
+        netlink_reply.msg_namelen = sizeof(session->them); // size of the struct,
+                                                           // not the pointer to it
         netlink_reply.msg_name    = &session->them;
         netlink_reply.msg_iovlen  = 1;
         netlink_reply.msg_iov     = &reply_vector;
@@ -652,7 +653,12 @@ fill_sa_address(struct sockaddr **sa, struct ifaddrmsg *net_address, void *rta_d
 
         default: {
             struct sockaddr *sagen;
-            assert(rta_payload_length <= sizeof(sagen->sa_data));
+            // Runtime bounds check, NOT just an assert: under NDEBUG the assert
+            // is compiled out, and an exotic address family whose kernel-supplied
+            // payload exceeds sa_data would heap-overflow the calloc'd sockaddr.
+            // Mirrors the guard fill_ll_address already does on sll_addr.
+            if (rta_payload_length > sizeof(sagen->sa_data))
+                return -1;
             *sa = sagen = (struct sockaddr *) calloc(1, sizeof(*sagen));
             if (!sagen)
                 return -1;
