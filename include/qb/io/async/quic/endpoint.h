@@ -273,7 +273,7 @@ public:
     endpoint(endpoint&&) = delete;
     endpoint& operator=(endpoint&&) = delete;
 
-    ~endpoint() {
+    virtual ~endpoint() {
         close();
         unregister_watchers();
     }
