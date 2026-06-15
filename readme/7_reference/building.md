@@ -9,13 +9,14 @@ This guide provides detailed information on building the QB Actor Framework from
 
 Before you begin, ensure your development environment has the following:
 
-*   **C++23-capable compiler:** The framework targets **C++23** (e.g. a recent GCC, Clang, or MSVC with C++23 support).
-*   **CMake:** **3.22 or newer** is required (see also [CMake and dependencies](./cmake_dependencies.md)).
-*   **Git:** Required on the configure machine if you use **FetchContent** for GoogleTest / Google Benchmark (default when tests or benchmarks are enabled).
+*   **C++23-capable compiler:** The framework targets **C++23** (e.g. a recent GCC, Clang, or MSVC with C++23 support). The requirement propagates to consumers as a PUBLIC `cxx_std_23` usage requirement.
+*   **CMake:** **3.24 or newer** is required (needed for the `FetchContent` + `find_package` integration; see [CMake and dependencies](./cmake_dependencies.md)).
+*   **Git:** Required on the configure machine when a fetchable dependency (GoogleTest, Google Benchmark, Zlib) is not found on the system and is built from source.
 *   **Optional Dependencies (for extended features):**
-    *   **OpenSSL Development Libraries:** For SSL/TLS and cryptography (`QB_WITH_SSL=ON`).
-    *   **Zlib Development Libraries:** For compression (`QB_WITH_COMPRESSION=ON`).
-    *   **Google Test / Google Benchmark:** Not a manual install by default — qb uses **CMake FetchContent** with pinned tags when `QB_BUILD_TESTS` / `QB_BUILD_BENCHMARKS` are **ON**. Use **`QB_USE_SYSTEM_GTEST`** / **`QB_USE_SYSTEM_BENCHMARK`** with **`find_package(... CONFIG)`** if you prefer vcpkg, Conan, or distro packages.
+    *   **OpenSSL Development Libraries:** For SSL/TLS and cryptography (`QB_WITH_SSL=ON`). System-provided only (not fetchable); absent → SSL features disabled.
+    *   **Zlib Development Libraries:** For compression (`QB_WITH_COMPRESSION=ON`). Found on the system, or built from source when absent and `QB_DEPS_FETCH_FALLBACK=ON` (default).
+    *   **libngtcp2 (+ libnghttp3):** For QUIC / HTTP/3 (`QB_WITH_QUIC=AUTO`). System-provided only.
+    *   **Google Test / Google Benchmark:** Resolved automatically — **system package if present, otherwise built from source** via FetchContent with pinned tags (when `QB_BUILD_TESTS` / `QB_BUILD_BENCHMARKS` are **ON**). Force a system package with **`QB_USE_SYSTEM_GTEST`** / **`QB_USE_SYSTEM_BENCHMARK`**.
 
 ## 2. Standard Build Process
 
@@ -75,26 +76,44 @@ The QB Framework's CMake build system is organized as follows:
 
 You can customize the build by passing options to CMake during the configuration step (e.g., `cmake -DOPTION_NAME=VALUE ..`). Here are some of the most important ones for the QB Framework:
 
-*   **`CMAKE_BUILD_TYPE`**: (String: `Debug`, `Release`, `RelWithDebInfo`, `MinSizeRel`) Standard CMake option to set the build configuration. Impacts optimization levels and debug information.
-*   **`BUILD_SHARED_LIBS`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Standard CMake option. If `ON`, libraries will be built as shared objects (.so, .dll, .dylib). QB might also use a custom `QB_DYNAMIC` option for this.
-*   **`QB_DYNAMIC`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Specific QB option to build `qb-io` and `qb-core` as shared/dynamic libraries rather than static ones. This is often the primary control for shared vs. static builds in QB.
-*   **`QB_BUILD_TESTS`**: (Boolean: `ON`/`OFF`, Default: Often `ON`) Controls whether to build the unit and system tests (typically using Google Test).
-*   **`QB_BUILD_BENCHMARKS`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Controls whether to build performance benchmarks (may require Google Benchmark).
-*   **`QB_BUILD_DOC`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Enables CMake targets related to generating Doxygen API documentation.
-*   **`QB_BUILD_EXAMPLES`**: (Boolean: `ON`/`OFF`, Default: Often `ON`) Controls whether to build the example applications provided with the framework.
-*   **`QB_INSTALL`**: (Boolean: `ON`/`OFF`, Default: `ON`) If `ON`, CMake will generate installation rules. This allows you to use `cmake --install .`.
-*   **`QB_WITH_SSL`**: (Boolean: `ON`/`OFF`, default often `ON` with auto-detect) Enables SSL/TLS in `qb-io`. Requires OpenSSL development libraries when `ON`.
-*   **`QB_WITH_COMPRESSION`**: (Boolean: `ON`/`OFF`, default often `ON` with auto-detect) Enables compression in `qb-io`. Requires Zlib when `ON`.
-*   **`QB_USE_SYSTEM_GTEST`**: (Boolean: `OFF` by default) If `ON`, uses **`find_package(GTest CONFIG REQUIRED)`** instead of **FetchContent** for tests.
-*   **`QB_USE_SYSTEM_BENCHMARK`**: (Boolean: `OFF` by default) If `ON`, uses **`find_package(benchmark CONFIG REQUIRED)`** instead of **FetchContent** for benchmarks.
-*   **`QB_GOOGLETEST_GIT_TAG`** / **`QB_GOOGLEBENCHMARK_GIT_TAG`**: (String, advanced cache) Pin FetchContent to a tag or full commit hash.
-*   **`QB_LOGGER`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Enables integration with the `nanolog` high-performance logging library. Requires `nanolog` to be available (e.g., as a submodule) and typically also `QB_WITH_LOG=ON`.
-*   **`QB_WITH_LOG`**: (Boolean: `ON`/`OFF`, Default: `ON`) A general switch that might enable logging infrastructure, often a prerequisite for `QB_LOGGER`.
-*   **`QB_STDOUT_LOG`**: (Boolean: `ON`/`OFF`, Default: Often `ON` if `QB_LOGGER` is `OFF`) Enables simple diagnostic logging to `stdout` via `qb::io::cout()` when the full `nanolog` system is not active.
-*   **`QB_WITH_TCMALLOC`**: (Boolean: `ON`/`OFF`, Default: `OFF`) If `ON` (Linux only), attempts to link the application with TCMalloc (from Google Performance Tools) as the memory allocator, which can sometimes improve performance for memory-intensive applications.
-*   **`QB_BUILD_COVERAGE`**: (Boolean: `ON`/`OFF`, Default: `OFF`) Enables code coverage reporting flags (e.g., for gcov/lcov). Typically used with `Debug` builds on non-Windows platforms.
-*   **`QB_BUILD_ARCH`**: (String, Default: `native` on GCC/Clang) Allows specifying CPU architecture-specific optimization flags (e.g., `native`, `avx2`).
-*   **`CMAKE_INSTALL_PREFIX`**: (Path) Standard CMake variable. Specifies the root directory where libraries, headers, and CMake package configuration files will be installed when you run `cmake --install .`.
+### Build configuration
+
+*   **`CMAKE_BUILD_TYPE`**: (String: `Debug`, `Release`, `RelWithDebInfo`, `MinSizeRel`; default `Release`) Standard CMake build configuration.
+*   **`BUILD_SHARED_LIBS`** / **`QB_BUILD_SHARED_LIBS`**: (Boolean, Default: `OFF`) Build `qb-io`/`qb-core` (and modules) as shared objects instead of static. `QB_BUILD_SHARED_LIBS` defaults to the value of the standard `BUILD_SHARED_LIBS`.
+*   **`QB_BUILD_TESTS`**: (Boolean, Default: `ON`) Build the unit/system tests (Google Test).
+*   **`QB_BUILD_BENCHMARKS`**: (Boolean, Default: `OFF`) Build performance benchmarks (Google Benchmark).
+*   **`QB_BUILD_EXAMPLES`**: (Boolean, Default: `ON`) Build the example applications.
+*   **`QB_BUILD_DOCS`**: (Boolean, Default: `OFF`) Add the Doxygen documentation subdirectory. (`QB_BUILD_DOC` then gates the actual `docs` target.)
+*   **`QB_INSTALL`**: (Boolean, Default: `ON`) Generate installation rules (`cmake --install .`).
+*   **`CMAKE_INSTALL_PREFIX`**: (Path) Standard install root.
+
+### Optional features
+
+*   **`QB_WITH_SSL`**: (Boolean, Default: `ON`) SSL/TLS + crypto in `qb-io` via OpenSSL. Auto-disables (with a warning) if OpenSSL is absent. Enables Argon2 password hashing when libargon2 is also found.
+*   **`QB_WITH_COMPRESSION`**: (Boolean, Default: `ON`) Compression in `qb-io` via Zlib (system, or fetched when `QB_DEPS_FETCH_FALLBACK=ON`).
+*   **`QB_WITH_QUIC`**: (Tri-state: `AUTO`/`ON`/`OFF`, Default: `AUTO`) QUIC transport via libngtcp2. `AUTO` enables it iff libngtcp2 is found; `ON` requires it; `OFF` disables it. Requires `QB_WITH_SSL`.
+*   **`QB_WITH_LOGGING`**: (Boolean, Default: `ON`) Enable the logging subsystem (nanolog).
+*   **`QB_STDOUT_LOGGING`**: (Boolean, Default: `OFF`) Stdout logging fallback when full logging is off.
+*   **`QB_WITH_PROFILING`**: (Boolean, Default: `OFF`) Link gperftools (tcmalloc/profiler) when found. Incompatible with `QB_SANITIZE`.
+
+### Performance
+
+*   **`QB_ENABLE_OPTIMIZATIONS`**: (Boolean, Default: `ON`) Extra Release optimization flags (vectorization, loop unrolling, function/data sections).
+*   **`QB_ENABLE_NATIVE_ARCH`**: (Boolean, Default: `ON`) Tune codegen for the build-host CPU (`-march=native` / `-mcpu=native`, validated per compiler). **Turn OFF for portable/distributable binaries** (use the `release-portable` preset).
+*   **`QB_ENABLE_LTO`**: (Boolean, Default: `OFF`) Link Time Optimization for Release.
+*   **`QB_ENABLE_FAST_MATH`**: (Boolean, Default: `OFF`) `-ffast-math` / `/fp:fast` (breaks IEEE-754).
+
+### Diagnostics
+
+*   **`QB_SANITIZE`**: (String, Default: empty) Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. (Legacy: `QB_DEBUG_MEMORY=ON` ⇒ `QB_SANITIZE=address,undefined`.)
+*   **`QB_BUILD_COVERAGE`**: (Boolean, Default: `OFF`) gcov/lcov coverage instrumentation (Debug, non-Windows).
+*   **`QB_DEBUG_ACTOR`**: (Boolean, Default: `OFF`) Extra actor-system debug instrumentation.
+
+### Dependency resolution
+
+*   **`QB_DEPS_FETCH_FALLBACK`**: (Boolean, Default: `ON`) Build fetchable deps (GoogleTest, Google Benchmark, Zlib) from source when not found on the system. OFF = system-only for those.
+*   **`QB_USE_SYSTEM_GTEST`** / **`QB_USE_SYSTEM_BENCHMARK`**: (Boolean, Default: `OFF`) Force `find_package(... CONFIG REQUIRED)` and never fetch.
+*   **`QB_GOOGLETEST_GIT_TAG`** / **`QB_GOOGLEBENCHMARK_GIT_TAG`** / **`QB_ZLIB_GIT_TAG`**: (String, advanced cache) Pin the fetched source revision.
 
 *Always check the root `CMakeLists.txt` and `cmake/` directory for the most up-to-date and complete list of options specific to your version of QB.*
 
@@ -120,11 +139,13 @@ Successfully building the framework will produce several targets:
     *   `stduuid` (for `qb::uuid` - likely bundled)
     *   `nlohmann/json` (for `qb::protocol::json` - likely bundled)
 *   **Optional External Libraries (enabled via CMake options):**
-    *   OpenSSL (for `QB_IO_WITH_SSL=ON`)
-    *   Zlib (for `QB_IO_WITH_ZLIB=ON`)
-    *   Google Test (for `QB_BUILD_TESTS=ON` — **FetchContent** by default; see [cmake_dependencies.md](./cmake_dependencies.md))
+    *   OpenSSL (for `QB_WITH_SSL=ON`) — system-provided
+    *   Argon2 (auto-enabled with SSL when libargon2 is found) — system-provided
+    *   Zlib (for `QB_WITH_COMPRESSION=ON`) — system, or fetched as fallback
+    *   libngtcp2 / libnghttp3 (for `QB_WITH_QUIC`, HTTP/3) — system-provided
+    *   Google Test (for `QB_BUILD_TESTS=ON` — system if present, else fetched; see [cmake_dependencies.md](./cmake_dependencies.md))
     *   Google Benchmark (for `QB_BUILD_BENCHMARKS=ON` — same)
-    *   `nanolog` (for `QB_LOGGER=ON` - may be a submodule or fetched)
+    *   `nanolog` (bundled, used when `QB_WITH_LOGGING=ON`)
 
 ## 7. Platform-Specific Notes
 

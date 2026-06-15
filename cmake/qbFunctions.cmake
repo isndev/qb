@@ -39,20 +39,25 @@ function(_qb_apply_target_properties target)
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF
     )
-    
+
+    # Propagate the C++23 requirement as a PUBLIC usage requirement so that any
+    # consumer linking this target (via find_package(qb) or add_subdirectory) is
+    # forced to compile at >= C++23. The CXX_STANDARD property above is a private,
+    # non-transitive setting; without this line a downstream target built at an
+    # older standard would fail cryptically on qb's public headers (coroutines,
+    # std::expected, concepts).
+    target_compile_features(${target} PUBLIC cxx_std_23)
+
     # Apply compiler flags
     qb_apply_compiler_flags(${target})
     
     # Apply linker flags
     qb_apply_linker_flags(${target})
-    
-    # Set output directories
-    set_target_properties(${target} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
-    )
-    
+
+    # Output directories come from the global CMAKE_*_OUTPUT_DIRECTORY set politely in
+    # qbConfig (tests/benchmarks override to their own bin/ subdir). No per-target
+    # override here, so an embedding parent's chosen layout is respected.
+
     # Add include directories (PUBLIC so they're inherited by dependents)
     target_include_directories(${target} 
         PUBLIC 
@@ -442,7 +447,10 @@ function(qb_register_module)
     if(MOD_HEADER_ONLY)
         # Header-only module
         add_library(${module_target} INTERFACE)
-        
+
+        # Header-only qb modules also require C++23 from their consumers.
+        target_compile_features(${module_target} INTERFACE cxx_std_23)
+
         # Apply interface properties
         if(MOD_INCLUDES)
             target_include_directories(${module_target} INTERFACE ${MOD_INCLUDES})
@@ -515,9 +523,12 @@ function(qb_load_modules modules_dir)
     
     qb_status_message("Loading modules from: ${modules_dir}")
     
-    # Get all subdirectories
-    file(GLOB module_dirs RELATIVE "${modules_dir}" "${modules_dir}/*")
-    
+    # Get all subdirectories. CONFIGURE_DEPENDS re-runs the glob on rebuild so a
+    # newly added/removed module triggers a reconfigure; sorting makes the module
+    # load order deterministic across machines.
+    file(GLOB module_dirs RELATIVE "${modules_dir}" CONFIGURE_DEPENDS "${modules_dir}/*")
+    list(SORT module_dirs)
+
     foreach(module_dir ${module_dirs})
         set(full_module_path "${modules_dir}/${module_dir}")
         

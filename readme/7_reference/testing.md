@@ -23,7 +23,9 @@ Our testing strategy is divided into two main categories:
 
 Tests are compiled as part of the standard QB Framework build process if the `QB_BUILD_TESTS` CMake option is enabled (it is often `ON` by default).
 
-**GoogleTest** is resolved automatically: by default CMake **FetchContent** clones a **pinned release** (see [CMake and dependencies](./cmake_dependencies.md)). The first configure needs **network** access unless you use **`QB_USE_SYSTEM_GTEST=ON`** with a preinstalled **GTest** CMake package.
+**GoogleTest** is resolved automatically: by default qb uses a **system** GTest if `find_package` finds one, otherwise it **builds a pinned release from source** via FetchContent (see [CMake and dependencies](./cmake_dependencies.md)). A from-source fallback needs **network** access on the first configure. Force a preinstalled package with **`QB_USE_SYSTEM_GTEST=ON`**.
+
+> **Running tests under sanitizers:** configure with the `sanitize` preset (`cmake --preset sanitize`) for ASan+UBSan, or `sanitize-thread` for TSan — every qb/qbm/test target is instrumented. See `QB_SANITIZE` in [building.md](./building.md).
 
 1.  **Ensure `QB_BUILD_TESTS=ON`:** When configuring CMake:
     ```bash

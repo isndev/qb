@@ -2,7 +2,7 @@
     "version": 3,
     "cmakeMinimumRequired": {
         "major": 3,
-        "minor": 22,
+        "minor": 24,
         "patch": 0
     },
     "configurePresets": [
@@ -58,12 +58,22 @@
         },
         {
             "name": "sanitize",
-            "displayName": "Sanitizers",
-            "description": "Debug build with ASan + UBSan",
+            "displayName": "Sanitizers (ASan + UBSan)",
+            "description": "Debug build with AddressSanitizer + UndefinedBehaviorSanitizer",
             "inherits": "base",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug",
-                "QB_DEBUG_MEMORY": "ON"
+                "QB_SANITIZE": "address,undefined"
+            }
+        },
+        {
+            "name": "sanitize-thread",
+            "displayName": "Sanitizers (TSan)",
+            "description": "Debug build with ThreadSanitizer (data-race detection)",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "QB_SANITIZE": "thread"
             }
         },
         {
@@ -88,10 +98,19 @@
         {
             "name": "release-native",
             "displayName": "Release + Native Arch",
-            "description": "Release build optimized for the host CPU",
+            "description": "Release build optimized for the host CPU (native is on by default; this preset is explicit)",
             "inherits": "release",
             "cacheVariables": {
                 "QB_ENABLE_NATIVE_ARCH": "ON"
+            }
+        },
+        {
+            "name": "release-portable",
+            "displayName": "Release + Portable Arch",
+            "description": "Release build with a portable CPU baseline (native arch OFF) for distributable binaries",
+            "inherits": "release",
+            "cacheVariables": {
+                "QB_ENABLE_NATIVE_ARCH": "OFF"
             }
         }
     ],
@@ -107,6 +126,10 @@
         {
             "name": "dev",
             "configurePreset": "dev"
+        },
+        {
+            "name": "sanitize",
+            "configurePreset": "sanitize"
         }
     ],
     "testPresets": [
@@ -130,6 +153,17 @@
             "execution": {
                 "timeout": 300,
                 "jobs": 4
+            }
+        },
+        {
+            "name": "sanitize",
+            "configurePreset": "sanitize",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600,
+                "jobs": 1
             }
         }
     ]

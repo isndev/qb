@@ -149,11 +149,40 @@ else()
     set(QB_HAS_SSL FALSE)
 endif()
 
-# ZLIB (optional, for compression support)
+# ZLIB (optional, for compression support). Zlib is CMake-buildable, so it supports
+# the system-first / git-fallback policy (QB_DEPS_FETCH_FALLBACK).
 if(QB_WITH_COMPRESSION)
     find_package(ZLIB QUIET)
     if(ZLIB_FOUND)
         qb_status_message("Found ZLIB: ${ZLIB_VERSION_STRING}")
+    elseif(QB_DEPS_FETCH_FALLBACK)
+        qb_status_message("ZLIB not found on system - building from source (tag ${QB_ZLIB_GIT_TAG})")
+        include(FetchContent)
+        set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        FetchContent_Declare(
+            zlib
+            GIT_REPOSITORY https://github.com/madler/zlib.git
+            GIT_TAG ${QB_ZLIB_GIT_TAG}
+            GIT_SHALLOW TRUE
+        )
+        FetchContent_MakeAvailable(zlib)
+        # madler/zlib exposes `zlib` (shared) and `zlibstatic` but no ZLIB::ZLIB target;
+        # normalize so the rest of the build (and qb-io) can link ZLIB::ZLIB uniformly.
+        if(NOT TARGET ZLIB::ZLIB)
+            if(QB_BUILD_SHARED_LIBS AND TARGET zlib)
+                add_library(ZLIB::ZLIB ALIAS zlib)
+            elseif(TARGET zlibstatic)
+                add_library(ZLIB::ZLIB ALIAS zlibstatic)
+            elseif(TARGET zlib)
+                add_library(ZLIB::ZLIB ALIAS zlib)
+            endif()
+        endif()
+        if(TARGET ZLIB::ZLIB)
+            set(ZLIB_FOUND TRUE)
+        endif()
+    endif()
+
+    if(ZLIB_FOUND OR TARGET ZLIB::ZLIB)
         list(APPEND QB_EXTERNAL_LIBRARIES ZLIB::ZLIB)
         set(QB_HAS_COMPRESSION TRUE)
     else()
@@ -412,8 +441,11 @@ if(LIBEV_FOUND)
     list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_LIBEV=1")
 endif()
 
-# Update the global compile definitions
-set(QB_COMPILE_DEFINITIONS ${QB_COMPILE_DEFINITIONS} PARENT_SCOPE)
+# Publish the finalized compile definitions to CACHE INTERNAL so qb_apply_compiler_flags()
+# sees the full set from every scope (qb itself relies on the local variable; qbm/* and
+# examples, added by the top-level project, rely on this cache copy). Same rationale as
+# QB_CXX_FLAGS_* in qbCompiler and QB_PLATFORM_* in qbConfig.
+set(QB_COMPILE_DEFINITIONS "${QB_COMPILE_DEFINITIONS}" CACHE INTERNAL "")
 
 # Mark dependencies as loaded
 set(QB_DEPENDENCIES_LOADED TRUE CACHE INTERNAL "qb dependencies loaded")

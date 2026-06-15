@@ -5,7 +5,7 @@
 
 ## CMake version
 
-The framework requires **CMake 3.22 or newer**. This matches common LTS images, improves C++23 ergonomics, and aligns `qb`, bundled modules (`ev`, `uuid`), and consumer projects such as `qb-dev`.
+The framework requires **CMake 3.24 or newer**. 3.24 is the floor because qb uses the `FetchContent` + `find_package` integration (`FIND_PACKAGE_ARGS`) to resolve fetchable dependencies system-first with a from-source fallback.
 
 **Useful modern CMake practices used in qb:**
 
@@ -15,13 +15,23 @@ The framework requires **CMake 3.22 or newer**. This matches common LTS images, 
 
 Official references: [CMake documentation](https://cmake.org/cmake/help/latest/) — especially the [FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html) module.
 
-## GoogleTest and Google Benchmark
+## Dependency resolution policy
 
-When **`QB_BUILD_TESTS`** is **ON**, qb pulls **GoogleTest** via **`FetchContent`** unless you opt into a system install.
+qb resolves **fetchable** dependencies (those that build cleanly from source: GoogleTest, Google Benchmark, Zlib) with a single, consistent rule:
 
-When **`QB_BUILD_BENCHMARKS`** is **ON**, qb pulls **Google Benchmark** the same way.
+| Setting | Behavior |
+|---------|----------|
+| `QB_DEPS_FETCH_FALLBACK=ON` (default) | Use the **system** package if `find_package` locates it, otherwise **build the pinned tag from source** (FetchContent). |
+| `QB_DEPS_FETCH_FALLBACK=OFF` | Never fetch — use the system package if present, otherwise the feature is disabled (Zlib) or configuration fails (forced deps). |
+| `QB_USE_SYSTEM_GTEST` / `QB_USE_SYSTEM_BENCHMARK = ON` | Force `find_package(... CONFIG REQUIRED)` for that dependency — never fetch. |
 
-Default clone locations (first configure): under your build tree, e.g. `_deps/googletest-src` and `_deps/googlebenchmark-src` (exact path depends on the generator).
+**Not fetchable** (no clean CMake source build): **OpenSSL**, **Argon2**, **libngtcp2/libnghttp3**. These must be provided by the system (Homebrew, apt/dnf, vcpkg, …); when absent the corresponding optional feature (SSL, Argon2 hashing, QUIC/HTTP3) is disabled.
+
+When a dependency is built from source, its sources land under the build tree, e.g. `_deps/googletest-src`, `_deps/googlebenchmark-src`, `_deps/zlib-src` (exact path depends on the generator).
+
+## GoogleTest, Google Benchmark and Zlib
+
+When **`QB_BUILD_TESTS`** is **ON**, qb resolves **GoogleTest** by the policy above; **`QB_BUILD_BENCHMARKS`** does the same for **Google Benchmark**; **`QB_WITH_COMPRESSION`** does the same for **Zlib**.
 
 ### Pinning versions
 
@@ -31,6 +41,7 @@ Cache variables (advanced) control the Git tag or commit:
 |----------|---------|---------|
 | `QB_GOOGLETEST_GIT_TAG` | `v1.15.2` | googletest revision |
 | `QB_GOOGLEBENCHMARK_GIT_TAG` | `v1.9.2` | benchmark revision |
+| `QB_ZLIB_GIT_TAG` | `v1.3.1` | zlib revision (fallback build only) |
 
 Example:
 
@@ -38,9 +49,9 @@ Example:
 cmake -B build -S . -DQB_GOOGLETEST_GIT_TAG=v1.14.0
 ```
 
-### System packages instead of FetchContent
+### Forcing system packages
 
-If the toolchain already provides **Config** packages:
+The default already prefers a system package when present. To **require** one (and fail if missing, never fetch):
 
 ```bash
 cmake -B build -S . \
@@ -52,8 +63,8 @@ That enables **`find_package(GTest CONFIG REQUIRED)`** and **`find_package(bench
 
 ### Offline / CI caches
 
-- First configure with FetchContent needs **network** access to GitHub (unless sources are pre-populated).
-- For air-gapped or cached builds, vendor the tags you need or use **`QB_USE_SYSTEM_*`** with a local prefix (`CMAKE_PREFIX_PATH`).
+- A from-source fallback needs **network** access to GitHub on first configure (unless sources are pre-populated or a system package is found).
+- For air-gapped builds: pre-populate `_deps`, set `QB_DEPS_FETCH_FALLBACK=OFF` with system packages on `CMAKE_PREFIX_PATH`, or use `QB_USE_SYSTEM_*=ON`.
 
 ### Submodule removal
 
