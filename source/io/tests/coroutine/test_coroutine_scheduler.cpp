@@ -34,6 +34,26 @@ protected:
     }
 };
 
+// Regression: a spawned coroutine that suspends then completes must free its
+// frame. It completes via symmetric transfer from its awaited inner task, so its
+// own handle is never re-examined by run_ready(); the scheduler must instead
+// destroy it via the final_suspend defer-destruction path. Before that fix every
+// such spawn leaked one frame.
+TEST_F(CoroutineSchedulerTests, SpawnedSuspendingFrameIsFreed) {
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+    bool done = false;
+    auto fn = [&done]() -> task<void> {
+        co_await sleep(5ms);
+        done = true;
+    };
+    coro_scheduler().spawn(fn);
+    run_for(120ms);
+    coro_scheduler().run_ready();
+    EXPECT_TRUE(done);
+    const long after = detail::CoroutineFrameAllocator::live_frames;
+    EXPECT_EQ(after, baseline) << "leaked " << (after - baseline) << " coroutine frame(s)";
+}
+
 // =============================================================================
 // SCHEDULER STATE MANAGEMENT
 // =============================================================================

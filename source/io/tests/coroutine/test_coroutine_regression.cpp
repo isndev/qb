@@ -753,6 +753,16 @@ TEST_F(CoroutineRegression, ChannelSelectFirstReady) {
         auto result = co_await select(ch_fast, ch_slow);
         EXPECT_EQ(result.index, 0u);
         EXPECT_EQ(result.get<int>(), 42);
+
+        // Drain the slow producer before returning. The 100ms producer holds a
+        // raw pointer to `ch_slow`, which is a local of this coroutine frame;
+        // its storage is freed at co_return (scope exit) regardless of when the
+        // frame itself is reclaimed. Returning here while that producer is still
+        // sleeping would make its later `ch->send("slow")` dereference freed
+        // channel storage (use-after-free, caught under ASan). Awaiting the slow
+        // value keeps `ch_slow` alive until the producer has finished with it.
+        auto slow = co_await ch_slow.recv();
+        EXPECT_EQ(slow, "slow");
         done = true;
     };
 

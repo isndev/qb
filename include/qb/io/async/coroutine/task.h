@@ -101,6 +101,12 @@ namespace qb::io::async {
 // Forward declaration
 class CoroutineScheduler;
 
+// Defined in scheduler.h. Called from task<T>::final_suspend to hand a completed
+// DETACHED (spawned) coroutine frame to the current scheduler for destruction:
+// final_suspend cannot destroy its own frame (it is suspended in it), and a
+// spawned frame has no continuation/owner to free it otherwise.
+void defer_frame_destruction(std::coroutine_handle<>) noexcept;
+
 // ============================================================================
 // Coroutine frame freelist allocator (Finding 2.A.9)
 // ============================================================================
@@ -133,7 +139,14 @@ public:
     static constexpr std::size_t kAlign     = 32;
     static constexpr std::size_t kMaxBucket = 64;   // up to 2 KiB
 
+    // Per-thread count of coroutine frames allocated through this pool and not
+    // yet freed. Cheap diagnostic (thread_local — coroutines are mono-thread per
+    // VirtualCore, so no cross-core contention). Tests assert it returns to its
+    // baseline after coroutines complete, guarding against frame leaks.
+    static inline thread_local long live_frames = 0;
+
     [[nodiscard]] static void* allocate(std::size_t size) {
+        ++live_frames;
         const std::size_t idx = bucket_index(size);
         if (idx == 0 || idx > kMaxBucket) {
             return ::operator new(size);
@@ -149,6 +162,7 @@ public:
 
     static void deallocate(void* p, std::size_t size) noexcept {
         if (!p) return;
+        --live_frames;
         const std::size_t idx = bucket_index(size);
         if (idx == 0 || idx > kMaxBucket) {
             ::operator delete(p);
@@ -342,18 +356,28 @@ public:
         auto final_suspend() noexcept {
             struct final_awaiter {
                 std::coroutine_handle<> continuation_;
+                CoroutineScheduler*     scheduler_;
 
                 bool await_ready() const noexcept { return false; }
 
-                std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept {
-                    // Symmetric transfer: return the continuation handle directly
-                    // This avoids stack overflow in deep coroutine chains
-                    return continuation_ ? continuation_ : std::noop_coroutine();
+                std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept {
+                    // Awaited task: symmetric-transfer to the continuation,
+                    // avoiding stack overflow in deep chains. The awaiting
+                    // task<T> object owns and frees this frame.
+                    if (continuation_)
+                        return continuation_;
+                    // Detached (spawned) task: no continuation and no task<T>
+                    // owner. Hand the frame to the scheduler to destroy on the
+                    // current run_ready() drain (we cannot destroy it here — we
+                    // are suspended in it). Without this the spawned frame leaks.
+                    if (scheduler_)
+                        defer_frame_destruction(h);
+                    return std::noop_coroutine();
                 }
 
                 void await_resume() noexcept {}
             };
-            return final_awaiter{continuation_};
+            return final_awaiter{continuation_, scheduler_};
         }
 
         /**
@@ -596,23 +620,31 @@ public:
         auto final_suspend() noexcept {
             struct final_awaiter {
                 std::coroutine_handle<> continuation_;
+                CoroutineScheduler*     scheduler_;
 #ifdef QB_DEBUG_COROUTINES
                 std::size_t coro_id_;
 #endif
 
                 bool await_ready() const noexcept { return false; }
 
-                std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept {
+                std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept {
 #ifdef QB_DEBUG_COROUTINES
                     QB_CORO_TRACE(coro_id_, "final_suspend");
 #endif
-                    // Symmetric transfer for optimal performance
-                    return continuation_ ? continuation_ : std::noop_coroutine();
+                    // Awaited: symmetric-transfer to the continuation (owner frees
+                    // this frame). Detached (spawned): hand the frame to the
+                    // scheduler to destroy on the run_ready() drain — it has no
+                    // owner and cannot destroy itself here, so it would leak.
+                    if (continuation_)
+                        return continuation_;
+                    if (scheduler_)
+                        defer_frame_destruction(h);
+                    return std::noop_coroutine();
                 }
 
                 void await_resume() noexcept {}
             };
-            return final_awaiter{continuation_
+            return final_awaiter{continuation_, scheduler_
 #ifdef QB_DEBUG_COROUTINES
                 , coro_id_
 #endif
