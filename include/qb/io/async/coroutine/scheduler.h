@@ -43,26 +43,11 @@
 /** Enable scheduler/listener lifecycle debug traces (destructor, register_suspended, clear, reset).
  *  Build with -DQB_DEBUG_CORO_LIFECYCLE=1 to trace teardown and suspended counts. */
 #include <cstdio>
-#if defined(QB_DEBUG_SCOPE) && QB_DEBUG_SCOPE
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
-#endif
-/* MSVC legacy preprocessor does not handle __VA_OPT__ here; ##__VA_ARGS__ elides the
- * preceding comma when empty (MSVC + GNU), matching prior __VA_OPT__ behavior. */
-#define QB_SCHED_TRACE(fmt, ...) std::fprintf(stderr, "[sched] " fmt "\n", ##__VA_ARGS__)
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-#elif defined(QB_DEBUG_CORO_LIFECYCLE) && QB_DEBUG_CORO_LIFECYCLE
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
-#endif
-#define QB_SCHED_TRACE(fmt, ...) std::fprintf(stderr, "[sched] " fmt "\n", ##__VA_ARGS__)
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+#if (defined(QB_DEBUG_SCOPE) && QB_DEBUG_SCOPE) || \
+    (defined(QB_DEBUG_CORO_LIFECYCLE) && QB_DEBUG_CORO_LIFECYCLE)
+// Standard C++20 __VA_OPT__ elides the comma when no trailing args are passed
+// (MSVC needs the conformant preprocessor /Zc:preprocessor, enabled by qb's build).
+#define QB_SCHED_TRACE(fmt, ...) std::fprintf(stderr, "[sched] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
 #else
 #define QB_SCHED_TRACE(fmt, ...) ((void)0)
 #endif

@@ -32,7 +32,9 @@
 /** Set QB_DEBUG_AGEN=1 (compile flag or before the include) to enable
  *  async_generator trace prints that show the yield/next/suspend flow. */
 #if defined(QB_DEBUG_AGEN) && QB_DEBUG_AGEN
-#  define QB_AGEN_TRACE(fmt, ...) std::fprintf(stderr, "[agen ] " fmt "\n", ##__VA_ARGS__)
+// Standard C++20 __VA_OPT__ elides the comma when no trailing args are passed
+// (MSVC needs the conformant preprocessor /Zc:preprocessor, enabled by qb's build).
+#  define QB_AGEN_TRACE(fmt, ...) std::fprintf(stderr, "[agen ] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
 #else
 #  define QB_AGEN_TRACE(fmt, ...) (void)0
 #endif

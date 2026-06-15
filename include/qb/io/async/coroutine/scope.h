@@ -39,14 +39,9 @@
 
 #if defined(QB_DEBUG_SCOPE) && QB_DEBUG_SCOPE
 #include <cstdio>
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
-#endif
-#define QB_SCOPE_TRACE(fmt, ...) std::fprintf(stderr, "[scope] " fmt "\n", ##__VA_ARGS__)
-#if defined(__clang__) || defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+// Standard C++20 __VA_OPT__ elides the comma when no trailing args are passed
+// (MSVC needs the conformant preprocessor /Zc:preprocessor, enabled by qb's build).
+#define QB_SCOPE_TRACE(fmt, ...) std::fprintf(stderr, "[scope] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
 #else
 #define QB_SCOPE_TRACE(fmt, ...) ((void)0)
 #endif

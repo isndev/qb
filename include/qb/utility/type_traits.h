@@ -693,7 +693,7 @@ struct expand {
 //     has_member_<name><T>::value      — wraps the qb:: concept
 //     has_member_func_<name><T>::value — identical alias (historical compat)
 //
-//   METHOD only — additional struct for `friend class` declarations:
+//   METHOD only — additional struct for `friend struct` declarations:
 //     has_method_<name><C, Ret, Args...>::value
 //       Ret = void → existence only (qb::has_<name>)
 //       Ret ≠ void → exact return  (qb::has_<name>_r, std::same_as<Ret>)
@@ -716,7 +716,7 @@ struct expand {
         { c.name(std::declval<Args>()...) } -> std::same_as<Ret>;               \
     };                                                                           \
     } /* namespace qb */                                                         \
-    /** Legacy trait — supports `friend class has_method_name<...>`. */          \
+    /** Legacy trait — declared `struct`; befriend with `friend struct has_method_name<...>`. */ \
     /** Ret=void → existence only; Ret≠void → exact return (same_as<Ret>). */   \
     template <typename C, typename Ret, typename... Args>                        \
     struct has_method_##name                                                     \
