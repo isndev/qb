@@ -44,6 +44,7 @@ set(ACTOR_SYSTEM_TESTS
         test-actor-callback.cpp
         test-actor-dependency.cpp
         test-actor-event.cpp
+        test-audit-repro.cpp
         test-actor-service-event.cpp
         test-actor-broadcast.cpp
         test-actor-delayed-events.cpp

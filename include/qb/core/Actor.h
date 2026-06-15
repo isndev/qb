@@ -720,6 +720,10 @@ public:
      * @note If the event type has a non-trivial destructor, the framework ensures it is called appropriately.
      * @attention Do not store the returned reference beyond the current scope, as the event object's lifetime
      *            is managed by the framework after it's sent.
+     * @warning `noexcept`: an allocation failure while growing the pipe buffer or
+     *          constructing the event (e.g. under OOM) cannot be reported and calls
+     *          `std::terminate()`. Keep events small / allocation-light. See
+     *          `qb::Pipe::push` for the full contract (applies to `send`/`broadcast` too).
      */
     template <typename _Event, typename... _Args>
     _Event &push(ActorId const &dest, _Args &&...args) const noexcept;

@@ -121,6 +121,20 @@ public:
      *
      * @note Use `allocated_push()` instead when the event carries a large, dynamically
      *       sized payload and you want to avoid internal buffer reallocation.
+     *
+     * @warning **noexcept + allocation.** This method is `noexcept`, yet it grows the
+     *          pipe buffer (which may `throw std::bad_alloc` on memory exhaustion) and
+     *          constructs the event in place (whose constructor may also throw, e.g. an
+     *          event holding a `std::string`/`std::vector` under low memory). Because a
+     *          throw cannot escape a `noexcept` function, **any such failure calls
+     *          `std::terminate()` and aborts the whole process** — it is not a
+     *          recoverable error. This is by design: events are expected to be small,
+     *          quasi-POD messages on a system provisioned with enough memory, and an
+     *          allocation failure in the messaging hot path is treated as fatal. Keep
+     *          event constructors allocation-light (or move heap data in via
+     *          already-allocated `shared_ptr`s) if process-abort-on-OOM is unacceptable.
+     *          The same contract applies to `allocated_push()`, `Actor::push()`,
+     *          `Actor::send()` and `Actor::broadcast()`.
      */
     template <typename _Event, typename... _Args>
     _Event &push(_Args &&...args) const noexcept;
@@ -164,6 +178,19 @@ public:
      *
      * @note If `size` is smaller than `sizeof(_Event)` the framework silently uses
      *       `sizeof(_Event)` as the minimum allocation.
+     *
+     * @warning **Maximum event size.** An event's total in-pipe footprint must not
+     *          exceed the per-core mailbox ring capacity, which is
+     *          `(std::numeric_limits<uint16_t>::max() / QB_LOCKFREE_EVENT_BUCKET_BYTES)`
+     *          buckets — i.e. **~1023 buckets (≈64 KiB with the default 64-byte,
+     *          cache-line bucket)**. A larger event cannot be enqueued into another
+     *          core's mailbox and will never be delivered cross-core (it stays
+     *          stuck in the source pipe). The `bucket_size` header field is also a
+     *          `uint16_t`, so an event spanning ≥ 65536 buckets wraps that field
+     *          (a value of exactly 65536 truncates to 0 and stalls the receiver).
+     *          For large payloads, put the data on the heap (e.g. a
+     *          `std::shared_ptr<std::vector<T>>` member) and keep the event itself
+     *          small — do **not** size `allocated_push` to the payload bytes.
      */
     template <typename _Event, typename... _Args>
     [[nodiscard]] _Event &allocated_push(std::size_t size,
