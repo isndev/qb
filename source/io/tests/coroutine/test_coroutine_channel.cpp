@@ -95,6 +95,28 @@ TEST_F(ChannelBasicTests, DestroyChannelWhileRecvParkedNoUAF) {
     EXPECT_FALSE(got_value); // resolved to nullopt, no use-after-free
 }
 
+TEST_F(ChannelBasicTests, DestroyChannelWhileSendForParkedNoUAF) {
+    auto ch = std::make_unique<channel<int>>(1);
+    EXPECT_TRUE(ch->try_send(1)); // fill the single buffer slot so send_for parks
+    bool done = false;
+    bool sent = true; // must become false (send failed) once the channel is gone
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        bool ok = co_await ch->send_for(2, 200ms); // parks: buffer full, channel open
+        sent = ok;
+        done = true;
+    });
+
+    run_for(10ms); // let the sender park
+    EXPECT_FALSE(done);
+
+    ch.reset(); // destroy the channel while the sender is parked
+
+    run_for(50ms); // deferred resume now runs against the freed channel
+    EXPECT_TRUE(done);
+    EXPECT_FALSE(sent); // resolved to false, no use-after-free
+}
+
 /**
  * @test Try send on buffered channel
  * @brief Non-blocking send when buffer has space

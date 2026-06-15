@@ -178,7 +178,8 @@ public:
             // object elsewhere — destroying them here would double-free when
             // that task's destructor runs later. Leaking a queued continuation
             // at teardown is strictly safer.
-            if (item.owned && item.handle && !item.handle.done()) {
+            if (item.handle && !item.handle.done() &&
+                owned_frames_.erase(item.handle.address())) {
                 QB_SCHED_TRACE("  destroy ready handle=%p owned=%d", (void*)item.handle.address(), item.owned);
                 item.handle.destroy();
             }
@@ -186,6 +187,16 @@ public:
         }
         QB_SCHED_TRACE("  drained ready_queue: %zu items", ready_drained);
         (void)ready_drained;
+        // Destroy frames deferred by completed spawned coroutines that were not
+        // drained by a final run_ready() (e.g. the loop completing them on its
+        // last tick before teardown). They are suspended at final_suspend.
+        for (auto h : frames_to_destroy_) {
+            if (h) {
+                owned_frames_.erase(h.address());
+                h.destroy();
+            }
+        }
+        frames_to_destroy_.clear();
 #ifndef NDEBUG
         if (!suspended_coroutines_.empty()) {
             std::fprintf(stderr,
@@ -197,6 +208,10 @@ public:
         QB_SCHED_TRACE("  clearing suspended_coroutines_ (count=%zu), NOT destroying handles", suspended_coroutines_.size());
         suspended_coroutines_.clear();
         in_flight_.clear();
+        // Any owned frames still here are suspended (not in the ready queue) and
+        // are intentionally leaked at teardown per Finding 2.B.8 — just drop the
+        // bookkeeping; the OS reclaims them at process/thread exit.
+        owned_frames_.clear();
         QB_SCHED_TRACE("~CoroutineScheduler() end this=%p", (void*)this);
     }
 
@@ -357,24 +372,35 @@ public:
                 in_flight_.erase(item.handle.address());
 
             std::coroutine_handle<> handle = item.handle;
-            bool owned = item.owned;
 
             if (handle && !handle.done()) {
-                QB_SCHED_TRACE("run_ready resume handle=%p owned=%d", (void*)handle.address(), owned);
+                QB_SCHED_TRACE("run_ready resume handle=%p owned=%d", (void*)handle.address(), (int)item.owned);
                 handle.resume();
                 ++count;
-
-                if (owned && handle.done()) {
-                    QB_SCHED_TRACE("run_ready destroy completed handle=%p", (void*)handle.address());
-                    handle.destroy();
-                }
-            } else if (owned && handle && handle.done()) {
-                QB_SCHED_TRACE("run_ready destroy done handle=%p", (void*)handle.address());
-                handle.destroy();
+                // Do NOT destroy completed frames here. A spawned coroutine
+                // typically reaches final_suspend via SYMMETRIC TRANSFER from an
+                // awaited inner task — its own handle is never re-examined by
+                // this loop, so an inline destroy would miss it (frame leak).
+                // Instead a detached frame defers its own destruction at
+                // final_suspend (task<T>::final_awaiter) into frames_to_destroy_,
+                // which is drained below. Continuation/owned-by-task<T> frames
+                // are freed by their owning task object, never here.
             }
 
             if (max_count != 0 && count >= max_count) {
                 break;
+            }
+        }
+
+        // Drain frames whose detached (spawned) coroutines reached final_suspend
+        // during this run. Each is suspended at final_suspend (not running), so
+        // destroying it here is safe and frees the frame exactly once.
+        while (!frames_to_destroy_.empty()) {
+            auto h = frames_to_destroy_.back();
+            frames_to_destroy_.pop_back();
+            if (h) {
+                owned_frames_.erase(h.address());
+                h.destroy();
             }
         }
 
@@ -496,12 +522,25 @@ public:
         std::vector<void*> to_destroy(suspended_coroutines_.begin(), suspended_coroutines_.end());
         suspended_coroutines_.clear();
         for (void* addr : to_destroy) {
+            owned_frames_.erase(addr); // destroyed here — drop the ownership record
             auto handle = std::coroutine_handle<>::from_address(addr);
             if (handle && !handle.done()) {
                 QB_SCHED_TRACE("destroy_all_suspended destroying handle=%p", (void*)addr);
                 handle.destroy();
             }
         }
+    }
+
+    /**
+     * @brief Queue a completed detached (spawned) frame for destruction.
+     *
+     * Called from task<T>::final_suspend when a spawned coroutine finishes with
+     * no continuation to resume. The frame is suspended at final_suspend (it
+     * cannot destroy itself), so run_ready() destroys it on the current drain.
+     */
+    void defer_destroy(std::coroutine_handle<> h) {
+        if (h)
+            frames_to_destroy_.push_back(h);
     }
 
 private:
@@ -536,9 +575,24 @@ private:
     // Accessed only from the VirtualCore thread — no mutex needed.
     std::unordered_set<void*> in_flight_;
 
+    // Frames the scheduler OWNS and must destroy when they complete (those
+    // handed over by spawn(), which detaches the task<T>). The per-ready_item
+    // `owned` flag is NOT reliable for this: schedule_resume()/enqueue_for_later()
+    // re-queue a resumed handle with owned=false, so a spawned coroutine that
+    // suspends once and then completes would otherwise never be destroyed —
+    // a frame leak on every spawn that awaits. This set is the authoritative
+    // ownership record; run_ready() destroys a completed handle iff it is here.
+    std::unordered_set<void*> owned_frames_;
+
     // Handles currently suspended (waiting on I/O or timers).
     // Accessed only from the VirtualCore thread — no mutex needed.
     std::unordered_set<void*> suspended_coroutines_;
+
+    // Detached (spawned) frames that reached final_suspend and must be destroyed
+    // by the scheduler on the current run_ready() drain. A completing detached
+    // coroutine cannot destroy its own frame from inside final_suspend (it is
+    // suspended in it), so it queues its handle here instead.
+    std::vector<std::coroutine_handle<>> frames_to_destroy_;
 
     // Finding 2.D.1: re-entrancy guard for run_ready(). Set to true for the
     // duration of a `run_ready` call; the body of run_ready() checks this
@@ -601,6 +655,19 @@ inline void enqueue_for_later_via_current(std::coroutine_handle<> handle) noexce
 }
 
 /**
+ * @brief Hand a completed detached (spawned) coroutine frame to the current
+ *        scheduler for destruction. Declared in task.h and called from
+ *        task<T>::final_suspend (which cannot deref the incomplete scheduler
+ *        type itself). Defined here so the call resolves once scheduler.h is
+ *        included (always the case via coroutine.h).
+ */
+inline void defer_frame_destruction(std::coroutine_handle<> handle) noexcept {
+    if (auto* sched = CoroutineScheduler::current_ptr()) {
+        sched->defer_destroy(handle);
+    }
+}
+
+/**
  * @brief Implementation of CoroutineScheduler::spawn
  *
  * The coroutine is added to the ready queue and will be resumed
@@ -614,6 +681,7 @@ inline void CoroutineScheduler::spawn(task<void>&& t) {
     // Set this scheduler as the coroutine's scheduler
     handle.promise().scheduler_ = this;
 
+    owned_frames_.insert(handle.address());
     in_flight_.insert(handle.address());
     ready_queue_.push_back({handle, true});
     QB_SCHED_TRACE("spawn handle=%p in_flight=%zu", (void*)handle.address(), in_flight_.size());

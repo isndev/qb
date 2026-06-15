@@ -579,12 +579,13 @@ public:
             std::shared_ptr<bool> guard;
             std::shared_ptr<bool> fired;
             std::chrono::milliseconds timeout_ms;
+            std::shared_ptr<bool> _ch_alive; ///< channel liveness; skip ch access when false
             bool _resumed = false;
 
             timed_send_awaiter(channel<T>& c, T v, std::shared_ptr<bool> g,
                                std::shared_ptr<bool> f, std::chrono::milliseconds t)
                 : ch(c), val(std::move(v)), guard(std::move(g)),
-                  fired(std::move(f)), timeout_ms(t) {}
+                  fired(std::move(f)), timeout_ms(t), _ch_alive(c._alive) {}
 
             // Frame-destruction guard: if the send_for frame is destroyed while
             // parked, set *guard so neither send_timer nor wake_one_sender()
@@ -604,6 +605,12 @@ public:
 
             bool await_resume() {
                 _resumed = true; // normal resume path: destructor must not re-arm guard
+                // The channel was destroyed while we were parked: close() scheduled
+                // this resume, then ~channel freed the channel. The send could not be
+                // delivered, so report failure without touching the freed channel
+                // (mirrors send_awaiter / recv_awaiter's _ch_alive guard).
+                if (!*_ch_alive)
+                    return false;
                 if (*fired) return false;
                 if (ch._closed) return false;
                 // Deliver directly to a pending receiver if one exists
