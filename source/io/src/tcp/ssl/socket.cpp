@@ -505,13 +505,23 @@ apply_client_peer_verification(SSL *ssl, const std::string &hostname,
         return;
     X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
     unsigned char ip_buf[sizeof(struct in6_addr)];
+    int rc;
     if (inet_pton(AF_INET, hostname.c_str(), ip_buf) == 1 ||
         inet_pton(AF_INET6, hostname.c_str(), ip_buf) == 1) {
         // Literal IP target: match against the certificate's IP SANs.
-        X509_VERIFY_PARAM_set1_ip_asc(param, hostname.c_str());
+        rc = X509_VERIFY_PARAM_set1_ip_asc(param, hostname.c_str());
     } else {
         // DNS name target: match against the certificate's CN / DNS SANs.
-        X509_VERIFY_PARAM_set1_host(param, hostname.c_str(), 0);
+        rc = X509_VERIFY_PARAM_set1_host(param, hostname.c_str(), 0);
+    }
+    if (rc != 1) {
+        // Could not install hostname/IP verification (e.g. allocation failure).
+        // Fail CLOSED: install a verify callback that rejects every certificate
+        // so the handshake aborts. Silently continuing here would leave only
+        // chain verification active and accept a valid-chain cert issued for a
+        // DIFFERENT host — a MITM hole.
+        SSL_set_verify(ssl, SSL_VERIFY_PEER,
+                       [](int, X509_STORE_CTX *) -> int { return 0; });
     }
 }
 
@@ -901,7 +911,13 @@ socket::write(const void *data, std::size_t size) noexcept {
     auto ret = handCheck();
     if (ret == 1) {
         ret = SSL_write(ssl_handle(), data, static_cast<int>(size));
-        if (ret < 0) {
+        // Consult SSL_get_error for ret <= 0, not just ret < 0. The io layer
+        // only writes when size > 0, where SSL_write() returns 0 to signal a
+        // failed write (connection closed / SSL_ERROR_ZERO_RETURN /
+        // SSL_ERROR_SYSCALL). The previous `ret < 0` let a 0 fall through and
+        // be reported as "0 bytes written", leaving the io write loop to spin
+        // on EV_WRITE until the next call finally returned < 0.
+        if (ret <= 0) {
             auto err = SSL_get_error(ssl_handle(), ret);
             switch (err) {
                 case SSL_ERROR_WANT_WRITE:

@@ -233,7 +233,8 @@
  * @details Used by `io_handler` to limit the number of concurrent sessions to prevent
  *          resource exhaustion. Default is 0 (unlimited) to preserve backward compatibility.
  *          Set to a positive value to enable the limit (e.g., 10000 for production servers).
- *          When the limit is reached, `registerSession()` will throw a `std::runtime_error`.
+ *          When the limit is reached, `registerSession()` closes the incoming I/O
+ *          and returns `nullptr` (it does not throw).
  *          You can also set it at runtime via `set_max_sessions()`.
  * @ingroup IO
  */

@@ -620,7 +620,10 @@ public:
         auto pos = m_os->tellp();
         logline.stringify(*m_os);
         m_bytes_written += m_os->tellp() - pos;
-        if (m_bytes_written > m_log_file_roll_size_bytes) {
+        // m_bytes_written (std::streamoff, signed) is always >= 0 here; cast to
+        // match the unsigned roll-size and avoid a signed/unsigned comparison
+        // warning (the roll size became uint64_t to fix the >=4GB overflow).
+        if (static_cast<std::uint64_t>(m_bytes_written) > m_log_file_roll_size_bytes) {
             roll_file();
         }
     }

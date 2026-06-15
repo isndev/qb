@@ -586,6 +586,12 @@ template <>
 size_t
 uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size,
            std::size_t max, int window_bits) {
+    // Empty input decompresses to nothing. Return early: with size == 0 the
+    // decode loop below computes chunk = 2*size = 0, so avail_out stays 0 every
+    // iteration and `while (inflate_s.avail_out == 0)` never terminates (hang).
+    if (size == 0)
+        return 0;
+
     z_stream inflate_s;
 
     inflate_s.zalloc   = Z_NULL;

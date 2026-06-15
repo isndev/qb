@@ -227,19 +227,25 @@ public:
                 return false;
             }
 
+            // Snapshot the protocol pointer AND its should_flush() before onMessage():
+            // onMessage() may switch_protocol() or clear_protocols(), either of which can
+            // leave `protocol` dangling. should_flush() is a per-protocol invariant (no
+            // setter is ever called), so capturing the OLD protocol's value now is
+            // equivalent and removes every post-onMessage deref of `protocol`.
             auto *protocol = _protocol;
+            const bool old_should_flush = protocol->should_flush();
             protocol->onMessage(ret);
             ++_messages_processed;
 
             if (unlikely(_reason)) {
-                if (likely(protocol->should_flush()))
+                if (likely(old_should_flush))
                     derived().flush(ret);
                 _on_message = false;
                 return derived().pendingWrite() > 0;
             }
 
             if (unlikely(!_protocol || !_protocol->ok())) {
-                if (likely(protocol->should_flush()))
+                if (likely(old_should_flush))
                     derived().flush(ret);
                 if (derived().pendingWrite() > 0) {
                     _on_message = false;
@@ -251,7 +257,7 @@ public:
                 return false;
             }
 
-            if (likely(protocol->should_flush()))
+            if (likely(old_should_flush))
                 derived().flush(ret);
         }
         _on_message = false;

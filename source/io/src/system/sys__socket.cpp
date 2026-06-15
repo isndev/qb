@@ -1119,7 +1119,10 @@ socket::not_recv_error(int error) {
 const char *
 socket::strerror(int error) {
 #if defined(_MSC_VER) && !defined(_WINSTORE)
-    static char error_msg[256];
+    // thread_local (not static): each VirtualCore thread gets its own buffer so
+    // concurrent error formatting on different cores cannot race on a shared
+    // buffer. Valid until the next strerror() call on the same thread.
+    thread_local char error_msg[256];
     ZeroMemory(error_msg, sizeof(error_msg));
     ::FormatMessageA(
         FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS |

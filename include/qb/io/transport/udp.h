@@ -163,7 +163,20 @@ public:
         template <typename T>
         auto &
         operator<<(T &&data) {
-            auto      &out_buffer = static_cast<udp::base_t &>(proxy).out();
+            auto &out_buffer = static_cast<udp::base_t &>(proxy).out();
+            // Ensure a pushed_message header exists and _last_pushed_offset is
+            // valid before dereferencing it below. Without this, using a saved
+            // ProxyOut reference after setDestination() (which resets the offset
+            // to kNoPendingMessage == SIZE_MAX) would dereference
+            // begin() + SIZE_MAX — a wild out-of-bounds write. Mirrors udp::out(),
+            // inlined here because out()'s deduced return type is not visible from
+            // this nested class yet.
+            if (proxy._last_pushed_offset == kNoPendingMessage) {
+                proxy._last_pushed_offset = out_buffer.size();
+                auto &m = out_buffer.template allocate_back<pushed_message>();
+                m.ident = proxy._remote_dest;
+                m.size  = 0;
+            }
             const auto start_size = out_buffer.size();
             out_buffer << std::forward<T>(data);
             const auto added = static_cast<std::size_t>(out_buffer.size() - start_size);
@@ -299,6 +312,12 @@ public:
             if (qb::likely(ret > 0)) {
                 _in_buffer.free_back(io::udp::socket::MaxDatagramSize - ret);
                 setDestination(_remote_source);
+            } else if (ret == 0) {
+                // Valid zero-length datagram: no payload to keep, but still
+                // update the reply target to this sender — otherwise a reply
+                // would be sent to the previously-seen peer.
+                _in_buffer.free_back(io::udp::socket::MaxDatagramSize);
+                setDestination(_remote_source);
             } else {
                 _in_buffer.free_back(io::udp::socket::MaxDatagramSize);
             }
@@ -315,6 +334,9 @@ public:
         } else if (ret > 0) {
             qb::io::socket::set_last_errno(EMSGSIZE);
             return ErrBufferLimitExceeded;
+        } else if (ret == 0) {
+            // Valid zero-length datagram: update the reply target (see above).
+            setDestination(_remote_source);
         }
         return ret;
     }
@@ -330,9 +352,11 @@ public:
      *          propagates the error code to the caller (to be turned into an
      *          `event::disconnected` with a system error by the async layer).
      *
-     *          A datagram whose size exceeds the socket's maximum is clamped to
-     *          `io::udp::socket::MaxDatagramSize`; callers that need to send bigger
-     *          payloads are expected to fragment at the application level.
+     *          A datagram whose size would exceed `io::udp::socket::MaxDatagramSize`
+     *          is rejected (the append is rolled back and `EMSGSIZE` is reported by
+     *          the `ProxyOut`), not clamped — clamping would silently truncate the
+     *          message. Callers that need to send bigger payloads must fragment at
+     *          the application level.
      */
     int
     write() noexcept {
