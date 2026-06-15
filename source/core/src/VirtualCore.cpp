@@ -53,27 +53,9 @@ CPU_ISSET(int num, cpu_set_t *cs) {
     return (cs->count & (1 << num));
 }
 
-static int
-pthread_getaffinity_np(pthread_t thread, size_t cpusetsize, cpu_set_t *cpuset) {
-    if (!cpuset)
-        return false;
-
-    // Only logical cores count on macOS
-    int    num_cores;
-    size_t len = sizeof(num_cores);
-    if (sysctlbyname("hw.logicalcpu", &num_cores, &len, nullptr, 0))
-        return 1;
-
-    CPU_ZERO(cpuset);
-
-    // On macOS, no api to set affinity,
-    // C++23: Using auto for type deduction
-    for (auto i = 0; i < num_cores; ++i) {
-        CPU_SET(i, cpuset);
-    }
-
-    return 0;
-}
+// NB: a macOS shim for pthread_getaffinity_np() used to live here, but
+// __init__ no longer calls getaffinity (it would clobber the requested cpuset),
+// so it has been removed as dead code.
 
 static int
 pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
@@ -150,6 +132,16 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
         // storage, and Event objects are placement-constructed within it.
         auto event = reinterpret_cast<Event *>(events.data() + i);
 
+        // Defensive: a well-formed event always spans at least one bucket. A
+        // zero bucket_size (only reachable via a malformed / oversized
+        // allocated_push whose uint16 size field wrapped to 0) would make
+        // `i += 0` spin forever, re-routing the same event and hanging the
+        // core. Stop draining this batch instead of looping indefinitely.
+        if (unlikely(event->bucket_size == 0)) {
+            LOG_CRIT(*this << " received event with bucket_size==0 (malformed or "
+                              "oversized event); aborting batch");
+            break;
+        }
         event->state.alive = 0;
         _router.route(*event, [this](auto &event) {
             if (!event.getDestination().is_broadcast())
@@ -322,11 +314,19 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
                 CPU_SET(core, &cpuset);
 
         pthread_t current_thread = pthread_self();
-        ret = !pthread_getaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
-        if (!ret)
-            LOG_WARN("get thread affinity failed: " << strerror(errno));
-        ret = !pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
-        if (!ret)
+        // NB: do NOT call pthread_getaffinity_np() on `cpuset` here. It writes the
+        // thread's *current* affinity mask into `cpuset`, overwriting the requested
+        // set built above — so the subsequent pthread_setaffinity_np() would just
+        // re-apply the current affinity (a no-op on Linux) and the requested
+        // per-core pinning would be silently discarded. Apply the requested set
+        // directly.
+        //
+        // Affinity is best-effort: a logical QB CoreId need not map to a physical
+        // CPU (e.g. core 255 on an 8-core host), so a failed pin must NOT fail the
+        // VirtualCore init — it only loses a placement optimisation. Warn and
+        // continue. (Previously the pthread_getaffinity_np clobber masked this by
+        // always pinning to CPU 0, which trivially succeeds.)
+        if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset) != 0)
             LOG_WARN("set thread affinity failed: " << strerror(errno));
 #elif defined(_WIN32) || defined(_WIN64)
 #ifdef _MSC_VER
@@ -339,9 +339,8 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
         // QB CoreIds are logical ids; they may exceed the affinity width of a
         // single Windows processor group. In that case, skip OS pinning rather
         // than failing VirtualCore init for an otherwise legal QB core id.
-        if (mask != 0u)
-            ret = (SetThreadAffinityMask(GetCurrentThread(), mask));
-        if (mask != 0u && !ret)
+        // Affinity is best-effort: never fail init on a pin failure (warn only).
+        if (mask != 0u && SetThreadAffinityMask(GetCurrentThread(), mask) == 0)
             LOG_WARN("set thread affinity failed");
 #else
 #warning "Cannot set affinity on windows with GNU Compiler"
@@ -415,10 +414,20 @@ VirtualCore::__workflow__() {
         // snapshot is still required because `onCallback()` may register or
         // unregister actors during dispatch (e.g. via `addRefActor`).
         {
-            thread_local std::vector<ICallback *> cb_snapshot;
+            thread_local std::vector<CallbackEntry> cb_snapshot;
             cb_snapshot = _callback_list;
-            for (auto *cb : cb_snapshot)
-                cb->onCallback();
+            for (auto const &entry : cb_snapshot) {
+                // Skip the callback of an actor killed earlier in this same
+                // dispatch pass (e.g. by an earlier actor's onCallback). The
+                // object is still alive — destruction is deferred to the
+                // removeActors phase below — so this is purely a semantics fix:
+                // a killed actor must not get another tick, matching the
+                // event-kill path which skips the whole callback phase. The
+                // empty() fast-path keeps the common (nothing killed) case free.
+                if (likely(_actor_to_remove.empty()) ||
+                    !_actor_to_remove.count(entry.id))
+                    entry.cb->onCallback();
+            }
         }
         // check if callbacks killed actors
         if (unlikely(!_actor_to_remove.empty())) {
@@ -511,10 +520,10 @@ void
 VirtualCore::__unregisterCallback(ActorId const id) noexcept {
     auto it = _actor_callbacks.find(id);
     if (it != _actor_callbacks.end()) {
-        auto *cb = it->second;
         _actor_callbacks.erase(it);
         // Keep the flat callback snapshot in sync (2.6).
-        auto vit = std::find(_callback_list.begin(), _callback_list.end(), cb);
+        auto vit = std::find_if(_callback_list.begin(), _callback_list.end(),
+                                [id](CallbackEntry const &e) { return e.id == id; });
         if (vit != _callback_list.end()) {
             *vit = _callback_list.back();
             _callback_list.pop_back();

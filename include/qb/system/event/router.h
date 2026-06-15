@@ -810,8 +810,20 @@ public:
         } else {
             onError(event);
             if constexpr (_CleanEvent) {
+                // A never-subscribed event type has no registered disposer
+                // (disposers are registered on subscribe<T>). Using `.at()` here
+                // throws std::out_of_range for such an event, and that exception
+                // propagates out of VirtualCore::__receive_events__ /
+                // __workflow__ — start_thread() catches it and flags
+                // ExceptionThrown, killing the whole VirtualCore (all its actors)
+                // for a single misaddressed/unhandled event. Look the disposer up
+                // and skip when absent: the event is dropped (a leak only for the
+                // rare unhandled non-trivially-destructible type) instead of
+                // taking the core down.
                 std::lock_guard lk(_disposers_mtx);
-                _disposers.at(event.getID())->dispose(&event);
+                if (const auto dit = _disposers.find(event.getID());
+                    dit != _disposers.cend())
+                    dit->second->dispose(&event);
             }
         }
     }

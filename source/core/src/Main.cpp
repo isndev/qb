@@ -356,19 +356,41 @@ Main::core(CoreId const index) {
     return _core_initializers.emplace(index, index).first->second;
 }
 
+namespace {
+// Install a signal disposition. On POSIX use sigaction() rather than
+// std::signal(): the latter has implementation-defined semantics and, under the
+// historical System-V behaviour, resets the handler to SIG_DFL after the first
+// delivery — so a second SIGINT/SIGTERM would terminate the process instead of
+// triggering the graceful shutdown a second time. sigaction with no
+// SA_RESETHAND keeps the handler installed; SA_RESTART avoids spuriously
+// failing slow syscalls. On Windows, std::signal is the only portable option.
+void
+install_signal(int signum, void (*handler)(int)) noexcept {
+#if defined(_WIN32) || defined(_WIN64)
+    std::signal(signum, handler);
+#else
+    struct sigaction sa {};
+    sa.sa_handler = handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = (handler == SIG_DFL || handler == SIG_IGN) ? 0 : SA_RESTART;
+    ::sigaction(signum, &sa, nullptr);
+#endif
+}
+} // namespace
+
 void
 Main::registerSignal(int const signum) noexcept {
-    std::signal(signum, &Main::onSignal);
+    install_signal(signum, &Main::onSignal);
 }
 
 void
 Main::unregisterSignal(int const signum) noexcept {
-    std::signal(signum, SIG_DFL);
+    install_signal(signum, SIG_DFL);
 }
 
 void
 Main::ignoreSignal(int const signum) noexcept {
-    std::signal(signum, SIG_IGN);
+    install_signal(signum, SIG_IGN);
 }
 
 } // namespace qb

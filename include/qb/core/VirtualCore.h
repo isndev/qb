@@ -126,6 +126,17 @@ public:
         ExceptionThrown = (1u << 12u)  ///< An unhandled exception occurred during VirtualCore execution (e.g., in an actor event handler).
     };
 
+    // The startup barrier (Main::start / Main::__wait__all__cores__ready) packs
+    // the "cores ready" count and the error sentinels into one atomic counter:
+    // a value >= BadInit means a core failed to start, any smaller value is the
+    // clean ready-count (each core fetch_add(1)). That separation only holds
+    // while the largest possible clean count — bounded by the number of cores,
+    // i.e. MaxCores — stays strictly below the first error sentinel (BadInit).
+    static_assert(static_cast<uint64_t>(qb::MaxCores) <
+                      static_cast<uint64_t>(BadInit),
+                  "startup-barrier sentinel space (Error::BadInit) must exceed "
+                  "MaxCores so a clean ready-count is never mistaken for an error");
+
 private:
     friend class Actor;
     friend class CoroContext;
@@ -257,9 +268,17 @@ private:
      * @details
      * Maintained in sync with `_actor_callbacks` on register / unregister so the
      * workflow loop can iterate without rebuilding a thread-local vector on every
-     * iteration (finding 2.6). Stored as raw pointers owned by the actor instances.
+     * iteration (finding 2.6). Each entry pairs the callback pointer (owned by the
+     * actor instance) with the actor id, so the workflow loop can skip the
+     * callback of an actor that was killed earlier in the *same* dispatch pass
+     * (consistent with the event-kill path, which skips the whole callback phase
+     * via `_actor_to_remove`).
      */
-    std::vector<ICallback *> _callback_list;
+    struct CallbackEntry {
+        ICallback *cb;
+        ActorId    id;
+    };
+    std::vector<CallbackEntry> _callback_list;
     RemoveActorList _actor_to_remove;
     // --- loop
 

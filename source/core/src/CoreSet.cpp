@@ -48,7 +48,16 @@ CoreSet::CoreSet(CoreIdSet const &set) noexcept
 
 CoreId
 CoreSet::resolve(std::size_t id) const noexcept {
-    return _set.at(id);
+    // `resolve` is noexcept but `_set` is a fixed `std::array<uint8_t, MaxCores>`.
+    // A CoreId is a uint16_t, so a caller can legitimately hold an out-of-range
+    // value (e.g. BroadcastId(300) or an ActorId with a core_id >= MaxCores).
+    // `_set.at(id)` would throw std::out_of_range, and a throw from a noexcept
+    // function calls std::terminate — turning a misaddressed event into a hard
+    // process abort. Bounds-check instead: out-of-range ids resolve to 0, the
+    // same defined-but-unspecified value already returned for an in-range id
+    // that is not a member of the set (see the @return contract). The framework
+    // then routes-and-drops the misaddressed event rather than crashing.
+    return id < MaxCores ? _set[id] : static_cast<CoreId>(0);
 }
 
 uint32_t

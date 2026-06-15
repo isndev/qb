@@ -30,6 +30,14 @@ namespace qb {
 template <typename _Event, typename _Actor>
 void
 VirtualCore::registerEvent(_Actor &actor) noexcept {
+    // Never subscribe an actor that failed id allocation (service-id pool
+    // exhausted -> __generate_id__ returned NotFound). Its constructor still
+    // runs registerEvent for the default events, but appendActor() rejects it
+    // and destroys it without unsubscribing; a subscription keyed by the
+    // NotFound id would then dangle and route to freed memory if any event is
+    // sent to a default/NotFound ActorId.
+    if (unlikely(!actor.id().is_valid()))
+        return;
     LOG_INFO("Actor(" << actor.id() << ") subscribed to "
                       << ActorProxy::getName<_Event>());
     _router.subscribe<_Event>(actor);
@@ -93,10 +101,15 @@ VirtualCore::getService() const noexcept {
 template <typename _Actor>
 void
 VirtualCore::registerCallback(_Actor &actor) noexcept {
+    // Same guard as registerEvent: an actor that failed id allocation must not
+    // leave a callback entry keyed by its NotFound id (it is about to be
+    // destroyed by appendActor()).
+    if (unlikely(!actor.id().is_valid()))
+        return;
     auto [it, inserted] = _actor_callbacks.insert({actor.id(), &actor});
     if (inserted) {
         // Maintain the flat snapshot for the workflow loop (2.6).
-        _callback_list.push_back(&actor);
+        _callback_list.push_back({&actor, actor.id()});
     }
 }
 

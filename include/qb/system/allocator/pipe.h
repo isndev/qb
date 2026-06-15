@@ -565,6 +565,14 @@ public:
      */
     inline void
     swap(pipe &rhs) noexcept {
+        // This byte-swaps exactly one CacheLine. It is only correct while the
+        // whole pipe object (all base_pipe members) fits within that cache line;
+        // if a future member pushed sizeof(pipe) past it, only the first cache
+        // line would be swapped, leaving `_data` half-exchanged (double-free /
+        // leak). Guard the invariant at compile time.
+        static_assert(sizeof(pipe) <= sizeof(CacheLine),
+                      "pipe<T>::swap byte-swaps a single CacheLine; the pipe "
+                      "object must fit within one cache line");
         std::swap(*reinterpret_cast<CacheLine *>(this),
                   *reinterpret_cast<CacheLine *>(&rhs));
     }
