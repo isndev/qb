@@ -24,7 +24,7 @@
 using namespace qb::io::async;
 using namespace std::chrono_literals;
 
-#define TLOG(fmt, ...) std::fprintf(stderr, "[test ] " fmt "\n", ##__VA_ARGS__)
+#define TLOG(fmt, ...) std::fprintf(stderr, "[test ] " fmt "\n" __VA_OPT__(,) __VA_ARGS__)
 
 // =============================================================================
 // TEST SUITE: Basic Generator

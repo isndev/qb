@@ -78,6 +78,7 @@ if(QB_COMPILER_MSVC)
         "/GR"               # Enable RTTI
         "/permissive-"      # Disable permissive mode
         "/Zc:__cplusplus"   # Enable proper __cplusplus macro
+        "/Zc:preprocessor"  # Conformant preprocessor (required for __VA_OPT__)
         "/utf-8"            # Use UTF-8 encoding
     )
 
