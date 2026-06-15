@@ -37,6 +37,8 @@
 #include <qb/io/async/io_handler.h>
 #include <qb/io/async/listener.h>
 
+using namespace std::chrono_literals;
+
 namespace {
 
 // ---------------------------------------------------------------------------
@@ -100,7 +102,7 @@ BenchResult bench_async_callback_fire(std::size_t iters) {
     std::atomic<std::size_t> counter{0};
     return run_bench("async::callback (immediate, heap alloc + libev fire)", iters,
                      [&] {
-                         qb::io::async::callback([&] { ++counter; }, 0.0);
+                         qb::io::async::callback([&] { ++counter; }, qb::duration::zero());
                          qb::io::async::listener::current.run(EVRUN_NOWAIT);
                      });
 }
@@ -111,7 +113,7 @@ BenchResult bench_async_callback_fire(std::size_t iters) {
 BenchResult bench_scoped_callback_ctor_dtor(std::size_t iters) {
     return run_bench("scoped_callback (allocate + cancel via dtor)", iters,
                      [&] {
-                         auto h = qb::io::async::scoped_callback([] {}, 1.0);
+                         auto h = qb::io::async::scoped_callback([] {}, 1s);
                          (void)h;
                      });
 }

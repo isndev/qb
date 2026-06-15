@@ -58,16 +58,16 @@ Beyond its core asynchronous I/O and networking capabilities, `qb-io` offers a r
     *   Streaming API (`compress_provider`, `decompress_provider`) for handling large data sets or stream-based compression/decompression.
 *   **(Reference:** See `qb/source/io/tests/system/test-compression*.cpp` for usage.**)
 
-## 4. High-Precision Time (`qb::TimePoint`, `qb::Duration`)
+## 4. High-Precision Time (`qb::wall_time`, `qb::mono_time`, `qb::duration`)
 
 *   **Header:** `qb/system/timestamp.h`
-*   **Purpose:** Platform-independent, nanosecond-precision time points and durations.
+*   **Purpose:** Platform-independent, nanosecond-precision time points and durations, built directly on `std::chrono`.
 *   **Key Features:**
-    *   **`qb::Duration`:** Represents time spans. Create with factory methods (`Duration::from_seconds(5)`) or literals (`5_s`, `100_ms`). Supports arithmetic and unit conversions (e.g., `d.milliseconds()`, `d.seconds_float()`).
-    *   **`qb::TimePoint`:** Represents specific moments in time. Create with `TimePoint::now()`, `TimePoint::from_iso8601("...")`. Supports arithmetic with `Duration`. Format to string (`tp.to_iso8601()`, `tp.format("%Y-%m-%d")`).
-    *   **Specialized TimePoints:** `UtcTimePoint`, `LocalTimePoint`, `HighResTimePoint` (monotonic), `TscTimePoint` (CPU counter based).
-    *   **Utilities:** `ScopedTimer` and `LogTimer` for easy performance measurement of code blocks.
-*   **(Reference:** See `qb/source/core/tests/unit/test-timestamp.cpp`. Aliases like `qb::Timestamp` and `qb::Timespan` exist for backward compatibility.**)
+    *   **`qb::duration`:** Alias for `std::chrono::nanoseconds`. Represents time spans. Create with `std::chrono` durations (`std::chrono::seconds(5)`, `std::chrono::milliseconds(100)`) or chrono literals (`5s`, `100ms`). Supports arithmetic and unit conversions (e.g., `std::chrono::duration_cast<std::chrono::milliseconds>(d).count()`, `std::chrono::duration_cast<std::chrono::seconds>(d).count()`).
+    *   **`qb::wall_time`:** Alias for `std::chrono::system_clock::time_point`; a wall-clock moment in time. Create with `qb::wall_now()` or `qb::from_iso8601("...")` / `qb::parse_utc(str, fmt)` (both return `std::optional<qb::wall_time>`), or `qb::wall_from_unix_seconds(int64)`. Supports arithmetic with `qb::duration`. Format to string with `qb::to_iso8601(tp)` or `qb::format_utc(tp, "%Y-%m-%d")`, and extract epoch counts with `qb::unix_seconds/millis/micros/nanos(tp)`.
+    *   **`qb::mono_time`:** Alias for `std::chrono::steady_clock::time_point`; a monotonic time point for interval/elapsed-time measurement. Obtain with `qb::mono_now()`.
+    *   **Utilities:** `ScopedTimer` and `LogTimer` for easy performance measurement of code blocks (their callback receives a `qb::duration`); `qb::tsc_ticks()` reads the CPU time-stamp counter.
+*   **(Reference:** See `qb/source/core/tests/unit/test-timestamp.cpp`.**)
 
 ## 5. System Information
 

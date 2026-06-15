@@ -65,6 +65,7 @@
 // (VirtualCore thread). Plain bools are sufficient for single-thread cooperative.
 #include <memory>
 #include <ev/ev++.h>
+#include <qb/system/timestamp.h>  // qb::duration, qb::detail::to_ev_seconds
 
 // scheduler.h must be included before task.h to get schedule_via_current
 #include "scheduler.h"
@@ -258,11 +259,11 @@ struct timer_awaiter : awaiter_base {
      * @param duration The time to wait
      * @param loop The event loop (defaults to current)
      */
-    timer_awaiter(std::chrono::milliseconds duration, ev::loop_ref loop = ev::get_default_loop())
+    timer_awaiter(qb::duration duration, ev::loop_ref loop = ev::get_default_loop())
         : loop_(loop)
         , yield_only_(duration.count() <= 0) {
         if (!yield_only_) {
-            double after = duration.count() / 1000.0;
+            double after = qb::detail::to_ev_seconds(duration);
             ev_timer_init(&watcher_, timer_callback, after, 0.0);
             watcher_.data = this;
         }

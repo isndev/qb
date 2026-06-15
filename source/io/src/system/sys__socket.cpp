@@ -127,7 +127,7 @@ socket::xpconnect(const char *hostname, u_short port, u_short local_port) {
 
 int
 socket::xpconnect_n(const char *hostname, u_short port,
-                    const std::chrono::microseconds &wtimeout, u_short local_port) {
+                    const qb::duration &wtimeout, u_short local_port) {
     auto flags = getipsv();
     int  error = -1;
     socket::resolve_i(
@@ -169,7 +169,7 @@ socket::pconnect(const char *hostname, u_short port, u_short local_port) {
 
 int
 socket::pconnect_n(const char *hostname, u_short port,
-                   const std::chrono::microseconds &wtimeout, u_short local_port) {
+                   const qb::duration &wtimeout, u_short local_port) {
     int error = -1;
     socket::resolve_i(
         [&](const endpoint &ep) {
@@ -201,7 +201,7 @@ socket::pconnect(const endpoint &ep, u_short local_port) {
 }
 
 int
-socket::pconnect_n(const endpoint &ep, const std::chrono::microseconds &wtimeout,
+socket::pconnect_n(const endpoint &ep, const qb::duration &wtimeout,
                    u_short local_port) {
     if (this->reopen(ep.af())) {
         if (local_port != 0 && this->bind(QB_ADDR_ANY(ep.af()), local_port) != 0)
@@ -669,16 +669,16 @@ socket::connect(socket_type s, const endpoint &ep) {
 
 int
 socket::connect_n(const char *addr, u_short port,
-                  const std::chrono::microseconds &wtimeout) {
+                  const qb::duration &wtimeout) {
     return connect_n(ip::endpoint(addr, port), wtimeout);
 }
 int
-socket::connect_n(const endpoint &ep, const std::chrono::microseconds &wtimeout) {
+socket::connect_n(const endpoint &ep, const qb::duration &wtimeout) {
     return this->connect_n(this->fd, ep, wtimeout);
 }
 int
 socket::connect_n(socket_type s, const endpoint &ep,
-                  const std::chrono::microseconds &wtimeout) {
+                  const qb::duration &wtimeout) {
     if (set_nonblocking(s, true) != 0)
         return -1;
 
@@ -695,8 +695,8 @@ socket::connect_n(socket_type s, const endpoint &ep,
         return -1;
     }
 
-    auto remaining = std::chrono::microseconds(
-        std::max<std::chrono::microseconds::rep>(wtimeout.count(), 0));
+    auto remaining = qb::duration(
+        std::max<qb::duration::rep>(wtimeout.count(), 0));
 
     fd_set readfds;
     fd_set writefds;
@@ -753,13 +753,13 @@ socket::disconnect(socket_type s) {
 }
 
 int
-socket::send_n(const void *buf, int len, const std::chrono::microseconds &wtimeout,
+socket::send_n(const void *buf, int len, const qb::duration &wtimeout,
                int flags) {
     return this->send_n(this->fd, buf, len, wtimeout, flags);
 }
 int
 socket::send_n(socket_type s, const void *buf, int len,
-               std::chrono::microseconds wtimeout, int flags) {
+               qb::duration wtimeout, int flags) {
     int bytes_transferred = 0;
     int n;
     int error = 0;
@@ -777,9 +777,10 @@ socket::send_n(socket_type s, const void *buf, int len,
 
         error = socket::get_last_errno();
         if (n == -1 && socket::not_send_error(error)) {
-            auto      start = qb::highp_clock();
-            int const rtn   = handle_write_ready(s, wtimeout);
-            wtimeout -= std::chrono::microseconds(qb::highp_clock() - start);
+            const auto start = std::chrono::steady_clock::now();
+            int const  rtn   = handle_write_ready(s, wtimeout);
+            wtimeout -= std::chrono::duration_cast<qb::duration>(
+                std::chrono::steady_clock::now() - start);
 
             if (rtn != -1 && wtimeout.count() > 0) {
                 continue;
@@ -794,12 +795,12 @@ socket::send_n(socket_type s, const void *buf, int len,
 }
 
 int
-socket::recv_n(void *buf, int len, const std::chrono::microseconds &wtimeout,
+socket::recv_n(void *buf, int len, const qb::duration &wtimeout,
                int flags) const {
     return this->recv_n(this->fd, buf, len, wtimeout, flags);
 }
 int
-socket::recv_n(socket_type s, void *buf, int len, std::chrono::microseconds wtimeout,
+socket::recv_n(socket_type s, void *buf, int len, qb::duration wtimeout,
                int flags) {
     int bytes_transferred = 0;
     int n;
@@ -818,9 +819,10 @@ socket::recv_n(socket_type s, void *buf, int len, std::chrono::microseconds wtim
 
         error = socket::get_last_errno();
         if (n == -1 && socket::not_recv_error(error)) {
-            auto      start = qb::highp_clock();
-            int const rtn   = handle_read_ready(s, wtimeout);
-            wtimeout -= std::chrono::microseconds(qb::highp_clock() - start);
+            const auto start = std::chrono::steady_clock::now();
+            int const  rtn   = handle_read_ready(s, wtimeout);
+            wtimeout -= std::chrono::duration_cast<qb::duration>(
+                std::chrono::steady_clock::now() - start);
 
             if (rtn != -1 && wtimeout.count() > 0) {
                 continue;
@@ -869,55 +871,61 @@ socket::recvfrom(void *buf, int len, endpoint &from, int flags) const {
 }
 
 int
-socket::handle_write_ready(const std::chrono::microseconds &wtimeout) const {
+socket::handle_write_ready(const qb::duration &wtimeout) const {
     return handle_write_ready(this->fd, wtimeout);
 }
 int
-socket::handle_write_ready(socket_type s, const std::chrono::microseconds &wtimeout) {
+socket::handle_write_ready(socket_type s, const qb::duration &wtimeout) {
     fd_set writefds;
     return socket::select(s, nullptr, &writefds, nullptr, wtimeout);
 }
 
 int
-socket::handle_read_ready(const std::chrono::microseconds &wtimeout) const {
+socket::handle_read_ready(const qb::duration &wtimeout) const {
     return handle_read_ready(this->fd, wtimeout);
 }
 int
-socket::handle_read_ready(socket_type s, const std::chrono::microseconds &wtimeout) {
+socket::handle_read_ready(socket_type s, const qb::duration &wtimeout) {
     fd_set readfds;
     return socket::select(s, &readfds, nullptr, nullptr, wtimeout);
 }
 
 int
 socket::select(socket_type s, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-               std::chrono::microseconds wtimeout) {
+               qb::duration wtimeout) {
     int n = 0;
 
     // A negative timeval makes ::select fail with EINVAL on most platforms;
     // clamp to zero (poll once) so a negative remaining timeout is well-defined.
     if (wtimeout.count() < 0)
-        wtimeout = std::chrono::microseconds::zero();
+        wtimeout = qb::duration::zero();
 
     for (;;) {
         reregister_descriptor(s, readfds);
         reregister_descriptor(s, writefds);
         reregister_descriptor(s, exceptfds);
 
+        // Convert at the syscall boundary: timeval needs whole seconds + the
+        // sub-second remainder expressed in microseconds.
+        const auto      remaining_us =
+            std::chrono::duration_cast<std::chrono::microseconds>(wtimeout);
         // Saturate the seconds field so a very large timeout cannot overflow
         // timeval::tv_sec (32-bit long on Windows).
-        const long long secs    = wtimeout.count() / std::micro::den;
+        const long long secs    = remaining_us.count() / std::micro::den;
         const long long max_sec = static_cast<long long>(
             (std::numeric_limits<decltype(timeval::tv_sec)>::max)());
         timeval waitd_tv = {
             static_cast<decltype(timeval::tv_sec)>(secs > max_sec ? max_sec : secs),
-            static_cast<decltype(timeval::tv_usec)>(wtimeout.count() % std::micro::den)};
-        long long start = highp_clock();
+            static_cast<decltype(timeval::tv_usec)>(remaining_us.count() %
+                                                    std::micro::den)};
+        const auto start = std::chrono::steady_clock::now();
 #if defined(_WIN32)
         n               = ::select(0, readfds, writefds, exceptfds, &waitd_tv);
 #else
         n               = ::select(s + 1, readfds, writefds, exceptfds, &waitd_tv);
 #endif
-        wtimeout -= std::chrono::microseconds(highp_clock() - start);
+        wtimeout -= std::chrono::duration_cast<qb::duration>(
+            std::chrono::steady_clock::now() - start);
 
         if (n < 0 && socket::get_last_errno() == EINTR) {
             if (wtimeout.count() > 0)

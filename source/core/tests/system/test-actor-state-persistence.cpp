@@ -31,6 +31,8 @@
 #include <qb/main.h>
 #include <string>
 
+using namespace std::chrono_literals;
+
 // Define test events
 struct StateUpdateEvent : public qb::Event {
     std::string key;
@@ -200,7 +202,7 @@ public:
 
         // Create checkpoint after 50ms
         qb::io::async::callback(
-            [this]() { to(_stateful_actor_id).push<CheckpointEvent>(); }, 0.05);
+            [this]() { to(_stateful_actor_id).push<CheckpointEvent>(); }, 50ms);
 
         // Query state after 100ms
         qb::io::async::callback(
@@ -208,29 +210,29 @@ public:
                 to(_stateful_actor_id).push<StateQueryEvent>("test", id());
                 to(_stateful_actor_id).push<StateQueryEvent>("counter", id());
             },
-            0.1);
+            100ms);
 
         // Simulate failure after 150ms
         qb::io::async::callback(
-            [this]() { to(_stateful_actor_id).push<SimulateFailureEvent>(); }, 0.15);
+            [this]() { to(_stateful_actor_id).push<SimulateFailureEvent>(); }, 150ms);
 
         // Try query after failure (should be ignored)
         qb::io::async::callback(
             [this]() { to(_stateful_actor_id).push<StateQueryEvent>("test", id()); },
-            0.2);
+            200ms);
 
         // Restore state after 250ms
         qb::io::async::callback(
-            [this]() { to(_stateful_actor_id).push<RestoreStateEvent>(); }, 0.25);
+            [this]() { to(_stateful_actor_id).push<RestoreStateEvent>(); }, 250ms);
 
         // Verify state after 300ms
         qb::io::async::callback(
-            [this]() { to(_stateful_actor_id).push<VerifyStateEvent>(); }, 0.3);
+            [this]() { to(_stateful_actor_id).push<VerifyStateEvent>(); }, 300ms);
 
         // Query state after recovery
         qb::io::async::callback(
             [this]() { to(_stateful_actor_id).push<StateQueryEvent>("test", id()); },
-            0.35);
+            350ms);
 
         // Complete test
         qb::io::async::callback(
@@ -238,7 +240,7 @@ public:
                 to(_stateful_actor_id).push<TestCompleteEvent>();
                 kill();
             },
-            0.4);
+            400ms);
     }
 
     // Handle state responses

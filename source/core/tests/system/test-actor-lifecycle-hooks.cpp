@@ -38,6 +38,8 @@
 #include <thread>
 #include <vector>
 
+using namespace std::chrono_literals;
+
 // Define test events
 struct StartEvent : public qb::Event {};
 struct StopEvent : public qb::Event {};
@@ -117,7 +119,7 @@ public:
                     recordLifecycleEvent(_actor_name, "self_kill");
                     kill();
                 },
-                0.2);
+                200ms);
         }
 
         // External kill for immediate kill actor
@@ -127,7 +129,7 @@ public:
                     recordLifecycleEvent(_actor_name, "external_kill");
                     kill();
                 },
-                0.1);
+                100ms);
         }
 
         // Normal actor just stays alive
@@ -153,7 +155,7 @@ public:
                 g_test_complete = true;
                 kill();
             },
-            1.0);
+            1s);
 
         return true;
     }

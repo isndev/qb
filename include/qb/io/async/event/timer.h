@@ -46,7 +46,7 @@ namespace qb::io::async::event {
  * @code
  * class MyTimeoutHandler : public qb::io::async::with_timeout<MyTimeoutHandler> {
  * public:
- *   MyTimeoutHandler(double timeout_seconds) : with_timeout(timeout_seconds) {}
+ *   MyTimeoutHandler(qb::duration timeout) : with_timeout(timeout) {}
  *
  *   void onActivity() {
  *     updateTimeout(); // Reset the timer on activity

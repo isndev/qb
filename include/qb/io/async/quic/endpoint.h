@@ -123,10 +123,10 @@ protected:
             return;
         }
         const auto now = std::chrono::steady_clock::now();
-        const auto delay = deadline <= now
-            ? std::chrono::duration<double>{0.}
-            : std::chrono::duration<double>(deadline - now);
-        _timer_event->start(delay.count());
+        const qb::duration delay = deadline <= now
+            ? qb::duration::zero()
+            : (deadline - now);
+        _timer_event->start(qb::detail::to_ev_seconds(delay));
     }
 
     void fail_transport(std::uint64_t error_code, std::string_view reason) {

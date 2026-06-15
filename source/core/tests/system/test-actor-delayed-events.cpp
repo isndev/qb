@@ -32,6 +32,8 @@
 #include <qb/system/timestamp.h>
 #include <vector>
 
+using namespace std::chrono_literals;
+
 // Define test events
 struct TimerEvent : public qb::Event {
     uint64_t timestamp;
@@ -79,7 +81,7 @@ public:
     void
     on(const TimerEvent &event) {
         // Record the timestamp of this event using precise timing
-        uint64_t current_time = qb::Timestamp::nano();
+        uint64_t current_time = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now()));
 
         // For first timer reception, record time and schedule a delayed repeat
         if (_timestamps[event.timer_id] == 0) {
@@ -87,15 +89,15 @@ public:
 
             // Schedule delayed callback based on timer_id to ensure proper ordering
             // Higher timer_id = longer delay to make them complete in ascending order
-            double delay_sec = event.timer_id * 0.05; // 50ms in seconds
+            auto delay = 50ms * event.timer_id; // 50ms per timer_id
 
-            // Use simplified async callback with direct seconds parameter
+            // Use simplified async callback with direct duration parameter
             qb::io::async::callback(
                 [this, timer_id = event.timer_id]() {
                     // When the timer finishes, send another event to self
                     to(id()).push<TimerEvent>(timer_id);
                 },
-                delay_sec);
+                delay);
         }
         // On second event reception, verify order and record completion
         else {
@@ -183,10 +185,10 @@ public:
     bool
     onInit() override {
         registerEvent<qb::KillEvent>(*this);
-        _start_time = qb::Timestamp::nano();
+        _start_time = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now()));
 
         // Schedule first callback immediately (0 sec delay)
-        qb::io::async::callback([this]() { handle_callback(); }, 0.0);
+        qb::io::async::callback([this]() { handle_callback(); }, qb::duration::zero());
 
         return true;
     }
@@ -198,7 +200,7 @@ public:
 
         // If reached target, terminate
         if (_current_count >= _target_count) {
-            uint64_t elapsed = qb::Timestamp::nano() - _start_time;
+            uint64_t elapsed = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now())) - _start_time;
 
             // Record elapsed time (should be proportional to target_count)
             {
@@ -210,7 +212,7 @@ public:
             kill();
         } else {
             // Schedule next callback after a short delay (1ms = 0.001 sec)
-            qb::io::async::callback([this]() { handle_callback(); }, 0.001);
+            qb::io::async::callback([this]() { handle_callback(); }, 1ms);
         }
     }
 

@@ -44,7 +44,7 @@ public:
     bool
     onInit() final {
         EXPECT_NE(static_cast<uint32_t>(id()), 0u);
-        LOG_VERB("TestActor had been initialized at" << qb::Timestamp::nano());
+        LOG_VERB("TestActor had been initialized at" << qb::unix_nanos(qb::wall_now()));
         registerEvent<TestEvent>(*this);
         push<TestEvent>(id());
         qb::io::cout() << "Test Actor(" << id() << "): Hello master !" << std::endl;
@@ -53,9 +53,9 @@ public:
 
     void
     on(TestEvent const &) {
-        LOG_INFO("TestActor received TestEvent at" << qb::Timestamp::nano());
+        LOG_INFO("TestActor received TestEvent at" << qb::unix_nanos(qb::wall_now()));
         kill();
-        LOG_WARN("TestActor will be killed at" << qb::Timestamp::nano());
+        LOG_WARN("TestActor will be killed at" << qb::unix_nanos(qb::wall_now()));
     }
 };
 

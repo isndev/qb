@@ -39,6 +39,7 @@
 #include <thread>
 
 using namespace qb::io;
+using namespace std::chrono_literals;
 
 namespace {
 
@@ -75,7 +76,7 @@ public:
     std::atomic<bool> timer_triggered{false};
     std::atomic<int>  timer_count{0};
 
-    explicit TimerHandler(double timeout = 0.1)
+    explicit TimerHandler(qb::duration timeout = 100ms)
         : with_timeout(timeout) {}
 
     void
@@ -86,7 +87,7 @@ public:
 };
 
 TEST_F(AsyncIOTest, BasicTimer) {
-    TimerHandler timer(0.1); // 100ms timeout
+    TimerHandler timer(100ms); // 100ms timeout
 
     // Run event loop for a short time
     for (auto i = 0; i < 5 && !timer.timer_triggered; ++i) {
@@ -99,7 +100,7 @@ TEST_F(AsyncIOTest, BasicTimer) {
 }
 
 TEST_F(AsyncIOTest, UpdateTimeout) {
-    TimerHandler timer(1.0); // 1s timeout - increase the delay
+    TimerHandler timer(1s); // 1s timeout - increase the delay
 
     // Run the event loop once to initialize
     async::run(EVRUN_NOWAIT);
@@ -130,10 +131,10 @@ TEST_F(AsyncIOTest, UpdateTimeout) {
 }
 
 TEST_F(AsyncIOTest, SetTimeout) {
-    TimerHandler timer(1.0); // Initial 1s timeout
+    TimerHandler timer(1s); // Initial 1s timeout
 
     // Change timeout to 0.1s
-    timer.setTimeout(0.1);
+    timer.setTimeout(100ms);
 
     // Run event loop
     for (auto i = 0; i < 5 && !timer.timer_triggered; ++i) {
@@ -142,11 +143,11 @@ TEST_F(AsyncIOTest, SetTimeout) {
     }
 
     EXPECT_TRUE(timer.timer_triggered);
-    EXPECT_DOUBLE_EQ(timer.getTimeout(), 0.1);
+    EXPECT_EQ(timer.getTimeout(), 100ms);
 
     // Disable timeout
     timer.timer_triggered = false;
-    timer.setTimeout(0.0);
+    timer.setTimeout(qb::duration::zero());
 
     // Run event loop - timer should not trigger
     for (auto i = 0; i < 5; ++i) {
@@ -155,7 +156,7 @@ TEST_F(AsyncIOTest, SetTimeout) {
     }
 
     EXPECT_FALSE(timer.timer_triggered);
-    EXPECT_DOUBLE_EQ(timer.getTimeout(), 0.0);
+    EXPECT_EQ(timer.getTimeout(), qb::duration::zero());
 }
 
 // Test the async::Timeout utility class
@@ -164,7 +165,7 @@ TEST_F(AsyncIOTest, TimeoutUtility) {
 
     // Create a timeout that will execute after 100ms
     new async::Timeout<std::function<void()>>(
-        [&callback_executed]() { callback_executed = true; }, 0.1);
+        [&callback_executed]() { callback_executed = true; }, 100ms);
 
     // Run event loop until callback is executed
     for (auto i = 0; i < 10 && !callback_executed; ++i) {
@@ -181,7 +182,7 @@ TEST_F(AsyncIOTest, ImmediateTimeoutUtility) {
 
     // Create a timeout that will execute immediately (timeout = 0)
     new async::Timeout<std::function<void()>>(
-        [&callback_executed]() { callback_executed = true; }, 0.0);
+        [&callback_executed]() { callback_executed = true; }, qb::duration::zero());
 
     // Should be executed immediately without running the event loop
     EXPECT_TRUE(callback_executed);
@@ -189,7 +190,7 @@ TEST_F(AsyncIOTest, ImmediateTimeoutUtility) {
 
 TEST_F(AsyncIOTest, ClearDetachesLiveAsyncObjectsSafely) {
     {
-        TimerHandler timer(1.0);
+        TimerHandler timer(1s);
         EXPECT_EQ(async::listener::current.size(), 1u);
 
         async::listener::current.clear();
@@ -477,21 +478,21 @@ TEST_F(AsyncIOTest, EventPriorities) {
             std::lock_guard<std::mutex> lock(mutex);
             execution_order.push_back(1);
         },
-        0.1);
+        100ms);
 
     new async::Timeout<std::function<void()>>(
         [&execution_order, &mutex]() {
             std::lock_guard<std::mutex> lock(mutex);
             execution_order.push_back(2);
         },
-        0.2);
+        200ms);
 
     new async::Timeout<std::function<void()>>(
         [&execution_order, &mutex]() {
             std::lock_guard<std::mutex> lock(mutex);
             execution_order.push_back(3);
         },
-        0.3);
+        300ms);
 
     // Run event loop
     for (auto i = 0; i < 30; ++i) {
@@ -1013,7 +1014,7 @@ class CancellableTimerHandler : public async::with_timeout<CancellableTimerHandl
 public:
     std::atomic<bool> timer_triggered{false};
 
-    explicit CancellableTimerHandler(double timeout = 0.5)
+    explicit CancellableTimerHandler(qb::duration timeout = 500ms)
         : with_timeout(timeout) {}
 
     void
@@ -1031,7 +1032,7 @@ public:
 };
 
 TEST_F(AsyncIOTest, TimerCancellation) {
-    CancellableTimerHandler timer(0.2); // 200ms timeout
+    CancellableTimerHandler timer(200ms); // 200ms timeout
 
     // Run the event loop a few times but not enough to trigger the timer
     for (auto i = 0; i < 3; ++i) {
@@ -1040,7 +1041,7 @@ TEST_F(AsyncIOTest, TimerCancellation) {
     }
 
     // Cancel the timer by setting timeout to 0
-    timer.setTimeout(0.0);
+    timer.setTimeout(qb::duration::zero());
 
     // Force the timer stop (this is needed since setTimeout may not immediately stop the
     // timer)
@@ -1068,17 +1069,17 @@ TEST_F(AsyncIOTest, MultipleConcurrentTimers) {
     // Create timers with different timeouts
     new async::Timeout<std::function<void()>>(
         [&timer1_triggered]() { timer1_triggered = true; },
-        0.05 // 50ms
+        50ms // 50ms
     );
 
     new async::Timeout<std::function<void()>>(
         [&timer2_triggered]() { timer2_triggered = true; },
-        0.1 // 100ms
+        100ms // 100ms
     );
 
     new async::Timeout<std::function<void()>>(
         [&timer3_triggered]() { timer3_triggered = true; },
-        0.15 // 150ms
+        150ms // 150ms
     );
 
     // Run event loop until all timers trigger
@@ -1112,7 +1113,8 @@ TEST_F(AsyncIOTest, TimerPrecision) {
             fire_time      = clock::now();
             timer_triggered = true;
         },
-        timeout_seconds);
+        std::chrono::duration_cast<qb::duration>(
+            std::chrono::duration<double>(timeout_seconds)));
 
     // Run the event loop until the timer fires or we exhaust the budget.
     for (auto i = 0; i < 20 && !timer_triggered; ++i) {
@@ -1160,7 +1162,7 @@ TEST_F(AsyncIOTest, TimerSynchronization) {
     for (auto i = 0; i < 5; ++i) {
         new async::Timeout<std::function<void()>>(
             [&tester, i]() { tester.critical_section(i); },
-            0.05 * (i + 1) // Staggered timeouts
+            50ms * (i + 1) // Staggered timeouts
         );
     }
 
@@ -1203,7 +1205,7 @@ TEST_F(AsyncIOTest, MultiThreadedAsyncOperations) {
                         // This is executed when the timer triggers
                         completed++;
                     },
-                    0.05 * (t + 1) // Different timeout for each thread
+                    50ms * (t + 1) // Different timeout for each thread
                 );
 
                 // Run the event loop a few times
@@ -1254,10 +1256,10 @@ TEST_F(AsyncIOTest, NestedTimedOperations) {
             // Create a nested timer
             new async::Timeout<std::function<void()>>(
                 [&operation_count]() { operation_count++; },
-                0.05 // 50ms
+                50ms // 50ms
             );
         },
-        0.05 // 50ms
+        50ms // 50ms
     );
 
     // Run event loop until both timers have triggered
@@ -1280,7 +1282,7 @@ public:
     StateHolder       state;
     std::atomic<bool> timer_triggered{false};
 
-    explicit StatefulTimer(double timeout = 0.1)
+    explicit StatefulTimer(qb::duration timeout = 100ms)
         : with_timeout(timeout) {}
 
     void
@@ -1293,7 +1295,7 @@ public:
 };
 
 TEST_F(AsyncIOTest, StatefulTimerOperation) {
-    StatefulTimer timer(0.1); // 100ms timeout
+    StatefulTimer timer(100ms); // 100ms timeout
 
     // Run event loop until timer triggers
     for (auto i = 0; i < 10 && !timer.timer_triggered; ++i) {
@@ -1313,7 +1315,7 @@ TEST_F(AsyncIOTest, DroppedTimers) {
     for (auto i = 0; i < 10; ++i) {
         new async::Timeout<std::function<void()>>(
             [&completed_count]() { completed_count++; },
-            0.02 * (i + 1) // Stagger timeouts from 20ms to 200ms
+            20ms * (i + 1) // Stagger timeouts from 20ms to 200ms
         );
     }
 
@@ -1362,7 +1364,7 @@ TEST_F(AsyncIOTest, TimeoutBehavior) {
     // Test immediate execution with zero timeout
     std::atomic<bool> zero_timer_triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&zero_timer_triggered]() { zero_timer_triggered = true; }, 0.0);
+        [&zero_timer_triggered]() { zero_timer_triggered = true; }, qb::duration::zero());
 
     // Should be triggered immediately without running event loop
     EXPECT_TRUE(zero_timer_triggered);
@@ -1370,7 +1372,7 @@ TEST_F(AsyncIOTest, TimeoutBehavior) {
     // Test very small positive timeout
     std::atomic<bool> small_timer_triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&small_timer_triggered]() { small_timer_triggered = true; }, 0.001);
+        [&small_timer_triggered]() { small_timer_triggered = true; }, 1ms);
 
     // Run event loop a few times
     for (auto i = 0; i < 5 && !small_timer_triggered; ++i) {
@@ -1383,7 +1385,7 @@ TEST_F(AsyncIOTest, TimeoutBehavior) {
     // Test negative timeout — executes immediately (same as zero)
     std::atomic<bool> negative_timer_triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&negative_timer_triggered]() { negative_timer_triggered = true; }, -1.0);
+        [&negative_timer_triggered]() { negative_timer_triggered = true; }, -1s);
 
     EXPECT_TRUE(negative_timer_triggered);
 }
@@ -1406,11 +1408,11 @@ TEST_F(AsyncIOTest, ExceptionHandlingInCallbacks) {
             // Instead of throwing, just set the flag
             // throw std::runtime_error("Test exception");
         },
-        0.1);
+        100ms);
 
     // Create a timer that should still trigger
     new async::Timeout<std::function<void()>>(
-        [&second_timer_triggered]() { second_timer_triggered = true; }, 0.1);
+        [&second_timer_triggered]() { second_timer_triggered = true; }, 100ms);
 
     // Run event loop
     for (auto i = 0; i < 10 && !second_timer_triggered; ++i) {
@@ -1430,7 +1432,7 @@ TEST_F(AsyncIOTest, ResourceCleanup) {
 
     // Create timers
     for (int i = 0; i < NUM_TIMERS; ++i) {
-        timers.push_back(std::make_unique<TimerHandler>(0.1));
+        timers.push_back(std::make_unique<TimerHandler>(100ms));
     }
 
     // Run event loop once to initialize
@@ -1478,7 +1480,7 @@ TEST_F(AsyncIOTest, IntensiveAsyncOperations) {
                     [&completed_operations, &thread_completed]() { 
                         completed_operations++; 
                         thread_completed++;
-                    }, 0.01);
+                    }, 10ms);
 
                 // Run event loop occasionally to prevent buildup
                 if (i % 100 == 0) {
@@ -1517,7 +1519,7 @@ TEST_F(AsyncIOTest, ManyConcurrentTimers) {
 
     // Create many timers with different timeouts
     for (int i = 0; i < NUM_TIMERS; ++i) {
-        timers.push_back(std::make_unique<TimerHandler>(0.01 * (i % 10 + 1)));
+        timers.push_back(std::make_unique<TimerHandler>(10ms * (i % 10 + 1)));
     }
 
     // Run event loop until all timers complete
@@ -1550,7 +1552,7 @@ TEST_F(AsyncIOTest, TimerMemoryUsage) {
 
     // Create many timers
     for (int i = 0; i < NUM_TIMERS; ++i) {
-        timers.push_back(std::make_unique<TimerHandler>(0.01));
+        timers.push_back(std::make_unique<TimerHandler>(10ms));
     }
 
     // Run event loop until all timers complete
@@ -1591,7 +1593,7 @@ TEST_F(AsyncIOTest, EventLoopReinitialization) {
     // Create a timer
     std::atomic<bool> timer_triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&timer_triggered]() { timer_triggered = true; }, 0.1);
+        [&timer_triggered]() { timer_triggered = true; }, 100ms);
 
     // Run event loop once
     async::run(EVRUN_ONCE);
@@ -1602,7 +1604,7 @@ TEST_F(AsyncIOTest, EventLoopReinitialization) {
     // Create another timer
     std::atomic<bool> timer2_triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&timer2_triggered]() { timer2_triggered = true; }, 0.1);
+        [&timer2_triggered]() { timer2_triggered = true; }, 100ms);
 
     // Run event loop until both timers trigger
     for (auto i = 0; i < 10 && (!timer_triggered || !timer2_triggered); ++i) {
@@ -1751,13 +1753,13 @@ TEST_F(AsyncIOTest, CloseAfterDeliverSendsDataThenDisconnects) {
 
 TEST_F(AsyncIOTest, CallbackImmediateExecution) {
     bool executed = false;
-    async::callback([&executed]() { executed = true; }, 0.0);
+    async::callback([&executed]() { executed = true; }, qb::duration::zero());
     EXPECT_TRUE(executed);
 }
 
 TEST_F(AsyncIOTest, CallbackScheduledExecution) {
     std::atomic<bool> executed{false};
-    async::callback([&executed]() { executed = true; }, 0.05);
+    async::callback([&executed]() { executed = true; }, 50ms);
 
     EXPECT_FALSE(executed);
     for (auto i = 0; i < 20 && !executed; ++i) {
@@ -1865,7 +1867,7 @@ TEST_F(AsyncIOTest, ConnectorToRefusedPort) {
             socket_invalid = !sock.is_open();
             callback_fired = true;
         },
-        2.0);
+        2s);
 
     for (auto i = 0; i < 100 && !callback_fired; ++i) {
         async::run(EVRUN_ONCE);
@@ -1890,7 +1892,7 @@ TEST_F(AsyncIOTest, ConnectorWithTimeoutExpiry) {
             socket_invalid = !sock.is_open();
             callback_fired = true;
         },
-        1.0);
+        1s);
 
     auto start = std::chrono::steady_clock::now();
     for (auto i = 0; i < 200 && !callback_fired; ++i) {
@@ -1919,10 +1921,10 @@ TEST_F(AsyncIOTest, TimeoutExceptionSafetyNoLeak) {
             throw_count++;
             throw std::runtime_error("intentional throw");
         },
-        0.05);
+        50ms);
 
     new async::Timeout<std::function<void()>>(
-        []() { normal_count++; }, 0.1);
+        []() { normal_count++; }, 100ms);
 
     for (int i = 0; i < 20 && normal_count == 0; ++i) {
         async::run(EVRUN_ONCE);
@@ -1936,7 +1938,7 @@ TEST_F(AsyncIOTest, TimeoutExceptionSafetyNoLeak) {
 TEST_F(AsyncIOTest, NegativeTimeoutTriggersImmediately) {
     std::atomic<bool> triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&]() { triggered = true; }, -5.0);
+        [&]() { triggered = true; }, -5s);
 
     // Negative timeout should execute immediately without event loop
     EXPECT_TRUE(triggered);
@@ -1945,7 +1947,7 @@ TEST_F(AsyncIOTest, NegativeTimeoutTriggersImmediately) {
 TEST_F(AsyncIOTest, ZeroTimeoutTriggersImmediately) {
     std::atomic<bool> triggered{false};
     new async::Timeout<std::function<void()>>(
-        [&]() { triggered = true; }, 0.0);
+        [&]() { triggered = true; }, qb::duration::zero());
 
     EXPECT_TRUE(triggered);
 }

@@ -32,6 +32,8 @@
 #include <memory>
 #include <stdexcept>
 
+using namespace std::chrono_literals;
+
 // Define test events
 struct ErrorInducingEvent : public qb::Event {
     enum class ErrorType { None, ThrowException, InvalidOperation, SendToInvalidActor };
@@ -170,7 +172,7 @@ public:
                 broadcast<qb::KillEvent>();
                 kill();
             }},
-            0.5); // 500ms timeout (0.5 seconds)
+            500ms); // 500ms timeout (0.5 seconds)
 
         return true;
     }

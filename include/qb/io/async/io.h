@@ -30,6 +30,7 @@
 #define QB_IO_ASYNC_IO_H
 
 #include <memory>
+#include <qb/system/timestamp.h>
 #include <qb/utility/type_traits.h>
 #include "../config.h"
 #include "../system/sys__socket.h"
@@ -114,10 +115,10 @@ public:
      * @param timeout Initial timeout value in seconds. A value of `0.0` or less disables the timeout initially.
      *                The timer is started if `timeout` is greater than `0.0`.
      */
-    explicit with_timeout(ev_tstamp timeout = 3)
-        : _timeout(timeout)
+    explicit with_timeout(qb::duration timeout = std::chrono::seconds(3))
+        : _timeout(qb::detail::to_ev_seconds(timeout))
         , _last_activity(0) {
-        if (timeout > 0.) {
+        if (_timeout > 0.) {
             ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
             this->_async_event.start(_timeout);
         }
@@ -137,13 +138,13 @@ public:
 
     /**
      * @brief Sets a new timeout value and restarts the timer.
-     * @param timeout New timeout value in seconds. If `0.0` or less, the timer is stopped (disabled).
+     * @param timeout New timeout duration. If zero or negative, the timer is stopped (disabled).
      *                Otherwise, the timer is configured with the new timeout and started.
      *                The `_last_activity` timestamp is also updated to the current event loop time.
      */
     void
-    setTimeout(ev_tstamp timeout) noexcept {
-        _timeout = timeout;
+    setTimeout(qb::duration timeout) noexcept {
+        _timeout = qb::detail::to_ev_seconds(timeout);
         if (_timeout > 0.) { // Check against 0, not just if(_timeout)
             ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
             _last_activity = this->_async_event.loop.now();
@@ -154,12 +155,12 @@ public:
     }
 
     /**
-     * @brief Gets the current configured timeout value.
-     * @return Current timeout value in seconds.
+     * @brief Gets the current configured timeout duration.
+     * @return Current timeout as a `qb::duration` (zero if disabled).
      */
-    [[nodiscard]] auto
+    [[nodiscard]] qb::duration
     getTimeout() const noexcept {
-        return _timeout;
+        return qb::detail::from_ev_seconds(_timeout);
     }
 
 private:
@@ -261,10 +262,11 @@ public:
      *                the function is executed immediately (or in the next loop iteration,
      *                depending on `with_timeout` behavior) and this `Timeout` object is deleted.
      */
-    Timeout(_Func &&func, double timeout)
-        : with_timeout<Timeout<_Func>>(timeout > 0. ? timeout : 0.)
+    Timeout(_Func &&func, qb::duration timeout)
+        : with_timeout<Timeout<_Func>>(timeout > qb::duration::zero() ? timeout
+                                                                       : qb::duration::zero())
         , _func(std::forward<_Func>(func)) {
-        if (timeout <= 0.) {
+        if (timeout <= qb::duration::zero()) {
             try { _func(); } catch (...) {}
             _delete_only = true;
             this->_async_event.start(0.);
@@ -300,8 +302,15 @@ public:
  */
 template <typename _Func>
 void
-callback(_Func &&func, double timeout = 0.) {
-    if (timeout <= 0.) {
+callback(_Func &&func) {
+    func();
+}
+
+template <typename _Func, typename Rep, typename Period>
+void
+callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
+    const qb::duration d = std::chrono::duration_cast<qb::duration>(timeout);
+    if (d <= qb::duration::zero()) {
         func();
         return;
     }
@@ -314,13 +323,7 @@ callback(_Func &&func, double timeout = 0.) {
     // `ev_run`. Refreshing the cache here guarantees the requested delay is
     // honoured regardless of how long the owning thread slept outside the loop.
     ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
-    new Timeout<_Func>(std::forward<_Func>(func), timeout);
-}
-
-template <typename _Func, typename Rep, typename Period>
-void callback(_Func&& func, std::chrono::duration<Rep, Period> timeout_duration) {
-    double seconds = std::chrono::duration_cast<std::chrono::duration<double>>(timeout_duration).count();
-    callback(std::forward<_Func>(func), seconds);
+    new Timeout<_Func>(std::forward<_Func>(func), d);
 }
 
 /**
@@ -346,10 +349,12 @@ class ScopedTimeout : public with_timeout<ScopedTimeout<_Func>> {
     bool  _fired = false;
 
 public:
-    ScopedTimeout(_Func &&func, double timeout)
-        : with_timeout<ScopedTimeout<_Func>>(timeout > 0. ? timeout : 0.)
+    ScopedTimeout(_Func &&func, qb::duration timeout)
+        : with_timeout<ScopedTimeout<_Func>>(timeout > qb::duration::zero()
+                                                 ? timeout
+                                                 : qb::duration::zero())
         , _func(std::forward<_Func>(func)) {
-        if (timeout <= 0.) {
+        if (timeout <= qb::duration::zero()) {
             _fired = true;
             try { _func(); } catch (...) {}
         }
@@ -359,7 +364,7 @@ public:
     [[nodiscard]] bool fired() const noexcept { return _fired; }
 
     /** @brief Cancel the scheduled callback if it has not fired yet. */
-    void cancel() noexcept { this->setTimeout(0.0); }
+    void cancel() noexcept { this->setTimeout(qb::duration::zero()); }
 
     /**
      * @brief Internal libev timer callback. Users should not call this directly.
@@ -389,23 +394,21 @@ public:
  */
 template <typename _Func>
 [[nodiscard]] auto
-scoped_callback(_Func &&func, double timeout = 0.) {
+scoped_callback(_Func &&func) {
     using Timer = ScopedTimeout<std::decay_t<_Func>>;
-    return std::make_unique<Timer>(std::forward<_Func>(func), timeout);
+    return std::make_unique<Timer>(std::forward<_Func>(func), qb::duration::zero());
 }
 
 /**
- * @brief `std::chrono` overload of `scoped_callback`.
+ * @brief `std::chrono` / `qb::duration` overload of `scoped_callback`.
  * @ingroup Async
  */
 template <typename _Func, typename Rep, typename Period>
 [[nodiscard]] auto
-scoped_callback(_Func &&func,
-                std::chrono::duration<Rep, Period> timeout_duration) {
-    const double seconds =
-        std::chrono::duration_cast<std::chrono::duration<double>>(timeout_duration)
-            .count();
-    return scoped_callback(std::forward<_Func>(func), seconds);
+scoped_callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
+    using Timer = ScopedTimeout<std::decay_t<_Func>>;
+    return std::make_unique<Timer>(std::forward<_Func>(func),
+                                   std::chrono::duration_cast<qb::duration>(timeout));
 }
 
 /**
@@ -502,8 +505,9 @@ public:
      *          The `on(event::file&)` handler will be called when changes are detected.
      */
     void
-    start(std::string const &fpath, ev_tstamp ts = QB_DEFAULT_FILE_WATCHER_INTERVAL) noexcept {
-        this->_async_event.start(fpath.c_str(), ts);
+    start(std::string const &fpath,
+          qb::duration interval = std::chrono::milliseconds(100)) noexcept {
+        this->_async_event.start(fpath.c_str(), qb::detail::to_ev_seconds(interval));
     }
 
     /**
@@ -663,8 +667,9 @@ public:
      *          The `on(event::file&)` handler will be called when changes to the directory's attributes are detected.
      */
     void
-    start(std::string const &fpath, ev_tstamp ts = QB_DEFAULT_FILE_WATCHER_INTERVAL) noexcept {
-        this->_async_event.start(fpath.c_str(), ts);
+    start(std::string const &fpath,
+          qb::duration interval = std::chrono::milliseconds(100)) noexcept {
+        this->_async_event.start(fpath.c_str(), qb::detail::to_ev_seconds(interval));
     }
 
     /**

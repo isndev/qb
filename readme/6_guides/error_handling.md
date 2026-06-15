@@ -109,9 +109,9 @@ QB-Core does not provide a built-in, Erlang-style supervisor hierarchy. Instead,
 
     class WorkerSupervisor : public qb::Actor {
     private:
-        std::map<qb::ActorId, qb::TimePoint> _pending_pings; // Worker ID -> Ping Sent Time
+        std::map<qb::ActorId, qb::mono_time> _pending_pings; // Worker ID -> Ping Sent Time
         std::vector<qb::ActorId> _worker_pool;
-        const qb::Duration PING_TIMEOUT = qb::literals::operator""_s(5); // 5 seconds
+        const qb::duration PING_TIMEOUT = std::chrono::seconds(5); // 5 seconds
 
     public:
         bool onInit() override {
@@ -127,11 +127,11 @@ QB-Core does not provide a built-in, Erlang-style supervisor hierarchy. Instead,
         void sendPingAndScheduleCheck(qb::ActorId worker_id) {
             if (!isActorKnownAndAlive(worker_id)) return; // Simplified check
             push<PingWorkerEvent>(worker_id);
-            _pending_pings[worker_id] = qb::HighResTimePoint::now();
+            _pending_pings[worker_id] = qb::mono_now();
             
             qb::io::async::callback([this, worker_id](){
                 if (this->is_alive()) this->push<WorkerTimeoutCheck>(this->id(), worker_id);
-            }, PING_TIMEOUT.seconds_float());
+            }, std::chrono::duration_cast<std::chrono::duration<double>>(PING_TIMEOUT).count());
         }
 
         void on(const PongWorkerResponse& event) {

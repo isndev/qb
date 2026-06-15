@@ -30,6 +30,7 @@
 #include <string>
 #include <vector>
 #include <openssl/ssl.h>
+#include <qb/system/timestamp.h>
 #include "../socket.h"
 
 namespace qb::io::ssl {
@@ -358,7 +359,7 @@ class QB_API socket : public tcp::socket {
     int connect_in(int af, std::string const &host, uint16_t port) noexcept;
 
     int connect_in(int af, std::string const &host, uint16_t port,
-                   std::chrono::microseconds wtimeout) noexcept;
+                   qb::duration wtimeout) noexcept;
 
     /**
      * @brief Internal method to initiate a non-blocking SSL connection to an address with a specific address family.
@@ -441,7 +442,7 @@ public:
      * @brief Like `connect(endpoint, hostname)` but bounds the underlying TCP connect phase.
      */
     int connect(endpoint const &ep, std::string const &hostname,
-                std::chrono::microseconds wtimeout) noexcept;
+                qb::duration wtimeout) noexcept;
 
     /**
      * @brief Establish a blocking SSL/TLS connection to a remote endpoint specified by a URI.
@@ -453,7 +454,7 @@ public:
     /**
      * @brief URI connect with a bounded TCP connect (TLS handshake is not separately timed here).
      */
-    int connect(uri const &u, std::chrono::microseconds wtimeout) noexcept;
+    int connect(uri const &u, qb::duration wtimeout) noexcept;
 
     /**
      * @brief Establish a blocking SSL/TLS connection to an IPv4 server.

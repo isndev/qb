@@ -219,15 +219,6 @@
 #define QB_MAX_IO_SIZE (static_cast<std::size_t>(1) << 30)  // 1GB
 
 /**
- * @def QB_DEFAULT_FILE_WATCHER_INTERVAL
- * @brief Default polling interval for file watchers (0.1 seconds)
- * @details This is the default interval at which libev checks for file changes.
- *          A smaller interval means more responsive detection but higher CPU usage.
- * @ingroup IO
- */
-#define QB_DEFAULT_FILE_WATCHER_INTERVAL 0.1
-
-/**
  * @def QB_DEFAULT_MAX_SESSIONS
  * @brief Default maximum number of sessions per io_handler instance.
  * @details Used by `io_handler` to limit the number of concurrent sessions to prevent

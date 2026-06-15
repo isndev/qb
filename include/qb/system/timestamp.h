@@ -1,10 +1,33 @@
 /**
  * @file qb/system/timestamp.h
- * @brief High-precision timing utilities
+ * @brief Canonical time vocabulary for the QB framework (std::chrono based).
  *
- * This file provides a set of classes for precise time handling, measurement,
- * and representation. It includes platform-independent implementations for
- * time spans and timestamps with nanosecond precision.
+ * Single source of truth for time across qb and its modules. The model is
+ * deliberately minimal and built entirely on `std::chrono`:
+ *
+ *  - `qb::duration`  — a span. Signed, nanosecond resolution (`int64`). Accepts
+ *                      any finer-or-equal `std::chrono::duration` implicitly
+ *                      (`30s`, `100ms`, `5us`), and **rejects a raw integer** —
+ *                      so unit-confusion (seconds vs milliseconds) cannot compile.
+ *  - `qb::mono_time` — a monotonic instant (`steady_clock`). Use for deadlines,
+ *                      timers, the event-loop "now", latency and RTT. Immune to
+ *                      wall-clock adjustments (NTP / DST).
+ *  - `qb::wall_time` — a wall-clock instant (`system_clock`). Use for dates,
+ *                      expiry, JWT exp/nbf, TLS validity, logs and wire formats.
+ *
+ * The two instant types are distinct on purpose: subtracting a wall instant from
+ * a monotonic one does not compile, which removes a whole class of "timeout
+ * fired early because the clock stepped" bugs.
+ *
+ * Raw scalars (`double` seconds, `int`/`uint64` milliseconds) and the C date
+ * library live ONLY behind the named seams in this header (`detail::to_ev_*`,
+ * `format_utc`/`parse_utc`) and the per-protocol wire codecs — never in a public
+ * signature elsewhere.
+ *
+ * Toolchain note: on this build (Apple clang / libc++) `std::format` supports
+ * chrono but `std::chrono::from_stream`/`parse` and the time-zone database are
+ * NOT available — hence formatting uses `std::format`/`strftime` and parsing uses
+ * `std::get_time` + `timegm`, all in UTC with no tzdb dependency.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -27,1427 +50,303 @@
 
 #include <array>
 #include <chrono>
-#include <compare>
 #include <cstdint>
+#include <cstdio>
+#include <ctime>
 #include <functional>
 #include <iomanip>
 #include <optional>
-#include <ratio>
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <thread>
-#include <type_traits>
 #include <utility>
 
 #if defined(__APPLE__)
-#include <mach/mach.h>
 #include <mach/mach_time.h>
-#include <sys/time.h>
-#elif defined(_WIN32) || defined(_WIN64)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
 #endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
-
-#include <qb/io.h>
-
-// Forward declarations
-namespace qb {
-class Duration;
-class TimePoint;
-
-// Specialized time points
-class UtcTimePoint;
-class LocalTimePoint;
-class HighResTimePoint;
-class TscTimePoint;  // TSC = Time Stamp Counter (formerly RDTS)
-}
 
 namespace qb {
 
 /**
- * @defgroup TimeUtilities Time Utilities
- * @brief Utilities for handling and measuring time with high precision
- * @ingroup Time
- */ 
-
-/**
- * @class Duration
- * @brief Represents a duration with nanosecond precision
- *
- * Duration provides a platform-independent way to represent time durations with
- * high precision. It supports arithmetic operations and various time unit
- * conversions, fully interoperable with std::chrono::duration.
+ * @defgroup Time Time
+ * @brief Canonical std::chrono time vocabulary (durations, instants, helpers).
  */
-class Duration {
-public:
-    /// Type used for nanosecond representation
-    using rep = int64_t;
-    
-    /// Underlying chrono duration type (nanoseconds)
-    using chrono_duration = std::chrono::duration<rep, std::nano>;
-    
-    /// Represents zero duration
-    static constexpr Duration zero() noexcept { return Duration(0); }
-    
-    /// Default constructor, initializes to zero
-    constexpr Duration() noexcept = default;
-    
-    /**
-     * @brief Constructs a duration with specified nanoseconds
-     * @param nanoseconds Duration in nanoseconds
-     */
-    constexpr explicit Duration(rep nanoseconds) noexcept
-        : _duration(nanoseconds) {}
-    
-    /**
-     * @brief Constructs a duration from std::chrono::duration
-     * @tparam Rep The count representation type
-     * @tparam Period The period type
-     * @param duration A std::chrono duration
-     */
-    template <typename Rep, typename Period>
-    constexpr explicit Duration(const std::chrono::duration<Rep, Period>& duration) noexcept
-        : _duration(std::chrono::duration_cast<chrono_duration>(duration).count()) {}
-        
-    // Standard special member functions
-    constexpr Duration(const Duration&) noexcept = default;
-    constexpr Duration(Duration&&) noexcept = default;
-    constexpr Duration& operator=(const Duration&) noexcept = default;
-    constexpr Duration& operator=(Duration&&) noexcept = default;
-    ~Duration() noexcept = default;
-    
-    /**
-     * @brief Converts to std::chrono::duration
-     * @return Equivalent std::chrono::duration in nanoseconds
-     */
-    [[nodiscard]] constexpr chrono_duration to_chrono() const noexcept {
-        return chrono_duration(_duration);
-    }
-    
-    /**
-     * @brief Converts to any std::chrono::duration
-     * @tparam Duration The target duration type
-     * @return Duration converted to the specified std::chrono::duration
-     */
-    template <typename TargetDuration>
-    [[nodiscard]] constexpr TargetDuration to() const noexcept {
-        return std::chrono::duration_cast<TargetDuration>(to_chrono());
-    }
-    
-    /**
-     * @brief Factory method to create a Duration from days
-     * @param days Number of days
-     * @return A Duration representing the specified number of days
-     */
-    [[nodiscard]] static constexpr Duration from_days(rep days) noexcept {
-        return Duration(days * 86400 * 1000000000LL);
-    }
-    
-    /**
-     * @brief Factory method to create a Duration from hours
-     * @param hours Number of hours
-     * @return A Duration representing the specified number of hours
-     */
-    [[nodiscard]] static constexpr Duration from_hours(rep hours) noexcept {
-        return Duration(hours * 3600 * 1000000000LL);
-    }
-    
-    /**
-     * @brief Factory method to create a Duration from minutes
-     * @param minutes Number of minutes
-     * @return A Duration representing the specified number of minutes
-     */
-    [[nodiscard]] static constexpr Duration from_minutes(rep minutes) noexcept {
-        return Duration(minutes * 60 * 1000000000LL);
-    }
-    
-    /**
-     * @brief Factory method to create a Duration from seconds
-     * @param seconds Number of seconds
-     * @return A Duration representing the specified number of seconds
-     */
-    [[nodiscard]] static constexpr Duration from_seconds(rep seconds) noexcept {
-        return Duration(seconds * 1000000000LL);
-    }
-    
-    /**
-     * @brief Factory method to create a Duration from milliseconds
-     * @param ms Number of milliseconds
-     * @return A Duration representing the specified number of milliseconds
-     */
-    [[nodiscard]] static constexpr Duration from_milliseconds(rep ms) noexcept {
-        return Duration(ms * 1000000LL);
-    }
-    
-    /**
-     * @brief Factory method to create a Duration from microseconds
-     * @param us Number of microseconds
-     * @return A Duration representing the specified number of microseconds
-     */
-    [[nodiscard]] static constexpr Duration from_microseconds(rep us) noexcept {
-        return Duration(us * 1000LL);
-    }
-    
-    /**
-     * @brief Factory method to create a Duration from nanoseconds
-     * @param ns Number of nanoseconds
-     * @return A Duration representing the specified number of nanoseconds
-     */
-    [[nodiscard]] static constexpr Duration from_nanoseconds(rep ns) noexcept {
-        return Duration(ns);
-    }
-    
-    // Value accessors
-    
-    /**
-     * @brief Gets the duration in days
-     * @return Number of whole days
-     */
-    [[nodiscard]] constexpr rep days() const noexcept {
-        return _duration / (86400 * 1000000000LL);
-    }
-    
-    /**
-     * @brief Gets the duration in days with fractional precision
-     * @return Number of days with decimal point
-     */
-    [[nodiscard]] constexpr double days_float() const noexcept {
-        return static_cast<double>(_duration) / (86400.0 * 1000000000.0);
-    }
-    
-    /**
-     * @brief Gets the duration in hours
-     * @return Number of whole hours
-     */
-    [[nodiscard]] constexpr rep hours() const noexcept {
-        return _duration / (3600 * 1000000000LL);
-    }
-    
-    /**
-     * @brief Gets the duration in hours with fractional precision
-     * @return Number of hours with decimal point
-     */
-    [[nodiscard]] constexpr double hours_float() const noexcept {
-        return static_cast<double>(_duration) / (3600.0 * 1000000000.0);
-    }
-    
-    /**
-     * @brief Gets the duration in minutes
-     * @return Number of whole minutes
-     */
-    [[nodiscard]] constexpr rep minutes() const noexcept {
-        return _duration / (60 * 1000000000LL);
-    }
-    
-    /**
-     * @brief Gets the duration in minutes with fractional precision
-     * @return Number of minutes with decimal point
-     */
-    [[nodiscard]] constexpr double minutes_float() const noexcept {
-        return static_cast<double>(_duration) / (60.0 * 1000000000.0);
-    }
-    
-    /**
-     * @brief Gets the duration in seconds
-     * @return Number of whole seconds
-     */
-    [[nodiscard]] constexpr rep seconds() const noexcept {
-        return _duration / 1000000000LL;
-    }
-    
-    /**
-     * @brief Gets the duration in seconds with fractional precision
-     * @return Number of seconds with decimal point
-     */
-    [[nodiscard]] constexpr double seconds_float() const noexcept {
-        return static_cast<double>(_duration) / 1000000000.0;
-    }
-    
-    /**
-     * @brief Gets the duration in milliseconds
-     * @return Number of whole milliseconds
-     */
-    [[nodiscard]] constexpr rep milliseconds() const noexcept {
-        return _duration / 1000000LL;
-    }
-    
-    /**
-     * @brief Gets the duration in milliseconds with fractional precision
-     * @return Number of milliseconds with decimal point
-     */
-    [[nodiscard]] constexpr double milliseconds_float() const noexcept {
-        return static_cast<double>(_duration) / 1000000.0;
-    }
-    
-    /**
-     * @brief Gets the duration in microseconds
-     * @return Number of whole microseconds
-     */
-    [[nodiscard]] constexpr rep microseconds() const noexcept {
-        return _duration / 1000LL;
-    }
-    
-    /**
-     * @brief Gets the duration in microseconds with fractional precision
-     * @return Number of microseconds with decimal point
-     */
-    [[nodiscard]] constexpr double microseconds_float() const noexcept {
-        return static_cast<double>(_duration) / 1000.0;
-    }
-    
-    /**
-     * @brief Gets the duration in nanoseconds
-     * @return Number of nanoseconds
-     */
-    [[nodiscard]] constexpr rep nanoseconds() const noexcept {
-        return _duration;
-    }
-    
-    /**
-     * @brief Gets the duration in nanoseconds with double precision
-     * @return Number of nanoseconds as double
-     */
-    [[nodiscard]] constexpr double nanoseconds_float() const noexcept {
-        return static_cast<double>(_duration);
-    }
-    
-    /**
-     * @brief Gets the total duration in nanoseconds
-     * @return Duration in nanoseconds
-     */
-    [[nodiscard]] constexpr rep count() const noexcept {
-        return _duration;
-    }
-    
-    // Unary operators
-    constexpr Duration operator+() const noexcept { return *this; }
-    constexpr Duration operator-() const noexcept { return Duration(-_duration); }
-    
-    // Compound assignment operators
-    constexpr Duration& operator+=(const Duration& other) noexcept {
-        _duration += other._duration;
-        return *this;
-    }
-    
-    constexpr Duration& operator-=(const Duration& other) noexcept {
-        _duration -= other._duration;
-        return *this;
-    }
-    
-    constexpr Duration& operator*=(rep multiplier) noexcept {
-        _duration *= multiplier;
-        return *this;
-    }
-    
-    constexpr Duration& operator/=(rep divisor) noexcept {
-        _duration /= divisor;
-        return *this;
-    }
-    
-    constexpr Duration& operator%=(const Duration& other) noexcept {
-        _duration %= other._duration;
-        return *this;
-    }
-    
-    constexpr auto operator<=>(const Duration& rhs) const noexcept = default;
-    
-private:
-    rep _duration{0}; ///< Duration in nanoseconds
-};
 
-// Binary arithmetic operators for Duration
-/**
- * @brief Adds two durations
- * @param lhs First duration
- * @param rhs Second duration
- * @return New duration equal to lhs + rhs
- * @ingroup Time
- */
-constexpr Duration operator+(const Duration& lhs, const Duration& rhs) noexcept {
-    return Duration(lhs.count() + rhs.count());
+// ---------------------------------------------------------------------------
+// Canonical types
+// ---------------------------------------------------------------------------
+
+/// Canonical span: signed, nanosecond resolution. Public timeout / TTL /
+/// interval parameters take this by value; it accepts any finer-or-equal
+/// chrono literal implicitly and rejects bare integers.
+using duration = std::chrono::nanoseconds;
+
+/// Monotonic instant — deadlines, timers, event-loop "now", latency, RTT.
+using mono_time = std::chrono::steady_clock::time_point;
+
+/// Wall-clock instant — dates, expiry, JWT, TLS validity, logs, wire formats.
+using wall_time = std::chrono::system_clock::time_point;
+
+/// Current monotonic instant.
+[[nodiscard]] inline mono_time
+mono_now() noexcept {
+    return std::chrono::steady_clock::now();
 }
 
-/**
- * @brief Subtracts second duration from first
- * @param lhs First duration
- * @param rhs Second duration
- * @return New duration equal to lhs - rhs
- * @ingroup Time
- */
-constexpr Duration operator-(const Duration& lhs, const Duration& rhs) noexcept {
-    return Duration(lhs.count() - rhs.count());
+/// Current wall-clock instant.
+[[nodiscard]] inline wall_time
+wall_now() noexcept {
+    return std::chrono::system_clock::now();
 }
 
-/**
- * @brief Multiplies a duration by a scalar value
- * @param lhs Duration 
- * @param rhs Scalar multiplier
- * @return Duration scaled by rhs
- * @ingroup Time
- */
-constexpr Duration operator*(const Duration& lhs, Duration::rep rhs) noexcept {
-    return Duration(lhs.count() * rhs);
+/// Bring the std::chrono literals (`30s`, `100ms`, `5us`, ...) into `qb` so
+/// call sites can write them without an extra `using`.
+inline namespace time_literals {
+using namespace std::chrono_literals;
+} // namespace time_literals
+
+// ---------------------------------------------------------------------------
+// Unix-epoch scalar extraction (wire / logging boundaries)
+// ---------------------------------------------------------------------------
+
+/// Whole seconds since the Unix epoch.
+[[nodiscard]] inline std::int64_t
+unix_seconds(wall_time tp) noexcept {
+    return std::chrono::duration_cast<std::chrono::seconds>(tp.time_since_epoch()).count();
 }
 
-/**
- * @brief Multiplies a scalar value by a duration
- * @param lhs Scalar multiplier
- * @param rhs Duration
- * @return Duration scaled by lhs
- * @ingroup Time
- */
-constexpr Duration operator*(Duration::rep lhs, const Duration& rhs) noexcept {
-    return Duration(lhs * rhs.count());
+/// Whole milliseconds since the Unix epoch.
+[[nodiscard]] inline std::int64_t
+unix_millis(wall_time tp) noexcept {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()).count();
 }
 
-/**
- * @brief Divides a duration by a scalar value
- * @param lhs Duration
- * @param rhs Scalar divisor
- * @return Duration divided by rhs
- * @ingroup Time
- */
-constexpr Duration operator/(const Duration& lhs, Duration::rep rhs) noexcept {
-    return Duration(lhs.count() / rhs);
+/// Whole microseconds since the Unix epoch.
+[[nodiscard]] inline std::int64_t
+unix_micros(wall_time tp) noexcept {
+    return std::chrono::duration_cast<std::chrono::microseconds>(tp.time_since_epoch()).count();
 }
 
-/**
- * @brief Divides one duration by another
- * @param lhs Numerator duration
- * @param rhs Denominator duration
- * @return Scalar ratio of lhs to rhs
- * @ingroup Time
- */
-constexpr Duration::rep operator/(const Duration& lhs, const Duration& rhs) noexcept {
-    return lhs.count() / rhs.count();
+/// Whole nanoseconds since the Unix epoch.
+[[nodiscard]] inline std::int64_t
+unix_nanos(wall_time tp) noexcept {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(tp.time_since_epoch()).count();
 }
 
-/**
- * @brief Calculates the remainder of dividing a duration by a scalar
- * @param lhs Duration
- * @param rhs Scalar divisor
- * @return Duration representing the remainder
- * @ingroup Time
- */
-constexpr Duration operator%(const Duration& lhs, Duration::rep rhs) noexcept {
-    return Duration(lhs.count() % rhs);
+/// Build a wall instant from whole seconds since the Unix epoch.
+[[nodiscard]] inline wall_time
+wall_from_unix_seconds(std::int64_t s) noexcept {
+    return wall_time{std::chrono::seconds{s}};
 }
 
-/**
- * @brief Calculates the remainder of dividing one duration by another
- * @param lhs Numerator duration
- * @param rhs Denominator duration
- * @return Duration representing the remainder
- * @ingroup Time
- */
-constexpr Duration operator%(const Duration& lhs, const Duration& rhs) noexcept {
-    return Duration(lhs.count() % rhs.count());
+/// Build a wall instant from whole milliseconds since the Unix epoch.
+[[nodiscard]] inline wall_time
+wall_from_unix_millis(std::int64_t ms) noexcept {
+    return wall_time{std::chrono::duration_cast<std::chrono::system_clock::duration>(
+        std::chrono::milliseconds{ms})};
 }
 
-// Literal operators for convenient duration creation
-namespace literals {
-    /**
-     * @brief Creates a Duration from literal days
-     * @param days Number of days
-     * @return Duration object representing the specified days
-     * @ingroup Time
-     */
-    constexpr Duration operator""_d(unsigned long long days) noexcept {
-        return Duration::from_days(days);
-    }
-    
-    /**
-     * @brief Creates a Duration from literal hours
-     * @param hours Number of hours
-     * @return Duration object representing the specified hours
-     * @ingroup Time
-     */
-    constexpr Duration operator""_h(unsigned long long hours) noexcept {
-        return Duration::from_hours(hours);
-    }
-    
-    /**
-     * @brief Creates a Duration from literal minutes
-     * @param minutes Number of minutes
-     * @return Duration object representing the specified minutes
-     * @ingroup Time
-     */
-    constexpr Duration operator""_min(unsigned long long minutes) noexcept {
-        return Duration::from_minutes(minutes);
-    }
-    
-    /**
-     * @brief Creates a Duration from literal seconds
-     * @param seconds Number of seconds
-     * @return Duration object representing the specified seconds
-     * @ingroup Time
-     */
-    constexpr Duration operator""_s(unsigned long long seconds) noexcept {
-        return Duration::from_seconds(seconds);
-    }
-    
-    /**
-     * @brief Creates a Duration from literal milliseconds
-     * @param milliseconds Number of milliseconds
-     * @return Duration object representing the specified milliseconds
-     * @ingroup Time
-     */
-    constexpr Duration operator""_ms(unsigned long long milliseconds) noexcept {
-        return Duration::from_milliseconds(milliseconds);
-    }
-    
-    /**
-     * @brief Creates a Duration from literal microseconds
-     * @param microseconds Number of microseconds
-     * @return Duration object representing the specified microseconds
-     * @ingroup Time
-     */
-    constexpr Duration operator""_us(unsigned long long microseconds) noexcept {
-        return Duration::from_microseconds(microseconds);
-    }
-    
-    /**
-     * @brief Creates a Duration from literal nanoseconds
-     * @param nanoseconds Number of nanoseconds
-     * @return Duration object representing the specified nanoseconds
-     * @ingroup Time
-     */
-    constexpr Duration operator""_ns(unsigned long long nanoseconds) noexcept {
-        return Duration::from_nanoseconds(nanoseconds);
-    }
-}
+// ---------------------------------------------------------------------------
+// UTC formatting / parsing (no time-zone database dependency)
+// ---------------------------------------------------------------------------
 
-/**
- * @class TimePoint
- * @brief Represents a point in time with nanosecond precision
- *
- * TimePoint provides a platform-independent way to represent moments in time
- * with high precision. It supports arithmetic operations with Duration objects
- * and provides conversions to various time units and formats.
- */
-class TimePoint {
-public:
-    /// Type used for nanosecond representation
-    using rep = uint64_t;
-    
-    /// Underlying std::chrono time point type
-    using chrono_time_point = std::chrono::time_point<std::chrono::system_clock, 
-                                                      std::chrono::duration<rep, std::nano>>;
-                                                      
-    /// Represents the epoch (1970-01-01 00:00:00 UTC)
-    static constexpr TimePoint epoch() noexcept { return TimePoint(0); }
-    
-    /**
-     * @brief Default constructor, initializes to epoch
-     */
-    constexpr TimePoint() noexcept = default;
-    
-    /**
-     * @brief Constructs a time point with specified time since epoch
-     * @param nanoseconds Time in nanoseconds since epoch
-     */
-    constexpr explicit TimePoint(rep nanoseconds) noexcept
-        : _time_since_epoch(nanoseconds) {}
-        
-    /**
-     * @brief Constructs a time point from std::chrono::time_point
-     * @tparam Clock The clock type
-     * @tparam Duration The duration type
-     * @param time_point A std::chrono time point
-     */
-    template <typename Clock, typename ChronoDuration>
-    explicit TimePoint(const std::chrono::time_point<Clock, ChronoDuration>& time_point) noexcept
-        : _time_since_epoch(std::chrono::duration_cast<std::chrono::nanoseconds>(
-              time_point.time_since_epoch()).count()) {}
-              
-    // Standard special member functions
-    constexpr TimePoint(const TimePoint&) noexcept = default;
-    constexpr TimePoint(TimePoint&&) noexcept = default;
-    constexpr TimePoint& operator=(const TimePoint&) noexcept = default;
-    constexpr TimePoint& operator=(TimePoint&&) noexcept = default;
-    ~TimePoint() noexcept = default;
-    
-    /**
-     * @brief Gets current system time
-     * @return TimePoint representing current system time
-     */
-    static TimePoint now() noexcept {
-        // Use the combination of system clock (for absolute time) and 
-        // steady clock (for monotonic time between calls)
-        static const auto system_start = std::chrono::system_clock::now();
-        static const auto steady_start = std::chrono::steady_clock::now();
-        
-        auto steady_now = std::chrono::steady_clock::now();
-        auto delta = steady_now - steady_start;
-        auto result = system_start + delta;
-        
-        return TimePoint(result);
-    }
-    
-    /**
-     * @brief Converts to std::chrono::time_point
-     * @return Equivalent std::chrono::time_point
-     */
-    [[nodiscard]] chrono_time_point to_chrono() const noexcept {
-        return std::chrono::time_point<std::chrono::system_clock>() + 
-               std::chrono::nanoseconds(_time_since_epoch);
-    }
-    
-    /**
-     * @brief Converts to any std::chrono::time_point
-     * @tparam Clock The target clock type
-     * @tparam Duration The target duration type
-     * @return Converted time point
-     */
-    template <typename Clock, typename ChronoDuration = typename Clock::duration>
-    [[nodiscard]] std::chrono::time_point<Clock, ChronoDuration> 
-    to() const noexcept {
-        using target_tp = std::chrono::time_point<Clock, ChronoDuration>;
-        return std::chrono::time_point_cast<ChronoDuration>(
-            target_tp(std::chrono::duration_cast<ChronoDuration>(
-                std::chrono::nanoseconds(_time_since_epoch))));
-    }
-    
-    /**
-     * @brief Factory method to create a TimePoint from days since epoch
-     * @param days Number of days since epoch
-     * @return A TimePoint at the specified time
-     */
-    [[nodiscard]] static constexpr TimePoint from_days(int64_t days) noexcept {
-        return TimePoint(days * 86400ULL * 1000000000ULL);
-    }
-    
-    /**
-     * @brief Factory method to create a TimePoint from hours since epoch
-     * @param hours Number of hours since epoch
-     * @return A TimePoint at the specified time
-     */
-    [[nodiscard]] static constexpr TimePoint from_hours(int64_t hours) noexcept {
-        return TimePoint(hours * 3600ULL * 1000000000ULL);
-    }
-    
-    /**
-     * @brief Factory method to create a TimePoint from minutes since epoch
-     * @param minutes Number of minutes since epoch
-     * @return A TimePoint at the specified time
-     */
-    [[nodiscard]] static constexpr TimePoint from_minutes(int64_t minutes) noexcept {
-        return TimePoint(minutes * 60ULL * 1000000000ULL);
-    }
-    
-    /**
-     * @brief Factory method to create a TimePoint from seconds since epoch
-     * @param seconds Number of seconds since epoch
-     * @return A TimePoint at the specified time
-     */
-    [[nodiscard]] static constexpr TimePoint from_seconds(int64_t seconds) noexcept {
-        return TimePoint(seconds * 1000000000ULL);
-    }
-    
-    /**
-     * @brief Factory method to create a TimePoint from milliseconds since epoch
-     * @param ms Number of milliseconds since epoch
-     * @return A TimePoint at the specified time
-     */
-    [[nodiscard]] static constexpr TimePoint from_milliseconds(int64_t ms) noexcept {
-        return TimePoint(ms * 1000000ULL);
-    }
-    
-    /**
-     * @brief Factory method to create a TimePoint from microseconds since epoch
-     * @param us Number of microseconds since epoch
-     * @return A TimePoint at the specified time
-     */
-    [[nodiscard]] static constexpr TimePoint from_microseconds(int64_t us) noexcept {
-        return TimePoint(us * 1000ULL);
-    }
-    
-    /**
-     * @brief Factory method to create a TimePoint from nanoseconds since epoch
-     * @param ns Number of nanoseconds since epoch
-     * @return A TimePoint at the specified time
-     */
-    [[nodiscard]] static constexpr TimePoint from_nanoseconds(int64_t ns) noexcept {
-        return TimePoint(ns);
-    }
-    
-    /**
-     * @brief Creates a TimePoint from ISO8601 string
-     * @param iso8601 ISO8601 formatted date-time string
-     * @return Optional TimePoint, empty if parsing failed
-     */
-    [[nodiscard]] static std::optional<TimePoint> from_iso8601(std::string_view iso8601) noexcept {
-        try {
-            std::tm tm = {};
-            std::string str_iso8601(iso8601);
-            std::istringstream iss(str_iso8601);
-            iss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
-            if (iss.fail()) {
-                return std::nullopt;
-            }
-            // The trailing 'Z' denotes UTC, so the broken-down time must be
-            // converted as UTC. std::mktime interprets tm as LOCAL time and
-            // would offset the epoch by the machine's timezone; timegm
-            // (_mkgmtime on Windows) interprets it as UTC.
-#ifdef _WIN32
-            const auto time_since_epoch = _mkgmtime(&tm);
+/// Format a wall instant as UTC using a strftime-compatible format string.
+/// Returns an empty string on failure.
+[[nodiscard]] inline std::string
+format_utc(wall_time tp, std::string_view fmt) {
+    const auto      t = static_cast<std::time_t>(unix_seconds(tp));
+    std::tm         tm{};
+#if defined(_WIN32)
+    if (gmtime_s(&tm, &t) != 0)
+        return {};
 #else
-            const auto time_since_epoch = timegm(&tm);
+    if (gmtime_r(&t, &tm) == nullptr)
+        return {};
 #endif
-            if (time_since_epoch == -1) {
-                return std::nullopt;
-            }
-            return TimePoint(static_cast<rep>(time_since_epoch) * 1000000000ULL);
-        } catch (...) {
-            return std::nullopt;
-        }
-    }
+    std::array<char, 128> buf{};
+    const std::string     f(fmt);
+    const auto            n = std::strftime(buf.data(), buf.size(), f.c_str(), &tm);
+    return std::string(buf.data(), n);
+}
 
-    /**
-     * @brief Factory method to parse a string into a TimePoint
-     * @param time_string Time string
-     * @param format Format string (strptime/std::get_time compatible)
-     * @return Optional TimePoint, empty if parsing failed
-     */
-    [[nodiscard]] static std::optional<TimePoint> parse(
-        std::string_view time_string, std::string_view format) noexcept {
-        try {
-            std::tm tm = {};
-            std::string str_time_string(time_string);
-            // Copy the format too: std::get_time needs a null-terminated C
-            // string, but string_view::data() is not guaranteed terminated
-            // (a substring view would read past the end — OOB).
-            std::string str_format(format);
-            std::istringstream iss(str_time_string);
-            iss >> std::get_time(&tm, str_format.c_str());
-            if (iss.fail()) {
-                return std::nullopt;
-            }
-            const auto time_since_epoch = std::mktime(&tm);
-            if (time_since_epoch == -1) {
-                return std::nullopt;
-            }
-            return TimePoint(static_cast<rep>(time_since_epoch) * 1000000000ULL);
-        } catch (...) {
+/// Format a wall instant as an ISO-8601 UTC string ("YYYY-MM-DDTHH:MM:SSZ").
+[[nodiscard]] inline std::string
+to_iso8601(wall_time tp) {
+    return format_utc(tp, "%Y-%m-%dT%H:%M:%SZ");
+}
+
+/// Parse a UTC time string with a get_time-compatible format. The broken-down
+/// time is interpreted as UTC (timegm / _mkgmtime), never local time. Returns
+/// std::nullopt on any parse error.
+[[nodiscard]] inline std::optional<wall_time>
+parse_utc(std::string_view str, std::string_view fmt) noexcept {
+    try {
+        std::tm            tm{};
+        const std::string  s(str);
+        const std::string  f(fmt); // get_time needs a null-terminated format
+        std::istringstream iss(s);
+        iss >> std::get_time(&tm, f.c_str());
+        if (iss.fail())
             return std::nullopt;
-        }
-    }
-    
-    // Value accessors
-    
-    /**
-     * @brief Gets the time in days since epoch
-     * @return Number of whole days
-     */
-    [[nodiscard]] constexpr rep days() const noexcept {
-        return _time_since_epoch / (86400ULL * 1000000000ULL);
-    }
-    
-    /**
-     * @brief Gets the time in days since epoch with fractional precision
-     * @return Number of days with decimal point
-     */
-    [[nodiscard]] constexpr double days_float() const noexcept {
-        return static_cast<double>(_time_since_epoch) / (86400.0 * 1000000000.0);
-    }
-    
-    /**
-     * @brief Gets the time in hours since epoch
-     * @return Number of whole hours
-     */
-    [[nodiscard]] constexpr rep hours() const noexcept {
-        return _time_since_epoch / (3600ULL * 1000000000ULL);
-    }
-    
-    /**
-     * @brief Gets the time in hours since epoch with fractional precision
-     * @return Number of hours with decimal point
-     */
-    [[nodiscard]] constexpr double hours_float() const noexcept {
-        return static_cast<double>(_time_since_epoch) / (3600.0 * 1000000000.0);
-    }
-    
-    /**
-     * @brief Gets the time in minutes since epoch
-     * @return Number of whole minutes
-     */
-    [[nodiscard]] constexpr rep minutes() const noexcept {
-        return _time_since_epoch / (60ULL * 1000000000ULL);
-    }
-    
-    /**
-     * @brief Gets the time in minutes since epoch with fractional precision
-     * @return Number of minutes with decimal point
-     */
-    [[nodiscard]] constexpr double minutes_float() const noexcept {
-        return static_cast<double>(_time_since_epoch) / (60.0 * 1000000000.0);
-    }
-    
-    /**
-     * @brief Gets the time in seconds since epoch
-     * @return Number of whole seconds
-     */
-    [[nodiscard]] constexpr rep seconds() const noexcept {
-        return _time_since_epoch / 1000000000ULL;
-    }
-    
-    /**
-     * @brief Gets the time in seconds since epoch with fractional precision
-     * @return Number of seconds with decimal point
-     */
-    [[nodiscard]] constexpr double seconds_float() const noexcept {
-        return static_cast<double>(_time_since_epoch) / 1000000000.0;
-    }
-    
-    /**
-     * @brief Gets the time in milliseconds since epoch
-     * @return Number of whole milliseconds
-     */
-    [[nodiscard]] constexpr rep milliseconds() const noexcept {
-        return _time_since_epoch / 1000000ULL;
-    }
-    
-    /**
-     * @brief Gets the time in milliseconds since epoch with fractional precision
-     * @return Number of milliseconds with decimal point
-     */
-    [[nodiscard]] constexpr double milliseconds_float() const noexcept {
-        return static_cast<double>(_time_since_epoch) / 1000000.0;
-    }
-    
-    /**
-     * @brief Gets the time in microseconds since epoch
-     * @return Number of whole microseconds
-     */
-    [[nodiscard]] constexpr rep microseconds() const noexcept {
-        return _time_since_epoch / 1000ULL;
-    }
-    
-    /**
-     * @brief Gets the time in microseconds since epoch with fractional precision
-     * @return Number of microseconds with decimal point
-     */
-    [[nodiscard]] constexpr double microseconds_float() const noexcept {
-        return static_cast<double>(_time_since_epoch) / 1000.0;
-    }
-    
-    /**
-     * @brief Gets the time in nanoseconds since epoch
-     * @return Number of nanoseconds
-     */
-    [[nodiscard]] constexpr rep nanoseconds() const noexcept {
-        return _time_since_epoch;
-    }
-    
-    /**
-     * @brief Gets the time in nanoseconds since epoch with double precision
-     * @return Number of nanoseconds as double
-     */
-    [[nodiscard]] constexpr double nanoseconds_float() const noexcept {
-        return static_cast<double>(_time_since_epoch);
-    }
-    
-    /**
-     * @brief Gets the duration since epoch
-     * @return Duration object representing time since epoch
-     */
-    [[nodiscard]] Duration time_since_epoch() const noexcept {
-        return Duration(static_cast<Duration::rep>(_time_since_epoch));
-    }
-    
-    /**
-     * @brief Gets the total time in nanoseconds since epoch
-     * @return Time in nanoseconds
-     */
-    [[nodiscard]] constexpr rep count() const noexcept {
-        return _time_since_epoch;
-    }
-    
-    /**
-     * @brief Formats the time point as a string
-     * @param format Format string (strftime compatible)
-     * @return Formatted string representation
-     */
-    [[nodiscard]] std::string format(std::string_view format) const {
-        const auto time_t_value = static_cast<std::time_t>(seconds());
-        std::tm tm = {};
-        
-#if defined(_MSC_VER)
-        gmtime_s(&tm, &time_t_value);
+#if defined(_WIN32)
+        const std::time_t t = _mkgmtime(&tm);
 #else
-        gmtime_r(&time_t_value, &tm);
+        const std::time_t t = timegm(&tm);
 #endif
-        
-        std::array<char, 128> buffer{};
-        const auto result = std::strftime(buffer.data(), buffer.size(), format.data(), &tm);
-        
-        if (result == 0) {
-            return {};
-        }
-        
-        return std::string(buffer.data(), result);
+        if (t == static_cast<std::time_t>(-1))
+            return std::nullopt;
+        return wall_from_unix_seconds(static_cast<std::int64_t>(t));
+    } catch (...) {
+        return std::nullopt;
     }
-    
-    /**
-     * @brief Converts to ISO8601 string
-     * @return ISO8601 formatted date-time string
-     */
-    [[nodiscard]] std::string to_iso8601() const {
-        return format("%Y-%m-%dT%H:%M:%SZ");
-    }
-    
-    /**
-     * @brief Reads CPU timestamp counter
-     * @return Raw TSC value (platform dependent)
-     */
-    static uint64_t read_tsc() noexcept {
+}
+
+/// Parse an ISO-8601 UTC string ("YYYY-MM-DDTHH:MM:SSZ").
+[[nodiscard]] inline std::optional<wall_time>
+from_iso8601(std::string_view iso8601) noexcept {
+    return parse_utc(iso8601, "%Y-%m-%dT%H:%M:%SZ");
+}
+
+// ---------------------------------------------------------------------------
+// Raw CPU timestamp counter (performance instrumentation only — NOT a clock)
+// ---------------------------------------------------------------------------
+
+/// Reads the platform CPU timestamp counter. Monotonic per-core, very high
+/// resolution, but uncalibrated and not comparable to wall/monotonic clocks.
+/// Use only for micro-benchmark deltas on a single thread.
+[[nodiscard]] inline std::uint64_t
+tsc_ticks() noexcept {
 #if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
-        return __rdtsc();
+    return __rdtsc();
 #elif defined(__i386__)
-        uint64_t x;
-        __asm__ volatile(".byte 0x0f, 0x31" : "=A"(x));
-        return x;
+    std::uint64_t x;
+    __asm__ volatile(".byte 0x0f, 0x31" : "=A"(x));
+    return x;
 #elif defined(__x86_64__)
-        unsigned hi, lo;
-        __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
-        return ((uint64_t)lo) | (((uint64_t)hi) << 32ULL);
+    unsigned hi, lo;
+    __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+    return (static_cast<std::uint64_t>(lo)) | (static_cast<std::uint64_t>(hi) << 32ULL);
 #elif defined(__aarch64__)
-        // ARM64: Use CNTVCT_EL0 (virtual counter) - monotonic, high resolution
-        uint64_t val;
-        __asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(val));
-        return val;
+    std::uint64_t val;
+    __asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(val));
+    return val;
 #elif defined(__arm__) && defined(__ARM_ARCH_7A__)
-        // ARMv7A: Use PMCCNTR if available, otherwise fallback
-        uint64_t val;
-        __asm__ __volatile__("mrc p15, 0, %0, c9, c13, 0" : "=r"(val));
-        return val;
+    std::uint64_t val;
+    __asm__ __volatile__("mrc p15, 0, %0, c9, c13, 0" : "=r"(val));
+    return val;
 #else
-        // Fallback to high-resolution clock for other platforms
-        const auto now = std::chrono::high_resolution_clock::now();
-        return std::chrono::duration_cast<std::chrono::nanoseconds>(
-            now.time_since_epoch()).count();
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::high_resolution_clock::now().time_since_epoch())
+            .count());
 #endif
-    }
-    
-    /**
-     * @brief Adds a duration to this time point
-     * @param duration Duration to add
-     * @return Reference to this time point after addition
-     */
-    TimePoint& operator+=(const Duration& duration) noexcept {
-        _time_since_epoch += static_cast<rep>(duration.count());
-        return *this;
-    }
-    
-    /**
-     * @brief Subtracts a duration from this time point
-     * @param duration Duration to subtract
-     * @return Reference to this time point after subtraction
-     */
-    TimePoint& operator-=(const Duration& duration) noexcept {
-        _time_since_epoch -= static_cast<rep>(duration.count());
-        return *this;
-    }
-
-    /**
-     * @brief Gets the current time in nanoseconds since epoch
-     * @return Nanoseconds since epoch
-     */
-    static uint64_t nano() noexcept {
-        return now().count();
-    }
-
-    constexpr auto operator<=>(const TimePoint& rhs) const noexcept = default;
-
-protected:
-    rep _time_since_epoch{0}; ///< Time in nanoseconds since epoch
-};
-
-// Binary arithmetic operators for TimePoint and Duration
-/**
- * @brief Adds a duration to a time point
- * @param lhs The time point
- * @param rhs The duration to add
- * @return A new time point equal to lhs + rhs
- * @ingroup Time
- */
-inline TimePoint operator+(const TimePoint& lhs, const Duration& rhs) noexcept {
-    TimePoint result(lhs);
-    result += rhs;
-    return result;
 }
 
-/**
- * @brief Adds a time point to a duration
- * @param lhs The duration
- * @param rhs The time point
- * @return A new time point equal to rhs + lhs
- * @ingroup Time
- */
-inline TimePoint operator+(const Duration& lhs, const TimePoint& rhs) noexcept {
-    return rhs + lhs;
-}
-
-/**
- * @brief Subtracts a duration from a time point
- * @param lhs The time point
- * @param rhs The duration to subtract
- * @return A new time point equal to lhs - rhs
- * @ingroup Time
- */
-inline TimePoint operator-(const TimePoint& lhs, const Duration& rhs) noexcept {
-    TimePoint result(lhs);
-    result -= rhs;
-    return result;
-}
-
-/**
- * @brief Calculates the duration between two time points
- * @param lhs The later time point
- * @param rhs The earlier time point
- * @return The duration between the two time points (lhs - rhs)
- * @ingroup Time
- */
-inline Duration operator-(const TimePoint& lhs, const TimePoint& rhs) noexcept {
-    return Duration(static_cast<Duration::rep>(lhs.count() - rhs.count()));
-}
-
-// Backward compatibility typedefs
-/**
- * @typedef Timespan
- * @brief Backward compatibility alias for Duration
- * @details Provided for compatibility with older code
- * @ingroup Time
- */
-using Timespan = Duration;
-
-/**
- * @typedef Timestamp
- * @brief Backward compatibility alias for TimePoint
- * @details Provided for compatibility with older code
- * @ingroup Time
- */
-using Timestamp = TimePoint;
-
-/**
- * @class UtcTimePoint
- * @brief Represents a UTC time point with nanosecond precision
- *
- * Extends TimePoint to specifically represent times in Coordinated Universal Time (UTC).
- */
-class UtcTimePoint : public TimePoint {
-public:
-    using TimePoint::TimePoint;
-    
-    /**
-     * @brief Default constructor, initializes to current UTC time
-     */
-    UtcTimePoint() : TimePoint(TimePoint::now()) {}
-    
-    /**
-     * @brief Gets current UTC time
-     * @return UtcTimePoint representing current UTC time
-     */
-    [[nodiscard]] static UtcTimePoint now() noexcept {
-        return UtcTimePoint(TimePoint::now().count());
-    }
-};
-
-/**
- * @class LocalTimePoint
- * @brief Represents a local time point with nanosecond precision
- *
- * Extends TimePoint to specifically represent times in local timezone.
- */
-class LocalTimePoint : public TimePoint {
-public:
-    using TimePoint::TimePoint;
-    
-    /**
-     * @brief Default constructor, initializes to current local time
-     */
-    LocalTimePoint() : TimePoint(TimePoint::now()) {}
-    
-    /**
-     * @brief Gets current local time
-     * @return LocalTimePoint representing current local time
-     */
-    [[nodiscard]] static LocalTimePoint now() noexcept {
-        return LocalTimePoint(TimePoint::now().count());
-    }
-    
-    /**
-     * @brief Formats the time point as a local time string
-     * @param format Format string (strftime compatible)
-     * @return Formatted local time string
-     */
-    [[nodiscard]] std::string format_local(std::string_view format) const {
-        const auto time_t_value = static_cast<std::time_t>(seconds());
-        std::tm tm = {};
-        
-#if defined(_MSC_VER)
-        localtime_s(&tm, &time_t_value);
-#else
-        localtime_r(&time_t_value, &tm);
-#endif
-        
-        std::array<char, 128> buffer{};
-        const auto result = std::strftime(buffer.data(), buffer.size(), format.data(), &tm);
-        
-        if (result == 0) {
-            return {};
-        }
-        
-        return std::string(buffer.data(), result);
-    }
-};
-
-/**
- * @class HighResTimePoint
- * @brief Represents a high-resolution time point
- *
- * Extends TimePoint to specifically represent high-precision times from
- * the system's high-resolution timer.
- */
-class HighResTimePoint : public TimePoint {
-public:
-    using TimePoint::TimePoint;
-    
-    /**
-     * @brief Default constructor, initializes to current high-resolution time
-     */
-    HighResTimePoint() : TimePoint(TimePoint::now()) {}
-    
-    /**
-     * @brief Gets current high-resolution time
-     * @return HighResTimePoint representing current high-resolution time
-     */
-    [[nodiscard]] static HighResTimePoint now() noexcept {
-        return HighResTimePoint(TimePoint::now().count());
-    }
-};
-
-/**
- * @class TscTimePoint
- * @brief Represents a time point based on CPU's timestamp counter
- *
- * Extends TimePoint to specifically represent times based on the CPU's
- * timestamp counter, which provides very high precision but may
- * vary between CPU cores.
- */
-class TscTimePoint : public TimePoint {
-public:
-    using TimePoint::TimePoint;
-    
-    /**
-     * @brief Default constructor, initializes to current TSC time
-     */
-    TscTimePoint() : TimePoint(now().count()) {}
-    
-    /**
-     * @brief Gets current TSC time calibrated to system time
-     * @return TscTimePoint based on CPU timestamp counter but aligned with system time
-     */
-    static TscTimePoint now() noexcept {
-        static const auto system_time_at_init = TimePoint::now();
-        static const auto tsc_at_init = TimePoint::read_tsc();
-        static const auto tsc_frequency = calibrate_tsc_frequency();
-        
-        const auto tsc_elapsed = TimePoint::read_tsc() - tsc_at_init;
-        const auto seconds_elapsed = static_cast<double>(tsc_elapsed) / tsc_frequency;
-        const auto nanoseconds_elapsed = static_cast<uint64_t>(seconds_elapsed * 1e9);
-        
-        return TscTimePoint(system_time_at_init.count() + nanoseconds_elapsed);
-    }
-    
-private:
-    /**
-     * @brief Calibrates the TSC frequency by measuring over a short interval
-     * @return Estimated TSC ticks per second
-     */
-    static double calibrate_tsc_frequency() noexcept {
-        const auto start_time = TimePoint::now();
-        const auto start_tsc = TimePoint::read_tsc();
-        
-        // Sleep for a short time to get a measurement
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        
-        const auto end_time = TimePoint::now();
-        const auto end_tsc = TimePoint::read_tsc();
-        
-        const auto time_diff_ns = end_time.count() - start_time.count();
-        const auto tsc_diff = end_tsc - start_tsc;
-        
-        return static_cast<double>(tsc_diff) * 1e9 / static_cast<double>(time_diff_ns);
-    }
-};
-
-/**
- * @typedef UtcTimestamp
- * @brief Backward compatibility alias for UtcTimePoint
- * @details Provided for compatibility with older code
- * @ingroup Time
- */
-using UtcTimestamp = UtcTimePoint;
-
-/**
- * @typedef LocalTimestamp
- * @brief Backward compatibility alias for LocalTimePoint
- * @details Provided for compatibility with older code
- * @ingroup Time
- */
-using LocalTimestamp = LocalTimePoint;
-
-/**
- * @typedef NanoTimestamp
- * @brief Backward compatibility alias for HighResTimePoint
- * @details Provided for compatibility with older code
- * @ingroup Time
- */
-using NanoTimestamp = HighResTimePoint;
-
-/**
- * @typedef RdtsTimestamp
- * @brief Backward compatibility alias for TscTimePoint
- * @details Provided for compatibility with older code
- * @ingroup Time
- */
-using RdtsTimestamp = TscTimePoint;
+// ---------------------------------------------------------------------------
+// Scoped measurement helpers
+// ---------------------------------------------------------------------------
 
 /**
  * @class ScopedTimer
- * @brief Utility for measuring code block execution time
- *
- * Measures elapsed time between construction and destruction,
- * optionally invoking a callback with the measured duration.
+ * @brief Measures elapsed monotonic time between construction and stop()/dtor,
+ *        invoking an optional callback with the measured `qb::duration`.
  */
 class ScopedTimer {
 public:
-    using TimerCallback = std::function<void(Duration)>;
-    
-    /**
-     * @brief Constructs a timer with a callback
-     * @param callback Function to call with measured duration when timer is destroyed
-     */
+    using TimerCallback = std::function<void(duration)>;
+
     explicit ScopedTimer(TimerCallback callback)
-        : _start_time(HighResTimePoint::now())
+        : _start(mono_now())
         , _callback(std::move(callback))
         , _active(true) {}
-        
-    /**
-     * @brief Destructor that invokes callback with elapsed time
-     */
+
     ~ScopedTimer() {
         stop();
     }
-    
-    /**
-     * @brief Stops the timer and invokes callback if active
-     * @return Measured duration
-     */
-    Duration stop() {
-        if (!_active) {
+
+    duration
+    stop() {
+        if (!_active)
             return _elapsed;
-        }
-        
-        _active = false;
-        _elapsed = HighResTimePoint::now() - _start_time;
-        
-        if (_callback) {
+        _active  = false;
+        _elapsed = mono_now() - _start;
+        if (_callback)
             _callback(_elapsed);
-        }
-        
         return _elapsed;
     }
-    
-    /**
-     * @brief Restarts the timer
-     */
-    void restart() {
-        _start_time = HighResTimePoint::now();
+
+    void
+    restart() {
+        _start  = mono_now();
         _active = true;
     }
-    
-    /**
-     * @brief Gets elapsed time without stopping timer
-     * @return Current elapsed duration
-     */
-    Duration elapsed() const {
-        if (!_active) {
-            return _elapsed;
-        }
-        
-        return HighResTimePoint::now() - _start_time;
+
+    [[nodiscard]] duration
+    elapsed() const {
+        return _active ? (mono_now() - _start) : _elapsed;
     }
-    
-    // Deleted copy/move operations to prevent double-stopping
-    ScopedTimer(const ScopedTimer&) = delete;
-    ScopedTimer& operator=(const ScopedTimer&) = delete;
-    ScopedTimer(ScopedTimer&&) = delete;
-    ScopedTimer& operator=(ScopedTimer&&) = delete;
-    
+
+    ScopedTimer(const ScopedTimer &)            = delete;
+    ScopedTimer &operator=(const ScopedTimer &) = delete;
+    ScopedTimer(ScopedTimer &&)                 = delete;
+    ScopedTimer &operator=(ScopedTimer &&)      = delete;
+
 private:
-    HighResTimePoint _start_time;
+    mono_time     _start;
     TimerCallback _callback;
-    Duration _elapsed{0};
-    bool _active;
+    duration      _elapsed{};
+    bool          _active;
 };
 
 /**
  * @class LogTimer
- * @brief Utility for logging execution time of code blocks
- *
- * Creates a timer that logs the elapsed time when it goes out of scope.
- * Useful for performance measurements and debugging.
+ * @brief Logs the elapsed time (microseconds) of a scope on destruction.
  */
 class LogTimer {
 public:
-    /**
-     * @brief Constructs a timer with a descriptive reason
-     * @param reason Description of what is being timed
-     */
     explicit LogTimer(std::string reason)
         : _reason(std::move(reason))
-        , _timer([this](Duration duration) {
-              qb::io::cout() << _reason << ": " << duration.microseconds() << "us" << std::endl;
-          }) {}
-          
-    /**
-     * @brief Gets elapsed time without stopping timer
-     * @return Current elapsed duration
-     */
-    Duration elapsed() const {
+        , _timer([this](duration d) {
+            std::fprintf(stdout, "%s: %lldus\n", _reason.c_str(),
+                         static_cast<long long>(
+                             std::chrono::duration_cast<std::chrono::microseconds>(d).count()));
+        }) {}
+
+    [[nodiscard]] duration
+    elapsed() const {
         return _timer.elapsed();
     }
-    
+
 private:
+    // Declaration order matters: `_timer`'s callback captures `this` and reads
+    // `_reason` when it fires on destruction. Members are destroyed in reverse
+    // declaration order, so `_timer` (declared last) is destroyed first — while
+    // `_reason` is still alive. Do NOT reorder these two (would be a UAF).
     std::string _reason;
     ScopedTimer _timer;
 };
 
+// ---------------------------------------------------------------------------
+// External boundary seams (the ONLY place a raw double touches time)
+// ---------------------------------------------------------------------------
+
+namespace detail {
+
+/// Convert a span to libev's `ev_tstamp` (double seconds). Used only by the
+/// async/listener/timer glue around libev.
+[[nodiscard]] inline double
+to_ev_seconds(duration d) noexcept {
+    return std::chrono::duration_cast<std::chrono::duration<double>>(d).count();
+}
+
+/// Convert libev's `ev_tstamp` (double seconds) back to a span.
+[[nodiscard]] inline duration
+from_ev_seconds(double seconds) noexcept {
+    return std::chrono::duration_cast<duration>(std::chrono::duration<double>(seconds));
+}
+
+} // namespace detail
+
 } // namespace qb
-
-// Stream operators
-/**
- * @brief Stream insertion operator for TimePoint
- * @param os Output stream
- * @param tp TimePoint to output
- * @return Reference to the output stream
- * @ingroup Time
- */
-inline std::ostream& operator<<(std::ostream& os, const qb::TimePoint& tp) {
-    return os << tp.to_iso8601();
-}
-
-/**
- * @brief Stream insertion operator for Duration
- * @param os Output stream
- * @param d Duration to output
- * @return Reference to the output stream
- * @ingroup Time
- */
-inline std::ostream& operator<<(std::ostream& os, const qb::Duration& d) {
-    auto seconds = d.seconds();
-    auto nanoseconds = d.nanoseconds() % 1000000000LL;
-    
-    if (nanoseconds == 0) {
-        return os << seconds << "s";
-    } else if (nanoseconds % 1000000LL == 0) {
-        return os << seconds << "s " << (nanoseconds / 1000000LL) << "ms";
-    } else if (nanoseconds % 1000LL == 0) {
-        return os << seconds << "s " << (nanoseconds / 1000LL) << "us";
-    } else {
-        return os << seconds << "s " << nanoseconds << "ns";
-    }
-}
-
-// Hash support for unordered containers
-namespace std {
-    /**
-     * @struct hash<qb::Duration>
-     * @brief Specialization of std::hash for qb::Duration
-     * @details 
-     * This hash specialization enables Duration objects to be used as keys in unordered
-     * associative containers like std::unordered_set and std::unordered_map.
-     * The hash is computed from the internal duration count in nanoseconds.
-     * @ingroup Time
-     */
-    template<>
-    struct hash<qb::Duration> {
-        /**
-         * @brief Hash function operator for Duration
-         * @param duration The Duration to hash
-         * @return Hash value based on the duration's nanosecond count
-         */
-        size_t operator()(const qb::Duration& duration) const noexcept {
-            return std::hash<int64_t>{}(duration.count());
-        }
-    };
-    
-    /**
-     * @struct hash<qb::TimePoint>
-     * @brief Specialization of std::hash for qb::TimePoint
-     * @details
-     * This hash specialization enables TimePoint objects to be used as keys in unordered
-     * associative containers like std::unordered_set and std::unordered_map.
-     * The hash is computed from the internal nanoseconds-since-epoch count.
-     * @ingroup Time
-     */
-    template<>
-    struct hash<qb::TimePoint> {
-        /**
-         * @brief Hash function operator for TimePoint
-         * @param time_point The TimePoint to hash
-         * @return Hash value based on the time point's nanosecond count
-         */
-        size_t operator()(const qb::TimePoint& time_point) const noexcept {
-            return std::hash<uint64_t>{}(time_point.count());
-        }
-    };
-}
-
-// std::formatter support (C++20)
-#if __cplusplus >= 202002L
-namespace std {
-    template<>
-    struct formatter<qb::TimePoint> {
-        constexpr auto parse(format_parse_context& ctx) {
-            return ctx.begin();
-        }
-        
-        auto format(const qb::TimePoint& tp, format_context& ctx) const {
-            return format_to(ctx.out(), "{}", tp.to_iso8601());
-        }
-    };
-    
-    template<>
-    struct formatter<qb::Duration> {
-        constexpr auto parse(format_parse_context& ctx) {
-            return ctx.begin();
-        }
-        
-        auto format(const qb::Duration& d, format_context& ctx) const {
-            auto seconds = d.seconds();
-            auto nanoseconds = d.nanoseconds() % 1000000000LL;
-            
-            if (nanoseconds == 0) {
-                return format_to(ctx.out(), "{}s", seconds);
-            } else if (nanoseconds % 1000000LL == 0) {
-                return format_to(ctx.out(), "{}s {}ms", seconds, nanoseconds / 1000000LL);
-            } else if (nanoseconds % 1000LL == 0) {
-                return format_to(ctx.out(), "{}s {}us", seconds, nanoseconds / 1000LL);
-            } else {
-                return format_to(ctx.out(), "{}s {}ns", seconds, nanoseconds);
-            }
-        }
-    };
-}
-#endif
 
 #endif // QB_SYSTEM_TIMESTAMP_H

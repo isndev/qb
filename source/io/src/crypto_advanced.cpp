@@ -232,7 +232,7 @@ crypto::derive_key(const std::string &password, const std::vector<unsigned char>
 // Implementation of secure token generation
 std::string
 crypto::generate_token(const std::string &payload, const std::vector<unsigned char> &key,
-                       uint64_t ttl) {
+                       qb::duration ttl) {
     using json = qb::json;
 
     // Create token data
@@ -246,8 +246,10 @@ crypto::generate_token(const std::string &payload, const std::vector<unsigned ch
 
     token_data["iat"] = now; // Issued at
 
-    if (ttl > 0) {
-        token_data["exp"] = now + ttl; // Expiration
+    if (ttl > qb::duration::zero()) {
+        token_data["exp"] =
+            now + static_cast<uint64_t>(
+                      std::chrono::duration_cast<std::chrono::seconds>(ttl).count()); // Expiration
     }
 
     // Generate a random IV

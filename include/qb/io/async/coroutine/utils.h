@@ -74,6 +74,7 @@
 #include <thread>
 #include <type_traits>
 #include <utility>
+#include <qb/system/timestamp.h>  // qb::duration
 #include "awaiter.h"
 #include "../listener.h"
 
@@ -96,7 +97,7 @@ namespace qb::io::async {
  * @return timer_awaiter that suspends until duration elapses
  * @ingroup Coroutine
  */
-inline timer_awaiter sleep(std::chrono::milliseconds duration) {
+inline timer_awaiter sleep(qb::duration duration) {
     // Use the listener's event loop, not the default loop
     // This ensures timers work with listener::current.run()
     return timer_awaiter{duration, listener::current.loop()};
@@ -214,7 +215,7 @@ inline CoroutineScheduler& coro_scheduler() {
  * @param duration Maximum time to run
  * @ingroup Coroutine
  */
-inline void run_for(std::chrono::milliseconds duration) {
+inline void run_for(qb::duration duration) {
     ensure_not_inside_ready_drain("run_for()");
     auto end = std::chrono::steady_clock::now() + duration;
     // Process any already-queued coroutines (e.g. from spawn) before the timed loop

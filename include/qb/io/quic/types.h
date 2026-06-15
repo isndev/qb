@@ -6,8 +6,10 @@
 #ifndef QB_IO_QUIC_TYPES_H_
 #define QB_IO_QUIC_TYPES_H_
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <qb/system/timestamp.h>
 #include <string>
 #include <string_view>
 
@@ -47,8 +49,8 @@ enum class stream_origin : std::uint8_t {
 };
 
 struct settings {
-    std::uint64_t handshake_timeout_ms = 10000;
-    std::uint64_t idle_timeout_ms = 30000;
+    qb::duration  handshake_timeout = std::chrono::seconds(10);
+    qb::duration  idle_timeout = std::chrono::seconds(30);
     std::uint64_t stream_recv_window = 1024 * 1024;
     std::uint64_t connection_recv_window = 16 * 1024 * 1024;
     std::uint64_t max_stream_data_bidi_local = 1024 * 1024;

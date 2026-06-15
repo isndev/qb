@@ -316,7 +316,7 @@ TEST(QuicEndpointTest, DelegatesClientLifecycleToBackend) {
         std::unique_ptr<qb::io::quic::backend>(raw_backend)};
 
     qb::io::quic::settings settings;
-    settings.idle_timeout_ms = 1234;
+    settings.idle_timeout = std::chrono::milliseconds(1234);
     endpoint.set_settings(settings);
 
     ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
@@ -326,7 +326,7 @@ TEST(QuicEndpointTest, DelegatesClientLifecycleToBackend) {
     EXPECT_EQ(raw_backend->start_client_calls, 1);
     ASSERT_EQ(raw_backend->last_alpn.size(), 1u);
     EXPECT_EQ(raw_backend->last_alpn.front(), "h3");
-    EXPECT_EQ(raw_backend->last_settings.idle_timeout_ms, 1234u);
+    EXPECT_EQ(raw_backend->last_settings.idle_timeout, std::chrono::milliseconds(1234));
     EXPECT_EQ(raw_backend->last_local.af(), AF_INET);
     EXPECT_EQ(raw_backend->last_remote.port(), 4433);
     EXPECT_EQ(raw_backend->last_tls.server_name, "127.0.0.1");
@@ -353,8 +353,8 @@ TEST(QuicEndpointTest, DelegatesClientLifecycleToBackend) {
 TEST(QuicEndpointTest, PassesBackpressureAndLifecycleSettingsToBackend) {
     auto *raw_backend = new FakeQuicBackend;
     qb::io::quic::settings settings;
-    settings.handshake_timeout_ms = 111;
-    settings.idle_timeout_ms = 222;
+    settings.handshake_timeout = std::chrono::milliseconds(111);
+    settings.idle_timeout = std::chrono::milliseconds(222);
     settings.stream_recv_window = 333;
     settings.connection_recv_window = 444;
     settings.max_stream_data_bidi_local = 555;
@@ -380,8 +380,8 @@ TEST(QuicEndpointTest, PassesBackpressureAndLifecycleSettingsToBackend) {
     ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
 
     EXPECT_EQ(raw_backend->configure_calls, 1);
-    EXPECT_EQ(raw_backend->last_settings.handshake_timeout_ms, 111u);
-    EXPECT_EQ(raw_backend->last_settings.idle_timeout_ms, 222u);
+    EXPECT_EQ(raw_backend->last_settings.handshake_timeout, std::chrono::milliseconds(111));
+    EXPECT_EQ(raw_backend->last_settings.idle_timeout, std::chrono::milliseconds(222));
     EXPECT_EQ(raw_backend->last_settings.stream_recv_window, 333u);
     EXPECT_EQ(raw_backend->last_settings.connection_recv_window, 444u);
     EXPECT_EQ(raw_backend->last_settings.max_stream_data_bidi_local, 555u);

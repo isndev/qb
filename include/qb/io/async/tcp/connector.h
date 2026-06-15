@@ -153,7 +153,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
                 if (auto self = w.lock())
                     self->on_deadline();
             },
-            remain > 0. ? remain : 0.);
+            qb::detail::from_ev_seconds(remain > 0. ? remain : 0.));
     }
 
     [[nodiscard]] finalize_result
@@ -329,9 +329,10 @@ public:
  */
 template <typename Socket_, typename Func_>
 void
-connect(uri const &remote, Func_ &&func, double timeout = 0., bool verify_peer = true) {
+connect(uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero(),
+        bool verify_peer = true) {
     auto op = std::make_shared<connector<Socket_, Func_>>(
-        std::forward<Func_>(func), remote, timeout, verify_peer);
+        std::forward<Func_>(func), remote, qb::detail::to_ev_seconds(timeout), verify_peer);
     LOG_DEBUG("Connector: Initializing for " << remote.source());
     op->run();
 }
@@ -351,10 +352,11 @@ connect(uri const &remote, Func_ &&func, double timeout = 0., bool verify_peer =
  */
 template <typename Socket_, typename Func_>
 void
-connect(Socket_&& existing_socket, uri const &remote, Func_ &&func, double timeout = 0.,
-        bool verify_peer = true) {
+connect(Socket_&& existing_socket, uri const &remote, Func_ &&func,
+        qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
     auto op = std::make_shared<connector<Socket_, Func_>>(
-        std::forward<Func_>(func), std::move(existing_socket), remote, timeout, verify_peer);
+        std::forward<Func_>(func), std::move(existing_socket), remote,
+        qb::detail::to_ev_seconds(timeout), verify_peer);
     LOG_DEBUG("Connector: Initializing with existing socket for " << remote.source());
     op->run();
 }
@@ -407,13 +409,13 @@ class connect_awaiter {
     };
 
     uri _remote;
-    std::chrono::milliseconds _timeout;
+    qb::duration _timeout;
     bool _verify_peer{true};
     std::shared_ptr<state_t> _state{std::make_shared<state_t>()};
 
 public:
     explicit connect_awaiter(uri remote,
-                             std::chrono::milliseconds timeout = std::chrono::milliseconds{0},
+                             qb::duration timeout = qb::duration::zero(),
                              bool verify_peer = true)
         : _remote(std::move(remote))
         , _timeout(timeout)
@@ -427,10 +429,6 @@ public:
         if (!_state->scheduler)
             _state->scheduler = &::qb::io::async::CoroutineScheduler::current();
 
-        double timeout_sec = _timeout.count() > 0
-            ? static_cast<double>(_timeout.count()) / 1000.0
-            : 0.0;
-
         auto state = _state;
         ::qb::io::async::tcp::connect<Socket_>(_remote, [state](Socket_&& socket) {
             if (!state->active)
@@ -442,7 +440,7 @@ public:
             if (state->scheduler && state->handle) {
                 state->scheduler->schedule_resume(state->handle);
             }
-        }, timeout_sec, _verify_peer);
+        }, _timeout, _verify_peer);
     }
 
     [[nodiscard]] std::optional<Socket_> await_resume() {
@@ -467,7 +465,7 @@ public:
  */
 template <typename Transport = qb::io::transport::tcp>
 [[nodiscard]] auto connect(uri remote,
-                           std::chrono::milliseconds timeout = std::chrono::milliseconds{0},
+                           qb::duration timeout = qb::duration::zero(),
                            bool verify_peer = true) {
     using socket_type = typename Transport::transport_io_type;
     return connect_awaiter<socket_type>{std::move(remote), timeout, verify_peer};
@@ -490,11 +488,11 @@ class connect_with_socket_awaiter {
 
     Socket_ _socket;
     uri _remote;
-    std::chrono::milliseconds _timeout;
+    qb::duration _timeout;
     std::shared_ptr<state_t> _state{std::make_shared<state_t>()};
 
 public:
-    connect_with_socket_awaiter(Socket_&& sock, uri remote, std::chrono::milliseconds timeout)
+    connect_with_socket_awaiter(Socket_&& sock, uri remote, qb::duration timeout)
         : _socket(std::move(sock))
         , _remote(std::move(remote))
         , _timeout(timeout) {}
@@ -507,10 +505,6 @@ public:
         if (!_state->scheduler)
             _state->scheduler = &::qb::io::async::CoroutineScheduler::current();
 
-        double timeout_sec = _timeout.count() > 0
-            ? static_cast<double>(_timeout.count()) / 1000.0
-            : 0.0;
-
         auto state = _state;
         ::qb::io::async::tcp::connect<Socket_>(std::move(_socket), _remote, [state](Socket_&& socket) {
             if (!state->active)
@@ -522,7 +516,7 @@ public:
             if (state->scheduler && state->handle) {
                 state->scheduler->schedule_resume(state->handle);
             }
-        }, timeout_sec);
+        }, _timeout);
     }
 
     [[nodiscard]] std::optional<Socket_> await_resume() {
@@ -548,7 +542,7 @@ public:
 template <typename Transport = qb::io::transport::tcp>
 [[nodiscard]] auto connect_with_socket(typename Transport::transport_io_type&& existing_socket,
                                          uri remote,
-                                         std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) {
+                                         qb::duration timeout = qb::duration::zero()) {
     using socket_type = typename Transport::transport_io_type;
     return connect_with_socket_awaiter<socket_type>{std::move(existing_socket), std::move(remote), timeout};
 }

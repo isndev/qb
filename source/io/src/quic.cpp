@@ -777,7 +777,10 @@ private:
         ngtcp2_settings_default(&native_settings);
         native_settings.initial_ts = timestamp(_base);
         native_settings.max_tx_udp_payload_size = NGTCP2_MAX_UDP_PAYLOAD_SIZE;
-        native_settings.handshake_timeout = _config.handshake_timeout_ms * NGTCP2_MILLISECONDS;
+        native_settings.handshake_timeout =
+            static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(_config.handshake_timeout).count()) *
+            NGTCP2_MILLISECONDS;
         return native_settings;
     }
 
@@ -790,7 +793,10 @@ private:
         params.initial_max_data = _config.connection_recv_window;
         params.initial_max_streams_bidi = _config.max_streams_bidi;
         params.initial_max_streams_uni = _config.max_streams_uni;
-        params.max_idle_timeout = _config.idle_timeout_ms * NGTCP2_MILLISECONDS;
+        params.max_idle_timeout =
+            static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(_config.idle_timeout).count()) *
+            NGTCP2_MILLISECONDS;
         params.max_udp_payload_size = NGTCP2_MAX_UDP_PAYLOAD_SIZE;
         params.max_datagram_frame_size = _config.enable_datagrams ? _config.max_datagram_frame_size : 0;
         params.disable_active_migration = 0;

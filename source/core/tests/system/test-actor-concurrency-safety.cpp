@@ -33,6 +33,8 @@
 #include <random>
 #include <vector>
 
+using namespace std::chrono_literals;
+
 // Define test events
 struct IncrementEvent : public qb::Event {
     int counter_id;
@@ -157,7 +159,7 @@ public:
         // Schedule the first increment (others will be chained)
         qb::io::async::callback(
             [this]() { sendNextIncrement(); },
-            0.001 * _worker_id); // Slight stagger in startup to reduce contention
+            1ms * _worker_id); // Slight stagger in startup to reduce contention
 
         return true;
     }
@@ -185,7 +187,7 @@ public:
         _operations_remaining--;
 
         // Schedule the next increment with a small delay
-        qb::io::async::callback([this]() { sendNextIncrement(); }, 0.0005);
+        qb::io::async::callback([this]() { sendNextIncrement(); }, 500us);
     }
 };
 
@@ -226,7 +228,7 @@ public:
                     finalizeTest();
                 }
             },
-            2.0); // Réduire à 2 secondes
+            2s); // Réduire à 2 secondes
 
         return true;
     }
@@ -261,9 +263,9 @@ public:
 
                 // Give counter actor time to process the complete event before
                 // terminating
-                qb::io::async::callback([this]() { kill(); }, 0.1);
+                qb::io::async::callback([this]() { kill(); }, 100ms);
             },
-            0.2);
+            200ms);
     }
 
     // Handle counter query responses
@@ -292,7 +294,7 @@ public:
     onInit() override {
         // Add a callback to kill this actor after the test should be complete
         qb::io::async::callback([this]() { kill(); },
-                                10.0); // 10 seconds is more than enough for the test
+                                10s); // 10 seconds is more than enough for the test
 
         return true;
     }

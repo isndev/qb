@@ -270,7 +270,7 @@ TEST_F(CryptoAdvancedTest, Tokens) {
     EXPECT_EQ(verified_payload, payload);
 
     // Test with TTL
-    std::string token_with_ttl = qb::crypto::generate_token(payload, test_key, 1);
+    std::string token_with_ttl = qb::crypto::generate_token(payload, test_key, std::chrono::seconds(1));
 
     // Token should not be empty
     EXPECT_FALSE(token_with_ttl.empty());
@@ -583,7 +583,7 @@ TEST_F(CryptoAdvancedTest, TokensWithComplexPayloads) {
         // Test with a JSON string payload
         std::string json_payload = "{\"user_id\":123,\"roles\":[\"admin\",\"user\"],"
                                    "\"permissions\":{\"read\":true,\"write\":true}}";
-        std::string json_token = qb::crypto::generate_token(json_payload, test_key, 60);
+        std::string json_token = qb::crypto::generate_token(json_payload, test_key, std::chrono::seconds(60));
 
         // Token should not be empty
         EXPECT_FALSE(json_token.empty());

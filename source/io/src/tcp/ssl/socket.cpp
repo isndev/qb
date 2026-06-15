@@ -619,7 +619,7 @@ socket::connect_in(int af, std::string const &host, uint16_t port) noexcept {
 
 int
 socket::connect_in(int af, std::string const &host, uint16_t port,
-                     std::chrono::microseconds wtimeout) noexcept {
+                     qb::duration wtimeout) noexcept {
     auto ret = -1;
     qb::io::socket::resolve_i(
         [&, this](const auto &ep) {
@@ -676,7 +676,7 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
 
 int
 socket::connect(endpoint const &ep, std::string const &hostname,
-                std::chrono::microseconds wtimeout) noexcept {
+                qb::duration wtimeout) noexcept {
     auto      ret = tcp::socket::connect(ep, wtimeout);
     const int err = qb::io::socket::get_last_errno();
     if (ret != 0 && !socket_no_error(err) && err != EISCONN)
@@ -730,7 +730,7 @@ socket::connect(uri const &u) noexcept {
 }
 
 int
-socket::connect(uri const &u, std::chrono::microseconds wtimeout) noexcept {
+socket::connect(uri const &u, qb::duration wtimeout) noexcept {
     switch (u.af()) {
         case AF_INET:
         case AF_INET6:

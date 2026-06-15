@@ -41,7 +41,7 @@ CoreInitializer::CoreInitializer(CoreId const index)
     , _next_id(static_cast<ServiceId>(
           VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1))
     , _affinity{index}
-    , _latency(0) {}
+    , _latency{} {}
 
 CoreInitializer::~CoreInitializer() noexcept {
     clear();
@@ -68,7 +68,7 @@ CoreInitializer::setAffinity(CoreIdSet const &id) noexcept {
 }
 
 CoreInitializer &
-CoreInitializer::setLatency(uint64_t const latency) noexcept {
+CoreInitializer::setLatency(qb::duration const latency) noexcept {
     _latency = latency;
     return *this;
 }
@@ -83,7 +83,7 @@ CoreInitializer::getAffinity() const noexcept {
     return _affinity;
 }
 
-uint64_t
+qb::duration
 CoreInitializer::getLatency() const noexcept {
     return _latency;
 }
@@ -239,7 +239,7 @@ Main::__wait__all__cores__ready(std::size_t const      nb_core,
 }
 
 void
-Main::setLatency(uint64_t const latency) {
+Main::setLatency(qb::duration const latency) {
     for (auto &[_, initializer] : _core_initializers)
         initializer.setLatency(latency);
 }

@@ -37,6 +37,7 @@
 #include <vector>
 // include from qb
 #include <qb/system/lockfree/mpsc.h>
+#include <qb/system/timestamp.h>
 #include "CoreSet.h"
 #include "Event.h"
 
@@ -171,7 +172,7 @@ private:
     const CoreId _index;
     ServiceId    _next_id;
     CoreIdSet    _affinity;
-    uint64_t     _latency;
+    qb::duration _latency;
 
     qb::unordered_set<ServiceId>                  _registered_services;
     std::vector<std::unique_ptr<IActorFactory>>   _actor_factories;
@@ -250,7 +251,7 @@ public:
      *   This introduces a potential worst-case latency for new event processing.
      * This setting takes effect when the engine starts.
      */
-    CoreInitializer &setLatency(uint64_t latency = 0) noexcept;
+    CoreInitializer &setLatency(qb::duration latency = qb::duration::zero()) noexcept;
 
     /** 
      * @brief Gets the CoreId associated with this initializer.
@@ -264,9 +265,9 @@ public:
     [[nodiscard]] CoreIdSet const &getAffinity() const noexcept;
     /** 
      * @brief Gets the currently configured maximum event loop latency (in ns) for this core.
-     * @return `uint64_t` latency value in nanoseconds. See `setLatency()` for interpretation.
+     * @return `qb::duration` latency value. See `setLatency()` for interpretation.
      */
-    [[nodiscard]] uint64_t         getLatency() const noexcept;
+    [[nodiscard]] qb::duration     getLatency() const noexcept;
 };
 
 /**
@@ -296,12 +297,12 @@ class SharedCoreCommunication : nocopy {
         (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
     //////// Types
     class Mailbox : public lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0> {
-        const uint64_t          _latency;
+        const qb::duration      _latency;
         std::mutex              _mtx;
         std::condition_variable _cv;
 
     public:
-        explicit Mailbox(std::size_t const nb_producer, uint64_t const latency)
+        explicit Mailbox(std::size_t const nb_producer, qb::duration const latency)
             : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer)
             , _latency(latency) {}
 
@@ -317,9 +318,9 @@ class SharedCoreCommunication : nocopy {
          */
         void
         wait() noexcept {
-            if (_latency) {
+            if (_latency > qb::duration::zero()) {
                 std::unique_lock lk(_mtx);
-                _cv.wait_for(lk, std::chrono::nanoseconds(_latency));
+                _cv.wait_for(lk, _latency);
             }
         }
 
@@ -334,7 +335,7 @@ class SharedCoreCommunication : nocopy {
          */
         void
         notify() noexcept {
-            if (_latency)
+            if (_latency > qb::duration::zero())
                 _cv.notify_all();
         }
 
@@ -343,7 +344,7 @@ class SharedCoreCommunication : nocopy {
          * @ingroup Engine
          * @return The configured latency in nanoseconds. If 0, the mailbox operates in a low-latency (busy-spin) mode for its consumer.
          */
-        [[nodiscard]] uint64_t
+        [[nodiscard]] qb::duration
         getLatency() const noexcept {
             return _latency;
         }
@@ -544,7 +545,7 @@ public:
      * @code
      * // qb::Main engine;
      * // qb::CoreInitializer& core_config = engine.core(0);
-     * // core_config.setLatency(100000); // 100us
+     * // core_config.setLatency(std::chrono::microseconds(100)); // 100us
      * @endcode
      */
     [[nodiscard]] CoreInitializer &core(CoreId const index);
@@ -557,7 +558,7 @@ public:
      *          See `CoreInitializer::setLatency()` for more details on latency values.
      * @attention This function is only available before the engine is running.
      */
-    void setLatency(uint64_t latency = 0);
+    void setLatency(qb::duration latency = qb::duration::zero());
 
     /*!
      * @brief Get the set of `CoreId`s that are currently configured to be used by the engine.
