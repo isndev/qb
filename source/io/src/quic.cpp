@@ -44,17 +44,25 @@ make_wire_alpn(std::vector<std::string> const& protocols) {
     return out;
 }
 
-void
+// Returns true when `dest` was filled with CSPRNG bytes. On RAND_bytes failure
+// the buffer is zeroed (defensive) and false is returned so security-critical
+// callers can fail closed instead of proceeding with predictable bytes.
+bool
 fill_random(uint8_t *dest, size_t len) {
     if (len == 0)
-        return;
-    if (RAND_bytes(dest, static_cast<int>(len)) != 1)
+        return true;
+    if (RAND_bytes(dest, static_cast<int>(len)) != 1) {
         std::memset(dest, 0, len);
+        return false;
+    }
+    return true;
 }
 
 void
 rand_cb(uint8_t *dest, size_t destlen, const ngtcp2_rand_ctx *) {
-    fill_random(dest, destlen);
+    // ngtcp2's rand callback is void-returning (best-effort, non-security-critical
+    // randomness such as padding); zeroing on RNG failure is the only option here.
+    (void)fill_random(dest, destlen);
 }
 
 std::string
@@ -71,9 +79,16 @@ int
 new_connection_id_cb(ngtcp2_conn *, ngtcp2_cid *cid,
                      ngtcp2_stateless_reset_token *token, size_t cidlen, void *) {
     uint8_t cidbuf[NGTCP2_MAX_CIDLEN];
-    fill_random(cidbuf, cidlen);
+    // Fail closed on CSPRNG failure: a predictable connection ID is a
+    // linkability problem, and — critically — a predictable stateless reset
+    // token lets an off-path attacker forge stateless resets and tear down the
+    // connection. Returning NGTCP2_ERR_CALLBACK_FAILURE makes ngtcp2 abort
+    // rather than install zeroed security material.
+    if (!fill_random(cidbuf, cidlen))
+        return NGTCP2_ERR_CALLBACK_FAILURE;
     ngtcp2_cid_init(cid, cidbuf, cidlen);
-    fill_random(token->data, sizeof(token->data));
+    if (!fill_random(token->data, sizeof(token->data)))
+        return NGTCP2_ERR_CALLBACK_FAILURE;
     return 0;
 }
 
@@ -632,8 +647,17 @@ private:
 
         if (_config.max_connections > 0 &&
             _server_connections.size() >= _config.max_connections) {
-            queue_close_event(disconnect_reason::buffer_overflow, 0,
-                              "QUIC connection limit exceeded");
+            // At the connection cap: silently drop this new-connection datagram.
+            // Do NOT queue_close_event() on the parent listener here — it pushes
+            // a connection_closed event carrying the parent's sentinel
+            // connection_id 0, which the endpoint interprets as "the listener
+            // itself closed" (endpoint.h sets _open=false), and it is sticky
+            // (_close_event_queued), so a single over-limit datagram would
+            // permanently shut the whole server down — turning a per-client
+            // connection-limit rejection into a full-server DoS. Dropping the
+            // datagram rejects just this one new connection, keeps the server
+            // up, and is repeatable; existing connections (matched by DCID
+            // above) are unaffected and the client may retry after a timeout.
             return nullptr;
         }
 
@@ -1192,7 +1216,14 @@ private:
         if (self->_stats.active_streams > 0)
             --self->_stats.active_streams;
         const auto id = static_cast<std::uint64_t>(stream_id);
-        if (app_error_code == 0 && !self->_stream_fin_seen[id]) {
+        // Non-inserting lookup: operator[] would default-insert a `false` entry
+        // for `id` only to erase it again on the line below. find() avoids the
+        // transient insert while preserving the "absent == not-yet-seen-FIN"
+        // semantics that drives the synthetic FIN event.
+        const auto fin_it = self->_stream_fin_seen.find(id);
+        const bool fin_already_seen =
+            fin_it != self->_stream_fin_seen.end() && fin_it->second;
+        if (app_error_code == 0 && !fin_already_seen) {
             backend_event fin_event;
             fin_event.type = backend_event::kind::stream_data;
             fin_event.connection_id = self->_connection_id;
