@@ -401,9 +401,19 @@ crypto::hash_password(const std::string &password, Argon2Variant variant) {
     uint32_t m_cost      = 1 << 16; // 64 MiB
     uint32_t parallelism = 1;       // 1 thread
 
-    // Allocate encoded hash string (large enough for all parameters and values)
-    const size_t encoded_len = 128;
-    char         encoded[encoded_len];
+    // Length of the derived hash embedded in the encoded string. argon2_hash
+    // requires this to be >= ARGON2_MIN_OUTLEN (4); the previous value of 0 made
+    // every call fail with ARGON2_OUTPUT_TOO_SHORT, so hash_password() always
+    // threw whenever the build linked Argon2. 32 bytes (256-bit) is the standard.
+    const uint32_t hash_len = 32;
+
+    // Size the encoded buffer exactly via argon2_encodedlen() instead of a fixed
+    // 128 bytes, so larger parameters cannot silently overflow into a too-small
+    // buffer (ARGON2_ENCODING_FAIL).
+    const size_t encoded_len =
+        argon2_encodedlen(t_cost, m_cost, parallelism,
+                          static_cast<uint32_t>(salt.size()), hash_len, type);
+    std::vector<char> encoded(encoded_len);
 
     // Hash the password
     int result = argon2_hash(t_cost,            // t_cost (iterations)
@@ -413,9 +423,9 @@ crypto::hash_password(const std::string &password, Argon2Variant variant) {
                              password.length(), // password length
                              salt.data(),       // salt
                              salt.size(),       // salt length
-                             nullptr,           // raw hash (not used)
-                             0,                 // raw hash length
-                             encoded,           // encoded hash output
+                             nullptr,           // raw hash (not retrieved separately)
+                             hash_len,          // derived hash length (>= MIN_OUTLEN)
+                             encoded.data(),    // encoded hash output
                              encoded_len,       // encoded hash length
                              type,              // variant
                              ARGON2_VERSION_13  // version
@@ -426,7 +436,7 @@ crypto::hash_password(const std::string &password, Argon2Variant variant) {
                                  std::string(argon2_error_message(result)));
     }
 
-    return std::string(encoded);
+    return std::string(encoded.data());
 #else
     (void)variant;
     // Fallback implementation using PBKDF2-HMAC-SHA256
@@ -460,11 +470,24 @@ crypto::hash_password(const std::string &password, Argon2Variant variant) {
 bool
 crypto::verify_password(const std::string &password, const std::string &hash) {
 #if defined(QB_HAS_ARGON2)
-    // Verify the password against the stored hash
+    // argon2_verify recomputes the hash with the supplied `type` and compares it
+    // to the one embedded in the encoded string, so the type MUST match the
+    // variant that produced the hash. Hardcoding Argon2_id silently failed to
+    // verify Argon2d / Argon2i hashes. Derive the variant from the encoded
+    // prefix (check "$argon2id$" before "$argon2i$" — the former is a prefix-
+    // superset of the latter).
+    argon2_type type = Argon2_id;
+    if (hash.rfind("$argon2id$", 0) == 0)
+        type = Argon2_id;
+    else if (hash.rfind("$argon2i$", 0) == 0)
+        type = Argon2_i;
+    else if (hash.rfind("$argon2d$", 0) == 0)
+        type = Argon2_d;
+
     int result = argon2_verify(hash.c_str(),      // Encoded hash
                                password.c_str(),  // Password
                                password.length(), // Password length
-                               Argon2_id          // Argon2 type (default to id)
+                               type               // Argon2 variant from the hash
     );
 
     return (result == ARGON2_OK);

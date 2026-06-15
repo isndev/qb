@@ -250,11 +250,7 @@ TEST_F(CryptoAdvancedTest, Base64URL) {
             EXPECT_EQ(test_decoded_str, test.first);
         }
     } catch (const std::exception &e) {
-        std::cout << "Note: Base64URL test exception: " << e.what() << std::endl;
-        // Don't fail the test here - just log the error
-
-        // We still need to pass something for the test to succeed
-        SUCCEED() << "Base64URL test skipped due to: " << e.what();
+        FAIL() << "Base64URL threw: " << e.what();
     }
 }
 
@@ -404,9 +400,10 @@ TEST_F(CryptoAdvancedTest, PasswordHashing) {
         EXPECT_TRUE(qb::crypto::verify_password(password, hash2));
 #endif
     } catch (const std::exception &e) {
-        std::cout << "Note: Password hashing test exception: " << e.what() << std::endl;
-        // Don't fail the test due to implementation details
-        SUCCEED() << "Password hashing test skipped due to: " << e.what();
+        // Was SUCCEED() (swallowed): that hid two real bugs — hash_password()
+        // always threw (Argon2 hashlen 0) and verify_password() couldn't check
+        // non-id variants. Fail loudly so regressions cannot hide again.
+        FAIL() << "Password hashing threw: " << e.what();
     }
 }
 
@@ -628,10 +625,7 @@ TEST_F(CryptoAdvancedTest, TokensWithComplexPayloads) {
         std::string verified_large = qb::crypto::verify_token(large_token, test_key);
         EXPECT_EQ(verified_large, large_payload);
     } catch (const std::exception &e) {
-        std::cout << "Note: Complex payload token test exception: " << e.what()
-                  << std::endl;
-        // Don't fail the test here
-        SUCCEED() << "Complex payload token test skipped due to: " << e.what();
+        FAIL() << "Complex payload token threw: " << e.what();
     }
 }
 

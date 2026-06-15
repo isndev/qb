@@ -442,8 +442,39 @@ jwt::ValidationResult jwt::verify(const std::string& token, const VerifyOptions&
         // Keep the +/- skew arithmetic on current_time (a bounded wall-clock
         // value), never on the token-supplied claim: `exp + skew` overflows
         // int64 (signed UB) for extreme claim values.
+        // RFC 7519 defines exp/nbf as NumericDate (a JSON number), but this
+        // library's own create_token stringifies them. Accept both a JSON
+        // number and a numeric string so a standards-compliant external token
+        // is not rejected, and fail closed (INVALID_FORMAT) on a non-numeric or
+        // malformed value instead of relying on a thrown exception.
+        const auto read_numeric_date =
+            [](const nlohmann::json &v, int64_t &out) -> bool {
+            if (v.is_number_integer()) { out = v.get<int64_t>(); return true; }
+            if (v.is_number_unsigned()) {
+                out = static_cast<int64_t>(v.get<uint64_t>());
+                return true;
+            }
+            if (v.is_number_float()) {
+                out = static_cast<int64_t>(v.get<double>());
+                return true;
+            }
+            if (v.is_string()) {
+                try {
+                    const std::string s = v.get<std::string>();
+                    std::size_t       pos = 0;
+                    out = std::stoll(s, &pos);
+                    return pos == s.size();
+                } catch (...) {
+                    return false;
+                }
+            }
+            return false;
+        };
+
         if (options.verify_expiration && payload_json.contains("exp")) {
-            int64_t exp = std::stoll(payload_json["exp"].get<std::string>());
+            int64_t exp = 0;
+            if (!read_numeric_date(payload_json["exp"], exp))
+                return ValidationResult(ValidationError::INVALID_FORMAT);
             if (current_time - skew > exp) {
                 return ValidationResult(ValidationError::TOKEN_EXPIRED);
             }
@@ -451,7 +482,9 @@ jwt::ValidationResult jwt::verify(const std::string& token, const VerifyOptions&
 
         // Verify not before time (same overflow-safe form as above).
         if (options.verify_not_before && payload_json.contains("nbf")) {
-            int64_t nbf = std::stoll(payload_json["nbf"].get<std::string>());
+            int64_t nbf = 0;
+            if (!read_numeric_date(payload_json["nbf"], nbf))
+                return ValidationResult(ValidationError::INVALID_FORMAT);
             if (current_time + skew < nbf) {
                 return ValidationResult(ValidationError::TOKEN_NOT_ACTIVE);
             }
@@ -497,10 +530,15 @@ jwt::ValidationResult jwt::verify(const std::string& token, const VerifyOptions&
             }
         }
         
-        // Extract payload as map
+        // Extract payload as map. A claim may legitimately be a non-string JSON
+        // value (RFC 7519 NumericDate exp/nbf/iat are numbers, and custom claims
+        // may be numbers/bools/objects). get<std::string>() throws on those and
+        // would fail an otherwise valid, correctly-signed token as INVALID_FORMAT.
+        // Serialize non-string claims to their JSON text instead.
         ValidationResult result;
         for (const auto& [key, value] : payload_json.items()) {
-            result.payload[key] = value.get<std::string>();
+            result.payload[key] =
+                value.is_string() ? value.get<std::string>() : value.dump();
         }
         
         return result;

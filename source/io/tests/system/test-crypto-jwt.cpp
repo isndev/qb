@@ -20,6 +20,7 @@
  */
 
 #include <gtest/gtest.h>
+#include <qb/io/crypto.h>
 #include <qb/io/crypto_jwt.h>
 #include <thread>
 #include <fstream>
@@ -228,112 +229,88 @@ TEST(CryptoJWT, NotBeforeValidation) {
     ASSERT_TRUE(result2.is_valid());
 }
 
-// Test asymmetric algorithms with RSA keys
+// Test asymmetric algorithms with RSA keys.
+// Keys are generated in-process so the RS256 sign+verify path is always exercised
+// (the test previously read keys from a hardcoded developer-local path and silently
+// GTEST_SKIP()'d everywhere, leaving asymmetric JWT verification untested).
 TEST(CryptoJWT, RSASignature) {
-    // For RSA tests, we need actual RSA keys
-    // Replace these paths with actual key paths for testing
-    std::string keys_path = "/Users/mbelhadi/Repos/qb-auth-project/temp_keys/";
-    
-    try {
-        std::string rsa_private_key = read_file(keys_path + "rsa_private.pem");
-        std::string rsa_public_key = read_file(keys_path + "rsa_public.pem");
-        
-        // Create a token with RSA-SHA256
-        std::map<std::string, std::string> payload = {
-            {"user_id", "12345"}
-        };
-        
-        jwt::CreateOptions create_options;
-        create_options.algorithm = jwt::Algorithm::RS256;
-        create_options.key = rsa_private_key;
-        
-        std::string token = jwt::create(payload, create_options);
-        
-        // Verify with public key
-        jwt::VerifyOptions verify_options;
-        verify_options.algorithm = jwt::Algorithm::RS256;
-        verify_options.key = rsa_public_key;
-        
-        auto result = jwt::verify(token, verify_options);
-        ASSERT_TRUE(result.is_valid());
-        ASSERT_EQ(result.payload.at("user_id"), "12345");
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Skipping RSA test due to missing keys: " << e.what() << std::endl;
-        GTEST_SKIP();
-    }
+    auto [rsa_private_key, rsa_public_key] = crypto::generate_rsa_keypair(2048);
+    ASSERT_FALSE(rsa_private_key.empty());
+    ASSERT_FALSE(rsa_public_key.empty());
+
+    std::map<std::string, std::string> payload = {{"user_id", "12345"}};
+
+    jwt::CreateOptions create_options;
+    create_options.algorithm = jwt::Algorithm::RS256;
+    create_options.key = rsa_private_key;
+    std::string token = jwt::create(payload, create_options);
+
+    // Verify with public key
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm = jwt::Algorithm::RS256;
+    verify_options.key = rsa_public_key;
+    auto result = jwt::verify(token, verify_options);
+    ASSERT_TRUE(result.is_valid());
+    ASSERT_EQ(result.payload.at("user_id"), "12345");
+
+    // Negative: a token signed by a different key must NOT verify.
+    auto [other_private, other_public] = crypto::generate_rsa_keypair(2048);
+    verify_options.key = other_public;
+    EXPECT_FALSE(jwt::verify(token, verify_options).is_valid());
 }
 
-// Test ECDSA signatures
+// Test ECDSA signatures (ES256 = P-256 / prime256v1). Keys generated in-process.
 TEST(CryptoJWT, ECDSASignature) {
-    // For ECDSA tests, we need actual EC keys
-    // Replace these paths with actual key paths for testing
-    std::string keys_path = "/Users/mbelhadi/Repos/qb-auth-project/temp_keys/";
-    
-    try {
-        std::string ec_private_key = read_file(keys_path + "ec_private.pem");
-        std::string ec_public_key = read_file(keys_path + "ec_public.pem");
-        
-        // Create a token with ES256
-        std::map<std::string, std::string> payload = {
-            {"user_id", "12345"}
-        };
-        
-        jwt::CreateOptions create_options;
-        create_options.algorithm = jwt::Algorithm::ES256;
-        create_options.key = ec_private_key;
-        
-        std::string token = jwt::create(payload, create_options);
-        
-        // Verify with public key
-        jwt::VerifyOptions verify_options;
-        verify_options.algorithm = jwt::Algorithm::ES256;
-        verify_options.key = ec_public_key;
-        
-        auto result = jwt::verify(token, verify_options);
-        ASSERT_TRUE(result.is_valid());
-        ASSERT_EQ(result.payload.at("user_id"), "12345");
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Skipping ECDSA test due to missing keys: " << e.what() << std::endl;
-        GTEST_SKIP();
-    }
+    auto [ec_private_key, ec_public_key] = crypto::generate_ec_keypair("prime256v1");
+    ASSERT_FALSE(ec_private_key.empty());
+    ASSERT_FALSE(ec_public_key.empty());
+
+    std::map<std::string, std::string> payload = {{"user_id", "12345"}};
+
+    jwt::CreateOptions create_options;
+    create_options.algorithm = jwt::Algorithm::ES256;
+    create_options.key = ec_private_key;
+    std::string token = jwt::create(payload, create_options);
+
+    // Verify with public key
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm = jwt::Algorithm::ES256;
+    verify_options.key = ec_public_key;
+    auto result = jwt::verify(token, verify_options);
+    ASSERT_TRUE(result.is_valid());
+    ASSERT_EQ(result.payload.at("user_id"), "12345");
+
+    // Negative: a different EC key must not verify.
+    auto [other_private, other_public] = crypto::generate_ec_keypair("prime256v1");
+    verify_options.key = other_public;
+    EXPECT_FALSE(jwt::verify(token, verify_options).is_valid());
 }
 
-// Test EdDSA signatures
+// Test EdDSA signatures (Ed25519). Keys generated in-process.
 TEST(CryptoJWT, EdDSASignature) {
-    // For EdDSA tests, we need actual Ed25519 keys
-    // Replace these paths with actual key paths for testing
-    std::string keys_path = "/Users/mbelhadi/Repos/qb-auth-project/temp_keys/";
-    
-    try {
-        std::string ed25519_private_key = read_file(keys_path + "ed25519_private.pem");
-        std::string ed25519_public_key = read_file(keys_path + "ed25519_public.pem");
-        
-        // Create a token with EdDSA
-        std::map<std::string, std::string> payload = {
-            {"user_id", "12345"}
-        };
-        
-        jwt::CreateOptions create_options;
-        create_options.algorithm = jwt::Algorithm::EdDSA;
-        create_options.key = ed25519_private_key;
-        
-        std::string token = jwt::create(payload, create_options);
-        
-        // Verify with public key
-        jwt::VerifyOptions verify_options;
-        verify_options.algorithm = jwt::Algorithm::EdDSA;
-        verify_options.key = ed25519_public_key;
-        
-        auto result = jwt::verify(token, verify_options);
-        ASSERT_TRUE(result.is_valid());
-        ASSERT_EQ(result.payload.at("user_id"), "12345");
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Skipping EdDSA test due to missing keys: " << e.what() << std::endl;
-        GTEST_SKIP();
-    }
+    auto [ed25519_private_key, ed25519_public_key] = crypto::generate_ed25519_keypair();
+    ASSERT_FALSE(ed25519_private_key.empty());
+    ASSERT_FALSE(ed25519_public_key.empty());
+
+    std::map<std::string, std::string> payload = {{"user_id", "12345"}};
+
+    jwt::CreateOptions create_options;
+    create_options.algorithm = jwt::Algorithm::EdDSA;
+    create_options.key = ed25519_private_key;
+    std::string token = jwt::create(payload, create_options);
+
+    // Verify with public key
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm = jwt::Algorithm::EdDSA;
+    verify_options.key = ed25519_public_key;
+    auto result = jwt::verify(token, verify_options);
+    ASSERT_TRUE(result.is_valid());
+    ASSERT_EQ(result.payload.at("user_id"), "12345");
+
+    // Negative: a different Ed25519 key must not verify.
+    auto [other_private, other_public] = crypto::generate_ed25519_keypair();
+    verify_options.key = other_public;
+    EXPECT_FALSE(jwt::verify(token, verify_options).is_valid());
 }
 
 // Test custom claim validation
