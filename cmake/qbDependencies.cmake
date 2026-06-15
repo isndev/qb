@@ -166,12 +166,27 @@ else()
     set(QB_HAS_COMPRESSION FALSE)
 endif()
 
-# QUIC transport (optional, via libngtcp2)
-if(QB_WITH_QUIC)
+# QUIC transport (optional, via libngtcp2). Tri-state QB_WITH_QUIC:
+#   AUTO (default) - enable iff libngtcp2 is found; quiet (no warning) when absent
+#   ON  / TRUE / 1 - require libngtcp2; warn and disable if it (or SSL) is missing
+#   OFF / FALSE/ 0 - disabled outright
+string(TOUPPER "${QB_WITH_QUIC}" _qb_quic_mode)
+if(_qb_quic_mode STREQUAL "OFF" OR _qb_quic_mode STREQUAL "FALSE" OR
+   _qb_quic_mode STREQUAL "0" OR _qb_quic_mode STREQUAL "NO" OR _qb_quic_mode STREQUAL "N")
+    qb_status_message("QUIC transport support disabled")
+    set(QB_HAS_QUIC FALSE)
+else()
+    # AUTO or an explicit truthy value. `required` distinguishes ON (must find,
+    # warn on failure) from AUTO (best-effort, stay quiet on failure).
+    set(_qb_quic_required TRUE)
+    if(_qb_quic_mode STREQUAL "AUTO")
+        set(_qb_quic_required FALSE)
+    endif()
     if(NOT QB_HAS_SSL)
-        qb_warning_message("QUIC requested but SSL/TLS support is disabled - QUIC support disabled")
+        if(_qb_quic_required)
+            qb_warning_message("QUIC requested but SSL/TLS support is disabled - QUIC support disabled")
+        endif()
         set(QB_HAS_QUIC FALSE)
-        set(QB_WITH_QUIC OFF)
     else()
         find_package(Ngtcp2 QUIET)
         if(Ngtcp2_FOUND)
@@ -181,15 +196,14 @@ if(QB_WITH_QUIC)
                 Ngtcp2::crypto_ossl
             )
             set(QB_HAS_QUIC TRUE)
-        else()
+        elseif(_qb_quic_required)
             qb_warning_message("libngtcp2 not found - QUIC support disabled")
             set(QB_HAS_QUIC FALSE)
-            set(QB_WITH_QUIC OFF)
+        else()
+            qb_status_message("libngtcp2 not found - QUIC transport auto-disabled")
+            set(QB_HAS_QUIC FALSE)
         endif()
     endif()
-else()
-    qb_status_message("QUIC transport support disabled")
-    set(QB_HAS_QUIC FALSE)
 endif()
 
 # Google Test / Google Benchmark: resolved in qbFetchGoogleDeps.cmake (FetchContent or

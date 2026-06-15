@@ -419,6 +419,12 @@ public:
         if (!_backend || bytes == 0)
             return;
         _backend->extend_stream_credit(connection_id, stream_id, bytes);
+        // Flush the generated MAX_STREAM_DATA / MAX_DATA flow-control frames and
+        // re-arm EV_WRITE, exactly like every other backend mutator above.
+        // Without this the credit grant is queued but never sent, so the peer
+        // never learns it may send more and the receive path stalls.
+        drain_backend_packets();
+        drain_backend_events();
     }
 
     void reset_stream(std::uint64_t stream_id,

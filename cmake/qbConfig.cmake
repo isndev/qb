@@ -86,7 +86,10 @@ option(QB_BUILD_COVERAGE "Enable code coverage instrumentation (Debug builds onl
 option(QB_WITH_LOGGING "Enable logging support" ON)
 option(QB_WITH_SSL "Enable SSL/TLS support" ON)
 option(QB_WITH_COMPRESSION "Enable compression support" ON)
-option(QB_WITH_QUIC "Enable QUIC transport support via libngtcp2" OFF)
+# Tri-state: AUTO (enable iff libngtcp2 is found, quiet when absent), ON (require
+# it, warn if missing), OFF (disabled). AUTO mirrors how SSL/compression behave.
+set(QB_WITH_QUIC "AUTO" CACHE STRING "QUIC transport via libngtcp2: AUTO, ON, or OFF")
+set_property(CACHE QB_WITH_QUIC PROPERTY STRINGS AUTO ON OFF)
 option(QB_WITH_PROFILING "Enable profiling support" OFF)
 
 # Debug options
