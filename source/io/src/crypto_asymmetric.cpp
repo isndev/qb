@@ -27,10 +27,13 @@
 #include <cstring>
 #include <fstream>
 #include <memory>
+#include <openssl/ec.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
+#include <openssl/objects.h>
 #include <openssl/pem.h>
 #include <openssl/rand.h>
+#include <openssl/rsa.h>
 #include <openssl/x509.h>
 #include <qb/io/crypto.h>
 #include <sstream>
@@ -125,6 +128,93 @@ get_raw_key_bytes(EVP_PKEY *pkey, bool is_private) {
     }
 
     return key_bytes;
+}
+
+// Implementation of RSA key pair generation (PEM format).
+// Declared in crypto.h but previously had no definition — any caller failed to
+// link. Mirrors generate_ed25519_keypair's EVP keygen + key_to_pem flow.
+std::pair<std::string, std::string>
+crypto::generate_rsa_keypair(int bits) {
+    if (bits < 2048) {
+        throw std::runtime_error("RSA key size must be at least 2048 bits");
+    }
+
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+    if (!ctx) {
+        throw std::runtime_error("Failed to create RSA context: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    if (EVP_PKEY_keygen_init(ctx) != 1) {
+        EVP_PKEY_CTX_free(ctx);
+        throw std::runtime_error("Failed to initialize RSA key generation: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, bits) != 1) {
+        EVP_PKEY_CTX_free(ctx);
+        throw std::runtime_error("Failed to set RSA key size: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    EVP_PKEY *pkey = NULL;
+    if (EVP_PKEY_keygen(ctx, &pkey) != 1) {
+        EVP_PKEY_CTX_free(ctx);
+        throw std::runtime_error("RSA key generation failed: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    std::string private_key_pem = key_to_pem(pkey, true);
+    std::string public_key_pem  = key_to_pem(pkey, false);
+
+    EVP_PKEY_free(pkey);
+    EVP_PKEY_CTX_free(ctx);
+
+    return std::make_pair(private_key_pem, public_key_pem);
+}
+
+// Implementation of EC key pair generation (PEM format). Curve is a short name
+// such as "prime256v1" (P-256/ES256), "secp384r1", "secp521r1". Declared in
+// crypto.h but previously had no definition.
+std::pair<std::string, std::string>
+crypto::generate_ec_keypair(const std::string &curve) {
+    const int nid = OBJ_sn2nid(curve.c_str());
+    if (nid == NID_undef) {
+        throw std::runtime_error("Unknown EC curve: " + curve);
+    }
+
+    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
+    if (!ctx) {
+        throw std::runtime_error("Failed to create EC context: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    if (EVP_PKEY_keygen_init(ctx) != 1) {
+        EVP_PKEY_CTX_free(ctx);
+        throw std::runtime_error("Failed to initialize EC key generation: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    if (EVP_PKEY_CTX_set_ec_paramgen_curve_nid(ctx, nid) != 1) {
+        EVP_PKEY_CTX_free(ctx);
+        throw std::runtime_error("Failed to set EC curve: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    EVP_PKEY *pkey = NULL;
+    if (EVP_PKEY_keygen(ctx, &pkey) != 1) {
+        EVP_PKEY_CTX_free(ctx);
+        throw std::runtime_error("EC key generation failed: " +
+                                 get_openssl_asymmetric_error());
+    }
+
+    std::string private_key_pem = key_to_pem(pkey, true);
+    std::string public_key_pem  = key_to_pem(pkey, false);
+
+    EVP_PKEY_free(pkey);
+    EVP_PKEY_CTX_free(ctx);
+
+    return std::make_pair(private_key_pem, public_key_pem);
 }
 
 // Implementation of Ed25519 key pair generation (PEM format)

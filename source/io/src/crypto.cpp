@@ -144,6 +144,11 @@ crypto::hex_to_string(const std::string &input) noexcept {
     for (auto it = input.begin(); it != input.end();) {
         int hi = hex_value(*it++);
         int lo = hex_value(*it++);
+        // Reject non-hex input instead of emitting garbage bytes: hex_value()
+        // returns -1 for any non-hex digit, and `(-1 << 4) | lo` would push a
+        // bogus byte. A malformed hex string now yields "" (parse failure).
+        if (hi < 0 || lo < 0)
+            return "";
         output.push_back(static_cast<char>(hi << 4 | lo));
     }
     return output;
@@ -160,11 +165,17 @@ crypto::evp(std::istream &stream, const EVP_MD *md) noexcept {
         while ((read_length = stream.read(&buffer[0], buffer_size).gcount()) > 0)
             EVP_DigestUpdate(context, buffer.data(),
                              static_cast<std::size_t>(read_length));
-        unsigned int hash_len;
+        unsigned int hash_len = 0;
         hash.resize(EVP_MAX_MD_SIZE);
-        EVP_DigestFinal_ex(context, reinterpret_cast<unsigned char *>(hash.data()),
-                           &hash_len);
-        hash.resize(hash_len);
+        // Check the return value: on failure hash_len would be left
+        // uninitialized and hash.resize(hash_len) could request a garbage size.
+        // Treat failure as an empty hash (fail-closed, matching the empty
+        // result returned when the context/init fails above).
+        if (EVP_DigestFinal_ex(context, reinterpret_cast<unsigned char *>(hash.data()),
+                               &hash_len) == 1)
+            hash.resize(hash_len);
+        else
+            hash.clear();
     }
     EVP_MD_CTX_free(context);
     return hash;
@@ -322,6 +333,11 @@ crypto::base64_encode(const unsigned char *data, size_t len) {
     BIO *bio = BIO_new(BIO_s_mem());
     BIO *b64 = BIO_new(BIO_f_base64());
     if (!bio || !b64) {
+        // Free whichever allocation succeeded (BIO_free_all(nullptr) is a no-op)
+        // before throwing — the two BIOs are not yet chained, so leaking the
+        // successful one on partial failure was a real (OOM-path) leak.
+        BIO_free_all(bio);
+        BIO_free_all(b64);
         throw std::runtime_error("Error during BIO creation");
     }
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL); // disable newline characters in output
@@ -342,6 +358,9 @@ crypto::base64_decode(const std::string &input) {
     BIO *bio = BIO_new_mem_buf(input.data(), static_cast<int>(input.size()));
     BIO *b64 = BIO_new(BIO_f_base64());
     if (!bio || !b64) {
+        // Free whichever allocation succeeded before throwing (see base64_encode).
+        BIO_free_all(bio);
+        BIO_free_all(b64);
         throw std::runtime_error("Error during BIO creation");
     }
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
@@ -430,6 +449,14 @@ std::string
 crypto::generate_secure_random_string(std::size_t len, std::string_view range) {
     if (range.empty()) {
         throw std::invalid_argument("Character range cannot be empty");
+    }
+    // A single random byte (0..255) cannot uniformly index a set larger than
+    // 256. With range.size() > 256 the rejection threshold (256/range_size)*
+    // range_size below evaluates to 0, so the do/while rejection loop would
+    // spin forever (every byte is >= 0). Reject oversized ranges explicitly.
+    if (range.size() > 256) {
+        throw std::invalid_argument(
+            "Character range must not exceed 256 characters");
     }
     if (len == 0) {
         return "";
