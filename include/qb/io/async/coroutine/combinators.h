@@ -39,6 +39,7 @@
 
 #include "task.h"
 #include "utils.h"
+#include <qb/system/timestamp.h>  // qb::duration
 #include <any>
 #include <chrono>
 #include <cstddef>
@@ -484,7 +485,7 @@ class timeout_awaiter {
     };
 
     std::shared_ptr<state_t> _state;
-    std::chrono::milliseconds _timeout;
+    qb::duration _timeout;
 
     static task<void> run_task(std::shared_ptr<state_t> state) {
         try {
@@ -499,7 +500,7 @@ class timeout_awaiter {
         }
     }
 
-    static task<void> run_timeout(std::shared_ptr<state_t> state, std::chrono::milliseconds timeout) {
+    static task<void> run_timeout(std::shared_ptr<state_t> state, qb::duration timeout) {
         co_await sleep(timeout);
         if (!state->completed) {
             state->completed = true;
@@ -510,7 +511,7 @@ class timeout_awaiter {
     }
 
 public:
-    timeout_awaiter(task<T>&& t, std::chrono::milliseconds timeout)
+    timeout_awaiter(task<T>&& t, qb::duration timeout)
         : _state(std::make_shared<state_t>(std::move(t)))
         , _timeout(timeout) {}
 
@@ -550,7 +551,7 @@ public:
  * @ingroup Coroutine
  */
 template <typename T>
-auto coro_with_timeout(task<T>&& t, std::chrono::milliseconds timeout) {
+auto coro_with_timeout(task<T>&& t, qb::duration timeout) {
     return timeout_awaiter<T>(std::move(t), timeout);
 }
 
@@ -570,7 +571,7 @@ class timeout_awaiter<void> {
     };
 
     std::shared_ptr<state_t> _state;
-    std::chrono::milliseconds _timeout;
+    qb::duration _timeout;
 
     static task<void> run_task(std::shared_ptr<state_t> state) {
         try {
@@ -584,7 +585,7 @@ class timeout_awaiter<void> {
         }
     }
 
-    static task<void> run_timeout(std::shared_ptr<state_t> state, std::chrono::milliseconds timeout) {
+    static task<void> run_timeout(std::shared_ptr<state_t> state, qb::duration timeout) {
         co_await sleep(timeout);
         if (!state->completed) {
             state->completed = true;
@@ -594,7 +595,7 @@ class timeout_awaiter<void> {
     }
 
 public:
-    timeout_awaiter(task<void>&& t, std::chrono::milliseconds timeout)
+    timeout_awaiter(task<void>&& t, qb::duration timeout)
         : _state(std::make_shared<state_t>(std::move(t)))
         , _timeout(timeout) {}
 
@@ -620,7 +621,7 @@ public:
  * @brief Helper to create timeout awaiter (void specialization)
  * @ingroup Coroutine
  */
-inline auto coro_with_timeout(task<void>&& t, std::chrono::milliseconds timeout) {
+inline auto coro_with_timeout(task<void>&& t, qb::duration timeout) {
     return timeout_awaiter<void>(std::move(t), timeout);
 }
 

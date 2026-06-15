@@ -27,6 +27,7 @@
 
 #include <cstdint>
 #include <chrono>
+#include <qb/system/timestamp.h>
 
 namespace qb::io::event {
 
@@ -47,7 +48,7 @@ struct Config {
      * if no events are immediately available. A sensible default to balance
      * responsiveness and CPU usage.
      */
-    static constexpr std::chrono::milliseconds DEFAULT_POLL_TIMEOUT{100};
+    static constexpr qb::duration DEFAULT_POLL_TIMEOUT = std::chrono::milliseconds{100};
     
     /**
      * @brief Maximum number of events to retrieve and process in a single polling iteration.

@@ -42,7 +42,7 @@ QB offers a rich set of features designed for demanding applications:
     *   **`qb::io::uri`:** Robust URI parsing.
     *   **Cryptography:** Hashing, encryption, and more (requires OpenSSL).
     *   **Compression:** Gzip and Deflate (requires Zlib).
-    *   **`qb::Timestamp` & `qb::Duration`:** Precise time measurement.
+    *   **`qb::wall_time` & `qb::duration`:** Precise time measurement.
     *   **Optimized Containers:** Performance-focused data structures like `qb::allocator::pipe`, `qb::string`, and `qb::unordered_map`.
 
 ## Why Choose QB?

@@ -120,15 +120,15 @@ public:
      * @return true if the lock was acquired, false if the timeout expired
      */
     [[nodiscard]] bool
-    trylock_for(const Timespan &timespan) noexcept {
-        // Calculate a finish timestamp
-        Timestamp finish = NanoTimestamp() + timespan;
+    trylock_for(qb::duration timespan) noexcept {
+        // Calculate a finish instant on the monotonic clock
+        const qb::mono_time finish = qb::mono_now() + timespan;
 
         // Try to acquire spin-lock at least one time
         do {
             if (trylock())
                 return true;
-        } while (NanoTimestamp() < finish);
+        } while (qb::mono_now() < finish);
 
         // Failed to acquire spin-lock
         return false;
@@ -140,12 +140,12 @@ public:
      * This method attempts to acquire the lock, spinning until either the lock
      * is acquired or the specified timestamp is reached.
      *
-     * @param timestamp Point in time until which to try acquiring the lock
+     * @param deadline Monotonic instant until which to try acquiring the lock
      * @return true if the lock was acquired, false if the timeout expired
      */
     [[nodiscard]] bool
-    trylock_until(const UtcTimestamp &timestamp) noexcept {
-        return trylock_for(timestamp - UtcTimestamp());
+    trylock_until(qb::mono_time deadline) noexcept {
+        return trylock_for(deadline - qb::mono_now());
     }
 
     /**

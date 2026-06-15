@@ -26,6 +26,7 @@
 #define QB_IO_UDP_SOCKET_H_
 #include "../system/sys__socket.h"
 #include "../uri.h"
+#include <qb/system/timestamp.h>
 #include <chrono>
 #include <string>
 
@@ -180,8 +181,8 @@ public:
      * @return Number of bytes read, or a negative value on error or timeout.
      * @details Uses `qb::io::socket::recv_n` which internally uses `select` for timeout handling.
      */
-    int read_timeout(void *dest, std::size_t len, qb::io::endpoint &peer, 
-                     const std::chrono::microseconds &timeout) const noexcept;
+    int read_timeout(void *dest, std::size_t len, qb::io::endpoint &peer,
+                     const qb::duration &timeout) const noexcept;
 
     /**
      * @brief Try to read a datagram from the socket (non-blocking attempt).

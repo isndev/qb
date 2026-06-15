@@ -41,7 +41,7 @@ namespace {
 /* Returns microseconds since epoch */
 uint64_t
 timestamp_now() {
-    return qb::Timestamp::nano() / 1000;
+    return static_cast<uint64_t>(qb::unix_micros(qb::wall_now()));
 }
 
 /* I want [2016-10-13 00:01:23.528514] */

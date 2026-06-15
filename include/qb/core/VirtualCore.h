@@ -516,7 +516,7 @@ public:
      * will see the same value when calling `Actor::time()` (which internally calls this).
      * This is optimized for performance within a loop iteration but means it does not update
      * with true nanosecond precision *during* a single actor's event handling.
-     * For a continuously updating high-precision clock, use `qb::NanoTimestamp()`.
+     * For a continuously updating high-precision clock, use `qb::wall_now()`.
      */
     [[nodiscard]] uint64_t time() const noexcept;
 };

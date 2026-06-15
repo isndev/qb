@@ -31,6 +31,8 @@
 #include <qb/main.h>
 #include <vector>
 
+using namespace std::chrono_literals;
+
 // Define test events
 struct AllocateResourceEvent : public qb::Event {
     int size;
@@ -169,7 +171,7 @@ public:
         _resources.clear();
 
         // Wait to ensure all destructors have been called
-        qb::io::async::callback([this]() { kill(); }, 0.1);
+        qb::io::async::callback([this]() { kill(); }, 100ms);
     }
 
     // Force shutdown without explicit cleanup
@@ -232,7 +234,7 @@ public:
                 _phase = 1;
                 schedulePhase2();
             },
-            0.2);
+            200ms);
     }
 
     // Phase 2: Release some resources manually
@@ -258,9 +260,9 @@ public:
                         _phase = 2;
                         schedulePhase3();
                     },
-                    0.2);
+                    200ms);
             },
-            0.2);
+            200ms);
     }
 
     // Phase 3: Perform graceful shutdown on one actor
@@ -280,7 +282,7 @@ public:
                 _phase = 3;
                 schedulePhase4();
             },
-            0.3);
+            300ms);
     }
 
     // Phase 4: Force shutdown on remaining actors
@@ -297,7 +299,7 @@ public:
                 g_test_complete = true;
                 kill();
             },
-            0.3);
+            300ms);
     }
 
     // Handle resource status reports

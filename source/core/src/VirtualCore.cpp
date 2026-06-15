@@ -30,6 +30,10 @@
 #include <qb/system/timestamp.h>
 
 #ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach/thread_act.h>
+#include <mach/thread_policy.h>
+#include <pthread.h>
 #include <sys/sysctl.h>
 #include <sys/types.h>
 
@@ -370,7 +374,7 @@ VirtualCore::__workflow__() {
     LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actors.size())
                    << " actor(s)");
     while (likely(true)) {
-        _metrics._nanotimer = Timestamp::nano();
+        _metrics._nanotimer = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now()));
 
         // Poll for pending signal (async-signal-safe: volatile sig_atomic_t read)
         // OR for a C++20 cooperative cancellation request coming from the
@@ -443,7 +447,7 @@ VirtualCore::__workflow__() {
         // Adaptive backoff: a busy iteration refills the spin credit; otherwise we
         // burn through the remaining credit before blocking on the mailbox (2.15).
         _metrics.carry_over();
-        if (_mail_box.getLatency()) {
+        if (_mail_box.getLatency() > qb::duration::zero()) {
             if (likely(_metrics._spin_credit))
                 --_metrics._spin_credit;
             else

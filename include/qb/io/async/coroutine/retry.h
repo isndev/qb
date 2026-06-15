@@ -25,6 +25,7 @@
 
 #include "task.h"
 #include "utils.h"
+#include <qb/system/timestamp.h>  // qb::duration
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -76,8 +77,8 @@ enum class backoff_strategy {
  */
 struct retry_policy {
     size_t max_attempts = 3;
-    std::chrono::milliseconds base_delay{100};
-    std::chrono::milliseconds max_delay{30'000};  // 30 seconds
+    qb::duration base_delay{std::chrono::milliseconds{100}};
+    qb::duration max_delay{std::chrono::milliseconds{30'000}};  // 30 seconds
     backoff_strategy strategy = backoff_strategy::exponential;
 
     // Predicate to determine if an error is retryable
@@ -110,15 +111,19 @@ namespace detail {
  * avoid overflow before the `max_delay` clamp (otherwise `base_delay *
  * (1u << 30)` silently overflows `chrono::milliseconds`' signed rep).
  */
-inline std::chrono::milliseconds calculate_delay(
+inline qb::duration calculate_delay(
     size_t retry_number,
     const retry_policy& policy) {
 
     using ms_rep = std::chrono::milliseconds::rep;
     if (retry_number < 1) retry_number = 1;
 
-    const ms_rep base_ms = policy.base_delay.count();
-    const ms_rep max_ms  = policy.max_delay.count();
+    // The backoff/jitter math is deliberately computed in millisecond-resolution
+    // integers; the policy fields are qb::duration (nanoseconds), so cast in.
+    const ms_rep base_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(policy.base_delay).count();
+    const ms_rep max_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(policy.max_delay).count();
     ms_rep       delay_ms = base_ms;
 
     switch (policy.strategy) {
@@ -179,7 +184,7 @@ inline std::chrono::milliseconds calculate_delay(
 
     if (delay_ms > max_ms) delay_ms = max_ms;
     if (delay_ms < 0)      delay_ms = 0;
-    return std::chrono::milliseconds{delay_ms};
+    return qb::duration{std::chrono::milliseconds{delay_ms}};
 }
 
 } // namespace detail

@@ -26,6 +26,7 @@
 #define QB_IO_TCP_SOCKET_H_
 #include "../system/sys__socket.h"
 #include "../uri.h"
+#include <qb/system/timestamp.h>
 
 namespace qb::io::tcp {
 
@@ -51,7 +52,7 @@ class QB_API socket : protected qb::io::socket {
     int connect_in(int af, std::string const &host, uint16_t port) noexcept;
 
     int connect_in(int af, std::string const &host, uint16_t port,
-                   std::chrono::microseconds wtimeout) noexcept;
+                   qb::duration wtimeout) noexcept;
 
     /**
      * @brief Internal method to perform a non-blocking connect.
@@ -151,7 +152,7 @@ public:
      * @param wtimeout Maximum time to wait; non-positive values are clamped to zero (poll once).
      * @return 0 on success; non-zero on failure (including timeout; see `get_last_errno()`).
      */
-    int connect(qb::io::endpoint const &ep, std::chrono::microseconds wtimeout) noexcept;
+    int connect(qb::io::endpoint const &ep, qb::duration wtimeout) noexcept;
 
     /**
      * @brief Connect to a remote TCP endpoint specified by a URI.
@@ -163,7 +164,7 @@ public:
     /**
      * @brief Connect using a URI with a bound TCP handshake duration.
      */
-    int connect(uri const &u, std::chrono::microseconds wtimeout) noexcept;
+    int connect(uri const &u, qb::duration wtimeout) noexcept;
 
     /**
      * @brief Connect to an IPv4 TCP server.

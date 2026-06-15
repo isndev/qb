@@ -29,6 +29,7 @@
 // NOTE: No <mutex> — the channel is used exclusively within a single qb-io
 // thread under the cooperative scheduler. "Multi-Producer" here means multiple
 // coroutines; they are all on the same thread and never run concurrently.
+#include <qb/system/timestamp.h>  // qb::duration
 #include <chrono>
 #include <deque>
 #include <exception>
@@ -503,7 +504,7 @@ public:
      * @param timeout Maximum time to wait
      * @return Optional value — empty on timeout or closed channel
      */
-    task<std::optional<T>> recv_for(std::chrono::milliseconds timeout) {
+    task<std::optional<T>> recv_for(qb::duration timeout) {
         // Fast path
         if (!_buffer.empty()) {
             co_return try_recv();
@@ -515,11 +516,11 @@ public:
         struct timed_recv_awaiter {
             channel<T>& ch;
             std::shared_ptr<channel_select_state> state;
-            std::chrono::milliseconds timeout_ms;
+            qb::duration timeout_ms;
 
             timed_recv_awaiter(channel<T>& c,
                                std::shared_ptr<channel_select_state> s,
-                               std::chrono::milliseconds t)
+                               qb::duration t)
                 : ch(c), state(std::move(s)), timeout_ms(t) {}
 
             // Frame-destruction guard: this awaiter lives inside the recv_for
@@ -559,7 +560,7 @@ public:
      * @param timeout Maximum time to wait for buffer space
      * @return true if sent, false on timeout or closed channel
      */
-    task<bool> send_for(T value, std::chrono::milliseconds timeout) {
+    task<bool> send_for(T value, qb::duration timeout) {
         if (_closed) co_return false;
         // Fast path: space available
         if (_buffer.size() < _capacity || !_recv_waiters.empty()) {
@@ -578,12 +579,12 @@ public:
             T val;
             std::shared_ptr<bool> guard;
             std::shared_ptr<bool> fired;
-            std::chrono::milliseconds timeout_ms;
+            qb::duration timeout_ms;
             std::shared_ptr<bool> _ch_alive; ///< channel liveness; skip ch access when false
             bool _resumed = false;
 
             timed_send_awaiter(channel<T>& c, T v, std::shared_ptr<bool> g,
-                               std::shared_ptr<bool> f, std::chrono::milliseconds t)
+                               std::shared_ptr<bool> f, qb::duration t)
                 : ch(c), val(std::move(v)), guard(std::move(g)),
                   fired(std::move(f)), timeout_ms(t), _ch_alive(c._alive) {}
 
@@ -633,7 +634,7 @@ private:
     // Free functions: parameters stored by value in the coroutine frame.
     static task<void> channel_timer(std::shared_ptr<channel_select_state> state,
                                      std::coroutine_handle<> h,
-                                     std::chrono::milliseconds delay) {
+                                     qb::duration delay) {
         co_await sleep(delay);
         // winner=1 signals timeout; schedule_via_current deduplicates
         if (!state->resolved) {
@@ -646,7 +647,7 @@ private:
     static task<void> send_timer(std::shared_ptr<bool> guard,
                                   std::shared_ptr<bool> fired,
                                   std::coroutine_handle<> h,
-                                  std::chrono::milliseconds delay) {
+                                  qb::duration delay) {
         co_await sleep(delay);
         if (!*guard) {
             *guard = true;

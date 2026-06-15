@@ -25,6 +25,7 @@
 
 #include "task.h"
 #include "channel.h"
+#include <qb/system/timestamp.h>  // qb::duration
 #include <chrono>
 #include <cstddef>
 #include <exception>
@@ -251,7 +252,7 @@ public:
      * @brief Debounce - emit only after quiet period
      * Emits the last value only after no new values arrive for the delay period
      */
-    async_stream debounce(std::chrono::milliseconds delay) {
+    async_stream debounce(qb::duration delay) {
         auto source  = _next;
         // Finding 2.C.6: a truly unbounded channel lets a fast producer race
         // arbitrarily far ahead of a slow debounced consumer, defeating the
@@ -322,7 +323,7 @@ public:
      * @brief Throttle - limit emission rate
      * Emits at most one value per interval
      */
-    async_stream throttle(std::chrono::milliseconds interval) {
+    async_stream throttle(qb::duration interval) {
         auto source = _next;
         auto last_emit = std::make_shared<std::chrono::steady_clock::time_point>(
             std::chrono::steady_clock::now() - interval);
@@ -336,7 +337,7 @@ public:
                 auto next_allowed = *last_emit + interval;
 
                 if (now < next_allowed) {
-                    co_await sleep(std::chrono::duration_cast<std::chrono::milliseconds>(next_allowed - now));
+                    co_await sleep(std::chrono::duration_cast<qb::duration>(next_allowed - now));
                 }
 
                 *last_emit = std::chrono::steady_clock::now();
@@ -697,19 +698,19 @@ async_stream<T> repeat_value(T value) {
  * @ingroup Coroutine
  */
 inline async_stream<size_t> interval(
-    std::chrono::milliseconds interval_time,
+    qb::duration interval_time,
     bool start_with_now = false) {
 
     auto counter = std::make_shared<size_t>(0);
     auto next_time = std::make_shared<std::chrono::steady_clock::time_point>(
-        std::chrono::steady_clock::now() + (start_with_now ? std::chrono::milliseconds(0) : interval_time)
+        std::chrono::steady_clock::now() + (start_with_now ? qb::duration::zero() : interval_time)
     );
 
     auto interval_ms = interval_time;
     return async_stream<size_t>([counter, next_time, interval_ms]() -> task<std::optional<size_t>> {
         auto now = std::chrono::steady_clock::now();
         if (now < *next_time) {
-            co_await sleep(std::chrono::duration_cast<std::chrono::milliseconds>(*next_time - now));
+            co_await sleep(std::chrono::duration_cast<qb::duration>(*next_time - now));
         }
 
         *next_time += interval_ms;
@@ -726,7 +727,7 @@ inline async_stream<size_t> interval(
  * @ingroup Coroutine
  */
 template <typename T>
-async_stream<T> timer(T value, std::chrono::milliseconds delay) {
+async_stream<T> timer(T value, qb::duration delay) {
     auto shared = std::make_shared<std::optional<T>>(std::move(value));
     auto emitted = std::make_shared<bool>(false);
 

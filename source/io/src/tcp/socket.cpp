@@ -87,7 +87,7 @@ socket::connect_in(int af, std::string const &host, uint16_t port) noexcept {
 
 int
 socket::connect_in(int af, std::string const &host, uint16_t port,
-                   std::chrono::microseconds wtimeout) noexcept {
+                   qb::duration wtimeout) noexcept {
     auto ret = -1;
     qb::io::socket::resolve_i(
         [&, this](const auto &ep) {
@@ -114,7 +114,7 @@ socket::connect(qb::io::endpoint const &ep) noexcept {
 }
 
 int
-socket::connect(qb::io::endpoint const &ep, std::chrono::microseconds wtimeout) noexcept {
+socket::connect(qb::io::endpoint const &ep, qb::duration wtimeout) noexcept {
     if (is_open()) {
         if (local_endpoint().af() != ep.af())
             return -1;
@@ -138,7 +138,7 @@ socket::connect(uri const &u) noexcept {
 }
 
 int
-socket::connect(uri const &u, std::chrono::microseconds wtimeout) noexcept {
+socket::connect(uri const &u, qb::duration wtimeout) noexcept {
     switch (u.af()) {
         case AF_INET:
         case AF_INET6:

@@ -85,8 +85,8 @@ socket::read(void *dest, std::size_t len, qb::io::endpoint &peer) const noexcept
 }
 
 int
-socket::read_timeout(void *dest, std::size_t len, qb::io::endpoint &peer, 
-                   const std::chrono::microseconds &timeout) const noexcept {
+socket::read_timeout(void *dest, std::size_t len, qb::io::endpoint &peer,
+                   const qb::duration &timeout) const noexcept {
     if (!is_open()) {
         return -1;
     }

@@ -16,8 +16,8 @@ The QB Actor Framework utilizes several lock-free data structures internally to 
     *   `lock()`: Acquires the lock, spinning indefinitely if necessary.
     *   `trylock() -> bool`: Attempts to acquire the lock once and returns immediately (true if successful).
     *   `trylock(int64_t spin_count) -> bool`: Tries to acquire, spinning up to `spin_count` times.
-    *   `trylock_for(const qb::Duration& timespan) -> bool`: Tries to acquire within a specified duration.
-    *   `trylock_until(const qb::UtcTimePoint& timestamp) -> bool`: Tries to acquire until a specific time point.
+    *   `trylock_for(qb::duration timespan) -> bool`: Tries to acquire within a specified duration.
+    *   `trylock_until(qb::mono_time timestamp) -> bool`: Tries to acquire until a specific monotonic time point.
     *   `unlock()`: Releases the lock.
     *   `locked() -> bool`: Checks if the lock is currently held.
 *   **Use Case within QB:** Primarily used for extremely short critical sections where contention is expected to be very low and the overhead of a `std::mutex` (which involves system calls) is undesirable. For example, it's used internally in some modes of the MPSC queue.

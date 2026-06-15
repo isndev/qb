@@ -35,8 +35,10 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <iomanip>
+#include <qb/system/timestamp.h>
 #include <istream>
 #include <openssl/aes.h>
 #include <openssl/buffer.h>
@@ -865,12 +867,12 @@ public:
      *
      * @param payload The payload to include in the token
      * @param key The key to use for encryption
-     * @param ttl Time to live in seconds (0 = no expiration)
+     * @param ttl Token lifetime as a `qb::duration` (zero = no expiration)
      * @return The generated token
      */
     static std::string generate_token(const std::string                &payload,
                                       const std::vector<unsigned char> &key,
-                                      uint64_t                          ttl = 0);
+                                      qb::duration                      ttl = qb::duration::zero());
 
     /**
      * @brief Verify and decrypt a token

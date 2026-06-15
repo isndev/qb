@@ -26,6 +26,7 @@
 #include "task.h"
 #include "utils.h"
 #include "cancellation.h"
+#include <qb/system/timestamp.h>  // qb::duration
 #include <algorithm>
 #include <vector>
 #include <memory>
@@ -399,7 +400,7 @@ public:
      *
      * @return true if all completed within timeout, false on timeout
      */
-    task<bool> join_all_for(std::chrono::milliseconds timeout) {
+    task<bool> join_all_for(qb::duration timeout) {
         if (_impl->active_count == 0) co_return true;
 
         // Single shared slot used by BOTH on_task_done and the timer.
@@ -409,7 +410,7 @@ public:
         struct timed_join_awaiter {
             std::shared_ptr<scope_impl>              impl;
             std::shared_ptr<std::coroutine_handle<>> slot;
-            std::chrono::milliseconds                timeout_ms;
+            qb::duration                             timeout_ms;
 
             [[nodiscard]] bool await_ready() const noexcept { return impl->active_count == 0; }
 
@@ -466,7 +467,7 @@ private:
      * Parameters are stored by VALUE in the coroutine frame — no dangling refs.
      */
     static task<void> join_all_timer(std::shared_ptr<std::coroutine_handle<>> slot,
-                                      std::chrono::milliseconds delay) {
+                                      qb::duration delay) {
         co_await sleep(delay);
         QB_SCOPE_TRACE("join_all_timer fired");
         auto h = *slot;

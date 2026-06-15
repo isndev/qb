@@ -12,7 +12,7 @@ Our testing strategy is divided into two main categories:
 *   **Unit Tests (typically found in `qb/source/<module>/tests/unit/`):**
     *   Focus on testing individual classes, functions, or small, isolated modules in detail.
     *   Aim for minimal dependencies to verify component logic in isolation.
-    *   Examples: Testing `qb::Timestamp` functionality, `qb::io::uri` parsing, or specific cryptographic functions.
+    *   Examples: Testing `qb::wall_time` functionality, `qb::io::uri` parsing, or specific cryptographic functions.
 
 *   **System/Integration Tests (typically found in `qb/source/<module>/tests/system/`):**
     *   Focus on testing the interaction and integration of multiple framework components.

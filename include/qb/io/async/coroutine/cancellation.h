@@ -33,6 +33,7 @@
 // use only (one qb-io VirtualCore thread). Cross-thread cancellation must go
 // through the qb actor event system — an actor on Thread B sends a Cancel event
 // to the actor on Thread A, which then calls token.cancel() on its own thread.
+#include <qb/system/timestamp.h>  // qb::duration
 #include <chrono>
 #include <exception>
 #include <functional>
@@ -425,7 +426,7 @@ struct cancellable_sleep_awaiter {
         std::coroutine_handle<> handle;
     };
 
-    std::chrono::milliseconds duration;
+    qb::duration duration;
     cancellation_token token;
 
     [[nodiscard]] bool await_ready() const { return token.is_cancelled(); }
@@ -448,7 +449,7 @@ private:
     // Static function: d and s are VALUE parameters stored in the coroutine frame.
     // Never use a lambda here — the compiler may store a pointer to the local lambda
     // object rather than a copy, causing a dangling reference after await_suspend returns.
-    static task<void> timer_task(std::chrono::milliseconds d, std::shared_ptr<sleep_state> s) {
+    static task<void> timer_task(qb::duration d, std::shared_ptr<sleep_state> s) {
         co_await sleep(d);
         if (!s->resumed) {
             s->resumed = true;
@@ -464,7 +465,7 @@ private:
  * @return Task that completes after duration or when cancelled
  * @ingroup Coroutine
  */
-inline task<void> cancellable_sleep(std::chrono::milliseconds duration, cancellation_token token) {
+inline task<void> cancellable_sleep(qb::duration duration, cancellation_token token) {
     co_await cancellable_sleep_awaiter{duration, std::move(token)};
 }
 
@@ -500,7 +501,7 @@ struct with_deadline_timeout_awaiter {
         });
 
         auto now = std::chrono::steady_clock::now();
-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
+        auto remaining = std::chrono::duration_cast<qb::duration>(deadline - now);
         if (remaining.count() <= 0) {
             if (!state->completed) {
                 state->completed = true;
@@ -518,7 +519,7 @@ struct with_deadline_timeout_awaiter {
 private:
     static task<void> deadline_timer_task(
         std::shared_ptr<with_deadline_timeout_state> s,
-        std::chrono::milliseconds remaining)
+        qb::duration remaining)
     {
         co_await sleep(remaining);
         if (!s->completed) {

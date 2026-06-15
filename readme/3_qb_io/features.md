@@ -74,7 +74,7 @@ The `qb-io` library is a versatile and powerful **C++23** toolkit designed for b
 
 ## 6. Essential Utilities
 
-*   **High-Precision Time (`qb::Timestamp`, `qb::Duration`):** Nanosecond-accurate time points and durations for measurements and scheduling.
+*   **High-Precision Time (`qb::wall_time`, `qb::mono_time`, `qb::duration`):** `std::chrono`-based, nanosecond-accurate time points and durations for measurements and scheduling.
 *   **Cryptography (Optional: `QB_IO_WITH_SSL`):
     *   **Hashing:** MD5, SHA-1, SHA-2 (SHA-256, SHA-384, SHA-512), HMAC variants.
     *   **Key Derivation:** PBKDF2, HKDF, Argon2 for secure key generation from passwords or other entropy sources.

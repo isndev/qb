@@ -40,6 +40,7 @@
 #include <vector>
 
 #include <qb/io/config.h>
+#include <qb/system/timestamp.h>
 
 #if !defined(_WS2IPDEF_)
 /**
@@ -798,21 +799,21 @@ public: /// portable connect APIs
     // for support ipv6 ONLY network.
     QB__DECL int xpconnect(const char *hostname, u_short port, u_short local_port = 0);
     QB__DECL int xpconnect_n(const char *hostname, u_short port,
-                             const std::chrono::microseconds &wtimeout,
-                             u_short                          local_port = 0);
+                             const qb::duration &wtimeout,
+                             u_short             local_port = 0);
 
     // easy to connect a server ipv4 or ipv6.
     QB__DECL int pconnect(const char *hostname, u_short port, u_short local_port = 0);
     QB__DECL int pconnect_n(const char *hostname, u_short port,
-                            const std::chrono::microseconds &wtimeout,
-                            u_short                          local_port = 0);
+                            const qb::duration &wtimeout,
+                            u_short             local_port = 0);
     QB__DECL int pconnect_n(const char *hostname, u_short port, u_short local_port = 0);
 
     // easy to connect a server ipv4 or ipv6.
     QB__DECL int pconnect(const endpoint &ep, u_short local_port = 0);
-    QB__DECL int pconnect_n(const endpoint                  &ep,
-                            const std::chrono::microseconds &wtimeout,
-                            u_short                          local_port = 0);
+    QB__DECL int pconnect_n(const endpoint     &ep,
+                            const qb::duration &wtimeout,
+                            u_short             local_port = 0);
     QB__DECL int pconnect_n(const endpoint &ep, u_short local_port = 0);
 
     // easy to create a tcp ipv4 or ipv6 server socket.
@@ -1051,11 +1052,11 @@ public:
      * so, after this function called, the socket will be always set to blocking mode.
      */
     QB__DECL int        connect_n(const char *addr, u_short port,
-                                  const std::chrono::microseconds &wtimeout);
-    QB__DECL int        connect_n(const endpoint                  &ep,
-                                  const std::chrono::microseconds &wtimeout);
+                                  const qb::duration &wtimeout);
+    QB__DECL int        connect_n(const endpoint     &ep,
+                                  const qb::duration &wtimeout);
     QB__DECL static int connect_n(socket_type s, const endpoint &ep,
-                                  const std::chrono::microseconds &wtimeout);
+                                  const qb::duration &wtimeout);
 
     /**
      * @brief Establishes a connection to a specified this socket with nonblocking
@@ -1086,9 +1087,9 @@ public:
      *close socket.
      */
     QB__DECL int        send_n(const void *buf, int len,
-                               const std::chrono::microseconds &wtimeout, int flags = 0);
+                               const qb::duration &wtimeout, int flags = 0);
     QB__DECL static int send_n(socket_type s, const void *buf, int len,
-                               std::chrono::microseconds wtimeout, int flags = 0);
+                               qb::duration wtimeout, int flags = 0);
 
     /**
      * @brief nonblock recv
@@ -1099,10 +1100,10 @@ public:
      *         Oterwise, If retval < len && not_recv_error(get_last_errno()), should
      *close socket.
      */
-    QB__DECL int recv_n(void *buf, int len, const std::chrono::microseconds &wtimeout,
+    QB__DECL int recv_n(void *buf, int len, const qb::duration &wtimeout,
                         int flags = 0) const;
     QB__DECL static int recv_n(socket_type s, void *buf, int len,
-                               std::chrono::microseconds wtimeout, int flags = 0);
+                               qb::duration wtimeout, int flags = 0);
 
     /**
      * @brief Sends data on this connected socket
@@ -1158,13 +1159,13 @@ public:
     QB__DECL int recvfrom(void *buf, int len, endpoint &peer,
                           int flags = MSG_NOSIGNAL) const;
 
-    QB__DECL int handle_write_ready(const std::chrono::microseconds &wtimeout) const;
-    QB__DECL static int handle_write_ready(socket_type                      s,
-                                           const std::chrono::microseconds &wtimeout);
+    QB__DECL int handle_write_ready(const qb::duration &wtimeout) const;
+    QB__DECL static int handle_write_ready(socket_type         s,
+                                           const qb::duration &wtimeout);
 
-    QB__DECL int handle_read_ready(const std::chrono::microseconds &wtimeout) const;
-    QB__DECL static int handle_read_ready(socket_type                      s,
-                                          const std::chrono::microseconds &wtimeout);
+    QB__DECL int handle_read_ready(const qb::duration &wtimeout) const;
+    QB__DECL static int handle_read_ready(socket_type         s,
+                                          const qb::duration &wtimeout);
 
     /**
      * @brief Get local address info
@@ -1323,11 +1324,11 @@ public:
      */
     int
     select(fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
-           const std::chrono::microseconds &wtimeout) const {
+           const qb::duration &wtimeout) const {
         return socket::select(this->fd, readfds, writefds, exceptfds, wtimeout);
     }
     QB__DECL static int select(socket_type s, fd_set *readfds, fd_set *writefds,
-                               fd_set *exceptfds, std::chrono::microseconds wtimeout);
+                               fd_set *exceptfds, qb::duration wtimeout);
 
     /**
      * @brief Disables sends or receives on this socket

@@ -49,7 +49,7 @@ For the `listener` to process events, its loop must be actively run:
 std::atomic<bool> g_is_running = true;
 
 void my_periodic_task() {
-    std::cout << "Periodic task executed at: " << qb::UtcTimePoint::now().to_iso8601() << std::endl;
+    std::cout << "Periodic task executed at: " << qb::to_iso8601(qb::wall_now()) << std::endl;
     if (g_is_running) {
         // Reschedule self
         qb::io::async::callback(my_periodic_task, 1.0); // Every 1 second

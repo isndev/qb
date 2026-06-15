@@ -34,6 +34,7 @@
 #endif
 
 using namespace qb::io;
+using namespace std::chrono_literals;
 
 // -----------------------------------------------------------------------------
 // Common test fixture
@@ -446,7 +447,7 @@ TEST_F(IoPlanTest, T_SACCEPT_FLUSH_IsIdempotentOnEmptyAcceptor) {
 // invocation, no use-after-free). Firing must happen exactly once.
 TEST_F(IoPlanTest, T_SCOPED_CALLBACK_FiresOnceAndIsCancellable) {
     std::atomic<int> fired{0};
-    auto             timer = async::scoped_callback([&] { ++fired; }, 0.05);
+    auto             timer = async::scoped_callback([&] { ++fired; }, 50ms);
     ASSERT_NE(timer, nullptr);
 
     // Not yet fired.
@@ -474,7 +475,7 @@ TEST_F(IoPlanTest, T_SCOPED_CALLBACK_DestructionCancelsPendingTimer) {
     std::atomic<int> fired{0};
 
     {
-        auto timer = async::scoped_callback([&] { ++fired; }, 1.0); // 1s
+        auto timer = async::scoped_callback([&] { ++fired; }, 1s); // 1s
         ASSERT_NE(timer, nullptr);
         EXPECT_FALSE(timer->fired());
         // Destroyed immediately on scope exit — the libev watcher inside

@@ -180,7 +180,7 @@ Provides the non-blocking I/O foundation, networking, and various system utiliti
 *   **Cryptography (`qb::crypto`, `qb::jwt`)** (`qb/io/crypto.h`, `qb/io/crypto_jwt.h`): Hashing, encoding, symmetric/asymmetric encryption, JWTs (requires OpenSSL).
 *   **Compression (`qb::compression`)** (`qb/io/compression.h`): Gzip, Deflate (requires Zlib).
 *   **JSON (`qb::json`, `qb::jsonb`)** (`qb/json.h`): Based on `nlohmann/json` for parsing and manipulation.
-*   **Time (`qb::TimePoint`, `qb::Duration`)** (`qb/system/timestamp.h`): High-precision time points and durations.
+*   **Time (`qb::wall_time`, `qb::mono_time`, `qb::duration`)** (`qb/system/timestamp.h`): `std::chrono`-based wall-clock/monotonic time points and durations (`qb::wall_now()`, `qb::mono_now()`, `qb::to_iso8601()`, `qb::format_utc()`, `qb::unix_*()`).
 *   **System Info:** `qb::CPU` (`qb/system/cpu.h`), `qb::endian` (`qb/system/endian.h`).
 *   **Containers & Allocators:**
     *   `qb::allocator::pipe<T>` (`qb/system/allocator/pipe.h`): High-performance dynamic buffer.

@@ -522,7 +522,7 @@ public:
      * // ... some heavy calculation ...
      * assert(t1 == time()); // true - will not assert within the same event handler execution
      * @endcode
-     * For a continuously updating, high-precision timestamp, use `qb::NanoTimestamp()::count()` from `<qb/system/timestamp.h>`.
+     * For a continuously updating, high-precision timestamp, use `qb::unix_nanos(qb::wall_now())` from `<qb/system/timestamp.h>`.
      * @note This time is primarily for relative measurements or logging within an actor's turn.
      */
     [[nodiscard]] uint64_t time() const noexcept;

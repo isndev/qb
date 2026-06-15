@@ -247,7 +247,7 @@ protected:
     SetUp() final {
         for (auto i = 0u; i < max_core; ++i) {
             for (auto j = 0u; j < MAX_ACTORS; ++j) {
-                main.core(((i + 1) % max_core)).setLatency(100);
+                main.core(((i + 1) % max_core)).setLatency(std::chrono::nanoseconds(100));
                 main.addActor<ActorSender>(
                     i, MAX_EVENTS,
                     main.addActor<TestActorReceiver>(((i + 1) % max_core), MAX_EVENTS));

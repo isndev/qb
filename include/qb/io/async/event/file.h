@@ -48,7 +48,7 @@ namespace qb::io::async::event {
  * @code
  * class MyFileMonitor : public qb::io::async::file_watcher<MyFileMonitor> {
  * public:
- *   MyFileMonitor(const std::string& path_to_watch, double interval = 1.0) {
+ *   MyFileMonitor(const std::string& path_to_watch, qb::duration interval = std::chrono::seconds(1)) {
  *     this->start(path_to_watch, interval);
  *   }
  *

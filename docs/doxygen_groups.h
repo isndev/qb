@@ -336,7 +336,7 @@
  * @ingroup System
  * @brief High-precision timestamp and duration classes.
  *
- * Contains \`qb::Timestamp\` and \`qb::Duration\`.
+ * Contains \`qb::wall_time\` and \`qb::duration\`.
  */
 
 // General Utilities
