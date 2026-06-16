@@ -43,6 +43,11 @@ project(${QB_FRAMEWORK_NAME}
         DESCRIPTION "${QB_FRAMEWORK_DESCRIPTION}"
 )
 
+if(QB_BUILD_TESTS)
+    include(CTest)
+    enable_testing()
+endif()
+
 # -----------------------------------------------------------------------------
 # Core Framework Initialization
 # -----------------------------------------------------------------------------

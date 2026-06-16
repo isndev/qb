@@ -1,13 +1,26 @@
 /**
- * @file test_coroutine_scheduler.cpp
- * @brief Scheduler and Lifecycle Tests
+ * @file qb/io/tests/coroutine/test-coroutine-scheduler.cpp
+ * @brief Coroutine scheduler lifecycle tests
  *
- * Expert-level tests for CoroutineScheduler behavior, task lifecycle,
- * handle management, and integration with libev event loop.
+ * This file contains tests for CoroutineScheduler behavior, including ready queue
+ * processing, handle lifetime, exception handling, move-only task semantics,
+ * thread-local scheduler state, event loop restart behavior, cancellation, detaching,
+ * and pending counts.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
- * @license Apache License, Version 2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * @ingroup Tests
  */
 
 #include <gtest/gtest.h>

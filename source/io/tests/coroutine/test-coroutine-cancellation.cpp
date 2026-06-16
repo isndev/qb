@@ -1,13 +1,25 @@
 /**
- * @file test_coroutine_cancellation.cpp
+ * @file qb/io/tests/coroutine/test-coroutine-cancellation.cpp
  * @brief Coroutine cancellation tests
  *
- * Tests for cancellation mechanisms:
- * - cancellation_token: signal cancellation
- * - check_cancelled: awaiter for cancellation
- * - cancellable operations
+ * This file contains tests for cancellation_token, cancellation callbacks,
+ * cancellation-aware awaiters, cancellable sleep operations, deadline handling, and
+ * cancellation edge cases.
  *
  * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * @ingroup Tests
  */
 
 #include <gtest/gtest.h>

@@ -1,44 +1,25 @@
 /**
- * @file test_basic.cpp
- * @brief Basic Coroutine Tests - qb-io Standalone
+ * @file qb/io/tests/coroutine/test-coroutine-basic.cpp
+ * @brief Basic coroutine tests for qb-io
  *
- * TDD test suite for foundational coroutine functionality in qb-io.
- * qb-io is a standalone async I/O library built on libev.
- *
- * Test Coverage:
- * - Task lifecycle (creation, execution, destruction)
- * - Value return and propagation
- * - Timer-based suspension (sleep)
- * - Sequential and concurrent execution
- * - Exception handling basics
- * - Nested coroutine composition
- * - Scheduler state inspection
- *
- * Architecture:
- * - Pure qb-io (no qb-core dependency)
- * - Uses listener::current for event loop
- * - Thread-local CoroutineScheduler per thread
- *
- * IMPORTANT: Lambda Coroutine Capture Safety
- * ------------------------------------------
- * When creating coroutines from lambdas, you MUST store the lambda in a variable
- * before calling it, OR capture by pointer instead of by reference.
- *
- * WRONG (dangling reference):
- *   auto t = [&var]() -> task<void> { use var; }();
- *
- * CORRECT (stored lambda):
- *   auto fn = [&var]() -> task<void> { use var; };
- *   auto t = fn();
- *
- * CORRECT (pointer capture):
- *   auto ptr = &var;
- *   auto fn = [ptr]() -> task<void> { use *ptr; };
- *   auto t = fn();
+ * This file contains foundational tests for qb-io coroutine tasks, including task
+ * lifecycle, value propagation, timer-based suspension, concurrent execution, exception
+ * propagation, nested coroutine composition, and scheduler state inspection.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
- * @license Apache License, Version 2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * @ingroup Tests
  */
 
 #include <gtest/gtest.h>

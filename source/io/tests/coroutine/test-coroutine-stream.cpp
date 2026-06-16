@@ -1,13 +1,26 @@
 /**
- * @file test_coroutine_stream.cpp
- * @brief Async stream tests
+ * @file qb/io/tests/coroutine/test-coroutine-stream.cpp
+ * @brief Coroutine async stream tests
  *
- * Tests for:
- * - async_stream: functional stream processing
- * - map, filter, take, skip transformations
- * - collect, for_each, count operations
+ * This file contains tests for async_stream creation, transformation, terminal
+ * operations, range and repeat helpers, channel-backed streams, chained streams,
+ * buffering, merge and zip operations, drain_to, timer streams, backpressure,
+ * throttling, and shared channel consumption.
  *
  * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * @ingroup Tests
  */
 
 #include <gtest/gtest.h>

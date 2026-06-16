@@ -1,14 +1,25 @@
 /**
- * @file test_coroutine_combinators.cpp
- * @brief Coroutine combinators tests
+ * @file qb/io/tests/coroutine/test-coroutine-combinators.cpp
+ * @brief Coroutine combinator tests
  *
- * Tests for combining multiple coroutines:
- * - when_all: wait for all coroutines
- * - when_any: wait for first coroutine
- * - race: competition between coroutines
- * - timeout: execute with timeout limit
+ * This file contains tests for coroutine composition helpers, including when_all,
+ * when_any, race, timeout handling, vector overloads, result extraction, structured
+ * binding support, and exception propagation.
  *
  * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * @ingroup Tests
  */
 
 #include <gtest/gtest.h>
