@@ -1,135 +1,142 @@
-@page reference_core_invariants QB-Core: Thread-Safety & Lifecycle Invariants
-@brief Consolidated reference of the thread-ownership, memory-ordering and lifecycle invariants upheld by `qb-core`. Read this once before you write actor, coroutine or event-router code.
+# qb-core thread-safety and lifecycle invariants
 
-# QB-Core — Thread-Safety & Lifecycle Invariants
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23) — 577606c
 
-This page is the **single source of truth** for the invariants the runtime assumes. Every header and `.cpp` in `qb/include/qb/core/**` + `qb/source/core/src/**` is written with these rules in mind. If a change breaks an invariant, the whole actor model breaks silently.
+The rules `qb-core` assumes and the guarantees it gives in return: which thread owns what, when an actor is alive, and in what order events arrive — so you can reason about correctness without reading the scheduler.
 
-The rules are grouped by subsystem. Each one links back to the finding number in `qb/QB_CORE_PLAN.md` where the invariant was formalised or hardened.
+**Prerequisites:** [Threading model](../2_core_concepts/threading_model.md), [Actor model](../2_core_concepts/actor_model.md) — **See also:** [Event system](../2_core_concepts/event_system.md), [qb-io invariants](./io_invariants.md), [API overview](./api_overview.md), [FAQ](./faq.md)
 
----
+## Summary
 
-## 1. Thread model — one VirtualCore, one worker thread
+`qb-core` is a share-nothing actor runtime. Its correctness rests on one structural decision — **each `VirtualCore` runs on exactly one thread and never shares actor state** — from which every other invariant follows. Because actors are strictly thread-affine, almost nothing in the actor layer needs an atomic, a lock, or a memory fence; the few synchronization primitives that exist guard cross-thread initialization and engine-wide shutdown, not the hot path.
 
-- Every `qb::VirtualCore` runs on **exactly one** `std::jthread` for the entire life of the engine (`qb::Main::start()` → `~Main()`).
-- The worker is identified by a `thread_local` pointer: `VirtualCore::_handler`. This pointer is installed by `Main::start_thread` before any actor is instantiated on that worker, and it is never reassigned for the lifetime of the worker.
-- **Actors never migrate** between cores. An actor created on core `N` lives, receives events, and is destroyed on core `N`. Its `this` pointer is therefore only dereferenceable on that one thread.
-- Any API that synthesises "`thread-free`" behaviour (e.g. `qb::Pipe`, `to()`, `push<>()`, `broadcast<>()`) is implemented in terms of enqueuing events into the destination core's mailbox; the destination core's worker then dequeues and dispatches **on its own thread**.
+This page consolidates the invariants you must respect (the contract you owe the runtime) and the guarantees the runtime gives back (the contract it owes you). Each is cited to the header or source that enforces it. Breaking one of these does not raise a compile error and often does not crash immediately — it corrupts state silently — so treat them as load-bearing.
 
-Consequence: almost nothing in qb-core needs to be atomic. The few atomics that exist are there for **cross-thread init** (2.3 — `_nb_service`, `detail::_type_id_counter`) or **engine-wide shutdown** (2.17 — `std::stop_source` / `std::stop_token`).
+## Thread model: one VirtualCore, one worker thread
 
----
+- Every `qb::VirtualCore` runs on its own `std::jthread` for the life of the engine. `qb::Main::start(bool async = true)` spawns one worker per registered core (`source/core/src/Main.cpp:256`); the threads are joined by `Main::join()` or by `~Main()`, whose `std::jthread` members auto-join (`source/core/src/Main.cpp:172`).
+- The active worker is identified by a `thread_local` pointer, `VirtualCore::_handler`, installed by `Main::start_thread` before any actor is instantiated on that worker and never reassigned for the worker's lifetime (`source/core/src/Main.cpp:190`).
+- **Actors never migrate between cores.** An actor created on core *N* lives, receives events, and is destroyed on core *N*. Its `this` pointer is only dereferenceable on that one thread. A `VirtualCore` owns its actors exclusively; the actor maps and the service-id pool perform no synchronization (`include/qb/core/VirtualCore.h:172`).
+- Cross-actor APIs (`to()`, `push<>()`, `send<>()`, `broadcast<>()`, `qb::Pipe`) never touch the destination actor directly. They enqueue an event into the destination core's mailbox; that core's worker dequeues and dispatches it **on its own thread**.
 
-## 2. Actor lifecycle
+The consequence is that `qb-core` carries no `std::mutex` on the message path. The atomics that exist are confined to cross-thread service-id registration and the engine-wide `std::stop_source` used for shutdown (`source/core/src/Main.cpp:172`). See [Memory ordering](#memory-ordering-cheat-sheet) for the full accounting.
 
-### 2.1 Construction
+## Actor lifecycle
 
-- `Actor::Actor()` / `Actor::Actor(ActorId)` / `Actor::Actor(qb::no_default_events_t)` all assert `VirtualCore::_handler != nullptr` (finding 2.8). Instantiating an actor outside a worker thread is a programming error and will trip an assertion in debug builds.
-- `TActorFactory<_Actor>::create_impl` and `VirtualCore::addReferencedActor` both route through the `qb::allocate_actor<_Actor>(args...)` customization point (finding 2.13). Users who want PMR / pool-backed allocation specialise that template for their actor type.
-- Default event registrations (`KillEvent`, `SignalEvent`, etc.) can be opted out by passing `qb::no_default_events` to the ctor (finding 2.16) — use this for ephemeral, pool-reused actors.
+### Construction
 
-### 2.2 Init
+- An actor must be constructed from inside a `VirtualCore` worker thread, never from the main thread or an arbitrary user thread. Every `Actor` constructor asserts `VirtualCore::_handler != nullptr` (`source/core/src/Actor.cpp:32`). Construct actors only through `Main::core(idx).addActor<T>(...)`, `CoreInitializer::addActor<T>(...)`, or `addRefActor<T>(...)` / `addRefHandle<T>(...)` from within another actor on the same core.
+- Default event registrations (`KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, `PingEvent`) can be opted out by passing `qb::no_default_events` to the protected constructor (`include/qb/core/Actor.h:277`). Use this for ephemeral, pool-reused actors that never receive those control events.
 
-- `Actor::onInit()` is invoked exactly once by the owning `VirtualCore`, on that core's worker thread, before the actor enters the event loop. Returning `false` cancels the registration; the actor is destroyed immediately.
+### Initialization
 
-### 2.3 Steady state
+- `Actor::onInit()` is invoked once by the owning `VirtualCore` on that core's worker thread, before the actor enters the event loop. Returning `false` cancels registration and the actor is destroyed immediately. Subscribe to events with `registerEvent<T>(*this)` inside `onInit()`.
 
-- Event handlers, `onCallback()`, `onInit()`, `onTerminate()`, and all coroutines awaited inside an actor **execute on the owning core's worker thread**. You can freely access `this` members without synchronisation.
-- `Actor::_alive` is a plain `bool` (not atomic) intentionally: reads and writes are strictly single-threaded on the owning core (finding 2.9). External code must **not** observe `_alive` directly — it MUST go through `qb::RefActorHandle<T>::get()` (finding 2.9), which resolves liveness through `VirtualCore::findActor<T>()` on the owning core.
+### Steady state
 
-### 2.4 Destruction
+- Event handlers (`on(...)`), `onCallback()`, `onInit()`, and any coroutine resumed inside the actor all execute on the owning core's worker thread. You may read and write `this` members without synchronization.
+- `onCallback()` (from `qb::ICallback`) runs once per `VirtualCore` loop iteration, near the end of the iteration: the worker flushes its outbound pipes, drains its inbound mailbox, removes any actors killed during the drain, and only then dispatches callbacks (`source/core/src/VirtualCore.cpp:408`). Events an `onCallback()` pushes are therefore flushed at the start of the next iteration. It must be fast and non-blocking; blocking it stalls the entire core and every actor on it (`include/qb/core/ICallback.h:16`).
+- `Actor::time()` returns the `VirtualCore`'s cached nanosecond timestamp, refreshed once per loop iteration, so it is constant within a single handler or `onCallback()` invocation (`include/qb/core/Actor.h:512`). For a continuously updating value use `qb::unix_nanos(qb::wall_now())` from `<qb/system/timestamp.h>`.
+- `Actor::_alive` is a plain `bool`, not an atomic, by design: it is single-writer / single-reader, always touched on the one owning thread, because remote senders enqueue a `KillEvent` rather than flipping the flag (`include/qb/core/Actor.h:218`). External code **must not** read `_alive`. To test liveness of a referenced actor, dereference a `qb::RefActorHandle<T>` (below), which re-queries the owning core.
 
-- `Actor::kill()` flips `_alive = false` on the owning core. The actual destruction happens at the **end of the current workflow iteration**, in `VirtualCore::removeActor()`.
-- An actor with in-flight coroutines (`active_coroutine_count() > 0`) will log a warning when destroyed: coroutines must never capture raw actor pointers (use `qb::RefActorHandle<T>` or coroutine scopes that propagate cancellation — finding 2.12 / coroutine skill).
-- Service actors reserve their `ServiceId` for the entire life of the process. Only non-service ids are recycled into `VirtualCore::_ids` (finding 2.14 / 2.3).
+### Destruction
 
----
+- `Actor::kill()` sets `_alive = false` and calls `VirtualCore::killActor(id())` (`source/core/src/Actor.cpp:121`). It only *flags* the actor: the actor stops receiving new events but may still drain events already queued, and `~Actor()` runs later under `VirtualCore` control, at the end of the workflow iteration.
+- `Actor::is_alive()` reports `true` until `kill()` has been called *and* the `VirtualCore` has processed the removal (`include/qb/core/Actor.h:552`).
+- A referenced actor obtained with `addRefActor<T>()` returns a **raw, non-owning** pointer. The pointer dangles — dereferencing it is undefined behavior — once the child calls `kill()` (`include/qb/core/Actor.h:936`). If you must hold the reference across event-handler boundaries, use `addRefHandle<T>()` / `qb::RefActorHandle<T>`, whose `get()` / `operator->()` re-query `VirtualCore::_handler` to confirm the actor is still registered and alive before returning the cached pointer (`include/qb/core/Actor.h:1200`).
+- A `RefActorHandle<T>` may only be dereferenced from the owning `VirtualCore`'s worker thread — the thread that created the referenced actor. Cross-thread dereference is a logic error, asserted in debug builds (`include/qb/core/Actor.h:1204`).
+- Service-actor ids are reserved for the lifetime of the process. `VirtualCore::removeActor` recycles only non-service ids back into the pool, keeping each `ServiceIndex` stable (`source/core/src/VirtualCore.cpp:509`).
 
-## 3. Event system
+## Event system
 
-### 3.1 Identity
+### Identity
 
-- Each event / service type has a dense, collision-free 16-bit `TypeId` assigned at first use through a magic-static counter in `qb::detail::type_id_for<T>()` (finding 2.1). The counter is atomic so concurrent first-instantiations from different TUs are race-free.
-- The legacy address-narrowing path has been removed. Do not write code that assumes `type_id<T>()` is `constexpr` or derivable from an address.
-- `type_id<T>()` is **stable within a process run** but is not guaranteed to be stable **across runs** — do not persist it.
+- Each event type has a stable 16-bit `qb::TypeId` assigned at first use through a magic-static, atomically incremented counter (`qb::type_id<T>()`, `include/qb/core/Event.h:61`). `ServiceActor<Tag>` indices are allocated once under that same magic-static guarantee, with a mutex guarding the shared service-id map insertion, so the id is unique and valid even under concurrent first use (`include/qb/core/Actor.tpp:153`).
+- A `type_id<T>()` value is stable within a single process run but is **not** stable across runs. Do not persist it.
 
-### 3.2 Push vs send
+### Identifiers
 
-- `push<Event>()` uses `allocate_back` on the destination pipe → FIFO, ordered between the same (source, dest) pair, works with any `Event` type.
-- `send<Event>()` uses `allocate` on the destination pipe → may reuse holes, faster, but ordering is not preserved. Requires `event_qos0_type` (trivially destructible events).
-- `broadcast<Event>()` fan-outs to every active core; each core processes the event independently on its worker thread.
+- `qb::ActorId` is a 32-bit compound of a `ServiceId` (the actor's slot within its core) and a `CoreId` (which `VirtualCore` hosts it). Default-construction yields `ActorId::NotFound` (`== 0`, invalid); `is_valid()` checks the value against `NotFound` (`include/qb/core/ActorId.h:403`).
+- `ActorId::BroadcastSid` (`ServiceId` max) marks an id as a broadcast target. A `qb::BroadcastId(core)` used with `push<>()` delivers to every actor on one core; `Actor::broadcast<Event>()` fans out to every active core (`include/qb/core/Actor.h:849`).
 
-### 3.3 Event bucket layout
+### Sending: push vs send
 
-- An `Event` is cacheline-aligned (`QB_LOCKFREE_CACHELINE_ALIGNMENT`) and crafted so its metadata (`state`, `bucket_size`, `id`, `dest`, `source`) fits in a single cacheline. Keep `EventId` at 16 bits to preserve that property (finding 2.1 — acknowledged trade-off).
-- `base_pipe::allocate_back` relocates existing buckets via `memcpy` when the pipe grows. **Events MUST be trivially relocatable**: this is a documented precondition. Concretely: no self-pointers, no members that register themselves with an external registry in their ctor/dtor. Most payloads satisfy this (PODs, `std::string` with SSO, `std::unique_ptr`, etc.). If you have an event with a self-pointer, redesign it to hold the indirection elsewhere (finding 2.2 — kept by design).
+| Primitive | Ordering | Constraint | Use when |
+|---|---|---|---|
+| `push<Event>(dest, args...)` | FIFO per (source, dest) pair | any event type, including non-trivial members | the default — most sends |
+| `send<Event>(dest, args...)` | **unordered** | event type must be trivially destructible | order is irrelevant and you have measured a need to skip ordering |
+| `broadcast<Event>(args...)` | per-core independent | any event type | fan-out to every active core |
 
-### 3.4 Deadlock recovery between cores
+- `push<Event>()` guarantees ordered delivery to the same destination from the same source (`include/qb/core/Actor.h:728`, mirrored by `qb::Pipe::push`, `include/qb/core/Pipe.h:118`). It returns a mutable reference to the event in the pipe buffer; you may set fields on it before it is consumed, but you must not store the reference past the current scope.
+- `send<Event>()` is unordered and **requires the event type to be trivially destructible** — `VirtualCore::send` enforces this with `static_assert(std::is_trivially_destructible_v<T>, ...)` (`include/qb/core/VirtualCore.tpp:126`). Events holding `std::string`, `std::vector`, and similar non-trivial members are rejected at compile time. `qb::string<N>` and POD payloads are fine. Prefer `push()` unless you have measured a need.
 
-`VirtualCore::__flush_all__` drains outbound pipes to peers via their mailboxes. If a peer's mailbox is full:
+> The 16-bit `EventId` keeps an event's metadata (`state`, `bucket_size`, `id`, `dest`, `source`) within one cacheline. This is a deliberate trade-off; do not assume room for a wider id.
 
-- **Non-QoS events** (`qos == 0`): single `try_send` attempt, dropped on failure (best-effort semantics).
-- **QoS events**: bounded three-stage backoff (finding 2.4):
-  - `[0, 64)` attempts → `qb::spin_loop_pause()` hint (CPU-friendly, no scheduler involvement)
-  - `[64, 512)` attempts → `std::this_thread::yield()` (peer consumer gets a slot)
-  - `>= 512` → partial flush (keep the unsent tail in the pipe), `mailbox.notify()` the peer, return to workflow.
+### reply and forward
 
-**Termination is guaranteed in bounded time**: after a partial flush, the workflow calls `__receive__`, which drains the local mailbox → frees space for peers → their next `try_send` succeeds. Formally no deadlock, no starvation.
+- `reply(event)` returns a received event to its source by swapping `dest` and `source` (`source/core/src/Actor.cpp:135`). `forward(dest, event)` re-routes it to a new destination while **preserving the original source** (`source/core/src/Actor.cpp:144`).
+- Both reuse the received event object, so the `on()` handler must take the event by non-const reference. After the call the event is consumed and must not be touched again.
+- Broadcast events cannot be replied to or forwarded; the attempt is logged and dropped (`source/core/src/Actor.cpp:137`, `source/core/src/Actor.cpp:149`).
 
----
+### Events must be trivially relocatable
 
-## 4. Memory ordering cheat-sheet
+The pipe buffer relocates existing event buckets when it grows. Events must therefore be **trivially relocatable**: no self-pointers, and no member that registers itself with an external registry from its constructor or destructor. PODs, `qb::string<N>`, `std::string` with SSO, and `std::unique_ptr` satisfy this. If an event must hold a self-reference, redesign it to keep the indirection elsewhere.
 
-| Data                                   | Access pattern             | Why safe                                                                              |
-|----------------------------------------|----------------------------|---------------------------------------------------------------------------------------|
-| `Actor::_alive`                        | plain read/write           | Single-thread owner (§ 2.3).                                                          |
-| `Actor` member fields                  | plain read/write           | Idem.                                                                                 |
-| `VirtualCore::_actors` / `_callback_list` | plain read/write        | Only mutated on the owning worker thread.                                             |
-| `Main::_signal_pending`                | `volatile std::sig_atomic_t` | Async-signal-safe read in the worker loop.                                           |
-| `Main::_stop_source` / `_stop_token`   | `std::stop_*`              | Standard library provides the ordering (`request_stop` acts as release / poll as acquire). |
-| `VirtualCore::_nb_service`             | `atomic<ServiceId>` relaxed | Published through magic-static acquire edge (§ 2 / finding 2.3).                     |
-| `detail::_type_id_counter`             | `atomic<TypeId>` relaxed   | Idem (finding 2.1).                                                                   |
-| MPSC mailbox (`SharedCoreCommunication::Mailbox`) | lock-free ringbuffer | Own internal acquire/release (see `lockfree/mpsc/ringbuffer.h`).                      |
+### noexcept on the message path
 
-No `std::mutex` on the hot path. The only mutexes in qb-core protect:
-- The `servicesMutex()` (mutation of the `type_id<Tag>() → ServiceId` map — rare, only at static init).
-- `SharedCoreCommunication::Mailbox::_mtx` (condition variable parking when latency > 0 — only when truly idle).
+`push()`, `send()`, `broadcast()`, and `Pipe::push()` / `Pipe::allocated_push()` are all `noexcept`, yet they may grow the pipe buffer (which can throw `std::bad_alloc`) or run an event constructor that throws. Because a throw cannot escape a `noexcept` function, **any such failure calls `std::terminate()` and aborts the process** (`include/qb/core/Actor.h:723`, `include/qb/core/Pipe.h:126`). This is intentional, not a recoverable error. Keep events small and their constructors allocation-light.
 
----
+### Bounded inter-core flush (no cross-core deadlock)
 
-## 5. Coroutines & async I/O
+`VirtualCore::__flush_all__` drains outbound pipes into peer mailboxes (`source/core/src/VirtualCore.cpp:219`). When a peer's mailbox is full:
 
-- `Actor::spawn_async` eagerly allocates a single `shared_ptr<atomic<size_t>>` active-coroutine counter in the `Actor` ctor (finding 2.12). Every `spawn_async` call is a single `fetch_add` + spawn on the hot path.
-- Coroutine bodies run in the same event loop as the actor (`qb::io::async::listener::current`). You can freely `co_await` on `qb::io::async::*` awaitables; on resumption, you are back on the owning worker thread.
-- **Do not** capture a raw actor pointer into a coroutine unless you can prove the coroutine completes before the actor dies. Use `qb::RefActorHandle<T>` or a `qb::coroutine::scope` with cancellation to propagate teardown.
-- A dying actor with outstanding coroutines logs a warning; the coroutines are NOT forcibly cancelled — that is the caller's responsibility.
+- **Best-effort events** (`event.state.qos == 0`): a single `try_send` attempt, then dropped on failure.
+- **QoS-guaranteed events**: a bounded spin-then-yield backoff before partial flush, with tunables `kFlushSpinAttempts = 64` and `kFlushYieldAttempts = 512` (`source/core/src/VirtualCore.cpp:213`):
+  - attempts `[0, 64)` — `qb::spin_loop_pause()` (CPU hint, no scheduler involvement);
+  - attempts `[64, 512)` — `std::this_thread::yield()` (give the peer consumer a slot);
+  - at `512` — partial flush: keep the unsent tail in the pipe, notify the peer, and return to the workflow.
 
----
+Termination is guaranteed in bounded time: after a partial flush the workflow drains its own mailbox, which frees space for peers, whose next `try_send` then succeeds. The design admits no cross-core deadlock and no starvation.
 
-## 6. CPU affinity & shutdown
+## Coroutines inside actors
 
-- `qb::CoreInitializer::setAffinity(CoreIdSet)` pins the VirtualCore's thread. Pass `qb::CoreIdSet{qb::NoAffinity}` (or any set with no real core id < `qb::MaxCores`) to explicitly opt out of pinning (finding 2.11). See `@ref NoAffinity`.
-- `Main::stop()` is async-signal-safe: sets a `volatile sig_atomic_t` that `__workflow__` polls.
-- `~Main()` additionally requests the `std::stop_source`, providing a signal-free shutdown path that works on platforms without POSIX signals (finding 2.17). Workers observe the token in `__workflow__` and synthesise a `SignalEvent` broadcast so existing shutdown handlers keep working.
+- `Actor::spawn_async(func)` is the supported way to run a C++23 coroutine inside an actor (`include/qb/core/Actor.h:1036`). It must be called from the actor's worker thread; a debug assertion checks that a thread-local coroutine scheduler exists on the calling thread (`include/qb/core/Actor.tpp:256`).
+- A coroutine spawned this way runs in an **isolated context** and **must not access actor members after any `co_await`** — the actor may be destroyed while the coroutine is suspended, which is undefined behavior (`include/qb/core/Actor.h:988`). Capture everything you need by value before the first suspension point, and communicate back only through the `qb::CoroContext` handed to the lambda: `ctx.push<Event>(...)`, `ctx.id()`, `ctx.time()`. The context carries the actor's `ActorId` by value, never a raw `this`.
+- The active-coroutine counter is an eagerly allocated `shared_ptr<atomic<size_t>>` (`include/qb/core/Actor.h:1093`), so each `spawn_async` is a single `fetch_add` plus a spawn on the hot path. Query it with `has_active_coroutines()` (`include/qb/core/Actor.h:1042`) or `active_coroutine_count()` (`include/qb/core/Actor.h:1050`).
+- Coroutines are **not** forcibly cancelled when the actor dies; that is the caller's responsibility. The strict mono-thread rule for the coroutine layer is documented in [qb-io invariants](./io_invariants.md).
 
----
+## CPU affinity and shutdown
 
-## 7. Do-and-Don't summary
+- `qb::CoreInitializer::setAffinity(CoreIdSet)` pins a worker's thread, best-effort. A logical `CoreId` need not map to a physical CPU, so a failed `pthread_setaffinity_np` / `SetThreadAffinityMask` only warns and never fails `VirtualCore` init (`source/core/src/VirtualCore.cpp:302`). Core ids `>= qb::MaxCores`, including the `qb::NoAffinity` sentinel, are filtered out before pinning — pass a set containing only `qb::NoAffinity` to opt out of pinning explicitly.
+- Shutdown has three triggers wired to the same plumbing (`source/core/src/Main.cpp:172`): a POSIX signal (`SIGINT` / `SIGTERM` via `sigaction`), `Main::stop()` setting a `volatile sig_atomic_t` that the workflow polls, and the C++20 `std::stop_source` (`request_stop()` on `~Main` or programmatically). A worker that observes any of them synthesizes a virtual `SIGINT` and broadcasts a `SignalEvent`, so existing shutdown handlers keep working on platforms with or without POSIX signals.
 
-**Do**
-- Keep all actor state accesses on the owning worker thread.
-- Use `qb::RefActorHandle<T>` when referencing a same-core child actor.
-- Use `allocated_push<Event>()` when you need fine-grained control of the bucket, otherwise `push<Event>()`.
-- Write events that are trivially relocatable (no self-pointers).
-- Opt out of default event registrations (`qb::no_default_events`) for short-lived pool-reused actors.
+## Memory ordering cheat-sheet
 
-**Don't**
-- Don't touch `Actor::_alive` from outside the owning thread.
-- Don't persist `type_id<T>()` across runs.
-- Don't block the worker thread (no `std::this_thread::sleep_for`, no heavy syscalls) — use a coroutine or a dedicated IO actor.
-- Don't capture raw actor pointers into coroutines.
-- Don't rely on any kind of lock-based synchronization to "share" actor state.
+| Data | Access pattern | Why it is safe |
+|---|---|---|
+| `Actor::_alive` | plain read/write | single-thread owner (`include/qb/core/Actor.h:218`) |
+| `Actor` member fields | plain read/write | same |
+| `VirtualCore` actor maps / callback list | plain read/write | mutated only on the owning worker thread (`include/qb/core/VirtualCore.h:172`) |
+| `Main` signal flag | `volatile std::sig_atomic_t` | async-signal-safe poll in the worker loop |
+| `Main::_stop_source` / `_stop_token` | `std::stop_*` | standard library supplies the ordering (request_stop releases, poll acquires) |
+| Service-id registration | atomic + magic-static + mutex | one-time cross-thread publish (`include/qb/core/Actor.tpp:153`) |
+| Inter-core mailbox | lock-free MPSC ring buffer | own internal acquire/release (see [lock-free primitives](./lockfree_primitives.md)) |
 
----
+There is no `std::mutex` on the message path. The only locks in `qb-core` guard the one-time service-id map (static-init only) and the mailbox condition variable used when a core parks while truly idle at non-zero latency.
 
-**(Cross-refs:** [API Overview](./api_overview.md) · [FAQ](./faq.md) · [QB_CORE_PLAN.md](../../QB_CORE_PLAN.md) — finding numbers referenced above.)**
+## Pitfalls
+
+- **Touching another actor's state directly.** Calling a public method on a raw `addRefActor` pointer bypasses the mailbox and the actor model's guarantees, and dangles after the child's `kill()` (`include/qb/core/Actor.h:936`). Send an event to the child's `id()`, or hold a `RefActorHandle<T>`.
+- **Reading `_alive` from outside the owning thread.** It is not atomic; a cross-thread read is a data race (`include/qb/core/Actor.h:218`). Use `RefActorHandle<T>`.
+- **Capturing `this` (or any member by reference) into a `spawn_async` coroutine.** The actor can die while the coroutine is suspended (`include/qb/core/Actor.h:988`). Capture by value; reach the actor only through `CoroContext`.
+- **Blocking the worker thread.** `std::this_thread::sleep_for`, a heavy syscall, or a long computation in a handler or `onCallback()` stalls every actor on the core (`include/qb/core/ICallback.h:16`). Offload to a coroutine or a dedicated I/O actor.
+- **Letting an event constructor throw under load.** The `noexcept` message path terminates the process on a thrown exception (`include/qb/core/Pipe.h:126`). Keep events small and allocation-light.
+- **Using `send()` for ordered work.** `send()` is unordered and rejects non-trivially-destructible events at compile time (`include/qb/core/VirtualCore.tpp:126`). When ordering matters, use `push()`.
+- **Persisting `type_id<T>()`.** It is process-local and not stable across runs.
+
+## See also
+
+- [Threading model](../2_core_concepts/threading_model.md) — the one-core-one-thread design in narrative form.
+- [Event system](../2_core_concepts/event_system.md) — event types, QoS levels, and routing.
+- [qb-io invariants](./io_invariants.md) — the matching contract for the async I/O layer and coroutine scheduler.
+- [API overview](./api_overview.md) · [FAQ](./faq.md) · [Glossary](./glossary.md)

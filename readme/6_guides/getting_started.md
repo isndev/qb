@@ -1,263 +1,336 @@
-@page guides_getting_started_md Getting Started with the QB Actor Framework
-@brief Your first steps to building high-performance concurrent applications with QB.
+# Getting started
 
-# Getting Started with the QB Actor Framework
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-Welcome to the QB Actor Framework! This guide will walk you through setting up your environment, building the framework, and running your first simple actor-based application. Our goal is to get you from zero to a running QB application quickly.
+Install qb, build and run a first actor, add a non-blocking timer, and find the next page to read.
 
-## 1. What You'll Need (Prerequisites)
+**Prerequisites:** a C++23 toolchain and CMake 3.24+ (see [Build requirements](#1-prerequisites)) — **See also:** [Building from source](../7_reference/building.md), [CMake and dependencies](../7_reference/cmake_dependencies.md), [Core concepts: the actor model](../2_core_concepts/actor_model.md), [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md)
 
-Before you begin, ensure your development environment meets these requirements:
+## Summary
 
-*   **C++23-capable compiler:** Recent GCC, Clang, or MSVC with C++23 enabled (qb sets `CXX_STANDARD 23`).
-*   **CMake:** **3.22 or newer.**
-*   **Git:** For cloning qb; also used by **FetchContent** when tests or benchmarks are enabled (default), unless you use system GTest/Benchmark packages.
-*   **(Optional but Recommended for Full Features)**
-    *   **OpenSSL Development Libraries:** If you plan to use SSL/TLS for secure networking or QB's cryptography features (`qb::crypto`, `qb::jwt`).
-    *   **Zlib Development Libraries:** If you intend to use data compression features (`qb::compression`).
+This page takes you from an empty directory to a running, multi-actor program. You will:
 
-## 2. Obtain the QB Framework Code
+1. Confirm the toolchain qb needs.
+2. Bring qb into a project — either by scaffolding a new one or by embedding the source tree.
+3. Write a first actor, then a two-actor program that exchanges messages.
+4. Add a non-blocking timer driven by the `qb-io` event loop.
+5. Build, run, and check for engine errors.
 
-First, clone the QB Actor Framework repository to your local machine:
+Every API used here is part of `qb-core` (the actor engine) and `qb-io` (the asynchronous runtime). The two libraries compose: linking `qb::core` pulls in `qb::io`.
 
-```bash
-git clone <your_repository_url> qb-framework
-cd qb-framework
-```
+## 1. Prerequisites
 
-GoogleTest and Google Benchmark are **not** git submodules anymore: CMake **FetchContent** downloads pinned versions when `QB_BUILD_TESTS` or `QB_BUILD_BENCHMARKS` is **ON** (see [CMake and dependencies](../7_reference/cmake_dependencies.md)).
+| Requirement | Detail |
+|---|---|
+| C++23 compiler | CI builds with GCC and Clang on Linux, Apple Clang and GCC on macOS, and MSVC on Windows. qb propagates a PUBLIC `cxx_std_23` usage requirement, so consumers compile as C++23 automatically. |
+| CMake | **3.24 or newer.** 3.24 is the floor because qb resolves fetchable dependencies with `FetchContent` + `find_package` integration. |
+| Git | Required to clone qb and to fetch its submodules. GoogleTest and Google Benchmark are downloaded by `FetchContent` when tests or benchmarks are enabled. |
+| OpenSSL (optional) | Enables SSL/TLS transports and the `qb::crypto`/`qb::jwt` utilities. Controlled by `QB_WITH_SSL` (default `ON`, auto-disabled if OpenSSL is absent). |
+| zlib (optional) | Enables compression utilities. Controlled by `QB_WITH_COMPRESSION` (default `ON`). |
 
-## 3. Build the QB Framework Libraries
+libev and stduuid ship bundled in the source tree and need no installation. For the full option list, see [Build requirements](../7_reference/building.md) and [CMake and dependencies](../7_reference/cmake_dependencies.md).
 
-QB uses CMake for its build system. Here's a typical out-of-source build process:
+<!-- src: README.md (Requirements), qb/readme/7_reference/cmake_dependencies.md -->
 
-```bash
-# From the root of the qb-framework directory
+## 2. Bring qb into a project
 
-# 1. Create a build directory
-mkdir build
-cd build
+There are two on-ramps. Pick one.
 
-# 2. Configure the build (from within the 'build' directory)
-#    This example creates a Release build and enables tests.
-#    Adjust QB_WITH_SSL and QB_WITH_COMPRESSION if you need those features.
-cmake .. -DCMAKE_BUILD_TYPE=Release -DQB_BUILD_TESTS=ON -DQB_WITH_SSL=OFF -DQB_WITH_COMPRESSION=OFF
+### Option A — scaffold a new project
 
-# 3. Build the framework (libraries, examples, tests)
-cmake --build . --config Release
-# On Linux/macOS, you can often speed this up with: make -j$(nproc) or make -j<number_of_cores>
-```
-
-This process compiles the `qb-io` and `qb-core` libraries. For more detailed build options and installation instructions, please refer to the [Reference: Building the QB Framework](./../7_reference/building.md).
-
-## 4. Your First QB Application: "PingPongActor"
-
-Let's create a minimal application with two actors: one sends a "Ping", and the other replies with a "Pong".
-
-**a) Create a Project Directory:**
-
-Outside the `qb-framework` directory, create a new directory for your project, for example, `my_qb_app`.
+The `qb-new-project.sh` helper bootstraps a project from the `qb-sample-project` template. It clones the template, re-initializes it as a fresh Git repository under the name you pass, and pulls qb (and any other dependencies) as submodules:
 
 ```bash
-mkdir my_qb_app
-cd my_qb_app
+curl -fsSL https://raw.githubusercontent.com/isndev/qb/main/script/qb-new-project.sh | bash /dev/stdin MyProject
+cd MyProject
+cmake -DCMAKE_BUILD_TYPE=Release -B build
+cmake --build build --parallel
 ```
 
-**b) `ping_pong_main.cpp`:**
+The result is a buildable CMake project with qb wired in and ready to extend. Build it with the commands above, then run the executable named in the generated `CMakeLists.txt`. <!-- TODO(verify): the template's file layout and executable name live in the external qb-sample-project repository, not in this tree. --> Skip to [section 3](#3-your-first-actor) and edit the generated source to add your own actors.
 
-Create a file named `ping_pong_main.cpp` in your `my_qb_app` directory with the following content:
+<!-- src: qb/script/qb-new-project.sh:16-31 -->
+
+### Option B — embed qb in an existing CMake project
+
+Clone qb with its submodules into your project, then add it as a subdirectory:
+
+```bash
+git clone --recursive https://github.com/isndev/qb.git
+```
+
+```cmake
+# CMakeLists.txt
+cmake_minimum_required(VERSION 3.24)
+project(my_app CXX)
+
+add_subdirectory(qb)                                   # builds qb-core and qb-io
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE qb::core)         # qb::core pulls in qb::io
+```
+
+To consume an installed copy instead of embedding the source, replace `add_subdirectory(qb)` with `find_package(qb CONFIG REQUIRED)`, which provides the same `qb::core` and `qb::io` targets.
+
+<!-- src: README.md (Integrate into your build) -->
+
+## 3. Your first actor
+
+An actor owns its state, subscribes to the event types it handles in `onInit()`, and reacts to each message one at a time. The program below defines one actor that sends an event to itself and terminates on receipt.
 
 ```cpp
-#include <qb/main.h>     // QB Engine: qb::Main
-#include <qb/actor.h>    // Actor base class: qb::Actor, qb::ActorId
-#include <qb/event.h>    // Event base class: qb::Event
-#include <qb/io.h>       // For qb::io::cout (thread-safe console output)
-#include <iostream>      // For std::endl
+// main.cpp
+#include <qb/main.h>     // qb::Main — the engine
+#include <qb/actor.h>    // qb::Actor base class, qb::ActorId
+#include <qb/event.h>    // qb::Event base class
+#include <qb/io.h>       // qb::io::cout — thread-safe console output
 
-// --- 1. Define Events ---
-// Event sent from Pinger to Ponger
-struct PingEvent : qb::Event {
-    qb::ActorId pinger_id; // So Ponger knows who to reply to
-    int ping_value;
-
-    PingEvent(qb::ActorId sender, int val) : pinger_id(sender), ping_value(val) {}
+struct GreetingEvent : qb::Event {
+    qb::string<64> message;
+    explicit GreetingEvent(const char *msg) : message(msg) {}
 };
 
-// Event sent from Ponger back to Pinger
-struct PongEvent : qb::Event {
-    int pong_value;
-
-    explicit PongEvent(int val) : pong_value(val) {}
-};
-
-// --- 2. Define Pinger Actor ---
-class PingerActor : public qb::Actor {
-private:
-    qb::ActorId _ponger_actor_id;
-    int _pings_sent = 0;
-    const int _max_pings = 3;
-
+class GreeterActor : public qb::Actor {
 public:
-    // Constructor: Takes the ID of the Ponger actor
-    explicit PingerActor(qb::ActorId ponger_id) : _ponger_actor_id(ponger_id) {}
+    bool onInit() final {
+        registerEvent<GreetingEvent>(*this);     // subscribe to GreetingEvent
+        push<GreetingEvent>(id(), "Hello");      // send one to self
+        return true;                             // returning false aborts creation
+    }
 
-    bool onInit() override {
-        qb::io::cout() << "PingerActor [" << id() << "] initialized. Target Ponger: " << _ponger_actor_id << ".\n";
-        registerEvent<PongEvent>(*this); // Pinger needs to handle Pong replies
-        registerEvent<qb::KillEvent>(*this);
+    void on(const GreetingEvent &event) {
+        qb::io::cout() << "Received: " << event.message << '\n';
+        kill();                                  // work done; terminate this actor
+    }
+};
 
-        // Send the first Ping
-        sendNextPing();
+int main() {
+    qb::Main engine;
+    engine.addActor<GreeterActor>(0);            // construct on core 0
+    engine.start();                              // start worker threads (async)
+    engine.join();                               // block until all actors stop
+    return 0;
+}
+```
+
+What each call does:
+
+- **`engine.addActor<GreeterActor>(0)`** registers the actor for `VirtualCore` 0, reserves its `qb::ActorId`, and returns that ID immediately. The actor itself is constructed on the worker thread when `start()` runs. All actors must be added before `start()`.
+- **`onInit()`** runs once, after construction and ID assignment, before any event is processed. Subscribe to your event types here with `registerEvent<T>(*this)`. Returning `false` aborts creation and immediately destroys the actor.
+- **`push<GreetingEvent>(id(), "Hello")`** enqueues an event for the destination `ActorId` (here, `id()` — this actor itself). `push` guarantees ordered delivery from the same source to the same destination.
+- **`on(const GreetingEvent &)`** is the handler the engine invokes when the subscribed event arrives.
+- **`kill()`** marks the actor for termination after the current handler returns.
+- **`engine.start()`** launches one worker thread per used core, then returns. **`engine.join()`** blocks until every actor has terminated.
+
+`registerEvent`, `push`, `on`, and `kill` are members of `qb::Actor`; `addActor`, `start`, and `join` are members of `qb::Main`.
+
+<!-- src: README.md (Your first actor), examples/core/example1_simple_actor.cpp -->
+
+### The `start()` / `join()` contract
+
+`Main::start(bool async = true)` has two modes:
+
+- **`start()` (async, the default)** launches all `VirtualCore` worker threads and returns immediately. The calling thread is free; call `join()` to block until shutdown. This is the idiom used above.
+- **`start(false)`** turns the calling thread into one of the worker threads and blocks until the engine stops. Use it when you do not want a separate main thread; in that mode there is no separate thread to `join()`.
+
+Either way, check `engine.hasError()` after the engine stops to detect a core that terminated on an error.
+
+<!-- src: qb/include/qb/core/Main.h:478-512 -->
+
+## 4. A two-actor program: ping/pong
+
+This expands the first example into two actors that exchange messages. `PongerActor` replies to each `PingEvent` with a `PongEvent`; `PingerActor` sends a fixed number of pings, then shuts both actors down.
+
+```cpp
+// ping_pong.cpp
+#include <qb/main.h>
+#include <qb/actor.h>
+#include <qb/event.h>
+#include <qb/io.h>
+
+// --- Events ---
+struct PingEvent : qb::Event {
+    qb::ActorId from;   // so Ponger knows whom to reply to
+    int value;
+    PingEvent(qb::ActorId sender, int v) : from(sender), value(v) {}
+};
+
+struct PongEvent : qb::Event {
+    int value;
+    explicit PongEvent(int v) : value(v) {}
+};
+
+// --- Ponger: replies to each Ping with a Pong ---
+class PongerActor : public qb::Actor {
+public:
+    bool onInit() final {
+        registerEvent<PingEvent>(*this);
+        // qb::KillEvent is auto-subscribed by default; no need to register it.
         return true;
     }
 
-    void on(const PongEvent& event) {
-        qb::io::cout() << "PingerActor [" << id() << "] received Pong with value: " << event.pong_value << ".\n";
-        if (_pings_sent < _max_pings) {
-            sendNextPing();
+    void on(const PingEvent &event) {
+        qb::io::cout() << "Ponger received ping #" << event.value << '\n';
+        push<PongEvent>(event.from, event.value);   // reply with the same value
+    }
+};
+
+// --- Pinger: sends a fixed number of pings, then stops both actors ---
+class PingerActor : public qb::Actor {
+    qb::ActorId _ponger;
+    int _sent = 0;
+    static constexpr int _max = 3;
+
+public:
+    explicit PingerActor(qb::ActorId ponger) : _ponger(ponger) {}
+
+    bool onInit() final {
+        registerEvent<PongEvent>(*this);
+        send_ping();
+        return true;
+    }
+
+    void on(const PongEvent &event) {
+        qb::io::cout() << "Pinger received pong #" << event.value << '\n';
+        if (_sent < _max) {
+            send_ping();
         } else {
-            qb::io::cout() << "PingerActor [" << id() << "] finished sending pings. Requesting Ponger to stop.\n";
-            push<qb::KillEvent>(_ponger_actor_id); // Tell Ponger to stop
-            kill(); // Pinger stops itself
+            push<qb::KillEvent>(_ponger);   // ask Ponger to terminate
+            kill();                         // terminate self
         }
     }
 
-    void on(const qb::KillEvent& /*event*/) {
-        qb::io::cout() << "PingerActor [" << id() << "] shutting down.\n";
-        kill();
-    }
-
 private:
-    void sendNextPing() {
-        _pings_sent++;
-        qb::io::cout() << "PingerActor [" << id() << "] sending Ping #" << _pings_sent << " to " << _ponger_actor_id << ".\n";
-        push<PingEvent>(_ponger_actor_id, id(), _pings_sent); // Send my ID and ping value
+    void send_ping() {
+        ++_sent;
+        push<PingEvent>(_ponger, id(), _sent);
     }
 };
 
-// --- 3. Define Ponger Actor ---
-class PongerActor : public qb::Actor {
+int main() {
+    qb::Main engine;
+
+    qb::ActorId ponger = engine.addActor<PongerActor>(0);
+    if (!ponger.is_valid()) {
+        qb::io::cout() << "Failed to add PongerActor\n";
+        return 1;
+    }
+
+    qb::ActorId pinger = engine.addActor<PingerActor>(0, ponger);
+    if (!pinger.is_valid()) {
+        qb::io::cout() << "Failed to add PingerActor\n";
+        return 1;
+    }
+
+    engine.start();
+    engine.join();
+
+    return engine.hasError() ? 1 : 0;
+}
+```
+
+Notes on the new pieces:
+
+- **`addActor` returns `ActorId::NotFound` on failure** (for example, if a core is full). `ActorId::is_valid()` checks for that sentinel, so guard the returned IDs before using them.
+- **`qb::KillEvent` is auto-subscribed.** Every actor subscribes to `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, and `PingEvent` at construction, so neither actor registers `KillEvent` explicitly. The default `on(const KillEvent &)` handler calls `kill()`. (To opt out of the four default subscriptions, construct with `qb::no_default_events` and register `KillEvent` yourself.)
+- **`push<qb::KillEvent>(_ponger)`** sends a kill request to another actor; the receiver's default handler terminates it gracefully.
+
+Both actors run on core 0 here. To distribute them across cores, pass a different `CoreId` to `addActor`; messages cross cores over lock-free queues with no code change. See [the threading model](../2_core_concepts/threading_model.md).
+
+<!-- src: examples/core/example1_simple_actor.cpp, qb/source/core/src/Actor.cpp:38-41,70-72, qb/include/qb/core/ActorId.h:403,444, qb/include/qb/core/Main.tpp:38,60 -->
+
+## 5. Add a non-blocking timer
+
+Actor handlers run on the `VirtualCore`'s event-loop thread, so they must not block. To run code after a delay without blocking, schedule it on the `qb-io` event loop with `qb::io::async::callback`. The callback fires on the same core, between event deliveries.
+
+`callback` takes a callable and a `std::chrono::duration`:
+
+```cpp
+#include <qb/main.h>
+#include <qb/actor.h>
+#include <qb/io.h>
+#include <qb/io/async.h>          // qb::io::async::callback
+#include <chrono>
+
+using namespace std::chrono_literals;
+
+class HeartbeatActor : public qb::Actor {
+    int _ticks = 0;
+
 public:
-    bool onInit() override {
-        qb::io::cout() << "PongerActor [" << id() << "] initialized and ready for Pings.\n";
-        registerEvent<PingEvent>(*this); // Ponger handles Ping requests
-        registerEvent<qb::KillEvent>(*this);
+    bool onInit() final {
+        schedule_tick();
         return true;
     }
 
-    void on(const PingEvent& event) {
-        qb::io::cout() << "PongerActor [" << id() << "] received Ping #" << event.ping_value << " from " << event.pinger_id << ".\n";
-        // Reply with a Pong, echoing the ping value
-        push<PongEvent>(event.pinger_id, event.ping_value);
-    }
-
-    void on(const qb::KillEvent& /*event*/) {
-        qb::io::cout() << "PongerActor [" << id() << "] shutting down.\n";
-        kill();
+private:
+    void schedule_tick() {
+        // Run this lambda on the event loop ~500 ms from now.
+        qb::io::async::callback([this] {
+            qb::io::cout() << "tick " << ++_ticks << '\n';
+            if (_ticks < 3)
+                schedule_tick();   // re-arm for the next tick
+            else
+                kill();
+        }, 500ms);
     }
 };
 
-// --- 4. Main Application Logic ---
 int main() {
-    qb::io::cout() << "--- QB Ping-Pong Actor Example ---\n";
-
-    // Create the QB Engine instance
     qb::Main engine;
-
-    // Add the PongerActor to core 0. We need its ID to pass to PingerActor.
-    qb::ActorId ponger_id = engine.addActor<PongerActor>(0);
-    if (!ponger_id.is_valid()) {
-        qb::io::cout() << "Error: Failed to add PongerActor!\n";
-        return 1;
-    }
-    qb::io::cout() << "PongerActor created on core 0 with ID: " << ponger_id << ".\n";
-
-    // Add the PingerActor to core 0, providing it with the PongerActor's ID.
-    qb::ActorId pinger_id = engine.addActor<PingerActor>(0, ponger_id);
-    if (!pinger_id.is_valid()) {
-        qb::io::cout() << "Error: Failed to add PingerActor!\n";
-        return 1;
-    }
-    qb::io::cout() << "PingerActor created on core 0 with ID: " << pinger_id << ".\n";
-
-    // Start the engine. This call will block until all actors have terminated.
-    qb::io::cout() << "Starting QB engine...\n";
-    engine.start(false); // false = run synchronously in this thread
-
-    qb::io::cout() << "QB engine has stopped.\n";
-
-    // Check if any VirtualCore encountered an error during execution
-    if (engine.hasError()) {
-        qb::io::cout() << "Error: Engine stopped due to an error in a VirtualCore!\n";
-        return 1;
-    }
-
-    qb::io::cout() << "--- Ping-Pong Example Finished Successfully ---\n";
-    return 0;
+    engine.addActor<HeartbeatActor>(0);
+    engine.start();
+    engine.join();
+    return engine.hasError() ? 1 : 0;
 }
-
 ```
 
-**c) `CMakeLists.txt` for Your Application:**
+The callback runs on the actor's own core, so capturing `this` and touching member state inside it is safe — there is no cross-thread access. A timeout of zero or less runs the callable inline at the call site rather than scheduling it; the single-argument overload `callback(func)` likewise invokes `func` immediately. Pass a positive duration to defer execution.
 
-Create a `CMakeLists.txt` file in your `my_qb_app` directory:
+For inactivity timeouts, coroutine-based async flows, and the full event-loop surface available to actors, see [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md).
 
-```cmake
-cmake_minimum_required(VERSION 3.22)
-project(MyQBApp CXX)
+<!-- src: qb/include/qb/io/async/io.h:303-311, examples/core/example5_timers.cpp -->
 
-set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+## 6. Build and run
 
-# Find the QB package. 
-# You might need to adjust CMAKE_PREFIX_PATH if QB was installed to a custom location,
-# or if you are building QB alongside your project using add_subdirectory.
-# Example for an installed QB:
-# list(APPEND CMAKE_PREFIX_PATH "/path/to/your/qb-framework/build" "/path/to/your/qb-install-dir")
-find_package(qb REQUIRED CONFIG)
-
-# If QB was built as part of the same CMake project (e.g. via add_subdirectory)
-# ensure you link to the targets directly (qb::qb-core, qb::qb-io)
-
-add_executable(ping_pong_app ping_pong_main.cpp)
-
-# Link your application against the qb-core library (which includes qb-io)
-target_link_libraries(ping_pong_app PRIVATE qb::core)
-
-```
-
-**d) Build and Run Your Application:**
-
-Navigate to your `my_qb_app` directory, then create a build directory, configure, and build:
+Place your source next to a `CMakeLists.txt` that embeds qb (see [Option B](#option-b--embed-qb-in-an-existing-cmake-project)), then:
 
 ```bash
-# From within my_qb_app directory
-mkdir build
-cd build
-
-# Configure - Point to your QB build or install directory if needed
-# If QB was installed to /usr/local, CMake should find it.
-# If QB was built in ../qb-framework/build, you might use:
-# cmake .. -DCMAKE_PREFIX_PATH=../../qb-framework/build
-cmake .. 
-
-# Build
-cmake --build . --config Release
-
-# Run
-./ping_pong_app 
-# On Windows, the executable might be in a subdirectory like ./Release/ping_pong_app.exe
+cmake -DCMAKE_BUILD_TYPE=Release -B build
+cmake --build build --parallel
+./build/my_app
 ```
 
-You should see output from both actors, demonstrating the ping-pong message exchange!
+On Windows with a multi-config generator, the executable lands under a configuration subdirectory, for example `build/Release/my_app.exe`.
 
-## 5. Exploring Further
+Expected output for the ping/pong program:
 
-Congratulations on running your first QB application!
+```text
+Ponger received ping #1
+Pinger received pong #1
+Ponger received ping #2
+Pinger received pong #2
+Ponger received ping #3
+Pinger received pong #3
+```
 
-*   **Included Examples:** The QB framework comes with many more examples in its `example/` directory (e.g., `example/core/`, `example/io/`, `example/core_io/`). Build them as part of the main QB build and explore their code to see various features in action.
-*   **Core Concepts:** Dive deeper into the [Core Concepts](./../2_core_concepts/README.md) to solidify your understanding of actors, events, and asynchronous I/O.
-*   **Module Documentation:** Explore the detailed documentation for [QB-IO Module](./../3_qb_io/README.md) and [QB-Core Module](./../4_qb_core/README.md).
-*   **Other Guides:** Check out other guides for patterns, performance tuning, and error handling.
+A non-zero exit code means `engine.hasError()` reported a core that terminated on an error.
 
-Happy coding with the QB Actor Framework! 
+## Pitfalls
+
+- **Add all actors before `start()`.** `Main::core()` and `Main::addActor()` are only valid before the engine runs; `Main::core()` throws `std::runtime_error` once the engine is running.
+- **Never construct an actor directly.** Actors must be created from inside a `VirtualCore` worker thread via `Main::addActor<T>(...)` (or `core(idx).addActor<T>(...)`). The constructor asserts it is running on a worker thread.
+- **A core with zero actors fails startup.** Startup reports `Error::NoActor` if any used core has no actors; surface it with `hasError()` after the engine stops.
+- **`push`/`send`/`broadcast` are `noexcept`.** An allocation failure while enqueuing cannot be reported and calls `std::terminate()`. Keep events small and allocation-light.
+- **Do not block in a handler or callback.** `on(...)` handlers and `qb::io::async::callback` bodies run on the core's event-loop thread; a blocking call stalls every actor on that core. Use the async surface in [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md) instead.
+- **Subscribe with `registerEvent<T>` in `onInit()`, not your constructor.** `onInit()` is the documented initialization hook: it runs once the actor is fully appended to its core, and returning `false` from it aborts creation cleanly. A constructor cannot signal initialization failure that way.
+
+<!-- src: qb/source/core/src/Main.cpp:200,341, qb/source/core/src/Actor.cpp:32, qb/include/qb/core/Actor.h:723 -->
+
+## Where to go next
+
+- **[Core concepts: the actor model](../2_core_concepts/actor_model.md)** — actors, events, lifecycle, and the guarantees that follow from share-nothing state.
+- **[Core concepts: the event system](../2_core_concepts/event_system.md)** — `push` vs `send`, ordered delivery, `reply`/`forward`, and broadcasts.
+- **[Threading model](../2_core_concepts/threading_model.md)** — placing actors on cores and how inter-core messaging works.
+- **[Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md)** — timers, deferred callbacks, and coroutines from within an actor.
+- **[Patterns cookbook](./patterns_cookbook.md)** and **[Performance tuning](./performance_tuning.md)** — recurring designs and how to make them fast.
+- **Worked examples** ship under `examples/` in the repository: `examples/core/` (actors), `examples/io/` (async I/O), and `examples/core_io/` (the two combined). They build with the framework.

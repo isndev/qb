@@ -1,112 +1,437 @@
-@page qb_io_utilities_md QB-IO: Essential Utilities & Helpers
-@brief Explore the rich set of utility classes and functions in `qb-io` for common system programming tasks.
+# qb-io utilities
 
-# QB-IO: Essential Utilities & Helpers
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-Beyond its core asynchronous I/O and networking capabilities, `qb-io` offers a robust collection of utilities designed to simplify common system programming tasks, enhance performance, and ensure cross-platform compatibility. These utilities cover areas from data manipulation and cryptography to time management and system information.
+Beyond sockets and the event loop, `qb-io` ships a set of standalone utilities — the canonical time vocabulary, cryptography and JWT, compression, URI parsing, fixed-capacity strings and flat hash maps, UUIDs, JSON, and endian helpers — usable on their own without the actor runtime.
 
-## 1. URI Parsing & Manipulation (`qb::io::uri`)
+**Prerequisites:** [qb-io module overview](./README.md) — **See also:** [Async I/O system](./async_system.md), [Protocols](./protocols.md), [Lock-free primitives](./../7_reference/lockfree_primitives.md)
 
-*   **Header:** `qb/io/uri.h`
-*   **Purpose:** Provides comprehensive, RFC 3986 compliant parsing and manipulation of Uniform Resource Identifiers (URIs).
-*   **Key Features:**
-    *   Parses schemes, authority (userinfo, host, port), path, query parameters, and fragments.
-    *   Handles IPv4 and IPv6 host representations.
-    *   Methods like `scheme()`, `host()`, `u_port()` (for numeric port), `path()`, `queries()` (map of decoded query params), `fragment()`.
-    *   Static `uri::encode(string_view)` and `uri::decode(string_view)` for percent-encoding/decoding.
-*   **Example:**
-    ```cpp
-    #include <qb/io/uri.h>
-    // ...
-    qb::io::uri my_uri("http://user@example.com:8080/path?query=val#section");
-    std::cout << "Scheme: " << my_uri.scheme() << ", Host: " << my_uri.host() << std::endl;
-    // my_uri.query("query") would return "val"
-    ```
+---
 
-## 2. Cryptography (`qb::crypto`, `qb::jwt`)
+## Summary
 
-*   **Requires:** `QB_IO_WITH_SSL=ON` CMake option and linked OpenSSL library.
-*   **Headers:** `qb/io/crypto.h`, `qb/io/crypto_jwt.h`
-*   **Purpose:** A powerful suite of cryptographic functions.
-*   **Key Features:**
-    *   **Hashing:** MD5, SHA-1, SHA-2 family (SHA256, SHA384, SHA512), BLAKE2, HMAC variants.
-        *   Example: `std::string hash = qb::crypto::sha256("input string");`
-    *   **Encoding:** Base64, Base64URL, Hexadecimal.
-        *   Example: `std::string b64 = qb::crypto::base64::encode(data_vec);`
-    *   **Key Derivation:** PBKDF2, HKDF, Argon2 (Argon2id, Argon2i, Argon2d).
-    *   **Symmetric Encryption:** AES (CBC, GCM modes with 128, 192, 256-bit keys), ChaCha20-Poly1305.
-    *   **Asymmetric Cryptography:** RSA, ECDSA (P-256, P-384, P-521), EdDSA (Ed25519 for signing), X25519 (for key exchange), ECIES (hybrid encryption).
-    *   **JSON Web Tokens (JWT):** Full support for creating, signing (HS*, RS*, ES*, EdDSA algorithms), and verifying JWTs with claim validation.
-    *   **Secure Utilities:** Password hashing (`crypto::hash_password`), secure random data/salt generation, constant-time comparison.
-*   **(Reference:** Extensive examples in `qb/source/io/tests/system/test-crypto*.cpp` files.**)
+These utilities live in headers under `qb/include/qb/`. Most are header-only and have no third-party dependency. Two slices are gated on optional libraries resolved at configure time:
 
-## 3. Data Compression (`qb::compression`, `qb::gzip`, `qb::deflate`)
+| Slice | Header | Namespace | Build gate |
+|---|---|---|---|
+| Time vocabulary | `qb/system/timestamp.h` | `qb` | always |
+| Crypto + JWT | `qb/io/crypto.h`, `qb/io/crypto_jwt.h` | `qb::crypto`, `qb::jwt` | OpenSSL (`QB_WITH_SSL`) |
+| Compression | `qb/io/compression.h` | `qb::compression`, `qb::gzip`, `qb::deflate` | zlib (`QB_WITH_COMPRESSION`) |
+| URI | `qb/io/uri.h` | `qb::io` | always |
+| Fixed string | `qb/string.h` | `qb` | always |
+| Flat maps/sets | `qb/system/container/unordered_map.h`, `unordered_set.h` | `qb` | always |
+| UUID | `qb/uuid.h` | `qb`, `uuids` | always (vendored `stduuid`) |
+| JSON | `qb/json.h` | `qb` (via `nlohmann`) | always (vendored `nlohmann/json`) |
+| Endian | `qb/system/endian.h` | `qb::endian` | always |
 
-*   **Requires:** `QB_IO_WITH_ZLIB=ON` CMake option and linked Zlib library.
-*   **Header:** `qb/io/compression.h`
-*   **Purpose:** Efficient data compression and decompression using zlib.
-*   **Key Features:**
-    *   Supports **Gzip** and **Deflate** algorithms.
-    *   Simple functions for direct in-memory operations:
-        ```cpp
-        #include <qb/io/compression.h>
-        // ...
-        std::string original = "some data to compress";
-        std::string compressed = qb::gzip::compress(original.data(), original.size());
-        std::string decompressed = qb::gzip::uncompress(compressed.data(), compressed.size());
-        ```
-    *   Streaming API (`compress_provider`, `decompress_provider`) for handling large data sets or stream-based compression/decompression.
-*   **(Reference:** See `qb/source/io/tests/system/test-compression*.cpp` for usage.**)
+`QB_WITH_SSL` and `QB_WITH_COMPRESSION` are user-facing build requests; they resolve to the compile-time defines `QB_HAS_SSL` and `QB_HAS_COMPRESSION` once the dependency is found. If the dependency is absent, the request is forced off and the corresponding header `#error`s when included (`crypto.h` → `"missing OpenSSL Library"`, `compression.h` → `"missing Z Library"`). _(`qb/include/qb/io/crypto.h:33-34`, `qb/include/qb/io/compression.h:37-38`; `docs-overhaul/qb/FACTBOOK.md` build-options table.)_
 
-## 4. High-Precision Time (`qb::wall_time`, `qb::mono_time`, `qb::duration`)
+---
 
-*   **Header:** `qb/system/timestamp.h`
-*   **Purpose:** Platform-independent, nanosecond-precision time points and durations, built directly on `std::chrono`.
-*   **Key Features:**
-    *   **`qb::duration`:** Alias for `std::chrono::nanoseconds`. Represents time spans. Create with `std::chrono` durations (`std::chrono::seconds(5)`, `std::chrono::milliseconds(100)`) or chrono literals (`5s`, `100ms`). Supports arithmetic and unit conversions (e.g., `std::chrono::duration_cast<std::chrono::milliseconds>(d).count()`, `std::chrono::duration_cast<std::chrono::seconds>(d).count()`).
-    *   **`qb::wall_time`:** Alias for `std::chrono::system_clock::time_point`; a wall-clock moment in time. Create with `qb::wall_now()` or `qb::from_iso8601("...")` / `qb::parse_utc(str, fmt)` (both return `std::optional<qb::wall_time>`), or `qb::wall_from_unix_seconds(int64)`. Supports arithmetic with `qb::duration`. Format to string with `qb::to_iso8601(tp)` or `qb::format_utc(tp, "%Y-%m-%d")`, and extract epoch counts with `qb::unix_seconds/millis/micros/nanos(tp)`.
-    *   **`qb::mono_time`:** Alias for `std::chrono::steady_clock::time_point`; a monotonic time point for interval/elapsed-time measurement. Obtain with `qb::mono_now()`.
-    *   **Utilities:** `ScopedTimer` and `LogTimer` for easy performance measurement of code blocks (their callback receives a `qb::duration`); `qb::tsc_ticks()` reads the CPU time-stamp counter.
-*   **(Reference:** See `qb/source/core/tests/unit/test-timestamp.cpp`.**)
+## Time vocabulary (`qb::duration`, `qb::mono_time`, `qb::wall_time`)
 
-## 5. System Information
+The single source of truth for time across qb and its modules, built entirely on `std::chrono`. The model is deliberately minimal: one span type and two distinct instant types. _(`qb/include/qb/system/timestamp.h:82-88`.)_
 
-*   **CPU Details (`qb::CPU`):**
-    *   **Header:** `qb/system/cpu.h`
-    *   Static methods: `CPU::Architecture()`, `CPU::LogicalCores()`, `CPU::PhysicalCores()`, `CPU::ClockSpeed()`, `CPU::HyperThreading()`.
-*   **Endianness (`qb::endian`):**
-    *   **Header:** `qb/system/endian.h`
-    *   Utilities: `endian::native_order()`, `endian::is_little_endian()`, `endian::byteswap(value)`, `to_big_endian(value)`, `from_little_endian(value)`.
+| Type | Alias | Use for |
+|---|---|---|
+| `qb::duration` | `std::chrono::nanoseconds` | Every timeout, delay, TTL, interval, and latency value in public APIs. |
+| `qb::mono_time` | `std::chrono::steady_clock::time_point` | Deadlines, timers, the event-loop "now", latency, RTT. Immune to NTP/DST adjustments. |
+| `qb::wall_time` | `std::chrono::system_clock::time_point` | Dates, expiry, JWT `exp`/`nbf`, TLS validity, logs, wire formats. |
 
-## 6. High-Performance Containers & Allocators
+`qb::duration` accepts any finer-or-equal `std::chrono` literal implicitly (`30s`, `100ms`, `5us`) and **rejects a bare integer**, so a seconds-versus-milliseconds unit confusion cannot compile. The two instant types are distinct on purpose: subtracting a wall instant from a monotonic one does not compile, which removes a class of "timeout fired early because the clock stepped" bugs. _(`qb/include/qb/system/timestamp.h:8-20`.)_
 
-`qb-io` includes several container and allocator types optimized for performance and specific use cases, often avoiding heap allocations or improving cache locality.
+> The pre-2.0 PascalCase time aliases no longer exist. Use the three canonical lowercase types above.
 
-*   **`qb::allocator::pipe<T>`:** (`qb/system/allocator/pipe.h`)
-    *   An extremely efficient, dynamically resizable buffer. It's the backbone of `qb-io`'s stream input/output buffering. Supports `allocate_back()`, `free_front()`, `reorder()`, etc. The `pipe<char>` specialization offers convenient string-like `put()` and `operator<<` methods.
-*   **`qb::string<N>`:** (`qb/string.h`)
-    *   A fixed-capacity string (max `N` characters) stored on the stack within a `std::array`. Significantly faster than `std::string` for small strings as it avoids heap allocations.
-*   **`qb::unordered_map` / `qb::unordered_set`:** (`qb/system/container/unordered_map.h`, `unordered_set.h`)
-    *   Type aliases that point to high-performance hash table implementations (specifically `ska::flat_hash_map` and `ska::flat_hash_set` in release builds) which often outperform `std::unordered_map/set` due to better cache locality.
-*   **`qb::icase_unordered_map`:** (`qb/system/container/unordered_map.h`)
-    *   A case-insensitive version of `qb::unordered_map` specifically for string keys.
+### Public surface
 
-## 7. Lock-Free Primitives (`qb::lockfree`)
+```cpp
+#include <qb/system/timestamp.h>
 
-*   **Headers:** `qb/system/lockfree/*.h`
-*   **Purpose:** Provides low-level, lock-free data structures primarily for internal framework use, crucial for performance in concurrent scenarios.
-*   **Components:**
-    *   `SpinLock`: A lightweight spinlock for very short critical sections.
-    *   `spsc::ringbuffer`: Single-Producer, Single-Consumer lock-free queue.
-    *   `mpsc::ringbuffer`: Multiple-Producer, Single-Consumer lock-free queue (used for inter-core actor communication).
-*   **(See:** [Reference: Lock-Free Primitives](./../7_reference/lockfree_primitives.md) for more details.**)
+namespace qb {
 
-## 8. UUID Generation (`qb::uuid`)
+// Current instants
+mono_time mono_now() noexcept;            // steady_clock::now()
+wall_time wall_now() noexcept;            // system_clock::now()
 
-*   **Header:** `qb/uuid.h`
-*   **Purpose:** Provides RFC 4122 compliant Universally Unique Identifiers.
-*   **Usage:** `qb::uuid my_id = qb::generate_random_uuid();` (Relies on an embedded `stduuid` library version).
+// Unix-epoch extraction (wall instant -> integer count)
+int64_t unix_seconds(wall_time) noexcept;
+int64_t unix_millis (wall_time) noexcept;
+int64_t unix_micros (wall_time) noexcept;
+int64_t unix_nanos  (wall_time) noexcept;
 
-These utilities collectively make `qb-io` a comprehensive library for building robust, high-performance C++ applications, extending well beyond basic asynchronous I/O.
+// Unix-epoch construction (integer count -> wall instant)
+wall_time wall_from_unix_seconds(int64_t) noexcept;
+wall_time wall_from_unix_millis (int64_t) noexcept;
 
-**(Next:** Explore specific module documentation, like [QB-Core Module Overview](./../4_qb_core/README.md) or dive into the [Developer Guides](./../6_guides/README.md) for practical application patterns.**) 
+// UTC formatting / parsing (no time-zone database dependency)
+std::string                 format_utc(wall_time, std::string_view fmt);
+std::string                 to_iso8601(wall_time);          // "YYYY-MM-DDTHH:MM:SSZ"
+std::optional<wall_time>    parse_utc(std::string_view, std::string_view fmt) noexcept;
+std::optional<wall_time>    from_iso8601(std::string_view) noexcept;
+
+// Performance instrumentation (NOT a clock — uncalibrated, per-core)
+uint64_t tsc_ticks() noexcept;
+
+} // namespace qb
+```
+<!-- src: qb/include/qb/system/timestamp.h -->
+
+The chrono literals (`30s`, `100ms`, `5us`, …) are pulled into `qb` via `inline namespace qb::time_literals`, so call sites can write them without an extra `using`. _(`qb/include/qb/system/timestamp.h:104-106`.)_
+
+`format_utc`/`parse_utc` operate in UTC only and have no time-zone database dependency: formatting uses `strftime`, parsing uses `std::get_time` + `timegm`. `format_utc` returns an empty string on failure; `parse_utc`/`from_iso8601` return `std::nullopt` on any parse error. _(`qb/include/qb/system/timestamp.h:29-30,155-208`.)_
+
+`tsc_ticks()` reads the CPU time-stamp counter. It is monotonic per-core and high-resolution but uncalibrated and not comparable to wall or monotonic clocks — use it only for single-thread micro-benchmark deltas, never as a clock. _(`qb/include/qb/system/timestamp.h:214-216`.)_
+
+### Scoped measurement helpers
+
+```cpp
+#include <qb/io.h>                 // qb::io::cout
+#include <qb/system/timestamp.h>
+
+void process() {
+    qb::ScopedTimer timer([](qb::duration d) {
+        const auto us = std::chrono::duration_cast<std::chrono::microseconds>(d).count();
+        qb::io::cout() << "process took " << us << "us\n";
+    });
+    // ... work ...
+    // timer fires the callback with the measured qb::duration on scope exit.
+}
+```
+<!-- src: qb/include/qb/system/timestamp.h:254-299 -->
+
+`ScopedTimer` measures elapsed monotonic time between construction and `stop()`/destruction, invoking the callback with the measured `qb::duration`; `stop()`, `restart()`, and `elapsed()` are available for manual control. It is non-copyable and non-movable. `LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction. _(`qb/include/qb/system/timestamp.h:254-327`.)_
+
+> **Boundary seam.** The only place a raw `double` touches time is `qb::detail::to_ev_seconds` / `from_ev_seconds`, the conversion between `qb::duration` and libev's `ev_tstamp` (double seconds). Application code never needs these. _(`qb/include/qb/system/timestamp.h:333-348`.)_
+
+---
+
+## Cryptography (`qb::crypto`)
+
+`qb::crypto` is an OpenSSL-backed static toolbox: every entry point is a static member of `class crypto`. Requires an OpenSSL-enabled build (`QB_WITH_SSL` → `QB_HAS_SSL`). _(`qb/include/qb/io/crypto.h:33,85`.)_
+
+### Hashing and encoding
+
+```cpp
+#include <qb/io/crypto.h>
+
+// Hex-string digests of a std::string (iterations defaults to 1)
+std::string h = qb::crypto::sha256("payload");          // 64-char lowercase hex
+std::string m = qb::crypto::md5("payload");
+//   also: qb::crypto::sha1, qb::crypto::sha512
+
+// Generic digest over bytes -> raw byte vector
+std::vector<unsigned char> data = /* ... */;
+auto digest = qb::crypto::hash(data, qb::crypto::DigestAlgorithm::SHA256);
+
+// HMAC over bytes
+auto mac = qb::crypto::hmac(data, key, qb::crypto::DigestAlgorithm::SHA256);
+
+// Base64 / Base64URL / hex
+std::string b64    = qb::crypto::base64_encode(data.data(), data.size());
+auto        raw    = qb::crypto::base64_decode(b64);
+std::string b64url = qb::crypto::base64url_encode(data);
+std::string hex    = qb::crypto::to_hex_string(std::string(data.begin(), data.end()));
+```
+<!-- src: qb/source/io/tests/system/test-crypto.cpp -->
+
+The `std::string` hashing overloads (`md5`, `sha1`, `sha256`, `sha512`) return a hexadecimal string and take an `iterations` count (default `1`). `DigestAlgorithm` covers `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `BLAKE2B512`, and `BLAKE2S256`. _(`qb/include/qb/io/crypto.h:155-164,335-336,360-361,385-386,410-411,570-583`.)_
+
+### Random data
+
+| Function | Backing | Use |
+|---|---|---|
+| `generate_random_bytes(size_t)` | OpenSSL `RAND_bytes` (CSPRNG) | Keys, IVs, salts. |
+| `generate_secure_random_string(len, range)` | OpenSSL `RAND_bytes` (CSPRNG) | Passwords, tokens, session IDs. |
+| `generate_salt(size_t)` | OpenSSL `RAND_bytes` (CSPRNG) | Argon2/PBKDF2 salts. |
+| `generate_random_string(len, range)` | `std::mt19937` | Non-cryptographic only (e.g. test fixtures). |
+
+`generate_random_string` is seeded from `std::random_device` but uses a Mersenne Twister and is **not** cryptographically secure; use `generate_secure_random_string` for any security-sensitive value. _(`qb/include/qb/io/crypto.h:175-242,505,917`.)_
+
+### Symmetric encryption (AEAD)
+
+```cpp
+#include <qb/io/crypto.h>
+using C = qb::crypto;
+
+auto key = C::generate_key(C::SymmetricAlgorithm::AES_256_GCM);
+auto iv  = C::generate_iv (C::SymmetricAlgorithm::AES_256_GCM);
+
+std::vector<unsigned char> plaintext = /* ... */;
+std::vector<unsigned char> aad       = /* optional additional authenticated data */;
+
+auto ct = C::encrypt(plaintext, key, iv, C::SymmetricAlgorithm::AES_256_GCM, aad);
+auto pt = C::decrypt(ct,        key, iv, C::SymmetricAlgorithm::AES_256_GCM, aad);
+// pt is EMPTY if the GCM authentication tag fails — treat empty as authentication
+// failure, never as "decrypted to nothing".
+```
+<!-- src: qb/include/qb/io/crypto.h:540-561 -->
+
+`SymmetricAlgorithm` covers AES-CBC and AES-GCM at 128/192/256-bit, plus `CHACHA20_POLY1305`. For AEAD modes, `encrypt` appends and `decrypt` verifies the authentication tag; a failed tag yields an empty result. _(`qb/include/qb/io/crypto.h:143-152,531-561`; `docs-overhaul/qb/FACTBOOK.md:484`.)_
+
+### Key derivation and password hashing
+
+```cpp
+#include <qb/io/crypto.h>
+using C = qb::crypto;
+
+// Password hashing (Argon2id by default) -> self-describing encoded string.
+std::string stored = C::hash_password("correct horse battery staple");
+bool ok            = C::verify_password("correct horse battery staple", stored);
+
+// Lower-level derivation
+auto salt = C::generate_salt(16);
+auto dk   = C::derive_key("password", salt, /*key_length*/ 32,
+                          C::KdfAlgorithm::Argon2);   // or PBKDF2 / HKDF
+```
+<!-- src: qb/include/qb/io/crypto.h:771-792,919-936 -->
+
+`KdfAlgorithm` is `PBKDF2`, `HKDF`, or `Argon2`; `derive_key` defaults to `Argon2` with `iterations = 10000` (used only by PBKDF2) and a default `Argon2Params`. Dedicated entry points exist for each primitive: `pbkdf2`, `hkdf`, `argon2_kdf`. `Argon2Params` defaults to `t_cost = 3`, `m_cost = 1 << 16` KiB, `parallelism = 1`; `Argon2Variant` is `Argon2d`, `Argon2i`, or `Argon2id`. _(`qb/include/qb/io/crypto.h:701-792,926-936`.)_
+
+### Asymmetric cryptography
+
+`crypto` provides RSA, ECDSA, EdDSA, and X25519 over PEM-encoded keys, plus hybrid schemes:
+
+- **Key generation:** `generate_rsa_keypair(bits = 2048)`, `generate_ec_keypair(curve = "prime256v1")`, `generate_ed25519_keypair()`, `generate_x25519_keypair()` — each returns a `std::pair<std::string, std::string>` of `{private_pem, public_pem}`.
+- **Sign / verify:** `rsa_sign`/`rsa_verify`, `ec_sign`/`ec_verify` (default `DigestAlgorithm::SHA256`), `ed25519_sign`/`ed25519_verify`.
+- **Key agreement:** `ecdh_derive_secret`, `x25519_key_exchange`.
+- **Hybrid encryption:** `ecies_encrypt`/`ecies_decrypt` (`ECIESMode::STANDARD | AES_GCM | CHACHA20`), and `envelope_encrypt`/`envelope_decrypt` (`EnvelopeFormat::RAW | JSON | BASE64`) for large payloads.
+
+_(`qb/include/qb/io/crypto.h:603-681,807-860,938-1052`.)_
+
+### Constant-time comparison and secure tokens
+
+`constant_time_compare(a, b)` compares two byte vectors without short-circuiting (use it for HMACs and password hashes). `generate_token(payload, key, ttl)` produces an encrypted, authenticated token; `verify_token(token, key)` returns the payload or an empty string on any failure (tampering, malformed input, or expiry). _(`qb/include/qb/io/crypto.h:599-601,873-888`.)_
+
+```cpp
+auto key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
+
+// ttl is a qb::duration; zero() means the token never expires.
+std::string token = qb::crypto::generate_token("session:abc", key, qb::duration{std::chrono::hours(1)});
+
+std::string payload = qb::crypto::verify_token(token, key);  // "" if invalid/expired
+```
+<!-- src: qb/include/qb/io/crypto.h:862-888 -->
+
+`generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/source/io/src/crypto_advanced.cpp:235,243-244,249-252`; `docs-overhaul/qb/FACTBOOK.md:481-483`.)_
+
+---
+
+## JSON Web Tokens (`qb::jwt`)
+
+`qb::jwt` implements RFC 7519 over `qb::crypto`, in the same OpenSSL-gated slice. Every entry point is a static member of `class jwt`. _(`qb/include/qb/io/crypto_jwt.h:46`.)_
+
+Supported `Algorithm` values: `HS256/384/512` (HMAC), `RS256/384/512` (RSASSA-PKCS1-v1_5), `ES256/384/512` (ECDSA on P-256/P-384/P-521), and `EdDSA` (Ed25519). _(`qb/include/qb/io/crypto_jwt.h:51-62`.)_
+
+```cpp
+#include <qb/io/crypto_jwt.h>
+using qb::jwt;
+
+// --- Create with standard claims ---
+std::map<std::string, std::string> claims{{"user_id", "12345"}};
+
+jwt::CreateOptions opt;
+opt.algorithm = jwt::Algorithm::HS256;
+opt.key       = "my-256-bit-secret";
+
+std::string token = jwt::create_token(
+    claims,
+    /*issuer*/   "test-issuer",
+    /*subject*/  "user-12345",
+    /*audience*/ "test-audience",
+    /*expires_in*/ std::chrono::seconds(3600),
+    /*not_before*/ std::chrono::seconds(0),
+    /*jti*/      "token-id-123",
+    opt);
+
+// --- Verify ---
+jwt::VerifyOptions vopt;
+vopt.algorithm = jwt::Algorithm::HS256;
+vopt.key       = "my-256-bit-secret";
+
+jwt::ValidationResult result = jwt::verify(token, vopt);
+if (result.is_valid()) {
+    const std::string &uid = result.payload.at("user_id");
+} else if (result.error == jwt::ValidationError::TOKEN_EXPIRED) {
+    // handle expiry
+}
+```
+<!-- src: qb/source/io/tests/system/test-crypto-jwt.cpp:80-156 -->
+
+`create_token` takes `expires_in` and `not_before` as `std::chrono::seconds` offsets from "now" (RFC 7519 NumericDate is seconds). `exp` is emitted only when `expires_in.count() > 0` and `nbf` only when `not_before.count() > 0`; passing zero omits the claim. `verify` returns a `ValidationResult` whose `error` is one of `NONE`, `INVALID_FORMAT`, `INVALID_SIGNATURE`, `TOKEN_EXPIRED`, `TOKEN_NOT_ACTIVE`, `INVALID_ISSUER`, `INVALID_AUDIENCE`, `INVALID_SUBJECT`, or `CLAIM_MISMATCH`; `is_valid()` is `error == NONE`. _(`qb/include/qb/io/crypto_jwt.h:67-94,175-192`; `qb/source/io/src/crypto_jwt.cpp:282`.)_
+
+`VerifyOptions::clock_skew` is a `std::chrono::seconds` tolerance (default `0`) applied to the *current-time* side of the `exp`/`nbf` comparison — not to the token-supplied claim — to absorb clock drift without overflowing on extreme claim values. `verify` accepts `exp`/`nbf` as either a JSON number or a numeric string and fails closed (`INVALID_FORMAT`) on malformed values. `decode(token)` returns the `TokenParts` (header, payload, signature) *without* verification and throws `std::runtime_error` on a malformed token. _(`qb/include/qb/io/crypto_jwt.h:138,194-201`; `qb/source/io/src/crypto_jwt.cpp:474,478`; `docs-overhaul/qb/FACTBOOK.md:285,486-487`.)_
+
+---
+
+## Compression (`qb::gzip`, `qb::deflate`)
+
+zlib-backed gzip and deflate. Requires `QB_WITH_COMPRESSION` → `QB_HAS_COMPRESSION`. The convenience namespaces `qb::gzip` and `qb::deflate` are `using`-aliases of `qb::compression::gzip` / `qb::compression::deflate`. _(`qb/include/qb/io/compression.h:975-987`.)_
+
+```cpp
+#include <qb/io/compression.h>
+
+std::string original = "some data to compress, repeated many times ...";
+
+// One-shot string round trip (level defaults to Z_DEFAULT_COMPRESSION).
+std::string compressed   = qb::gzip::compress(original.c_str(), original.size());
+std::string decompressed = qb::gzip::uncompress(compressed.c_str(), compressed.size());
+// qb::deflate::compress / uncompress are the raw-deflate equivalents.
+```
+<!-- src: qb/source/io/tests/system/test-compression.cpp:154-178 -->
+
+`compress(const char* data, size_t size, int level = Z_DEFAULT_COMPRESSION)` and `uncompress(const char* data, size_t size)` return a `std::string`. Generic container overloads, `uncompress(Output&, data, size, max = 0)`, accept a `max` output budget: a non-zero `max` rejects inputs that would inflate beyond it (a decompression-bomb guard), throwing `std::runtime_error`. A truncated or incomplete stream also throws `std::runtime_error`. _(`qb/include/qb/io/compression.h:487-563,662-733,838-909`; `qb/source/io/tests/system/test-compression.cpp:200-227`.)_
+
+`qb::gzip::is_compressed(data, size)` heuristically detects a gzip or zlib header. For streaming over large or chunked data, the lower-level `qb::compression` namespace exposes `compress_provider` / `decompress_provider` interfaces with an `operation_hint` (`is_last` / `has_more`) and provider factories. _(`qb/include/qb/io/compression.h:56-247,744-766`.)_
+
+---
+
+## URI parsing (`qb::io::uri`)
+
+RFC 3986 parsing and percent-encoding. Construction runs `parse()` immediately; `is_valid()` reports whether the source parsed into a structurally valid URI. Component accessors return `std::string_view` borrowing from the URI's owned source string. _(`qb/include/qb/io/uri.h:182-575`.)_
+
+```cpp
+#include <qb/io/uri.h>
+
+qb::io::uri u{"https://user@www.example.com:8080/a/b?query1=value1&query2=value2#frag"};
+
+if (u.is_valid()) {
+    auto scheme = u.scheme();   // "https"  (std::string_view)
+    auto host   = u.host();     // "www.example.com"
+    auto port   = u.u_port();   // 8080     (uint16_t)
+    auto path   = u.path();     // "/a/b"
+    auto frag   = u.fragment(); // "frag"
+
+    const std::string &v1 = u.query("query1");  // "value1"
+}
+
+// Percent-encoding helpers (static). encode() emits '+' for a space
+// (application/x-www-form-urlencoded), and decode() maps '+' back to a space.
+std::string enc = qb::io::uri::encode("a b/c");   // "a+b%2Fc"
+std::string dec = qb::io::uri::decode(enc);        // "a b/c"
+```
+<!-- src: qb/source/io/tests/system/test-io.cpp:45-79 -->
+
+`u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0, not_found = "")` returns a single decoded value as `std::string const&`; `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/include/qb/io/uri.h:193,476-573`.)_
+
+---
+
+## Fixed-capacity string (`qb::string<N>`)
+
+`qb::string<N>` is an inline, `std::array`-backed string with a compile-time maximum capacity `N` (default `30`). It avoids heap allocation, which is faster than `std::string` for small, bounded strings. It is layout-trivial enough to embed directly in events and messages. _(`qb/include/qb/string.h:85-105`.)_
+
+```cpp
+#include <qb/string.h>
+
+qb::string<32> name = "actor-42";   // stored inline, no heap allocation
+name.append("-worker");
+const char *c = name.c_str();
+std::size_t n = name.size();        // current length
+std::size_t cap = name.capacity();  // == 32 (compile-time max)
+```
+<!-- src: qb/include/qb/string.h -->
+
+`size()` (alias `length()`) is the current length; `capacity()` and `max_size()` both return the compile-time `N`. Assigning or appending past `N` truncates to `N` rather than reallocating. The internal length field uses the smallest unsigned integer type that can hold `N + 1` (`uint8_t`/`uint16_t`/`size_t`), so small fixed strings stay compact. `qb::string<N>` converts implicitly to both `std::string` and `std::string_view`. _(`qb/include/qb/string.h:53-105,310-323,509-560`.)_
+
+---
+
+## Flat hash maps and case-insensitive maps
+
+`qb::unordered_map` / `qb::unordered_set` are aliases to high-performance flat hash tables (the `ska` open-addressing implementation), which favor cache locality over the node-based `std::unordered_map`. `qb::unordered_flat_map` / `qb::unordered_flat_set` name the `ska::flat_hash_map` / `ska::flat_hash_set` variant directly. _(`qb/include/qb/system/container/unordered_map.h:39-91`.)_
+
+```cpp
+#include <qb/system/container/unordered_map.h>
+
+qb::unordered_map<std::string, int> counts;
+counts["alpha"] = 1;
+
+// Case-insensitive string-keyed map: keys are ASCII-lowercased before every op.
+qb::icase_unordered_map<int> headers;
+headers["Content-Length"] = 42;
+int v = headers["content-length"];  // 42 — same entry
+```
+<!-- src: qb/include/qb/system/container/unordered_map.h -->
+
+`qb::icase_unordered_map<Value>` and the ordered `qb::icase_map<Value>` wrap an underlying map and ASCII-lowercase string keys (via the default `qb::string_to_lower` trait) before every operation — useful for HTTP headers and other case-insensitive lookups. This is exactly the type the URI parser uses for query parameters. _(`qb/include/qb/system/container/unordered_map.h:100-420`.)_
+
+> In a debug build (`NDEBUG` undefined), `qb::unordered_map` falls back to `std::unordered_map` to keep iterator-debugging and sanitizers happy; release builds use the `ska` implementation. _(`qb/include/qb/system/container/unordered_map.h:58-91`.)_
+
+---
+
+## UUID (`qb::uuid`)
+
+`qb::uuid` is a type alias for `uuids::uuid` from the vendored `stduuid` library — a 128-bit RFC 4122 identifier. `qb::generate_random_uuid()` produces a version-4 (random) UUID. _(`qb/include/qb/uuid.h`.)_
+
+```cpp
+#include <qb/uuid.h>
+
+qb::uuid id = qb::generate_random_uuid();   // version-4 UUID
+```
+<!-- src: qb/include/qb/uuid.h -->
+
+UUIDs serialize to and from JSON via the `uuids::to_json` / `uuids::from_json` adapters declared in `qb/json.h`. _(`qb/include/qb/json.h:301-311`.)_
+
+---
+
+## JSON (`qb::json`, `qb::jsonb`)
+
+`qb/json.h` integrates the vendored `nlohmann/json` library. `qb::json` is an alias for `nlohmann::json` (brought in via `using namespace nlohmann` inside `qb`), so the full `nlohmann` API is available. `qb::jsonb` is a distinct wrapper struct around `nlohmann::json` (binary-JSON intent) that forwards most operations to an internal `data` member but is a separate type that can be specialized differently in serialization contexts. _(`qb/include/qb/json.h:94-105,282-290`.)_
+
+```cpp
+#include <qb/json.h>
+
+qb::json msg = {
+    {"type", "ping"},
+    {"seq",  7},
+    {"tags", {"a", "b"}},
+};
+
+std::string wire = msg.dump();              // serialize
+qb::json    back = qb::json::parse(wire);   // parse
+int         seq  = back["seq"].get<int>();
+```
+<!-- src: qb/include/qb/json.h -->
+
+A `qb::allocator::pipe<char>::put<qb::json>` specialization lets JSON be written directly into a pipe buffer, and the JSON wire protocol (`qb::protocol::json`) frames JSON over NUL-terminated messages with a nesting-depth guard. See [Protocols](./protocols.md). _(`qb/include/qb/json.h:284-289`; `docs-overhaul/qb/FACTBOOK.md:118`.)_
+
+---
+
+## Endian helpers (`qb::endian`)
+
+`qb/system/endian.h` builds on C++20 `std::endian` and C++23 `std::byteswap`. Detection is `consteval` (compile-time) and conversion is `constexpr`. _(`qb/include/qb/system/endian.h:37-167`.)_
+
+```cpp
+#include <qb/system/endian.h>
+
+static_assert(qb::endian::native_order() == qb::endian::order::little ||
+              qb::endian::native_order() == qb::endian::order::big);
+
+uint32_t host = 0x01020304;
+uint32_t be   = qb::endian::to_big_endian(host);      // for wire formats
+uint32_t back = qb::endian::from_big_endian(be);       // == host
+uint32_t sw   = qb::endian::byteswap(host);            // unconditional swap
+```
+<!-- src: qb/include/qb/system/endian.h -->
+
+`native_order()`, `is_little_endian()`, and `is_big_endian()` are `consteval`. `byteswap<T>` accepts arithmetic and enum types. The `to_big_endian` / `from_big_endian` / `to_little_endian` / `from_little_endian` helpers are no-ops when the requested order already matches the host and a `byteswap` otherwise — the standard idiom for reading and writing fixed-endian wire formats. _(`qb/include/qb/system/endian.h:48-167`.)_
+
+---
+
+## Pitfalls
+
+- **Empty result means authentication failure, not empty plaintext.** `crypto::decrypt`, the AEAD helpers, and `verify_token` return an empty vector/string when the authentication tag or token check fails. Always branch on emptiness before using the result. _(`docs-overhaul/qb/FACTBOOK.md:483-484`.)_
+- **`generate_random_string` is not cryptographic.** It is a Mersenne Twister. Use `generate_secure_random_string`, `generate_random_bytes`, or `generate_salt` for any security-sensitive value. _(`qb/include/qb/io/crypto.h:175-242`.)_
+- **JWT and token TTLs are wall-clock seconds.** `create_token`'s `expires_in`/`not_before` and `generate_token`'s `ttl` resolve to whole-second `exp`/`nbf` claims evaluated against `system_clock`. Sub-second precision is lost and expiry follows wall-clock changes — by design, since expiry is a `wall_time` concept. _(`docs-overhaul/qb/FACTBOOK.md:481-485`.)_
+- **`u_port()` returns `0` on failure.** A missing, malformed, or out-of-range port yields `0`, which is indistinguishable from an explicit `:0`. Check `is_valid()` and the raw `port()` string if `0` is meaningful in your scheme. _(`qb/include/qb/io/uri.h:476-487`.)_
+- **`qb::string<N>` truncates silently.** Assigning past `N` characters truncates rather than throwing or reallocating. Size the capacity to the worst case for your data. _(`qb/include/qb/string.h:509-560`.)_
+- **URI accessors borrow from the URI.** `scheme()`, `host()`, `path()`, etc. return `std::string_view` into the URI's owned source string; do not let them outlive the `uri` object. _(`qb/include/qb/io/uri.h:185-552`.)_
+- **Crypto and compression headers `#error` without their dependency.** Including `crypto.h`/`crypto_jwt.h` without `QB_HAS_SSL`, or `compression.h` without `QB_HAS_COMPRESSION`, fails to compile. Guard optional features behind those defines. _(`qb/include/qb/io/crypto.h:33-34`, `qb/include/qb/io/compression.h:37-38`.)_
+
+---
+
+## See also
+
+- [qb-io module overview](./README.md) — the async I/O library these utilities ship with.
+- [Async I/O system](./async_system.md) — where `qb::duration` parameterizes timers, timeouts, and `sleep`.
+- [Protocols](./protocols.md) — JSON, text, and binary framings, including the depth-guarded JSON protocol.
+- [SSL/TLS transport](./ssl_transport.md) — the other consumer of the OpenSSL-gated slice.
+- [Lock-free primitives](./../7_reference/lockfree_primitives.md) — `SpinLock` and the SPSC/MPSC ring buffers.

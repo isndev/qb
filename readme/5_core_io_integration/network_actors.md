@@ -1,312 +1,384 @@
-@page core_io_network_actors_md QB & IO: Building Network-Enabled Actors
-@brief Master how QB actors become powerful network clients and servers using the `qb::io::use<>` template for seamless asynchronous I/O.
+# Building network actors
 
-# QB & IO: Building Network-Enabled Actors
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-One of the most powerful aspects of the QB Actor Framework is its seamless integration of asynchronous network I/O directly into actors. This allows you to build highly concurrent and responsive network applications—clients, servers, or peer-to-peer systems—where each network endpoint can be an independent, stateful actor.
+Turn an actor into a non-blocking TCP, UDP, or SSL/TLS endpoint by inheriting from a `qb::io::use<Self>` mixin, so network I/O runs on the actor's own `VirtualCore` event loop and arrives as ordinary `on(...)` handler calls.
 
-The primary mechanism for this integration is the **`qb::io::use<DerivedActor>`** helper template.
+**Prerequisites:** [The actor model](../2_core_concepts/actor_model.md), [qb-io transports](../3_qb_io/transports.md), [qb-io protocols](../3_qb_io/protocols.md), [async operations in actors](./async_in_actors.md) — **See also:** [SSL/TLS transport](../3_qb_io/ssl_transport.md), [chat_tcp walkthrough](./examples/chat_tcp_analysis.md), [message_broker walkthrough](./examples/message_broker_analysis.md)
 
-## The `qb::io::use<>` Template: Your Actor's Networking Toolkit
+## Summary
 
-Defined in `qb/io/async.h`, the `qb::io::use<DerivedActor>` template is a sophisticated CRTP (Curiously Recurring Template Pattern) utility. When your actor class inherits from one of its nested specializations (e.g., `qb::io::use<MyClient>::tcp::client`), it automatically gains the necessary base classes and methods to function as a specific type of network endpoint. This integration is deep: the actor's network operations become part of its `VirtualCore`'s event loop, ensuring non-blocking behavior.
+`qb-io` integrates asynchronous network I/O directly into actors through the `qb::io::use<Derived>` CRTP helper (declared in `qb/io/async.h`). When an actor inherits from one of its nested aliases — for example `qb::io::use<MyClient>::tcp::client<>` — it gains the transport, the input/output buffers, the protocol framer, and the event-loop registration needed to act as a specific kind of endpoint. The actor's reads and writes become part of the `listener` loop already running on its `VirtualCore`, so they never block the thread, and parsed messages and connection events are delivered as `on(...)` calls in the same single-threaded context as the actor's other events.
 
-**Key Specializations for Networked Actors:**
+Because each `VirtualCore` owns its own `listener::current` loop, all I/O objects created through `use<>` are thread-affine: they must not be shared across cores. This is the source of qb-io's thread safety — isolation, not locks — and it shapes the architectural patterns below.
 
-*   **TCP Client Actors:**
-    *   `qb::io::use<MyClientActor>::tcp::client<OptionalServerActorType = void>`: Transforms `MyClientActor` into an asynchronous TCP client.
-    *   `qb::io::use<MySSLClientActor>::tcp::ssl::client<OptionalServerActorType = void>`: Creates an SSL/TLS-secured TCP client actor.
-*   **TCP Server Actors & Session Handlers:**
-    *   `qb::io::use<MyAcceptorActor>::tcp::acceptor`: Equips `MyAcceptorActor` to listen for and accept incoming TCP connections, typically forwarding them to other actors.
-    *   `qb::io::use<MySSLAcceptorActor>::tcp::ssl::acceptor`: Same as above, but for SSL/TLS connections.
-    *   `qb::io::use<MyServerActor>::tcp::server<MySessionClass>`: A comprehensive base for an actor that both listens for TCP connections and manages `MySessionClass` instances for each client.
-    *   `qb::io::use<MySSLServerActor>::tcp::ssl::server<MySecureSessionClass>`: Secure version of the combined server.
-    *   `qb::io::use<MySessionClass>::tcp::client<MyServerActor>`: This is commonly used for `MySessionClass` itself, making it a server-managed component that handles communication for one connected client. `MyServerActor` is its logical parent or manager.
-    *   `qb::io::use<MySecureSessionClass>::tcp::ssl::client<MyServerActor>`: Secure version for server-managed sessions.
-*   **UDP Endpoint Actors:**
-    *   `qb::io::use<MyUDPActor>::udp::client`: Turns `MyUDPActor` into an asynchronous UDP endpoint capable of sending and receiving datagrams. Can function as a client or a simple server.
-    *   `qb::io::use<MyUDPServerActor>::udp::server`: Semantically similar to `udp::client`, often used for actors primarily designed to receive UDP messages on a bound port.
+## Concepts
 
-**Core Functionality Provided by `qb::io::use<>`:**
+### The `qb::io::use<>` aliases
 
-When your actor inherits from one of these `use<>` specializations, it gains:
+`qb::io::use<Derived>` exposes nested type aliases that attach async behavior to your class. The networking-relevant ones, verified against `qb/io/async.h`:
 
-1.  **`transport()` Method:** Access to the underlying `qb-io` transport object (e.g., `qb::io::tcp::socket`, `qb::io::tcp::ssl::listener`, `qb::io::udp::socket`). This is your primary interface for initiating connections, listening on ports, binding, and other socket-level operations.
-2.  **Input/Output Buffers (`in()` and `out()`):** Access to `qb::allocator::pipe<char>` instances for efficient, buffered management of incoming and outgoing byte streams.
-3.  **Protocol Handling Framework:** Your actor class is expected to define a nested type alias `using Protocol = YourChosenProtocol<DerivedActor>;` (this is not required for pure acceptor actors). The `use<>` base classes leverage this `Protocol` to automatically frame incoming byte streams into meaningful messages and parse them.
-4.  **Event Loop Integration:** The actor's network I/O operations are automatically registered with its `VirtualCore`'s `qb::io::async::listener`. This means I/O readiness (data arrival, send buffer available) triggers events processed by the actor's event loop.
-5.  **Asynchronous Event Handlers:** You will implement specific `on(...)` methods in your actor to react to:
-    *   Parsed messages from your `Protocol` (e.g., `void on(Protocol::message&& msg)`).
-    *   Network status changes (e.g., `void on(qb::io::async::event::disconnected const& event)`).
-    *   For acceptors, newly established connections (e.g., `void on(accepted_socket_type&& new_socket)`).
+| Alias | Role |
+| --- | --- |
+| `use<D>::tcp::client<Server = void>` | Asynchronous TCP client / server-side session endpoint. |
+| `use<D>::tcp::server<Session>` | Combined acceptor plus session pool for `Session`. |
+| `use<D>::tcp::acceptor` | Listen-and-accept only; hands accepted sockets to `on(accepted_socket_type&&)`. |
+| `use<D>::tcp::io_handler<Session>` | Session pool with no listener of its own. |
+| `use<D>::tcp::ssl::client<Server = void>` / `::ssl::server<Session>` / `::ssl::acceptor` | SSL/TLS variants (compiled only when `QB_HAS_SSL` is defined). |
+| `use<D>::udp::client` / `use<D>::udp::server` | Datagram endpoints (see [UDP endpoints](#udp-endpoints)). |
+| `use<D>::timeout` | Inactivity-timeout mixin (`qb::io::async::with_timeout<D>`). |
 
-## Implementing a Network Client Actor (TCP/SSL Focus)
+The SSL aliases exist only under `#ifdef QB_HAS_SSL`. UDP servers are currently datagram-oriented: there is no per-peer session demultiplexing, so all datagrams funnel through the same `Derived` instance.
 
-Let's outline the structure for an actor that connects to a server.
+### What a networked actor gains
 
-Conceptual Client-Side Network Interaction:
-```text
-+---------------------+     +-----------------------+     +-------------------+
-| MyNetworkClient     |     | qb-io (Transport/     |     | External Server   |
-| (Actor on VC0)      |---->| Protocol via use<>)   |---->| (Remote Machine)  |
-|                     |     | (Manages async socket)|     |                   |
-| - Calls connect()   |<----| & SSL Handshake)      |<----|                   |
-| - Sends app events  |     |                       |     |                   |
-| - Handles responses |     +-----------------------+     +-------------------+
-+---------------------+
-```
+Inheriting from a `use<>` networking alias adds:
 
-1.  **Inherit and Define Protocol:**
-    ```cpp
-    #include <qb/actor.h>
-    #include <qb/io/async.h>         // For qb::io::use<>
-    #include <qb/io/uri.h>           // For qb::io::uri parsing
-    #include <qb/io/protocol/text.h> // Example: for text::command protocol
-    #include <qb/io.h>               // For qb::io::cout
-    // For SSL:
-    // #include <qb/io/tcp/ssl/socket.h> // For SSL_CTX, qb::io::ssl::create_client_context
+1. **`transport()`** — the underlying transport object (`qb::io::tcp::socket`, `qb::io::tcp::listener`, `qb::io::udp::socket`, or their SSL counterparts). This is where you call `listen()`, hold a connected socket, and query the peer endpoint.
+2. **`in()` and `out()`** — `qb::allocator::pipe<char>` input and output buffers for the byte stream.
+3. **A protocol framer** — driven by a nested `using Protocol = ...;` alias on your class. The framer cuts the inbound byte stream into messages and calls your `on(Protocol::message&&)`. Pure acceptors do not need a `Protocol`.
+4. **Event-loop registration** — `start()` wires the transport's file descriptor into `listener::current` for read/write readiness.
+5. **`on(...)` handlers** you implement to react to parsed messages, `qb::io::async::event::disconnected`, `qb::io::async::event::timer`, and (for acceptors) `on(accepted_socket_type&&)`.
 
-    // Forward declaration for any events this actor sends/receives from other actors
-    struct SendToServerCommand : qb::Event { qb::string<128> command_data; };
+### Sending and receiving
 
-    class MyNetworkClient : public qb::Actor,
-                              public qb::io::use<MyNetworkClient>::tcp::client<> {
-                              // For SSL: public qb::io::use<MyNetworkClient>::tcp::ssl::client<> {
-    public:
-        // Define the protocol for framing messages over the connection
-        using Protocol = qb::protocol::text::command<MyNetworkClient>; // Example: newline-terminated
+Once a connection is live and a `Protocol` is active:
 
-    private:
-        qb::io::uri _server_uri;
-        bool _connected = false;
-        // For SSL clients:
-        // SSL_CTX* _ssl_ctx = nullptr; // Remember to manage its lifecycle (create/free)
+- **Receive:** the framer calls `void on(Protocol::message&& msg)` (or `on(const Protocol::message&)`) for each complete message.
+- **Send:** stream a value into the endpoint with `*this << value;`. `operator<<` forwards to `publish()` (see `qb/io/async/io.h`), which appends to `out()` and arms the write watcher. A custom protocol provides serialization by specializing `qb::allocator::pipe<char>::put<YourMessage>`, which lets you write `*this << my_message;` directly.
 
-    public:
-        explicit MyNetworkClient(const std::string& server_uri_string) 
-            : _server_uri(server_uri_string) {
-            // For SSL: 
-            // _ssl_ctx = qb::io::ssl::create_client_context(TLS_client_method());
-            // if (!_ssl_ctx) { /* Handle error: throw or log & fail onInit */ }
-        }
+### Roles in a server
 
-        // For SSL: 
-        // ~MyNetworkClient() override {
-        //     if (_ssl_ctx) { SSL_CTX_free(_ssl_ctx); }
-        // }
+A TCP server is built from two roles that can live in one actor or be split across several:
 
-        // ... (onInit, event handlers, etc., follow)
-    };
-    ```
+- **Acceptor** — owns the listening socket, accepts new connections, and produces accepted sockets.
+- **Session manager** — an `io_handler<Session>` that owns a pool of `Session` objects, one per connected client, and routes their I/O.
 
-2.  **`onInit()` - Establish Connection:**
-    *   Register any actor-specific events.
-    *   **For SSL:** Initialize the transport with the `SSL_CTX`: `this->transport().init(_ssl_ctx);`
-    *   Use `qb::io::async::tcp::connect` for non-blocking connection establishment. Provide a callback lambda to handle the connection result.
-    ```cpp
-    // Inside MyNetworkClient
+The `Session` class itself is a `use<Session>::tcp::client<Manager>`: from qb-io's perspective it is a client endpoint, but it is owned and driven by its managing actor rather than connecting outward.
+
+## TCP client actor
+
+The following client actor connects to a server, frames messages with a custom protocol, and reconnects on connection loss. It is derived from `examples/core_io/chat_tcp/client/ClientActor.{h,cpp}`, re-grounded against the current `connect` and timeout APIs.
+
+```cpp
+// src: examples/core_io/chat_tcp/client/ClientActor.h (adapted)
+#include <qb/actor.h>
+#include <qb/io/async.h>      // qb::io::use<>, qb::io::async::tcp::connect, callback
+#include <qb/io/uri.h>
+#include <qb/io.h>            // qb::io::cout
+#include <chrono>
+#include "Protocol.h"          // chat::ChatProtocol<IO_>, chat::Message
+
+using namespace std::chrono_literals;   // 5s literal; qb re-exports these via qb::time_literals
+
+class ClientActor : public qb::Actor,
+                    public qb::io::use<ClientActor>::tcp::client<> {
+public:
+    // The framer reads this alias; the base constructor activates it automatically.
+    using Protocol = chat::ChatProtocol<ClientActor>;
+
+    explicit ClientActor(qb::io::uri server_uri)
+        : _server_uri(std::move(server_uri)) {}
+
     bool onInit() override {
-        registerEvent<SendToServerCommand>(*this);
-        registerEvent<qb::KillEvent>(*this);
-
-        // For SSL: 
-        // if (!_ssl_ctx) return false; // Ensure SSL_CTX was created
-        // this->transport().init(_ssl_ctx);
-
-        qb::io::cout() << "Client [" << id() << "]: Attempting connection to " 
-                       << _server_uri.source().data() << ".\n";
-
-        // Deduce the socket type (tcp::socket or tcp::ssl::socket)
-        using UnderlyingSocketType = decltype(this->transport());
-
-        qb::io::async::tcp::connect<UnderlyingSocketType>(
-            _server_uri,                                 // Target URI
-            _server_uri.host().data(),                   // SNI hostname (esp. for SSL)
-            [this](UnderlyingSocketType resulting_socket) { // Connection callback
-                if (!this->is_alive()) return; // Actor might have been killed
-
-                if (resulting_socket.is_open()) {
-                    qb::io::cout() << "Client [" << id() << "]: TCP connection established.\n";
-                    // Move the connected socket into our transport
-                    this->transport() = std::move(resulting_socket);
-                    // Initialize our chosen protocol on the now-active transport
-                    this->template switch_protocol<Protocol>(*this);
-                    // Start monitoring I/O events (read/write readiness)
-                    this->start(); 
-                    _connected = true;
-
-                    // For SSL, after start(), complete the handshake
-                    if constexpr (std::is_same_v<UnderlyingSocketType, qb::io::tcp::ssl::socket>) {
-                        if (this->transport().connected() != 0) {
-                            qb::io::cout() << "Client [" << id() << "]: SSL handshake failed.\n";
-                            _connected = false;
-                            this->close(); // Close the underlying socket
-                            // Consider retry logic here via async::callback
-                            return;
-                        }
-                        qb::io::cout() << "Client [" << id() << "]: SSL handshake successful.\n";
-                    }
-                    
-                    // Optional: Send an initial message (e.g., authentication)
-                    // *this << "HELLO_SERVER" << Protocol::end;
-                } else {
-                    qb::io::cout() << "Client [" << id() << "]: Connection failed.\n";
-                    // Schedule a retry or terminate
-                    // qb::io::async::callback([this](){ if(this->is_alive()) this->onInit(); }, 5.0);
-                }
-            }
-            //, 5.0 // Optional timeout for the connect attempt in seconds
-        );
+        connect();
         return true;
     }
-    ```
 
-3.  **Implement Event Handlers:**
-    *   `void on(Protocol::message&& msg)`: Process messages received from the server, which have been parsed by your `Protocol`.
-    *   `void on(qb::io::async::event::disconnected const& event)`: This is critical. Handle connection loss: reset state (`_connected = false;`), clear I/O buffers (`this->in().reset(); this->out().reset();`), optionally reset protocol state (`if(this->protocol()) this->protocol()->reset();`), and implement reconnection logic if desired (often using `qb::io::async::callback` to schedule the next connection attempt).
-    *   `on(SendToServerCommand& event)`: If your client actor receives commands from other parts of your actor system to send data, check if `_connected` and `this->transport().is_open()`, then send the data using `*this << event.command_data.c_str() << Protocol::end;` (ensuring you append any protocol-specific delimiters like `Protocol::end`).
-    *   `void on(const qb::KillEvent&)`: Call `this->close();` (which handles the transport shutdown, including SSL_shutdown if applicable) and then `this->kill();`.
+    // Parsed message from the server.
+    void on(const chat::Message &msg) {
+        qb::io::cout() << "server: " << msg.payload << "\n";
+    }
 
-**(Reference:** `chat_tcp/client/ClientActor.h/.cpp`, `message_broker/client/ClientActor.h/.cpp` for complete client implementations. `test-async-io.cpp` in `qb/source/io/tests/system/` also shows SSL client setup within tests.**)
+    // Connection loss: reset state and schedule a delayed retry.
+    void on(qb::io::async::event::disconnected const &) {
+        _connected = false;
+        if (_should_reconnect)
+            qb::io::async::callback([this] { connect(); }, RECONNECT_DELAY);
+    }
 
-## Implementing Network Server Actors
+private:
+    void connect() {
+        // connect() takes a qb::duration; a chrono literal satisfies it.
+        qb::io::async::tcp::connect<qb::io::tcp::socket>(
+            _server_uri,
+            [this](qb::io::tcp::socket socket) {
+                if (socket.is_open())
+                    onConnected(std::move(socket));
+                else if (_should_reconnect)
+                    qb::io::async::callback([this] { connect(); }, RECONNECT_DELAY);
+            },
+            CONNECT_TIMEOUT);
+    }
 
-Servers generally consist of two main roles: an **acceptor** that listens for new connections, and **session handlers** that manage communication with individual connected clients. QB supports different ways to structure this:
+    void onConnected(qb::io::tcp::socket &&socket) {
+        _connected = true;
+        this->transport() = std::move(socket);          // adopt the live socket
+        this->template switch_protocol<Protocol>(*this); // activate the framer
+        this->start();                                   // join the event loop
+        *this << chat::Message{chat::MessageType::AUTH_REQUEST, "alice"};
+    }
 
-Basic Server Architecture (Separate Acceptor & Session Managers):
-```text
-                               +---------------------+
-                               | External TCP Client |
-                               +----------^----------+
-                                          | 1. Connects
-                               +----------v----------+
-                               | AcceptorActor       |
-                               | (on VC0, uses       |
-                               |  tcp::acceptor)     |
-                               +----------|----------+
-                                          | 2. Accepts socket, forwards via Event
-                               +----------v----------+
-                               | SessionManagerActor |
-                               | (on VC1, uses       |
-                               |  io_handler<Session>|
-                               +----------|----------+
-                                          | 3. Creates & Manages SessionActor
-                               +----------v----------+
-                               | SessionActor        |
-                               | (on VC1, uses       |
-                               |  tcp::client<Mgr>)  |
-                               | (Handles I/O for    |
-                               |  one client)        |
-                               +----------^----------+
-                                          | 4. Bidirectional App Data
-                               +----------v----------+
-                               | External TCP Client |
-                               +---------------------+
+    const qb::io::uri _server_uri;
+    bool _connected{false};
+    bool _should_reconnect{true};
+
+    static constexpr qb::duration CONNECT_TIMEOUT  = 5s;
+    static constexpr qb::duration RECONNECT_DELAY  = 5s;
+};
 ```
 
-### Pattern 1: Combined Server Actor (Acceptor + Session Manager)
+Points worth noting:
 
-Suitable for simpler servers where a single actor class can manage both listening for new connections and handling all active client sessions.
+- `qb::io::async::tcp::connect<Socket>(uri, callback, timeout, verify_peer)` performs the non-blocking connect; `timeout` is a `qb::duration` and defaults to `qb::duration::zero()` (no deadline). The callback receives a `Socket` whose `is_open()` is `false` on failure or timeout. For SSL clients, instantiate `connect<qb::io::tcp::ssl::socket>`; `verify_peer` (default `true`) controls certificate-chain and hostname verification.
+- After adopting the socket, call `switch_protocol<Protocol>(*this)` and then `start()`. `start()` registers the descriptor with the event loop; until it runs, no reads or writes are dispatched.
+- Reconnection is scheduled with `qb::io::async::callback(fn, delay)`, where `delay` is a `std::chrono` duration. See [async operations in actors](./async_in_actors.md) for the callback lifecycle.
 
-1.  **Define Session Class:** This class will handle I/O for *one* connected client. It usually inherits from `qb::io::use<MySessionClass>::tcp::client<MyServerActorType>` (or its SSL variant), making it a client from `qb-io`'s perspective but managed by your `MyServerActorType`.
-    ```cpp
-    // MySession.h
-    class MyServerActor; // Forward declaration
+> **Time API.** Both `connect` and `callback` take a `std::chrono` duration (`qb::duration` is `std::chrono::nanoseconds`). A raw `double` does not convert to a chrono duration and will not compile — write `5s`, `250ms`, or an explicit `qb::duration` rather than a bare number.
 
-    class MyClientSession : public qb::io::use<MyClientSession>::tcp::client<MyServerActor> {
-    public:
-        using Protocol = qb::protocol::text::command<MyClientSession>; // Or your custom protocol
+## TCP server: combined acceptor and session pool
 
-        explicit MyClientSession(MyServerActor& server_logic) : client(server_logic) {}
+For a single-actor server, inherit from `use<Self>::tcp::server<Session>`. This base combines the acceptor and the `io_handler<Session>` pool: it accepts connections, constructs a `Session` per client, and (when present) calls your `on(Session&)` hook after registration.
 
-        void on(Protocol::message&& msg) {
-            // Process data received from this client
-            // Example: server().handleClientCommand(this->id(), msg.text);
+```cpp
+// src: qb/include/qb/io/async/tcp/server.h (base contract) — pattern adapted
+#include <qb/actor.h>
+#include <qb/io/async.h>
+#include <qb/io/uri.h>
+#include "MyClientSession.h"   // a use<MyClientSession>::tcp::client<MyServer>
+
+class MyServer : public qb::Actor,
+                 public qb::io::use<MyServer>::tcp::server<MyClientSession> {
+public:
+    explicit MyServer(qb::io::uri listen_at) : _listen_at(std::move(listen_at)) {}
+
+    bool onInit() override {
+        // transport().listen(uri) returns 0 on success (non-zero is an error).
+        if (this->transport().listen(_listen_at) != 0) {
+            qb::io::cerr() << "listen failed on " << _listen_at.source() << "\n";
+            return false;
         }
-        void on(qb::io::async::event::disconnected const& event) {
-            // Notify the main server actor of this client's disconnection
-            // server().handleClientDisconnect(this->id());
-        }
-        // ... other session logic ...
-    };
-    ```
-2.  **Define Server Actor:** This actor inherits from `qb::Actor` and `qb::io::use<MyServerActorType>::tcp::server<MySessionClass>` (or `::tcp::ssl::server`). The `tcp::server` base provides `io_handler` capabilities.
-    ```cpp
-    // MyServerActor.h
-    class MyServerActor : public qb::Actor,
-                          public qb::io::use<MyServerActor>::tcp::server<MyClientSession> {
-    private:
-        // For SSL:
-        // SSL_CTX* _server_ssl_ctx = nullptr; // Manage its lifecycle
-    public:
-        explicit MyServerActor(const qb::io::uri& listen_uri) {
-            // For SSL:
-            // _server_ssl_ctx = qb::io::ssl::create_server_context(TLS_server_method(), cert_path, key_path);
-            // if (!_server_ssl_ctx) { /* error */ }
-            // this->transport().init(_server_ssl_ctx);
+        this->start();   // begin accepting connections
+        qb::io::cout() << "listening on " << _listen_at.source() << "\n";
+        return true;
+    }
 
-            if (this->transport().listen(listen_uri) != 0) { /* Handle listen error */ }
-            this->start(); // Start accepting connections
-            qb::io::cout() << "Server [" << id() << "] listening on " << listen_uri.source().data() << ".\n";
-        }
-        // For SSL: ~MyServerActor() { if (_server_ssl_ctx) SSL_CTX_free(_server_ssl_ctx); }
+    // Optional: called by the base right after a session is registered and started.
+    void on(MyClientSession &session) {
+        qb::io::cout() << "client " << session.id() << " connected\n";
+        session << "welcome\n";
+    }
 
-        // This method is called by the `tcp::server` base *after* a new MyClientSession 
-        // instance is created and its transport (the accepted socket) is set up.
-        void on(IOSession& new_session) { // IOSession is MyClientSession here
-            qb::io::cout() << "Server [" << id() << "]: New client session [" << new_session.id() 
-                           << "] connected from " << new_session.transport().peer_endpoint().to_string() << ".\n";
-            // new_session.start() is typically called by the base when registering the session.
-            // You can send a welcome message, etc.
-            // new_session << "Welcome!" << MyClientSession::Protocol::end;
-        }
+    void on(const qb::KillEvent &) {
+        for (auto &[id, session] : this->sessions())
+            if (session) session->disconnect();
+        this->sessions().clear();
+        this->kill();
+    }
+};
+```
 
-        // Example methods to be called by MyClientSession instances:
-        // void handleClientCommand(qb::uuid session_uuid, const std::string& command) { /* ... */ }
-        // void handleClientDisconnect(qb::uuid session_uuid) {
-        //     if (this->sessions().count(session_uuid)) {
-        //         this->sessions().erase(session_uuid); // Remove from managed sessions
-        //         qb::io::cout() << "Server: Session " << session_uuid << " removed.\n";
-        //     }
-        // }
+The session pool is reachable through `sessions()` (a `qb::unordered_map<qb::uuid, std::shared_ptr<Session>>`), `session(uuid)`, and `session_count()`, all declared in `qb/io/async/io_handler.h`. To cap concurrency, call `set_max_sessions(n)`; once the cap is reached, `registerSession()` closes the incoming socket and returns `nullptr` rather than allocating.
 
-        void on(const qb::KillEvent& /*event*/) {
-            qb::io::cout() << "Server [" << id() << "] shutting down.\n";
-            for (auto& [uuid, session_ptr] : this->sessions()) {
-                if (session_ptr) session_ptr->disconnect(); // Request graceful session shutdown
-            }
-            this->sessions().clear();
-            this->close(); // Close the listener socket
-            this->kill();
-        }
-    };
-    ```
+> **Two `listen` methods.** The raw transport's `transport().listen(uri)` returns `int` (`0` = success) and does **not** start the accept watcher, so you call `start()` yourself. The acceptor base also exposes a separate `[[nodiscard]] bool listen(uri, cert_file, key_file, alpn)` convenience that returns `true` on success and auto-starts; for SSL acceptors it also installs the server certificate. Pick one; do not mix them.
 
-### Pattern 2: Separate Acceptor Actor and Session-Managing Actor(s)
+## TCP server: separate acceptor and session managers
 
-For greater scalability, especially to distribute session handling across multiple cores, you can separate the connection accepting logic from the session management logic.
+To spread session handling across cores, split the two roles. An `AcceptActor` owns the listener and forwards each accepted socket, as a `qb::Event`, to one of several `ServerActor` session managers — which can run on different `VirtualCore`s. This is the architecture used by both `chat_tcp` and `message_broker`.
 
-1.  **Session Class:** Defined as in Pattern 1 (e.g., `MyClientSession` inheriting from `use<MyClientSession>::tcp::client<MySessionManagerActor>`).
-2.  **Session-Managing Actor(s):** One or more actors, potentially on different cores, that inherit from `qb::Actor` and `qb::io::async::io_handler<MySessionManagerActor, MyClientSession>`. These actors *do not listen* for connections themselves.
-    *   They receive an event (e.g., `NewClientConnectionEvent`) from the Acceptor Actor, which contains the newly accepted socket.
-    *   In the handler for this event (e.g., `on(NewClientConnectionEvent& event)`), they call `this->registerSession(std::move(event.client_socket_data))` to take ownership of the socket, create a `MyClientSession` instance, and start managing it.
-3.  **Acceptor Actor:** An actor inheriting from `qb::Actor` and `qb::io::use<MyAcceptorActor>::tcp::acceptor` (or its SSL variant).
-    *   **`onInit()`:** Initializes its SSL context (if SSL), then calls `this->transport().init(...)` if applicable, `this->transport().listen(...)`, and finally `this->start()` to begin accepting connections.
-    *   **`on(accepted_socket_type&& new_socket)`:** This method is automatically called by the `acceptor` base when a new raw TCP connection is established. Inside this handler, your Acceptor Actor would:
-        *   Choose a Session-Managing Actor (e.g., via round-robin, load balancing logic, or based on some criteria).
-        *   `push` a `NewClientConnectionEvent` (containing the `std::move(new_socket)`) to the chosen Session-Managing Actor.
+```text
+            External clients
+                  |  connect
+                  v
+        +---------------------+
+        | AcceptActor (VC0)   |   use<AcceptActor>::tcp::acceptor
+        |  on(accepted&&)     |
+        +----------+----------+
+                   | push<NewSessionEvent>{socket}   (round-robin)
+       +-----------+-----------+
+       v                       v
++----------------+     +----------------+
+| ServerActor    | ... | ServerActor    |   use<ServerActor>::tcp::io_handler<Session>
+| (VC1)          |     | (VC2)          |
+|  registerSession()   |  registerSession()
++-------+--------+     +-------+--------+
+        | owns                 | owns
+        v                      v
+   Session (one per client)  ...           use<Session>::tcp::client<ServerActor>
+```
 
-**(Reference:** The `chat_tcp` and `message_broker` examples robustly implement Pattern 2. They have an `AcceptActor`, one or more `ServerActor`s (which act as session managers), and specific `Session` classes (`ChatSession`, `BrokerSession`).**)
+### Acceptor actor
 
-## Key Considerations for Networked Actors
+The acceptor listens and distributes. Verified against `examples/core_io/chat_tcp/server/AcceptActor.{h,cpp}`:
 
-*   **Protocol Definition:** A well-defined `Protocol` is essential for reliable communication. Choose a built-in one or implement a custom one carefully.
-*   **Connection State Management:** Actors often need to track their connection state (e.g., `_is_connecting`, `_is_connected`, `_is_authenticated`).
-*   **Error Handling & Disconnections:** Robustly implement `on(qb::io::async::event::disconnected const&)` in client/session actors. Handle potential connection failures during `async::tcp::connect`. Servers should gracefully manage client disconnections.
-*   **Resource Cleanup:** Ensure underlying sockets, `SSL_CTX*` (if manually managed), and other resources are properly closed/freed. `qb-io`'s RAII patterns and the actor lifecycle (destructors, `close()` in `KillEvent` handlers) generally handle this, but explicit management of `SSL_CTX` is often necessary.
-*   **Flow Control:** For high-throughput applications, consider application-level flow control if actors can produce data faster than the network or receiving actors can consume it (e.g., pausing senders if `out()` buffer sizes grow too large, or using `pending_write` events).
+```cpp
+// src: examples/core_io/chat_tcp/server/AcceptActor.h
+class AcceptActor : public qb::Actor,
+                    public qb::io::use<AcceptActor>::tcp::acceptor {
+public:
+    AcceptActor(qb::io::uri listen_at, qb::ActorIdList pool);
 
-By leveraging `qb::io::use<>` and understanding these patterns, your QB actors can become powerful, self-contained network participants, capable of handling complex asynchronous communication with clarity and efficiency.
+    bool onInit() override;
+    void on(accepted_socket_type &&new_io);                // a new TCP connection
+    void on(qb::io::async::event::disconnected const &);   // listener failure
 
-**(Next:** Review specific example analyses like [chat_tcp Example Analysis](./examples/chat_tcp_analysis.md) to see these patterns in larger contexts.**)
-**(See also:** [QB-IO: Transports](./../3_qb_io/transports.md), [QB-IO: Protocols](./../3_qb_io/protocols.md)**) 
+private:
+    const qb::io::uri      _listen_at;
+    const qb::ActorIdList  _server_pool;
+    std::size_t            _session_counter{0};
+};
+```
+
+```cpp
+// src: examples/core_io/chat_tcp/server/AcceptActor.cpp
+bool AcceptActor::onInit() {
+    if (_server_pool.empty()) {
+        qb::io::cerr() << "empty server pool\n";
+        return false;
+    }
+    if (this->transport().listen(_listen_at)) {  // non-zero == failure
+        qb::io::cerr() << "cannot listen on " << _listen_at.source() << "\n";
+        return false;
+    }
+    qb::io::cout() << "AcceptActor listening on " << _listen_at.source() << "\n";
+    this->start();
+    return true;
+}
+
+void AcceptActor::on(accepted_socket_type &&new_io) {
+    // Round-robin the new socket to a session-managing ServerActor.
+    auto server_id = _server_pool[_session_counter++ % _server_pool.size()];
+    auto &evt = push<NewSessionEvent>(server_id);
+    evt.socket = std::move(new_io);   // transfer socket ownership into the event
+}
+
+void AcceptActor::on(qb::io::async::event::disconnected const &) {
+    // The listening socket itself failed — shut the system down.
+    broadcast<qb::KillEvent>();
+}
+```
+
+`accepted_socket_type` is `qb::io::tcp::socket` for a plain acceptor and `qb::io::tcp::ssl::socket` for an SSL acceptor (it is `_Prot::socket_type`). The accepted socket is moved into a `qb::Event` field — `NewSessionEvent { qb::io::tcp::socket socket; }` — to carry it, and ownership transfers because sockets are move-only.
+
+> **Cross-core socket transfer is safe; sharing is not.** Moving a connected socket into an event and pushing it to another core hands the descriptor to that core's loop. After the move, the acceptor no longer touches it. Never keep a copy or call into a transport from a core other than the one whose `listener` owns it.
+
+### Session-managing actor
+
+A session manager inherits `use<Self>::tcp::io_handler<Session>` — a pool with no listener. It receives the accepted socket and calls `registerSession`, which constructs the `Session`, adopts the socket, and starts it. Verified against `examples/core_io/chat_tcp/server/ServerActor.{h,cpp}`:
+
+```cpp
+// src: examples/core_io/chat_tcp/server/ServerActor.h
+class ServerActor : public qb::Actor,
+                    public qb::io::use<ServerActor>::tcp::io_handler<ChatSession> {
+public:
+    explicit ServerActor(qb::ActorId chatroom_id);
+    bool onInit() override;
+    void on(NewSessionEvent &evt);
+    void on(SendMessageEvent &evt);
+    // ... delegated handlers called by ChatSession ...
+};
+```
+
+```cpp
+// src: examples/core_io/chat_tcp/server/ServerActor.cpp (re-grounded return type)
+bool ServerActor::onInit() {
+    registerEvent<NewSessionEvent>(*this);
+    registerEvent<SendMessageEvent>(*this);
+    return true;
+}
+
+void ServerActor::on(NewSessionEvent &evt) {
+    // registerSession returns _Session* (nullptr if the session cap is hit).
+    if (auto *session = this->registerSession(std::move(evt.socket)))
+        qb::io::cout() << "registered session " << session->id() << "\n";
+}
+
+void ServerActor::on(SendMessageEvent &evt) {
+    auto it = this->sessions().find(evt.session_id);
+    if (it != this->sessions().end())
+        *it->second << evt.message;   // serialize via the session's Protocol
+}
+```
+
+`registerSession(transport_io_type&&, args...)` returns a `Session*` (not a reference); it is `nullptr` when the session limit is reached, so null-check it. Extra arguments are forwarded to the `Session` constructor after the managing actor reference. To reclaim a live descriptor — for example, to hand a connection to another handler during a protocol upgrade — use `extractSession(uuid)`, which removes the session and returns `{transport_io_type, bool}`.
+
+> **Override `disconnected` carefully.** `io_handler::disconnected(uuid)` erases the session from the pool, releasing the last `shared_ptr`. If you override it to add cleanup logic, you **must** forward to the base (`io_handler<Self, Session>::disconnected(id);`) or the session is never removed and its `shared_ptr` leaks.
+
+### Session class
+
+The `Session` handles one client. It is a server-side `client<Manager>`: a `use<Session>::tcp::client<ServerActor>` endpoint owned by its manager. It may also mix in `use<Session>::timeout` for inactivity handling. Verified against `examples/core_io/chat_tcp/server/ChatSession.{h,cpp}`:
+
+```cpp
+// src: examples/core_io/chat_tcp/server/ChatSession.h
+class ServerActor;   // forward declaration — the managing actor
+
+class ChatSession : public qb::io::use<ChatSession>::tcp::client<ServerActor>,
+                    public qb::io::use<ChatSession>::timeout {
+public:
+    using Protocol = chat::ChatProtocol<ChatSession>;
+
+    explicit ChatSession(ServerActor &server);
+    ~ChatSession();
+
+    void on(const chat::Message &msg);                     // parsed message
+    void on(qb::io::async::event::disconnected const &);   // client dropped
+    void on(qb::io::async::event::timer const &);          // inactivity timeout
+};
+```
+
+```cpp
+// src: examples/core_io/chat_tcp/server/ChatSession.cpp
+ChatSession::ChatSession(ServerActor &server)
+    : client(server) {
+    this->template switch_protocol<Protocol>(*this);
+    this->setTimeout(std::chrono::seconds(120));   // setTimeout takes a qb::duration
+}
+
+void ChatSession::on(const chat::Message &msg) {
+    // Delegate application logic to the managing actor via server().
+    this->server().handleChat(this->id(), msg.payload);
+    this->updateTimeout();   // reset the inactivity timer on activity
+}
+
+void ChatSession::on(qb::io::async::event::disconnected const &) {
+    this->server().handleDisconnect(this->id());
+}
+
+void ChatSession::on(qb::io::async::event::timer const &) {
+    this->disconnect();      // idle too long — drop the client
+}
+```
+
+Inside a session, `server()` returns the managing actor (`ServerActor&`) and `id()` returns the session's `qb::uuid const&`. The inactivity timer comes from the `use<>::timeout` mixin (`qb::io::async::with_timeout`): `setTimeout(qb::duration)` arms or re-arms the timer, `updateTimeout()` takes no argument and resets the countdown to "now" on activity, and `getTimeout()` returns the configured `qb::duration` (zero when disabled). A session delegates application decisions back to its manager rather than reaching across the actor boundary itself.
+
+## SSL/TLS endpoints
+
+The SSL aliases mirror the plain ones and are available when the build defines `QB_HAS_SSL`:
+
+- Client: `qb::io::use<Self>::tcp::ssl::client<>`, connected with `qb::io::async::tcp::connect<qb::io::tcp::ssl::socket>(...)`. `verify_peer` defaults to `true`.
+- Acceptor / server: `qb::io::use<Self>::tcp::ssl::acceptor` and `::ssl::server<Session>`. The acceptor's `bool listen(uri, cert_file, key_file, alpn)` overload installs the server certificate; for SSL acceptors it builds the context from `cert_file` and `key_file` and fails (returns `false`) if the certificate cannot be loaded.
+- `accepted_socket_type` for an SSL acceptor is `qb::io::tcp::ssl::socket`.
+
+See [SSL/TLS transport](../3_qb_io/ssl_transport.md) for context creation, certificate handling, and the handshake model.
+
+## UDP endpoints
+
+`qb::io::use<Self>::udp::server` and `::udp::client` provide datagram endpoints. Unlike TCP, the UDP server is datagram-oriented with no built-in per-peer session pool: every datagram is delivered to the same `Derived` instance. If you need per-peer state, key your own map on `qb::io::transport::udp::identity` inside your handler. UDP is all-or-nothing per datagram — a datagram larger than `qb::io::udp::socket::MaxDatagramSize` (65507) is rejected with `EMSGSIZE`, never truncated. See [transports](../3_qb_io/transports.md) for the UDP transport details.
+
+## Pitfalls
+
+- **Sharing I/O across cores.** Every `use<>` object is bound to the `listener` of the core that created it. Move sockets between cores via events; never share a transport, session, or buffer across threads.
+- **Forgetting `start()`.** Adopting a socket or calling `listen()` on the raw transport is not enough — `start()` registers the descriptor with the event loop. Without it, no reads, writes, or accepts fire. The acceptor's `bool listen(...)` convenience auto-starts; the raw `transport().listen()` does not.
+- **Passing a `double` where a duration is expected.** `connect`, `callback`, and `setTimeout` take `std::chrono`/`qb::duration`. A bare `5.0` will not compile; write `5s` or `250ms`.
+- **Binding `registerSession` to a reference.** It returns `Session*` (nullable at the session cap). Use `auto *session = registerSession(...)` and null-check; an `auto&` binding does not compile.
+- **Overriding `io_handler::disconnected` without forwarding.** Omitting the base call leaks the session's `shared_ptr` because it is never erased from the pool. Always call the base `disconnected(id)`.
+- **Ignoring `on(qb::io::async::event::disconnected const&)`.** Clients and sessions should handle it to reset state and (for clients) schedule reconnection. Acceptors should treat listener disconnection as fatal, typically `broadcast<qb::KillEvent>()`.
+- **Leaking on shutdown.** In a `qb::KillEvent` handler, disconnect or clear sessions and close listeners before `kill()`. RAII closes descriptors, but an orderly drain avoids resetting live clients abruptly.
+
+## See also
+
+- [Async operations in actors](./async_in_actors.md) — `qb::io::async::callback`, `with_timeout`, and deferred work inside actors.
+- [qb-io transports](../3_qb_io/transports.md) — TCP, UDP, and Unix-socket transport details.
+- [qb-io protocols](../3_qb_io/protocols.md) — writing an `AProtocol` and serializing messages.
+- [SSL/TLS transport](../3_qb_io/ssl_transport.md) — secure context setup and handshakes.
+- [chat_tcp walkthrough](./examples/chat_tcp_analysis.md) and [message_broker walkthrough](./examples/message_broker_analysis.md) — the full multi-actor server architecture in context.

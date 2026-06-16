@@ -1,146 +1,146 @@
-@page qb_core_features_md QB-Core: Key Features & Capabilities
-@brief A summary of the core features provided by the QB Actor Engine for concurrent C++ development.
+# qb-core features and capabilities
 
-# QB-Core: Key Features & Capabilities
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-`qb-core` equips developers with a comprehensive, production-ready toolkit to build robust and scalable actor-based applications on top of the `qb-io` asynchronous foundation. Here is a detailed rundown of its main capabilities.
+This page catalogs the capabilities of `qb-core` — the actor runtime built on `qb-io` — and links each one to the page that documents it in depth.
 
----
-
-## I. Actor Lifecycle & Management
-
-*   **Core Actor Abstraction (`qb::Actor`):** The fundamental base class for all user-defined actors, encapsulating state and behaviour in a thread-safe, isolated unit.
-
-*   **Flexible Actor Creation:**
-
-    | Method | Description |
-    |--------|-------------|
-    | `qb::Main::addActor<A>(core_id, ...)` | Add a single actor to a specific core before the engine starts |
-    | `main.core(id).builder().addActor<A>(...)` | Fluent builder for adding multiple actors to the same core |
-    | `Actor::addRefActor<A>(...)` | Create a child actor on the **same core**; returns raw pointer |
-    | `Actor::addRefHandle<A>(...)` | Create a child actor and wrap it in a `RefActorHandle<A>` (safe) |
-
-*   **Unique Actor Identification (`qb::ActorId`):** Each actor receives a system-unique ID (composed of `CoreId` + `ServiceId`) used for all event addressing.
-
-*   **Controlled Initialization (`virtual bool onInit()`):** Called after construction and ID assignment — the designated place for:
-    *   Registering event handlers (`registerEvent<MyEvent>(*this)`).
-    *   Acquiring resources, connecting to services.
-    *   Returning `false` aborts startup and triggers immediate destruction.
-
-*   **Graceful Termination (`kill()`):** Marks the actor for removal. The `VirtualCore` completes any in-flight handler before destroying the actor.
-
-*   **RAII Destruction (`virtual ~Actor()`):** Called only after the actor has been fully removed from the engine — RAII-managed members are safely destroyed.
-
-*   **Liveness Check (`is_alive()`):** Query whether `kill()` has been called and taken effect.
-
-*   **Lightweight Actors (`qb::no_default_events`):** Pass `qb::no_default_events` to the `Actor` constructor to skip the four automatic system-event subscriptions (`KillEvent`, `SignalEvent`, `PingEvent`, `UnregisterCallbackEvent`). Useful for high-throughput pools of short-lived actors where those handlers are not needed.
+**Prerequisites:** [Core concepts: the actor model](../2_core_concepts/actor_model.md), [qb-io module overview](../3_qb_io/README.md) — **See also:** [qb-core overview](./README.md)
 
 ---
 
-## II. Event System & Asynchronous Messaging
+## Summary
 
-*   **Event Definition (`qb::Event`):** The base class for all inter-actor messages. Events are primarily typed data carriers.
+`qb-core` provides the actor model on top of the `qb-io` asynchronous event loop: a base [`qb::Actor`](./actor.md) class, a typed event system, a multi-threaded engine ([`qb::Main`](./engine.md) plus one [`qb::VirtualCore`](./engine.md) worker thread per core), lock-free inter-core messaging, and C++23 coroutine integration. Each capability below is a one-line entry pointing at its owning page; the owning page holds the authoritative signatures and contracts.
 
-*   **Collision-Free Type IDs:** Each distinct event type receives a unique, dense `TypeId` via `qb::type_id<T>()` — a monotonic atomic counter (no ASLR-based collisions possible).
-
-*   **Type-Safe Dispatch:** Events are routed to the correct `on(EventType&)` handler via the internal `router::memh` table keyed on `TypeId`.
-
-*   **Event Subscription:**
-    *   `registerEvent<MyEvent>(*this)` — subscribe inside `onInit()`.
-    *   `unregisterEvent<MyEvent>(*this)` — dynamically unsubscribe at any point.
-
-*   **Quality of Service (QoS) Levels:**
-
-    | Base Type | Priority | Notes |
-    |-----------|----------|-------|
-    | `qb::Event` / `qb::EventQOS2` | High | Default; ordered delivery via `push()` |
-    | `qb::EventQOS1` | Medium | Ordered; suitable for latency-sensitive but non-critical events |
-    | `qb::EventQOS0` | Low / best-effort | Unordered; must be trivially destructible |
-
-*   **Versatile Message Sending:**
-
-    | Method | Ordering | Constraint | Use case |
-    |--------|----------|------------|----------|
-    | `push<E>(dest, ...)` | FIFO per pair | None | **Default, recommended** |
-    | `send<E>(dest, ...)` | Unordered | Trivially destructible | Low-latency fire-and-forget |
-    | `broadcast<E>(...)` | N/A | None | System-wide announcements |
-    | `push<E>(BroadcastId(core), ...)` | FIFO | None | Core-scoped broadcast |
-    | `reply(event)` | N/A | Non-const `event&` | Efficient request/response |
-    | `forward(dest, event)` | N/A | Non-const `event&` | Efficient delegation/routing |
-
-*   **Optimised Sending Utilities:**
-    *   `to(dest).push<E>(...)` — `EventBuilder` for chained multi-event sends; avoids repeated pipe lookups.
-    *   `getPipe(dest)` — direct `qb::Pipe` access for performance-critical paths.
-    *   `pipe.allocated_push<E>(size_hint, ...)` — pre-size the pipe buffer for large-payload events to avoid internal reallocation.
-
-*   **Event Reuse Patterns:** `reply()` and `forward()` reuse the event object in-place, avoiding allocation and copy for the response path.
+The public surface is reachable through three umbrella headers: `<qb/actor.h>` (actor and pipe), `<qb/main.h>` (engine), and `<qb/event.h>` (event base and system events).
 
 ---
 
-## III. Concurrency, Parallelism & Scheduling
+## Actor lifecycle and management
 
-*   **Engine Controller (`qb::Main`):** Manages `VirtualCore` threads, startup, stop-token-based cancellation, signal handling, and error aggregation.
+Owned by [Mastering `qb::Actor`](./actor.md).
 
-*   **Worker Threads (`qb::VirtualCore`):** Each core runs an independent event loop backed by a `qb::io::async::listener`. Actors are thread-affinized — they never migrate between cores.
+| Capability | API | One-line summary |
+|---|---|---|
+| Actor base class | `qb::Actor` | Base class for every user actor; encapsulates state behind sequential, single-threaded event handling. |
+| System-unique identity | `qb::ActorId` | Compound `CoreId` + `ServiceId` identifier used to address every event; obtained via `id()`. |
+| Initialization checkpoint | `virtual bool onInit()` | Runs after construction and ID assignment; register events and acquire resources here. Returning `false` aborts startup and destroys the actor. |
+| Graceful termination | `kill()` | Marks the actor for removal; the owning `VirtualCore` finishes the in-flight handler before destruction. |
+| Liveness query | `is_alive()` | Returns `true` until `kill()` takes effect. |
+| RAII destruction | `virtual ~Actor()` | Runs only after the actor is fully removed from its core; member RAII cleanup is safe here. |
+| Lightweight actors | `qb::no_default_events` | Constructor tag that skips the four default system-event subscriptions (`KillEvent`, `SignalEvent`, `PingEvent`, `UnregisterCallbackEvent`). |
+| Identity and timing accessors | `id()`, `getIndex()`, `getName()`, `getCoreSet()`, `time()` | Read-only accessors; `time()` returns a `uint64_t` nanosecond count cached once per loop iteration. |
 
-*   **Multi-Core Execution:** True parallel processing; actors are statically assigned to cores at creation time.
+Actor creation entry points:
 
-*   **Lock-Free Inter-Core Messaging:** Events between cores travel through MPSC (`lockfree::mpsc::ringbuffer`) mailboxes — no mutex contention on the hot path.
-
-*   **Configuration (`CoreInitializer` via `qb::Main::core(id)`):**
-    *   `setAffinity(CoreIdSet)` — pin the worker thread to specific physical CPUs (Linux `pthread_setaffinity_np` / Windows `SetThreadAffinityMask`).
-    *   `setLatency(ns)` — `0` = busy-spin (lowest latency, 100% CPU); `>0` = sleep when idle (trades latency for CPU efficiency).
-
-*   **Stop-Token Cancellation:** `qb::Main` uses `std::stop_source` / `std::stop_token` (C++20) for clean, signal-free shutdown that works on all platforms.
-
----
-
-## IV. C++23 Coroutine Integration
-
-*   **`Actor::spawn_async(func)`:** Launch a coroutine (`qb::io::async::task<void>`) from any event handler. The actor continues processing other events while the coroutine is suspended at `co_await` points.
-
-*   **`qb::CoroContext`:** Passed by value to the coroutine. Captures the actor's `ActorId` at spawn time — safe to use after `co_await` even if the parent actor has been destroyed.
-
-*   **Critical safety contract:**
-    1. **Never** access actor member variables (`this->_member`) after any `co_await`.
-    2. **Copy** all needed state by value **before** the first `co_await`.
-    3. **Only** use `ctx.push<E>(...)` / `ctx.push_to<E>(dest, ...)` after suspension.
-
-    ```cpp
-    void on(FetchRequest& req) {
-        std::string url = req.url;       // copy BEFORE spawn
-        ActorId     me  = id();
-
-        spawn_async([url, me](auto ctx) -> qb::io::async::task<void> {
-            auto data = co_await http_get(url);  // actor may die here
-            ctx.template push_to<ResultEvent>(me, data); // safe
-        });
-    }
-    ```
-
-*   **Active Coroutine Tracking:** `has_active_coroutines()` / `active_coroutine_count()` let you inspect pending asynchronous work before destroying an actor.
+| API | Where it lives | Summary |
+|---|---|---|
+| `qb::Main::addActor<A>(core_id, args...)` | [Engine](./engine.md) | Add one actor to a specific core before `start()`; returns its `qb::ActorId`. |
+| `main.core(id).builder().addActor<A>(args...)` | [Engine](./engine.md) | Fluent `ActorBuilder` for adding several actors to one core and collecting their IDs. |
+| `Actor::addRefActor<A>(args...)` | [Actor](./actor.md) | Create a child actor on the **same core**; returns a raw, non-owning `A*` (or `nullptr` if `onInit()` failed). |
+| `Actor::addRefHandle<A>(args...)` | [Actor](./actor.md) | Create a same-core child wrapped in a liveness-checked `qb::RefActorHandle<A>`. |
 
 ---
 
-## V. Actor Patterns & Utilities
+## Event system and asynchronous messaging
 
-*   **Periodic Tasks (`qb::ICallback`):** Actors that also inherit from `ICallback` can call `registerCallback(*this)` to receive an `onCallback()` invocation on every loop iteration. The method must be fast and non-blocking.
+Owned by [Event messaging between actors](./messaging.md).
 
-*   **Service Actors (`qb::ServiceActor<Tag>`):** Singleton actors per `VirtualCore`, identified by a unique `Tag` struct. Discovered via:
-    *   `getService<MyService>()` — same-core direct pointer access.
-    *   `getServiceId<MyServiceTag>(core_id)` — cross-core `ActorId` lookup.
+| Capability | API | One-line summary |
+|---|---|---|
+| Event base class | `qb::Event` | Cache-line-aligned base for every inter-actor message; carries header state, a type id, and dest/source IDs. |
+| Per-type identifiers | `qb::type_id<T>()` | Assigns a dense, collision-free `TypeId` from a monotonic atomic counter the first time it is queried for a type. |
+| Event subscription | `registerEvent<E>(*this)` / `unregisterEvent<E>(*this)` | Subscribe (typically in `onInit()`) or unsubscribe an actor from an event type at runtime. |
+| Type-safe dispatch | `void on(E&)` / `void on(E const&)` | The handler invoked for each registered event type; a non-const reference is required to use `reply()` or `forward()`. |
 
-*   **Dependency Discovery (`require<TargetActor>()`):** Broadcasts a `PingEvent`; live actors of the target type respond with `qb::RequireEvent`. Handle in `on(qb::RequireEvent&)` using `is<TargetActor>(event)`.
+Quality-of-service levels:
 
-*   **Safe Child-Actor References (`RefActorHandle<T>`):** Wraps the raw pointer returned by `addRefActor<T>()` with an O(1) liveness check on every dereference, preventing dangling-pointer UB if the child actor terminates independently.
+| Type | Priority | Notes |
+|---|---|---|
+| `qb::Event` (alias `qb::EventQOS2`) | High | Default base type; processed before lower QoS levels. |
+| `qb::EventQOS1` | Medium | Alias of `qb::Event`; processed after QOS2 and before QOS0. |
+| `qb::EventQOS0` | Low | Distinct subclass that sets `state.qos = 0`; processed last. |
 
-    ```cpp
-    _helper = addRefHandle<HelperActor>(id());
-    if (_helper) {               // checks is_alive internally
-        push<Task>(_helper->id(), data);
-    }
-    ```
+Sending methods:
 
-These features provide a comprehensive toolkit for building complex, concurrent, and high-performance applications using the Actor Model in modern C++.
+| Method | Ordering | Constraint | Use case |
+|---|---|---|---|
+| `push<E>(dest, args...)` | Ordered per source/dest pair | None; supports non-trivially-destructible events | Default, recommended. |
+| `send<E>(dest, args...)` | Unordered | Event type **must be trivially destructible** | Low-latency fire-and-forget. |
+| `broadcast<E>(args...)` | N/A | None | Deliver to every actor on every core. |
+| `push<E>(qb::BroadcastId(core), args...)` | Ordered | None | Deliver to every actor on one core. |
+| `reply(event)` | N/A | Non-const `Event&` | Return a received event to its source by swapping dest/source. |
+| `forward(dest, event)` | N/A | Non-const `Event&` | Re-route a received event to a new destination, preserving its source. |
 
-**(Next:** Explore [QB-Core: Mastering qb::Actor](./actor.md) for a deep dive into defining actors.)**
+Lower-level and batched sending:
+
+| API | Summary |
+|---|---|
+| `to(dest)` returns `qb::Actor::EventBuilder` | Fluent helper that chains ordered `push<E>()` calls over one destination pipe, avoiding repeated pipe lookups. |
+| `getPipe(dest)` returns `qb::Pipe` | Direct access to the typed channel to a destination for performance-critical paths. |
+| `pipe.allocated_push<E>(size_hint, args...)` | Pre-size the pipe buffer for a large-payload event to avoid internal reallocation. |
+
+---
+
+## Concurrency, parallelism, and scheduling
+
+Owned by [Engine — `qb::Main` and `VirtualCore`](./engine.md). See also [Core concepts: the threading model](../2_core_concepts/threading_model.md).
+
+| Capability | API | One-line summary |
+|---|---|---|
+| Engine controller | `qb::Main` (alias `qb::engine`) | Owns the `CoreInitializer`s, spawns one worker thread per `VirtualCore`, and drives start/stop/join and signal handling. |
+| Worker thread | `qb::VirtualCore` | Per-thread worker that owns its actors and runs an independent event loop backed by a `qb::io::async::listener`. |
+| Static actor affinity | actor placement at `addActor` time | Actors are assigned to a core at creation and never migrate between cores. |
+| Lock-free inter-core messaging | `qb::lockfree::mpsc::ringbuffer` mailboxes | Cross-core events travel through MPSC ring buffers with no mutex on the hot path. |
+| Idle latency policy | `CoreInitializer::setLatency(qb::duration)` / `Main::setLatency(qb::duration)` | `qb::duration::zero()` (the default) busy-spins for lowest latency; a positive value sleeps when idle to trade latency for CPU. |
+| CPU affinity | `CoreInitializer::setAffinity(qb::CoreIdSet)` | Pin a worker thread to specific physical CPUs; `qb::NoAffinity` lets the OS scheduler choose. |
+| Lifecycle control | `Main::start(bool async = true)`, `Main::stop()`, `Main::join()`, `Main::hasError()` | Start the engine (optionally blocking), request a clean stop, wait for workers, and check for startup/runtime errors. |
+| Stop-token cancellation | `std::stop_source` / `std::stop_token` | The engine uses C++20 stop tokens for signal-free shutdown across all platforms. |
+| Signal handling | `Main::registerSignal`, `Main::unregisterSignal`, `Main::ignoreSignal` | Route OS signals into engine shutdown. |
+
+---
+
+## C++23 coroutine integration
+
+Owned by [Common actor patterns and utilities](./patterns.md#6-c23-coroutine-pattern--spawn_async). The coroutine runtime itself is documented under [qb-io: C++23 coroutines](../3_qb_io/coroutines.md).
+
+| Capability | API | One-line summary |
+|---|---|---|
+| Launch a coroutine from a handler | `Actor::spawn_async(func)` | Starts a `qb::io::async::task<void>` that runs concurrently with the actor's event processing; the actor keeps handling events while the coroutine is suspended at a `co_await`. |
+| Lifetime-safe context | `qb::CoroContext` | Captures the actor's `ActorId` by value at spawn time; its `push<E>(...)` and `push_to<E>(dest, ...)` remain valid even if the parent actor is destroyed during a `co_await`. |
+| Coroutine introspection | `has_active_coroutines()`, `active_coroutine_count()` | Inspect pending asynchronous work before destroying an actor. |
+
+The safety contract — never touch actor members after a `co_await`, copy all needed state by value before the first suspension, and use only `CoroContext` afterward — is detailed and illustrated under [qb-io: safe integration with `qb::Actor`](../3_qb_io/coroutines.md#safe-integration-with-qbactor).
+
+---
+
+## Actor patterns and utilities
+
+Owned by [Common actor patterns and utilities](./patterns.md).
+
+| Capability | API | One-line summary |
+|---|---|---|
+| Periodic callbacks | `qb::ICallback` + `registerCallback(*this)` | Mixin granting an `onCallback()` tick once per `VirtualCore` loop iteration, after the core has received and dispatched that iteration's events; the body must be fast and non-blocking. |
+| Service actors | `qb::ServiceActor<Tag>` | One instance per `VirtualCore`, identified by a unique `Tag`; reached on the same core via `getService<MyService>()`. |
+| Dependency discovery | `require<TargetActor>()` | Broadcasts a `PingEvent`; live actors of the target type reply with `qb::RequireEvent`, handled with `is<TargetActor>(event)`. |
+| Safe child references | `qb::RefActorHandle<T>` | Wraps the raw pointer from `addRefActor<T>()` with an O(1) liveness check on every dereference, preventing dangling-pointer use after the child terminates. |
+
+---
+
+## Pitfalls
+
+- **`send()` is restricted to trivially destructible events.** Use `push()` for events holding `std::string`, `std::vector`, or any type with a non-trivial destructor. The trivial-destructibility constraint applies to `send()`, not to `EventQOS0` — QoS only sets dispatch priority.
+- **`onInit()` is the only safe place to call `registerEvent<E>()`.** Returning `false` from it aborts startup and destroys the actor before it processes any message.
+- **`no_default_events` actors do not respond to `KillEvent` or signals** unless you subscribe to those events explicitly in `onInit()`.
+- **`reply()` and `forward()` consume the event.** After either call the received event object must not be used again in the handler; both require a non-const `on(E&)` handler.
+- **`onCallback()` and every handler run on the `VirtualCore` thread.** Blocking or long-running work stalls every actor on that core; offload to a coroutine via `spawn_async()` instead.
+
+---
+
+## See also
+
+- [Mastering `qb::Actor`](./actor.md) — defining, initializing, and managing actors.
+- [Event messaging between actors](./messaging.md) — events, QoS, and every sending method in depth.
+- [Engine — `qb::Main` and `VirtualCore`](./engine.md) — startup, shutdown, affinity, and inter-core communication.
+- [Common actor patterns and utilities](./patterns.md) — service actors, periodic callbacks, discovery, and referenced actors.
+- [Core concepts: the threading model](../2_core_concepts/threading_model.md) — how cores, threads, and actor affinity fit together.

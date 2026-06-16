@@ -1,217 +1,299 @@
-@page qb_io_async_system_md QB-IO: The Asynchronous Engine (`qb::io::async`)
-@brief A deep dive into `qb-io`'s event loop, timers, callbacks, scoped timers, signal handling, and event management for standalone asynchronous programming.
+# The async runtime: event loop, timers, and callbacks
 
-# QB-IO: The Asynchronous Engine (`qb::io::async`)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-The `qb::io::async` namespace is the powerhouse behind `qb-io`'s non-blocking capabilities. It provides a complete, event-driven asynchronous programming model built around a high-performance event loop. While it seamlessly integrates with the `qb-core` actor system, `qb::io::async` is also designed to be fully usable as a standalone toolkit for any **C++23** application requiring efficient asynchronous operations — including native **C++23 coroutines** (`co_await`/`co_return`).
+`qb::io::async` is the single-threaded, libev-backed event loop that drives every non-blocking operation in `qb-io`: socket readiness, timers, scheduled callbacks, file-system watching, and the C++23 coroutine scheduler.
 
-> **Two async programming models, one event loop.** You can mix event-driven callbacks
-> (`on(Event&&)` handlers) and coroutines (`co_await`) freely; both run on the same
-> `listener` and are never concurrent within a thread.  See the dedicated
-> [C++23 Coroutines guide](./coroutines.md) for the full coroutine reference.
+**Prerequisites:** [QB-IO overview](./README.md), [Time model](./utilities.md) — **See also:** [C++23 coroutines](./coroutines.md), [Transports](./transports.md), [Protocols](./protocols.md), [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.md)
 
-## The Event Loop: `qb::io::async::listener`
+## Summary
 
-At the heart of the asynchronous system is the `qb::io::async::listener` class (defined in `qb/io/async/listener.h`). This class is your primary interface to the event loop.
+The `qb::io::async` namespace provides an event-driven asynchronous model built on a single `listener` per thread. It integrates with the `qb-core` actor runtime — each `VirtualCore` owns one `listener` — but is fully usable standalone in any C++23 program. Two programming models share the same loop: event-driven handlers (`on(Event&&)`) and native coroutines (`co_await`). Neither runs concurrently with the other within a thread; the loop dispatches them sequentially. This page covers the loop itself, the callback and timer utilities, and the file watcher. For the coroutine model, see [C++23 coroutines](./coroutines.md).
 
-*   **Underlying Engine:** `listener` wraps the `libev` C library, known for its high performance and portability across POSIX systems (epoll, kqueue) and Windows (IOCP, select).
-*   **Thread-Local Instance (`listener::current`):** Crucially, `qb-io` provides a **thread-local static instance** of the `listener` named `qb::io::async::listener::current`. This means each thread that intends to perform asynchronous operations with `qb-io` has its own dedicated event loop manager. You don't need to pass listener objects around; you simply access `listener::current` from the thread where you want to register or manage events.
-*   **Initialization (Standalone Usage):** If you're using `qb-io` without `qb-core`, you must initialize the listener for each participating thread by calling `qb::io::async::init();` once per thread before using other `qb::io::async` features. (When using `qb-core`, `qb::Main` handles this for its `VirtualCore` threads).
+Every timed API on this page takes `qb::duration` (a `std::chrono::nanoseconds` span) or any `std::chrono::duration`. Raw `double`-seconds arguments are not part of the public surface.
 
-### Responsibilities of the `listener`:
+## Concepts
 
-1.  **Monitoring Event Sources:** The `listener` continuously monitors various sources of events:
-    *   **I/O Events (`qb::io::async::event::io`):** Readiness of file descriptors (sockets, pipes, files) for reading or writing.
-    *   **Timer Events (`qb::io::async::event::timer`):** Expiration of scheduled timers for delayed or periodic actions.
-    *   **Signal Events (`qb::io::async::event::signal`):** Asynchronous notification of operating system signals (e.g., SIGINT, SIGTERM).
-    *   **File System Stat Events (`qb::io::async::event::file`):** Notifications about changes to file attributes (used by `file_watcher` and `directory_watcher`).
-2.  **Event Dispatching:** When an event source becomes active (e.g., data arrives on a socket, a timer expires), the `listener` identifies the corresponding registered handler (an object implementing `IRegisteredKernelEvent`) and invokes its `invoke()` method. This, in turn, typically calls the user-defined `on(SpecificEvent&)` method within the I/O component or handler class.
+### The event loop: `qb::io::async::listener`
 
-### Driving the Event Loop (Standalone Usage)
+The `listener` class (`qb/io/async/listener.h`) is the central event-loop manager. It wraps a libev `ev::dynamic_loop`, constructed with `EVFLAG_AUTO` so libev selects the best available backend (epoll, kqueue, or select on POSIX; wepoll/IOCP on Windows).
 
-For the `listener` to process events, its loop must be actively run:
+- **Thread-local instance.** Each thread has its own loop, reached through the static member `qb::io::async::listener::current`. You never pass a listener around; you address the current thread's loop. Under `qb-core`, every `VirtualCore` thread has its own `listener::current`.
+- **Single-threaded by contract.** A `listener` and every I/O object registered with it operate within one thread. I/O objects must not be shared across threads; isolation — not locking — provides their thread safety. On Windows the libev epoll path uses wepoll (IOCP), which additionally requires that the whole loop lifecycle stay on one thread.
 
-*   **`qb::io::async::run(int flag = 0)`:** This function executes the event loop for `listener::current`. The `flag` argument controls its behavior:
-    *   `0` (default): Runs the loop until `qb::io::async::break_parent()` is called or no active event watchers remain. This is a blocking call.
-    *   `EVRUN_ONCE`: Waits for at least one event to occur, processes the block of available events, and then returns.
-    *   `EVRUN_NOWAIT`: Checks for any immediately pending events, processes them, and returns without waiting if none are pending.
-*   **`qb::io::async::run_once()`:** Convenience for `run(EVRUN_ONCE)`.
-*   **`qb::io::async::run_until(const bool& status_flag)`:** Runs the loop with `EVRUN_NOWAIT` repeatedly as long as `status_flag` is true.
-*   **`qb::io::async::run_for(duration)`:** Runs the loop for a fixed wall-clock duration, then returns — useful in tests and coroutine drivers.
-*   **`qb::io::async::break_parent()`:** Signals `listener::current` to stop its current `run()` cycle.
+The `listener` monitors four classes of kernel event and dispatches each to its registered handler:
+
+| Watched source | qb-io event | Backed by |
+|---|---|---|
+| File-descriptor readiness (read/write) | `event::io` | `ev::io` |
+| Timer / inactivity expiry | `event::timer` *(alias `event::timeout`)* | `ev::timer` |
+| File or directory attribute change | `event::file` | `ev::stat` |
+| OS signal | `event::signal<Sig>` | `ev::sig` |
+
+When a watcher fires, the listener updates the wrapper's `_revents` field and calls `IRegisteredKernelEvent::invoke()`, which dispatches to the registered object's `on(SpecificEvent&)` method — checking `is_alive()` first when the handler type exposes it.
+
+### Initialization
+
+`qb::io::async::init()` exists for symmetry but is a **no-op**: `listener::current` is a `thread_local` that initializes itself on first access. You do not need to call it before using async features. When you need a *clean* loop — for example in a test `TearDown` — call `listener::current.clear()` directly, which detaches and flushes registered watchers. Do not rely on `init()` to reset state; it deliberately does nothing so that fixtures sharing a thread-local listener do not invalidate each other's already-registered watchers.
+
+### Driving the loop (standalone usage)
+
+Under `qb-core`, `qb::Main` runs the loop on each `VirtualCore`. Standalone, you drive it yourself. All free functions below operate on `listener::current`.
+
+| Function | Behavior | Header |
+|---|---|---|
+| `async::run(int flag = 0)` | Run the loop with a libev flag. `0` blocks until `break_parent()` or no active watchers remain. Returns the number of events invoked. | `listener.h` |
+| `async::run_once()` | `run(EVRUN_ONCE)` — wait for and process one block of events. | `listener.h` |
+| `async::run_until(bool const& status)` | Repeatedly `run(EVRUN_NOWAIT)` while `status` is true; sleeps 50 µs between idle passes to avoid busy-spinning. | `listener.h` |
+| `async::break_parent()` | Request `listener::current` to break out of its current `run()` cycle. | `listener.h` |
+| `async::run_for(qb::duration)` | Pump the loop (and ready coroutines) for a `steady_clock`-measured duration, then return. Used by tests and coroutine drivers. | `coroutine/utils.h` |
+| `async::run_sync(Awaitable&&)` | Spawn an awaitable and pump the loop until it completes, returning its result. Bridges synchronous code (e.g. test setup) to coroutine APIs. | `coroutine/utils.h` |
+
+After processing libev events, every `run()` call also drains any ready coroutines through the listener's scheduler.
+
+> **Pitfall — `EVRUN_ONCE` and timerfd.** When libev is built with timerfd-based time-jump detection (`QB_LIBEV_USE_TIMERFD=ON`, off by default) and only `ev_io` watchers are active with no heap timers, `EVRUN_ONCE` can block for libev's internal maximum wait time. In pump loops, prefer `run_until` or `run(EVRUN_NOWAIT)`.
+
+> **Pitfall — re-entrancy.** `run`, `run_once`, `run_until`, `run_for`, and `run_sync` must not be called from inside a coroutine or actor handler that is itself executing under the coroutine scheduler's ready-drain. Doing so throws `std::logic_error` (and asserts in debug builds).
+
+### Introspection
+
+The `listener` exposes counters useful for monitoring and debugging:
+
+- `nb_invoked_event()` — events invoked during the most recent `run()` (reset each call).
+- `total_events_processed()` — cumulative events since listener creation (never reset).
+- `size()` — number of currently registered watchers.
+
+### Registering event handlers
+
+`listener::current.registerEvent<_Event, _Actor, _Args...>(actor, args...)` associates a watcher with a handler and the loop:
+
+- `_Event` — the qb-io event type (e.g. `event::io`, `event::timer`), each wrapping one libev watcher.
+- `_Actor` — the handler instance; it must define an `on(_Event&)` method.
+- `_Args...` — arguments forwarded to the libev watcher's `set()` (e.g. a file descriptor and `EV_READ`/`EV_WRITE` flags for `event::io`).
+
+You rarely call this directly. The CRTP bases — `async::input`, `async::output`, `async::io`, `async::with_timeout`, `async::file_watcher` — register their watchers in their constructors and unregister them in their destructors. Registration and unregistration are O(1) with no per-event hash-table allocation: handlers are linked into an intrusive list owned by the listener, and each `RegisteredKernelEvent<E, A>` instantiation draws from a thread-local LIFO freelist, so steady-state churn performs no `malloc`/`free`.
+
+## Scheduled callbacks: `async::callback`
+
+`async::callback` (`qb/io/async/io.h`) schedules a callable for execution by the current thread's loop, optionally after a delay. It has two overloads:
 
 ```cpp
-// Standalone qb-io example sketch
+template <typename _Func>
+void callback(_Func &&func);                              // (1) no delay
+
+template <typename _Func, typename Rep, typename Period>
+void callback(_Func &&func, std::chrono::duration<Rep, Period> timeout);  // (2) delayed
+```
+
+- **Overload (1)** invokes `func()` **immediately and synchronously** on the calling thread. It does not defer to the loop.
+- **Overload (2)** with `timeout <= 0` likewise invokes `func()` immediately. With a positive duration it heap-allocates an internal `Timeout<_Func>` watcher that fires once after the delay and then deletes itself.
+
+The delayed path is self-managing: the `Timeout<_Func>` registers with the listener, runs the callable, and frees itself. A thread-local LIFO freelist backs `Timeout<_Func>` allocation, so steady-state `callback()` traffic performs zero `malloc`/`free`. To honor short delays even when the calling thread has been idle outside the loop, overload (2) refreshes libev's cached "now" before arming the timer.
+
+> **Exceptions are swallowed.** The delayed `Timeout<_Func>` invokes the callable inside `try { _func(); } catch (...) {}`. An exception escaping your callback is discarded, not propagated. Handle errors inside the callback.
+
+```cpp
+// src: derived from qb/source/io/tests/system/test-async-io.cpp
 #include <qb/io/async.h>
-#include <iostream>
+#include <qb/system/timestamp.h>
 #include <atomic>
+#include <chrono>
+#include <iostream>
 
-std::atomic<bool> g_is_running = true;
-
-void my_periodic_task() {
-    std::cout << "Periodic task executed at: " << qb::to_iso8601(qb::wall_now()) << std::endl;
-    if (g_is_running) {
-        // Reschedule self
-        qb::io::async::callback(my_periodic_task, 1.0); // Every 1 second
-    }
-}
+using namespace std::chrono_literals;
 
 int main() {
-    qb::io::async::init(); // Initialize listener for the main thread
+    std::atomic<bool> running{true};
 
-    std::cout << "Starting standalone qb-io event loop demo.\n";
-    std::cout << "Press Ctrl+C to exit (if signal handling is set up, or wait for tasks).\n";
+    // Reschedule from inside the callback to build a periodic task.
+    std::function<void()> tick = [&] {
+        std::cout << "tick at " << qb::to_iso8601(qb::wall_now()) << '\n';
+        if (running)
+            qb::io::async::callback([&] { tick(); }, 1s);
+    };
+    qb::io::async::callback([&] { tick(); }, 1s);
 
-    // Schedule an initial periodic task
-    qb::io::async::callback(my_periodic_task, 1.0);
+    // One-shot stop after 5 seconds.
+    qb::io::async::callback([&] {
+        running = false;
+        qb::io::async::break_parent();
+    }, 5s);
 
-    // Schedule a one-shot task to stop the loop after 5 seconds
-    qb::io::async::callback([]() {
-        std::cout << "5 seconds elapsed. Signaling application to stop.\n";
-        g_is_running = false;
-        qb::io::async::break_parent(); // Request the run loop to exit
-    }, 5.0);
-
-    // Run the event loop until break_parent() is called or g_is_running is false
-    // In a real app, this might be: while(g_is_running) { qb::io::async::run(EVRUN_ONCE); /* other logic */ }
-    qb::io::async::run(); // Runs until break_parent() or no more active watchers
-
-    std::cout << "Event loop finished.\n";
+    // Blocks until break_parent() runs or no active watchers remain.
+    qb::io::async::run();
     return 0;
 }
 ```
 
-## Registering Event Handlers
+To **cancel** a pending callback or hold a handle to it, use `scoped_callback` instead.
 
-The `listener::current.registerEvent<_Event, _Actor, _Args...>(actor, args...)` method is the core mechanism for associating an event watcher (like `qb::io::async::event::io` or `timer`) with a handler object (`_Actor`) and the event loop.
+## Owned, cancellable timers: `async::scoped_callback`
 
-*   `_Event`: The qb-io event type (e.g., `qb::io::async::event::timer`). This wraps a specific `libev` watcher.
-*   `_Actor`: The class instance that will handle the event (must have an `on(_Event&)` method).
-*   `_Args...`: Arguments specific to the `libev` watcher being set up (e.g., file descriptor and `EV_READ`/`EV_WRITE` flags for an `event::io` watcher, or timeout values for an `event::timer`).
-
-Most `qb-io` components designed for asynchronous operations (e.g., those inheriting from `qb::io::async::io`, `qb::io::async::file_watcher`, or `qb::io::async::with_timeout`) handle this registration internally when they are constructed or started.
-
-## Asynchronous Callbacks: `qb::io::async::callback`
-
-(`qb/io/async/io.h`)
-
-This utility function provides a straightforward way to schedule a callable (lambda, function pointer, functor) for execution by the current thread's event loop, optionally after a delay.
-
-*   **Execution:** The callback runs on the same thread that scheduled it.
-*   **Lifetime:** The internal timer object (`qb::io::async::Timeout`) created by `callback` is **self-managing** — it registers with the listener and deletes itself after the callback fires. A **thread-local LIFO freelist** ensures steady-state zero `malloc`/`free` calls.
-*   **Usage:** `qb::io::async::callback(my_function, delay_seconds);` or `qb::io::async::callback([]{ /* lambda body */ });`
-*   **Use Cases:** Delaying operations, breaking work into smaller non-blocking chunks, scheduling retries, and simple periodic tasks (by re-scheduling from within the callback).
-
-> **Note:** `callback()` uses a self-deleting `Timeout<F>` object. If you need to **cancel** the timer or keep a handle to it, use `scoped_callback()` instead.
-
-**(See practical examples in:** [Core Concepts: Asynchronous I/O Model in QB](./../2_core_concepts/async_io.md) for actor-centric usage, and `example1_async_io.cpp` for general usage.**)**
-
-## Owned / Cancellable Timers: `qb::io::async::scoped_callback`
-
-(`qb/io/async/io.h`)
-
-`scoped_callback` is the RAII alternative to `callback()`. It returns a `std::unique_ptr<ScopedTimeout<F>>` that the caller owns. Destroying (or resetting) the pointer cancels the pending callback without any extra bookkeeping.
+`scoped_callback` (`qb/io/async/io.h`) is the RAII counterpart to `callback`. It returns a `std::unique_ptr<ScopedTimeout<std::decay_t<_Func>>>` that the caller owns. Destroying or resetting the pointer stops the watcher and releases its registration; no self-delete is involved.
 
 ```cpp
-// Schedule work in 2 seconds, but keep a cancellation handle
-auto handle = qb::io::async::scoped_callback([]() {
-    std::cout << "2 seconds elapsed\n";
-}, 2.0);
+#include <qb/io/async.h>
+#include <chrono>
+#include <iostream>
 
-// Cancel before it fires:
-handle.reset(); // timer is stopped and unregistered cleanly
-
-// std::chrono overload
 using namespace std::chrono_literals;
-auto h2 = qb::io::async::scoped_callback(my_cleanup, 500ms);
+
+// Schedule work in 2 seconds, keeping a cancellation handle.
+auto handle = qb::io::async::scoped_callback([] {
+    std::cout << "2 seconds elapsed\n";
+}, 2s);
+
+// Cancel before it fires — stops and unregisters the watcher cleanly.
+handle.reset();
 ```
 
-Key differences from `callback()`:
+A timeout of zero or less fires the callback inline at construction (matching `callback`'s immediate semantics) and marks the timer as fired. `ScopedTimeout` also exposes `fired()` and `cancel()` (which sets the timeout to `qb::duration::zero()`). As with `callback`, the callable runs inside a `catch (...)` and exceptions are swallowed.
 
 | | `callback()` | `scoped_callback()` |
 |---|---|---|
-| Ownership | Self-deleting (`Timeout<F>`) | Caller-owned (`unique_ptr<ScopedTimeout<F>>`) |
+| Ownership | Self-deleting `Timeout<F>` | Caller-owned `unique_ptr<ScopedTimeout<F>>` |
 | Cancellation | Not possible | `handle.reset()` or `handle->cancel()` |
-| Heap traffic | Zero (freelist) | One allocation per call |
+| Heap traffic (steady state) | Zero (freelist) | One allocation per call |
 | Best for | Fire-and-forget tasks | Watchdogs, retry loops, cancellable deadlines |
 
-**(See also:** `ScopedTimeout<F>` in `qb/io/async/io.h`.**)**
+## Inactivity timeouts: `async::with_timeout<Derived>`
 
-## Timeout Management: `qb::io::async::with_timeout<Derived>`
+`with_timeout<Derived>` (`qb/io/async/io.h`) is a CRTP base that adds an inactivity timer to a class. It is the mechanism behind session idle-timeouts and operation deadlines.
 
-(`qb/io/async/io.h`)
+```cpp
+// src: derived from qb/source/io/tests/system/test-async-io.cpp (TimerHandler)
+#include <qb/io/async.h>
+#include <chrono>
 
-This CRTP base class allows you to easily add timeout functionality to your own classes.
+using namespace std::chrono_literals;
 
-*   **Inheritance:** `class MyClass : public qb::io::async::with_timeout<MyClass> { ... };`
-*   **Handler Method:** Implement `void on(qb::io::async::event::timer const& event)` in `MyClass` to define what happens when the timeout occurs.
-*   **Control:**
-    *   The constructor `with_timeout(timeout_in_seconds)` initializes and starts the timer.
-    *   Call `updateTimeout()` on any activity that should reset the timeout countdown.
-    *   Use `setTimeout(new_duration_seconds)` to change the timeout period or disable it (by passing `0.0`).
+class IdleHandler : public qb::io::async::with_timeout<IdleHandler> {
+public:
+    explicit IdleHandler(qb::duration timeout = 100ms)
+        : with_timeout(timeout) {}
 
-This mechanism is ideal for implementing inactivity timeouts in network sessions, operation timeouts, or any scenario where an action needs to be taken if something doesn't happen within a specific timeframe.
+    // Called when the inactivity deadline is reached.
+    void on(qb::io::async::event::timer const &) {
+        // Handle the timeout: close a connection, fail an operation, etc.
+    }
 
-**(A detailed example is available in:** [Core Concepts: Asynchronous I/O Model in QB](./../2_core_concepts/async_io.md) and `test-async-io.cpp::TimerHandler`**)**
+    void on_activity() {
+        updateTimeout(); // Reset the countdown on each activity.
+    }
+};
+```
 
-## Standard Asynchronous Event Types (`qb::io::async::event::*`)
+- **Constructor.** `with_timeout(qb::duration timeout = std::chrono::seconds(3))` starts the timer when `timeout > 0`; a non-positive value leaves it disabled.
+- **`updateTimeout()`** records the current loop time as the last activity. Because the underlying timer measures from last activity, calling this on each event resets the effective deadline without re-arming the watcher on every byte.
+- **`setTimeout(qb::duration)`** changes the period and restarts the timer; pass `qb::duration::zero()` to disable it.
+- **`getTimeout()`** returns the configured period as a `qb::duration` (zero when disabled).
+- **Handler.** Implement `on(event::timer const&)` (or `on(event::timer&&)`). The base only forwards to your handler once the real deadline — accounting for the latest `updateTimeout()` — has elapsed; if activity is more recent, it silently re-arms for the remaining interval.
 
-(`qb/io/async/event/all.h`)
+## Watching the file system: `async::file_watcher` and `async::directory_watcher`
 
-`qb-io` defines a suite of strongly-typed event structures. When building custom I/O components (those inheriting from `qb::io::async::input`, `output`, or `io`), you override `on(SpecificEvent&&)` methods to react to these.
+`file_watcher<Derived>` and `directory_watcher<Derived>` (`qb/io/async/io.h`) wrap an `event::file` (libev `ev::stat`) to monitor a path for attribute changes such as size or modification time.
+
+```cpp
+#include <qb/io/async.h>
+#include <chrono>
+#include <iostream>
+#include <string>
+
+using namespace std::chrono_literals;
+
+class LogTail : public qb::io::async::directory_watcher<LogTail> {
+public:
+    explicit LogTail(std::string path) {
+        // Poll every 500 ms for attribute changes.
+        start(path, 500ms);
+    }
+
+    void on(qb::io::async::event::file const &event) {
+        if (event.attr.st_nlink == 0) {
+            std::cout << "path removed\n";
+            disconnect(); // Stop watching.
+            return;
+        }
+        if (event.attr.st_mtime != event.prev.st_mtime)
+            std::cout << "attributes changed, size " << event.attr.st_size << '\n';
+    }
+};
+```
+
+- **`start(std::string const& path, qb::duration interval = std::chrono::milliseconds(100))`** begins watching. `interval` is libev's polling cadence: shorter is more responsive but costs more CPU.
+- **`disconnect()`** stops the watcher.
+- The `event::file` payload carries `attr` (current `ev_statdata`) and `prev` (previous snapshot). `attr.st_nlink == 0` indicates deletion.
+
+`file_watcher` differs from `directory_watcher` in that it also reads and frames file content through a `qb::io::async::IProtocol` (`do_read == true`). When the watched file grows, `file_watcher` calls `read_all()`, which runs the active protocol's `getMessageSize()` / `onMessage()` loop and enforces the configured maximum message size. `directory_watcher` (`do_read == false`) only forwards the `event::file` notification. The `async::file<Derived>` template (`qb/io/async/file.h`) composes `file_watcher` with `transport::file` for non-blocking file consumption; see [Transports](./transports.md).
+
+## Standard event types: `qb::io::async::event::*`
+
+`qb-io` defines strongly-typed event structs (`qb/io/async/event/all.h`). Custom I/O components — those deriving from `async::input`, `output`, or `io` — react by overriding `on(SpecificEvent&&)`.
 
 | Event type | Trigger | Key fields |
 |---|---|---|
 | `disconnected` | Connection closed or I/O error | `int reason`, `std::error_code error_code`, `std::string message` |
-| `eof` *(alias: `input_drained`)* | Input stream fully consumed | — |
-| `eos` | Output stream fully flushed | — |
+| `input_drained` *(alias `eof`)* | Input buffer fully consumed (not an end-of-stream signal) | — |
+| `eos` | Output buffer fully flushed | — |
 | `file` | Watched file/directory attributes changed | `ev_statdata attr`, `ev_statdata prev` |
-| `handshake` | SSL/TLS handshake progress | — |
-| `io` | Raw fd readiness (read or write) | `int fd`, `int events` |
-| `pending_read` | Unprocessed bytes remain in input buffer | `std::size_t size` |
-| `pending_write` | Unsent bytes remain in output buffer | `std::size_t size` |
-| `signal` | OS signal caught | `int signum` |
-| `timer` | Timer or inactivity timeout expired | loop timestamp |
-| `extracted` | Connection was extracted from a server | — |
+| `handshake` | Handshake complete | — |
+| `io` | Raw fd readiness; `_revents` carries `EV_READ`/`EV_WRITE` | (libev `ev::io` base) |
+| `pending_read` | Unprocessed bytes remain in the input buffer | `std::size_t bytes` |
+| `pending_write` | Unsent bytes remain in the output buffer | `std::size_t bytes` |
+| `signal<Sig>` | OS signal caught | (libev `ev::sig` base) |
+| `timer` *(alias `timeout`)* | Timer or inactivity timeout expired | (libev `ev::timer` base) |
+| `extracted` | Connection extracted from an I/O handler | — |
 | `dispose` | Component is about to be destroyed | — |
 
-### Disconnect Reason Codes
+### Disconnect reason codes
 
-The `disconnected` event carries a `reason` field of type `disconnect_reason` (an `int`-backed enum):
+The `disconnected` event carries a `reason` field of type `disconnect_reason`, an `int`-backed enum. The integer backing keeps it interchangeable with raw codes, so applications may pass their own positive values.
 
 | Code | Named constant | Meaning |
 |---|---|---|
-| `0` | `peer_closed` | Normal peer shutdown or graceful `disconnect()` |
+| `0` | `peer_closed` | Normal shutdown — peer closed, or the local side closed cleanly |
 | `1` | `user_initiated` | Explicit `disconnect()` call from application code |
-| `> 1` | *(application-defined)* | Custom application codes (e.g., HTTP status codes) |
-| `-1` | `protocol_error` | Protocol called `not_ok()` |
-| `-2` | `message_too_large` | Incoming frame exceeded `max_message_size()` |
-| `-3` | `buffer_overflow` | Read/write buffer exceeded configured limit |
+| `> 1` | *(application-defined)* | Custom application codes (e.g. `qbm-http` reason codes) |
+| `-1` | `protocol_error` | Protocol marked itself `not_ok()` |
+| `-2` | `message_too_large` | Incoming frame exceeded the configured maximum message size |
+| `-3` | `buffer_overflow` | Read/write buffer exceeded its configured limit |
 
 ```cpp
-void on(qb::io::async::event::disconnected&& ev) {
+void on(qb::io::async::event::disconnected &&ev) {
     using R = qb::io::async::event::disconnect_reason;
     switch (static_cast<R>(ev.reason)) {
-        case R::peer_closed:       /* normal */       break;
-        case R::protocol_error:    /* bad frame */    break;
-        case R::message_too_large: /* DoS guard */    break;
+        case R::peer_closed:       /* normal */    break;
+        case R::protocol_error:    /* bad frame */ break;
+        case R::message_too_large: /* DoS guard */ break;
         default:
             if (ev.error_code)
-                std::cerr << "System error: " << ev.error_code.message() << '\n';
+                std::cerr << "system error: " << ev.error_code.message() << '\n';
     }
 }
 ```
 
-### Handler Signature Rules
+### Handler signature rules
 
 Event handlers in CRTP-derived classes must use a compatible signature:
 
-*   `void on(event::X&&)` — preferred (rvalue, move-enabled).
-*   `void on(const event::X&)` — accepted.
-*   `void on(event::X&)` — **not accepted** for rvalue-only events; will silently fail to bind.
+- `void on(event::X&&)` — preferred (rvalue, move-enabled).
+- `void on(event::X const&)` — accepted.
+- `void on(event::X&)` — **not** accepted for rvalue-delivered events; it silently fails to bind.
 
-**(See also:** [QB-IO: Async, Lifecycle & Allocation Invariants](../7_reference/io_invariants.md) §4 for CRTP dispatch rules.**)**
+See [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.md) for the full CRTP dispatch rules.
 
-These events form the backbone of communication between the `listener` and I/O handling components.
+## Pitfalls
 
-**(Next:** [QB-IO: C++23 Coroutines](./coroutines.md) for the `co_await` programming model, or [QB-IO: Transports](./transports.md) for network transports.**) 
+- **`init()` does not reset the loop.** It is a no-op. For a clean event loop (tests, restarts), call `listener::current.clear()`.
+- **`callback(func)` is not deferred.** Overload (1), and overload (2) with a non-positive duration, run the callable synchronously and immediately. Only a positive duration schedules a future fire.
+- **Pass durations, not `double` seconds.** Every timed API takes `qb::duration` or a `std::chrono::duration`. There is no `double`-seconds public overload.
+- **Callbacks swallow exceptions.** `Timeout` and `ScopedTimeout` wrap the callable in `catch (...)`. Errors that escape your callable are silently dropped.
+- **Do not re-enter `run*` from a handler.** Calling `run`, `run_once`, `run_until`, `run_for`, or `run_sync` from inside a coroutine or actor handler executing under the scheduler throws `std::logic_error`.
+- **One thread per listener.** Never share I/O objects, watchers, or the loop across threads. Each thread that does async work has its own `listener::current`.
+
+## See also
+
+- [C++23 coroutines](./coroutines.md) — the `co_await` model layered on this loop, plus `sleep`, combinators, channels, and the scheduler.
+- [Transports](./transports.md) — the socket and file transports that ride on `async::input`/`output`/`io`.
+- [Protocols](./protocols.md) — the `IProtocol` framing the watcher and I/O bases drive.
+- [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.md) — registration, dispatch, and allocation guarantees in reference form.

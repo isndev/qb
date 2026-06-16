@@ -1,88 +1,203 @@
-@page guides_performance_tuning_md QB Framework: Performance Tuning Guide
-@brief Optimize your QB actor applications for maximum speed, scalability, and efficiency with these targeted tuning strategies.
+# Performance tuning
 
-# QB Framework: Performance Tuning Guide
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-The QB Actor Framework is engineered for high performance out-of-the-box. However, to extract the maximum potential for your specific application and hardware, consider these targeted tuning strategies. Always remember to **profile your application first** to identify actual bottlenecks before applying optimizations prematurely.
+A method-driven guide to the knobs that affect throughput and latency in a qb actor system: core placement, event-loop idle latency, allocation behavior, the lock-free transport, and the two build flags (`QB_ENABLE_NATIVE_ARCH`, `QB_ENABLE_LTO`) that change codegen.
 
-## 1. `VirtualCore` and Threading Configuration
+**Prerequisites:** [Engine: `qb::Main` and `VirtualCore`](./../4_qb_core/engine.md), [Event messaging](./../4_qb_core/messaging.md) — **See also:** [CMake options](./../7_reference/cmake_dependencies.md), [Building](./../7_reference/building.md)
 
-Fine-tuning how `qb::Main` manages its `VirtualCore` worker threads can significantly impact performance.
+## Summary
 
-*   **Optimal Core Count:**
-    *   **Default:** `qb::Main` typically defaults to `std::thread::hardware_concurrency()` `VirtualCore`s.
-    *   **Tuning:** If your application is I/O-bound with few active actors, or if profiling shows excessive context switching, consider reducing the number of cores during `qb::Main` instantiation. Conversely, ensure enough cores are available for CPU-bound actors to run in parallel.
-*   **CPU Affinity (`CoreInitializer::setAffinity(qb::CoreIdSet)`):
-    *   **Purpose:** Pin a `VirtualCore` thread to one or more specific physical CPU cores.
-    *   **Benefit:** Prevents OS thread migration, significantly improving L1/L2 cache hit rates and reducing context-switching overhead. This is especially beneficial for CPU-intensive actors or tightly communicating groups of actors that frequently access shared cache lines (though direct data sharing is discouraged by actors).
-    *   **How:** Before calling `main.start()`, use `main.core(virtual_core_id).setAffinity(affinity_set);`.
-    *   **Caution:** Requires careful planning. Incorrect affinity settings can lead to core overloading or underutilization. Profile to determine optimal pinning for critical actors/cores.
-*   **Event Loop Latency (`CoreInitializer::setLatency(nanoseconds)`):
-    *   **Purpose:** Controls the idle behavior of a `VirtualCore`'s event loop.
-    *   **`0` (Default for new cores):** Lowest possible event processing latency. The `VirtualCore` will busy-spin (consume 100% CPU on its assigned core) even when idle, constantly checking for new events. Ideal for ultra-latency-sensitive applications (e.g., high-frequency trading, real-time control systems).
-    *   **`> 0` (e.g., `1000000` for 1ms):** Allows the `VirtualCore` to sleep for up to the specified duration (in nanoseconds) if its event queues are empty. This drastically reduces CPU consumption during idle periods at the cost of potentially introducing a slight delay (up to the specified latency) in picking up the next event.
-    *   **Tuning:** For most server applications or systems with intermittent workloads, a small positive latency (e.g., 100µs to 5ms) often provides an excellent balance between responsiveness and CPU efficiency. Measure your application's specific latency requirements and CPU usage under load to find the sweet spot.
+qb is configured for low overhead by default. Most of the levers below trade one resource for another — CPU for latency, memory for fewer reallocations, portability for host-specific codegen — so none of them is universally correct. Measure first: a profiler tells you which actor, core, or path is hot; this page tells you which knob moves it. The framework does not publish performance numbers, and neither should you without your own benchmark on your own hardware.
 
-**(Reference:** [QB-Core: Engine - qb::Main & VirtualCore](./../4_qb_core/engine.md), `test-main.cpp` for examples.)**
+The tuning surface splits into three layers:
 
-## 2. Optimizing Event Messaging
+- **Engine configuration** — how many `VirtualCore`s run, which physical CPUs they pin to, and how long an idle core waits before parking. Set once, before `Main::start()`.
+- **Messaging and allocation** — how events move between actors and how the per-pipe buffers grow. Per-call decisions in your handlers.
+- **Build flags** — codegen targeting (`QB_ENABLE_NATIVE_ARCH`) and cross-module inlining (`QB_ENABLE_LTO`). Set at configure time.
 
-Efficient message passing is key to actor system performance.
+## Concepts
 
-*   **`push` (Ordered) vs. `send` (Unordered):
-    *   **`push<Event>(...)`:** The **default and strongly recommended** method. Ensures ordered delivery between a specific sender/receiver pair and correctly handles non-trivially destructible event payloads.
-    *   **`send<Event>(...)`:** Use **only in rare, performance-critical scenarios** where: (a) event order absolutely does not matter, (b) communication is guaranteed to be same-core, AND (c) the event type is **trivially destructible** (e.g., contains only PODs or `qb::string<N>`). Incorrect use can lead to very hard-to-debug ordering issues and is generally not worth the marginal potential gain.
-*   **`EventBuilder` (`actor.to(dest).push<...>(...)`):
-    *   If sending *multiple* events to the *same destination actor* consecutively from within a single event handler, using the `EventBuilder` can provide a minor performance improvement by avoiding repeated lookups for the communication pipe.
-*   **Direct Pipe Access & `allocated_push` (`actor.getPipe(dest).allocated_push<Event>(size_hint, ...)`):
-    *   **Crucial for Large Events:** When an event contains a large payload (e.g., a sizeable buffer passed via `std::shared_ptr` or `std::unique_ptr`), use `allocated_push`. Provide a `size_hint` (approximately `sizeof(Event) + actual_payload_size`) to pre-allocate a contiguous block in the underlying communication pipe. This can significantly reduce or eliminate expensive reallocations and memory copies within the pipe during event construction and enqueuing.
-*   **`reply(Event&)` and `forward(ActorId, Event&)`:
-    *   **Always prefer these** for request-response or delegation patterns. They reuse the existing event object, completely avoiding the overhead of new event allocation, construction, and data copying.
-*   **Event Payload Design:**
-    *   Keep event structures lean. They are primarily data carriers.
-    *   **Pass Large Data by Smart Pointer:** For substantial data (e.g., image buffers, large text blocks, collections), include a `std::shared_ptr<DataType>` or `std::unique_ptr<DataType>` in your event. This ensures only the pointer is copied/moved, not the entire data block.
-    *   **Use `qb::string<N>` for Strings:** Prefer `qb::string<N>` over `std::string` for string data within events to avoid potential ABI issues and heap allocations for small-to-medium strings. For very large strings, `std::shared_ptr<std::string>` is an option if `qb::string<N>` is insufficient.
+### The threading model
 
-**(Reference:** [QB-Core: Event Messaging Between Actors](./../4_qb_core/messaging.md), `test-actor-event.cpp`.)**
+`qb::Main` spawns exactly one worker thread (`std::jthread`) per `VirtualCore` it launches. A core is launched only if it has a `CoreInitializer` — that is, only if you placed at least one actor on it (via `Main::addActor<T>(core_id, …)`) or touched it through `Main::core(core_id)`. The set of cores that will launch is returned by `Main::usedCoreSet()`.
 
-## 3. Actor Design and Placement Strategies
+A registered core with zero actors fails to start: the worker logs `... Started with 0 Actor` (prefixed with its `VirtualCore(<index>).id(<thread>)` identity) and reports `VirtualCore::Error::NoActor`. Touch `Main::core(n)` only for cores you intend to populate.
 
-How you design and distribute your actors impacts system performance.
+Each `VirtualCore` owns its actors exclusively and runs them on its single thread. An actor never executes on two threads, so there is no lock around actor state. The cost model that follows from this:
 
-*   **Actor Granularity:** Avoid overly fine-grained actors if the communication overhead for simple tasks outweighs the benefits of decomposition. Conversely, overly coarse-grained actors can become bottlenecks or limit parallelism.
-*   **State Locality & Communication Patterns:**
-    *   **Co-locate Frequent Communicators:** Place actors that exchange many messages frequently on the *same `VirtualCore`* if possible. This minimizes inter-core communication overhead (which, while efficient in QB, is still more expensive than same-core).
-    *   Use `main.addActor<MyActor>(core_id, ...)` or the `core(core_id).builder()` to explicitly assign actors to cores.
-*   **Identifying and Isolating Bottlenecks:**
-    *   If an actor consistently handles a high volume of messages or performs CPU-intensive computations, consider placing it on a dedicated `VirtualCore` with appropriate affinity and low (or zero) latency settings.
-    *   Distribute work by sharding data or requests across multiple instances of worker actors if a single actor type becomes a bottleneck.
-*   **Non-Blocking Behavior is Paramount:** **Strictly avoid any blocking operations** (long computations, synchronous/blocking I/O calls, extended waits on mutexes or condition variables) directly within an actor's `on(Event&)` handlers or `onCallback()` method. A blocked actor stalls its entire `VirtualCore`! Offload such tasks using:
-    *   `qb::io::async::callback` for simpler, non-CPU-intensive blocking calls.
-    *   Dedicated worker actors (potentially on different cores) for more complex or frequent blocking operations. These workers perform the blocking task and send a result event back.
-*   **Referenced Actors (`addRefActor`):
-    *   Can reduce event-passing overhead for tightly-coupled parent-child actors that reside on the **same core** and interact very frequently with simple calls.
-    *   **Use with Caution:** Direct method calls bypass the child's mailbox, breaking standard actor isolation and potentially creating state consistency issues if not managed meticulously. Prefer events unless a significant, *measured* performance gain is demonstrated for a critical interaction.
+- **Same-core messaging** is a local pipe write — no atomics, no contention.
+- **Cross-core messaging** crosses a lock-free MPSC mailbox — efficient, but more expensive than same-core. Co-locate actors that talk frequently.
+- **A blocking call inside a handler stalls every actor on that core.** This is the single most common performance defect; see [Pitfalls](#pitfalls).
 
-## 4. I/O Performance Considerations (for `qb-io` usage)
+### Core placement
 
-*   **Protocol Efficiency:** Binary protocols (e.g., `text::binary16/32` which use `base::size_as_header`) are generally more performant than text-based protocols due to less parsing overhead.
-*   **Zero-Copy Read Views:** When parsing, if your protocol supports it (like `text::string_view` or `text::command_view`), using `std::string_view` for message payloads can avoid copying data from the input buffer into new strings, provided the view is used before the buffer is modified.
-*   **Buffer Management (`qb::allocator::pipe`):** `qb-io` streams use `qb::allocator::pipe` internally. While generally efficient, understanding its `reorder()` behavior can be useful if you are doing very low-level custom buffer manipulation (rarely needed).
-*   **SSL/TLS Overhead:** Encryption/decryption inherently adds CPU overhead. Ensure you are using modern, efficient cipher suites. For applications with many short-lived connections, SSL session resumption/caching can significantly reduce handshake latency.
-*   **Compression Trade-offs:** When using `qb::compression`, balance the desired compression level against CPU cost. Higher compression levels save more bandwidth/storage but consume more CPU cycles.
+Place an actor with `Main::addActor<T>(core_id, args…)`, or fluently across one core with `Main::core(core_id).builder()`. Placement is a topology decision: actors that exchange many messages belong on the same core to keep traffic off the cross-core mailbox; an actor that is a throughput bottleneck can be sharded into several instances spread across cores.
 
-## 5. Profiling: Your Most Important Tool
+```cpp
+// src: examples/all/taskmanager/src/main.cpp
+#include <qb/main.h>
+#include <cstdint>
+#include <vector>
 
-Theoretical optimizations are useful, but **always profile your application** under realistic load conditions to identify actual bottlenecks.
+qb::Main engine;
 
-*   **System Profilers:** Use platform-specific tools (`perf` on Linux, Instruments on macOS, VTune, Visual Studio Profiler) to find CPU hotspots, cache misses, and contention points.
-*   **Application-Level Metrics:** Instrument your critical actors with `std::atomic` counters or use `qb::LogTimer` / `qb::ScopedTimer` to measure:
-    *   Event processing times.
-    *   Mailbox queue lengths (if accessible or instrumented).
-    *   Message throughput per actor/core.
-    *   Latency for specific request-response cycles.
-*   **Logging:** Use a high-performance logger (like `nanolog` if `QB_LOGGER` is enabled) *selectively* for tracing event flow or timing critical sections. Excessive logging in hot paths can itself become a bottleneck.
+// Shard the worker pool across cores 1-4, collecting their ids first.
+std::vector<qb::ActorId> worker_ids;
+worker_ids.reserve(num_workers);
+for (uint32_t i = 0; i < num_workers; ++i) {
+    const uint32_t core = 1 + (i % 4);
+    worker_ids.push_back(
+        engine.addActor<actors::TaskManager>(core, pg_uri, redis_uri));
+}
 
-By systematically identifying bottlenecks through profiling and applying these QB-specific tuning techniques judiciously, you can build highly performant and scalable actor-based systems.
+// Co-locate the listener alone on a dedicated accept core, handing it the
+// populated worker-id list. Add it last so worker_ids is already filled.
+engine.addActor<actors::TcpListener>(/*core=*/0, listen_uri, worker_ids);
+```
 
-**(Next:** Learn about [QB Framework: Error Handling & Resilience Strategies](./error_handling.md) or [QB Framework: Effective Resource Management](./resource_management.md)**) 
+### CPU affinity
+
+`CoreInitializer::setAffinity(CoreIdSet const&)` pins a `VirtualCore`'s thread to a set of physical CPUs. Pinning prevents OS thread migration, which preserves L1/L2 cache residency for a hot, CPU-bound actor.
+
+```cpp
+CoreInitializer &setAffinity(CoreIdSet const &cores = {}) noexcept;  // Main.h
+```
+
+Verified semantics:
+
+- The argument is a `qb::CoreIdSet` (alias of `CoreIdBitSet`, a `std::bitset<MaxCores>` of CPU ids).
+- An **empty set** leaves scheduling to the OS.
+- `qb::NoAffinity` (`== std::numeric_limits<CoreId>::max()`) is a sentinel meaning "no pinning." Any `CoreId >= qb::MaxCores` — including `NoAffinity` — is silently filtered out when the set is built, so `qb::CoreIdSet{qb::NoAffinity}` is well-defined and issues no pinning call rather than throwing. `qb::MaxCores` is 256.
+
+```cpp
+// src: qb/include/qb/core/Main.h (NoAffinity doc examples)
+#include <qb/main.h>
+
+qb::Main engine;
+
+// Pin core 1's worker thread to physical CPU 2.
+engine.core(1).setAffinity(qb::CoreIdSet{2});
+
+// Explicitly let the OS schedule core 0 (NoAffinity is filtered out, yielding an empty set).
+engine.core(0).setAffinity(qb::CoreIdSet{qb::NoAffinity});
+```
+
+Affinity is a sharp tool. Over-subscribing one physical CPU with several pinned `VirtualCore`s, or pinning every worker to the same core, degrades throughput. Pin only the cores a profiler shows are migration-sensitive, and leave the rest to the OS.
+
+### Event-loop idle latency
+
+When a `VirtualCore` finds no events to process, it can either keep checking (busy-spin) or park on a condition variable for a bounded time. This is governed by `setLatency`, a `qb::duration` (an alias for `std::chrono::nanoseconds`):
+
+```cpp
+CoreInitializer &setLatency(qb::duration latency = qb::duration::zero()) noexcept;  // per-core, Main.h
+void             setLatency(qb::duration latency = qb::duration::zero());            // all cores, Main.h
+```
+
+The per-core form (`engine.core(n).setLatency(…)`) configures one `VirtualCore`. The `Main::setLatency(…)` form writes the same latency to every core that is *already registered* at the time of the call — it iterates the existing initializers and overwrites each one's latency unconditionally (`Main.cpp`), so it does **not** preserve per-core values set earlier. Apply the engine-wide default first, then override individual cores; a later `Main::setLatency(…)` clobbers every per-core value, and a core registered after the call keeps `qb::duration::zero()`. Both forms default to `qb::duration::zero()`.
+
+Verified behavior, from the mailbox `wait()` implementation (`Main.h`):
+
+- **`qb::duration::zero()` (default)** — low-latency mode. The idle core does not park; it stays on the lock-free fast path, polling for events. Lowest event-pickup latency, highest CPU use (a core can sit near 100% on its CPU when idle). Suited to a dedicated hot loop — for example, an accept core.
+- **`latency > 0`** — when idle, the core first burns an adaptive spin credit (refilled on any busy iteration), and once that credit is exhausted it parks on a `std::condition_variable` (`_cv.wait_for(lk, _latency)` in the mailbox `wait()`) for up to `latency`, or until a producer enqueues an event and calls `notify()`. This drops idle CPU sharply, at the cost of a worst-case event-pickup delay bounded by `latency`. A producer that exhausts its send-retry budget wakes the destination's mailbox (`VirtualCore.cpp`), so a parked consumer is not left waiting the full interval under back-pressure.
+
+The mixed topology — a zero-latency hot loop plus parked workers — is the common production shape:
+
+```cpp
+// src: examples/all/taskmanager/src/main.cpp
+#include <qb/main.h>
+
+qb::Main engine;
+
+// Accept core: zero latency = minimal accept-to-dispatch delay.
+engine.core(0).setLatency(qb::duration::zero());
+
+// Worker cores: 500 µs idle window — balances CPU against response time.
+// setLatency is idempotent; calling it again on the same core is safe.
+engine.core(1).setLatency(std::chrono::nanoseconds(500'000));
+```
+
+The `qb::time_literals` inline namespace re-exports the standard chrono literals, so the duration above can also be written `500us` once those literals are in scope (`#include <qb/system/timestamp.h>`; `using namespace qb::time_literals;`).
+
+There is no published latency-versus-CPU table. Pick a starting value from your tail-latency budget (a server tolerating single-digit milliseconds can park for hundreds of microseconds to milliseconds; a tight control loop uses zero), then measure idle CPU and pickup latency under realistic load.
+
+> All affinity, latency, and placement calls must happen **before** `Main::start()`. Once the engine is running, `Main::core(id)` throws `std::runtime_error` ("Cannot access to CoreInitializers while engine is running").
+
+### Messaging cost
+
+The mechanics and the ordering contract are owned by [Event messaging](./../4_qb_core/messaging.md); this section is only the performance lens.
+
+- **`push<Event>(dest, …)`** is the default. It is ordered per source/destination pair and correctly handles non-trivially-destructible payloads. Prefer it.
+- **`send<Event>(dest, …)`** drops the ordering guarantee. Reserve it for the narrow case where order genuinely does not matter and the event is trivially destructible. The `qb::trivial_event` concept (`Actor.h`) is exactly `event_type<T> && std::is_trivially_destructible_v<T>`. The potential gain is marginal and the failure mode (silent reordering) is hard to debug — do not reach for it speculatively.
+- **`reply(Event&)`** and **`forward(ActorId, Event&)`** reuse the event object already in hand. For request/response and delegation, they avoid a fresh allocation, construction, and copy. Prefer them over constructing a new event.
+- **`EventBuilder`** (`actor.to(dest).push<…>(…).push<…>(…)`) chains several sends to the same destination, resolving the destination pipe once.
+
+### Allocation behavior
+
+Each source-to-destination channel is a `qb::VirtualPipe` (an alias of `qb::allocator::pipe<EventBucket>`) — a growable byte buffer that allocates at both front and back and **doubles its capacity** when it runs out of room. Two consequences for hot paths:
+
+1. **Keep events small and move large data by handle.** An event is a data carrier; embed a `std::shared_ptr<T>` or `std::unique_ptr<T>` for a large buffer so only the pointer is copied into the pipe, not the payload. Use `qb::string<N>` (an inline, heap-free fixed-capacity string that truncates silently on overflow) for short strings instead of `std::string`.
+
+2. **Pre-size the pipe for large in-pipe events with `allocated_push`.** When the event's *effective in-pipe size* is large, reserve the exact space up front to avoid the doubling reallocations and copies that `push` would trigger:
+
+   ```cpp
+   [[nodiscard]] _Event &allocated_push(std::size_t size, _Args &&...args) const noexcept;  // Pipe.h
+   ```
+
+   ```cpp
+   // src: qb/include/qb/core/Pipe.h (allocated_push doc example)
+   // getPipe returns a qb::Pipe by value; hold it by value, not by reference.
+   qb::Pipe pipe = getPipe(dest);
+   const std::size_t hint = sizeof(LargeDataEvent) + extra_in_pipe_bytes;
+   auto &ev = pipe.allocated_push<LargeDataEvent>(hint, payload);
+   ```
+
+   Size the hint to the event's **effective in-pipe footprint**. When the payload lives behind a smart pointer, the in-pipe size is small — do not size the hint to the payload bytes in that case. The `size` argument is a reservation, not a hard cap.
+
+### Lock-free transport
+
+The cross-core path is built from lock-free primitives, not mutexes:
+
+- Each core's inbound **mailbox is a multi-producer / single-consumer (MPSC) lock-free ring buffer** (`qb::lockfree::mpsc::ringbuffer`). Every other core is a producer; the owning core is the sole consumer. The optional `std::condition_variable` is used only when `latency > 0` — for parking, not for mutual exclusion.
+- Concurrently written fields are padded to a cache line (`QB_LOCKFREE_CACHELINE_BYTES`) to avoid false sharing.
+
+You generally do not touch these types directly — the engine routes events through them — but two facts inform tuning. First, cross-core delivery is genuinely lock-free on the fast path, which is why a zero-latency core can poll without contending. Second, the standalone lock-free building blocks (`qb::lockfree::spsc::ringbuffer`, `qb::lockfree::mpsc_unbounded_queue`, `qb::lockfree::SpinLock`) are available if you need a wait-free hand-off *inside* a single actor's owned state. Note that `SpinLock` is a busy-wait TTAS lock for very short critical sections, not a general-purpose mutex.
+
+### Build flags
+
+Both flags are CMake configure-time options, owned by [CMake options](./../7_reference/cmake_dependencies.md). Their performance role:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `QB_ENABLE_NATIVE_ARCH` | `ON` | Tunes codegen for the build-host CPU: tries `-march=native`, falls back to `-mcpu=native` (older Apple Clang on arm64), then to the compiler default; `/arch:AVX2` on MSVC. |
+| `QB_ENABLE_LTO` | `OFF` | Link-Time Optimization: `-flto` on GCC/Clang, `/GL` + `/LTCG` on MSVC. Enables cross-translation-unit inlining at the cost of longer link times. |
+
+`QB_ENABLE_NATIVE_ARCH=ON` (the default) produces a **non-portable binary** tuned for the machine that built it. The binary may use instructions absent on an older CPU and fault there. **Turn it OFF for any binary you distribute or run on a different (possibly older) CPU.** With it off, qb selects a conservative baseline target (`-march=x86-64` on x86-64, generic `armv8-a` on non-Apple ARM64; Apple Silicon keeps its native target either way).
+
+`QB_ENABLE_LTO=OFF` by default. Enabling it can improve runtime performance through whole-program inlining; verify the gain against your own benchmark, because it lengthens builds and the benefit is workload-dependent.
+
+```bash
+# Portable Release build with LTO, no host-specific codegen.
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+      -DQB_ENABLE_NATIVE_ARCH=OFF -DQB_ENABLE_LTO=ON
+cmake --build build
+```
+
+Both flags apply to the Release configuration. A Debug build is not a meaningful performance baseline — always benchmark a Release (or RelWithDebInfo) build.
+
+## Pitfalls
+
+- **Blocking inside a handler stalls the whole core.** A long computation, a synchronous I/O call, or a wait on a mutex or condition variable inside `on(Event&)` or `onCallback()` freezes every actor on that `VirtualCore`. Offload to `qb::io::async::callback` for short non-CPU-bound waits, or to a dedicated worker actor (on another core) that does the blocking work and sends a result event back.
+- **Configuring after `start()`.** Affinity, latency, and placement are pre-start only. `Main::core(id)` throws once the engine is running.
+- **Touching a core you do not populate.** `Main::core(n)` registers core `n`; if no actor lands there, that worker fails to start, logging `... Started with 0 Actor` and reporting `VirtualCore::Error::NoActor`. Configure latency and affinity inside the same loop that places actors.
+- **Reaching for `send` before `push`.** The ordering guarantee `push` gives is cheap; the bugs `send` introduces are not. Use `send` only when the event is `qb::trivial_event` and order is provably irrelevant.
+- **Sizing `allocated_push` to the payload, not the in-pipe footprint.** When the payload is behind a smart pointer, the pipe holds only the pointer — a large hint wastes the reservation it was meant to save.
+- **Shipping a `QB_ENABLE_NATIVE_ARCH=ON` binary to other machines.** The default build is host-tuned and non-portable; it can fault on an older CPU. Build distributables with the flag off.
+- **Quoting numbers you did not measure.** qb publishes no throughput or latency figures. Every tuning decision here is directional; the magnitude is yours to benchmark, in Release, on your target hardware, under realistic load. Use a system profiler (`perf`, Instruments, VTune) to find the hot core or actor, and `qb::ScopedTimer` / `qb::LogTimer` (`qb/system/timestamp.h`) to time critical sections.
+
+## See also
+
+- [Engine: `qb::Main` and `VirtualCore`](./../4_qb_core/engine.md) — full lifecycle, core configuration, and signal handling.
+- [Event messaging](./../4_qb_core/messaging.md) — the authoritative contract for `push`, `send`, `reply`, `forward`, and pipes.
+- [CMake options](./../7_reference/cmake_dependencies.md) and [Building](./../7_reference/building.md) — every build flag, including `QB_ENABLE_NATIVE_ARCH` and `QB_ENABLE_LTO`.
+- [Error handling and resilience](./error_handling.md) and [Resource management](./resource_management.md) — companion guides.

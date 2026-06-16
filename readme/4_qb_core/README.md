@@ -1,21 +1,33 @@
-@page qb_core_readme_md QB-Core Module: The Actor Engine
-@brief An introduction to `qb-core`, the heart of the QB Actor Framework, enabling concurrent application logic via actors, events, and multi-core scheduling. Provides an overview and navigation for the QB-Core module documentation.
+# qb-core: the actor engine
 
-# QB-Core Module: The Actor Model Engine
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-Welcome to the `qb-core` module documentation. `qb-core` is the high-performance **C++23** library that brings the **Actor Model** to life within the QB Framework. Building directly upon the asynchronous foundation provided by `qb-io`, `qb-core` empowers you to design and implement complex concurrent applications by composing independent, message-driven actors.
+`qb-core` is the C++23 actor runtime layered on `qb-io`: it owns the `qb::Main` engine, the per-thread `qb::VirtualCore` workers, the `qb::Actor` base class, and the event-passing layer that connects them.
 
-This section provides a detailed exploration of `qb-core`'s architecture, its fundamental abstractions like actors and events, the engine that drives them, common patterns for their use, and the modern C++23 coroutine integration.
+**Prerequisites:** [The actor model](../2_core_concepts/actor_model.md), [The event system](../2_core_concepts/event_system.md), [qb-io module overview](../3_qb_io/README.md) — **See also:** [Core and IO integration](../5_core_io_integration/README.md), [Patterns cookbook](../6_guides/patterns_cookbook.md)
 
-## Architecture at a Glance
+## Summary
+
+`qb-core` brings the actor model to the framework. An actor is an isolated object with a unique
+`qb::ActorId` that owns private state and communicates only by passing events. Each actor lives on
+exactly one `qb::VirtualCore` worker thread for its whole lifetime and processes its messages one at
+a time, so actor code is single-threaded by construction and needs no locks for its own state.
+`qb::Main` configures the cores, spawns one `std::jthread` per `VirtualCore`, places actors onto
+those workers, and drives the event loops until shutdown.
+
+This section documents that runtime: how to write an actor, how messages move between actors within
+and across cores, how the engine starts, stops, and pins threads, and how to compose the primitives
+into recurring designs.
+
+## Architecture at a glance
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│                       qb::Main                            │
-│   (Engine orchestrator — manages VirtualCore threads)     │
+│                          qb::Main                         │
+│   (engine controller — spawns one jthread per VirtualCore)│
 └──────────┬──────────────────────────────┬─────────────────┘
-           │ owns                         │ owns
-    ┌──────▼──────────┐           ┌───────▼─────────┐
+           │ owns                          │ owns
+    ┌──────▼──────────┐           ┌────────▼────────┐
     │  VirtualCore 0  │           │  VirtualCore 1  │  …
     │  ┌───────────┐  │           │  ┌───────────┐  │
     │  │  Actor A  │  │           │  │  Actor C  │  │
@@ -27,36 +39,47 @@ This section provides a detailed exploration of `qb-core`'s architecture, its fu
     └─────────────────┘           └─────────────────┘
 ```
 
-Key design points:
-- Each `VirtualCore` runs an independent `qb::io::async::listener` event loop.
-- Actors on the **same** core communicate via a fast local queue.
-- Actors on **different** cores communicate via **lock-free MPSC mailboxes**.
-- Actors may also use **C++23 coroutines** (`spawn_async`) for non-blocking async I/O flows.
+Key design points, each documented on the linked page:
 
-## Key Topics in This Section
+- Each `VirtualCore` runs its own `qb::io::async::listener` event loop, so actors can mix
+  event handlers and async I/O on the same thread — see [the engine](./engine.md).
+- An actor never migrates between cores; its `_alive` flag is single-writer/single-reader on one
+  thread and needs no atomic — see [writing actors](./actor.md).
+- Actors on the **same** core exchange events through a per-actor pipe; actors on **different**
+  cores exchange them through per-core lock-free MPSC mailboxes — see [messaging](./messaging.md).
+- Actors may run C++23 coroutines through `spawn_async`, returning results to themselves through a
+  capture-by-value `qb::CoroContext` — see [actor patterns](./patterns.md) and
+  [qb-io coroutines](../3_qb_io/coroutines.md).
 
-*   **[QB-Core: Key Features & Capabilities](./features.md)**
-    *   A summary of the core features: actor lifecycle, event system, concurrency, coroutine support, and common utilities.
+## Pages in this section
 
-*   **[QB-Core: Mastering `qb::Actor`](./actor.md)**
-    *   A comprehensive guide to defining, initializing, and managing actors, including the new `spawn_async` coroutine API, `RefActorHandle`, and `no_default_events`.
+| Page | What it covers |
+|---|---|
+| [qb-core features and capabilities](./features.md) | A catalog of the runtime's capabilities — actor lifecycle, the event system, multicore scheduling, coroutine support, and shared utilities — each linked to its in-depth page. |
+| [Writing actors with `qb::Actor`](./actor.md) | Defining, initializing, and tearing down an actor; handling events; the `no_default_events` tag; periodic work via `ICallback`; and per-core services with `qb::ServiceActor`. |
+| [Event messaging between actors](./messaging.md) | How `push`, `send`, `reply`, `forward`, and `broadcast` differ in delivery semantics and ordering, and how events move through the per-actor pipe and per-core mailbox within and across cores. |
+| [The engine: `qb::Main` and `VirtualCore`](./engine.md) | Engine startup and shutdown, the `CoreInitializer` configuration step, CPU affinity, the `VirtualCore` loop, inter-core flushing, signal handling, and the stop-token cancellation path. |
+| [Actor patterns](./patterns.md) | Composing the `Actor` primitives into recurring designs: finite state machines, service registries, publish/subscribe, request/response with timeouts, supervision, referenced actors with `RefActorHandle`, runtime dependency resolution with `require`, and coroutine flows. |
 
-*   **[QB-Core: Event Messaging Between Actors](./messaging.md)**
-    *   Defining custom events, all sending methods (`push`, `send`, `broadcast`, `reply`, `forward`), QoS levels, and data-carrier best practices.
+## Suggested reading order
 
-*   **[QB-Core: Engine — `qb::Main` & `VirtualCore`](./engine.md)**
-    *   The QB runtime engine in depth: startup, shutdown, CPU affinity, the VirtualCore loop, inter-core communication, error handling, and the stop-token cancellation mechanism.
+1. **[Features and capabilities](./features.md)** — survey what the runtime provides before going deep.
+2. **[Writing actors](./actor.md)** → **[Event messaging](./messaging.md)** — the two pages that
+   teach the day-to-day API: defining an actor and getting events between actors.
+3. **[The engine](./engine.md)** — how `qb::Main` brings cores up, schedules work, and shuts down,
+   so you understand the runtime your actors execute on.
+4. **[Actor patterns](./patterns.md)** — practical ways to structure application logic once the
+   fundamentals are clear.
 
-*   **[QB-Core: Common Actor Patterns & Utilities](./patterns.md)**
-    *   FSM actors, Service Actors, periodic callbacks, referenced actors with `RefActorHandle`, dependency resolution, and coroutine patterns.
+## See also
 
-## How to Use This Section
+- [Core and IO integration](../5_core_io_integration/README.md) — how an actor drives `qb-io`
+  sockets, sessions, and protocols on its own `VirtualCore` listener.
+- [Patterns cookbook](../6_guides/patterns_cookbook.md) — task-oriented recipes that combine the
+  primitives from this section.
+- [The actor model](../2_core_concepts/actor_model.md) and
+  [The event system](../2_core_concepts/event_system.md) — the conceptual background this section
+  builds on.
 
-*   Begin with the **Key Features & Capabilities** for a high-level understanding.
-*   Study **Mastering `qb::Actor`** and **Event Messaging** to learn the fundamentals.
-*   Understand the **Engine (`qb::Main` & `VirtualCore`)** to grasp how the system operates and scales.
-*   Explore **Common Actor Patterns** for practical ways to structure your application logic.
-
-By mastering `qb-core`, you can build sophisticated, concurrent applications that are both performant and easier to reason about compared to traditional multi-threaded approaches.
-
-**(Next:** If you haven't already, ensure you understand the [QB-IO Module Overview](../3_qb_io/README.md) as `qb-core` builds upon it. Then, proceed to [Core & IO Integration Overview](../5_core_io_integration/README.md) to see how these two modules work together in practice.)** 
+**(Next:** ensure you have read the [qb-io module overview](../3_qb_io/README.md) — `qb-core` builds
+on it — then continue to [Core and IO integration](../5_core_io_integration/README.md).)**

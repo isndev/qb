@@ -1,36 +1,40 @@
-@page guides_readme QB Framework: Developer Guides
-@brief A collection of practical guides covering getting started, common design patterns, advanced usage, performance tuning, error handling, and resource management with the QB Actor Framework.
+# Guides
 
-# QB Framework: Developer Guides
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-This section provides a collection of practical guides designed to help you effectively use the QB Actor Framework. Whether you're new to QB or looking to leverage more advanced features, these guides offer targeted advice, step-by-step instructions, and insights into best practices.
+Task-oriented walkthroughs that take you from a first build to a production deployment, plus the patterns, tuning knobs, failure model, and migration paths you reach for along the way.
 
-## Guides in this Section:
+**Prerequisites:** [Core concepts](../2_core_concepts/README.md) — **See also:** [qb-core](../4_qb_core/README.md), [Core and I/O integration](../5_core_io_integration/README.md), [Reference](../7_reference/README.md)
 
-*   **[Getting Started with the QB Actor Framework](./getting_started.md)**
-    *   Your first stop: A step-by-step tutorial to set up QB, build the framework, and run your first simple actor-based application.
+## Summary
 
-*   **[QB Actor Framework: Design Patterns Cookbook](./patterns_cookbook.md)**
-    *   Practical recipes and C++ examples for implementing common and effective actor-based design patterns such as Publish/Subscribe, Request/Response with Timeout, and Shared Resource Management.
+The earlier sections explain *what* the framework is: the actor model, the asynchronous runtime, and how the two compose. This section is about *doing*. Each page is a self-contained walkthrough that starts from a concrete goal, shows complete and compilable code, and ends with the pitfalls that bite real systems. Pages cross-link to the conceptual chapters and the [reference](../7_reference/README.md) rather than restating definitions, so follow those links when you need the underlying contract.
 
-*   **[QB Framework: Advanced Techniques & System Design](./advanced_usage.md)**
-    *   Explore sophisticated usage patterns, advanced system design considerations (like complex actor hierarchies, supervision strategies, advanced message design), and strategies for tackling complex QB applications.
+## Pages in this section
 
-*   **[QB Framework: Performance Tuning Guide](./performance_tuning.md)**
-    *   Learn how to optimize your QB actor applications for maximum speed, scalability, and efficiency with targeted tuning strategies for virtual cores, event messaging, actor design, and I/O.
+| Page | What it covers |
+| --- | --- |
+| [Getting started](./getting_started.md) | Install qb, build and run a first actor, add a non-blocking timer, and find the next page to read. |
+| [Advanced usage](./advanced_usage.md) | Custom wire protocols, scaling actors across cores, coroutines inside actors, service actors, and composing the qbm modules with your own actors. |
+| [Error handling and resilience](./error_handling.md) | The exception policy, the `VirtualCore` fail-stop boundary, supervision patterns you build yourself, asynchronous I/O error events, and `async::callback` lifetime rules. |
+| [Patterns cookbook](./patterns_cookbook.md) | Compilable recipes for one-shot and periodic timers, request/reply, broadcast fan-out, multi-stage pipelines, and graceful shutdown. |
+| [Performance tuning](./performance_tuning.md) | Core placement, event-loop idle latency, allocation behavior, the lock-free transport, and the build flags (`QB_ENABLE_NATIVE_ARCH`, `QB_ENABLE_LTO`) that change codegen. |
+| [Resource management](./resource_management.md) | How RAII, actor ownership, and the actor lifecycle release memory, descriptors, sockets, and TLS contexts deterministically — and where the framework hands ownership back to you. |
+| [Migration guide](./migration_guide.md) | Moving from `std::thread` plus locked queues to actors, and from the pre-2.0 time types to the `qb::duration`/`qb::mono_time`/`qb::wall_time` chrono model. |
+| [Production readiness checklist](./production_checklist.md) | Building a portable binary, configuring TLS, capping resource use, wiring logging and signal handling, running the test suite, and deciding what to monitor. |
 
-*   **[QB Framework: Error Handling & Resilience Strategies](./error_handling.md)**
-    *   A practical guide to designing robust actor systems by effectively handling errors at different levels (actor-internal, unhandled exceptions, I/O errors) and implementing application-level supervision patterns.
+## Suggested reading order
 
-*   **[QB Framework: Effective Resource Management](./resource_management.md)**
-    *   Best practices for managing resources like memory, file handles, and network connections within QB actors, primarily leveraging RAII and understanding the actor lifecycle.
+Start with [Getting started](./getting_started.md) to stand up a working build and a first actor. From there the path depends on what you are doing:
 
-## How to Use These Guides
+1. **Building an application.** Read the [patterns cookbook](./patterns_cookbook.md) for the everyday interactions (timers, request/reply, fan-out, pipelines, shutdown), then [advanced usage](./advanced_usage.md) when you need custom protocols, multicore scaling, or coroutines inside actors.
+2. **Hardening it.** Read [error handling and resilience](./error_handling.md) to understand the failure model and the fail-stop boundary, then [resource management](./resource_management.md) for deterministic cleanup of memory, descriptors, sockets, and TLS contexts.
+3. **Shipping it.** Use [performance tuning](./performance_tuning.md) to address measured throughput and latency goals, and work through the [production readiness checklist](./production_checklist.md) before you deploy.
 
-*   **New Users:** Start with the "Getting Started" guide.
-*   **Application Design:** Refer to the "Design Patterns Cookbook" and "Advanced Techniques" for structuring your actor systems.
-*   **Optimization & Stability:** Consult the "Performance Tuning," "Error Handling," and "Resource Management" guides as your application evolves or when facing specific challenges.
+If you are porting existing code, read the [migration guide](./migration_guide.md) first; it maps thread-and-lock idioms onto actors and lists the retired time types you must replace.
 
-These guides are intended to complement the conceptual documentation and the detailed API references, providing practical pathways to mastering the QB Actor Framework.
+## See also
 
-**(Next:** After exploring these guides, you might want to delve into the [Reference Documentation](../7_reference/README.md) for specific API details or FAQs.**) 
+- [Core concepts](../2_core_concepts/README.md) — the actor model, the threading model, and the event system these guides assume.
+- [qb-core](../4_qb_core/README.md) and [Core and I/O integration](../5_core_io_integration/README.md) — the API chapters the guides link into.
+- [Reference](../7_reference/README.md) — API overview, invariants, build and CMake options, testing, FAQ, and glossary.

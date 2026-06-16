@@ -1,104 +1,130 @@
-@page qb_io_features_md QB-IO: Feature Showcase
-@brief A comprehensive rundown of the capabilities offered by the `qb-io` library for high-performance asynchronous C++ development.
+# qb-io feature catalog
 
-# QB-IO: Feature Showcase
+> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-The `qb-io` library is a versatile and powerful **C++23** toolkit designed for building applications that demand high-performance asynchronous I/O and robust system utilities. Here's a look at its key feature areas:
+An index of every `qb-io` capability — async engine, coroutines, transports, protocols, TLS, QUIC, crypto, compression, and utilities — with one-line summaries that link to the detail page that owns each topic.
 
-## 1. Core Asynchronous System (`qb::io::async`)
+**Prerequisites:** none — **See also:** [qb-io overview](./README.md), [the asynchronous engine](./async_system.md), [io invariants reference](../7_reference/io_invariants.md)
 
-*   **Event Loop (`listener`):** At its core, `qb-io` provides a high-performance event loop (leveraging `libev`) for managing all asynchronous operations on a per-thread basis.
-*   **Delayed Callbacks (`callback`, `scoped_callback`):** Schedule functions or lambdas for asynchronous execution after a specified delay. `callback()` is fire-and-forget (zero heap traffic at steady state); `scoped_callback()` returns an RAII handle that cancels the timer when destroyed.
-*   **Integrated Timers (`with_timeout`, `event::timer`):** Build classes with inherent timeout logic or create periodic timers for recurring tasks.
-*   **Comprehensive Event Handling (`event::*`):** A rich set of predefined event types for:
-    *   I/O readiness (socket readable/writable).
-    *   Connection lifecycle (disconnections with typed reason codes).
-    *   Stream status (end-of-file/end-of-stream).
-    *   Pending data notifications.
-    *   File system changes.
-    *   SSL/TLS handshake progress.
-*   **Asynchronous Signal Handling (`event::signal`):** Process system signals (e.g., SIGINT, SIGTERM) gracefully within the event loop.
-*   **File System Monitoring (`file_watcher`, `directory_watcher`):** Asynchronously watch files and directories for changes (modifications, creation, deletion).
+`qb-io` is the C++23 asynchronous runtime under the qb actor framework. It is also usable standalone: the event loop, transports, protocols, and utilities have no dependency on `qb-core`. This page is a map. Each entry names the type or namespace, states what it does in one line, and links to the page that documents it in full. Where a capability is optional, the entry names the compile-time feature macro that gates it and the CMake option that defines that macro.
 
-## 2. C++23 Coroutines (`qb::io::async` coroutine layer)
+## Optional feature gates
 
-`qb-io` provides a **complete, batteries-included** C++23 coroutine ecosystem layered on top of the `listener` event loop. Both programming styles — callbacks and coroutines — share the same single-threaded execution model and are fully interoperable.
+Three capability groups are compiled conditionally. The CMake option is what you set; the preprocessor macro is what guards the C++ code. When the dependency is absent, the option is forced off and the corresponding API is not compiled.
 
-*   **`task<T>` / `shared_task<T>`:** Lazy, move-only coroutine return types. `shared_task<T>` allows multiple coroutines to `co_await` the same result.
-*   **Awaiters:** `sleep()`, `wait_readable()`, `wait_writable()`, `async_awaiter<T>` (bridge any callback API to `co_await`). TCP connector awaiter (`co_await tcp::connect(uri, timeout)`).
-*   **Combinators:** `when_all()` (scatter-gather), `when_any()` (first wins), `race()`, `coro_with_timeout()` (deadline wrapper returning `std::optional<T>`).
-*   **Cancellation:** `cancellation_token`, `cancellable_sleep()`, `with_deadline()`. Tokens are single-threaded; cross-thread cancellation is routed through actor events.
-*   **Synchronisation primitives (non-blocking):** `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch`.
-*   **`channel<T>`:** MPSC communication channel with `send`/`recv`, timed operations, `select()` across multiple channels, and functional pipeline utilities.
-*   **Structured concurrency (`coroutine_scope`):** Group coroutines, `join_all()`/`join_any()`/`join_all_for()`, cancellation propagation, `parallel_map()`, `repeat_while()`.
-*   **Generators:** `generator<T>` (sync, range-for compatible), `async_generator<T>` (`co_yield` + `co_await`). Full set of consumers: `ag_for_each`, `ag_collect`, `ag_map`, `ag_filter`, `ag_reduce`.
-*   **Async streams:** `async_stream<T>` — lazy functional pipeline with `map`, `filter`, `take`, `skip`, terminal consumers (`collect`, `first`, `reduce`, `any`, `all`, `find`, `drain_to`), `merge_streams`, `zip`, `interval`.
-*   **Retry policies:** `with_retry()`, `with_retry_until()`, `make_retryable()` with configurable back-off strategies (linear, exponential, exponential-jitter).
+| Capability | CMake option | Compiled-in macro | Backing library |
+|---|---|---|---|
+| SSL/TLS and crypto | `QB_WITH_SSL` (default `ON`) | `QB_HAS_SSL` | OpenSSL |
+| Compression | `QB_WITH_COMPRESSION` (default `ON`) | `QB_HAS_COMPRESSION` | zlib |
+| QUIC / HTTP/3 transport | `QB_WITH_QUIC` (default `AUTO`) | `QB_HAS_QUIC` | ngtcp2 (requires SSL) |
 
-**(Reference:** [QB-IO: C++23 Coroutines](./coroutines.md) for the complete guide.)**
+<!-- src: source/io/CMakeLists.txt (QB_HAS_* definitions); README.md (QB_WITH_* options) -->
 
-## 3. Networking Capabilities
+See [Building from source](../7_reference/building.md) for the full option list and the auto-disable rules.
 
-*   **Unified Socket API (`qb::io::socket`):** A cross-platform (POSIX & Winsock) abstraction for raw socket operations.
-*   **TCP Communication (`qb::io::tcp`, `qb::io::transport::tcp`):
-    *   Robust client (`tcp::socket`) and server (`tcp::listener`) implementations.
-    *   Streamlined asynchronous connect (`async::tcp::connect`) and accept (`async::tcp::acceptor`) utilities.
-    *   Buffered stream transport (`transport::tcp`) for easy data handling.
-*   **UDP Communication (`qb::io::udp`, `qb::io::transport::udp`):
-    *   Datagram sockets (`udp::socket`) for connectionless messaging.
-    *   Endpoint identity management (`transport::udp::identity`) for tracking peers.
-    *   Support for multicast group membership.
-    *   Buffered stream-like transport (`transport::udp`) for datagrams.
-*   **SSL/TLS Security (Optional: `QB_IO_WITH_SSL`):
-    *   Secure socket variants: `tcp::ssl::socket` and `tcp::ssl::listener`.
-    *   Simplified SSL context creation (`ssl::create_client_context`, `ssl::create_server_context`).
-    *   Secure stream transport (`transport::stcp`) for encrypted TCP.
-*   **Addressing & Resolution:**
-    *   `qb::io::endpoint`: Versatile representation for IPv4, IPv6, and Unix domain socket addresses.
-    *   `qb::io::uri`: RFC 3986 compliant URI parsing and manipulation.
-    *   `socket::resolve()` family: Asynchronous and synchronous hostname resolution.
+## 1. Asynchronous engine (`qb::io::async`)
 
-## 4. Protocol Framework & Built-in Parsers
+The event loop and its callback-driven building blocks. One `listener` runs per thread; all timers, socket readiness, signals, and filesystem watchers are driven by it.
 
-*   **Extensible Protocol Interface (`qb::io::async::AProtocol`):** A clear C++ interface (using CRTP) for defining custom message framing and parsing logic.
-*   **Ready-to-Use Protocols:**
-    *   **Delimiter-Based:** `text::string` (null-terminated), `text::command` (newline-terminated), and their `string_view` counterparts for zero-copy reads (`text::string_view`, `text::command_view`). Also, generic `base::byte_terminated` and `base::bytes_terminated`.
-    *   **Size-Prefixed:** `text::binary8`, `text::binary16`, `text::binary32` for messages preceded by a 1, 2, or 4-byte length header (handles network byte order).
-    *   **JSON Support:** `protocol::json` (for null-terminated JSON strings) and `protocol::json_packed` (for null-terminated MessagePack-encoded JSON), both integrating with `nlohmann::json`.
+- **Event loop (`qb::io::async::listener`)** — the per-thread libev-backed reactor that owns every async watcher. Driven with `qb::io::async::run`, `run_once`, or `run_until`.
+- **Delayed callbacks (`qb::io::async::callback`, `scoped_callback`)** — schedule a callable to run after a `qb::duration` delay. `callback` is fire-and-forget; `scoped_callback` returns an RAII handle that cancels the timer on destruction.
+- **Timeout mixin (`qb::io::async::with_timeout<Derived>`)** — a CRTP base that gives a class an inherent, resettable timeout (`setTimeout`, `updateTimeout`, `getTimeout`).
+- **Event types (`qb::io::async::event::*`)** — typed payloads delivered to `on()` handlers: I/O readiness (`io`), timers (`timer`), connection lifecycle (`disconnected`, carrying an `int reason` code, an `error_code`, and a `message`; the documented codes are enumerated by `disconnect_reason`), stream status (`eos`, `input_drained`), pending-data notifications (`pending_read`, `pending_write`), filesystem changes (`file`), and TLS handshake completion (`handshake`).
+- **Signal handling (`qb::io::async::event::signal`)** — process OS signals (for example `SIGINT`, `SIGTERM`) inside the loop instead of in an interrupt context.
+- **Filesystem watchers (`qb::io::async::file_watcher`, `directory_watcher`)** — watch a file or directory and receive `event::file` notifications on change, creation, or deletion.
 
-## 5. File System Operations
+→ [The asynchronous engine](./async_system.md)
 
-*   **Direct File Access (`qb::io::sys::file`):** Cross-platform, descriptor-based synchronous file I/O.
-*   **Efficient Bulk Transfers (`qb::io::sys::file_to_pipe`, `pipe_to_file`):** Streamline reading entire files into memory pipes or writing pipe contents to files.
-*   **Asynchronous Monitoring:** (See Core Asynchronous System: `file_watcher`, `directory_watcher`).
+## 2. C++23 coroutines (`qb::io::async` coroutine layer)
 
-## 6. Essential Utilities
+A coroutine runtime layered on the same `listener`. Callbacks and coroutines share one single-threaded execution model and interoperate freely; only one coroutine runs at a time per thread, and another can run only at a `co_await` suspension point.
 
-*   **High-Precision Time (`qb::wall_time`, `qb::mono_time`, `qb::duration`):** `std::chrono`-based, nanosecond-accurate time points and durations for measurements and scheduling.
-*   **Cryptography (Optional: `QB_IO_WITH_SSL`):
-    *   **Hashing:** MD5, SHA-1, SHA-2 (SHA-256, SHA-384, SHA-512), HMAC variants.
-    *   **Key Derivation:** PBKDF2, HKDF, Argon2 for secure key generation from passwords or other entropy sources.
-    *   **Encoding:** Base64, Base64URL, Hexadecimal.
-    *   **Symmetric Encryption:** AES (CBC, GCM modes), ChaCha20-Poly1305.
-    *   **Asymmetric Cryptography:** RSA, ECDSA (P-256, P-384, P-521), EdDSA (Ed25519), X25519 key exchange, and ECIES (Elliptic Curve Integrated Encryption Scheme).
-    *   **JSON Web Tokens (`qb::jwt`):** Creation, signing, and verification of JWTs.
-    *   **Secure Utilities:** Secure password hashing, random data generation, and token management.
-*   **Compression (Optional: `QB_IO_WITH_ZLIB`):
-    *   Support for Gzip and Deflate compression algorithms.
-    *   Functions for both direct in-memory compression/decompression and stream-based processing.
-*   **System Information:**
-    *   CPU details (`qb::CPU`): Architecture, core counts, clock speed.
-    *   Endianness detection (`qb::endian`): Runtime and compile-time checks, byte-swapping utilities.
-*   **High-Performance Containers & Allocators:**
-    *   `qb::allocator::pipe<T>`: An efficient, dynamically resizable buffer optimized for I/O operations.
-    *   `qb::string<N>`: A fixed-capacity string optimized for small string operations, avoiding heap allocations.
-    *   `qb::unordered_map`, `qb::unordered_set`: High-performance hash table implementations (using `ska::flat_hash_map/set` in release builds).
-    *   `qb::icase_unordered_map`: Case-insensitive string key map.
-*   **Lock-Free Primitives (`qb::lockfree`):**
-    *   `SpinLock`: Low-overhead spinlock for short critical sections.
-    *   SPSC/MPSC Queues: Single-Producer/Single-Consumer and Multiple-Producer/Single-Consumer lock-free ring buffers, primarily used internally by `qb-core` for inter-thread communication.
-*   **UUID Generation (`qb::uuid`):** Create RFC 4122 compliant Universally Unique Identifiers.
+- **Return types (`task<T>`, `shared_task<T>`)** — `task<T>` is a lazy, move-only coroutine result; `shared_task<T>` is copyable and lets several coroutines `co_await` one computation without recomputation.
+- **Awaiters** — `sleep(qb::duration)`, `wait_readable` / `wait_writable`, and `async_awaiter<T>` to bridge any callback API into `co_await`. `co_await qb::io::async::tcp::connect(...)` awaits a TCP connection.
+- **Combinators** — `when_all` (scatter-gather), `when_any` (first to finish), `race`, and `coro_with_timeout` (deadline wrapper).
+- **Cancellation** — `cancellation_token`, `cancellable_sleep`, `with_deadline`, `check_cancelled`, `make_cancellable`. Tokens are single-threaded.
+- **Synchronization primitives** — `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch`. These need no OS locks because the single-thread model already serializes execution.
+- **Channels (`channel<T>`)** — in-thread communication with `send` / `recv`, timed variants (`send_for` / `recv_for`), `select` across channels, and `make_pipeline` / `transform` / `filter` / `collect` helpers.
+- **Structured concurrency (`coroutine_scope`)** — own a set of child coroutines with `join_all` / `join_any`, cancellation propagation, and `parallel_map` / `repeat_while`.
+- **Generators** — `generator<T>` (synchronous, range-for compatible) and `async_generator<T>` (`co_yield` plus `co_await`), with consumers `ag_for_each`, `ag_collect`, `ag_map`, `ag_filter`, `ag_reduce`.
+- **Async streams (`async_stream<T>`)** — a lazy functional pipeline with `map` / `filter` / `take` / `skip`, terminal consumers, `merge_streams`, `zip`, and `interval`.
+- **Retry (`with_retry`, `with_retry_until`, `make_retryable`)** — retry an operation under a `retry_policy` with a configurable `backoff_strategy`.
 
-This rich feature set makes `qb-io` a solid foundation for building a wide range of demanding C++ applications.
+→ [C++23 coroutines](./coroutines.md)
 
-**(Next:** [QB-IO: Async System (`qb::io::async`)](./async_system.md) | [QB-IO: C++23 Coroutines](./coroutines.md) | explore other specific feature pages.**) 
+## 3. Networking
+
+Cross-platform sockets, the buffered transports built on them, and addressing.
+
+- **Socket API (`qb::io::socket`)** — a cross-platform (POSIX and Winsock) abstraction over raw socket descriptors.
+- **TCP (`qb::io::tcp::socket`, `qb::io::tcp::listener`)** — connection-oriented client and server primitives. Asynchronous connect via `qb::io::async::tcp::connect` and accept via `qb::io::async::tcp::acceptor`; buffered framing via `qb::io::transport::tcp`.
+- **UDP (`qb::io::udp::socket`)** — connectionless datagram sockets with multicast group membership and per-peer endpoint tracking (`qb::io::transport::udp::identity`); buffered datagram I/O via `qb::io::transport::udp`.
+- **Addressing** — `qb::io::endpoint` represents IPv4, IPv6, and Unix-domain addresses; `qb::io::uri` parses and manipulates RFC 3986 URIs; the `qb::io::socket::resolve` family performs synchronous hostname resolution over `getaddrinfo` (`resolve`, `resolve_v4`, `resolve_v6`).
+
+→ [Transports](./transports.md)
+
+## 4. SSL/TLS (optional, `QB_HAS_SSL`)
+
+Encrypted TCP layered on OpenSSL.
+
+- **Secure sockets (`qb::io::tcp::ssl::socket`, `qb::io::tcp::ssl::listener`)** — TLS-wrapped client and server sockets that manage the handshake transparently.
+- **Context helpers (`qb::io::ssl::create_client_context`, `create_server_context`)** — build configured `SSL_CTX` objects without hand-rolling OpenSSL setup.
+- **Secure transport (`qb::io::transport::stcp`)** — buffered stream transport over `ssl::socket`, used by the secure `use<...>::tcp::ssl` clients and sessions.
+
+By default an auto-created client context loads the system trust store, enables peer verification, and checks the server certificate and hostname unless that policy is explicitly relaxed before connecting.
+
+→ [Secure TCP with SSL/TLS](./ssl_transport.md)
+
+## 5. QUIC / HTTP/3 (optional, `QB_HAS_QUIC`)
+
+A reactor-driven QUIC transport over ngtcp2 and OpenSSL. Requires SSL to be enabled.
+
+- **Endpoint (`qb::io::async::quic::endpoint`)** — owns the UDP socket and backend, drives the handshake, and dispatches connection and stream events. `listen` for servers, `connect` for clients.
+- **Streams and sessions** — logical per-stream buffered sessions (`stream_session`, `client`), bidirectional and unidirectional stream creation, flow-control hooks (`extend_stream_credit`), and reset/stop controls.
+- **Events (`qb::io::async::quic::event::*`)** — `connected`, `connection_closed`, `stream_started`, `stream_data`, `stream_data_acked`, `stream_closed`, `datagram`.
+- **Settings (`qb::io::quic::settings`)** — `handshake_timeout` (default 10 s) and `idle_timeout` (default 30 s) as `qb::duration`, plus address-validation Retry via `enable_stateless_retry` (default on). The only offered ALPN is `h3` (HTTP/3).
+
+→ [Native QUIC](./quic_transport.md)
+
+## 6. Protocols (`qb::protocol`, `qb::io::async::AProtocol`)
+
+Message framing over byte streams. A protocol cuts raw transport bytes into discrete messages; implement `qb::io::async::AProtocol<IO>` (CRTP) for a custom one, or reuse the built-ins.
+
+- **Delimiter-based (`qb::protocol::text`)** — `string` (NUL-terminated) and `command` (newline-terminated), with zero-copy `string_view` and `command_view` variants; generic `qb::protocol::base::byte_terminated` and `bytes_terminated`.
+- **Size-prefixed (`qb::protocol::text`)** — `binary8`, `binary16`, `binary32` for messages preceded by a 1-, 2-, or 4-byte length header.
+- **JSON (`qb::protocol::json`, `json_packed`)** — NUL-terminated JSON and MessagePack-packed JSON over `nlohmann::json`, with a nesting-depth limit that rejects pathologically nested input.
+- **Framework protocols (`qb::io::protocol::accept`, `handshake`)** — internal protocols that hand an accepted socket to its I/O component and drive a TLS handshake to completion.
+
+→ [Framing messages with protocols](./protocols.md)
+
+## 7. Filesystem
+
+- **Direct file access (`qb::io::sys::file`)** — cross-platform, descriptor-based synchronous file I/O.
+- **Bulk transfers (`qb::io::sys::file_to_pipe`, `pipe_to_file`)** — read a whole file into an in-memory pipe or write a pipe's contents to a file.
+- **Buffered file transport (`qb::io::transport::file`)** — stream-style buffered reads and writes over `sys::file`.
+- **Asynchronous monitoring** — `file_watcher` and `directory_watcher` (see [the asynchronous engine](./async_system.md)).
+
+→ [Transports](./transports.md)
+
+## 8. Utilities
+
+Cross-cutting helpers usable from any qb-io or qb-core code.
+
+- **Time vocabulary (`qb::duration`, `qb::mono_time`, `qb::wall_time`)** — the canonical `std::chrono` types: `duration` is `std::chrono::nanoseconds`, `mono_time` is a `steady_clock` time point, `wall_time` is a `system_clock` time point. Defined in `qb/system/timestamp.h`.
+- **Cryptography (`qb::crypto`, optional `QB_HAS_SSL`)** — hashing (MD5, SHA-1, SHA-256, SHA-512, HMAC), key derivation (PBKDF2, HKDF, Argon2), encoding (Base64, Base64URL, hex), symmetric encryption (AES-CBC, AES-GCM, ChaCha20-Poly1305), asymmetric primitives (RSA, ECDSA over P-256/P-384/P-521, Ed25519, X25519 exchange, ECIES), and secure random/token helpers.
+- **JSON Web Tokens (`qb::jwt`, optional `QB_HAS_SSL`)** — create, sign, decode, and verify JWTs.
+- **Compression (`qb::compression`, optional `QB_HAS_COMPRESSION`)** — gzip and deflate, in-memory (`compress` / `uncompress`, `qb::gzip`, `qb::deflate`) and streaming (`compress_provider` / `decompress_provider`); `uncompress` enforces a caller-supplied output budget to reject decompression bombs.
+- **System information** — CPU details (`qb::CPU`) and endianness checks plus byte-swap helpers (`qb::endian`, in `qb/system/endian.h`).
+- **Containers and allocators** — `qb::allocator::pipe<T>` (resizable I/O buffer), `qb::string<N>` (fixed-capacity, heap-free small string), `qb::unordered_map` / `qb::unordered_set` (ska flat-hash maps in release builds), and `qb::icase_unordered_map` (case-insensitive string keys).
+- **Lock-free primitives (`qb::lockfree`)** — `SpinLock` plus SPSC and MPSC ring-buffer queues, used internally by `qb-core` for inter-core message passing.
+- **UUID (`qb::uuid`)** — RFC 4122 identifiers (an alias for `uuids::uuid` from stduuid).
+
+→ [Essential utilities](./utilities.md)
+
+## See also
+
+- [qb-io overview and reading order](./README.md)
+- [The asynchronous engine](./async_system.md) — the event loop every entry on this page sits on
+- [C++23 coroutines](./coroutines.md)
+- [io invariants reference](../7_reference/io_invariants.md) — required reading before writing a custom protocol, transport, or async component
+- [Building from source](../7_reference/building.md) — the optional-feature gates and CMake options in full

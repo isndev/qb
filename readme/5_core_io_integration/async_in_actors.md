@@ -1,188 +1,336 @@
-@page core_io_async_in_actors_md Integrating Core & IO: Asynchronous Operations within Actors
-@brief Guide to using `qb-io` asynchronous features like callbacks and timers directly within QB actors for non-blocking behavior.
+# Asynchronous operations inside actors
 
-# Integrating Core & IO: Asynchronous Operations within Actors
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-Actors in the QB Framework can directly and seamlessly leverage the asynchronous capabilities of `qb-io`. This allows actors to perform time-based operations, schedule deferred tasks, or manage I/O-bound activities without blocking their `VirtualCore` and impeding the progress of other actors on the same core.
+How an actor uses the `qb-io` event loop — deferred callbacks, inactivity timers, and coroutines — to perform time-based and I/O-bound work without blocking its `VirtualCore`.
 
-## Using `qb::io::async::callback` for Delayed or Deferred Actions
+**Prerequisites:** [Core concepts: the actor model](../2_core_concepts/actor_model.md), [Reference: `qb-io` async system](../3_qb_io/async_system.md) — **See also:** [Network actors](./network_actors.md), [Reference: time utilities](../3_qb_io/utilities.md)
 
-(`qb/io/async/io.h`)
+## Summary
 
-This is the **primary and most flexible way** for an actor to schedule a piece of code (typically a lambda) to be executed later by its own `VirtualCore`'s event loop.
+Every `VirtualCore` runs a single thread that drives one `qb::io::async::listener` event loop. Actors assigned to that core and the asynchronous I/O objects bound to its loop share the same thread; thread safety comes from isolation, not locks. Because that one thread interleaves actor message handling and event-loop callbacks, an actor must never block it: a synchronous `read`, a `sleep`, or a mutex wait stalls every other actor and every pending I/O event on the core.
 
-*   **How to Use:** Call `qb::io::async::callback(your_lambda, delay_in_seconds);` from within an actor's `onInit()`, an `on(Event&)` handler, or even another `onCallback()` (if the actor inherits `qb::ICallback`).
-    *   A `delay_in_seconds` of `0.0` (or omitting it) schedules the lambda for the next available iteration of the event loop.
-*   **Execution Context:** The provided lambda will execute on the **same `VirtualCore`** (and thus the same thread) as the actor that scheduled it. This means the lambda can safely interact with the actor's state *if and only if* the actor is still alive and proper checks are made.
-*   **Capturing Actor Context (`this` or `id()`):**
-    *   **Crucial Safety Check:** When a lambda captures `this` (or `auto self_id = id();`), it is **essential** to check `this->is_alive()` (or `if (auto actor_ptr = VirtualCore::_handler->getActor(self_id)) { ... }` if only ID was captured and direct actor pointer needed, though this is less common for self-interaction) at the very beginning of the lambda's body. This is because the actor might be terminated and destroyed before the delayed callback gets a chance to execute.
-    *   **Sending Events Back to Self:** Instead of complex direct state manipulation from the lambda, a robust pattern is for the lambda to `push` a new, specific event back to the scheduling actor itself. The actor then handles this event in a dedicated `on()` handler.
+This page covers the mechanisms an actor uses to stay non-blocking:
 
-*   **Common Use Cases for Actors:**
-    *   **Implementing Timeouts:** For an operation initiated by the actor, schedule a callback. If the operation doesn't complete (e.g., by an incoming response event clearing a pending flag) before the callback runs, the callback can trigger timeout logic.
-    *   **Periodic Actions:** A callback can reschedule itself to create periodic behavior (an alternative to using `qb::ICallback`).
-    *   **Breaking Down Complex Non-Blocking Tasks:** If an actor needs to perform a series of non-blocking steps, it can execute one step and then schedule the next step via `async::callback` with a zero delay, effectively yielding control back to the event loop between steps.
-    *   **Retry Mechanisms:** After a failed attempt (e.g., network connection), schedule a retry attempt using a delayed callback.
-    *   **Simulating Work/Delays:** Useful in examples or tests to introduce artificial processing times without actual blocking.
+- `qb::io::async::callback` — schedule a callable to run later on the same core's loop.
+- `qb::io::async::scoped_callback` — the same, but cancellable through a caller-owned handle.
+- `qb::io::async::with_timeout<T>` — a CRTP mixin that fires after a span of inactivity.
+- `Actor::spawn_async` — drive a coroutine on the core's loop, awaiting I/O without blocking.
+- Wrapping unavoidable blocking work (such as synchronous file I/O) in a callback or a dedicated worker actor.
+
+## The single-thread-per-core contract
+
+A `VirtualCore` owns its actors exclusively, in one thread. The same thread owns the `listener::current` event loop and every async object registered with it. Two invariants follow, and both are load-bearing:
+
+- **No sharing across threads.** An I/O object (client, server, session, watcher, timer) created on one core's loop must not be touched from another thread. Cross-core communication goes through events (`push`/`broadcast`), never through shared pointers to I/O state. <!-- src: qb/include/qb/io/async/listener.h:63 -->
+- **No blocking the loop.** While a callback or message handler runs, the loop cannot dispatch anything else on that core. A blocking call inside it freezes the whole core until it returns. <!-- src: qb/include/qb/core/ICallback.h:116 -->
+
+Within a single core there are no data races to defend against — that is the point of the model — but the cost of that simplicity is the no-blocking rule. The rest of this page is about honoring it.
+
+## `qb::io::async::callback` — deferred and delayed actions
+
+`qb::io::async::callback` schedules a callable to run later on the calling thread's event loop. It is the primary way an actor defers work to a future loop iteration.
 
 ```cpp
-// Inside MyProcessingActor class
-#include <qb/actor.h>
-#include <qb/io/async.h> // For qb::io::async::callback
-#include <qb/io.h>       // For qb::io::cout
+// Declared in qb/include/qb/io/async/io.h
+namespace qb::io::async {
+    template <typename _Func>
+    void callback(_Func &&func);                          // run on next opportunity
 
-// Event to signal task completion or timeout
-struct ProcessTaskCompleteEvent : qb::Event {
-    int task_id;
+    template <typename _Func, typename Rep, typename Period>
+    void callback(_Func &&func, std::chrono::duration<Rep, Period> timeout);
+}
+```
+
+Key facts, each verified against the header:
+
+- **The delay is a `std::chrono` duration, not a `double`.** Pass `200ms`, `std::chrono::seconds(5)`, or any `std::chrono::duration`. There is no seconds-as-`double` overload. <!-- src: qb/include/qb/io/async/io.h:309 -->
+- **A non-positive (or absent) delay fires inline, immediately.** `callback(f)` and `callback(f, d)` with `d <= 0` invoke `func()` synchronously at the call site — they do *not* defer to the next iteration. Use a strictly positive duration when you need the callback to run on a later turn of the loop. <!-- src: qb/include/qb/io/async/io.h:305,313 -->
+- **The callback runs on the same `VirtualCore`** that scheduled it, so it may touch that actor's state — but only if the actor is still alive when it fires.
+- **Fire-and-forget.** The scheduled timer (`Timeout<F>`) is heap-allocated and deletes itself after firing; there is no handle to cancel it. When you need cancellation, use `scoped_callback` (below).
+
+### Capture safety: the actor may be gone
+
+A delayed callback can outlive the actor that scheduled it. If the lambda captures `this`, guard every member access with `is_alive()`, which returns `false` once the actor has been terminated:
+
+```cpp
+// Verify the actor still exists before touching its state.
+qb::io::async::callback([this, task_id]() {
+    if (!is_alive())
+        return;                       // actor was killed; do nothing
+    // ... safe to use this-> members here ...
+}, std::chrono::seconds(5));
+```
+
+For longer or riskier deferrals, prefer the message-back pattern: have the callback `push` an event to the actor's own `id()` instead of mutating state directly. Events addressed to a dead actor are silently dropped, so this needs no liveness check and keeps all state changes inside ordinary `on(Event&)` handlers.
+
+### A timeout-watchdog example
+
+This actor starts an operation and arms a timeout. If a completion signal does not clear the pending flag before the callback fires, the callback declares the operation timed out and resolves it through an event.
+
+```cpp
+// Inactivity / operation-timeout pattern using async::callback.
+#include <qb/actor.h>
+#include <qb/io/async.h>
+#include <qb/io.h>
+#include <chrono>
+#include <map>
+
+using namespace std::chrono_literals;
+
+struct TaskComplete : qb::Event {
+    int  task_id;
     bool timed_out;
-    explicit ProcessTaskCompleteEvent(int id, bool timeout_status) 
-        : task_id(id), timed_out(timeout_status) {}
+    TaskComplete(int id, bool timeout) : task_id(id), timed_out(timeout) {}
 };
 
-class MyProcessingActor : public qb::Actor {
-private:
-    std::map<int, bool> _pending_tasks; // task_id -> is_pending
-    int _next_task_id = 1;
+class WatchdogActor : public qb::Actor {
+    std::map<int, bool> _pending;   // task_id -> still pending
+    int                 _next_id = 1;
 
 public:
     bool onInit() override {
-        registerEvent<ProcessTaskCompleteEvent>(*this);
+        registerEvent<TaskComplete>(*this);
         registerEvent<qb::KillEvent>(*this);
-        // Example: Start a task immediately
-        startLongOperation(5.0); // Operation that we expect to complete or timeout in 5s
+        startOperation(5s);
         return true;
     }
 
-    void startLongOperation(double timeout_seconds) {
-        int current_task_id = _next_task_id++;
-        _pending_tasks[current_task_id] = true;
-        qb::io::cout() << "Actor [" << id() << "]: Starting operation for task " << current_task_id 
-                       << ", timeout in " << timeout_seconds << "s.\n";
+    void startOperation(qb::duration timeout) {
+        const int id = _next_id++;
+        _pending[id] = true;
+        // ... kick off the real non-blocking operation here ...
 
-        // Simulate starting an external non-blocking operation here...
-
-        // Schedule a timeout check using async::callback
-        // Capture 'this' to access actor members and methods
-        qb::io::async::callback([this, current_task_id]() {
-            if (!this->is_alive()) { // Crucial check!
-                // qb::io::cout() << "Actor for task " << current_task_id << " no longer alive for timeout check.\n";
-                return;
+        qb::io::async::callback([this, id]() {
+            if (!is_alive())
+                return;                                   // actor gone
+            auto it = _pending.find(id);
+            if (it != _pending.end() && it->second) {     // still pending -> timed out
+                push<TaskComplete>(this->id(), id, true);
+                _pending.erase(it);
             }
-            // Check if the task is still marked as pending
-            if (_pending_tasks.count(current_task_id) && _pending_tasks[current_task_id]) {
-                // Task timed out, send a completion event indicating timeout
-                qb::io::cout() << "Actor [" << id() << "]: Task " << current_task_id << " timed out!\n";
-                this->push<ProcessTaskCompleteEvent>(this->id(), current_task_id, true);
-                _pending_tasks.erase(current_task_id); // Clean up
-            }
-            // If not pending, it means a response was received before timeout
-        }, timeout_seconds);
+        }, timeout);
     }
 
-    // Imagine this event is received from an external system or another actor
-    // when the long operation actually finishes (before timeout).
-    void onOperationActuallyCompleted(int task_id_completed) { // Not a qb::Event, but a conceptual method
-        if (_pending_tasks.count(task_id_completed) && _pending_tasks[task_id_completed]) {
-            qb::io::cout() << "Actor [" << id() << "]: Task " << task_id_completed << " completed successfully (before timeout).\n";
-            this->push<ProcessTaskCompleteEvent>(this->id(), task_id_completed, false);
-            _pending_tasks.erase(task_id_completed);
-        }
+    void on(const TaskComplete &ev) {
+        qb::io::cout() << "task " << ev.task_id
+                       << (ev.timed_out ? " timed out\n" : " completed\n");
     }
 
-    void on(const ProcessTaskCompleteEvent& event) {
-        qb::io::cout() << "Actor [" << id() << "]: Handling ProcessTaskCompleteEvent for task " << event.task_id
-                       << (event.timed_out ? " (TIMED OUT)" : " (SUCCESS)") << ".\n";
-        // Further processing based on completion or timeout...
-    }
-
-    void on(const qb::KillEvent& /*event*/) { kill(); }
+    void on(const qb::KillEvent &) { kill(); }
 };
 ```
-**(Reference:** `test-actor-delayed-events.cpp`, `example10_distributed_computing.cpp` (extensive use for simulation and scheduling), `file_processor/file_worker.h` (wrapping blocking calls).**)
 
-## Using `qb::io::async::with_timeout` for Actor Inactivity
+`startOperation` takes a `qb::duration` — the canonical span type used for every timeout, delay, and interval in the public API. It is an alias for `std::chrono::nanoseconds` and accepts any finer-or-equal chrono literal implicitly (`5s`, `200ms`), while rejecting a bare integer at compile time. <!-- src: qb/include/qb/system/timestamp.h:82 -->
 
-While `async::callback` is versatile, if an actor needs a simple inactivity timeout (i.e., it should terminate or take action if no relevant messages arrive for a period), inheriting from `qb::io::async::with_timeout<DerivedActor>` can be an option.
+### Common uses
 
-*   **How it Works:**
-    1.  **Inheritance:** `class MyActor : public qb::Actor, public qb::io::async::with_timeout<MyActor> { ... };`
-    2.  **Constructor Initialization:** Call the base `with_timeout(timeout_duration_seconds);` in your actor's constructor.
-    3.  **Implement Timeout Handler:** `void on(qb::io::async::event::timer const& event)` will be called when the timer expires.
-    4.  **Reset on Activity:** In your relevant `on(ApplicationEvent&)` handlers (those that signify activity), call `this->updateTimeout();` to reset the inactivity countdown.
-*   **Use Case:** Terminating idle sessions, cleaning up actors that haven't received heartbeats or work for a while.
+- **Operation timeouts.** Arm a callback when you start something; cancel its effect by clearing a pending flag when the result arrives first (as above).
+- **Retry with backoff.** On a failed attempt, reschedule the next try with a growing delay.
+- **Yielding between steps.** Split a long computation into chunks and schedule the next chunk so the loop can service other actors in between. Use a strictly positive delay, since a zero delay runs inline and does not yield.
+- **Periodic work.** A callback can reschedule itself. For strictly periodic, every-iteration work, prefer `qb::ICallback` (see below).
+
+## `qb::io::async::scoped_callback` — cancellable deferred actions
+
+When you need to cancel a pending callback — a per-request deadline, a watchdog you re-arm, a retry you may abandon — use `scoped_callback`. It returns a `std::unique_ptr` to a caller-owned `ScopedTimeout`; destroying or reassigning that pointer cancels the pending call.
 
 ```cpp
-#include <qb/actor.h>
-#include <qb/io/async.h> // For qb::io::async::with_timeout and event::timer
-#include <qb/io.h>
+// Declared in qb/include/qb/io/async/io.h
+namespace qb::io::async {
+    template <typename _Func, typename Rep, typename Period>
+    [[nodiscard]] auto
+    scoped_callback(_Func &&func, std::chrono::duration<Rep, Period> timeout);
+}
+```
 
-struct ClientActivityPing : qb::Event {};
+```cpp
+// Hold the handle as a member; let it cancel automatically on destruction.
+class RequestActor : public qb::Actor {
+    std::unique_ptr<qb::io::async::ScopedTimeout<std::function<void()>>> _deadline;
 
-class SessionActorWithInactivity : public qb::Actor, 
-                                   public qb::io::async::with_timeout<SessionActorWithInactivity> {
 public:
-    SessionActorWithInactivity() : with_timeout(30.0) { // 30-second inactivity timeout
-        qb::io::cout() << "SessionActor [" << id() << "]: Created with 30s inactivity timeout.\n";
+    void arm() {
+        // Wrap the callable in std::function so the returned
+        // ScopedTimeout<std::function<void()>> matches the member's type.
+        _deadline = qb::io::async::scoped_callback(
+            std::function<void()>{[this]() {
+                if (!is_alive())
+                    return;
+                // deadline elapsed without a response
+            }},
+            std::chrono::seconds(3));
     }
 
+    void onResponse() {
+        _deadline.reset();   // cancels the pending deadline if it has not fired
+    }
+};
+```
+
+`ScopedTimeout` exposes `cancel()` and `fired()`. As with `callback`, a non-positive duration fires inline at construction. The trade-off versus `callback`: `scoped_callback` is cancellable and owned by you; `callback` is fire-and-forget and self-cleaning. <!-- src: qb/include/qb/io/async/io.h:364,367; qb/include/qb/io/async/io.h:357 -->
+
+## `qb::io::async::with_timeout<T>` — inactivity timers
+
+For an actor (or any async object) that should act when it has been *idle* for a span — close an idle session, drop a client that stopped sending heartbeats — inherit the `with_timeout<T>` CRTP mixin.
+
+```cpp
+// Declared in qb/include/qb/io/async/io.h
+template <typename _Derived>
+class with_timeout {
+public:
+    explicit with_timeout(qb::duration timeout = std::chrono::seconds(3));
+    void       updateTimeout() noexcept;            // reset the idle countdown
+    void       setTimeout(qb::duration timeout) noexcept;  // 0 disables the timer
+    qb::duration getTimeout() const noexcept;
+    // _Derived must define: void on(qb::io::async::event::timer const&);
+};
+```
+
+Mechanics, verified against the header:
+
+- The constructor takes a `qb::duration` and **defaults to `std::chrono::seconds(3)`**. A value `<= 0` starts disabled. <!-- src: qb/include/qb/io/async/io.h:118 -->
+- `updateTimeout()` records "now" as the last-activity time; call it from handlers that count as activity to push the deadline forward.
+- When the configured span elapses with no `updateTimeout()`, the mixin invokes `_Derived::on(qb::io::async::event::timer const&)`. The canonical handler signature takes the event by `const &`. <!-- src: qb/include/qb/io/async/io.h:178; qb/source/io/tests/system/test-event.cpp:69 -->
+- `setTimeout(d)` reconfigures and restarts the timer; `setTimeout(qb::duration::zero())` stops it. <!-- src: qb/include/qb/io/async/io.h:146 -->
+
+```cpp
+// Session actor that self-terminates after 30s of inactivity.
+#include <qb/actor.h>
+#include <qb/io/async.h>
+#include <qb/io.h>
+#include <chrono>
+
+using namespace std::chrono_literals;
+
+struct ClientPing : qb::Event {};
+
+class SessionActor
+    : public qb::Actor
+    , public qb::io::async::with_timeout<SessionActor> {
+public:
+    SessionActor() : with_timeout(30s) {}
+
     bool onInit() override {
-        registerEvent<ClientActivityPing>(*this);
+        registerEvent<ClientPing>(*this);
         registerEvent<qb::KillEvent>(*this);
-        updateTimeout(); // Start the initial countdown
+        updateTimeout();          // start the countdown
         return true;
     }
 
-    void on(const ClientActivityPing& /*event*/) {
-        qb::io::cout() << "SessionActor [" << id() << "]: Ping received, activity confirmed. Resetting timeout.\n";
-        updateTimeout(); // Reset inactivity timer upon receiving a ping
+    void on(const ClientPing &) {
+        updateTimeout();          // activity: defer the deadline
     }
 
-    // This handler is called by the with_timeout base when the timer expires
-    void on(qb::io::async::event::timer const& /*event*/) {
-        qb::io::cout() << "SessionActor [" << id() << "]: Inactivity timeout reached! Terminating session.\n";
-        kill(); // Terminate the actor due to inactivity
-    }
-
-    void on(const qb::KillEvent& /*event*/) {
-        setTimeout(0.0); // Disable timer explicitly during shutdown
+    // Fired by with_timeout once 30s elapse with no updateTimeout().
+    void on(qb::io::async::event::timer const &) {
+        qb::io::cout() << "session " << id() << " idle, terminating\n";
         kill();
     }
-    
-    ~SessionActorWithInactivity() override {
-        qb::io::cout() << "SessionActor [" << id() << "] destroyed.\n";
+
+    void on(const qb::KillEvent &) {
+        setTimeout(qb::duration::zero());   // stop the timer before teardown
+        kill();
     }
 };
 ```
-**(Reference:** `chat_tcp/server/ChatSession.h` uses this pattern, though it's a non-actor class in that example, the principle is the same. `test-async-io.cpp::TimerHandler` also demonstrates `with_timeout`.)**
 
-## Asynchronous File Operations within Actors
+`with_timeout` is the same mixin that network session classes use for idle-connection cleanup; the message-broker server's `BrokerSession` closes its connection from exactly this handler. <!-- src: examples/core_io/message_broker/server/BrokerSession.cpp:159 -->
 
-Directly performing blocking file I/O (like `std::fstream::read` or `qb::io::sys::file::write`) within an actor's event handler or `onCallback` is **highly discouraged** as it will block the `VirtualCore`.
+> **`with_timeout` vs. `callback`.** `with_timeout` models *inactivity* — a deadline that resets on activity and auto-reschedules until the real deadline. `callback`/`scoped_callback` model a *one-shot* deferral at a fixed delay. Reach for `with_timeout` when "reset the clock on every message" is the natural description; reach for a callback when "do X once, T from now" is.
 
-To handle file operations asynchronously from an actor:
+## Coroutines inside actors — `spawn_async`
 
-1.  **Wrap Blocking Calls in `qb::io::async::callback` (for simpler cases):**
-    *   The actor receives a request to read/write a file.
-    *   It captures necessary parameters (file path, data, original requester ID) into a lambda.
-    *   It schedules this lambda using `qb::io::async::callback`.
-    *   The lambda executes on the actor's `VirtualCore` but in a way that doesn't block the primary event processing flow for *other* events while the blocking call itself is in progress (though the callback itself will block its turn in the event loop queue).
-    *   After the blocking I/O in the lambda completes, the lambda should `push` a result event (containing data or error status) back to the original requester or to the scheduling actor itself.
-    *   **Caution:** While this makes the actor *appear* non-blocking to other actors, the `VirtualCore` processing this specific callback *will* be blocked during the actual file I/O. This is suitable for infrequent or less performance-critical file operations.
+An actor can drive a C++ coroutine on its core's event loop with `Actor::spawn_async`. The coroutine can `co_await` asynchronous operations (sleeps, I/O, combinators) and suspend without blocking the loop; the core services other actors while it is parked, then resumes it when the awaited operation completes.
 
-2.  **Dedicated File Worker Actors (Recommended for complex or frequent I/O):**
-    *   Create specialized worker actors whose sole purpose is to perform file I/O.
-    *   The main actor delegates file operation requests (as events) to these worker actors.
-    *   Worker actors can use the `async::callback` pattern internally to perform the blocking I/O.
-    *   This isolates blocking operations to specific actors/cores, potentially configured with higher latency if they are expected to block often.
-    *   **(Reference:** The `example/core_io/file_processor/` provides a good example of this pattern.)**
+```cpp
+// Declared in qb/include/qb/core/Actor.h
+template <typename Func>
+void spawn_async(Func &&func) const;   // Func returns qb::io::async::task<void>
+```
 
-3.  **Asynchronous File Watching (`qb::io::async::file_watcher` or `directory_watcher`):**
-    *   For scenarios where an actor needs to react to changes in the file system (file creation, modification, deletion) without polling.
-    *   The actor (or a helper class it owns) can inherit from `qb::io::async::file_watcher<MyActor>` or `directory_watcher<MyActor>`.
-    *   It then implements `void on(qb::io::async::event::file const& event)` to handle notifications.
-    *   The watcher is started with `this->start(path_to_watch, interval);`.
-    *   **(Reference:** The `example/core_io/file_monitor/` demonstrates this pattern with a `DirectoryWatcher` actor.)**
+The callable receives a `CoroContext` and returns `qb::io::async::task<void>`. **The safety contract is strict, because a suspended coroutine can outlive its actor:** <!-- src: qb/include/qb/core/Actor.h:982-1036 -->
 
-By using these asynchronous patterns, actors can effectively manage time-based logic and interact with potentially blocking resources like the file system without compromising the overall responsiveness and concurrency of the QB application.
+- **Never access actor members after a `co_await`.** The actor may have been destroyed while the coroutine was suspended; touching `this->_member` afterward is undefined behavior.
+- **Copy everything you need by value before the first `co_await`.** Do not capture `this` or references to actor members into the coroutine.
+- **After suspension, use only the `CoroContext`.** `ctx.push<Event>(...)` (to the spawning actor's own id), `ctx.push_to<Event>(dest, ...)` (to another actor), `ctx.id()`, and `ctx.time()` are safe; events to a dead actor are dropped. <!-- src: qb/include/qb/core/Actor.tpp:173,180 -->
+- **Keep coroutines short-lived.** The longer a coroutine runs, the wider the window in which its actor can be destroyed.
 
-**(Next:** [Integrating Core & IO: Network Actors](./network_actors.md) to see how actors handle network I/O.**) 
+```cpp
+// Safe coroutine: copy state out, await, reply only through the context.
+void on(RequestEvent &ev) {
+    // Copy ALL needed data BEFORE spawning — no 'this', no member refs.
+    std::string key    = ev.key;
+    qb::ActorId sender = ev.sender;
+
+    spawn_async([key, sender](auto ctx) -> qb::io::async::task<void> {
+        auto reply = co_await fetch(key);              // actor may die here
+        // push_to(dest, ...) addresses another actor; push(...) would go to self.
+        ctx.template push_to<ResultEvent>(sender, reply);   // safe via context
+    });
+}
+```
+
+```cpp
+// DANGEROUS — do not do this.
+spawn_async([this](auto ctx) -> qb::io::async::task<void> {
+    co_await sleep(100ms);     // actor may die while suspended
+    this->_member = value;     // UNDEFINED BEHAVIOR: actor may be gone
+});
+```
+
+`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is shared per `VirtualCore` and established when the core's listener is created, so `spawn_async` requires no setup beyond running inside the engine. <!-- src: qb/include/qb/core/Actor.h:1042,1050; qb/include/qb/core/Actor.tpp:231 -->
+
+For the awaitables themselves (`sleep`, timeouts, channels, `when_all`/`when_any`/`race`), see [Reference: C++23 coroutines](../3_qb_io/coroutines.md).
+
+## Periodic work: `qb::ICallback`
+
+For logic that must run on *every* loop iteration (polling, draining a queue, heartbeats), inherit `qb::ICallback` alongside `qb::Actor` and register with `registerCallback(*this)`. The core calls `onCallback()` once per iteration until you call `unregisterCallback()`.
+
+```cpp
+// Declared in qb/include/qb/core/ICallback.h
+class ICallback {
+public:
+    virtual void onCallback() = 0;   // called every loop iteration while registered
+};
+```
+
+`onCallback()` is bound by the same no-blocking rule as everything else on the core: it must return quickly and must never block, sleep, or do synchronous I/O. <!-- src: qb/include/qb/core/ICallback.h:116 --> For a one-shot or backoff schedule rather than every-iteration work, prefer `async::callback`. For the registration API and a worked heartbeat example, see [Reference: `qb::Actor` (`ICallback`)](../4_qb_core/actor.md).
+
+## Blocking file I/O from an actor
+
+Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling thread, and an actor's thread is its whole `VirtualCore`. Three patterns keep the core responsive, in increasing order of isolation:
+
+1. **Wrap the blocking call in `async::callback`** (suitable for infrequent, non-critical I/O). The callback still blocks the core *for its own turn*, but it keeps the blocking work out of the actor's main message-handling path. When the I/O finishes, `push` a result event back to the requester. This is what the `file_processor` worker does. <!-- src: examples/core_io/file_processor/file_worker.h:100 -->
+
+   ```cpp
+   // FileWorker schedules the blocking read off the message-handling path.
+   qb::io::async::callback([this, request, file_content]() {
+       qb::io::sys::file file;
+       if (file.open(request.filepath.c_str(), O_RDONLY) >= 0) {
+           // ... synchronous read into file_content ...
+           file.close();
+       }
+       // push a ReadFileResponse back to request.requestor ...
+   });
+   ```
+
+2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `file_processor` example builds exactly this manager-worker topology. <!-- src: examples/core_io/file_processor/main.cpp:14 -->
+
+3. **Watch the filesystem instead of polling it.** To *react* to file or directory changes, use `qb::io::async::file_watcher<T>` / `directory_watcher<T>`, which deliver `on(qb::io::async::event::file const&)` notifications through the loop with no blocking. The `file_monitor` example demonstrates a directory-watcher actor. <!-- src: examples/core_io/file_monitor -->
+
+## Pitfalls
+
+- **Passing a `double` as a delay.** `callback`/`with_timeout` take `qb::duration` (a `std::chrono` span), not seconds-as-`double`. Write `5s` or `std::chrono::milliseconds(200)`, never `5.0`. A bare integer does not compile. <!-- src: qb/include/qb/system/timestamp.h:82 -->
+- **Expecting `callback(f)` or a zero delay to defer.** A non-positive duration runs `func()` inline at the call site. Use a strictly positive delay to schedule for a later loop turn. <!-- src: qb/include/qb/io/async/io.h:305,313 -->
+- **Touching `this` after the actor died.** A delayed callback can outlive its actor — guard with `is_alive()`, or prefer `push`-back-to-self over direct mutation.
+- **Accessing actor state after `co_await`.** Inside a coroutine, the actor may be destroyed across any suspension point. Copy state by value before the first `co_await` and use only the `CoroContext` afterward.
+- **Sharing I/O objects across cores.** An async object is bound to one core's loop. Never hand it to another thread; communicate with events instead. <!-- src: qb/include/qb/io/async/listener.h:63 -->
+- **Blocking the loop.** A synchronous `read`, a `sleep`, a mutex wait, or an unbounded computation in a handler, callback, or `onCallback()` freezes the entire core. Defer it, chunk it, or offload it to a worker actor.
+
+## See also
+
+- [Network actors](./network_actors.md) — combining `qb::Actor` with `qb::io::use<T>` clients, servers, and sessions.
+- [Reference: `qb-io` async system](../3_qb_io/async_system.md) — the listener, timers, and watchers in full.
+- [Reference: C++23 coroutines](../3_qb_io/coroutines.md) — `task<T>`, awaiters, and combinators.
+- [Reference: `qb::Actor`](../4_qb_core/actor.md) — `qb::ICallback` registration and the periodic-callback lifecycle.
+- [Reference: time utilities](../3_qb_io/utilities.md) — `qb::duration`, `qb::mono_time`, `qb::wall_time`.

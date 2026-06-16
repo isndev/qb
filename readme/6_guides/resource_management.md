@@ -1,152 +1,243 @@
-@page guides_resource_management_md QB Framework: Effective Resource Management
-@brief Best practices for managing resources like memory, file handles, and network connections within QB actors, leveraging RAII and actor lifecycle hooks.
+# Resource management
 
-# QB Framework: Effective Resource Management
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-Proper resource management is crucial for building stable and leak-free applications. The QB Actor Framework leverages standard C++ RAII (Resource Acquisition Is Initialization) principles and the actor lifecycle to provide robust and largely automatic resource handling.
+How RAII, actor ownership, and the actor lifecycle combine to release memory, descriptors, sockets, and TLS contexts deterministically, and where the framework hands ownership back to you.
 
-## 1. RAII: The Cornerstone of Resource Management in Actors
+**Prerequisites:** [The actor model](../2_core_concepts/actor_model.md), [Getting started](./getting_started.md) — **See also:** [Error handling](./error_handling.md), [Advanced usage](./advanced_usage.md)
 
-**RAII is the primary and strongly recommended approach for managing all resources within your QB actors.**
+## Summary
 
-*   **How It Works:** You encapsulate resources (dynamically allocated memory, file handles, network sockets, database connections, mutexes, etc.) within C++ objects that manage the resource's lifetime. The resource is acquired in the object's constructor and automatically released/cleaned up in its destructor.
-*   **Standard C++ RAII Tools:**
-    *   **Memory:**
-        *   `std::unique_ptr<T>`: For exclusive ownership of heap-allocated objects or arrays. Automatically calls `delete` or `delete[]`.
-        *   `std::shared_ptr<T>`: For shared ownership. The resource is deleted when the last `shared_ptr` to it is destroyed.
-        *   Standard Containers: `std::vector`, `std::string`, `std::map`, `qb::string<N>`, `qb::allocator::pipe<T>` all manage their own internal memory.
-    *   **File Handles:**
-        *   `std::fstream`, `std::ifstream`, `std::ofstream`: Automatically close the file when they go out of scope.
-        *   `qb::io::sys::file`: QB's own file wrapper also closes the file descriptor in its destructor.
-    *   **Network Sockets:**
-        *   `qb::io::tcp::socket`, `qb::io::udp::socket`, `qb::io::tcp::ssl::socket`: These classes manage the underlying system socket descriptor and ensure it's closed upon destruction.
-    *   **Locks (for external interactions, if unavoidable):**
-        *   `std::lock_guard<std::mutex>`: Acquires a mutex on construction and releases it on destruction (when the guard goes out of scope).
-        *   `std::unique_lock<std::mutex>`: Offers more flexible lock management, also ensuring release on destruction if still owned.
+The qb runtime owns the *thread of control*: it constructs an actor on a `VirtualCore` worker thread, runs `onInit()`, dispatches events, and calls `~Actor()` after termination — all on that one thread. You own the *resources*. Wrap each resource (heap memory, a file descriptor, a socket, an `SSL_CTX`, a mutex) in a C++ object whose destructor releases it, declare that object as an actor member, and the runtime's deterministic destruction order releases everything for you. This page covers the ownership rules you must know to make that work: when `~Actor()` actually runs, which qb types own their handles and which hand ownership back to you, and where a reference must outlive an asynchronous operation.
 
-*   **Integration with Actor Lifecycle:**
-    *   Declare RAII wrappers as member variables of your actor.
-    *   Acquire resources in the actor's constructor or, more commonly, in its `onInit()` method (especially if acquisition can fail and you want to prevent the actor from starting).
-    *   **Crucially, an actor's destructor (`~MyActor()`) is guaranteed to be called *after* the actor has fully terminated** (i.e., its `kill()` method has been processed and it's removed from the `VirtualCore`). This ensures that all RAII member objects are properly destructed, and thus their managed resources are released automatically and safely.
+## Concepts
+
+### RAII is the contract, not a suggestion
+
+Resource Acquisition Is Initialization (RAII) ties a resource's lifetime to an object's lifetime: acquire in the constructor, release in the destructor. The framework does not run a garbage collector, scan for leaks, or close handles you forgot about. Everything below rests on one guarantee — **a destructor that runs releases its resource exactly once** — so your job is to ensure the owning object is destroyed exactly once, on the right thread, in the right order.
+
+The standard library already provides the building blocks:
+
+| Resource | RAII owner |
+| --- | --- |
+| Exclusive heap object / array | `std::unique_ptr<T>`, `std::unique_ptr<T[]>` |
+| Shared heap object | `std::shared_ptr<T>` |
+| Dynamic buffers, strings, maps | `std::vector`, `std::string`, `std::map`, `qb::string<N>`, `qb::allocator::pipe<char>` |
+| File streams | `std::fstream`, `std::ifstream`, `std::ofstream` |
+| Scoped lock | `std::lock_guard`, `std::unique_lock`, `std::scoped_lock` |
+
+qb adds owners for the resources it introduces. The key invariant for every one of them is the same: they are **move-only** — copy construction and copy assignment are deleted, and the move transfers the native handle, leaving the moved-from object in a closed/empty state so the destructor never double-frees.
+
+| qb resource | Owner type | Header | Ownership note |
+| --- | --- | --- | --- |
+| Native file descriptor | `qb::io::sys::file` | `include/qb/io/system/file.h` | Move-only; destructor closes the handle. Copy was deliberately deleted to avoid a double-close. |
+| Native socket descriptor | `qb::io::socket` (the base `inet::socket`, aliased into `qb::io`) | `include/qb/io/system/sys__socket.h` | Move-only; destructor closes the descriptor. |
+| TCP socket | `qb::io::tcp::socket` | `include/qb/io/tcp/socket.h` | Move-only; closes the descriptor on destruction. |
+| UDP socket | `qb::io::udp::socket` | `include/qb/io/udp/socket.h` | Move-only. |
+| TLS socket | `qb::io::tcp::ssl::socket` | `include/qb/io/tcp/ssl/socket.h` | Move-only; owns and frees its `SSL` object (held in a `std::unique_ptr`) on destruction. |
+| TLS listener | `qb::io::tcp::ssl::listener` | `include/qb/io/tcp/ssl/listener.h` | Move-only; **takes ownership of the `SSL_CTX`** you pass to `init()` and frees it via `std::unique_ptr`. |
+
+<!-- src: include/qb/io/system/file.h:77 -->
+<!-- src: include/qb/io/system/sys__socket.h:796 -->
+<!-- src: include/qb/io/tcp/socket.h:91 -->
+<!-- src: include/qb/io/tcp/ssl/socket.h:336 (_ssl_handle unique_ptr), :43 (listener _ctx unique_ptr) -->
+
+### The actor destruction guarantee
+
+For an actor, RAII works because the runtime gives you a precise destruction contract. Three points define it:
+
+- **Construction is thread-affine.** An actor is constructed on the `VirtualCore` worker thread that will host it, never on the main thread. Use `Main::core(idx).addActor<T>(...)` or `addRefActor<T>(...)`; constructing an actor from an arbitrary thread asserts (the constructor checks `VirtualCore::_handler != nullptr`). (`source/core/src/Actor.cpp:33`)
+- **`onInit()` runs once, before any event.** It runs after construction and ID assignment. Returning `false` aborts registration and **immediately destroys the actor** — so any resource you acquired in the constructor is released right away. What you observe depends on the creation path: a runtime `addRefActor<T>()`/`addRefHandle<T>()` hands you back an invalid id / empty handle (`id.is_valid()` is false), whereas a pre-start `addActor<T>()` whose `onInit()` fails at startup instead flags the core `BadActorInit` and the core fails to start (`Main::hasError()` is true) — it does not hand you an invalid id. See [Error handling](./error_handling.md) for the full failure table. (`include/qb/core/Actor.h:317`, `source/core/src/VirtualCore.cpp:469`, `source/core/src/Main.cpp:210`)
+- **`kill()` flags, it does not destroy.** `kill()` sets `_alive = false` and asks the `VirtualCore` to retire the actor. The actor stops receiving *new* events but may still drain events already queued; **`~Actor()` runs later, under `VirtualCore` control**, on the same worker thread. (`source/core/src/Actor.cpp:121`)
+
+Because destruction is single-threaded and deterministic, member subobjects are destroyed in reverse declaration order after your `~MyActor()` body returns. Declare your RAII members and let the compiler-generated cleanup do the rest.
 
 ```cpp
+// Deterministic cleanup driven entirely by member RAII.
 #include <qb/actor.h>
-#include <qb/event.h>
 #include <qb/io.h>
-#include <memory>    // For std::unique_ptr, std::shared_ptr
-#include <fstream>   // For std::fstream
-#include <vector>    // For std::vector
-#include <qb/string.h> // For qb::string
+#include <fstream>
+#include <memory>
+#include <vector>
 
-// Hypothetical RAII wrapper for a network connection
-class NetworkConnectionWrapper {
-public:
-    NetworkConnectionWrapper(const char* address) { /* connect */ qb::io::cout() << "NetworkConnectionWrapper: Connected to " << address << ".\n"; }
-    ~NetworkConnectionWrapper() { /* disconnect */ qb::io::cout() << "NetworkConnectionWrapper: Disconnected.\n"; }
-    void send_data(const qb::string<32>& data) { /* ... */ }
-};
-
-class ResourceManagerActor : public qb::Actor {
-private:
-    // --- Resources Managed by RAII --- 
-    std::unique_ptr<int[]> _dynamic_array;      // Dynamically allocated array
-    std::fstream _config_file;                  // File handle
-    std::vector<qb::string<64>> _item_list;   // Container managing its own memory (and qb::string members)
-    std::shared_ptr<NetworkConnectionWrapper> _shared_connection; // Shared network resource
+class ReportWriter : public qb::Actor {
+    std::unique_ptr<int[]>        _scratch;   // delete[] on destruction
+    std::ofstream                 _out;       // closed on destruction
+    std::vector<std::string>      _rows;      // frees its storage
 
 public:
-    ResourceManagerActor(const char* config_path, const char* shared_server_address) {
-        // Constructor can initialize some members, or defer to onInit
-        _dynamic_array = std::make_unique<int[]>(100); // Acquired at construction
-        _shared_connection = std::make_shared<NetworkConnectionWrapper>(shared_server_address);
-        qb::io::cout() << "ResourceManagerActor [" << id() << "] constructed.\n";
-    }
+    explicit ReportWriter(std::string path)
+        : _scratch(std::make_unique<int[]>(256))
+        , _out(std::move(path), std::ios::out) {}
 
     bool onInit() override {
-        _config_file.open("actor_settings.conf", std::ios::in);
-        if (!_config_file.is_open()) {
-            qb::io::cout() << "ResourceManagerActor [" << id() << "]: Failed to open config file!\n";
-            return false; // Initialization failed, actor won't start, destructor will clean up _dynamic_array & _shared_connection
+        if (!_out.is_open()) {
+            qb::io::cout() << "ReportWriter[" << id() << "]: cannot open output\n";
+            return false; // actor is destroyed here; _scratch + _out already released
         }
-        _item_list.reserve(50);
-        qb::io::cout() << "ResourceManagerActor [" << id() << "]: Initialized successfully. Config file opened.\n";
-        registerEvent<qb::KillEvent>(*this);
+        _rows.reserve(64);
         return true;
     }
 
-    void on(const qb::KillEvent& /*event*/) {
-        qb::io::cout() << "ResourceManagerActor [" << id() << "]: KillEvent received. Shutting down.\n";
-        // Optional: Perform actions needed *before* RAII takes over in destructor.
-        // e.g., if _config_file was open for writing: _config_file.flush();
-        kill(); // Signal framework to proceed with termination
-    }
-
-    // --- Destructor --- 
-    // Called by the framework AFTER kill() completes and the actor is removed from the VirtualCore.
-    // All RAII members will have their destructors called automatically here.
-    ~ResourceManagerActor() override {
-        // _dynamic_array (unique_ptr) goes out of scope -> delete[] is called.
-        // _config_file (fstream) goes out of scope -> _config_file.close() is called if open.
-        // _item_list (vector) goes out of scope -> its memory is freed.
-        // _shared_connection (shared_ptr) decrements ref count; resource freed if it was the last owner.
-        qb::io::cout() << "ResourceManagerActor [" << id() << "]: Destructor called. All RAII resources released.\n";
-    }
-
-    // ... other methods using these resources ...
+    // No explicit destructor needed: _rows, _out, _scratch are released
+    // in reverse declaration order after ~ReportWriter() runs.
 };
 ```
-**(Reference Example:** `test-actor-resource-management.cpp` demonstrates various resource acquisition and release scenarios.)**
 
-## 2. Explicit Cleanup in `on(const qb::KillEvent&)`
+Write an explicit `~MyActor()` only when you need an *action* (flush a buffer, emit a final log line), not to release members — those are released for you.
 
-While RAII is preferred for automatic cleanup, sometimes an actor needs to perform specific actions *during its shutdown sequence but before its destructor is called*.
+### Cleanup ordering: when work must happen before the destructor
 
-*   **When to Use This Pattern:**
-    *   Notifying other actors that this actor is shutting down (e.g., unregistering from a manager, releasing a lease).
-    *   Explicitly closing network connections or flushing buffers if these operations need to complete *before* other system-wide shutdown signals are processed or before the actor object itself is destroyed.
-    *   Releasing external system resources (e.g., hardware locks, COM objects) that are not managed by C++ RAII wrappers.
-*   **How to Implement:**
-    1.  Ensure your actor is registered to handle `qb::KillEvent` (this is done by default by the `qb::Actor` constructor, but good to be aware of).
-    2.  Override `void on(const qb::KillEvent& event)`.
-    3.  Perform your specific cleanup actions within this handler.
-    4.  **Crucially, end your `on(const qb::KillEvent&)` handler by calling the base `this->kill()` method.** This signals the framework to proceed with the actor's termination, eventually leading to its destructor call.
+RAII releases resources, but it cannot perform side effects that must reach *other* actors or external systems while they are still operational. Sending an event, unregistering from a manager, or notifying a peer must happen during the shutdown sequence — before `~Actor()`. The hook for that is `on(const qb::KillEvent&)`.
+
+Every actor is, by default, subscribed to `KillEvent` (along with `SignalEvent`, `UnregisterCallbackEvent`, and `PingEvent`) at construction. (`source/core/src/Actor.cpp:38`) Constructing with `qb::no_default_events` skips all four, in which case the derived class must register at least `KillEvent` in `onInit()` to shut down gracefully. (`source/core/src/Actor.cpp:55`, `include/qb/core/Actor.h:75`)
+
+Override `on(const qb::KillEvent&)`, perform the side effects, then **call `kill()`** to let the runtime proceed to destruction:
 
 ```cpp
-// Inside an actor that manages a subscription with a remote service
-// Assume _service_manager_id is the ActorId of a service it's registered with.
+// src: derived from examples/all/auction_house patterns
+#include <qb/actor.h>
+#include <qb/io.h>
 
-// void on(const qb::KillEvent& event) {
-//     qb::io::cout() << "MySubscriberActor [" << id() << "]: Received KillEvent. Unsubscribing...\n";
-// 
-//     // Notify the service manager that this actor is stopping
-//     if (_service_manager_id.is_valid()) {
-//         push<UnsubscribeMeEvent>(_service_manager_id, id());
-//     }
-// 
-//     // If holding a raw socket or non-RAII resource explicitly:
-//     // if (_raw_connection_handle != INVALID_HANDLE) {
-//     //     close_raw_connection(_raw_connection_handle);
-//     //     _raw_connection_handle = INVALID_HANDLE;
-//     // }
-// 
-//     this->kill(); // Essential: proceed with framework-managed termination
-// }
+struct UnsubscribeEvent : qb::Event { qb::ActorId who; };
+
+class Subscriber : public qb::Actor {
+    qb::ActorId _manager;
+public:
+    explicit Subscriber(qb::ActorId manager) : _manager(manager) {}
+
+    bool onInit() override { return true; }
+
+    void on(const qb::KillEvent &) {
+        // Side effect that must reach the manager while it is still alive:
+        if (_manager.is_valid())
+            push<UnsubscribeEvent>(_manager).who = id();
+
+        kill(); // hand control back to the runtime; ~Subscriber() runs later
+    }
+};
 ```
-**(Reference Example:** `test-actor-lifecycle-hooks.cpp` shows various hooks, including `on(KillEvent&)`.)**
 
-## 3. Resource Management for Referenced Actors (`addRefActor`)
+Two rules follow from the lifecycle:
 
-*   When an actor (parent) creates a child actor using `addRefActor<ChildType>(...)`, the parent receives a raw pointer to the child but **does not own it** in the C++ sense (i.e., the parent's destructor will not automatically delete the child).
-*   The referenced child actor is responsible for its own lifecycle and must terminate itself via `kill()` or be killed by an event.
-*   If the parent actor needs to ensure its referenced children are terminated when the parent itself stops, the parent should explicitly send `qb::KillEvent`s to the `ActorId`s of its referenced children. This is typically done in the parent's `on(const qb::KillEvent&)` handler or, less commonly, its destructor (though sending messages from destructors is generally discouraged if it relies on other actors still being fully operational).
+- **Always end the handler with `kill()`.** If you override `on(KillEvent&)` and forget it, the actor never terminates.
+- **Do not send events from `~Actor()`.** A destructor that pushes events relies on the destination actor still being operational, which is not guaranteed during teardown. Put inter-actor side effects in the `KillEvent` handler, not the destructor.
 
-## 4. `qb-io` Component Resource Management
+### Referenced actors are not owned
 
-*   **Automatic Cleanup:** I/O components from `qb-io` (like `qb::io::tcp::socket`, `qb::io::tcp::listener`, `qb::io::sys::file`) are designed with RAII. They manage their underlying system handles (file descriptors, SOCKETs) and close them automatically upon destruction.
-*   **Actor Integration (`qb::io::use<>`):** When an actor inherits from `qb::io::use<>` base classes (e.g., `qb::io::use<MyClient>::tcp::client`), the networking transport component (which contains the socket) is typically a member of the `use<>` base. Its lifetime becomes tied to the actor's lifetime. When the actor is destroyed, the `use<>` base class member (and thus the transport and its socket) is also destroyed, ensuring resources are released.
-*   **SSL Contexts (`SSL_CTX*`):** If you manually create `SSL_CTX*` objects (e.g., using `qb::io::ssl::create_client_context` or `create_server_context`), **you are responsible for freeing them using `SSL_CTX_free()`** when they are no longer needed. This is often done in the destructor of the actor that owns the `SSL_CTX*`.
-*   **Explicit `close()`/`disconnect()`:** While RAII handles eventual cleanup, you might call `this->transport().close()` or `this->transport().disconnect()` explicitly in your actor's `on(KillEvent&)` handler if you need to ensure the network connection is shut down *before* other cleanup actions or notifications occur.
+`addRefActor<T>(...)` creates a child actor on the **same** `VirtualCore` and returns a raw `T*`. The parent does **not** own the child: the parent's destructor will not delete it, and the child manages its own lifecycle through its own `kill()`. The raw pointer **dangles the moment the child calls `kill()`** — dereferencing it afterward is undefined behavior. (`include/qb/core/Actor.h:936`)
 
-By consistently applying RAII and understanding the actor lifecycle, you can effectively manage resources and prevent leaks in your QB applications.
+Two safe patterns:
 
-**(Next:** Review the [QB Framework: Error Handling & Resilience Strategies](./error_handling.md) for strategies on building fault-tolerant actor systems.**) 
+- **Send events, not pointer calls.** Capture the child's `id()` and `push<Event>(child_id)`. Events to a dead actor are dropped by the router, so this never dereferences freed memory. (`include/qb/core/Actor.h:1199`)
+- **Hold a liveness-checked handle.** When you must keep a reference across event-handler boundaries, use `addRefHandle<T>()`, which returns a `RefActorHandle<T>`. Its `get()` re-queries the owning `VirtualCore` (via `findActor`) and returns `nullptr` if the child has died, instead of handing back a dangling pointer; `operator->()` and `operator*()` call `get()` and assert non-null in debug builds. (`include/qb/core/Actor.h:1235`, `include/qb/core/Actor.tpp:74`)
+
+```cpp
+// src: include/qb/core/Actor.h (addRefHandle / RefActorHandle)
+#include <qb/actor.h>
+
+class Worker : public qb::Actor {
+public:
+    bool onInit() override { return true; }
+    void do_step() { /* ... */ }
+};
+
+class Coordinator : public qb::Actor {
+    qb::RefActorHandle<Worker> _worker;
+public:
+    bool onInit() override {
+        _worker = addRefHandle<Worker>(); // empty if creation failed
+        return _worker.valid();
+    }
+
+    void tick() {
+        if (auto *w = _worker.get()) // nullptr if the Worker has been killed
+            w->do_step();
+    }
+};
+```
+
+A `RefActorHandle` may only be dereferenced from the owning `VirtualCore`'s worker thread — the same thread that created the child. `get()` resolves the actor against the calling thread's `VirtualCore` (`VirtualCore::_handler` is thread-local), so an off-thread dereference does not find the child and returns `nullptr`; it never reaches across threads to a live actor. Treat the handle as single-thread state.
+
+If the parent needs its referenced children gone when it stops, it must send each child a `KillEvent` explicitly (typically from the parent's own `on(KillEvent&)` handler). The runtime does not cascade kills down a reference tree.
+
+### TLS contexts: who frees the `SSL_CTX`
+
+`SSL_CTX` is the one place where ownership splits, so it deserves explicit attention.
+
+- **Helper-created contexts are caller-owned.** `qb::io::ssl::create_client_context(method)` and `qb::io::ssl::create_server_context(method, cert_path, key_path)` each return a raw `SSL_CTX*` (or `nullptr` on failure) that **you must free with `SSL_CTX_free()`** unless you hand the context off (see below). (`include/qb/io/tcp/ssl/socket.h:81`, `:92`)
+- **A listener you hand it to takes ownership.** `qb::io::tcp::ssl::listener::init(SSL_CTX*)` stores the context in a `std::unique_ptr` and frees it on destruction. Once you call `init()`, do **not** call `SSL_CTX_free()` yourself — that is a double-free. Call `init()` before `listen()`. (`include/qb/io/tcp/ssl/listener.h:80`)
+
+The transport-based server pattern below is the common case: the freshly created context is passed straight into the transport's listener, which then owns it for the transport's lifetime.
+
+```cpp
+// src: qb/source/io/tests/system/test-session-text.cpp:278
+#include <qb/io/tcp/ssl/socket.h>
+#include <qb/io/tcp/ssl/listener.h>
+
+using namespace qb::io;
+
+// Server: create_server_context returns an owned SSL_CTX*; the listener's
+// init() takes ownership and frees it on destruction. No SSL_CTX_free here.
+server.transport().init(ssl::create_server_context(
+    TLS_server_method(), "cert.pem", "key.pem"));
+
+// Client: secure by default. qb-io loads the system trust store, enables
+// SSL_VERIFY_PEER, and verifies the certificate against the target host.
+// set_insecure() opts out and disables MITM protection — call before connect.
+client.transport().set_insecure();
+```
+
+Two further facts shape correct TLS lifetime management:
+
+- **TLS is secure by default.** When qb-io builds the client `SSL_CTX` itself, it loads the system trust store, enables `SSL_VERIFY_PEER`, and verifies the server certificate against the hostname or IP. `set_insecure()` must be called *before* `connect()`/`n_connect()` to opt out, and disables MITM protection. When you supply your own `SSL*` via `init(SSL*)`, qb-io does not change your verification policy. (`include/qb/io/tcp/ssl/socket.h:716`)
+- **A TLS session you extract is yours to free.** A `qb::io::ssl::Session` obtained from `socket::get_session()` must be released with `qb::io::ssl::free_session()` when no longer needed. (`include/qb/io/tcp/ssl/socket.h:646`)
+
+### `qb::io::use<>` ties transport lifetime to the actor
+
+When an actor inherits from a `qb::io::use<>` base (for example `qb::io::use<MyClient>::tcp::client<>`), the networking transport — which owns the socket — is a subobject of that base. Its lifetime is therefore the actor's lifetime: when the actor is destroyed, the base subobject is destroyed, the transport's socket destructor runs, and the descriptor is closed. You do not manage the socket directly. If you need the connection torn down *before* the rest of teardown (for instance, to flush an application-level goodbye), call `this->disconnect()` — the method the `tcp::client` base exposes — from your `on(KillEvent&)` handler; RAII still handles the final close either way. (`include/qb/io/async/io.h:519`)
+
+See [Networking with qb-io](../3_qb_io/README.md) for the transport hierarchy.
+
+### References that must outlive an asynchronous operation
+
+The hardest lifetime bugs in an event-driven system are not leaks — they are use-after-free, where a buffer or object is destroyed while an in-flight operation still holds a reference into it. The actor model removes the *thread-safety* part of this problem (one writer per core), but not the *temporal* part: a reference handed to an asynchronous operation must remain valid until that operation completes.
+
+Three concrete cases from the framework:
+
+- **Zero-copy broadcast.** In the message-broker pattern, a payload is stored once in a `broker::MessageContainer` and shared across many events via an internal `shared_ptr`; the events carry `std::string_view`s into that container. The container's lifetime must outlive event delivery — drop it too early and every view dangles. (`examples/core_io/message_broker/README.md:46`)
+- **Accepted-socket ownership transfer.** In a TCP accept handler, the accepted socket must be **moved** out of the `on(accepted_socket_type&&)` parameter into the event immediately: `evt.socket = std::move(sock);`. This transfers descriptor ownership to the worker that will service the connection, on its core. Copying is not an option — the socket is move-only — and leaving the fd in the parameter would close it when the handler returns. (`examples/all/auction_house/include/auction_house/actors/tcp_listener.h:59`)
+- **Coroutine awaiters.** An awaiter must remain alive until `await_resume()`. Never create a temporary awaiter that goes out of scope before resumption — its watcher is stopped in `await_resume()`/the destructor specifically to avoid use-after-free. (`include/qb/io/async/coroutine/awaiter.h:30`)
+
+For ad-hoc cleanup that is not naturally a class member — a temporary handle from a C API, a rollback on an early return — use the framework's lightweight guards instead of hand-rolled `try`/`catch`:
+
+```cpp
+// src: include/qb/system/cpu.h
+#include <qb/system/cpu.h>
+
+void with_external_handle() {
+    void *h = acquire_external();
+    auto guard = qb::scope_guard([&] { release_external(h); });
+    // ... use h; release_external runs on every exit path ...
+    // guard.dismiss(); // call to keep the resource on the success path
+}
+```
+
+`qb::scope_guard` runs its callable on destruction unless `dismiss()` was called; it is `[[nodiscard]]` and move-constructible (copy construction and both assignment operators are deleted), so it cannot be copied or reassigned, only moved at construction. `qb::resource(handle, cleaner)` wraps a `void*` in a `std::unique_ptr<void, TCleaner>` for the same purpose. (`include/qb/system/cpu.h:60`, `:73`)
+
+## Pitfalls
+
+- **Overriding `on(KillEvent&)` without calling `kill()`.** The actor never terminates and its destructor never runs. Always end the handler with `kill()`.
+- **Sending events from a destructor.** Teardown order does not guarantee the destination is still operational. Move inter-actor side effects into the `KillEvent` handler.
+- **Dereferencing an `addRefActor<T>()` raw pointer after the child may have died.** It is undefined behavior. Use `addRefHandle<T>()`/`RefActorHandle<T>` and check `get()` for `nullptr`, or interact via `push<Event>(child_id)`.
+- **Calling `SSL_CTX_free()` on a context you already passed to `ssl::listener::init()`.** The listener owns it now; this is a double-free. Free only contexts you never handed off.
+- **Forgetting `set_insecure()` is a downgrade, not a tweak.** It disables peer verification and MITM protection. It exists for test and trusted-network scenarios; do not reach for it to silence a certificate error in production.
+- **Copying a move-only qb resource.** Sockets and `sys::file` delete copy precisely so a stray copy cannot cause a double-close. Use `std::move`, or `std::shared_ptr<file>` when shared ownership is genuinely required.
+- **Letting a referenced buffer die before an async operation completes.** Keep the owner alive (a member, a `shared_ptr`, or a moved-in payload) for the full duration of the operation, including zero-copy `string_view` broadcasts and in-flight coroutine awaiters.
+
+## See also
+
+- [The actor model](../2_core_concepts/actor_model.md) — construction, `onInit()`, `kill()`, and destruction ordering in depth.
+- [Error handling](./error_handling.md) — failure paths and how cleanup interacts with fault tolerance.
+- [Networking with qb-io](../3_qb_io/README.md) — sockets, transports, and the `qb::io::use<>` hierarchy.
+- [Advanced usage](./advanced_usage.md) — referenced actors, inner components, and shared state patterns.
