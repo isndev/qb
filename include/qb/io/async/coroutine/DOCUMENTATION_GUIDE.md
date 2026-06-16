@@ -468,15 +468,15 @@ auto p = idempotent_policy();
 
 | Suite | Tests | File |
 |-------|-------|------|
-| coroutine-stream | 23 | `test_coroutine_stream.cpp` |
-| coroutine-retry | 9 | `test_coroutine_retry.cpp` |
-| coroutine-generator | 23 | `test_coroutine_generator.cpp` |
-| coroutine-scope | 20 | `test_coroutine_scope.cpp` |
-| coroutine-channel | 21 | `test_coroutine_channel.cpp` |
-| coroutine-shared-task | 10 | `test_coroutine_shared_task.cpp` |
-| coroutine-sync | 21 | `test_coroutine_sync.cpp` |
-| coroutine-combinators | 20 | `test_coroutine_combinators.cpp` |
-| coroutine-cancellation | 17 | `test_coroutine_cancellation.cpp` |
+| coroutine-stream | 23 | `test-coroutine-stream.cpp` |
+| coroutine-retry | 9 | `test-coroutine-retry.cpp` |
+| coroutine-generator | 23 | `test-coroutine-generator.cpp` |
+| coroutine-scope | 20 | `test-coroutine-scope.cpp` |
+| coroutine-channel | 21 | `test-coroutine-channel.cpp` |
+| coroutine-shared-task | 10 | `test-coroutine-shared-task.cpp` |
+| coroutine-sync | 21 | `test-coroutine-sync.cpp` |
+| coroutine-combinators | 20 | `test-coroutine-combinators.cpp` |
+| coroutine-cancellation | 17 | `test-coroutine-cancellation.cpp` |
 | **Total** | **164** | |
 
 ---

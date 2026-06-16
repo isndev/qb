@@ -1,24 +1,25 @@
 /**
- * @file test_coroutine_shared_task.cpp
- * @brief Tests for shared_task<T> — multi-consumer coroutine results
+ * @file qb/io/tests/coroutine/test-coroutine-shared-task.cpp
+ * @brief Shared coroutine task tests
  *
- * Covers:
- * - Single consumer (baseline parity with task<T>)
- * - Multiple consumers sharing the same result
- * - Consumers that arrive AFTER the task has completed (late joiners)
- * - Exception propagation to all waiters
- * - shared_task<void> specialisation
- * - Copyability of the handle
- *
- * Note on spawn(lambda) vs spawn(lambda()):
- * -----------------------------------------
- * We always use  coro_scheduler().spawn(lambda)  (no trailing `()`)
- * and             scope.spawn(lambda)
- * The new callable overloads move the closure into a wrapper coroutine
- * frame, ensuring it outlives the spawning scope regardless of loop
- * iterations or temporary lambda lifetimes.
+ * This file contains tests for shared_task<T> and shared_task<void>, including single
+ * and multiple consumers, late joiners, copyable handles, exception propagation,
+ * fan-out usage, validity checks, and non-default-constructible result types.
  *
  * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * @ingroup Tests
  */
 
 #include <gtest/gtest.h>

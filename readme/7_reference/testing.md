@@ -34,7 +34,7 @@ Note the asymmetry: qb-core has both `unit/` and `system/` directories, while qb
 
 ### Naming and target conventions
 
-Test source files are named `test-<feature>.cpp` for core and qb-io system tests (for example `test-actor-event.cpp`, `test-uri.cpp`). Coroutine sources use underscores: `test_<feature>.cpp` (for example `test_coroutine_regression.cpp`).
+Test source files are named `test-<feature>.cpp` for core and qb-io system tests (for example `test-actor-event.cpp`, `test-uri.cpp`). Coroutine sources use the same hyphenated convention and must start with `test-coroutine-` (for example `test-coroutine-regression.cpp`).
 
 CMake derives the executable name from the source file, prefixed with the owning project. Because the prefixes differ per directory, so do the resulting target names:
 
@@ -43,11 +43,11 @@ CMake derives the executable name from the source file, prefixed with the owning
 | `core/tests/system/test-actor-event.cpp` | `qb-core-gtest-system-test-actor-event` |
 | `core/tests/unit/test-timestamp.cpp` | `qb-core-gtest-unit-timestamp` |
 | `io/tests/system/test-async-io.cpp` | `qb-io-gtest-test-async-io` |
-| `io/tests/coroutine/test_basic.cpp` | `qb-io-gtest-coroutine-basic` |
+| `io/tests/coroutine/test-coroutine-basic.cpp` | `qb-io-gtest-coroutine-basic` |
 
-<!-- src: qb/source/core/tests/system/CMakeLists.txt:66-79, qb/source/io/tests/system/CMakeLists.txt:46-55, qb/source/io/tests/coroutine/CMakeLists.txt:30-34 -->
+<!-- src: qb/source/core/tests/system/CMakeLists.txt:66-79, qb/source/io/tests/system/CMakeLists.txt:46-55, qb/source/io/tests/coroutine/CMakeLists.txt:55-91 -->
 
-The core system and unit CMake files follow a `gtest-system-<file>` / `gtest-unit-<name>` scheme; the qb-io system file uses `gtest-<file>`; the coroutine file lists each target by hand as `gtest-coroutine-<name>`. When you grep for a test executable, match on the feature fragment rather than assuming a single prefix.
+The core system and unit CMake files follow a `gtest-system-<file>` / `gtest-unit-<name>` scheme; the qb-io system file uses `gtest-<file>`; the coroutine file strips only the leading `test-`, which makes every coroutine target start with `qb-io-gtest-coroutine-`. When you add a coroutine test, name the source `test-coroutine-<feature>.cpp` and add it to `COROUTINE_TESTS`.
 
 ## Building the tests
 
@@ -256,7 +256,7 @@ The instrumentation flags (`-g -fprofile-arcs -ftest-coverage`, plus `--coverage
 - **Run from the right directory.** Tests resolve resources (SSL certs, fixtures) relative to `bin/tests`. CTest sets this automatically; if you launch a binary by hand, `cd build/bin/tests` first or resource-dependent cases fail.
 - **Optional suites are absent or skipped, depending on the dependency.** Crypto and compression suites are not configured without OpenSSL / zlib — those targets do not exist at all, so they cannot pass. QUIC is gated differently: `test-quic.cpp` is always built, but its cases `GTEST_SKIP()` when libngtcp2 was not found (`QB_HAS_QUIC` undefined), so they show as skipped. Either way, an absent or skipped suite means a missing dependency, not a passing run. Confirm which features were enabled at configure time before reading a green result as full coverage.
 - **Coverage is narrow.** `QB_BUILD_COVERAGE` works only on Debug, non-Windows, with lcov + gcov present, and the GCC/gcov toolchain. It is not a general-purpose option across all build types.
-- **Coroutine tests must clean up the per-thread state.** Async coroutine fixtures call `qb::io::async::init()` in `SetUp` and reset state in `TearDown`. The minimum is `qb::io::async::listener::current.clear()` (`qb/source/io/tests/coroutine/test_coroutine_channel.cpp:32-34`); fixtures that spawn coroutines drain the scheduler first — `run_for(5ms)` then `reset_coro_scheduler()` then `clear()` — to avoid leaking suspended coroutine frames across tests (`qb/source/io/tests/coroutine/test_coroutine_scope.cpp:314-319`). Follow the existing fixture pattern in the file you are adding to.
+- **Coroutine tests must clean up the per-thread state.** Async coroutine fixtures call `qb::io::async::init()` in `SetUp` and reset state in `TearDown`. The minimum is `qb::io::async::listener::current.clear()` (`qb/source/io/tests/coroutine/test-coroutine-channel.cpp:32-34`); fixtures that spawn coroutines drain the scheduler first — `run_for(5ms)` then `reset_coro_scheduler()` then `clear()` — to avoid leaking suspended coroutine frames across tests (`qb/source/io/tests/coroutine/test-coroutine-scope.cpp:314-319`). Follow the existing fixture pattern in the file you are adding to.
 - **CI runs Release only.** The CI workflow builds Release and does not exercise Debug, sanitizers, or coverage, and does not install libngtcp2 (so QUIC is auto-disabled on CI). Run sanitizer presets and coverage locally — do not assume CI exercised them.
 
 ## See also

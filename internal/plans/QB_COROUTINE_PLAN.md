@@ -255,7 +255,7 @@ Cross-reference dependencies:
 - **Issue**: Returns `in_flight_.size() + ready_queue_.size()`. The same
   logical handle is counted once in `in_flight_` and once in the ready
   queue while waiting. (`DISABLED_SchedulerTracksInFlightCoroutines` in
-  `test_coroutine_scheduler.cpp` flags this.)
+  `test-coroutine-scheduler.cpp` flags this.)
 - **Fix**: Pick one metric with a clear name (`queued()` vs
   `suspended()`) or keep a separate counter. Re-enable the test.
 
@@ -645,7 +645,7 @@ Expected: no benchmark regression (all fixes are on cold paths, except
 6. **2.C.10** — `semaphore::acquire` fast-path (`await_ready` returns
    true when permits available).
 
-Add micro-benchmarks in `qb/source/io/tests/coroutine/test_coroutine_benchmark.cpp`
+Add micro-benchmarks in `qb/source/io/tests/coroutine/test-coroutine-benchmark.cpp`
 for: per-spawn cost, per-await cost on an already-ready awaitable,
 `when_all<4>`, `channel::send`/`recv` no-contention, `semaphore::acquire`
 no-contention.
@@ -776,7 +776,7 @@ no-contention.
 | 2.C.9 | `channel.h` | `channel_range` doc clarified — it is a **non-blocking** drain, not an async iterator; `operator*` is no longer `const` (accurately reflects the move-out). |
 | 2.C.11/12 | `sync.h` | `async_mutex::unlock()` asserts when called on an unlocked mutex; `barrier::arrive_awaiter` doc-commented for missing-reset misuse. |
 | 2.D.2/3/5/8 | `Actor.tpp` | `spawn_async` asserts a TLS scheduler exists on the caller thread (guards against cross-thread calls); existing safety docs already covered 2.D.2/3/8. |
-| 2.D.10 | `test_coroutine_regression.cpp` | 6 new regression tests (channel send-on-closed, shared_task null state, with_deadline already passed, active_count incl. suspended, from_range temporary, zip short-circuit). 39/39 pass. |
+| 2.D.10 | `test-coroutine-regression.cpp` | 6 new regression tests (channel send-on-closed, shared_task null state, with_deadline already passed, active_count incl. suspended, from_range temporary, zip short-circuit). 39/39 pass. |
 
 ### 2026-04-19 — Phase 4 (polish, S4) — implemented
 

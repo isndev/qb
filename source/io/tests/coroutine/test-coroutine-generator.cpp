@@ -1,13 +1,25 @@
 /**
- * @file test_coroutine_generator.cpp
- * @brief Generator coroutine tests
+ * @file qb/io/tests/coroutine/test-coroutine-generator.cpp
+ * @brief Coroutine generator tests
  *
- * Tests for:
- * - generator: sync generator with co_yield
- * - async_generator: async generator
- * - utility generators (range, iota, etc.)
+ * This file contains tests for synchronous and asynchronous coroutine generators,
+ * including co_yield behavior, range helpers, transformation helpers, collection
+ * utilities, manual iteration, move semantics, and async generator helper functions.
  *
  * @author qb - C++ Actor Framework
+ * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * @ingroup Tests
  */
 
 // Enable async_generator and ag_* helper traces

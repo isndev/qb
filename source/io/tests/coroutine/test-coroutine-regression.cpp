@@ -1,13 +1,26 @@
 /**
- * @file test_coroutine_regression.cpp
- * @brief Regression tests for all coroutine bugs found and fixed
+ * @file qb/io/tests/coroutine/test-coroutine-regression.cpp
+ * @brief Coroutine regression tests
  *
- * Each test targets a specific bug that was identified and corrected.
- * These tests ensure the fixes remain in place across future changes.
+ * This file contains regression tests for previously identified coroutine bugs,
+ * ensuring fixes remain covered for channels, scheduler state, retry policies,
+ * combinators, synchronization primitives, streams, generators, and cancellation
+ * behavior.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
- * @license Apache License, Version 2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *         http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * @ingroup Tests
  */
 
 #include <gtest/gtest.h>
