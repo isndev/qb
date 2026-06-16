@@ -1,211 +1,397 @@
-@page reference_io_invariants QB-IO: Async, Lifecycle & Allocation Invariants
-@brief Consolidated reference of the thread-ownership, lifetime and
-allocation invariants upheld by `qb-io`. Read this once before you write
-protocol, transport or session code.
+# qb-io invariants: threading, lifetime, and ownership
 
-# QB-IO — Async, Lifecycle & Allocation Invariants
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-This page is the **single source of truth** for the invariants the
-asynchronous stack assumes. Every header under `qb/include/qb/io/**` and
-every source under `qb/source/io/src/**` is written with these rules in
-mind. If a change breaks one of these invariants, the whole `qb-io`
-model breaks silently (races, double frees, or worse: "it works until
-production").
+The rules the asynchronous stack assumes — one event loop per thread, where
+callbacks run, when objects may be destroyed, and who owns each socket — with
+the header and line that enforces each one.
 
-Each rule links back to the finding number in
-[`qb/QB_IO_PLAN.md`](../../QB_IO_PLAN.md) where the invariant was
-formalised or hardened.
+**Prerequisites:** [Core concepts](../2_core_concepts/), [Asynchronous I/O](../3_qb_io/) —
+**See also:** [Public API overview](./api_overview.md), [Core invariants](./core_invariants.md),
+[Glossary](./glossary.md)
 
----
+## Summary
 
-## 1. Thread model — one `listener` per `VirtualCore`
+`qb-io` achieves thread safety through isolation, not locks. Every event loop,
+socket, session, timer, watcher, and coroutine scheduler belongs to exactly one
+thread for its entire life. There are no mutexes on the I/O hot paths because
+there is never more than one thread touching a given object.
 
-- Every `VirtualCore` owns **exactly one** `qb::io::async::listener`.
-  The listener is reachable through the `thread_local` slot
-  `qb::io::async::listener::current`, installed on the worker thread
-  before any I/O object is constructed on that core.
-- Every `async::input<>`, `async::output<>`, `async::io<>`,
-  `async::tcp::client`, `async::tcp::server`, `async::udp::client`,
-  `async::udp::server`, `Timeout<F>`, `ScopedTimeout<F>`,
-  `file_watcher<>` and `directory_watcher<>` you allocate is bound at
-  construction to the `listener::current` of the thread that runs the
-  constructor. **It MUST be destroyed on the same thread** — the libev
-  watcher it registers is not cross-thread safe.
-- The listener itself is **not** locked. All hot paths assume
-  single-threaded access. Anything that needs to speak to an I/O object
-  from another thread goes through the actor mailbox
-  (`qb::Actor::push<>` / `broadcast<>`) — never through a raw pointer.
+This page is the reference contract for that model. Each invariant below is a
+rule a change must not break; breaking one does not usually fail to compile — it
+produces a silent data race, a dangling pointer, or a double free that survives
+testing and surfaces in production. Read it once before you write protocol,
+transport, session, or coroutine code, and consult it when something built on
+`qb-io` crashes in a way that does not reproduce under a debugger.
 
-Consequence: `qb-io` objects are **not `std::thread`-safe**. They are
-`VirtualCore`-safe, which is a strictly stronger and strictly
-single-threaded notion.
+The invariants are grouped by subsystem. Each bullet cites the header that owns
+the rule as `path:line`. Where a claim is enforced by a single enum, constant,
+or function, that symbol is named so you can verify it directly.
 
 ---
 
-## 2. `IRegisteredKernelEvent` ownership & lifetime
+## 1. Thread model — one listener per thread
 
-- Every libev watcher created by `listener::registerEvent<Event>()` is
-  backed by a freshly-allocated `RegisteredKernelEvent<Event, Actor>`.
-  Those allocations live in a **thread-local LIFO freelist** per
-  `(Event, Actor)` instantiation (finding 2.13). Steady-state
-  `registerEvent` / `unregisterEvent` does **zero `malloc`/`free`** after
-  the first handful of instances.
-- The ownership chain is strict: the listener owns the
-  `RegisteredKernelEvent *`, the `RegisteredKernelEvent` owns the libev
-  watcher (`_event`), and the libev watcher carries a back-pointer
-  (`_interface`) used by `unregisterEvent` to release storage.
-- `IRegisteredKernelEvent *` is threaded on an **intrusive doubly-linked
-  list** hanging off the listener (finding 2.20). Links live on the
-  interface itself (`_list_prev`, `_list_next`); the listener is the
-  only class allowed to touch them (friended). Registration and
-  de-registration are therefore three pointer swaps with no hash
-  computation.
-- **Double-unregister is idempotent**: calling
-  `listener::unregisterEvent(p)` on a pointer that is no longer linked
-  is a no-op (guarded by a linked-state check in `_unlink`), and
-  `delete`ing the pointer is skipped. This is a safety net — do **not**
-  rely on it in application code.
+- Each thread owns **exactly one** `qb::io::async::listener`, reachable through
+  the `thread_local` static member `listener::current`
+  (`include/qb/io/async/listener.h:88`). Under `qb-core`, every `VirtualCore`
+  worker thread has its own `listener::current`; the worker installs it before
+  any I/O object is constructed on that core.
+- Every async object — `async::input<>`, `async::output<>`, `async::io<>`,
+  the `async::tcp` / `async::udp` clients and servers, `with_timeout<>`,
+  `Timeout<F>`, `ScopedTimeout<F>`, and the file and directory watchers — binds
+  to `listener::current` **at construction**. `async::base` registers its libev
+  watcher in its constructor and stops + unregisters it in its destructor
+  (`include/qb/io/async/io.h:79`, `:88`). The object **must be constructed and
+  destroyed on the same thread**; the libev watcher is not cross-thread safe.
+- The listener is **never locked**. All event handlers (`on()` methods) run
+  sequentially on the listener's own thread, so I/O state needs no mutex or
+  atomic (`include/qb/io/async/listener.h:63`). This is a strictly stronger and
+  strictly single-threaded guarantee than `std::thread`-safety: `qb-io` objects
+  are *not* `std::thread`-safe, they are *thread-confined*.
+- To reach an I/O object from another thread, go through the actor mailbox
+  (`qb::Actor::push<>` / `broadcast<>`) — never through a raw pointer. The
+  destination core dequeues and dispatches the event on its own thread.
+- On Windows, the libev epoll backend is wepoll (IOCP). The loop must not run
+  on one thread while another thread closes the same loop or its epoll handle
+  (`include/qb/io/async/listener.h:73`). One thread per listener satisfies this
+  contract; do not break it on Windows even for "read-only" access.
 
----
-
-## 3. `async::callback` and `Timeout<F>` allocations
-
-- `async::callback(func, timeout > 0)` creates a self-deleting
-  `Timeout<F>` on the heap (one allocation) which in turn registers a
-  libev timer (one `RegisteredKernelEvent` allocation). Both
-  allocations now hit **thread-local freelists** (findings 2.13 and
-  2.15). Steady-state burst traffic through `async::callback` performs
-  **exactly zero** `malloc`/`free` calls once the pools have warmed up.
-- `Timeout<F>::on(event::timer const&)` is the only place that calls
-  `delete this` on the timer. Any other code path that wants owned,
-  RAII-cancellable timers **must** use `async::scoped_callback(...)` /
-  `ScopedTimeout<F>` (finding 2.14): they are pure stack/`unique_ptr`
-  citizens and do not participate in the self-delete dance.
-- The pool lifetime is strictly "thread-local, never drained". On
-  thread exit the OS reclaims the pooled blocks. Draining in a TLS
-  destructor would race with late `delete this` calls from
-  already-fired timers whose loop iteration outlives the listener TLS,
-  so we explicitly do not attempt it.
+Moving an async object is also forbidden. `async::base` declares no move
+operations of its own, and the embedded `_async_event` reference binds to the
+original object's address (`include/qb/io/async/io.h:71`). Copy is blocked at the
+derived `input`/`output`/`io` level; a move would corrupt the listener
+registration. Hold these objects in place — by `shared_ptr`, in a session
+registry, or as a member — never relocate them.
 
 ---
 
-## 4. CRTP dispatch & user overrides
+## 2. `async::init()` and listener teardown
 
-- The dispatch between `async::tcp::server`, `async::tcp::acceptor`,
-  `async::input/output/io` and the user's `_Derived` class is
-  **compile-time** via CRTP + a set of trait predicates
-  (`qb::has_on<T, Event>`, `qb::has_getMessageSize<T>`, etc.).
-- For events that the framework dispatches as rvalues (most notably
-  `event::disconnected`), **user overrides must be declared with a
-  compatible signature**: `on(event::X&&)` or `on(const event::X&)`.
-  A plain `on(event::X&)` (non-const lvalue reference) will fail to
-  bind — the framework does not hand out lvalues for these rvalue-only
-  events (finding documented alongside the trait work).
-- The trait `qb::has_own_on<Derived, Base, Event>` (added alongside
-  the 2026-04-19 CRTP bug-fix) is the correct way to detect whether a
-  derived class **genuinely overrides** a particular `on(Event&&)`
-  handler vs. merely inheriting the base's fallback. Using the
-  coarser `qb::has_on` inside a CRTP base for dispatch is unsafe: it
-  will match the inherited method and cause infinite recursion.
-
-Do **not** use `qb::has_on` in a CRTP base to decide whether to
-re-dispatch to the derived class. Use `qb::has_own_on` instead.
-
----
-
-## 5. Session lifetime in `io_handler<Session>`
-
-- `io_handler::registerSession` allocates a new `Session` and binds its
-  socket — but only **after** the DoS guard (finding 2.11): session
-  slots are checked, reserved and capped **before** allocation so that
-  a flood of incoming connections cannot amplify into heap pressure.
-- `io_handler::stream()` / `stream_if()` fan-out uses a persistent
-  `_broadcast_scratch` vector (finding 2.12) so that broadcasting to
-  the same N sessions N times costs O(N) reads, not O(N²)
-  allocations.
-- A session is destroyed in three situations:
-  1. The peer closes → `event::disconnected` with a positive
-     `disconnect_reason`.
-  2. The framework detects a protocol violation or `max_message_size`
-     overflow → `disconnect_reason::user_initiated` with
-     `_reason = -2` (finding 2.16 / 2.17).
-  3. The owner actor calls `disconnect()` explicitly.
-
-In all three cases, the destruction happens **inside the listener
-callback on the owning `VirtualCore`'s thread** — never from another
-thread, never from a destructor of an unrelated object.
+- `qb::io::async::init()` is a deliberate **no-op**
+  (`include/qb/io/async/listener.h:535`). `listener::current` is a
+  self-initializing `thread_local`; `init()` exists only as an explicit
+  "this thread uses qb-io" marker. It must **not** clear the listener: it is
+  called from multi-threaded test fixtures that have already constructed objects
+  in the same thread-local listener, and clearing would dangle their registered
+  kernel events.
+- To reset event-loop state (for example in a unit-test teardown), call
+  `listener::current.clear()` directly — never via `init()`.
+- `listener::clear()` (and the destructor) **detach** watchers without
+  **deleting** them (`include/qb/io/async/listener.h:284`). Each `async::base`
+  still holds a reference to its embedded event, so the owning object's
+  destructor performs the final unregister and delete. Deleting in `clear()`
+  would leave a dangling `_async_event`.
+- `clear()` runs the loop four times with `EVRUN_NOWAIT`, not `EVRUN_ONCE`,
+  because under a monotonic-clock + timerfd libev build the loop can pick a
+  multi-million-second wait time when `timercnt == 0`, which would wedge thread
+  teardown (`include/qb/io/async/listener.h:284`). This is intentional; do not
+  "simplify" it to a single `EVRUN_ONCE`.
 
 ---
 
-## 6. Protocol contract (`IProtocol`)
+## 3. Re-entrancy — never pump the loop from inside a handler
 
-- `IProtocol::getMessageSize()` is **side-effect-free** (finding 2.21).
-  It may be called multiple times per byte of input by the stream
-  layer; implementations must not mutate parser state, not decrement
-  a credit counter, not emit logs that have semantic meaning.
-- `getMessageSize()` returns `IProtocol::kNoMessage` when more input
-  is needed, or a positive frame size otherwise.
-- `max_message_size()` is a hard cap enforced by the stream layer
-  **before** calling the protocol's `on_message()` — a protocol that
-  returns a size larger than its own cap will short-circuit to
-  `disconnected` with `_reason = -2` and will not be re-invoked on the
-  session.
-- `event::input_drained` (finding 2.9) signals "protocol parser has
-  consumed every buffered byte it could" and is distinct from EOF.
-  The legacy alias `event::eof = event::input_drained` is preserved
-  for backward compatibility (finding 2.22) but new code should use
-  `event::input_drained`.
+- `async::run` / `run_once` / `run_until` must **not** be called from inside a
+  coroutine body or an actor handler that is already executing under
+  `CoroutineScheduler::run_ready()`. `ensure_not_inside_ready_drain()` asserts
+  in debug builds and throws `std::logic_error` in release
+  (`include/qb/io/async/listener.h:545`).
+- The same applies to the synchronous coroutine bridges `run_sync()` and
+  `run_for()` (`include/qb/io/async/coroutine/utils.h:278`, `:218`): they are for
+  test setup/teardown and non-coroutine entry points only. Each calls
+  `ensure_not_inside_ready_drain()` on entry, so a re-entrant call asserts in
+  debug and throws `std::logic_error` in release
+  (`include/qb/io/async/coroutine/utils.h:283`, `:219`). A second, deeper
+  per-scheduler `in_run_ready_` guard inside `run_ready()` itself asserts in
+  debug and returns `0` in release should a nested drain still be reached
+  (`include/qb/io/async/coroutine/scheduler.h:317`).
+- `input` / `io` add a second, single-thread re-entrance guard: `on(event::io)`
+  returns immediately when `_on_message` is already set, preventing recursive
+  message processing within the same thread
+  (`include/qb/io/async/io.h:1299`). This is intra-thread re-entrance
+  protection, not cross-thread synchronization.
 
----
-
-## 7. Transport-level invariants
-
-- `transport::udp::publish()` writes **one datagram per call**,
-  atomic at the kernel level. Partial-write retries have been removed
-  (finding 2.1): `sendto` errors propagate up as
-  `event::disconnected` rather than infinite retries.
-- `transport::saccept::flush()` **detaches** the handshake socket into
-  the new session instead of reassigning its descriptor (finding 2.4).
-  An in-flight TLS handshake survives the detach.
-- `transport::stcp` uses a cached `do_handshake` result so the
-  protocol-size query (`handshake::getMessageSize()`) is cheap and
-  side-effect-free (finding 2.19 + 2.21).
+> **`run_once()` footgun.** The bundled libev disables timerfd by default — the
+> `QB_LIBEV_USE_TIMERFD` CMake option is `OFF` (`modules/ev/CMakeLists.txt:28`).
+> Built with `-DQB_LIBEV_USE_TIMERFD=ON` and with only `ev_io` watchers active
+> (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
+> internal maximum wait time. Drive manual pumps with `run_until(...)` or
+> `run(EVRUN_NOWAIT)` instead (`include/qb/io/async/listener.h:583`).
 
 ---
 
-## 8. Bench harness invariants (internal)
+## 4. Timers, `async::callback`, and ownership of timeouts
 
-For anyone extending `qb/source/io/tests/system/bench-io-plan.cpp`:
+- `async::callback(func)` with no duration, or with a non-positive duration,
+  runs `func()` **inline immediately** — not on the next loop iteration
+  (`include/qb/io/async/io.h:303`, `:311`). `Timeout<F>` and `ScopedTimeout<F>`
+  mirror this fire-immediately semantics in their constructors.
+- `async::callback(func, timeout)` with a positive duration creates a
+  self-deleting `Timeout<F>` on the heap, which registers a libev timer.
+  `Timeout<F>` owns its own lifetime and calls `delete this` when it fires
+  (`include/qb/io/async/io.h:202`). Do not store, delete, or otherwise hold a
+  `Timeout<F>` — it is fire-and-forget by design.
+- For a timer you can **cancel or own**, use `async::scoped_callback(...)` /
+  `ScopedTimeout<F>` (`include/qb/io/async/io.h:202`). These are caller-owned
+  via `unique_ptr`; cancellation is destroying or reusing the object. They do
+  not participate in the `delete this` dance.
+- `Timeout`, `ScopedTimeout`, and the `RegisteredKernelEvent` slab use
+  per-instantiation, thread-local LIFO freelists (custom `operator new` /
+  `operator delete`). A steady-state `callback()` performs **zero**
+  `malloc`/`free` once the pool is warm (`include/qb/io/async/io.h:212`). The
+  pools are intentionally **never drained** at thread exit — the OS reclaims the
+  thread's memory, and draining from a TLS destructor would race a late
+  `delete this` from an already-fired timer whose loop iteration outlives the
+  listener TLS. Do not add a drain step.
+- All timeout, interval, and delay parameters in this layer are
+  `qb::duration` (`std::chrono::nanoseconds`); the only raw `double` is libev's
+  `ev_tstamp` (seconds) at the `qb::detail::to_ev_seconds` /
+  `from_ev_seconds` seam (`include/qb/io/async/io.h:118`). The retired
+  pre-2.0 capitalized time identifiers appear nowhere in this layer and must
+  never be reintroduced; the canonical vocabulary is `qb::duration`,
+  `qb::mono_time`, and `qb::wall_time`
+  (`include/qb/system/timestamp.h`).
 
-- Benches run against `listener::current` on the main thread — always
-  call `qb::io::async::init()` first and `listener::current.clear()`
-  at the end of `main` to drain any dangling watchers.
-- Each bench loop must be net-zero on the listener: for every
-  `registerEvent` / `new Timeout<F>` you must call the matching
-  `unregisterEvent` / let the timer fire, otherwise the next bench in
-  the same process will see polluted state.
-- Never compare bench numbers taken on different build types or with
-  different sanitisers; the freelists and intrusive list are sensitive
-  to ASan / TSan quarantine behaviour.
+> `callback()` refreshes libev's cached monotonic "now" (`ev_now_update`) before
+> arming a timer, so a timer scheduled after the owning thread blocked outside
+> the loop does not expire far earlier than requested
+> (`include/qb/io/async/io.h:325`).
 
 ---
 
-## Appendix — How to check invariants when something breaks
+## 5. CRTP dispatch and user `on()` overrides
 
-1. **Is the crash on the listener's thread?** `std::this_thread::get_id()`
-   inside the callback → compare to the owning `VirtualCore`'s id.
-2. **Is a watcher leaked?** `listener::current.size()` at shutdown
-   should be 0. If not, look for an I/O object destroyed on the wrong
-   thread or a protocol that forgot to unregister.
-3. **Is the freelist corrupted?** Temporarily remove the class-level
-   `operator new`/`operator delete` in
-   `RegisteredKernelEvent<E,A>` / `Timeout<F>`; if the crash goes
-   away, a double-free or wrong-size delete is hitting the pool.
-4. **Is `on(Event&&)` recursing?** Check with
-   `qb::has_own_on<Derived, Base, Event>` that the derived class
-   actually provides the override, and that the signature is
-   rvalue-ref (or `const&`), never non-const lvalue.
+- Dispatch between the framework bases (`async::tcp::server`,
+  `async::tcp::acceptor`, `async::input`/`output`/`io`) and the user's
+  `_Derived` class is resolved **at compile time** via CRTP plus trait
+  predicates such as `qb::has_on<T, Event>`
+  (`include/qb/utility/type_traits.h:799`).
+- The framework dispatches most lifecycle events as **rvalues** — for example
+  `event::disconnected` is delivered with `std::move`. A user handler must use a
+  compatible signature: `on(event::X&&)` or `on(const event::X&)`. A plain
+  `on(event::X&)` (non-const lvalue reference) will not bind and is treated as
+  *no override* (`include/qb/utility/type_traits.h:818`).
+- When a CRTP base needs to decide whether `_Derived` **genuinely overrides** a
+  handler (rather than merely inheriting the base fallback), use
+  `qb::has_own_on<Derived, Base, Event>`
+  (`include/qb/utility/type_traits.h:877`), **not** `qb::has_on`. `has_on`
+  evaluates `true` for the inherited overload, so using it to drive a
+  `static_cast<Derived&>(*this).on(e)` re-dispatch produces silent infinite
+  recursion (`include/qb/utility/type_traits.h:799`).
 
 ---
 
-*Document companion to `qb/QB_IO_PLAN.md`. Last updated: 2026-04-19.*
+## 6. Disconnect reasons and the dispose self-guard
+
+- Disconnect reasons are the strongly-typed enum `disconnect_reason`, with
+  underlying type `int` for ABI compatibility with the historical raw-integer
+  field (`include/qb/io/async/event/disconnected.h:45`):
+
+  | Constant | Value | Meaning |
+  | --- | --- | --- |
+  | `peer_closed` | `0` | Normal shutdown — peer closed, or the local side closed cleanly. Generated automatically on kernel EOF. |
+  | `user_initiated` | `1` | Explicit `disconnect()` from user code. |
+  | `protocol_error` | `-1` | Protocol marked itself `not_ok()`. |
+  | `message_too_large` | `-2` | DoS guard: message exceeded `max_message_size()`. |
+  | `buffer_overflow` | `-3` | DoS guard: read or write buffer exceeded the configured cap. |
+
+  Positive codes are application-defined; the negative codes are framework-
+  reserved and set automatically by the read/write/publish DoS guards. Prefer
+  the strongly-typed `disconnect(disconnect_reason)` overload over a raw integer.
+- `disconnect(0)` is remapped to `user_initiated` (`1`) because internally
+  `_reason == 0` is the sentinel for "no disconnect pending"; the `peer_closed`
+  (`0`) code is generated automatically on kernel EOF
+  (`include/qb/io/async/io.h:1158`).
+- `dispose()` is **idempotent** — guarded by `_is_disposed`, it runs once
+  (`include/qb/io/async/io.h:1372`). It fires `on(event::disconnected)` if the
+  derived class implements it; for a server-owned object it then notifies
+  `server().disconnected(id())`, otherwise it stops the watcher and fires
+  `on(event::dispose)`.
+- For the entire duration of `on(event::io)`, the handler holds a
+  `std::shared_ptr<void> _self_guard` to itself — acquired before any branch
+  that can reach `dispose()` (`include/qb/io/async/io.h:1297`). This means a user
+  who releases the last external `shared_ptr` from inside `on(disconnected)`
+  cannot trigger a use-after-free in the rest of `dispose()`. The guard is typed
+  `shared_ptr<void>` so it works even when `_Derived` inherits
+  `enable_shared_from_this<Base>` with `Base != _Derived` (the HTTP CRTP session
+  case). Do not remove or narrow this guard.
+
+> All three destruction paths — peer close, framework-detected protocol or
+> size violation, and explicit `disconnect()` — run **inside the listener
+> callback on the owning thread**, never from another thread and never from an
+> unrelated object's destructor.
+
+---
+
+## 7. Sessions in `io_handler<Session>`
+
+- `io_handler::registerSession` enforces the session cap **before** allocation
+  (`include/qb/io/async/io_handler.h:211`). If `_max_sessions > 0` and the
+  registry is full, it closes the incoming I/O (which already owns an open fd,
+  and possibly an `SSL*`) and returns `nullptr` — no `Session` is allocated. This
+  prevents a connection flood from amplifying into heap pressure.
+- The cap is **opt-in**. `_max_sessions` defaults to `QB_DEFAULT_MAX_SESSIONS`,
+  which is `0` — meaning **unlimited** — for backward compatibility
+  (`include/qb/io/config.h:233`). Set it explicitly with `set_max_sessions(n)`,
+  or define `QB_DEFAULT_MAX_SESSIONS` before including the header, on any
+  network-facing server.
+- `stream()` / `stream_if()` fan-out reuses a persistent `_broadcast_scratch`
+  vector (`include/qb/io/async/io_handler.h:115`) so broadcasting to N sessions
+  costs O(N) reads, not O(N²) allocations.
+
+---
+
+## 8. Protocol contract (`IProtocol`)
+
+The protocol base class `IProtocol` / `AProtocol<_IO_>` lives in
+`include/qb/io/async/protocol.h`. Every concrete protocol under
+`include/qb/io/protocol/**` depends on it.
+
+- `getMessageSize()` is expected to be a **pure query**
+  (`include/qb/io/async/protocol.h:102`). The stream layer may call it many
+  times per byte of input; an implementation must not mutate parser state,
+  decrement a credit counter, or emit semantically meaningful side effects.
+  Base protocols keep a resumable scan offset so re-invocation does not rescan
+  from the start.
+- It returns `IProtocol::kNoMessage` (`== 0`) when more input is needed, or the
+  exact byte count of the next complete frame otherwise
+  (`include/qb/io/async/protocol.h:48`, `:72`). Consumption happens when
+  `onMessage(size)` is called with that size.
+- A protocol signals an unrecoverable framing or parse error by calling
+  `not_ok()`; the I/O component then closes the connection, and the protocol
+  cannot be recovered (`include/qb/io/async/protocol.h:185`).
+- `set_should_flush(bool)` controls whether the input buffer is flushed after
+  each message (`include/qb/io/async/protocol.h:193`). `process_messages`
+  snapshots the **old** protocol pointer and its `should_flush()` before calling
+  `onMessage()`, because `onMessage()` may `switch_protocol()` (handshake or
+  upgrade) and leave the old protocol dangling — the flush must use the old
+  protocol's policy (`include/qb/io/async/io.h:2498`).
+- The `handshake` protocol is the documented exception to the pure-query rule:
+  its `getMessageSize()` calls `transport().do_handshake()` (a side effect) and
+  caches the result so the handshake step is never executed twice per buffer
+  cycle (`include/qb/io/protocol/handshake.h:70`).
+
+> **`event::eof` is not end-of-stream.** The event class is
+> `event::input_drained`, with `using eof = input_drained` as a back-compat
+> alias (`include/qb/io/async/event/eof.h:57`). It fires whenever a successful
+> read empties the input buffer — even on a perfectly healthy, still-open
+> connection. For an actual connection closure, handle
+> `event::disconnected`, not `event::eof`.
+
+---
+
+## 9. Coroutine lifetimes
+
+The coroutine layer (`include/qb/io/async/coroutine/**`) is a separate slice; see
+the coroutine documentation for full semantics. The invariants that intersect
+with I/O lifetime are:
+
+- The entire layer is **strictly mono-thread (cooperative)**. One
+  `CoroutineScheduler` belongs to exactly one thread — the VirtualCore worker or
+  the listener's I/O thread (`include/qb/io/async/coroutine/scheduler.h:96`).
+  Resuming or pushing from another thread is undefined behavior; cross-thread
+  wake-ups go through the actor mailbox.
+- A `thread_local` scheduler is established automatically when a
+  `qb::io::async::listener` is created on the thread. `schedule_via_current()`
+  asserts in debug and silently no-ops in release if no scheduler exists,
+  leaving any queued waiter permanently unresumed
+  (`include/qb/io/async/coroutine/scheduler.h:615`).
+- **Awaiters must remain alive until `await_resume()`**
+  (`include/qb/io/async/coroutine/awaiter.h:30`). Never create a temporary
+  awaiter that goes out of scope before resumption; watchers are stopped in
+  `await_resume()` (or the awaiter destructor) precisely to avoid a
+  use-after-free.
+- `~CoroutineScheduler` destroys only the ready-queue and deferred-completed
+  frames it owns. **Suspended frames are intentionally leaked**, because their
+  libev watchers still reference them
+  (`include/qb/io/async/coroutine/scheduler.h:155`). **Stop the event loop
+  before destroying the scheduler**, or those watchers fire against freed
+  frames.
+- `spawn()` takes ownership of the coroutine handle and runs it to completion
+  even if the original `task` object is destroyed
+  (`include/qb/io/async/coroutine/scheduler.h:90`). Pass a callable to `spawn`
+  **without invoking it** (`spawn(f)`, not `spawn(f())`): creating a coroutine
+  from a temporary lambda with reference or loop-variable captures dangles after
+  the first suspension. `spawn(Callable)` moves the closure into an owning frame
+  (`include/qb/io/async/coroutine/scheduler.h:255`).
+
+---
+
+## 10. Socket and descriptor ownership
+
+- `qb::io::socket` and `qb::io::sys::file` are **move-only RAII owners** of their
+  native handle. Copy construction and assignment are deleted, and the
+  destructor closes the handle (`include/qb/io/system/file.h:77`). File copy was
+  removed deliberately to prevent two objects double-closing the same descriptor
+  — a bug that on Windows raises a fast-fail and on Linux can close a descriptor
+  another thread has since reopened.
+- The transport sockets follow the same rule: `tcp::socket`, `udp::socket`,
+  `ssl::socket`, and `ssl::listener` all delete the copy constructor and default
+  the move operations; ownership of the native handle (and `SSL*`) transfers on
+  move (`include/qb/io/tcp/socket.h:91`). `tcp::socket` inherits non-publicly
+  from `qb::io::socket`, so only its re-exported accessors are public
+  (`include/qb/io/tcp/socket.h:43`).
+- A default-constructed socket is **uninitialized**; call `init()` before any
+  connect/accept/read/write. The success conventions differ and cannot be
+  treated uniformly (`include/qb/io/tcp/socket.h:86`,
+  `include/qb/io/udp/socket.h:117`):
+  - `tcp::socket::init(int af)` returns `int` (`0` = success).
+  - `udp::socket::init(int af)` returns `bool` (`true` = success).
+  - `ssl::socket::init(SSL*)` returns `void` and adopts the supplied handle.
+- The accept transports **detach** the accepted handle rather than closing it.
+  `transport::accept::flush()` / `saccept::flush()` call `release_handle()` on
+  the accepted socket so it is *not* closed when the transport's internal
+  `_accepted_io` is reused — the handle (and `SSL*`) has already been moved into
+  the user session by the protocol layer
+  (`include/qb/io/transport/accept.h:112`). An in-flight TLS handshake survives
+  the detach.
+- All socket timeout parameters are `qb::duration`
+  (`std::chrono::nanoseconds`); a non-positive wait is clamped to "poll once"
+  in the timed connect/recv/send paths (`include/qb/io/tcp/socket.h:150`).
+  Timeout semantics are deliberately asymmetric: `ssl` timed connect bounds only
+  the TCP phase (the TLS handshake is unbounded), and `udp::socket::read_timeout`
+  returns `-ETIMEDOUT` on expiry, whereas a generic non-blocking "no data" read
+  returns `0` (`include/qb/io/tcp/ssl/socket.h:456`,
+  `source/io/src/udp/socket.cpp:88`).
+
+---
+
+## 11. DoS bounds
+
+Buffer growth and message size are hard-capped to bound a malicious or buggy
+peer's memory footprint (`include/qb/io/config.h:172`, `:249`, `:263`):
+
+| Constant | Default | Enforced by |
+| --- | --- | --- |
+| `QB_MAX_MESSAGE_SIZE` | 100 MB | per-message cap; over-limit marks the protocol `not_ok()` and disconnects with `message_too_large` |
+| `QB_MAX_READ_BUFFER_SIZE` | 200 MB | input buffer growth; over-limit returns `ErrBufferLimitExceeded` and disconnects with `buffer_overflow` |
+| `QB_MAX_WRITE_BUFFER_SIZE` | 200 MB | output buffer growth; over-limit makes `publish()` return `nullptr` and disconnects with `buffer_overflow` |
+
+Setting a cap to `SIZE_MAX` disables that limit
+(`include/qb/io/stream.h:124`, `:471`); it is discouraged for any network-facing
+component.
+
+---
+
+## Appendix — diagnosing an invariant break
+
+1. **Is the crash on the listener's thread?** Compare
+   `std::this_thread::get_id()` inside the failing callback to the owning
+   `VirtualCore`'s thread id. A mismatch means an object was constructed or
+   destroyed on the wrong thread (§1).
+2. **Is a watcher leaked?** `listener::current.size()` should be `0` at
+   shutdown. A non-zero count points to an I/O object destroyed on the wrong
+   thread, or a protocol that never unregistered (§1, §2).
+3. **Is the freelist corrupted?** Temporarily remove the per-instantiation
+   `operator new` / `operator delete` on `RegisteredKernelEvent<E,A>` /
+   `Timeout<F>`. If the crash disappears, a double-free or wrong-size delete is
+   hitting the pool (§4).
+4. **Is `on(Event&&)` recursing?** Confirm with
+   `qb::has_own_on<Derived, Base, Event>` that the derived class actually
+   provides the override, and that its signature is `&&` or `const&`, never a
+   non-const lvalue reference (§5).
+5. **Did a coroutine outlive its scheduler?** Verify the event loop was stopped
+   before the `CoroutineScheduler` was destroyed; suspended frames are leaked,
+   not destroyed, and their watchers reference freed memory if the loop runs
+   again (§9).

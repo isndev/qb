@@ -1,277 +1,541 @@
-@page guides_patterns_cookbook_md QB Actor Framework: Design Patterns Cookbook
-@brief Practical recipes and C++ examples for implementing common and effective actor-based design patterns with the QB Framework.
+# Patterns cookbook
 
-# QB Actor Framework: Design Patterns Cookbook
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-This cookbook provides practical recipes and conceptual C++ examples for implementing common design patterns in your QB actor-based applications. These patterns help structure your system, manage state, and handle interactions effectively. For information about Service Actors and Periodic Callbacks, please refer to the [QB-Core: Common Actor Patterns & Utilities](./../4_qb_core/patterns.md) page.
+Task-oriented recipes for the interactions you reach for most often: one-shot and periodic timers, request/reply, broadcast fan-out, multi-stage pipelines, and graceful shutdown — each a complete, compilable snippet.
 
-## 1. Finite State Machine (FSM)
+**Prerequisites:** [Writing actors with `qb::Actor`](../4_qb_core/actor.md), [Event messaging](../4_qb_core/messaging.md) — **See also:** [Actor patterns](../4_qb_core/patterns.md), [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md), [Error handling and resilience](./error_handling.md)
 
-Actors naturally model entities with distinct states and transitions triggered by events. The [QB-Core: Common Actor Patterns & Utilities](./../4_qb_core/patterns.md#1-finite-state-machine-fsm-with-actors) page provides a detailed explanation and example of implementing FSMs.
+## Summary
 
-**Key Idea:** An actor's member variables hold its current state. Event handlers (`on(Event&)` methods) implement state transition logic based on the current state and the received event.
+This page is a recipe collection. Each recipe states the task, shows a self-contained snippet, and
+calls out the one or two pitfalls that bite in practice. It does not re-derive the `qb::Actor` API —
+the send primitives (`push`, `send`, `broadcast`, `reply`, `forward`, `to`), `qb::ICallback`, and the
+lifecycle hooks are defined on [the actor page](../4_qb_core/actor.md), and the structural patterns
+they compose into (finite state machines, service registries, publish/subscribe, request/response
+with a timeout, supervision, discovery) live on [the actor patterns page](../4_qb_core/patterns.md).
+Reach for the patterns page when you are choosing an architecture; reach for this page when you know
+the shape and need the few lines that implement it.
 
-## 2. Publish/Subscribe (Pub/Sub)
+## Concepts
 
-This pattern decouples message senders (publishers) from receivers (subscribers) using a central Broker actor that manages topics and message distribution.
+Every recipe rests on the same invariants, covered in full on [the threading model
+page](../2_core_concepts/threading_model.md):
 
-*   **Purpose:** Allows multiple actors to subscribe to specific topics of interest and receive relevant messages without publishers needing to know about individual subscribers.
-*   **Components:**
-    *   **Broker Actor:** Manages topic subscriptions and routes published messages.
-    *   **Publisher Actor(s):** Send messages for a specific topic to the Broker.
-    *   **Subscriber Actor(s):** Subscribe to topics with the Broker and receive messages for those topics.
+- **One handler at a time.** An actor processes one event before the next, on a single
+  `VirtualCore` thread, so its members need no locking.
+- **Ordered, per-destination delivery.** `push<E>(dest, …)` events to the same destination from the
+  same source arrive in send order; `send<E>(dest, …)` is unordered and restricted to
+  trivially-destructible events.
+- **`kill()` only flags.** Termination sets `_alive = false`; destruction happens later under
+  `VirtualCore` control. That deferral is what makes shutdown sequencing tractable.
 
-*   **Conceptual Flow:**
-    ```text
-    +-------------+      +-----------------+      +-------------+
-    | Publisher A |----->| PublishReq(T1)  |----->| BrokerActor |
-    +-------------+      +-----------------+      +-------------+
-          ^                                             |
-          | 2. Broker sends                             | 1. Publisher sends message for Topic T1
-          |    NotificationMsg(T1)                      | Manages subscriptions for T1, T2...
-          |    to relevant subscribers                  |
-    +-----|-------+                               +-----|-------+
-    | SubscriberX |                               | SubscriberY |
-    | (Subscribed |                               | (Subscribed |
-    |  to T1)     |                               |  to T1)     |
-    +-------------+                               +-------------+
+Two timing tools from `qb-io` recur throughout:
 
-    +-------------+
-    | SubscriberZ |
-    | (Subscribed |
-    |  to T2)     |  <-- No message, not subscribed to T1
-    +-------------+
-    ```
+- `qb::io::async::callback(func, delay)` schedules `func` on the actor's own `VirtualCore` loop after
+  `delay`, a `std::chrono::duration` (`qb/io/async/io.h`). A non-positive `delay` — or the no-duration
+  overload `callback(func)` — runs `func` immediately and inline. The timer is one-shot and deletes
+  itself after firing.
+- `qb::io::async::scoped_callback(func, delay)` returns a caller-owned `std::unique_ptr<ScopedTimeout<…>>`
+  whose destruction cancels the pending callback. Prefer it when you need to cancel a timer or reuse
+  the handle (`qb/io/async/io.h`).
 
-*   **Conceptual Implementation:**
+Because a scheduled callback runs outside any `on()` handler, it must capture only what it needs and
+guard re-entry into the actor with `is_alive()` before touching actor state. See [the `async::callback`
+lifetime rules](./error_handling.md) for the full contract.
 
-    **Events:**
-    ```cpp
-    #include <qb/actor.h>
-    #include <qb/event.h>
-    #include <qb/string.h>
-    #include <string> // For std::string in map keys if needed, or use qb::string
-    #include <vector>
-    #include <set>
-    #include <map>
-    #include <memory> // For std::shared_ptr
+## Recipe: one-shot timer
 
-    // Using qb::string for topic for efficiency and ABI safety in events
-    struct SubscribeReq : qb::Event { qb::string<64> topic; };
-    struct UnsubscribeReq : qb::Event { qb::string<64> topic; };
-    struct PublishReq : qb::Event {
-        qb::string<64> topic;
-        std::shared_ptr<qb::string<256>> content; // Use shared_ptr for potentially large content
-        PublishReq(const char* t, std::shared_ptr<qb::string<256>> c) : topic(t), content(c) {}
-    };
-    struct NotificationMsg : qb::Event {
-        qb::string<64> topic;
-        std::shared_ptr<qb::string<256>> content; // Share content efficiently
-        NotificationMsg(qb::string<64> t, std::shared_ptr<qb::string<256>> c) : topic(std::move(t)), content(c) {}
-    };
-    ```
+**Task.** Run an action once, after a delay, from inside an actor.
 
-    **Broker Actor:**
-    ```cpp
-    class BrokerActor : public qb::Actor {
-    private:
-        // Using std::string as map key here for simplicity in example; 
-        // consider qb::string or custom hash for qb::string if performance critical.
-        std::map<std::string, std::set<qb::ActorId>> _subscriptions;
+Schedule a `callback` that posts a self-event when the timer fires. Routing the deferred work back
+through an event (rather than doing it directly in the lambda) keeps it on the actor's single-threaded
+handler path, where member access is safe.
 
-    public:
-        bool onInit() override {
-            registerEvent<SubscribeReq>(*this);
-            registerEvent<UnsubscribeReq>(*this);
-            registerEvent<PublishReq>(*this);
-            // ... KillEvent ...
-            return true;
-        }
+```cpp
+// src: derived from qb/source/core/tests/system/test-actor-delayed-events.cpp
+#include <qb/actor.h>
+#include <qb/main.h>
+#include <qb/io.h>
+#include <qb/io/async.h>
+#include <chrono>
 
-        void on(const SubscribeReq& event) {
-            std::string topic_str = event.topic.c_str(); // Convert for map key if needed
-            _subscriptions[topic_str].insert(event.getSource());
-            qb::io::cout() << "Broker: Actor " << event.getSource() << " subscribed to " << topic_str << ".\n";
-        }
+using namespace std::chrono_literals;
 
-        void on(const UnsubscribeReq& event) {
-            std::string topic_str = event.topic.c_str();
-            if (_subscriptions.count(topic_str)) {
-                _subscriptions[topic_str].erase(event.getSource());
-                qb::io::cout() << "Broker: Actor " << event.getSource() << " unsubscribed from " << topic_str << ".\n";
-            }
-        }
+struct Tick : qb::Event {};
 
-        void on(const PublishReq& event) {
-            std::string topic_str = event.topic.c_str();
-            qb::io::cout() << "Broker: Publishing to topic '" << topic_str << "': " << event.content->c_str() << ".\n";
-            if (_subscriptions.count(topic_str)) {
-                for (qb::ActorId subscriber_id : _subscriptions[topic_str]) {
-                    // Create NotificationMsg once, pass shared_ptr to content
-                    push<NotificationMsg>(subscriber_id, event.topic, event.content);
-                }
-            }
-        }
-        // ... KillEvent handler ...
-    };
-    ```
+class OneShotActor : public qb::Actor {
+public:
+    bool onInit() override {
+        registerEvent<Tick>(*this);
+        // Fire Tick on ourselves 200 ms from now.
+        qb::io::async::callback([this]() {
+            if (is_alive())                 // the actor may already be gone
+                push<Tick>(id());
+        }, 200ms);
+        return true;
+    }
 
-    **Subscriber Actor:**
-    ```cpp
-    class SubscriberActor : public qb::Actor {
-    private:
-        qb::ActorId _broker_id;
-    public:
-        SubscriberActor(qb::ActorId broker) : _broker_id(broker) {}
-        bool onInit() override {
-            registerEvent<NotificationMsg>(*this);
-            // ... KillEvent ...
-            // Subscribe to a topic
-            push<SubscribeReq>(_broker_id, "news/local");
-            return true;
-        }
-        void on(const NotificationMsg& event) {
-            qb::io::cout() << "Subscriber [" << id() << "] on topic '" << event.topic.c_str() 
-                           << "' received: " << event.content->c_str() << ".\n";
-        }
-        // ... KillEvent handler could send UnsubscribeReq ...
-    };
-    ```
-*   **(Fuller Examples:** `example/core/example7_pub_sub.cpp`, `example/core_io/message_broker/` [which uses `MessageContainer` for optimized shared payload delivery].**)
+    void on(const Tick &) {
+        qb::io::cout() << "timer fired\n";
+        kill();                             // one-shot work is done
+    }
+};
 
-## 3. Request/Response with Timeout
+int main() {
+    qb::Main engine;
+    engine.addActor<OneShotActor>(0);
+    engine.start();
+    engine.join();
+    return 0;
+}
+```
 
-Actors often need to request information or an action from another actor and await a response, potentially with a timeout if the response doesn't arrive promptly.
+**Pitfalls.**
 
-*   **Purpose:** Manage asynchronous request-response interactions reliably.
-*   **Conceptual Flow:**
-    ```text
-    +-----------------+      +-----------------+      +-----------------+
-    | Requester Actor |-(1)->| MyRequestEvent  |-(2)->| Responder Actor |
-    | (ReqID: 123)    |      | (ReqID: 123,    |      | (Processes Req) |
-    +-----------------+      |  Data)          |      +-----------------+
-          |   ^ (4b. Response arrives)                    | (3. Sends Response)
-          |   |                                           |
-          | (4a. Timeout event arrives first)             |
-          |   | MyResponseEvent (ReqID: 123, Result)      |
-          |   +-------------------------------------------+
-          |
-          | (1b. Schedules self-sent RequestTimeoutEvent(ReqID:123)
-          |      via qb::io::async::callback)
-          |
-          +-----> Handles MyResponseEvent OR RequestTimeoutEvent for ReqID 123
-    ```
-*   **Mechanism:**
-    1.  **Define Events:**
-        *   `MyRequestEvent { qb::ActorId original_requester; uint32_t request_id; /* request data */ }`
-        *   `MyResponseEvent { uint32_t request_id; /* response data or error */ }`
-        *   `RequestTimeoutEvent { uint32_t request_id; }` (internal to requester)
-    2.  **Requester Actor:**
-        *   Generates a unique `request_id` (e.g., an atomic counter or member counter).
-        *   Stores context: `std::map<uint32_t, RequestContext> _pending_requests;` (Store timestamp, retry count etc. in `RequestContext`).
-        *   Sends request: `push<MyRequestEvent>(target_id, id(), current_request_id, request_payload);`
-        *   Schedules timeout: Uses `qb::io::async::callback` to send a `RequestTimeoutEvent` to itself after the desired timeout duration.
-            ```cpp
-            // Inside RequesterActor, after sending MyRequestEvent
-            uint32_t captured_req_id = current_request_id;
-            double timeout_duration_s = 5.0;
-            qb::io::async::callback([this, captured_req_id]() {
-                if (this->is_alive()) { // Crucial check
-                    this->push<RequestTimeoutEvent>(this->id(), captured_req_id);
-                }
-            }, timeout_duration_s);
-            ```
-        *   Handles `MyResponseEvent`: Looks up `response.request_id` in `_pending_requests`. If found, processes response and removes the entry. *Consider how to cancel/ignore the pending timeout callback if possible, though direct cancellation isn't simple; the timeout handler must re-check.*.
-        *   Handles `RequestTimeoutEvent`: Checks if `event.request_id` is still in `_pending_requests`. If yes, the original request timed out. Handles the timeout (e.g., retry, log error, notify user) and removes the pending entry.
-    3.  **Responder Actor:**
-        *   Handles `MyRequestEvent`: Performs the requested action.
-        *   Sends response: `push<MyResponseEvent>(request_event.original_requester, request_event.request_id, response_payload);`
-        *   (More efficient) Or, if `MyRequestEvent` was received by non-const reference and can hold the response: `request_event.result_field = result_data; reply(request_event);`
+- The lambda runs outside any handler. Guard every actor access with `is_alive()`; a `push` to a dead
+  actor's `id()` is harmless, but reading or mutating members after destruction is undefined behavior.
+- `callback` schedules on *the calling thread's* loop. Call it from an actor handler (or `onInit`),
+  not from `main` or another thread, so the timer lands on the actor's own `VirtualCore`.
 
-*   **(Reference Examples:** This pattern is foundational to many interactions. `example/core_io/file_processor/` demonstrates request/response where the worker responds directly to the client. The timeout aspect would be an addition to such patterns.)**
+### Cancellable variant
 
-## 4. Shared Resource Manager
+When you must be able to cancel the timer (a deadline that the response may beat), use
+`scoped_callback` and hold the returned handle. Destroying or reassigning it stops the pending
+callback.
 
-Safely manage access to resources that are not inherently thread-safe (e.g., a database connection, a file being written sequentially) by encapsulating the resource within a dedicated Manager Actor.
+```cpp
+// src: derived from qb/include/qb/io/async/io.h (ScopedTimeout / scoped_callback)
+#include <qb/actor.h>
+#include <qb/io.h>
+#include <qb/io/async.h>
+#include <chrono>
+#include <memory>
 
-*   **Purpose:** Serialize access to a shared resource, preventing data races and ensuring consistent state, without explicit locking by client actors.
-*   **Conceptual Flow:**
-    ```text
-    +---------------+            +-----------------+            +--------------------+
-    | ClientActor A |----(1)---->| ResourceRequestA|----(2)---->|                    |
-    +---------------+            +-----------------+            |  ResourceManager   |
-                                                                  |  (Owns & Serializes|
-    +---------------+            +-----------------+            |  Access to DBConn, |
-    | ClientActor B |----(1)---->| ResourceRequestB|----(2)---->|  File, etc.)       |
-    +---------------+            +-----------------+            |                    |
-                                                                  +---------|----------+
-                                                                            | (3) Processes sequentially
-                                                                            | (4) Sends Response
-                                                                  +---------v----------+
-                                                                  | ResourceResponse   |
-                                                                  | (to A or B via     |
-                                                                  |  event.getSource())|
-                                                                  +--------------------+
-    ```
-*   **Components:**
-    1.  **Manager Actor:**
-        *   **Owns the Resource:** Holds the resource as a private member (e.g., `std::unique_ptr<DatabaseConnection> _db_conn;`, `std::fstream _file_stream;`).
-        *   **Initializes/Releases Resource:** Acquires the resource in its constructor or `onInit()`. Releases it in its `on(KillEvent&)` handler or destructor (RAII is best).
-        *   **Defines Request/Response Events:** E.g., `DBQueryRequest`, `DBQueryResult`, `WriteLogRequest`, `WriteLogResponse`.
-        *   **Handles Requests Sequentially:** Processes incoming request events one by one. Within each handler, it interacts with the managed resource.
-        *   **Sends Responses:** After processing, sends a response event back to the original requester.
-    2.  **Client Actors:**
-        *   Do **not** access the shared resource directly.
-        *   Interact with the resource *only* by sending request events to the Manager Actor.
-        *   Handle response events from the Manager Actor.
+using namespace std::chrono_literals;
 
-*   **Conceptual Example (Simplified Logger Manager):**
-    ```cpp
-    #include <fstream> // For std::ofstream
-    // Events
-    struct LogLineEvent : qb::Event { qb::string<256> line_to_log; };
-    // No response needed for this simple logger
+struct Deadline : qb::Event {};
+struct Response : qb::Event {};
 
-    class FileLoggerManager : public qb::Actor {
-    private:
-        std::ofstream _log_file;
-        qb::string<128> _file_path;
-    public:
-        FileLoggerManager(const char* file_path) : _file_path(file_path) {}
+class DeadlineActor : public qb::Actor {
+    // Owns the timer; resetting/destroying it cancels the callback.
+    std::unique_ptr<qb::io::async::ScopedTimeout<std::function<void()>>> _deadline;
 
-        bool onInit() override {
-            _log_file.open(_file_path.c_str(), std::ios::app);
-            if (!_log_file.is_open()) {
-                qb::io::cout() << "Logger: Failed to open " << _file_path.c_str() << "!\n";
-                return false; // Fail actor initialization
-            }
-            registerEvent<LogLineEvent>(*this);
-            registerEvent<qb::KillEvent>(*this);
-            qb::io::cout() << "Logger [" << id() << "] started for file: " << _file_path.c_str() << ".\n";
-            return true;
-        }
+public:
+    bool onInit() override {
+        registerEvent<Deadline>(*this);
+        registerEvent<Response>(*this);
+        _deadline = qb::io::async::scoped_callback(std::function<void()>([this]() {
+            if (is_alive())
+                push<Deadline>(id());
+        }), 500ms);
+        return true;
+    }
 
-        void on(const LogLineEvent& event) {
-            if (_log_file.is_open()) {
-                _log_file << event.line_to_log.c_str() << std::endl; // endl flushes by default
-            }
-        }
+    void on(const Response &) {
+        _deadline.reset();                  // response won the race: cancel the deadline
+        kill();
+    }
 
-        void on(const qb::KillEvent& /*event*/) {
-            qb::io::cout() << "Logger [" << id() << "] shutting down. Closing file.\n";
-            if (_log_file.is_open()) {
-                _log_file.close();
-            }
+    void on(const Deadline &) {
+        qb::io::cout() << "deadline elapsed before response\n";
+        kill();
+    }
+};
+```
+
+## Recipe: periodic work
+
+**Task.** Run an action on every loop iteration (a heartbeat, a poll, a drain step).
+
+Inherit from `qb::ICallback` and register it. `onCallback()` is invoked once per `VirtualCore` loop
+iteration — after the mailbox is drained and before outgoing pipes are flushed. It runs on the
+event-loop thread, so it must be fast and non-blocking.
+
+```cpp
+// src: derived from qb/source/core/tests/system/test-actor-callback.cpp
+#include <qb/actor.h>
+#include <qb/icallback.h>
+#include <qb/main.h>
+#include <qb/io.h>
+
+class HeartbeatActor : public qb::Actor, public qb::ICallback {
+    uint64_t _ticks = 0;
+public:
+    bool onInit() override {
+        registerCallback(*this);            // start the per-iteration tick
+        return true;
+    }
+
+    void onCallback() override {
+        if (++_ticks >= 1000) {
+            unregisterCallback();           // stop ticking
             kill();
         }
-        // Destructor will also be called, but explicit close in KillEvent is good for clarity
-        ~FileLoggerManager() override {
-             if (_log_file.is_open()) { _log_file.close(); }
-        }
-    };
-    ```
-*   **(Reference Example:** `example6_shared_queue.cpp` features a `Supervisor` actor managing access to a `SharedQueue`. While the queue in that example *is* thread-safe, the pattern illustrates actors interacting with a central component to access a shared facility. A pure actor version would make the queue itself a private member of the Supervisor and not thread-safe.)**
+    }
+};
 
-These patterns offer robust solutions for structuring complex actor interactions. By combining them and adapting them to your specific needs, you can build sophisticated, scalable, and maintainable concurrent applications with the QB Actor Framework.
+int main() {
+    qb::Main engine;
+    engine.addActor<HeartbeatActor>(0);
+    engine.start();
+    engine.join();
+    return 0;
+}
+```
 
-**(Next:** Explore [QB Framework: Advanced Techniques & System Design](./advanced_usage.md) for more in-depth techniques, or [QB Framework: Performance Tuning Guide](./performance_tuning.md) for optimization strategies.**) 
+**Periodic at a fixed interval.** `onCallback()` fires as fast as the loop turns, which is not a fixed
+period. For a steady wall-clock interval, chain self-scheduled `callback`s instead — each handler
+re-arms the next tick:
+
+```cpp
+// src: derived from qb/source/core/tests/system/test-actor-delayed-events.cpp
+#include <qb/actor.h>
+#include <qb/io/async.h>
+#include <chrono>
+
+using namespace std::chrono_literals;
+
+struct PollNow : qb::Event {};
+
+class PollingActor : public qb::Actor {
+public:
+    bool onInit() override {
+        registerEvent<PollNow>(*this);
+        push<PollNow>(id());                // kick off the first cycle
+        return true;
+    }
+
+    void on(const PollNow &) {
+        // ... do one unit of polling work ...
+        qb::io::async::callback([this]() {  // re-arm the next tick at a fixed delay
+            if (is_alive())
+                push<PollNow>(id());
+        }, 1s);
+    }
+};
+```
+
+**Pitfalls.**
+
+- `onCallback()` blocks the whole core while it runs. Never sleep, wait on a mutex, or do synchronous
+  I/O inside it.
+- Callback frequency depends on loop rate and the configured idle latency
+  (`CoreInitializer::setLatency`), not a clock. Use the self-scheduled-`callback` variant when the
+  interval must be predictable.
+
+## Recipe: request/reply
+
+**Task.** Send a request to another actor and handle its response, with the response routed back to
+the original sender automatically.
+
+Reuse the request event for the reply. The responder takes the event by **non-const reference**,
+fills in the result, and calls `reply(event)`, which swaps the event's source and destination so it
+returns to the requester. No bookkeeping of `ActorId`s is needed.
+
+```cpp
+// src: derived from qb/source/core/tests/system/test-actor-event.cpp (reply/forward)
+#include <qb/actor.h>
+#include <qb/main.h>
+#include <qb/io.h>
+
+struct Query : qb::Event {
+    int    input  = 0;
+    int    result = 0;              // filled in by the responder
+    explicit Query(int v) : input(v) {}
+};
+
+class Responder : public qb::Actor {
+public:
+    bool onInit() override {
+        registerEvent<Query>(*this);
+        return true;
+    }
+
+    void on(Query &event) {         // non-const: reply() mutates and consumes it
+        event.result = event.input * event.input;
+        reply(event);               // returns the event to its source
+    }
+};
+
+class Requester : public qb::Actor {
+    qb::ActorId _responder;
+public:
+    explicit Requester(qb::ActorId responder) : _responder(responder) {}
+
+    bool onInit() override {
+        registerEvent<Query>(*this);
+        push<Query>(_responder, 7); // request
+        return true;
+    }
+
+    void on(Query &event) {         // the reply arrives as the same event type
+        qb::io::cout() << "result = " << event.result << '\n';
+        push<qb::KillEvent>(_responder);
+        kill();
+    }
+};
+
+int main() {
+    qb::Main engine;
+    auto responder = engine.addActor<Responder>(0);
+    engine.addActor<Requester>(0, responder);
+    engine.start();
+    engine.join();
+    return 0;
+}
+```
+
+**Pitfalls.**
+
+- The handler must take the event by non-const reference (`Query &`). `reply` and `forward` mutate the
+  event in place; a `const` parameter will not compile against them.
+- After `reply(event)` (or `forward(dest, event)`) the event object is consumed — do not read or
+  modify it afterward.
+- `reply` is the most allocation-light response path because it reuses the inbound event. When the
+  responder needs a different event type, send a fresh one to `event.getSource()` instead.
+- For a request that may never be answered, add a deadline with the [cancellable timer
+  recipe](#cancellable-variant). The full request/response-with-timeout pattern is on [the actor
+  patterns page](../4_qb_core/patterns.md).
+
+### Forwarding to a worker
+
+`forward(dest, event)` re-routes a received event to a new destination while **preserving the
+original source**, so a worker's eventual `reply` still reaches the first sender — the forwarder drops
+out of the return path.
+
+```cpp
+// src: derived from qb/source/core/tests/benchmark/bm-forward-reply.cpp
+void on(Query &event) {
+    forward(_worker_id, event);     // worker's reply goes back to event.getSource(), not here
+}
+```
+
+## Recipe: broadcast fan-out
+
+**Task.** Deliver one event to many actors at once.
+
+`broadcast<E>(args…)` sends a freshly constructed event to every actor on every `VirtualCore`. To
+target a single core, `push<E>` to a `qb::BroadcastId(coreId)`.
+
+```cpp
+// src: derived from qb/source/core/tests/system/test-actor-event.cpp (BroadcastId)
+#include <qb/actor.h>
+#include <qb/main.h>
+#include <qb/io.h>
+
+struct Announce : qb::Event {
+    qb::string<64> text;
+    explicit Announce(const char *t) : text(t) {}
+};
+
+class Listener : public qb::Actor {
+public:
+    bool onInit() override {
+        registerEvent<Announce>(*this);
+        // qb::KillEvent is already registered by the default constructor; its
+        // inherited handler calls kill(), so broadcast<KillEvent>() stops this actor.
+        return true;
+    }
+    void on(const Announce &e) {
+        qb::io::cout() << "listener " << id() << ": " << e.text << '\n';
+    }
+};
+
+class Publisher : public qb::Actor {
+public:
+    bool onInit() override {
+        broadcast<Announce>("system online");  // every actor on every core
+        broadcast<qb::KillEvent>();            // then shut the system down
+        kill();
+        return true;
+    }
+};
+
+int main() {
+    qb::Main engine;
+    engine.addActor<Listener>(0);
+    engine.addActor<Listener>(0);
+    engine.addActor<Publisher>(0);
+    engine.start();
+    engine.join();
+    return 0;
+}
+```
+
+**Pitfalls.**
+
+- A broadcast reaches *every* actor, including ones that never registered a handler for the event;
+  unhandled events are dropped safely, but design the event so any recipient can ignore it.
+- `broadcast` constructs a separate event copy per recipient. For a large payload delivered to a
+  curated subscriber list, prefer a broker actor that forwards a shared payload (see the
+  publish/subscribe pattern on [the actor patterns page](../4_qb_core/patterns.md), and the
+  `examples/core_io/message_broker/` example).
+
+## Recipe: pipeline
+
+**Task.** Move an item through a chain of processing stages, one actor per stage.
+
+Each stage handles its input event, transforms it, and `push`es the next stage's event to the next
+actor. Wiring the stages with `to(dest).push<…>()` chains is convenient when one handler sends several
+ordered events to the same destination.
+
+```cpp
+// src: derived from qb/source/core/tests/system/test-actor-event.cpp (to().push chaining)
+#include <qb/actor.h>
+#include <qb/main.h>
+#include <qb/io.h>
+
+struct RawItem    : qb::Event { int value; explicit RawItem(int v) : value(v) {} };
+struct ParsedItem : qb::Event { int value; explicit ParsedItem(int v) : value(v) {} };
+struct DoneItem   : qb::Event { int value; explicit DoneItem(int v) : value(v) {} };
+
+class StageSink : public qb::Actor {
+public:
+    bool onInit() override {
+        registerEvent<DoneItem>(*this);
+        return true;
+    }
+    void on(const DoneItem &e) {
+        qb::io::cout() << "result: " << e.value << '\n';
+        kill();
+    }
+};
+
+class StageTransform : public qb::Actor {
+    qb::ActorId _sink;
+public:
+    explicit StageTransform(qb::ActorId sink) : _sink(sink) {}
+    bool onInit() override {
+        registerEvent<ParsedItem>(*this);
+        return true;
+    }
+    void on(const ParsedItem &e) {
+        push<DoneItem>(_sink, e.value * 10);  // hand off to the next stage
+    }
+};
+
+class StageParse : public qb::Actor {
+    qb::ActorId _transform;
+public:
+    explicit StageParse(qb::ActorId transform) : _transform(transform) {}
+    bool onInit() override {
+        registerEvent<RawItem>(*this);
+        push<RawItem>(id(), 42);              // feed the pipeline
+        return true;
+    }
+    void on(const RawItem &e) {
+        push<ParsedItem>(_transform, e.value + 1);
+    }
+};
+
+int main() {
+    qb::Main engine;
+    auto sink      = engine.addActor<StageSink>(0);
+    auto transform = engine.addActor<StageTransform>(0, sink);
+    engine.addActor<StageParse>(0, transform);
+    engine.start();
+    engine.join();
+    return 0;
+}
+```
+
+**Pitfalls.**
+
+- Wire the stages back-to-front at construction so each upstream stage knows its downstream
+  `ActorId`. `addActor` returns the new actor's id; pass it into the next constructor.
+- Spreading stages across cores (`engine.addActor<Stage>(coreId, …)`) parallelizes the pipeline, but
+  cross-core hops cost more than same-core ones. See [the threading
+  model](../2_core_concepts/threading_model.md) and [performance tuning](./performance_tuning.md).
+- `forward(next_stage, event)` is an alternative to constructing a new event per stage when the same
+  event type flows through and the original source should be preserved.
+
+## Recipe: graceful shutdown
+
+**Task.** Stop the system cleanly — let actors release resources before the engine joins.
+
+`kill()` does not destroy an actor immediately; it sets `_alive = false`, and the `VirtualCore`
+destroys the actor later. A `qb::KillEvent` handler is the actor's chance to flush buffers, close
+files, or notify peers before it goes. For a system-wide stop, `broadcast<qb::KillEvent>()` flags
+every actor; `engine.join()` returns once they have all terminated.
+
+```cpp
+// src: derived from examples/core/example5_timers.cpp (broadcast<KillEvent>) and
+//      qb/include/qb/core/Main.h (registerSignal)
+#include <qb/actor.h>
+#include <qb/main.h>
+#include <qb/io.h>
+#include <csignal>
+
+class Worker : public qb::Actor {
+public:
+    bool onInit() override {
+        registerEvent<qb::KillEvent>(*this);   // route KillEvent to the custom handler below
+        return true;
+    }
+
+    void on(const qb::KillEvent &) {           // overrides the default kill()-only handler
+        qb::io::cout() << "worker " << id() << ": releasing resources\n";
+        // ... close files, flush state ...
+        kill();                                // confirm termination
+    }
+};
+
+class Supervisor : public qb::Actor {
+public:
+    bool onInit() override {
+        registerEvent<qb::KillEvent>(*this);
+        return true;
+    }
+
+    void on(const qb::KillEvent &) {
+        broadcast<qb::KillEvent>();            // fan shutdown out to every actor
+        kill();
+    }
+};
+
+int main() {
+    qb::Main engine;
+    // start() installs a SIGINT handler. Registering SIGTERM makes it broadcast a
+    // qb::SignalEvent too; an actor must handle on(qb::SignalEvent&) to act on it
+    // (see the pitfalls below).
+    qb::Main::registerSignal(SIGTERM);
+
+    engine.addActor<Worker>(0);
+    engine.addActor<Worker>(0);
+    engine.addActor<Supervisor>(0);
+    engine.start();
+    engine.join();                             // returns once all actors have stopped
+    return 0;
+}
+```
+
+**Pitfalls.**
+
+- A default-constructed actor is already subscribed to `qb::KillEvent`; its inherited handler
+  (`qb::Actor::on(qb::KillEvent const &)`) calls `kill()` and nothing else. You define your own
+  `on(const qb::KillEvent &)` to run cleanup first — and a custom handler **must** call `kill()`
+  itself, or the actor never terminates and `join()` blocks. An actor built with
+  `qb::no_default_events` registers nothing; it must `registerEvent<qb::KillEvent>(*this)` in
+  `onInit()` to take part in ordered shutdown at all.
+- Prefer RAII for cleanup. Holding resources in members whose destructors release them means
+  correctness does not hinge on the `KillEvent` handler running. See [resource
+  management](./resource_management.md).
+- Signal handling is `SIGINT`-centric by default. `start()` installs a handler for `SIGINT` only;
+  when it fires, the engine broadcasts a `qb::SignalEvent`, and the default
+  `qb::Actor::on(qb::SignalEvent const &)` handler calls `kill()` **only when `event.signum ==
+  SIGINT`**. `Main::registerSignal(int)` makes another signal (for example `SIGTERM` or `SIGHUP`)
+  broadcast the same `qb::SignalEvent` carrying that signal number — but to act on it you must
+  define your own `on(qb::SignalEvent &)` and inspect `event.signum`. `Main::unregisterSignal(int)`
+  restores the default OS disposition, and `Main::ignoreSignal(int)` ignores a signal.
+
+## See also
+
+- [Actor patterns](../4_qb_core/patterns.md) — the structural patterns (FSM, service registry,
+  pub/sub, request/response-with-timeout, supervision, discovery) these recipes compose into.
+- [Writing actors with `qb::Actor`](../4_qb_core/actor.md) — the full send-primitive and lifecycle API.
+- [Event messaging](../4_qb_core/messaging.md) — event types, QoS, and the pipe API.
+- [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md) — `async::callback`,
+  coroutines, and non-blocking I/O from a handler.
+- [Error handling and resilience](./error_handling.md) — the `async::callback` lifetime rules and the
+  fail-stop boundary.

@@ -1,21 +1,36 @@
-@page introduction_readme QB Framework: Introduction
-@brief Start here to understand the QB Actor Framework, its purpose, core philosophy, and how to get started.
+# Introduction
 
-# Introduction to the QB Actor Framework
+> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-Welcome to the QB Actor Framework! This section provides the essential starting points for understanding what QB is, why it was created, and the fundamental principles that guide its design. Whether you are new to actor systems or evaluating QB for your next C++ project, these pages will give you a solid foundation.
+The starting point for understanding what qb is, the problems it addresses, and the design principles that shape it.
 
-## Chapters in this Section:
+**Prerequisites:** none — **See also:** [Core concepts](../2_core_concepts/README.md) · [Getting started](../6_guides/getting_started.md)
 
-*   **[QB Framework: A High-Performance C++ Actor Toolkit](./overview.md)**
-    *   Discover what QB offers, its key capabilities for building concurrent and distributed systems, and who this framework is designed for.
+## Summary
 
-*   **[QB Framework Philosophy: Building Modern C++ Systems](./philosophy.md)**
-    *   Delve into the core design philosophies behind QB, including its reliance on the Actor Model, asynchronous I/O, performance, modularity, and developer productivity.
+qb is a C++23 framework for building concurrent and distributed systems on the actor model, composed of two libraries: an actor engine (`qb-core`) layered on a standalone non-blocking asynchronous I/O runtime (`qb-io`). This section orients newcomers and evaluators before they reach the hands-on material. Read it to decide whether qb fits your problem and to understand the reasoning behind its architecture.
 
-## Next Steps
+## Pages in this section
 
-After familiarizing yourself with this introductory material, we recommend proceeding to:
+| Page | What it covers |
+|---|---|
+| [What qb is](./overview.md) | The two-library structure (`qb-io` and `qb-core`), the problem qb addresses, who it is for, a first actor, and when to use — or not use — it. |
+| [Design philosophy](./philosophy.md) | The principles behind qb: share-nothing actor isolation, asynchronous-by-default I/O, the layered and modular split, explicit modern C++23, and lock-free inter-core messaging, each with its rationale. |
 
-*   The **[Getting Started Guide](../6_guides/getting_started.md)** for a practical walkthrough of setting up and running your first QB application.
-*   The **[Core Concepts](../2_core_concepts/README.md)** section to understand the fundamental building blocks like actors, events, and the asynchronous model in more detail. 
+## Suggested reading order
+
+1. **[What qb is](./overview.md)** — start here for the shape of the framework and a runnable first actor.
+2. **[Design philosophy](./philosophy.md)** — then read why the architecture is built the way it is.
+
+## Next steps
+
+After this section:
+
+- **[Core concepts](../2_core_concepts/README.md)** — actors, events, the asynchronous I/O model, and the threading model in detail.
+- **[Getting started](../6_guides/getting_started.md)** — build and run your first qb application.
+
+## See also
+
+- [qb-io](../3_qb_io/README.md) — the asynchronous runtime in depth.
+- [qb-core](../4_qb_core/README.md) — the actor engine and messaging.
+- [Project README](../../README.md) — the top-level overview, platform support, and module ecosystem.

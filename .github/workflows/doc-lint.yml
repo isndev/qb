@@ -1,0 +1,40 @@
+# Documentation anti-drift guard.
+# Runs scripts/doc-lint.sh: forbidden retired tokens, broken internal links,
+# missing governance files. See CONTRIBUTING.md.
+name: doc-lint
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'README.md'
+      - 'readme/**'
+      - 'INSTALL.md'
+      - 'VERSIONING.md'
+      - 'CHANGELOG.md'
+      - 'SECURITY.md'
+      - 'SUPPORT.md'
+      - 'CONTRIBUTING.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'scripts/doc-lint.sh'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'README.md'
+      - 'readme/**'
+      - 'INSTALL.md'
+      - 'VERSIONING.md'
+      - 'CHANGELOG.md'
+      - 'SECURITY.md'
+      - 'SUPPORT.md'
+      - 'CONTRIBUTING.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'scripts/doc-lint.sh'
+
+jobs:
+  doc-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run documentation anti-drift guard
+        run: ./scripts/doc-lint.sh

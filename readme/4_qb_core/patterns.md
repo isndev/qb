@@ -1,307 +1,620 @@
-@page qb_core_patterns_md QB-Core: Common Actor Patterns & Utilities
-@brief Discover and implement common actor design patterns and utilities within the QB Framework for robust application structure.
+# Actor patterns
 
-# QB-Core: Common Actor Patterns & Utilities
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-Beyond the fundamental actor and event mechanisms, `qb-core` supports and simplifies several design patterns that are highly useful in building robust and maintainable actor-based systems. This guide explores key patterns and utilities available to `qb::Actor` implementations.
+Compose the `qb::Actor` primitives into recurring designs: finite state machines, service registries, publish/subscribe, request/response with a timeout, supervision, and runtime dependency resolution.
 
----
+**Prerequisites:** [Writing actors with qb::Actor](./actor.md), [Event messaging](./messaging.md) — **See also:** [The engine: Main and VirtualCore](./engine.md), [Coroutines](../3_qb_io/coroutines.md), [Patterns cookbook](../6_guides/patterns_cookbook.md)
 
-## 1. Finite State Machine (FSM) with Actors
+This page builds on the `Actor` API rather than redefining it. The send primitives
+(`push`, `send`, `broadcast`, `reply`, `forward`), `qb::ServiceActor`, `getService<T>()`, and
+`qb::ICallback` are documented on [the actor page](./actor.md); the event types and pipe API on
+[the messaging page](./messaging.md). What follows is how those pieces combine into patterns you
+will reach for repeatedly.
 
-Actors model naturally as FSMs: their member variables represent state, and event handlers implement transitions.
+## Concepts
 
-**Implementation recipe:**
+Every pattern below rests on three invariants of the actor model, covered in full on [the threading
+model page](../2_core_concepts/threading_model.md):
 
-1. Define states with `enum class`.
-2. Store current state as a member variable.
-3. Use `switch`/`if` on state inside event handlers.
-4. Timed transitions: use `qb::io::async::callback` or `spawn_async` for delays.
+- **Single-writer state.** An actor's members are touched only by that actor's handlers, which run
+  one at a time on one `VirtualCore` thread. State machines, registries, and subscription tables can
+  therefore be plain C++ members with no locking.
+- **Message-only coupling.** Actors never read each other's state. A request/response or pub/sub
+  edge is a pair of events, not a shared pointer or a callback into another actor.
+- **`kill()` only flags.** Termination is cooperative and deferred (`_alive = false`; destruction
+  runs later under `VirtualCore` control), which is what makes supervision and graceful shutdown
+  tractable.
+
+The patterns also use two timing tools from `qb-io`:
+
+- `qb::io::async::callback(func, delay)` schedules `func` to run after `delay` on the actor's own
+  `VirtualCore` loop. `delay` is a `std::chrono::duration` (`qb/io/async/io.h`); a non-positive delay
+  runs `func` immediately. The callback runs outside any actor context, so it must capture only what
+  it needs and guard re-entry into the actor with `is_alive()`.
+- `Actor::time()` returns a per-iteration cached nanosecond timestamp — uniform within one handler.
+  For a fresh reading use `qb::unix_nanos(qb::wall_now())` (`qb/system/timestamp.h`).
+
+## Finite state machines
+
+An actor is already a state machine: its members are the state, and its event handlers are the
+transitions. Model the states with an `enum class`, store the current state as a member, and branch
+on it inside each handler. Timed transitions (a brew finishing, a session expiring) are scheduled
+with `qb::io::async::callback`, which posts a self-event when the timer fires.
 
 ```cpp
+// src: derived from examples/core/example8_state_machine.cpp
 #include <qb/actor.h>
+#include <qb/io.h>
 #include <qb/io/async.h>
-#include <qb/string.h>
+#include <chrono>
 
-enum class OrderState { PENDING_PAYMENT, PROCESSING, SHIPPED, CANCELLED };
-
-struct PlaceOrderEvent    : qb::Event { qb::string<128> details; };
-struct PaymentReceived    : qb::Event { qb::string<64>  ref; };
-struct ShipOrderEvent     : qb::Event {};
+struct PlaceOrder    : qb::Event { qb::string<128> details; };
+struct PaymentTaken  : qb::Event {};
+struct ShipOrder     : qb::Event {};
 
 class OrderActor : public qb::Actor {
-    OrderState      _state = OrderState::PENDING_PAYMENT;
-    qb::string<128> _data;
+    enum class State { AwaitingPayment, Processing, Shipped };
+    State           _state = State::AwaitingPayment;
+    qb::string<128> _details;
+
 public:
     bool onInit() override {
-        registerEvent<PlaceOrderEvent>(*this);
-        registerEvent<PaymentReceived>(*this);
-        registerEvent<ShipOrderEvent>(*this);
+        registerEvent<PlaceOrder>(*this);
+        registerEvent<PaymentTaken>(*this);
+        registerEvent<ShipOrder>(*this);
         registerEvent<qb::KillEvent>(*this);
         return true;
     }
 
-    void on(PlaceOrderEvent const& ev) {
-        _data  = ev.details;
-        _state = OrderState::PENDING_PAYMENT;
-        qb::io::cout() << "Order placed: " << _data.c_str() << "\n";
+    void on(PlaceOrder const &ev) {
+        _details = ev.details;
+        _state   = State::AwaitingPayment;
     }
 
-    void on(PaymentReceived const& ev) {
-        if (_state == OrderState::PENDING_PAYMENT) {
-            _state = OrderState::PROCESSING;
-            qb::io::async::callback([this]() {
-                if (is_alive()) push<ShipOrderEvent>(id());
-            }, 2.0);
-        }
+    void on(PaymentTaken const &) {
+        if (_state != State::AwaitingPayment)
+            return;                                 // guard: ignore out-of-state input
+        _state = State::Processing;
+        // Timed transition: post ShipOrder to self after the fulfillment delay.
+        qb::io::async::callback([this] {
+            if (is_alive())                         // the actor may be gone when the timer fires
+                push<ShipOrder>(id());
+        }, std::chrono::seconds(2));
     }
 
-    void on(ShipOrderEvent const& /*ev*/) {
-        if (_state == OrderState::PROCESSING)
-            _state = OrderState::SHIPPED;
+    void on(ShipOrder const &) {
+        if (_state == State::Processing)
+            _state = State::Shipped;
     }
 
-    void on(qb::KillEvent const& /*ev*/) { kill(); }
+    void on(qb::KillEvent const &) { kill(); }
 };
 ```
 
-**(Full example:** `example/core/example8_state_machine.cpp` — coffee machine FSM)**
+Two rules keep an actor FSM correct:
 
----
+- **Guard every transition on the current state.** Handlers can fire in any order; an unguarded
+  handler that assumes a prior state corrupts the machine. The `if (_state != ...)` check above
+  rejects events that arrive in the wrong state.
+- **Drive timed transitions through `callback` + a self-event**, never a blocking wait. The
+  `is_alive()` guard inside the closure is mandatory: the timer holds no claim on the actor, so the
+  actor can be killed between scheduling and firing.
 
-## 2. Service Actors — Core-Local Singletons
+For a larger machine, a `std::map<State, std::map<Input, Handler>>` transition table makes the
+states and transitions explicit and keeps each handler small — see the full coffee-machine FSM in
+`examples/core/example8_state_machine.cpp`.
 
-`qb::ServiceActor<Tag>` ensures at most **one instance per `VirtualCore`** for a given tag type, making it ideal for per-core resources (loggers, metrics, caches).
+## Service actors as per-core registries
 
-### Defining a Service Actor
+A `qb::ServiceActor<Tag>` is a singleton per `VirtualCore` per `Tag` (defined on [the actor
+page](./actor.md#service-actors-qbserviceactor)). That makes it the natural home for a per-core
+shared resource — a logger, a metrics sink, a connection registry — that other actors on the same
+core reach by type, and actors on other cores reach by computed id.
 
 ```cpp
-struct LoggerTag {};    // unique, empty tag struct
+// src: derived from qb/source/core/tests/system/test-actor-service-event.cpp
+#include <qb/actor.h>
+#include <qb/io.h>
 
-struct LogEvent : qb::Event {
-    qb::string<128> message;
-    explicit LogEvent(const char* msg) : message(msg) {}
+struct LoggerTag {};   // unique, empty tag that names the service type
+
+struct LogLine : qb::Event {
+    qb::string<128> text;
+    explicit LogLine(const char *t) : text(t) {}
 };
 
 class CoreLogger : public qb::ServiceActor<LoggerTag> {
 public:
     bool onInit() override {
-        registerEvent<LogEvent>(*this);
+        registerEvent<LogLine>(*this);
         registerEvent<qb::KillEvent>(*this);
         return true;
     }
 
-    void on(LogEvent const& ev) {
-        qb::io::cout() << "[Core " << getIndex() << "] " << ev.message.c_str() << "\n";
+    void on(LogLine const &ev) {
+        qb::io::cout() << "[core " << getIndex() << "] " << ev.text.c_str() << '\n';
     }
 
-    void on(qb::KillEvent const& /*ev*/) { kill(); }
+    void on(qb::KillEvent const &) { kill(); }
 };
 ```
 
-### Adding & Accessing
+Register one instance per core, then reach it two ways:
 
 ```cpp
-// Setup — at most one CoreLogger per core
+// Startup: at most one CoreLogger per core.
 engine.addActor<CoreLogger>(0);
 engine.addActor<CoreLogger>(1);
-
-// Cross-core: look up ActorId and push event
-qb::ActorId logger_id = qb::Actor::getServiceId<LoggerTag>(target_core);
-if (logger_id.is_valid())
-    push<LogEvent>(logger_id, "hello from another actor");
-
-// Same-core: direct pointer (avoids mailbox — use with care)
-if (auto* logger = getService<CoreLogger>())
-    push<LogEvent>(logger->id(), "same-core log");
 ```
 
-**(Reference:** `test-actor-add.cpp`, `test-actor-service-event.cpp`)**
+```cpp
+// Same core — a typed pointer, resolved with no message hop.
+if (auto *logger = getService<CoreLogger>())
+    push<LogLine>(logger->id(), "hello from the same core");
 
----
+// Any core — compute the service's ActorId for a target core, then send.
+qb::ActorId logger_id = qb::Actor::getServiceId<LoggerTag>(target_core);
+push<LogLine>(logger_id, "hello from another core");
+```
 
-## 3. Periodic Callbacks — `qb::ICallback`
+`getService<T>()` returns the live pointer on the **current** core, or `nullptr` if no such service
+runs there. `getServiceId<Tag>(core)` computes the deterministic `ActorId` a `ServiceActor<Tag>`
+would occupy on `core`; it does **not** verify that an instance is actually registered there, so a
+send to an unpopulated core's service id is dropped by the router.
 
-For polling, heartbeats, or any logic that must run on every loop iteration.
+> **Pitfall:** prefer sending events to the service's `id()` over calling its methods through the
+> `getService<T>()` pointer. A direct call bypasses the event queue and runs synchronously inside
+> your handler — acceptable for read-only accessors, but a re-entrancy hazard for anything that
+> mutates the service or sends further events.
+
+## Publish/subscribe through a broker
+
+The broker pattern decouples publishers from subscribers: a broker actor owns a
+`topic -> {subscriber ids}` table, subscribers register for topics, and publishers send to the
+broker without knowing who (if anyone) will receive a message. Because the broker's table is plain
+actor state, no synchronization is involved.
+
+```cpp
+// src: derived from examples/core/example7_pub_sub.cpp
+#include <qb/actor.h>
+#include <map>
+#include <set>
+#include <string>
+
+enum class Topic { Weather, News, Stocks };
+
+struct Subscribe   : qb::Event { Topic topic; qb::ActorId who; };
+struct Unsubscribe : qb::Event { Topic topic; qb::ActorId who; };
+struct Publish     : qb::Event { Topic topic; std::string body; };
+struct Delivery    : qb::Event { Topic topic; std::string body; };
+
+class Broker : public qb::Actor {
+    std::map<Topic, std::set<qb::ActorId>> _subscribers;
+
+public:
+    bool onInit() override {
+        registerEvent<Subscribe>(*this);
+        registerEvent<Unsubscribe>(*this);
+        registerEvent<Publish>(*this);
+        registerEvent<qb::KillEvent>(*this);
+        return true;
+    }
+
+    void on(Subscribe const &ev)   { _subscribers[ev.topic].insert(ev.who); }
+    void on(Unsubscribe const &ev) { _subscribers[ev.topic].erase(ev.who); }
+
+    void on(Publish const &ev) {
+        auto it = _subscribers.find(ev.topic);
+        if (it == _subscribers.end())
+            return;
+        for (qb::ActorId sub : it->second)        // fan out one Delivery per subscriber
+            push<Delivery>(sub, Delivery{ .topic = ev.topic, .body = ev.body });
+    }
+
+    void on(qb::KillEvent const &) { kill(); }
+};
+```
+
+A subscriber registers in `onInit()` and handles `Delivery`:
+
+```cpp
+class Subscriber : public qb::Actor {
+    qb::ActorId _broker;
+public:
+    explicit Subscriber(qb::ActorId broker) : _broker(broker) {}
+
+    bool onInit() override {
+        registerEvent<Delivery>(*this);
+        registerEvent<qb::KillEvent>(*this);
+        push<Subscribe>(_broker, Subscribe{ .topic = Topic::Weather, .who = id() });
+        return true;
+    }
+
+    void on(Delivery const &ev) { /* consume ev.body */ }
+    void on(qb::KillEvent const &) { kill(); }
+};
+```
+
+Design notes:
+
+- **A subscriber list is per-topic actor state**, so add and remove are ordinary `std::set`
+  operations with no locking.
+- **The broker copies the payload once per subscriber** here. For high fan-out with large,
+  immutable payloads, store the body once and share it across deliveries (for example via a
+  `std::shared_ptr` held in a container that outlives delivery, plus `std::string_view` in the
+  event) to avoid per-recipient copies. The `examples/core_io/message_broker` sample demonstrates
+  this zero-copy variant.
+- **Distinguish broker pub/sub from `broadcast<E>()`.** `broadcast` reaches *every* actor on every
+  core unconditionally; the broker reaches exactly the actors that opted into a topic. Use
+  `broadcast` for system-wide notices (shutdown, alerts), the broker for selective subscription.
+
+The full demo — broker, multiple subscribers, a publisher, and a driver — is
+`examples/core/example7_pub_sub.cpp`.
+
+## Request/response with a timeout
+
+Actor messaging is one-way; a request/response exchange is two events plus a correlation id so the
+requester can match a reply to the request it sent. Because a peer may never answer, a robust
+requester also arms a timeout and treats whichever arrives first — the reply or the deadline — as
+the resolution.
 
 ```cpp
 #include <qb/actor.h>
-#include <qb/icallback.h>
+#include <qb/io/async.h>
+#include <chrono>
+#include <cstdint>
+#include <unordered_map>
 
-struct TickEvent : qb::Event { int count; };
+struct Query  : qb::Event { std::uint64_t correlation; qb::string<64> key; };
+struct Answer : qb::Event { std::uint64_t correlation; qb::string<64> value; };
+struct QueryTimeout : qb::Event { std::uint64_t correlation; };
 
-class HeartbeatActor : public qb::Actor, public qb::ICallback {
-    int _count = 0;
+class Requester : public qb::Actor {
+    qb::ActorId                            _service;
+    std::uint64_t                          _next = 1;
+    std::unordered_map<std::uint64_t, bool> _pending;   // correlation -> outstanding
+
 public:
+    explicit Requester(qb::ActorId service) : _service(service) {}
+
     bool onInit() override {
+        registerEvent<Answer>(*this);
+        registerEvent<QueryTimeout>(*this);
         registerEvent<qb::KillEvent>(*this);
-        registerCallback(*this);   // activate periodic callback
         return true;
     }
 
-    void onCallback() override {
-        ++_count;
-        if (_count % 2 == 0)
-            broadcast<TickEvent>(_count);
+    void ask(const char *key) {
+        const std::uint64_t id_ = _next++;
+        _pending[id_] = true;
+        push<Query>(_service, Query{ .correlation = id_, .key = key });
 
-        if (_count >= 10) {
-            unregisterCallback();  // deactivate
-            kill();
-        }
+        // Arm a deadline; the closure re-enters the actor only if it is still alive.
+        qb::io::async::callback([this, id_] {
+            if (is_alive())
+                push<QueryTimeout>(id(), QueryTimeout{ .correlation = id_ });
+        }, std::chrono::milliseconds(500));
     }
 
-    void on(qb::KillEvent const& /*ev*/) { kill(); }
+    void on(Answer const &ev) {
+        if (_pending.erase(ev.correlation))         // first responder wins
+            { /* success: use ev.value */ }
+    }
+
+    void on(QueryTimeout const &ev) {
+        if (_pending.erase(ev.correlation))         // timeout only if still outstanding
+            { /* failure: retry, fall back, or report */ }
+    }
+
+    void on(qb::KillEvent const &) { kill(); }
 };
 ```
 
-> **Never** block inside `onCallback()` — it stalls the entire VirtualCore.
-
-**(Reference:** `test-actor-callback.cpp`, `example1_basic_actors.cpp`)**
-
----
-
-## 4. Referenced Actors — `addRefActor` / `addRefHandle`
-
-### 4.1 Raw `addRefActor` — Requires Care
-
-Creates a child actor on the **same core** and returns a raw pointer. The pointer becomes dangling when the child terminates:
+The responder answers the request's source, echoing the correlation id back in a distinct `Answer`
+event so the requester can pair it. (`reply()` reuses the *same* event object and so keeps the same
+type; use it when request and response share one event type, and a fresh event — as here — when they
+differ. See [reply and forward](./actor.md#reply-and-forward-reuse-a-received-event).)
 
 ```cpp
-ChildHelperActor* _raw = addRefActor<ChildHelperActor>(id());
-// _raw may become dangling at any time!
+class Service : public qb::Actor {
+public:
+    bool onInit() override {
+        registerEvent<Query>(*this);
+        registerEvent<qb::KillEvent>(*this);
+        return true;
+    }
+
+    void on(Query const &q) {
+        push<Answer>(q.getSource(), Answer{ .correlation = q.correlation, .value = lookup(q.key) });
+    }
+
+    void on(qb::KillEvent const &) { kill(); }
+};
 ```
 
-### 4.2 `RefActorHandle<T>` — Recommended Safe Wrapper
+Key points:
 
-`addRefHandle<T>()` wraps the pointer in a `RefActorHandle<T>` that performs an O(1) liveness check on every dereference:
+- **The correlation id, not the event type, pairs a reply with its request.** Erasing the id from
+  `_pending` on the first of {answer, timeout} makes the resolution idempotent: a late reply after a
+  timeout (or vice versa) finds nothing to erase and is ignored.
+- **The timeout is a self-event, not a blocking wait.** The requester keeps processing other events
+  while the deadline runs on its own loop.
+- **Guard the timeout closure with `is_alive()`.** If the requester is killed before the deadline,
+  the captured `this` would otherwise re-enter a dead actor.
+
+For an exchange that fans out to an external network service, drive the I/O from a coroutine instead
+of a peer actor — see [Coroutines](#coroutines-for-async-io) below.
+
+## Referenced (child) actors
+
+`addRefActor<T>(args...)` creates a child actor on the **same** `VirtualCore` and returns a raw `T*`
+(`qb/core/Actor.h`). The parent does not own the child — the child manages its own lifecycle and
+must `kill()` itself — and the raw pointer dangles the moment the child terminates. The child still
+has its own `ActorId` and receives events normally.
 
 ```cpp
-struct HelperTask   : qb::Event { int a, b; };
-struct HelperResult : qb::Event { int result; };
+// src: derived from qb/source/core/tests/system/test-actor-add.cpp
+ChildHelper *raw = addRefActor<ChildHelper>(id());   // raw can dangle once the child dies
+```
 
-class ChildHelperActor : public qb::Actor {
+For any handle the parent keeps across event boundaries, wrap the pointer in a `RefActorHandle<T>`
+via `addRefHandle<T>(args...)`. The handle caches both the `ActorId` and the pointer, and re-checks
+liveness on every dereference, so a stale dereference yields `nullptr` instead of undefined
+behavior.
+
+```cpp
+// src: derived from qb/source/core/tests/system/test-actor-add.cpp
+#include <qb/actor.h>
+#include <qb/io.h>
+
+struct Task   : qb::Event { int a, b; };
+struct Result : qb::Event { int value; };
+
+class ChildHelper : public qb::Actor {
     qb::ActorId _parent;
 public:
-    explicit ChildHelperActor(qb::ActorId parent) : _parent(parent) {}
+    explicit ChildHelper(qb::ActorId parent) : _parent(parent) {}
+
     bool onInit() override {
-        registerEvent<HelperTask>(*this);
+        registerEvent<Task>(*this);
         registerEvent<qb::KillEvent>(*this);
         return true;
     }
-    void on(HelperTask const& ev) { push<HelperResult>(_parent, ev.a + ev.b); }
-    void on(qb::KillEvent const& /*ev*/) { kill(); }
+
+    void on(Task const &ev)        { push<Result>(_parent, Result{ .value = ev.a + ev.b }); }
+    void on(qb::KillEvent const &)  { kill(); }
 };
 
-class ParentActor : public qb::Actor {
-    qb::RefActorHandle<ChildHelperActor> _helper;
+class Parent : public qb::Actor {
+    qb::RefActorHandle<ChildHelper> _helper;
 public:
     bool onInit() override {
-        _helper = addRefHandle<ChildHelperActor>(id());
-        if (!_helper) return false;
-        registerEvent<HelperResult>(*this);
+        _helper = addRefHandle<ChildHelper>(id());
+        if (!_helper)                               // onInit() failed inside the child
+            return false;
+        registerEvent<Result>(*this);
         registerEvent<qb::KillEvent>(*this);
         return true;
     }
-    void doWork(int a, int b) {
-        if (_helper)                          // O(1) liveness check — safe
-            push<HelperTask>(_helper->id(), a, b);
+
+    void dispatch(int a, int b) {
+        if (_helper)                                // O(1) liveness check before use
+            push<Task>(_helper->id(), Task{ .a = a, .b = b });
     }
-    void on(HelperResult const& ev) {
-        qb::io::cout() << "result = " << ev.result << "\n";
+
+    void on(Result const &ev) {
+        qb::io::cout() << "result = " << ev.value << '\n';
     }
-    void on(qb::KillEvent const& /*ev*/) {
-        if (_helper) push<qb::KillEvent>(_helper->id());
+
+    void on(qb::KillEvent const &) {
+        if (_helper)
+            push<qb::KillEvent>(_helper->id());     // ask the child to stop first
         kill();
     }
 };
 ```
 
-**`RefActorHandle<T>` API:**
+`RefActorHandle<T>` surface (`qb/core/Actor.h`):
 
-| Method | Description |
-|--------|-------------|
-| `valid()` / `operator bool()` | True if constructed with a non-null actor |
-| `id()` | `ActorId` of the referenced actor |
-| `get()` | Live pointer or `nullptr` if terminated |
-| `operator->()` | `get()` with debug-mode assertion |
-| `operator*()` | Dereference (UB if `get() == nullptr`) |
+| Member | Returns | Behavior |
+|---|---|---|
+| `valid()` | `bool` | True if the handle holds a valid `ActorId` (constructed from a non-null actor). |
+| `id()` | `qb::ActorId` | The referenced actor's id (may be invalid). |
+| `get()` | `T *` | Cached pointer if the actor is still alive on the current core, else `nullptr`. |
+| `operator->()` | `T *` | `get()` with a debug-build assertion that it is non-null. |
+| `operator*()` | `T &` | Dereference; undefined if `get() == nullptr`. |
+| `operator bool()` | `bool` | True iff `get() != nullptr` (live). |
 
-**(Reference:** `test-actor-add.cpp::TestRefActor`)**
+> **Pitfall:** a `RefActorHandle` may be dereferenced only on the owning `VirtualCore` thread — the
+> thread that created the child. It is a same-core construct: cross-core access is a logic error and
+> is asserted in debug builds. To reach an actor on another core, send to its `id()`.
 
----
+## Supervision
 
-## 5. Actor Dependency Resolution — `require<T>`
-
-Dynamically discover running actor instances without knowing their `ActorId` at startup.
+The framework has no built-in supervisor hierarchy; supervision is a pattern you assemble from the
+primitives. A supervisor actor creates its workers, holds their ids (or `RefActorHandle`s for
+same-core children), and decides what to do when one stops. Because actor creation and termination
+both flow through the supervisor's handlers, restart and shutdown policies stay in one place.
 
 ```cpp
-class ClientActor : public qb::Actor {
+#include <qb/actor.h>
+#include <vector>
+
+struct WorkerDown : qb::Event { qb::ActorId who; };   // a worker reports its own exit
+
+class Supervisor : public qb::Actor {
+    std::vector<qb::RefActorHandle<Worker>> _workers;
+    std::size_t                             _target = 4;
+
+public:
+    bool onInit() override {
+        registerEvent<WorkerDown>(*this);
+        registerEvent<qb::KillEvent>(*this);
+        for (std::size_t i = 0; i < _target; ++i)
+            spawnWorker();
+        return true;
+    }
+
+    void spawnWorker() {
+        auto h = addRefHandle<Worker>(id());          // same-core child, reports to id()
+        if (h)
+            _workers.push_back(h);
+    }
+
+    void on(WorkerDown const &ev) {
+        // Restart policy: replace the worker that reported it is shutting down.
+        spawnWorker();
+        (void)ev;
+    }
+
+    void on(qb::KillEvent const &) {
+        for (auto &h : _workers)                       // fan out shutdown to live children
+            if (h)
+                push<qb::KillEvent>(h->id());
+        kill();
+    }
+};
+```
+
+Supervision techniques:
+
+- **Let workers report their own termination.** A worker pushes a `WorkerDown` to the supervisor in
+  its `on(KillEvent const &)` before calling `kill()`. The supervisor sees the exit through an
+  ordinary handler and applies its policy (restart, escalate, or let the pool shrink).
+- **Cascade shutdown explicitly.** A supervisor's `on(KillEvent const &)` should push `KillEvent` to
+  each worker before killing itself. There is no automatic parent/child teardown; the cooperative
+  `kill()` model means you choose the order.
+- **Prefer `RefActorHandle` for same-core workers** so a dereference after a worker has died yields
+  `nullptr` rather than undefined behavior. For workers on other cores, hold their `ActorId`s and
+  rely on the router dropping events to dead ids.
+
+## Dependency resolution with require
+
+When an actor must find peers whose `ActorId`s are not known at construction time — services started
+elsewhere, or instances spread across cores — `require<T...>()` performs runtime discovery.
+`require<A, B>()` broadcasts a `PingEvent` for each listed type; every **live** actor of a listed
+type replies with a `qb::RequireEvent` carrying its type tag and `qb::ActorStatus::Alive`. The
+requester must subscribe to `RequireEvent` and use `is<T>(event)` to identify which type answered.
+
+```cpp
+// src: derived from qb/source/core/tests/system/test-actor-dependency.cpp
+#include <qb/actor.h>
+
+class Client : public qb::Actor {
     qb::ActorId _logger;
-    bool        _logger_found = false;
+    bool        _resolved = false;
+
 public:
     bool onInit() override {
         registerEvent<qb::RequireEvent>(*this);
         registerEvent<qb::KillEvent>(*this);
-        require<CoreLogger>();    // broadcasts a discovery ping
+        require<CoreLogger>();                  // broadcast a discovery ping for CoreLogger
         return true;
     }
 
-    void on(qb::RequireEvent const& ev) {
+    void on(qb::RequireEvent const &ev) {
         if (is<CoreLogger>(ev) && ev.status == qb::ActorStatus::Alive) {
-            _logger       = ev.getSource();
-            _logger_found = true;
-            push<LogEvent>(_logger, "Client connected!");
+            _logger   = ev.getSource();         // the responding actor's id
+            _resolved = true;
+            push<LogLine>(_logger, "client resolved its logger");
         }
     }
 
-    void on(qb::KillEvent const& /*ev*/) { kill(); }
+    void on(qb::KillEvent const &) { kill(); }
 };
 ```
 
-**Notes:**
-- Multiple `RequireEvent` responses arrive if several instances exist across cores.
-- `require<A, B, C>()` discovers multiple types at once.
-- `is<T>(ev)` checks the type tag embedded in the event.
+Behavior and limits:
 
-**(Reference:** `test-actor-dependency.cpp`)**
+- **One response per live instance.** If several actors of the requested type exist (for example a
+  per-core service across N cores), the requester receives N `RequireEvent`s. Handle each as it
+  arrives — collect them into a list rather than assuming a single answer.
+- **`require` is one-shot discovery, not a subscription.** It is a point-in-time broadcast: actors
+  that start *after* the ping do not retroactively respond. Re-issue `require<T>()` if you need to
+  rediscover later.
+- **The built-in path reports only `Alive`.** The default `on(PingEvent const &)` replies with
+  `ActorStatus::Alive`; there is no automatic `Dead` notification when a peer later terminates.
+  Detect a peer's death through your own protocol (such as the `WorkerDown` report in the
+  supervision pattern), not by waiting for a `Dead` `RequireEvent`.
+- **Static wiring is simpler when ids are known up front.** If you create the dependencies yourself,
+  capture their `ActorId`s from `addActor` and pass them through constructors (the
+  `test-actor-dependency.cpp` `ActorIdList` form). Reserve `require<T>()` for when you genuinely do
+  not hold the ids.
 
----
+## Coroutines for async I/O
 
-## 6. C++23 Coroutine Pattern — `spawn_async`
-
-Use `spawn_async` to perform non-blocking async I/O while the actor stays responsive.
+When a handler needs a non-blocking external round trip (an HTTP call, a database query) before it
+can answer, drive it from a coroutine launched with `spawn_async`. The coroutine runs in an isolated
+context: it cannot touch actor members after the first `co_await`, and it communicates results back
+through a `qb::CoroContext`, which captures the actor's `id()` by value and survives the actor's
+destruction.
 
 ```cpp
-void on(ApiRequest& req) {
-    // 1. Copy ALL required state BEFORE spawn — 'this' may be gone after co_await
+// see ../3_qb_io/coroutines.md for the full coroutine model
+void on(ApiRequest &req) {
+    // Copy everything the coroutine needs BEFORE the first co_await.
     std::string url    = req.url;
-    ActorId     sender = req.getSource();
+    qb::ActorId sender = req.getSource();
 
     spawn_async([url, sender](auto ctx) -> qb::io::async::task<void> {
-        auto response = co_await http_client::get(url);
-        ctx.template push_to<ApiResponse>(sender, response.body);
+        auto response = co_await http_get(url);     // the actor may be destroyed here
+        ctx.template push_to<ApiResponse>(sender, response.body);  // safe: ctx is self-contained
     });
 }
 ```
 
-For graceful shutdown with pending coroutines, defer termination:
+`CoroContext` exposes `push<E>(...)` (to the spawning actor), `push_to<E>(dest, ...)` (to any
+actor), `id()`, and `time()` (`qb/core/Actor.h`). These are the only operations valid after a
+suspension point — never dereference `this` or an actor member past a `co_await`.
+
+To shut down cleanly while coroutines are still in flight, check `has_active_coroutines()` and defer
+termination until they drain:
 
 ```cpp
-void on(qb::KillEvent const& /*ev*/) {
+void on(qb::KillEvent const &) {
     if (has_active_coroutines()) {
-        qb::io::async::callback([this]() {
-            if (is_alive()) push<qb::KillEvent>(id());
-        }, 0.1);
+        // Re-check shortly; the timer holds no claim on the actor, so guard re-entry.
+        qb::io::async::callback([this] {
+            if (is_alive())
+                push<qb::KillEvent>(id());
+        }, std::chrono::milliseconds(100));
     } else {
         kill();
     }
 }
 ```
 
-**(See also:** [QB-Core: Mastering qb::Actor](./actor.md))**
+The full coroutine contract — the dangling-closure rule, the `task<void>` type, the scheduler, and
+the safety requirements — lives on the [Coroutines](../3_qb_io/coroutines.md) page. The footgun to
+remember: capture state by value before the first `co_await`, and route everything through the
+context.
 
----
+## Pitfalls
 
-These patterns provide flexible and powerful ways to structure actor-based applications, promoting separation of concerns, safe resource management, and performant concurrent behaviour.
+- **Unguarded state transitions.** An FSM handler that assumes a prior state without checking
+  `_state` corrupts the machine when events arrive out of order. Guard every transition.
+- **Timer closures that re-enter a dead actor.** `qb::io::async::callback` keeps no claim on the
+  actor. Any closure that calls back into the actor must test `is_alive()` first.
+- **Passing a bare number as a delay.** `qb::io::async::callback(func, delay)` requires a
+  `std::chrono::duration` (`std::chrono::seconds(2)`, `100ms` with `using namespace
+  std::chrono_literals`), not a raw `double`.
+- **Dereferencing a raw `addRefActor` pointer after the child dies.** The pointer dangles silently.
+  Use `addRefHandle<T>()` and check the handle before each use.
+- **Cross-core `RefActorHandle` use.** Handles are same-core only. Reach actors on other cores by
+  `id()`.
+- **Treating `require<T>()` as a live registry.** It is a one-shot ping answered only by actors
+  alive at that instant, and only with `Alive`. Re-issue it to rediscover, and detect deaths through
+  your own protocol.
+- **Calling a `getService<T>()` pointer's mutating methods.** A direct call runs synchronously and
+  bypasses the queue — a re-entrancy hazard. Send an event to the service's `id()` instead.
 
-**(Next:** Review [Developer Guides](./../6_guides/README.md) for higher-level application patterns and best practices.)**
+## See also
+
+- [Writing actors with qb::Actor](./actor.md) — the `Actor` API these patterns compose:
+  `onInit`, handlers, send primitives, `ServiceActor`, `ICallback`, `kill`/`is_alive`.
+- [Event messaging](./messaging.md) — defining events, `reply`/`forward`, pipes, correlation.
+- [The engine: Main and VirtualCore](./engine.md) — `addActor`, core configuration, startup and
+  shutdown ordering.
+- [Coroutines](../3_qb_io/coroutines.md) — the full `spawn_async` / `CoroContext` model.
+- [Patterns cookbook](../6_guides/patterns_cookbook.md) — larger, end-to-end worked examples.

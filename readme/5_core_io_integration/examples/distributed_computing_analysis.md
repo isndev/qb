@@ -1,116 +1,360 @@
-@page example_analysis_dist_comp_md Case Study: Simulating Distributed Computing with QB Actors
-@brief An in-depth look at the `distributed_computing` example, showcasing task distribution, parallel processing, load balancing, and monitoring in a multi-actor QB system.
+# Distributed-computing simulation walkthrough
 
-# Case Study: Simulating Distributed Computing with QB Actors
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-*   **Location:** `example/core/example10_distributed_computing.cpp`
-*   **Objective:** This example constructs a simulation of a distributed computing environment. It effectively demonstrates how multiple QB actors can collaborate to manage a workflow involving task generation, intelligent scheduling, parallel execution by worker nodes, result aggregation, and overall system monitoring. It's a valuable case study for understanding more complex, multi-stage actor interactions and asynchronous process simulation.
+An annotated reading of `examples/core/example10_distributed_computing.cpp`: five cooperating actor types that generate, schedule, execute, collect, and monitor a stream of simulated computational tasks across multiple cores.
 
-Through this analysis, you will see how QB facilitates:
-*   Complex, multi-actor workflows.
-*   Dynamic task scheduling and basic load balancing concepts.
-*   Simulation of work and delays using asynchronous callbacks.
-*   Centralized coordination and state management by dedicated actors.
-*   System-wide monitoring and statistics gathering.
+**Prerequisites:** [Actor model](../../2_core_concepts/actor_model.md), [Event system](../../2_core_concepts/event_system.md), [Messaging](../../4_qb_core/messaging.md), [Engine](../../4_qb_core/engine.md) — **See also:** [Async system](../../3_qb_io/async_system.md), [Actor reference](../../4_qb_core/actor.md), [Core & IO integration overview](../README.md)
 
-## Architectural Overview: A Distributed Workflow
+<!-- src: examples/core/example10_distributed_computing.cpp -->
 
-The simulation is orchestrated by several types of actors, each with distinct responsibilities, potentially running across multiple `VirtualCore`s:
+## Summary
 
-### 1. `TaskGeneratorActor`
-*   **Role:** Periodically creates new computational `Task` objects (defined in the example with properties like type, priority, complexity, and data).
-*   **QB Integration:** Standard `qb::Actor`.
-*   **Functionality:**
-    *   Uses `qb::io::async::callback` to trigger `generateTask()` at intervals determined by a `TASKS_PER_SECOND` constant.
-    *   `generateTask()`: Constructs a `Task` object with randomized attributes.
-    *   Encapsulates the `Task` within a `TaskMessage` event and `push`es it to the `TaskSchedulerActor`.
-    *   Ceases generation upon receiving a `ShutdownMessage`.
+The example builds a single-process simulation of a distributed work pool. A `TaskGeneratorActor` emits `Task` objects at a fixed rate; a `TaskSchedulerActor` queues them, sorts by priority, and dispatches to whichever `WorkerNodeActor` reports spare capacity; workers simulate processing with a delayed callback, then forward a `TaskResult` to a `ResultCollectorActor`; and a `SystemMonitorActor` wires the topology together, prints periodic statistics, and drives a coordinated shutdown after a fixed wall-clock budget.
 
-### 2. `TaskSchedulerActor`: The Central Dispatcher & Load Balancer
-*   **Role:** Receives tasks, queues them, and dispatches them to available `WorkerNodeActor`s based on a scheduling strategy (prioritization and basic load awareness).
-*   **QB Integration:** Standard `qb::Actor`.
-*   **State Management:**
-    *   `_worker_ids`: A list of available `WorkerNodeActor` IDs.
-    *   `_worker_metrics`: A map (`qb::ActorId` to `WorkerMetrics`) storing the last known status (heartbeat, utilization) of each worker.
-    *   `_task_queue`: A `std::deque` of `std::shared_ptr<Task>`, acting as the pending task buffer.
-    *   `_active_tasks`: A map (`task_id` to `std::shared_ptr<Task>`) tracking tasks currently assigned to workers.
-*   **Event Handling & Logic:**
-    *   `on(TaskMessage&)`: Adds the new task to `_task_queue` and attempts to schedule it immediately via `scheduleTasks()`.
-    *   `on(WorkerHeartbeatMessage&)`: Updates the `last_heartbeat` timestamp for the reporting worker in `_worker_metrics`.
-    *   `on(WorkerStatusMessage&)`: Updates the full `WorkerMetrics` (including utilization) for the reporting worker.
-    *   `on(ResultMessage&)`: Receives `TaskResult` from a `ResultCollectorActor` (indirectly signaling task completion by a worker), removes the task from `_active_tasks`, and attempts to `scheduleTasks()` to dispatch new work if workers are free.
-    *   `on(UpdateWorkersMessage&)`: Receives the initial list of `WorkerNodeActor` IDs from the `SystemMonitorActor`.
-*   **Scheduling (`scheduleTasks()`):
-    1.  Sorts `_task_queue` by `Task::priority` (higher priority first).
-    2.  Iterates through known `_worker_ids`.
-    3.  For each worker, calls `isWorkerAvailable()` to check its status.
-    4.  If a worker is available and tasks are pending, dequeues the highest priority task, moves it to `_active_tasks`, and `push`es a `TaskAssignmentMessage` (containing the `Task`) to that worker.
-*   **Worker Availability (`isWorkerAvailable()`):** Checks if metrics for the worker exist, if its `last_heartbeat` is recent (within `HEARTBEAT_TIMEOUT`), and if its reported `utilization` is below a defined threshold (e.g., 80%), indicating it has capacity.
-*   **Load Assessment (`assessLoadBalance()`):** Periodically scheduled via `qb::io::async::callback`. Calculates and logs average worker utilization and current task queue sizes for monitoring purposes.
+It is a useful study of three patterns that recur in larger qb applications:
 
-### 3. `WorkerNodeActor`: The Task Executor
-*   **Role:** Receives `TaskAssignmentMessage`s and simulates the execution of the assigned `Task`.
-*   **QB Integration:** Standard `qb::Actor`.
-*   **State Management:** `_current_task`, `_metrics` (its own `WorkerMetrics`), `_is_busy` flag, `_simulation_start_time`, `_busy_start_time`.
-*   **Initialization & Reporting (`onInit()`, `scheduleHeartbeat()`, `scheduleMetricsUpdate()`):
-    *   In `onInit()`, after receiving `InitializeMessage`, it starts two recurring `qb::io::async::callback` chains:
-        *   `scheduleHeartbeat()`: Periodically sends a `WorkerHeartbeatMessage` (containing its ID, current time, and busy status) to the `TaskSchedulerActor`.
-        *   `scheduleMetricsUpdate()`: Periodically calculates its own utilization and other metrics, then sends a `WorkerStatusMessage` to the `TaskSchedulerActor`.
-*   **Task Execution (`on(TaskAssignmentMessage&)`):
-    1.  If not already `_is_busy`, accepts the task.
-    2.  Sets `_is_busy = true`, stores `_current_task`, updates the task's status to `IN_PROGRESS`.
-    3.  `push`es a `TaskStatusUpdateMessage` back to the `TaskSchedulerActor`.
-    4.  **Simulates Work:** Schedules a call to its own `completeCurrentTask()` method using `qb::io::async::callback`. The delay for this callback is determined by the `task->complexity` (using `generateProcessingTime()`).
-*   **Task Completion (`completeCurrentTask()` - invoked by the scheduled callback):
-    1.  Calculates simulated processing time.
-    2.  Randomly determines if the task succeeded or failed.
-    3.  Updates its internal `_metrics` (total tasks processed, processing time, success/failure count).
-    4.  Creates a `TaskResult` object.
-    5.  `push`es a `ResultMessage` (containing the `TaskResult`) to the `ResultCollectorActor`.
-    6.  `push`es a final `TaskStatusUpdateMessage` (COMPLETED or FAILED) to the `TaskSchedulerActor`.
-    7.  Sets `_is_busy = false`, making itself available for new tasks.
+- **A multi-stage actor pipeline** with one role per actor type (generation, scheduling, execution, collection, supervision).
+- **Self-paced periodic work** built from one-shot [`qb::io::async::callback`](../../3_qb_io/async_system.md) timers that re-arm themselves, rather than a blocking loop.
+- **A supervisor-driven lifecycle**, where one actor owns setup and teardown for the whole system.
 
-### 4. `ResultCollectorActor`: The Aggregator
-*   **Role:** Receives `ResultMessage`s from `WorkerNodeActor`s and stores/logs the outcomes of completed tasks.
-*   **QB Integration:** Standard `qb::Actor`.
-*   **State Management:** `_results` (a map from `task_id` to `TaskResult`).
-*   **Event Handling:**
-    *   `on(InitializeMessage&)`: Activates the actor.
-    *   `on(ResultMessage&)`: Stores the received `result` in its `_results` map and logs the result to the console.
-    *   `on(ShutdownMessage&)`: Calculates and prints final statistics (overall success rate, average processing time across all tasks) based on the collected `_results`.
+> **Read this as a pattern catalog, not a copy-paste template.** The example trades correctness for brevity in a few places that this page calls out explicitly under [Pitfalls](#pitfalls-and-corrections) — most importantly, its load-balancing decisions race against stale metrics, and its raw-`double` timer arguments do not match the current `async::callback` signature. Where the source and the current API disagree, the API is ground truth.
 
-### 5. `SystemMonitorActor`: The Orchestrator & Overseer
-*   **Role:** Sets up the entire simulation, starts the actors, monitors overall system performance, and initiates a graceful shutdown.
-*   **QB Integration:** Standard `qb::Actor`.
-*   **Initialization (`onInit()` and `on(InitializeMessage&)`):
-    *   Creates instances of all other actor types (`TaskGeneratorActor`, `TaskSchedulerActor`, `ResultCollectorActor`, and a pool of `WorkerNodeActor`s), assigning them to different cores (`qb::Main::addActor`).
-    *   Stores their `ActorId`s.
-    *   `push`es an `InitializeMessage` to all created actors to kickstart their operations.
-    *   Sends an initial `UpdateWorkersMessage` (containing all worker IDs) to the `TaskSchedulerActor`.
-*   **Performance Monitoring (`schedulePerformanceReport()`):
-    *   Uses `qb::io::async::callback` to periodically call itself (by pushing a `SystemStatsMessage` to its own ID after calculation).
-    *   Calculates system-wide statistics (e.g., total tasks generated, completed, failed; overall throughput) using global `std::atomic` counters (which are incremented by other actors like `TaskGeneratorActor` and `WorkerNodeActor`).
-    *   Logs these system-wide stats.
-*   **Simulation Shutdown (`shutdownSystem()`):
-    *   Scheduled via `qb::io::async::callback` to run after `SIMULATION_DURATION_SECONDS`.
-    *   Performs a final performance report.
-    *   `broadcast<ShutdownMessage>()` to all actors to signal them to stop their activities and terminate gracefully.
-    *   Finally, calls `qb::Main::stop()` to stop the entire engine.
+## Architecture at a glance
 
-## Key QB Concepts & Patterns Demonstrated
+```
+TaskGeneratorActor ──TaskMessage──▶ TaskSchedulerActor ──TaskAssignmentMessage──▶ WorkerNodeActor (×4)
+                                          ▲   ▲                                         │   │
+            WorkerStatusMessage ──────────┘   │                                         │   │
+            WorkerHeartbeatMessage ───────────┘                                         │   │
+            TaskStatusUpdateMessage ◀──────────────────────────────────────────────────┘   │
+                                                                                            │
+                                              ResultCollectorActor ◀──────ResultMessage─────┘
 
-*   **Complex Multi-Actor Workflow:** Illustrates a sophisticated pipeline with clear separation of concerns: generation, scheduling, execution, collection, and system-level monitoring.
-*   **Asynchronous Simulation of Work:** Extensive use of `qb::io::async::callback` to simulate task processing times and to schedule periodic actions (heartbeats, metrics updates, report generation) without blocking any `VirtualCore`.
-*   **Centralized Coordination & State:**
-    *   `TaskSchedulerActor`: Manages the central task queue and worker availability.
-    *   `ResultCollectorActor`: Aggregates all final task outcomes.
-    *   `SystemMonitorActor`: Orchestrates the setup and shutdown of the entire simulation.
-*   **Dynamic Task Scheduling & Basic Load Balancing:** The `TaskSchedulerActor` uses worker heartbeats and reported metrics (utilization) to make decisions about which worker should receive the next task, also prioritizing tasks from its queue.
-*   **Worker Self-Monitoring and Reporting:** `WorkerNodeActor`s proactively send heartbeats and status updates to the scheduler, enabling the scheduler to make informed decisions.
-*   **Inter-Actor Event Design:** Shows various custom event types (`TaskMessage`, `WorkerStatusMessage`, `ResultMessage`, `ShutdownMessage`, etc.) designed to carry specific information between collaborating actors.
-*   **Graceful Shutdown:** A coordinated shutdown process initiated by the `SystemMonitorActor` via a `ShutdownMessage`, allowing other actors to finalize their work and report statistics before the engine stops.
-*   **Global Atomics for High-Level Stats:** Use of `std::atomic` global counters demonstrates a simple way to aggregate high-level system statistics from multiple concurrent actors with thread safety (though for more complex stats, a dedicated statistics actor would be preferable).
+SystemMonitorActor: creates all actors, broadcasts InitializeMessage, prints SystemStatsMessage, broadcasts ShutdownMessage
+```
 
-This `distributed_computing` example serves as a rich template for understanding how to structure larger, more intricate applications using the QB Actor Framework, particularly those involving distributed workflows and resource management.
+All five actor types derive from `qb::Actor`. Each registers its event handlers in its constructor with `registerEvent<T>(*this)` and overrides `onInit()` for first-loop setup. Inter-actor communication uses `push<Event>(destination, ...)` and `broadcast<Event>(...)` exclusively — no shared mutable state crosses actor boundaries except the global `std::atomic` counters discussed below.
 
-**(Next Example Analysis:** [file_monitor Example Analysis](./file_monitor_analysis.md)**) 
+## Domain model
+
+Three plain structs carry the simulation state. Note the use of [`qb::string<N>`](../../3_qb_io/utilities.md), a fixed-capacity inline string (`template <std::size_t _Size = 30>`, backed by `std::array<char, _Size + 1>`) chosen so that events stay trivially copyable and avoid heap traffic on the hot path.
+
+```cpp
+// src: examples/core/example10_distributed_computing.cpp
+enum class ComplexityLevel { SIMPLE = 1, MEDIUM = 5, COMPLEX = 10, VERY_COMPLEX = 20 };
+
+struct Task {
+    qb::string<64>  task_id;
+    qb::string<32>  task_type;
+    int             priority;        // 1..10; >7 is "high priority"
+    ComplexityLevel complexity;      // drives simulated processing time
+    qb::string<256> data;            // synthetic input payload
+    TaskStatus      status;          // PENDING / ASSIGNED / IN_PROGRESS / COMPLETED / FAILED / CANCELED
+    uint64_t        creation_time;
+    uint64_t        start_time{0};
+    uint64_t        completion_time{0};
+};
+
+struct TaskResult {
+    qb::string<64>   task_id;
+    bool             success;
+    qb::string<1024> result_data;
+    uint64_t         processing_time;  // microseconds
+};
+
+struct WorkerMetrics {
+    uint64_t total_tasks_processed{0};
+    uint64_t total_processing_time{0}; // microseconds
+    uint64_t failed_tasks{0};
+    uint64_t successful_tasks{0};
+    double   average_processing_time{0.0};
+    double   utilization{0.0};         // 0.0..1.0, busy-time / wall-time
+    uint64_t last_heartbeat{0};
+};
+```
+
+A `Task` is wrapped in a `std::shared_ptr` so the scheduler's queue, its `_active_tasks` map, and the worker handling it can all reference the same instance. The events below carry that shared pointer by value, so ownership is reference-counted across actors rather than copied.
+
+> **`std::shared_ptr` in an event is a deliberate exception, not the default.** Most qb events should hold values or fixed-capacity buffers so they stay trivially serializable. A `shared_ptr` only works here because every actor runs in the same process; it would not survive a future cross-process transport. See [Messaging](../../4_qb_core/messaging.md) for the value-semantics rule events are normally expected to follow.
+
+## Event vocabulary
+
+Events derive from `qb::Event`. The task-related messages form a small hierarchy so that an assignment, a cancellation, and a status update all share the same `task` payload:
+
+```cpp
+// src: examples/core/example10_distributed_computing.cpp
+struct TaskMessage : qb::Event {
+    std::shared_ptr<Task> task;
+    explicit TaskMessage(const std::shared_ptr<Task> &t) : task(t) {}
+};
+struct TaskAssignmentMessage   : TaskMessage { using TaskMessage::TaskMessage; };
+struct TaskCancellationMessage : TaskMessage { using TaskMessage::TaskMessage; };
+struct TaskStatusUpdateMessage : TaskMessage { using TaskMessage::TaskMessage; };
+
+struct ResultMessage : qb::Event { TaskResult result; /* ... */ };
+
+struct WorkerStatusMessage    : qb::Event { qb::ActorId worker_id; WorkerMetrics metrics; /* ... */ };
+struct WorkerHeartbeatMessage : qb::Event { qb::ActorId worker_id; uint64_t timestamp; bool is_busy; /* ... */ };
+
+struct InitializeMessage : qb::Event {};
+struct ShutdownMessage   : qb::Event {};
+struct UpdateWorkersMessage : qb::Event { std::vector<qb::ActorId> worker_ids; /* ... */ };
+```
+
+Deriving distinct event types (`TaskAssignmentMessage` vs. `TaskMessage`) lets each actor subscribe to exactly the messages it cares about: the scheduler handles `TaskMessage`, the worker handles `TaskAssignmentMessage`, even though both carry an identical payload. Registration and dispatch are by static type, so the two never collide. See [Event system](../../2_core_concepts/event_system.md) for how the registry resolves handlers.
+
+## The five actors
+
+### 1. `TaskGeneratorActor` — the source
+
+The generator registers for `InitializeMessage` and `ShutdownMessage` in its constructor, then begins producing tasks once initialized:
+
+```cpp
+// src: examples/core/example10_distributed_computing.cpp
+void on(InitializeMessage &) {
+    _is_active = true;
+    _start_time = getCurrentTimestamp();
+    scheduleTaskGeneration();           // arm the first timer
+}
+
+void scheduleTaskGeneration() {
+    if (!_is_active) return;
+    double seconds_per_task = 1.0 / TASKS_PER_SECOND;   // 50 tasks/s -> 0.02 s
+    qb::io::async::callback([this]() {
+        if (_is_active) {
+            generateTask();
+            scheduleTaskGeneration();    // re-arm: a self-pacing loop
+        }
+    }, seconds_per_task);
+}
+```
+
+This is the **self-rescheduling timer** pattern: each callback fires once, does its work, and arms the next one. There is no blocking sleep and no busy loop — the [event loop](../../3_qb_io/async_system.md) on this core stays free to dispatch other actors between ticks. `generateTask()` builds a randomized `Task`, pushes it to the scheduler with `push<TaskMessage>(_scheduler_id, task)`, and increments the global `g_total_tasks` counter.
+
+> The `seconds_per_task` value above is a raw `double`, and the current `async::callback` overload does **not** accept one — see [Pitfalls](#timer-delays-must-be-chrono-durations). Treat the timer *shape* here as correct and the *argument type* as something you must modernize.
+
+### 2. `TaskSchedulerActor` — the dispatcher and load balancer
+
+The scheduler is the heart of the simulation. Its state:
+
+| Member | Type | Role |
+| --- | --- | --- |
+| `_worker_ids` | `std::vector<qb::ActorId>` | Known worker actors |
+| `_worker_metrics` | `std::map<qb::ActorId, WorkerMetrics>` | Last-reported status per worker |
+| `_task_queue` | `std::deque<std::shared_ptr<Task>>` | Pending tasks |
+| `_active_tasks` | `std::map<qb::string<64>, std::shared_ptr<Task>>` | Dispatched, not-yet-completed tasks |
+
+It registers eight event types. The load-relevant handlers:
+
+- `on(TaskMessage&)` — enqueue, then call `scheduleTasks()`.
+- `on(WorkerHeartbeatMessage&)` — refresh that worker's `last_heartbeat`.
+- `on(WorkerStatusMessage&)` — replace that worker's full `WorkerMetrics`.
+- `on(ResultMessage&)` — erase the finished task from `_active_tasks`, then `scheduleTasks()` again because a worker has freed up.
+- `on(UpdateWorkersMessage&)` — receive the worker-ID list (the scheduler is constructed before the workers exist; the monitor sends the IDs after construction).
+
+Dispatch sorts by priority and assigns to the first available worker:
+
+```cpp
+// src: examples/core/example10_distributed_computing.cpp
+void scheduleTasks() {
+    if (!_is_active || _task_queue.empty()) return;
+
+    std::stable_sort(_task_queue.begin(), _task_queue.end(),
+        [](const auto &a, const auto &b) { return a->priority > b->priority; });
+
+    for (const auto &worker_id : _worker_ids) {
+        if (_task_queue.empty()) break;
+        if (isWorkerAvailable(worker_id)) {
+            auto task = _task_queue.front();
+            _task_queue.pop_front();
+            task->status = TaskStatus::ASSIGNED;
+            _active_tasks[task->task_id] = task;
+            push<TaskAssignmentMessage>(worker_id, task);
+        }
+    }
+}
+
+bool isWorkerAvailable(qb::ActorId worker_id) {
+    auto it = _worker_metrics.find(worker_id);
+    if (it == _worker_metrics.end()) return true;          // no metrics yet -> optimistic
+    const auto &m = it->second;
+    if (getCurrentTimestamp() - m.last_heartbeat > HEARTBEAT_TIMEOUT) return false; // stale
+    if (m.utilization > 0.8) return false;                 // overloaded
+    return true;
+}
+```
+
+`assessLoadBalance()` runs on its own re-arming one-second timer and logs the mean utilization and queue depths. It is observation only; it does not change dispatch.
+
+> **The availability check is racy and over-optimistic — by design, for brevity.** `utilization` and `_is_busy` arrive asynchronously, so a worker can be assigned a task while it is already running one (the worker handles that by re-queueing — see below). The check is a teaching scaffold, not a production scheduler. [Pitfalls](#scheduling-is-best-effort-not-authoritative) expands on this.
+
+### 3. `WorkerNodeActor` — the executor
+
+Four worker instances are spread across cores `0..3`. On `InitializeMessage`, each starts two independent re-arming timers — a one-second heartbeat and a two-second metrics update — and then waits for assignments.
+
+Execution simulates work with a delayed callback rather than blocking:
+
+```cpp
+// src: examples/core/example10_distributed_computing.cpp
+void on(TaskAssignmentMessage &msg) {
+    if (_is_busy) {                                  // already working: bounce it back
+        msg.task->status = TaskStatus::PENDING;
+        push<TaskStatusUpdateMessage>(_scheduler_id, msg.task);
+        return;
+    }
+    _current_task = msg.task;
+    _current_task->status = TaskStatus::IN_PROGRESS;
+    _current_task->start_time = getCurrentTimestamp();
+    _is_busy = true;
+    _busy_start_time = getCurrentTimestamp();
+    push<TaskStatusUpdateMessage>(_scheduler_id, _current_task);
+
+    double processing_time = generateProcessingTime(_current_task->complexity);
+    qb::io::async::callback([this]() {
+        if (_is_active) completeCurrentTask();       // "finish" after the simulated delay
+    }, processing_time);
+}
+```
+
+`completeCurrentTask()` rolls a 95% success probability, updates `_metrics`, builds a `TaskResult`, pushes it to the collector with `push<ResultMessage>(_collector_id, result)`, sends a final `TaskStatusUpdateMessage` to the scheduler, increments the global completed/failed counters, and clears `_is_busy` so the next assignment is accepted.
+
+This is the key non-blocking idiom: a worker never sleeps. It captures `this`, schedules a one-shot timer, and returns to the event loop immediately, so its core keeps serving other actors during the simulated processing window.
+
+> Capturing `this` in a self-scheduled callback is safe **only** because every callback first checks `_is_active` and the actor's `on(ShutdownMessage&)` sets `_is_active = false` before `kill()`. A timer that fires after the actor is destroyed and dereferences `this` is a use-after-free. The guard flag is load-bearing, not decorative.
+
+### 4. `ResultCollectorActor` — the sink
+
+The collector stores every `TaskResult` in a `std::map` keyed by task id and logs it. On `ShutdownMessage`, it computes and prints the final success rate and mean processing time across all collected results, then calls `kill()`. It is the simplest actor — a pure aggregator with no timers.
+
+### 5. `SystemMonitorActor` — the supervisor
+
+The monitor owns the lifecycle. Its `onInit()` sends itself an `InitializeMessage`; the handler then fans out:
+
+```cpp
+// src: examples/core/example10_distributed_computing.cpp
+void on(InitializeMessage &) {
+    _is_active = true;
+    _start_time = getCurrentTimestamp();
+    // ... banner ...
+    push<InitializeMessage>(_task_generator_id);
+    push<InitializeMessage>(_scheduler_id);
+    push<InitializeMessage>(_collector_id);
+    for (const auto &w : _worker_ids) push<InitializeMessage>(w);
+    push<UpdateWorkersMessage>(_scheduler_id, _worker_ids);  // hand the scheduler its workers
+
+    schedulePerformanceReport();                              // re-arming 2 s stats timer
+
+    qb::io::async::callback([this]() {                        // one-shot end-of-run timer
+        if (_is_active) shutdownSystem();
+    }, SIMULATION_DURATION_SECONDS);
+}
+```
+
+`schedulePerformanceReport()` reads the global atomics every two seconds, computes throughput, and pushes a `SystemStatsMessage` to itself; `on(SystemStatsMessage&)` prints it. `shutdownSystem()` emits a final report, pushes `ShutdownMessage` to the generator, scheduler, workers, and collector (collector last, so it sees all results), then arms a short final timer that calls `broadcast<ShutdownMessage>()` to catch anyone missed.
+
+This concentrates two responsibilities — topology setup and orderly teardown — in one supervisor, which keeps the other four actors free of cross-cutting lifecycle logic.
+
+## Wiring it together: `main`
+
+```cpp
+// src: examples/core/example10_distributed_computing.cpp
+int main() {
+    try {
+        qb::Main engine;
+
+        auto collector_id = engine.addActor<ResultCollectorActor>(0);
+        auto scheduler_id = engine.addActor<TaskSchedulerActor>(0);
+
+        std::vector<qb::ActorId> worker_ids;
+        for (int i = 0; i < NUM_WORKERS; ++i) {
+            int core_id = i % 4;                              // spread workers over cores 0..3
+            worker_ids.push_back(
+                engine.addActor<WorkerNodeActor>(core_id, scheduler_id, collector_id));
+        }
+
+        auto generator_id = engine.addActor<TaskGeneratorActor>(0, scheduler_id);
+        engine.addActor<SystemMonitorActor>(
+            0, generator_id, scheduler_id, collector_id, worker_ids);
+
+        engine.start();   // async = true by default: returns immediately
+        engine.join();    // block until every VirtualCore stops
+    } catch (const std::exception &e) {
+        qb::io::cerr() << "Exception: " << e.what() << std::endl;
+        return 1;
+    }
+    return 0;
+}
+```
+
+`engine.addActor<T>(core, args...)` is the convenience form of `engine.core(core).addActor<T>(args...)`; it returns the new actor's `ActorId` and must be called before `start()`. The construction order matters: the collector and scheduler must exist so their IDs can be passed into the worker constructors, and the workers must exist so their IDs can be handed to the monitor. The scheduler receives its worker list later, via `UpdateWorkersMessage`, because it is constructed before the workers are.
+
+`engine.start()` defaults to `async = true` and returns immediately; `engine.join()` blocks the calling thread until all `VirtualCore`s terminate. See [Engine](../../4_qb_core/engine.md) for the full start/stop/join contract.
+
+## Patterns worth keeping
+
+- **One actor, one role.** Generation, scheduling, execution, collection, and supervision are cleanly separated. Each actor's state is private and reached only through events.
+- **Self-pacing timers over loops.** Every recurring activity — generation, heartbeats, metrics, load assessment, reporting — is a one-shot [`async::callback`](../../3_qb_io/async_system.md) that re-arms itself, guarded by an `_is_active` flag. No actor ever blocks its core.
+- **Supervisor-owned lifecycle.** A single `SystemMonitorActor` performs setup and a staged shutdown, so the other actors carry no orchestration logic.
+- **Typed event subclasses for routing.** Deriving `TaskAssignmentMessage` from `TaskMessage` lets producers and consumers subscribe to different messages that share a payload, with no runtime tagging.
+
+## Pitfalls and corrections
+
+### Timer delays must be chrono durations
+
+The example passes raw `double` and `int` seconds to `qb::io::async::callback` (`scheduleTaskGeneration` uses `seconds_per_task`; the monitor passes `SIMULATION_DURATION_SECONDS`; heartbeats pass `1.0`). The current timed overload is:
+
+```cpp
+// src: qb/include/qb/io/async/io.h
+template <typename _Func, typename Rep, typename Period>
+void callback(_Func &&func, std::chrono::duration<Rep, Period> timeout);
+```
+
+It accepts a `std::chrono::duration` only. The canonical `qb::duration` (`std::chrono::nanoseconds`) "accepts any finer-or-equal chrono literal implicitly and rejects bare integers" — so a bare `double` or `int` does **not** bind, and these calls do not compile as written against qb 2.0.0. Use chrono literals or explicit durations:
+
+```cpp
+#include <chrono>
+using namespace std::chrono_literals;
+
+// Recurring at 50 Hz:
+qb::io::async::callback([this]{ /* ... */ }, 20ms);
+
+// A delay computed at runtime — wrap the seconds in a double-based duration:
+auto delay = std::chrono::duration<double>(1.0 / TASKS_PER_SECOND);
+qb::io::async::callback([this]{ /* ... */ }, delay);
+
+// Fire on the next loop iteration:
+qb::io::async::callback([this]{ /* ... */ }, qb::duration::zero());
+```
+
+This matches how the framework's own tests schedule delayed work, e.g. `500us`, `100ms`, `1ms`, and `qb::duration::zero()` in `qb/source/core/tests/system/test-actor-concurrency-safety.cpp` and `test-actor-delayed-events.cpp`.
+
+### The example's `getCurrentTimestamp()` is not the canonical clock
+
+The file defines a local `getCurrentTimestamp()` returning microseconds since epoch from `std::chrono::high_resolution_clock`. That is fine for an isolated demo, but it is **not** the framework time vocabulary. For real code, prefer the canonical types in [`qb/system/timestamp.h`](../../3_qb_io/utilities.md): `qb::mono_now()` (a `qb::mono_time` from `steady_clock`) for intervals, deadlines, and latency; and `qb::wall_now()` (a `qb::wall_time` from `system_clock`) for wall-clock instants. Mixing a wall clock into interval math, as the example does, is exactly what the canonical split exists to prevent.
+
+### Scheduling is best-effort, not authoritative
+
+`isWorkerAvailable()` reads `utilization` and `last_heartbeat` that arrive asynchronously and lag reality by up to a metrics interval. Two consequences:
+
+1. The scheduler can dispatch to a worker that is already busy. The worker defends itself by bouncing the task back as `PENDING` via `TaskStatusUpdateMessage`. That update is recorded but the bounced task is not re-enqueued, so under contention work can be silently dropped from the active set.
+2. The 95% "success" roll and the synthetic processing time make the throughput figures illustrative, not measured.
+
+Read the load-balancing logic as a demonstration of *how to route on reported metrics*, not as a scheduler to ship.
+
+### Global atomics are a shortcut, not the recommended pattern
+
+`g_total_tasks`, `g_completed_tasks`, and friends are process-global `std::atomic` counters incremented from multiple cores. They are thread-safe and convenient for a top-line tally, but they bypass the actor model's message-passing discipline. For anything beyond a coarse counter, route statistics through a dedicated aggregator actor (the example's own `ResultCollectorActor` is the in-model alternative) so that state stays owned by one actor and reachable only through events.
+
+### Build note
+
+`example10_distributed_computing` is registered in `examples/core/CMakeLists.txt`. Before building or borrowing its timer calls, apply the chrono-duration fix above; the source predates the current `async::callback` signature.
+
+## See also
+
+- [Async system](../../3_qb_io/async_system.md) — `qb::io::async::callback`, the event loop, and timer semantics.
+- [Messaging](../../4_qb_core/messaging.md) — `push`, `broadcast`, event value semantics, and delivery guarantees.
+- [Engine](../../4_qb_core/engine.md) — `qb::Main`, `addActor`, `start`, `join`, and core assignment.
+- [Actor reference](../../4_qb_core/actor.md) — `registerEvent`, `onInit`, `kill`, and the actor lifecycle.
+- [Event system](../../2_core_concepts/event_system.md) — handler registration and type-based dispatch.
+- [File monitor walkthrough](./file_monitor_analysis.md) — another core/IO integration case study.

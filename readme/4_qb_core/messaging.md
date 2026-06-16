@@ -1,280 +1,255 @@
-@page qb_core_messaging_md QB-Core: Event Messaging Between Actors
-@brief A comprehensive guide to defining, sending, and handling events—the core communication mechanism in QB.
+# Event messaging between actors
 
-# QB-Core: Event Messaging Between Actors
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-In the QB Actor Framework, actors live in isolation and communicate *exclusively* by exchanging asynchronous messages. These messages are called **Events**. Mastering the event system is fundamental to building robust and scalable actor-based applications.
+A deep dive into the qb messaging layer: how `push`, `send`, `reply`, `forward`, and `broadcast` differ in delivery semantics, what ordering the runtime guarantees, and how events move through the per-actor pipe and the per-core mailbox both within a core and across cores.
 
-This guide covers how to define events, the various ways actors can send them, and how they are received and processed.
+**Prerequisites:** [Writing actors with qb::Actor](./actor.md), [The event system](../2_core_concepts/event_system.md) — **See also:** [The engine: Main and VirtualCore](./engine.md), [Actor patterns](./patterns.md), [Concurrency model](../2_core_concepts/concurrency.md)
 
-## Defining Events: The Structure of Actor Communication
+## Summary
 
-All messages exchanged between actors must be C++ structs or classes that publicly inherit from the base `qb::Event` class (defined in `qb/core/Event.h`).
+Actors in qb communicate only by exchanging typed events. An event is a C++ object that derives from `qb::Event`; the runtime copies it into a buffer, routes it to the destination actor's owning `VirtualCore`, and invokes that actor's handler for the event's exact type. This page covers the send side in detail — the five primitives an actor uses, their ordering and lifetime contracts, and the two-stage transport (source-side *pipe*, destination-side *mailbox*) that carries an event from one core to another.
 
-**Key Principles for Event Design:**
+The event *type* model — how to define events, when to use `qb::string<N>` versus `std::string`, and how handlers are registered and dispatched — is owned by [The event system](../2_core_concepts/event_system.md). This page does not repeat those definitions; it focuses on delivery.
 
-*   **Data Carriers:** Events are primarily containers for data. They should encapsulate the information necessary for the receiving actor to understand the request or notification and act accordingly. Avoid embedding complex processing logic within the event objects themselves.
-*   **Immutability (Conventionally):** Once an event is sent, it's best to treat its payload as immutable. If an actor needs to modify data and send it onward, it should typically create a new event. The exceptions are `reply()` and `forward()`, which are designed for efficient reuse of the event object.
+Every signature here is grounded in three headers: `qb/core/Event.h` (the event base class), `qb/core/Actor.h` (the send API), and `qb/core/Pipe.h` (the low-level channel). Routing internals come from `qb/core/VirtualCore.tpp` and `qb/core/Main.h`.
 
-**The `qb::Event` Base Class Provides:**
+## Concepts
 
-*   `id` (`qb::EventId`): An internal type identifier for the event (e.g., `qb::type_id<MyEventType>()`). Used by the framework for dispatching to the correct handler.
-*   `dest` (`qb::ActorId`): The ID of the actor intended to receive the event.
-*   `source` (`qb::ActorId`): The ID of the actor that sent the event.
-*   Internal flags and size information (`is_alive()`, `getQOS()`, `getSize()`).
+### The transport: pipe out, mailbox in
 
-**Creating Custom Events:**
+Every event crosses two structures on its way from sender to receiver.
 
-Add member variables to your derived event struct/class to carry application-specific data.
+- **The pipe (`qb::Pipe`, wrapping a `qb::VirtualPipe`)** is the source side. A `VirtualPipe` is `qb::allocator::pipe<EventBucket>` (`qb/core/Event.h`) — a growable buffer owned by the *sending* `VirtualCore`, keyed by the destination core. The sender constructs the event in place inside this buffer.
+- **The mailbox** is the destination side. The engine holds one `SharedCoreCommunication::Mailbox` per core (in `SharedCoreCommunication::_mail_boxes`, reached via `getMailBox(CoreId)`, `qb/core/Main.h`). A `Mailbox` derives from `qb::lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>` — a multi-producer, single-consumer lock-free ring. Every other core enqueues into a core's mailbox; only that core dequeues from it.
 
-```cpp
-#include <qb/event.h>   // For qb::Event
-#include <qb/actorid.h> // For qb::ActorId
-#include <qb/string.h>  // For qb::string (efficient fixed-size string)
-#include <string>       // For std::string
-#include <vector>       // For std::vector
-#include <memory>       // For std::shared_ptr
+A `VirtualPipe` and the mailbox both store **`EventBucket`** slots. An `EventBucket` is one cache line wide — `QB_LOCKFREE_EVENT_BUCKET_BYTES`, which equals `QB_LOCKFREE_CACHELINE_BYTES` (`qb/utility/prefix.h`), 64 bytes on common targets. An event occupies a whole number of contiguous buckets, recorded in the 16-bit `bucket_size` field of its header.
 
-// 1. A simple signal event (no data, just the type matters)
-struct SystemReadySignal : qb::Event {};
+The mailbox ring holds `MaxRingEvents = std::numeric_limits<uint16_t>::max() / QB_LOCKFREE_EVENT_BUCKET_BYTES` buckets — roughly **1023 buckets (≈64 KiB)** with the default 64-byte bucket (`qb/core/Main.h`).
 
-// 2. Event with basic data members and qb::string (recommended for strings)
-struct UpdateConfiguration : qb::Event {
-    qb::string<64> config_key;    // Max 64 chars for key
-    qb::string<256> new_value;  // Max 256 chars for value
-    int priority_level;
+### Two delivery paths: same core and cross core
 
-    UpdateConfiguration(const char* key, const char* val, int priority)
-        : config_key(key), new_value(val), priority_level(priority) {}
-};
+The destination actor's `ActorId` carries the `CoreId` of the core that owns it. Routing branches on whether that core is the sender's own core.
 
-// 3. Event carrying a large or shared payload efficiently
-struct DataAnalysisTask : qb::Event {
-    std::shared_ptr<std::vector<double>> data_points;
-    qb::string<32> task_description;
+- **Same core.** The event is appended to the local pipe and consumed during the same core's event-loop iteration, after the current handler returns. No mailbox, no inter-thread synchronization.
+- **Cross core.** The event is published into the destination core's MPSC mailbox. The destination core dequeues it on its next loop iteration. This is the only path that touches the lock-free ring.
 
-    DataAnalysisTask(std::shared_ptr<std::vector<double>> points, const char* desc)
-        : data_points(std::move(points)), task_description(desc) {}
-};
-```
+`send()` and `push()` resolve this branch differently — see [Ordering guarantees](#ordering-guarantees) below.
 
-**Performance & Data Handling in Events:**
+### Mailbox latency and wake-up
 
-*   **Small, POD-like Data:** For simple data, direct members are fine.
-*   **`qb::string<N>` (Strongly Recommended for Direct String Members in Events):**
-    *   **Purpose:** Use `qb::string<N>` when you need string data *directly as a member* of your event. `N` is the fixed maximum character capacity.
-    *   **Benefits:** `qb::string<N>` stores its data directly within its own structure. This avoids heap allocations for small-to-medium strings and, critically, **circumvents potential ABI (Application Binary Interface) stability issues that can arise with `std::string` as a direct member.** The C++ standard does not guarantee ABI compatibility for `std::string` across different compilers or even different versions of the same compiler or standard library. This means that the internal layout of a `std::string` (like where it stores its pointer to heap data, its size, and capacity, especially with Small String Optimization - SSO) can vary. If QB's event system were to perform low-level copies of events containing `std::string` members, and these events cross such ABI boundaries (e.g. different shared libraries compiled differently, or even just complex internal buffering by QB), the receiving side might misinterpret the `std::string`'s internal state, leading to crashes or corrupted data. `qb::string<N>` avoids this by having a fully self-contained, predictable layout.
-    *   **Transparency:** Offers implicit conversion to `std::string_view` and explicit conversion to `std::string` (e.g., `std::string(my_qb_string)`).
-    *   **Example:**
-        ```cpp
-        struct UserLoginEvent : qb::Event {
-            qb::string<64> username;
-            qb::string<128> session_token;
-            // ... constructor ...
-        };
-        ```
+A mailbox is constructed with a `qb::duration` latency (`qb/core/Main.h`). It governs how the consuming core waits when its mailbox is empty.
 
-*   **`std::string` as a Direct Member (Use with Extreme Caution / Generally Avoid):**
-    *   **With `qb::Actor::push()`:** While `push()` *can* manage the lifecycle of `std::string` direct members in events within a consistent compilation environment, **its use as a direct event member is strongly discouraged due to the ABI stability concerns mentioned above.**
-    *   **Recommendation:** **For direct string members, ALWAYS prefer `qb::string<N>`.**
+- **Latency `0` (default, busy-spin).** `Mailbox::wait()` returns immediately; the core stays on the lock-free fast path and polls. Lowest latency, one core fully occupied.
+- **Latency `> 0`.** `Mailbox::wait()` parks on a `std::condition_variable` for up to the configured span. A producer that enqueues an event calls `Mailbox::notify()`, which signals the condition variable and wakes the consumer. Lower CPU use at idle, at the cost of up to one latency span of wake-up delay.
 
-*   **Other STL Containers (e.g., `std::vector<T>`, `std::map<K,V>`):**
-    *   **With `qb::Actor::push()`:** These containers, when direct members of an event sent via `push()`, will have their copy/move constructors and destructors correctly invoked by the framework as C++ objects. The primary concern here is **performance**: copying large vectors or maps by value in events can be very expensive.
-    *   **Recommendation for Large Collections:** For any sizeable or dynamically growing collections, pass them via `std::shared_ptr` (e.g., `std::shared_ptr<std::vector<MyData>>`) to avoid deep copies during event transmission.
-    *   **With `qb::Actor::send()`:** These containers are typically non-trivially destructible and thus **not permitted** as direct members of events sent via `send()`.
+Latency is set per core through `qb::CoreInitializer::setLatency` or globally through `qb::Main::setLatency`; see [The engine](./engine.md).
 
-*   **Smart Pointers for Large, Shared, or Owned Data (Recommended for `push()`):**
-    *   To pass large data payloads (binary blobs, extensive collections, complex objects) without incurring significant copying overhead, or to clearly transfer ownership, wrap the data in a smart pointer:
-        *   **`std::shared_ptr<T>`:** Use when the data might be referenced by multiple actors after the event is sent, or when the lifetime is co-managed.
-        *   **`std::unique_ptr<T>`:** Use when the sending actor wishes to transfer exclusive ownership of the data to the receiving actor. The data will be moved, and the sender relinquishes access. This is very efficient.
-    *   This ensures only the smart pointer (which is small and typically trivially copyable/movable itself) is involved in QB's internal event transfer mechanisms, while the underlying data is managed appropriately.
-    *   **Using `std::string` with Smart Pointers:** If you are passing string data via `std::shared_ptr<std::string>` or `std::unique_ptr<std::string>`, then using `std::string` (instead of `qb::string<N>`) for the heap-allocated string data is acceptable and often more convenient for dynamically sized text. The smart pointer manages the `std::string`'s lifecycle correctly, and QB interacts primarily with the smart pointer object itself.
-    *   **Example with `std::unique_ptr<std::string>`:**
-        ```cpp
-        struct LargeTextMessageEvent : qb::Event {
-            std::unique_ptr<std::string> message_content;
+## The five send primitives
 
-            explicit LargeTextMessageEvent(std::unique_ptr<std::string> content) 
-                : message_content(std::move(content)) {}
-        };
+All send methods are inherited from `qb::Actor` and are callable from inside any handler, `onInit`, or `onCallback`. Every one is `const noexcept`.
 
-        // In sender actor:
-        auto large_log_entry = std::make_unique<std::string>(GenerateVeryLongLog());
-        push<LargeTextMessageEvent>(logger_actor_id, std::move(large_log_entry)); 
-        // large_log_entry is now nullptr in sender.
-        ```
+> **`noexcept` is load-bearing.** `push`, `send`, `broadcast`, `reply`, and `forward` are all `noexcept`, yet they grow the pipe buffer (which can throw `std::bad_alloc`) and run the event constructor in place (which can throw). A throw cannot cross a `noexcept` boundary, so any such failure calls `std::terminate()` and aborts the process — it is not recoverable. This is by design: events are expected to be small, allocation-light messages on an adequately provisioned system. Keep event constructors cheap, and move large heap data in through an already-allocated `std::shared_ptr` rather than allocating inside the constructor. (`qb/core/Pipe.h`, `qb/core/Actor.h`.)
 
-*   **Trivial Destructibility (Strictly Required for `qb::Actor::send()`):**
-    *   Events sent via `send()` **must** be trivially destructible. This typically means they contain only POD types or other trivially destructible types like `qb::string<N>`. Members like `std::string`, `std::vector`, or smart pointers (`std::shared_ptr`, `std::unique_ptr`) (which manage a non-trivial resource or have non-trivial destructors) are **not allowed** for events sent via `send()`.
-
-**(See also:** [Core Concepts: QB Event System](./../2_core_concepts/event_system.md)**)**
-
-## Sending Events: Actor Communication Methods
-
-Actors use methods inherited from `qb::Actor` to dispatch events.
-
-### 1. `push<EventType>(destination_actor_id, constructor_args...) const noexcept -> EventType&`
-
-*   **Primary Choice:** This is the **default and recommended** method for sending events.
-*   **Ordered Delivery:** Guarantees that events sent from a specific source actor to a specific destination actor are processed by the destination in the order they were `push`ed by the source.
-*   **Asynchronous:** The call returns immediately; the event is queued and processed by the destination actor's `VirtualCore` later.
-*   **Return Value:** Returns a non-const reference to the constructed event *before* it's actually sent. This allows you to modify its members if needed just after construction.
-*   **Data Types:** Handles non-trivially destructible events (but see strong recommendation for `qb::string<N>` over `std::string` as direct members).
-*   **Example:**
-    ```cpp
-    // Inside an actor
-    qb::ActorId target_id = get_target_actor_id();
-    auto& cmd = push<UpdateConfiguration>(target_id, "timeout_ms", "500", 1);
-    // cmd.priority_level = 2; // Optionally modify before it's sent
-    ```
-*   **(Ref:** `test-actor-event.cpp::BasicPushActor`**)
-
-### 2. `send<EventType>(destination_actor_id, constructor_args...) const noexcept`
-
-*   **Specialized Use:** For scenarios where event order is not critical and the event type is simple and trivially destructible.
-*   **Unordered Delivery:** Provides no guarantee about the order of arrival relative to other events (even other `send` calls from the same source to the same destination).
-*   **Potentially Lower Latency (Same Core):** May offer slightly reduced latency for same-core communication, as it might bypass some queueing steps.
-*   **Requirement:** `EventType` **must be trivially destructible**. (e.g. contains only POD types or `qb::string<N>`).
-*   **Caution:** Use sparingly and only when the trade-offs are well understood. Incorrect use can lead to hard-to-debug issues.
-*   **Example:**
-    ```cpp
-    // Inside an actor, for a simple, order-agnostic notification
-    struct FireForgetSignal : qb::Event {}; // Must be trivially destructible
-    send<FireForgetSignal>(monitor_actor_id);
-    ```
-*   **(Ref:** `test-actor-event.cpp::BasicSendActor`**)
-
-### 3. Broadcasting Events
-
-*   **`broadcast<EventType>(constructor_args...) const noexcept`**
-    *   Sends the event to **all actors on all active `VirtualCore`s** within the `qb::Main` instance.
-    *   Use for system-wide announcements or signals.
-    *   Example: `broadcast<SystemShutdownNotice>();`
-*   **`push<EventType>(qb::BroadcastId(core_id), constructor_args...)`**
-    *   Sends the event (ordered relative to other pushes from the sender) to **all actors currently running on the specified `core_id`**.
-    *   Useful for core-specific group notifications.
-    *   Example: `push<CacheFlushCommand>(qb::BroadcastId(1), "users_cache");`
-*   **(Ref:** `test-actor-broadcast.cpp`**)
-
-### 4. `reply(Event& original_event) const noexcept`
-
-*   **Efficient Response:** The most efficient way to send a response back to the actor that sent `original_event`.
-*   **Mechanism:** Reuses the `original_event` object. It swaps the `source` and `dest` fields and resends it.
-*   **Handler Requirement:** The `on(EventType& event)` handler that calls `reply(event)` **must take its event parameter by non-const reference** (`EventType& event`) to allow modification.
-*   **Event Consumption:** After `reply(event)` is called, the `event` object in the handler is considered "consumed" and should not be accessed further by that handler.
-*   **Example:**
-    ```cpp
-    // Inside ResponderActor
-    struct MyRequest : qb::Event { qb::string<64> query; qb::string<128> response_data; };
-    void on(MyRequest& request_event) { // Note: non-const reference
-        qb::string<128> temp_response = "Processed: ";
-        // temp_response.append(request_event.query.c_str()); // Assuming qb::string has append or similar
-        request_event.response_data = temp_response; // Assign back
-        reply(request_event); // Sends the modified MyRequest back to the original sender
-    }
-    ```
-*   **(Ref:** `test-actor-event.cpp::TestReceiveReply`**)
-
-### 5. `forward(ActorId new_destination, Event& original_event) const noexcept`
-
-*   **Efficient Redirection:** An efficient way to delegate an event to another actor without creating a new event object.
-*   **Mechanism:** Reuses the `original_event` object, changing its `dest` to `new_destination` but preserving the `original_event.source`.
-*   **Handler Requirement:** Similar to `reply()`, the `on()` handler must take a non-const event reference (`EventType& event`).
-*   **Event Consumption:** The `event` object is consumed after `forward()`.
-*   **Example:**
-    ```cpp
-    // Inside RouterActor
-    struct WorkOrder : qb::Event { /* ... */ };
-    void on(WorkOrder& work_event) { // Note: non-const reference
-        qb::ActorId worker_node_id = find_available_worker_for(work_event);
-        forward(worker_node_id, work_event); // Delegate to a specific worker
-    }
-    ```
-*   **(Ref:** `test-actor-event.cpp::TestReceiveReply` uses forward in one of its tests**)
-
-### 6. Advanced Sending: `EventBuilder` and `Pipe`
-
-For fine-tuned control or performance-critical scenarios, especially when sending multiple events or large events:
-
-*   **`to(destination_id).push<EventType>(...)` -> `Actor::EventBuilder&`**
-    *   Returns an `EventBuilder` object.
-    *   Allows chaining multiple `push<EventType>()` calls to the *same destination* more fluently. This can offer a minor performance benefit by avoiding repeated lookups for the communication pipe to the destination.
-    *   Example:
-        ```cpp
-        to(stats_service_id)
-            .push<CounterIncrementEvent>("login_attempts")
-            .push<TimerStartEvent>("user_session_" + user_id);
-        ```
-*   **`getPipe(destination_id) const noexcept -> qb::Pipe`**
-    *   Provides direct access to the underlying `qb::Pipe` object, which is the communication channel to the `destination_id`.
-    *   The `qb::Pipe` object itself has `push<EventType>(...)` methods.
-    *   **`pipe.allocated_push<MyLargeEvent>(payload_size_hint, constructor_args...)`:** This is particularly useful for events that carry large, dynamically sized payloads (e.g., data in a `std::vector` passed via `std::shared_ptr`). By providing a `payload_size_hint` (approximate size of the event struct *plus* its dynamic payload), you can help the framework pre-allocate sufficient space in the pipe, avoiding potentially costly reallocations and memory copies during event construction and enqueuing.
-    *   Example with `allocated_push`:
-        ```cpp
-        // Assume LargeDataEvent contains a std::shared_ptr<std::vector<char>> data;
-        auto my_large_data_vec = std::make_shared<std::vector<char>>(1024 * 1024); // 1MB
-        // ... fill my_large_data_vec ...
-        qb::Pipe data_pipe = getPipe(data_processing_actor_id);
-        size_t estimated_size = sizeof(LargeDataEvent) + my_large_data_vec->size();
-        
-        auto& ev = data_pipe.allocated_push<LargeDataEvent>(estimated_size, my_large_data_vec);
-        // ev is a reference to the event in the pipe's buffer
-        ```
-
-**(Reference:** `test-actor-event.cpp` demonstrates various sender actor implementations using these methods.**)
-
-## Receiving and Handling Events in Actors
-
-Actors process events by:
-
-1.  **Registering Event Handlers:** This is done **exclusively within the actor's `onInit()` method** by calling `registerEvent<EventType>(*this);` for each specific `EventType` the actor is designed to handle.
-
-2.  **Implementing Handler Methods:** For each registered `EventType`, the actor must provide a corresponding `public` method with one of the following signatures:
-    *   `void on(const EventType& event)`: If the handler only needs to read the event's data.
-    *   `void on(EventType& event)`: If the handler intends to modify the event (e.g., add a result) and then use `reply(event)` or `forward(destination, event)`. Note that modifications are only relevant for these reuse patterns; the original event in the sender or other potential recipients (for broadcasts) is not affected.
+### `push` — ordered, the default
 
 ```cpp
-// In MyActor.h or .cpp
-class MyActor : public qb::Actor {
-public:
-    bool onInit() override {
-        registerEvent<UpdateConfiguration>(*this); // From example above
-        registerEvent<DataAnalysisTask>(*this);  // From example above
-        registerEvent<qb::KillEvent>(*this);
-        return true;
-    }
+template <typename _Event, typename... _Args>
+_Event &push(ActorId const &dest, _Args &&...args) const noexcept;
+```
+<!-- src: qb/include/qb/core/Actor.h -->
 
-    // Handler for UpdateConfiguration (can be const& if not replying/forwarding)
-    void on(const UpdateConfiguration& event) {
-        qb::io::cout() << "MyActor [" << id() << "]: Received config update for key '"
-                       << event.config_key.c_str() << "' to value '" << event.new_value.c_str() 
-                       << "' with priority " << event.priority_level << ".\n";
-        // Apply configuration change...
-    }
+`push` is the primary and recommended primitive. It constructs `_Event` in place at the **back** of the destination pipe (`allocate_back`, `qb/core/VirtualCore.tpp`) and returns a mutable reference to it, so the sender can finish populating the event after construction:
 
-    // Handler for DataAnalysisTask (non-const& if we might reply/forward)
-    void on(DataAnalysisTask& event) { 
-        if (event.data_points) {
-            qb::io::cout() << "MyActor [" << id() << "]: Received data task '"
-                           << event.task_description.c_str() << "' with " 
-                           << event.data_points->size() << " data points.\n";
-            // Perform analysis...
-            // Example: push<AnalysisCompleteEvent>(event.getSource(), task_id, result);
-        } else {
-            qb::io::cout() << "MyActor [" << id() << "]: Received empty data task.\n";
-        }
-    }
+```cpp
+// derived from: qb/source/core/tests/system/test-actor-event.cpp (BasicPushActor)
+#include <qb/actor.h>
+#include <qb/event.h>
 
-    void on(const qb::KillEvent& /*event*/) {
-        kill();
-    }
+struct UpdateConfig : qb::Event {
+    qb::string<64>  key;
+    qb::string<256> value;
+    int             priority;
+    UpdateConfig(const char *k, const char *v, int p)
+        : key(k), value(v), priority(p) {}
 };
+
+void Producer::on(const TickEvent &) {
+    auto &cmd = push<UpdateConfig>(_target, "timeout_ms", "500", 1);
+    cmd.priority = 2; // valid: the event has not been sent yet
+}
 ```
 
-*   **Dispatch Mechanism:** The `VirtualCore` responsible for an actor uses the event's type ID (`event.getID()`) and its destination actor ID (`event.getDestination()`) to route the event. An internal router (`qb::router::memh`) then invokes the specific `on()` handler in the target actor that matches the event's type.
-*   **Sequential Processing Guarantee:** An actor processes events from its mailbox one at a time. One `on()` handler must complete before the next one for that same actor instance can begin.
+`push` accepts events with non-trivial members and destructors (`std::string`, `std::vector`, smart pointers). The framework runs the event's destructor on the receiving side after the handler returns.
 
-This event-driven, message-passing architecture is central to how QB achieves concurrency and simplifies the development of complex, stateful systems.
+> Do not retain the returned reference past the current scope. The event's lifetime is owned by the framework once control leaves the handler.
 
-**(Next:** [QB-Core: Engine (`qb::Main`, `VirtualCore`)](./engine.md) to understand how actors and their events are managed and scheduled.**)
-**(See also:** [Core Concepts: QB Event System](./../2_core_concepts/event_system.md), [QB-Core: Mastering qb::Actor](./actor.md)**) 
+### `send` — unordered, trivially destructible only
+
+```cpp
+template <typename _Event, typename... _Args>
+void send(ActorId const &dest, _Args &&...args) const noexcept;
+```
+<!-- src: qb/include/qb/core/Actor.h -->
+
+`send` does **not** guarantee ordering relative to other sends or pushes from the same source to the same destination. It constructs the event at the **front** of the pipe (`allocate`, `qb/core/VirtualCore.tpp`); for a cross-core destination it attempts to publish the event into the destination mailbox immediately and, on success, frees the pipe slot with `pipe.free(...)` (`qb/core/VirtualCore.tpp`). That early-publish path is what breaks the FIFO ordering that `push` preserves.
+
+`_Event` **must be trivially destructible**. This is a hard contract, but the enforcement is not uniform: `fill_event` `static_assert`s `std::is_trivially_destructible_v<T>` only for events deriving from `EventQOS0` (`if constexpr (event_qos0_type<T>)`, `qb/core/VirtualCore.tpp`). A plain `qb::Event`-derived type with a `std::string`, `std::vector`, or smart-pointer member therefore *compiles* through `send` — but on the early cross-core publish path the freed pipe slot is reclaimed by pointer arithmetic without running the event destructor (`pipe.free` advances `_begin`/`_end` only, `qb/system/allocator/pipe.h`), so any owned heap memory leaks. Derive fire-and-forget events from `qb::EventQOS0` so the requirement is caught at compile time, or restrict `send` to genuinely trivial events.
+
+```cpp
+// derived from: qb/source/core/tests/system/test-actor-event.cpp (BasicSendActor)
+#include <qb/actor.h>
+#include <qb/event.h>
+
+// Derive from EventQOS0 so the trivially-destructible requirement is enforced
+// at compile time (see note above). A plain qb::Event would compile silently.
+struct FireForgetSignal : qb::EventQOS0 {};
+
+void Monitor::ping(qb::ActorId monitor_id) {
+    send<FireForgetSignal>(monitor_id);
+}
+```
+
+Prefer `push` unless you have measured a need and ordering genuinely does not matter. Misuse is a frequent source of order-dependent bugs.
+
+### `reply` — return an event to its sender
+
+```cpp
+void reply(Event &event) const noexcept;
+```
+<!-- src: qb/include/qb/core/Actor.h -->
+
+`reply` reuses the received event object instead of allocating a new one. The runtime swaps the event's `dest` and `source`, re-marks it alive, and sends it back (`std::swap(event.dest, event.source)`, `qb/core/VirtualCore.cpp`). The handler must therefore take its event **by non-const reference**, because the object is mutated in place:
+
+```cpp
+// derived from: qb/source/core/tests/system/test-actor-event.cpp (TestReceiveReply)
+void Responder::on(MyRequest &request) {     // non-const reference
+    request.response = compute(request.query);
+    reply(request);                          // sent back to request's source
+    // request is consumed here; do not touch it again
+}
+```
+
+A broadcast event cannot be replied to: if `event.dest.is_broadcast()` is true, `reply` logs a warning and drops the call (`qb/source/core/src/Actor.cpp`). After `reply` returns, the event is consumed — do not read or modify it.
+
+### `forward` — redirect an event, preserving its origin
+
+```cpp
+void forward(ActorId dest, Event &event) const noexcept;
+```
+<!-- src: qb/include/qb/core/Actor.h -->
+
+`forward` re-routes a received event to a new destination without allocating. It overwrites `event.dest` with the new target but **deliberately leaves `event.source` untouched**, so the original sender remains the logical origin and a downstream `reply` returns to the true client rather than to the forwarding actor (`qb/source/core/src/Actor.cpp`, `qb/source/core/src/VirtualCore.cpp`). As with `reply`, the handler must take a non-const reference, broadcast events cannot be forwarded, and the event is consumed after the call.
+
+```cpp
+// derived from: qb/source/core/tests/system/test-actor-event.cpp (TestReceiveReply)
+void Router::on(WorkItem &item) {            // non-const reference
+    forward(pick_worker(item), item);        // worker sees the original source
+}
+```
+
+The distinction in one line: `reply` swaps `dest` and `source`; `forward` sets a new `dest` and keeps `source`.
+
+### `broadcast` — fan out to every actor
+
+```cpp
+template <typename _Event, typename... _Args>
+void broadcast(_Args &&...args) const noexcept;
+```
+<!-- src: qb/include/qb/core/Actor.h -->
+
+`broadcast` delivers a copy of the event to every actor on every active core. Internally it iterates the engine's core set and issues one `send` per core with a `BroadcastId` destination (`qb/core/VirtualCore.tpp`):
+
+```cpp
+broadcast<SystemShutdownNotice>();
+```
+
+To target a single core instead of the whole system, push to a `qb::BroadcastId`:
+
+```cpp
+// Deliver to every actor on core 1, ordered relative to this sender's pushes.
+push<CacheFlushCommand>(qb::BroadcastId(1), "users_cache");
+```
+
+`qb::BroadcastId(core_id)` is an `ActorId` whose service id is the reserved `BroadcastSid` (`qb/core/ActorId.h`). An actor receiving a broadcast cannot `reply` to it or `forward` it, since the destination id is a broadcast id.
+
+## Ordering guarantees
+
+The runtime makes one ordering promise, and it is narrow but precise:
+
+> Events delivered with `push` (or `Pipe::push` / `to(dest).push`) from a **single source** actor to a **single destination** actor are processed by the destination in the exact order they were pushed. (`qb/core/Pipe.h`, `qb/core/Actor.h`.)
+
+What this promise does *not* cover:
+
+- **No cross-source ordering.** If actors A and B both push to C, the interleaving of A's and B's events at C is unspecified. Each source's own subsequence is preserved; the merge is not.
+- **No cross-destination ordering.** Two pushes from A to different destinations have no ordering relationship.
+- **`send` is unordered, period.** It carries no ordering guarantee relative to any other `send` or `push`, even same-source same-destination, because of the early cross-core publish path described above.
+- **`broadcast` fans out as independent sends**, so per-recipient ordering follows the same single-source rule, but there is no global ordering across recipients.
+
+Underlying these rules: `push` appends to the back of the per-source-core pipe and the pipe drains in FIFO order, so a single source draining into a single destination preserves insertion order. Because each `VirtualCore` is strictly single-threaded and an actor never migrates cores, a handler never runs concurrently with another handler on the same actor — ordering is observed exactly as the receiving core dequeues.
+
+## Bulk and large-payload sending
+
+For sending several events to one destination, or for events with large dynamic payloads, the framework exposes the underlying channel directly.
+
+### `to(dest)` — fluent chained pushes
+
+```cpp
+[[nodiscard]] EventBuilder to(ActorId dest) const noexcept;
+```
+<!-- src: qb/include/qb/core/Actor.h -->
+
+`to(dest)` returns an `Actor::EventBuilder` bound to the destination's pipe; each `EventBuilder::push` forwards to `Pipe::push` and returns the builder for chaining (`qb/core/Actor.tpp`). The pipe is resolved once, so repeated sends to the same destination skip the per-call lookup. Ordering matches plain `push`.
+
+```cpp
+// derived from: qb/source/core/tests/system/test-actor-event.cpp (EventBuilderPushActor)
+to(stats_id)
+    .push<CounterIncrement>("login_attempts")
+    .push<TimerStart>("session");
+```
+
+### `getPipe(dest)` and `allocated_push`
+
+```cpp
+[[nodiscard]] Pipe getPipe(ActorId dest) const noexcept;
+```
+<!-- src: qb/include/qb/core/Actor.h -->
+
+`getPipe` hands back the `qb::Pipe` to a destination. `Pipe` exposes `push` (identical semantics to `Actor::push`) and `allocated_push`, which takes a byte-size hint so the framework can reserve the right amount of pipe buffer up front and avoid reallocation while constructing a large event:
+
+```cpp
+// src: qb/include/qb/core/Pipe.h
+template <typename _Event, typename... _Args>
+[[nodiscard]] _Event &allocated_push(std::size_t size, _Args &&...args) const noexcept;
+```
+
+```cpp
+// derived from: qb/source/core/tests/system/test-actor-event.cpp (AllocatedPipePushActor); pattern from qb/include/qb/core/Pipe.h
+qb::Pipe pipe = getPipe(processor_id);
+auto blob = std::make_shared<std::vector<std::byte>>(1024 * 1024); // 1 MB
+// ... fill blob ...
+std::size_t hint = sizeof(BlobEvent) + blob->size();
+auto &ev = pipe.allocated_push<BlobEvent>(hint, blob);
+```
+
+If `size` is smaller than `sizeof(_Event)`, the framework silently uses `sizeof(_Event)`.
+
+> **Size the event small, not the payload.** The hint helps the *source pipe* reserve space, but the real ceiling is the destination mailbox. An event's total in-pipe footprint must fit the mailbox ring — about 1023 buckets (≈64 KiB) with the default bucket size. A larger event cannot be enqueued cross-core and will stall, stuck in the source pipe. Put bulk data on the heap behind a `std::shared_ptr` member and keep the event struct itself small; do not size `allocated_push` to the payload bytes. (`qb/core/Pipe.h`.)
+
+## Pitfalls
+
+- **`send` ordering and lifetime.** `send` does not preserve order, even same-source to same-destination. Reach for it only when ordering is irrelevant *and* the event is trivially destructible. The compile-time check fires only for `EventQOS0`-derived events, so derive fire-and-forget events from `qb::EventQOS0`; a non-trivial plain-`Event` type compiles but leaks its heap members on the cross-core path. The default answer is `push`.
+- **Non-const handler for `reply`/`forward`.** Both reuse the event object in place, so the handler must declare `void on(MyEvent &event)`. A `const` reference will not compile against `reply(event)` / `forward(dest, event)`.
+- **Using an event after `reply`/`forward`.** The event is consumed once handed back to the runtime. Reading or mutating it afterward is a use-after-consume bug.
+- **Replying to or forwarding a broadcast.** Both are silently dropped (logged at warn) when the destination is a broadcast id. Design request/response flows around unicast events.
+- **Oversized events stall cross-core.** An event larger than the mailbox ring capacity never delivers across cores and sits stuck in the source pipe. Keep events small; move bulk data to the heap.
+- **Allocation in an event constructor under OOM aborts the process.** Because the send path is `noexcept`, a throwing event constructor or a failed buffer growth calls `std::terminate()`. Construct events from already-allocated resources.
+- **Returned references are scope-bound.** The reference from `push` / `allocated_push` is valid only until control leaves the current handler. Do not store it.
+
+## See also
+
+- [The event system](../2_core_concepts/event_system.md) — defining events, `qb::string<N>` versus `std::string`, handler registration and dispatch.
+- [Writing actors with qb::Actor](./actor.md) — the full `Actor` API, lifecycle, and services.
+- [The engine: Main and VirtualCore](./engine.md) — cores, mailboxes, latency configuration, and scheduling.
+- [Actor patterns](./patterns.md) — request/response, routing, and fan-out built on these primitives.
+- [Concurrency model](../2_core_concepts/concurrency.md) — the single-threaded-per-core execution guarantees behind the ordering rules.

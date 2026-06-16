@@ -1,73 +1,48 @@
-@page readme_main QB Actor Framework README  
-@brief Main README for the QB Actor Framework, providing an overview and navigation.
+# qb documentation
 
-# QB Actor Framework
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-**High-Performance C++23 Actor Framework for Concurrent & Distributed Systems**
+The narrative guide to the qb actor framework, organized into seven sections for progressive learning, from first principles to production reference.
 
-## Overview
+**Prerequisites:** none — **See also:** [project README](../README.md) · [Getting started](./6_guides/getting_started.md)
 
-The QB Actor Framework is a modern **C++23** library (`CMAKE_CXX_STANDARD 23`) designed for building high-performance, scalable, and robust concurrent and distributed applications. It leverages the **Actor Model** paradigm and an efficient **Asynchronous I/O** foundation (`qb-io`) to simplify the development of complex systems.
+## About this guide
 
-QB provides developers with tools to manage concurrency through isolated actors and asynchronous message passing, while handling low-level I/O and system details efficiently.
+qb is a C++23 framework for concurrent and distributed systems built on the actor model. It pairs share-nothing actors with a non-blocking asynchronous I/O engine (`qb-io`) and native C++20/23 coroutines: `qb-core` is the actor engine, and `qb-io` is the runtime it stands on. This guide explains the model, the two libraries, and how to build with them.
 
-**Target Audience:** Experienced C++ developers familiar with concurrency concepts, asynchronous programming, and system design.
+The sections below progress from concepts to reference. New readers should follow them in order; experienced readers can jump to the section that matches the task at hand. Each section opens with its own index page that links to the pages within it.
 
-## Core Philosophy
+## Sections
 
-QB is built upon principles designed for performance and maintainability in concurrent environments:
+| # | Section | What it covers |
+|---|---|---|
+| 1 | [Introduction](./1_introduction/README.md) | What qb is, the design philosophy behind it, and when the actor model is the right fit. |
+| 2 | [Core concepts](./2_core_concepts/README.md) | The vocabulary: actors, the event system, the asynchronous I/O model, concurrency, and the threading model. |
+| 3 | [qb-io](./3_qb_io/README.md) | The asynchronous runtime: the event loop, transports, the protocol layer, coroutines, SSL/TLS, QUIC, and utilities. |
+| 4 | [qb-core](./4_qb_core/README.md) | The actor engine: `qb::Actor`, the `qb::Main` engine and `qb::VirtualCore` scheduling, messaging, and actor patterns. |
+| 5 | [Core and I/O integration](./5_core_io_integration/README.md) | How actors use `qb-io` together — async work inside actors and network actors — with worked examples. |
+| 6 | [Guides](./6_guides/README.md) | Task-oriented walkthroughs: getting started, patterns, performance tuning, error handling, resource management, and migration. |
+| 7 | [Reference](./7_reference/README.md) | API overview, build system, CMake options, core and I/O invariants, lock-free primitives, benchmarks, testing, FAQ, and glossary. |
 
-1.  **Actor Model:** State encapsulation and asynchronous message passing as the primary means of interaction, reducing complexity associated with shared state and locking. ([Read More](./1_introduction/philosophy.md#1-the-actor-model))
-2.  **Asynchronous I/O:** Non-blocking, event-driven I/O for high throughput and responsiveness, managed by the `qb-io` layer. ([Read More](./1_introduction/philosophy.md#2-asynchronous-io-qb-io))
-3.  **Performance:** Emphasis on multi-core scalability, efficient messaging (including lock-free mechanisms), and low-overhead abstractions. ([Read More](./1_introduction/philosophy.md#3-performance-and-efficiency))
+## Suggested reading order
 
-## High-Level Architecture
+1. Start with [Introduction](./1_introduction/README.md) to understand the model and decide whether it fits the problem.
+2. Read [Core concepts](./2_core_concepts/README.md) for the vocabulary used throughout the rest of the guide.
+3. Work through [Getting started](./6_guides/getting_started.md) to build and run a first actor.
+4. Go deeper into the library that matters for the task: [qb-core](./4_qb_core/README.md) for the actor engine, [qb-io](./3_qb_io/README.md) for the runtime.
+5. See the two combined in [Core and I/O integration](./5_core_io_integration/README.md), then consult [Guides](./6_guides/README.md) and [Reference](./7_reference/README.md) as needed.
 
-The framework consists of two main libraries:
+## Project policies
 
-*   **`qb-io`:** The foundational asynchronous I/O and utilities library. It can be used standalone.
-*   **`qb-core`:** The actor engine, built upon `qb-io`, providing the actor implementation, scheduling, and messaging.
-
-```
-+---------------------+      +----------------------+
-|    Your Application |      |   Framework Examples |
-+----------^----------+      +----------^-----------+
-           |                         |
-           |  Uses                   |  Uses
-           v                         v
-+-----------------------------------------------------+
-|                     qb-core                         |
-|    (qb::Actor, qb::Main, qb::VirtualCore, qb::Event)|
-+--------------------------^--------------------------+
-                           |
-                           | Depends on / Integrates with
-                           v
-+-----------------------------------------------------+
-|                      qb-io                          |
-| (async::io, transports, protocols, crypto, utils)   |
-+-----------------------------------------------------+
-                           |
-                           | Uses / Abstracts
-                           v
-+-----------------------------------------------------+
-|          System (libev, Sockets, Files, OS)         |
-+-----------------------------------------------------+
-```
-
-## Documentation Navigation
-
-This documentation provides a comprehensive guide to the QB framework:
-
-1.  **[Introduction](./1_introduction/)**: Detailed overview and core design philosophy.
-2.  **[Core Concepts](./2_core_concepts/)**: Fundamental ideas behind the framework (Actors, Events, Async IO, Concurrency).
-3.  **[QB-IO Module](./3_qb_io/)**: Deep dive into the asynchronous I/O library.
-4.  **[QB-Core Module](./4_qb_core/)**: Detailed exploration of the actor engine.
-5.  **[Core & IO Integration](./5_core_io_integration/)**: How actors utilize `qb-io` features, with example analysis.
-6.  **[Guides](./6_guides/)**: Practical tutorials and pattern implementations.
-7.  **[Reference](./7_reference/)**: Build system, testing procedures, and API summaries.
-
-**New Users:** Start with the **[Getting Started Guide](./6_guides/getting_started.md)**.
+| Document | Purpose |
+|---|---|
+| [INSTALL](../INSTALL.md) | Prerequisites, build, and installation instructions. |
+| [VERSIONING](../VERSIONING.md) | Semantic Versioning policy and the source of the version number. |
+| [CHANGELOG](../CHANGELOG.md) | Notable changes per release. |
+| [SECURITY](../SECURITY.md) | Supported versions and how to report a vulnerability. |
+| [SUPPORT](../SUPPORT.md) | Where to ask questions and get help. |
+| [CONTRIBUTING](../CONTRIBUTING.md) | How to propose changes and the contribution workflow. |
 
 ## License
 
-QB Actor Framework is licensed under the Apache License, Version 2.0. 
+Licensed under the Apache License, Version 2.0. See [LICENSE](../LICENSE).

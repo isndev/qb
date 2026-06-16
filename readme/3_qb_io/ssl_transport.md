@@ -1,120 +1,422 @@
-@page qb_io_ssl_transport_md QB-IO: Secure TCP with SSL/TLS
-@brief Enabling encrypted TCP communication in `qb-io` using OpenSSL.
+# Secure TCP with SSL/TLS
 
-# QB-IO: Secure TCP with SSL/TLS
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-`qb-io` provides robust support for secure TCP communication through SSL/TLS, leveraging the OpenSSL library. This allows you to encrypt data streams, ensuring confidentiality and integrity for your networked applications.
+`qb-io` layers OpenSSL-backed SSL/TLS over its TCP stack, with secure-by-default client verification, a context-owning listener, and a stream transport that drains OpenSSL's internal buffers.
 
-**Prerequisites:**
+**Prerequisites:** [Transports](./transports.md), [Asynchronous I/O system](./async_system.md) — **See also:** [Native QUIC transport](./quic_transport.md), [qb-io utilities](./utilities.md)
 
-*   The `QB_IO_WITH_SSL` CMake option must be **ON** during the build of the QB framework.
-*   The OpenSSL library (development headers and libraries) must be installed and accessible on your system.
+## Summary
 
-## Core SSL/TLS Components in `qb-io`
+Secure TCP in `qb-io` is the plain TCP stack with an OpenSSL encryption layer spliced
+underneath the same stream and async interfaces. The pieces are:
 
-`qb-io` extends its standard TCP components with SSL/TLS capabilities:
+- `qb::io::tcp::ssl::socket` — a `tcp::socket` that owns an OpenSSL `SSL*` and runs the
+  handshake plus transparent `SSL_read`/`SSL_write`.
+- `qb::io::tcp::ssl::listener` — a `tcp::listener` that owns an `SSL_CTX` and mints a
+  configured `ssl::socket` per accepted connection.
+- `qb::io::transport::stcp` — the `stream<ssl::socket>` specialization that backs every
+  asynchronous secure session.
+- Free functions in `qb::io::ssl` for building and configuring `SSL_CTX` objects.
 
-1.  **`qb::io::tcp::ssl::socket`** (from `qb/io/tcp/ssl/socket.h`)
-    *   **Purpose:** This class is your secure TCP socket. It wraps a standard `qb::io::tcp::socket` and transparently layers SSL/TLS encryption and decryption over it using an OpenSSL `SSL*` handle.
-    *   **Key Functionality:** Manages the SSL handshake process (client-side `connect()`, server-side after `accept()`). All data passed through its `read()` and `write()` methods is automatically encrypted/decrypted.
-    *   **Initialization:** Before connecting or accepting, an `ssl::socket` must be associated with an OpenSSL context (`SSL_CTX*`) via its `init(SSL_CTX* ctx)` method or by being constructed/assigned from an already SSL-enabled socket.
-    *   **Advanced Access:** `ssl_handle()` provides direct access to the underlying `SSL*` object if you need fine-grained control over OpenSSL settings.
+The whole slice compiles only when the build was configured with OpenSSL available; see
+[Build gating](#build-gating). Throughout, the socket and listener follow `qb-io`'s
+ownership conventions: they are move-only, and the listener owns its `SSL_CTX` for its
+lifetime.
 
-2.  **`qb::io::tcp::ssl::listener`** (from `qb/io/tcp/ssl/listener.h`)
-    *   **Purpose:** This class acts as a secure TCP server, listening for incoming connections and performing the server-side SSL/TLS handshake.
-    *   **Functionality:** It requires an `SSL_CTX*` configured with the server's certificate and private key. When `accept()` is called, it first accepts a standard TCP connection and then establishes the SSL/TLS session over it, returning a fully secured `qb::io::tcp::ssl::socket` ready for communication.
-    *   **Initialization:** Call `init(SSL_CTX* ctx)` with a server-configured SSL context *before* invoking `listen()`.
+## Build gating
 
-3.  **SSL Context Creation Helpers** (in `qb/io/tcp/ssl/socket.h` namespace `qb::io::ssl`)
-    *   `qb::io::ssl::create_client_context(const SSL_METHOD* method)`: Simplifies creating an `SSL_CTX*` suitable for SSL/TLS clients (e.g., using `TLS_client_method()`).
-    *   `qb::io::ssl::create_server_context(const SSL_METHOD* method, const std::string& cert_path, const std::string& key_path)`: Creates an `SSL_CTX*` for servers, loading the server's certificate and private key from the specified PEM-encoded files.
-    *   **Note:** The caller is responsible for freeing the returned `SSL_CTX*` using `SSL_CTX_free()` when it's no longer needed (typically managed by the actor or class that owns the listener/socket).
+The SSL transport is an optional feature. The CMake option `QB_WITH_SSL` defaults to `ON`,
+but OpenSSL is found by `find_package(OpenSSL QUIET)` and is **never** fetched. If OpenSSL
+is not present, `QB_WITH_SSL` is forced `OFF`, the resolved capability `QB_HAS_SSL` becomes
+false, and the entire SSL/TLS slice is absent.
 
-4.  **Secure TCP Transport: `qb::io::transport::stcp`** (from `qb/io/transport/stcp.h`)
-    *   **Purpose:** This is the specialized `qb::io::stream` implementation for secure TCP. It uses `qb::io::tcp::ssl::socket` as its underlying I/O mechanism.
-    *   **Base Class:** Inherits from `qb::io::stream<qb::io::tcp::ssl::socket>`.
-    *   **Key Behavior:** Its `read()` method is aware of OpenSSL's internal buffering. After performing a socket read, it calls `SSL_pending()` to check if OpenSSL has already decrypted and buffered additional data. If so, it performs further reads from the SSL layer to ensure all application data is retrieved promptly and not left in OpenSSL's internal buffers.
+<!-- src: qb/cmake/qbConfig.cmake:101, qb/cmake/qbDependencies.cmake:124-146 -->
 
-## Integrating Secure Transports with Asynchronous Components
+| Symbol | Meaning |
+| --- | --- |
+| `QB_WITH_SSL` | User-facing request (CMake option, default `ON`). Forced `OFF` if OpenSSL is missing. |
+| `QB_HAS_SSL` | Resolved capability after dependency probing. Gates the compile definition and the headers below. |
 
-For actor-based development or other asynchronous classes, `qb-io` provides `qb::io::use<>` helper templates (in `qb/io/async.h`) to simplify integration:
+All SSL headers (`qb/io/tcp/ssl/socket.h`, `qb/io/tcp/ssl/listener.h`,
+`qb/io/transport/stcp.h`) require an OpenSSL-enabled build. The `use<>::tcp::ssl` async
+aliases in `qb/io/async.h` are themselves guarded by `#ifdef QB_HAS_SSL`, so code that
+references them must also be compiled under that definition.
 
-*   `use<MyActor>::tcp::ssl::client<ServerActor = void>`: Base for an actor that acts as an SSL/TLS client.
-*   `use<MyActor>::tcp::ssl::acceptor`: Base for an actor that accepts incoming SSL/TLS connections.
-*   `use<MyActor>::tcp::ssl::server<SessionActor>`: A comprehensive base for an actor that acts as an SSL/TLS server, combining an acceptor and managing `SessionActor` instances for each client.
-*   `use<MyActor>::tcp::ssl::io_handler<SessionActor>`: If you need more custom server logic, this provides the session management part for SSL sessions.
+<!-- src: qb/include/qb/io/async.h:114-127 -->
 
-These helpers ensure that the correct secure transport (`transport::stcp`) and socket (`tcp::ssl::socket`) types are used automatically.
+> The crypto and JWT toolbox (`qb/io/crypto.h`) shares this OpenSSL dependency and `#error`s
+> at compile time unless `QB_HAS_SSL` is defined. A non-SSL build has neither secure
+> transport nor the crypto utilities.
 
-## Implementing an SSL/TLS Server
+## Core components
 
-1.  **Certificates:** Obtain or generate your server certificate (`.pem` file) and corresponding private key (`.pem` file). For testing, self-signed certificates can be created using OpenSSL command-line tools (see `test-io/system/CMakeLists.txt` for an example command: `openssl req -x509 ...`).
-2.  **SSL Context (`SSL_CTX`):** In your server actor (or main setup code):
-    ```cpp
-    #include <qb/io/tcp/ssl/socket.h> // For create_server_context, SSL_CTX_free
-    // ... other necessary includes ...
+### `qb::io::tcp::ssl::socket`
 
-    SSL_CTX* _server_ssl_ctx = nullptr; // Typically a member of your server/acceptor actor
+Declared in `qb/io/tcp/ssl/socket.h`. Inherits `qb::io::tcp::socket` and owns the OpenSSL
+`SSL*` through a `std::unique_ptr<SSL, …>`. It is move-only (the copy constructor is
+deleted; move construction and move assignment are defaulted), so ownership of both the
+native handle and the `SSL` object transfers on move.
 
-    // In constructor or onInit of your server/acceptor actor:
-    const char* my_cert_path = "path/to/your/server_cert.pem";
-    const char* my_key_path = "path/to/your/server_key.pem";
-    _server_ssl_ctx = qb::io::ssl::create_server_context(TLS_server_method(), my_cert_path, my_key_path);
-    if (!_server_ssl_ctx) {
-        // Handle error: Failed to create context or load certificate/key files
-        throw std::runtime_error("Server SSL context creation failed. Check paths and OpenSSL errors.");
+```cpp
+class QB_API socket : public tcp::socket {
+    // ...
+public:
+    constexpr static bool is_secure() noexcept { return true; }
+
+    void init(SSL *handle = nullptr) noexcept;
+
+    int connect(endpoint const &ep, std::string const &hostname = "") noexcept;
+    int connect(uri const &u) noexcept;
+    int connect_v4(std::string const &host, uint16_t port) noexcept;
+    int connect_v6(std::string const &host, uint16_t port) noexcept;
+
+    int n_connect(qb::io::endpoint const &ep, std::string const &hostname = "") noexcept;
+    int connected() noexcept;          // drives SSL_connect/SSL_accept after non-blocking connect
+
+    int handshake_status() noexcept;   // 1 done, 0 needs I/O, -1 fatal
+    [[nodiscard]] bool handshake_complete() const noexcept;
+
+    int read(void *data, std::size_t size) noexcept;        // SSL_read
+    int write(const void *data, std::size_t size) noexcept; // SSL_write
+    int disconnect() noexcept;                              // SSL_shutdown + base disconnect
+
+    void set_insecure() noexcept;                           // opt out of peer verification
+    [[nodiscard]] bool verify_peer() const noexcept;
+
+    [[nodiscard]] SSL *ssl_handle() const noexcept;
+};
+```
+<!-- src: qb/include/qb/io/tcp/ssl/socket.h:335-744 -->
+
+Key behaviors verified in the header:
+
+- **Initialization.** A default-constructed `ssl::socket` is uninitialized. `init(SSL*)`
+  takes ownership of an `SSL` handle (created with `SSL_new` from an `SSL_CTX`). The
+  blocking `connect*` family builds an `SSL_CTX` and handle for you when none is supplied,
+  which is why those calls work directly on a default-constructed socket.
+- **Return convention.** `connect*` and `n_connect*` return `int`: `0` on success (the
+  value of `qb::io::SocketStatus::Done`), non-zero on failure. A failed peer-verification
+  surfaces as `qb::io::SocketStatus::CertificateError` (value `1`).
+  <!-- src: qb/include/qb/io/system/sys__socket.h:1563-1567 -->
+- **Handshake progress.** `handshake_status()` returns `1` when the TLS handshake is
+  complete, `0` when OpenSSL needs more socket readiness (`WANT_READ`/`WANT_WRITE`), and
+  `-1` on a fatal error. `handshake_complete()` reports whether it finished successfully.
+  `do_handshake()` is an inline alias for the internal handshake check.
+- **Read drains less than requested.** `read()` returns the number of decrypted bytes,
+  `0` on an orderly peer shutdown, and a negative value on error. Because OpenSSL can hold
+  already-decrypted application data internally, generic streaming code should use
+  `transport::stcp`, which handles `SSL_pending()` for you (see [The stcp transport](#the-stcp-transport)).
+
+#### Secure by default
+
+When `qb-io` builds the client `SSL_CTX` itself — the usual `connect()` / `n_connect()` /
+async-connector path — it loads the system trust store, enables `SSL_VERIFY_PEER`, and
+verifies the server certificate against the target hostname or IP. A connection to a host
+whose certificate does not validate **fails**.
+
+```cpp
+// Verifying client (default): rejects a self-signed or untrusted certificate.
+qb::io::tcp::ssl::socket c;
+int rc = c.connect_v4("example.com", 443);   // 0 only if the chain + hostname verify
+```
+
+To opt out — self-signed certificates in tests, pinning handled elsewhere, or a channel
+trusted by other means — call `set_insecure()` **before** `connect()` / `n_connect()`.
+
+```cpp
+// Opt out of verification for a local self-signed fixture.
+qb::io::tcp::ssl::socket c;
+c.set_insecure();                            // disables MITM protection — use deliberately
+int rc = c.connect_v4("127.0.0.1", 64388);
+```
+<!-- src: qb/source/io/tests/system/test-async-io.cpp:786-801 -->
+
+When you supply your own `SSL` handle through `init(SSL*)`, `qb-io` does **not** modify the
+verification policy; your context's settings are used as-is.
+
+<!-- src: qb/include/qb/io/tcp/ssl/socket.h:716-739 -->
+
+#### Pre-handshake configuration
+
+These settings must be applied **before** the handshake. SNI and ALPN values are cached on
+the socket and applied once the `SSL` handle exists, so they are valid to set before
+`connect()` / `n_connect()`:
+
+| Method | Purpose |
+| --- | --- |
+| `set_sni_hostname(const std::string&)` | Server Name Indication for the next handshake. |
+| `set_alpn_protocols(const std::vector<std::string>&)` | Offer ALPN protocols (e.g. `{"h2", "http/1.1"}`). |
+| `set_verify_callback(int(*)(int, X509_STORE_CTX*), int mode)` | Per-connection X.509 verification callback. |
+| `set_verify_depth(int)` | Maximum verification chain depth. |
+| `disable_session_resumption()` | Sets `SSL_OP_NO_TICKET` and clears any cached session. |
+| `request_ocsp_stapling(bool)` | Request a stapled OCSP response from the server. |
+| `set_session(qb::io::ssl::Session&)` | Offer a previously cached session for resumption. |
+| `set_insecure()` | Disable peer verification on the auto-created context. |
+
+<!-- src: qb/include/qb/io/tcp/ssl/socket.h:614-714 -->
+
+#### Introspection and sessions
+
+After a successful handshake the socket exposes: `get_negotiated_cipher_suite()`,
+`get_negotiated_tls_version()`, `get_alpn_selected_protocol()`,
+`get_peer_certificate_details()`, `get_peer_certificate_chain()`, and
+`get_last_ssl_error_string()`.
+
+`get_session()` returns a `qb::io::ssl::Session` for client-side resumption. The caller
+owns it and must release it with `qb::io::ssl::free_session()`. Setting a session does not
+guarantee resumption — the server must agree.
+
+<!-- src: qb/include/qb/io/tcp/ssl/socket.h:583-663 -->
+
+### `qb::io::tcp::ssl::listener`
+
+Declared in `qb/io/tcp/ssl/listener.h`. Inherits `qb::io::tcp::listener` and owns an
+`SSL_CTX` through a `std::unique_ptr<SSL_CTX, …>`. It is move-only.
+
+```cpp
+class QB_API listener : public tcp::listener {
+    std::unique_ptr<SSL_CTX, void (*)(SSL_CTX *)> _ctx;
+public:
+    constexpr static bool is_secure() noexcept { return true; }
+
+    void init(SSL_CTX *ctx) noexcept;          // takes ownership; call before listen()
+
+    ssl::socket accept() const noexcept;
+    int         accept(ssl::socket &socket) const noexcept;
+
+    [[nodiscard]] SSL_CTX *ssl_handle() const noexcept;
+    // plus context configuration: configure_mtls, set_tls_protocol_versions,
+    // set_cipher_list, set_supported_alpn_protocols, enable_session_caching, ...
+};
+```
+<!-- src: qb/include/qb/io/tcp/ssl/listener.h:42-291 -->
+
+- **Context ownership.** `init(SSL_CTX*)` transfers ownership of the context to the
+  listener, which frees it on destruction. Call `init()` **before** `listen()`.
+- **Accept.** Both `accept()` overloads first perform a plain TCP accept, then create an
+  `SSL` object from `_ctx` and associate it with the accepted descriptor. The returned
+  (or filled) `ssl::socket` still needs its handshake driven — by `connected()` /
+  `do_handshake()` for manual use, or automatically by the async server machinery.
+- **Server configuration.** The listener forwards a wide range of context settings,
+  including `configure_mtls()` for client-certificate (mTLS) authentication,
+  `set_tls_protocol_versions()`, `set_cipher_list()` / `set_ciphersuites_tls13()`,
+  `set_supported_alpn_protocols()`, `enable_session_caching()`,
+  `configure_dh_parameters()`, and `configure_ecdh_curves()`. Each returns `false` if the
+  context is not initialized.
+
+### The stcp transport
+
+`qb::io::transport::stcp` (in `qb/io/transport/stcp.h`) is the
+`qb::io::stream<qb::io::tcp::ssl::socket>` specialization that backs every asynchronous
+secure session. Its `read()` does a socket read, then checks `SSL_pending()` and performs a
+second read for any application data OpenSSL has already decrypted and buffered internally.
+Without that drain, decrypted bytes would be stranded until the next socket readiness
+event. Both `read()` results are bounded by `_max_read_buffer_size` and return
+`ErrBufferLimitExceeded` if the cap would be exceeded.
+
+<!-- src: qb/include/qb/io/transport/stcp.h:44-89 -->
+
+### SSL context helpers
+
+Free functions in namespace `qb::io::ssl` (declared in `qb/io/tcp/ssl/socket.h`) build and
+configure `SSL_CTX` objects.
+
+```cpp
+namespace qb::io::ssl {
+
+SSL_CTX *create_client_context(const SSL_METHOD *method);
+
+SSL_CTX *create_server_context(const SSL_METHOD *method,
+                               std::filesystem::path cert_path,
+                               std::filesystem::path key_path);
+
+// Context configuration (each returns bool):
+bool load_ca_certificates(SSL_CTX *ctx, const std::string &ca_file_path);
+bool set_tls_protocol_versions(SSL_CTX *ctx, int min_version, int max_version);
+bool configure_mtls_server_context(SSL_CTX *ctx, const std::string &client_ca_file_path,
+                                   int verification_mode = SSL_VERIFY_PEER);
+bool set_alpn_protos_client(SSL_CTX *ctx, const std::vector<std::string> &protocols);
+// ... cipher lists, OCSP, DH/ECDH, keylog, session caching, PHA, and more.
+
+} // namespace qb::io::ssl
+```
+<!-- src: qb/include/qb/io/tcp/ssl/socket.h:36-318 -->
+
+`create_client_context` and `create_server_context` return `nullptr` on failure (for
+example when the certificate or key file cannot be loaded). **The caller owns the returned
+`SSL_CTX` and must release it with `SSL_CTX_free()`** — except when it is handed to a
+`listener` via `init()`, which then owns and frees it.
+
+`create_server_context` takes `std::filesystem::path` arguments for the PEM-encoded
+certificate and private key, not raw `const char*` paths.
+
+## Building an SSL server
+
+Inherit from the async SSL server alias, build a server context from the certificate and key
+file paths, and hand it to the transport's listener before listening. The aliases (verified in
+`qb/io/async.h`) are:
+
+| Alias | Role |
+| --- | --- |
+| `use<T>::tcp::ssl::acceptor` | Accepts connections; you handle each accepted `ssl::socket`. |
+| `use<T>::tcp::ssl::server<Session>` | Acceptor plus per-client `Session` management. |
+| `use<T>::tcp::ssl::io_handler<Session>` | Session-management mixin for custom servers. |
+| `use<T>::tcp::ssl::client<Server = void>` | Secure client session over `transport::stcp`. |
+
+<!-- src: qb/include/qb/io/async.h:114-127 -->
+
+```cpp
+// src: qb/source/io/tests/system/test-async-io.cpp:623-746 (adapted)
+#include <qb/io/async.h>
+#include <qb/io/protocol/text.h>
+#include <qb/io/tcp/ssl/socket.h>   // qb::io::ssl::create_server_context
+
+using namespace qb::io;
+
+class SecureServer;
+
+// One session per accepted client. The transport is transport::stcp.
+class SecureSession
+    : public use<SecureSession>::tcp::ssl::client<SecureServer> {
+public:
+    using Protocol = qb::protocol::text::command<SecureSession>;
+
+    explicit SecureSession(IOServer &server) : client(server) {}
+
+    void on(Protocol::message &&msg) {
+        *this << msg.text << Protocol::end;   // echo back, still encrypted
     }
-    // Remember to free the context, e.g., in the actor's destructor:
-    // if (_server_ssl_ctx) { SSL_CTX_free(_server_ssl_ctx); _server_ssl_ctx = nullptr; }
-    ```
-3.  **Acceptor/Server Actor:** Inherit from `qb::io::use<MyAcceptor>::tcp::ssl::acceptor` or `qb::io::use<MyServer>::tcp::ssl::server<MySession>`.
-4.  **Initialize Listener Transport:** Before listening, associate the `SSL_CTX` with the listener's transport:
-    ```cpp
-    // Inside your acceptor/server actor's onInit (after creating _server_ssl_ctx):
-    this->transport().init(_server_ssl_ctx);
-    ```
-5.  **Listen:** Call `this->transport().listen_v4(port, host);` (or `listen_v6`, `listen(uri)`).
-6.  **Start Accepting:** Call `this->start();` (method from the `qb::io::async` base like `async::input`).
-7.  **Handle New Secure Connections:** Implement `on(accepted_socket_type&& new_secure_socket)` (for acceptors) or `on(IOSession& new_secure_session)` (for combined servers). The accepted socket/session will be an `ssl::socket` or a session class using `transport::stcp`.
+};
 
-**(Reference Example:** `test-async-io.cpp` (SSL test), `test-session-text.cpp` (Secure test).**)
+class SecureServer
+    : public use<SecureServer>::tcp::ssl::server<SecureSession> {
+public:
+    void on(IOSession &) { /* a new secure session was established */ }
+};
 
-## Implementing an SSL/TLS Client
+void run_server(const std::string &cert_path, const std::string &key_path) {
+    async::init();
 
-1.  **SSL Context (`SSL_CTX`):** In your client actor (or setup code):
-    ```cpp
-    #include <qb/io/tcp/ssl/socket.h> // For create_client_context, SSL_CTX_free
-    // ... other necessary includes ...
+    SecureServer server;
+    // create_server_context returns nullptr on failure; the listener takes
+    // ownership of the SSL_CTX and frees it on destruction.
+    server.transport().init(
+        ssl::create_server_context(TLS_server_method(), cert_path, key_path));
 
-    SSL_CTX* _client_ssl_ctx = nullptr; // Typically a member of your client actor
+    server.transport().listen_v4(64384);   // 0 on success
+    server.start();                        // begin accepting on the event loop
 
-    // In constructor or onInit of your client actor:
-    _client_ssl_ctx = qb::io::ssl::create_client_context(TLS_client_method());
-    if (!_client_ssl_ctx) {
-        throw std::runtime_error("Client SSL context creation failed.");
+    while (true)
+        async::run(EVRUN_ONCE);
+}
+```
+
+The server-side handshake is driven by the async machinery as each connection is accepted;
+you never call `SSL_accept` directly. For listeners that need mTLS, protocol pinning, or
+specific cipher policy, configure the context (or the listener's forwarding methods) before
+`listen()`.
+
+## Building an SSL client
+
+The default client verifies the peer. Against a public CA-signed server, a plain
+`connect_v4(host, port)` is sufficient. For a self-signed test fixture, opt out with
+`set_insecure()` before connecting.
+
+```cpp
+// src: qb/source/io/tests/system/test-async-io.cpp:661-732 (adapted)
+#include <qb/io/async.h>
+#include <qb/io/protocol/text.h>
+
+using namespace qb::io;
+
+class SecureClient : public use<SecureClient>::tcp::ssl::client<> {
+public:
+    using Protocol = qb::protocol::text::command<SecureClient>;
+
+    void on(Protocol::message &&msg) {
+        // received a decrypted, framed message
     }
-    // Optional: Configure server certificate verification (recommended for production)
-    // SSL_CTX_set_verify(_client_ssl_ctx, SSL_VERIFY_PEER, nullptr); // custom_verify_callback can be nullptr
-    // if (!SSL_CTX_load_verify_locations(_client_ssl_ctx, "/path/to/ca_bundle.pem", nullptr)) {
-    //     // Handle error loading CA certificates
-    // }
-    // Remember to free the context in the actor's destructor.
-    ```
-2.  **Client Actor:** Inherit from `qb::io::use<MyClient>::tcp::ssl::client`.
-3.  **Initialize Client Transport:** Before connecting, associate the `SSL_CTX`:
-    ```cpp
-    // Inside your client actor's onInit (after creating _client_ssl_ctx):
-    this->transport().init(_client_ssl_ctx);
-    ```
-4.  **Connect:** Use the transport's connect methods, e.g., `this->transport().connect_v4(host, port, sni_hostname);` or `this->transport().n_connect(endpoint, sni_hostname);`. Providing the `sni_hostname` is important for Server Name Indication.
-    For fully asynchronous connection (using `n_connect`), you'll typically use `qb::io::async::tcp::connect<qb::io::tcp::ssl::socket>(uri_or_endpoint, sni_hostname, connect_callback_lambda);`.
-5.  **Handshake:** The SSL handshake occurs as part of the connection process.
-    *   For blocking `connect`, it completes before returning.
-    *   For non-blocking `n_connect` (or when using `async::tcp::connect`), the `connect_callback_lambda` receives the TCP-connected `ssl::socket`. You then typically call `this->transport() = std::move(accepted_socket); this->switch_protocol<MyProtocol>(*this); this->start(); this->transport().connected();` where `transport().connected()` finalizes the SSL handshake.
-6.  **Communicate Securely:** Once connected and the handshake is complete, use `*this << ...;` or `in()`/`out()` methods as with regular TCP. The `transport::stcp` handles encryption/decryption.
+};
 
-**(Reference Example:** `test-async-io.cpp` (SSL test), `test-session-text.cpp` (Secure test).**)
+void run_client() {
+    async::init();
 
-By following these patterns, you can seamlessly integrate SSL/TLS encryption into your QB applications, enhancing their security.
+    SecureClient client;
 
-**(Next:** [QB-IO: Utilities](./utilities.md)**) 
+    // Local self-signed server on 127.0.0.1: opt out of the default
+    // peer verification. Omit this line for a CA-signed endpoint.
+    client.transport().set_insecure();
+
+    if (SocketStatus::Done !=
+        client.transport().connect_v4("127.0.0.1", 64384)) {
+        throw std::runtime_error("could not connect to secure server");
+    }
+
+    client.start();
+    client << "ping" << '\n';   // encrypted on the wire
+
+    while (true)
+        async::run(EVRUN_ONCE);
+}
+```
+
+For verified production clients, set SNI before connecting so the certificate is checked
+against the intended hostname:
+
+```cpp
+SecureClient client;
+client.transport().set_sni_hostname("api.example.com");   // before connect
+if (SocketStatus::Done != client.transport().connect_v4("api.example.com", 443))
+    throw std::runtime_error("TLS connect/verify failed");
+```
+<!-- src: qb/include/qb/io/tcp/ssl/socket.h:677-696 -->
+
+## Generating a test certificate
+
+The framework's own SSL tests generate a self-signed certificate with OpenSSL. The exact
+command (RSA-2048, `CN=localhost`, 365-day validity, with a `subjectAltName` so hostname
+verification can pass for `localhost`) is:
+
+```bash
+# src: qb/source/io/tests/system/CMakeLists.txt:133-136
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
+    -days 365 -nodes \
+    -subj "/CN=localhost/O=QB Tests/C=US" \
+    -addext "subjectAltName = DNS:localhost"
+```
+
+A self-signed certificate is rejected by a default (verifying) client; pair it with
+`set_insecure()` on the client, or add the certificate to the client's trust store.
+
+## Pitfalls
+
+- **The slice vanishes without OpenSSL.** If OpenSSL is not found, `QB_WITH_SSL` is forced
+  `OFF`, the headers are unavailable, and the `use<>::tcp::ssl` aliases do not exist. Verify
+  `QB_HAS_SSL` in the build configuration before depending on any of this.
+- **Verification is on by default.** A default client connection to a self-signed or
+  otherwise untrusted server **fails**. This is intended MITM hardening. Use
+  `set_insecure()` only for trusted channels, and call it before `connect()` / `n_connect()`.
+- **Set SNI before the handshake.** For verified clients, call `set_sni_hostname()` before
+  connecting so the certificate is checked against the right name. Without a server name,
+  the chain is validated but the hostname is not.
+- **Pre-handshake settings are time-sensitive.** SNI, ALPN, verification callbacks, session
+  offers, OCSP requests, and `set_insecure()` must be set before the handshake starts.
+- **Timed connect does not bound the handshake.** The timed `connect(ep, hostname, wtimeout)`
+  overloads bound only the underlying TCP connect phase; the TLS handshake itself is not
+  separately timed.
+  <!-- src: qb/include/qb/io/tcp/ssl/socket.h:441-457 -->
+- **`SSL_CTX` ownership splits by path.** A context from `create_*_context` is caller-owned
+  and must be `SSL_CTX_free`d — unless it is passed to `listener::init()`, which then owns
+  and frees it. A `Session` from `get_session()` is always caller-owned; release it with
+  `free_session()`.
+- **Use `stcp` for streaming, not raw `read()`.** OpenSSL may buffer decrypted data
+  internally. `transport::stcp::read()` drains `SSL_pending()`; the raw `socket::read()`
+  does not, so a hand-rolled read loop can strand already-decrypted bytes.
+
+## See also
+
+- [Transports](./transports.md) — how `stcp` fits the stream/transport model.
+- [Asynchronous I/O system](./async_system.md) — the event loop and `use<>` helpers.
+- [Native QUIC transport](./quic_transport.md) — the alternative encrypted transport.
+- [qb-io utilities](./utilities.md) — the OpenSSL-backed crypto toolbox that shares this dependency.

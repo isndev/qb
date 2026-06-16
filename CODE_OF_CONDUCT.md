@@ -59,9 +59,11 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-**[INSERT CONTACT METHOD - e.g., project email address or link to reporting instructions]**.
-All complaints will be reviewed and investigated promptly and fairly.
+reported privately to the project maintainers. If you are unsure how to reach a
+maintainer directly, open a confidential report through the repository's
+**Security** tab ("Report a vulnerability"), which the maintainers monitor, and
+mark it as a conduct matter. All complaints will be reviewed and investigated
+promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the
 reporter of any incident.
