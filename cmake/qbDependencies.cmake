@@ -307,7 +307,7 @@ set(QB_INTERNAL_MODULES_PATH "${QB_MODULES_DIR}")
 # Header-only internal modules whose include directories must be available
 # to qb-io / qb-core (and transitively to their dependents).
 # We collect them here; _qb_apply_target_properties() propagates them via
-# PUBLIC $<BUILD_INTERFACE:${QB_MODULES_DIR}> on every qb target.
+# qb's common usage properties on every qb/qbm target.
 set(QB_HEADER_ONLY_MODULES nanolog nlohmann ska_hash)
 
 # Internal modules list (for logging / diagnostics only)
@@ -441,10 +441,11 @@ if(LIBEV_FOUND)
     list(APPEND QB_COMPILE_DEFINITIONS "QB_HAS_LIBEV=1")
 endif()
 
-# Publish the finalized compile definitions to CACHE INTERNAL so qb_apply_compiler_flags()
-# sees the full set from every scope (qb itself relies on the local variable; qbm/* and
-# examples, added by the top-level project, rely on this cache copy). Same rationale as
-# QB_CXX_FLAGS_* in qbCompiler and QB_PLATFORM_* in qbConfig.
+# Publish the finalized compile definitions to CACHE INTERNAL so qb's common
+# target usage properties see the full set from every scope (qb itself relies on
+# the local variable; qbm/* and examples, added by the top-level project, rely on
+# this cache copy). Same rationale as QB_CXX_FLAGS_* in qbCompiler and
+# QB_PLATFORM_* in qbConfig.
 set(QB_COMPILE_DEFINITIONS "${QB_COMPILE_DEFINITIONS}" CACHE INTERNAL "")
 
 # Mark dependencies as loaded

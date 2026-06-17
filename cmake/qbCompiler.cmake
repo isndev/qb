@@ -373,9 +373,6 @@ function(qb_apply_compiler_flags target)
         target_compile_options(${target} PRIVATE ${QB_SANITIZE_COMPILE_OPTS})
     endif()
 
-    # Apply compile definitions (PUBLIC for ABI consistency)
-    target_compile_definitions(${target} PUBLIC ${QB_COMPILE_DEFINITIONS})
-    
     # Link threads if needed
     if(CMAKE_USE_PTHREADS_INIT)
         target_link_libraries(${target} PRIVATE Threads::Threads)

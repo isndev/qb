@@ -31,22 +31,50 @@ set(QB_FUNCTIONS_INCLUDED TRUE)
 # Internal Helper Functions
 # -----------------------------------------------------------------------------
 
+# Internal function to choose the correct usage scope for a target.
+function(_qb_target_usage_scope target out_var)
+    get_target_property(_qb_target_type ${target} TYPE)
+    if(_qb_target_type STREQUAL "INTERFACE_LIBRARY")
+        set(${out_var} INTERFACE PARENT_SCOPE)
+    else()
+        set(${out_var} PUBLIC PARENT_SCOPE)
+    endif()
+endfunction()
+
+# Internal function to apply qb's transitive usage requirements.
+function(_qb_apply_target_usage_properties target)
+    _qb_target_usage_scope(${target} _qb_usage_scope)
+
+    # Propagate the C++23 requirement as a usage requirement so consumers linking
+    # qb/qbm targets compile at the framework-required language level. The
+    # CXX_STANDARD target property below is not transitive.
+    target_compile_features(${target} ${_qb_usage_scope} cxx_std_${QB_CXX_STANDARD})
+
+    # Add include directories with the same scope. For INTERFACE modules this is
+    # their whole build contract; for compiled targets it is also inherited by
+    # downstream consumers.
+    target_include_directories(${target}
+        ${_qb_usage_scope}
+            "$<BUILD_INTERFACE:${QB_INCLUDE_DIR}>"
+            "$<BUILD_INTERFACE:${QB_MODULES_DIR}>"
+            "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+    )
+
+    if(QB_COMPILE_DEFINITIONS)
+        target_compile_definitions(${target} ${_qb_usage_scope} ${QB_COMPILE_DEFINITIONS})
+    endif()
+endfunction()
+
 # Internal function to apply common target properties
 function(_qb_apply_target_properties target)
     # Set C++ standard
     set_target_properties(${target} PROPERTIES
-        CXX_STANDARD 23
+        CXX_STANDARD ${QB_CXX_STANDARD}
         CXX_STANDARD_REQUIRED ON
         CXX_EXTENSIONS OFF
     )
 
-    # Propagate the C++23 requirement as a PUBLIC usage requirement so that any
-    # consumer linking this target (via find_package(qb) or add_subdirectory) is
-    # forced to compile at >= C++23. The CXX_STANDARD property above is a private,
-    # non-transitive setting; without this line a downstream target built at an
-    # older standard would fail cryptically on qb's public headers (coroutines,
-    # std::expected, concepts).
-    target_compile_features(${target} PUBLIC cxx_std_23)
+    _qb_apply_target_usage_properties(${target})
 
     # Apply compiler flags
     qb_apply_compiler_flags(${target})
@@ -57,14 +85,6 @@ function(_qb_apply_target_properties target)
     # Output directories come from the global CMAKE_*_OUTPUT_DIRECTORY set politely in
     # qbConfig (tests/benchmarks override to their own bin/ subdir). No per-target
     # override here, so an embedding parent's chosen layout is respected.
-
-    # Add include directories (PUBLIC so they're inherited by dependents)
-    target_include_directories(${target} 
-        PUBLIC 
-            "$<BUILD_INTERFACE:${QB_INCLUDE_DIR}>"
-            "$<BUILD_INTERFACE:${QB_MODULES_DIR}>"
-            "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
-    )
 endfunction()
 
 # Internal function to parse common arguments
@@ -107,9 +127,12 @@ function(_qb_apply_dependencies target dependencies)
         endif()
     endforeach()
     
-    # Apply resolved dependencies
+    # Apply resolved dependencies. INTERFACE libraries cannot consume PUBLIC or
+    # PRIVATE items, so header-only qb modules receive the same dependencies as
+    # usage requirements.
     if(resolved_deps)
-        target_link_libraries(${target} PUBLIC ${resolved_deps})
+        _qb_target_usage_scope(${target} _qb_usage_scope)
+        target_link_libraries(${target} ${_qb_usage_scope} ${resolved_deps})
     endif()
 endfunction()
 
@@ -448,8 +471,9 @@ function(qb_register_module)
         # Header-only module
         add_library(${module_target} INTERFACE)
 
-        # Header-only qb modules also require C++23 from their consumers.
-        target_compile_features(${module_target} INTERFACE cxx_std_23)
+        # Header-only modules do not compile sources, but they still expose qb's
+        # full usage contract to consumers.
+        _qb_apply_target_usage_properties(${module_target})
 
         # Apply interface properties
         if(MOD_INCLUDES)
@@ -690,4 +714,4 @@ function(qb_install_target)
 endfunction()
 
 # Mark functions as loaded
-set(QB_FUNCTIONS_LOADED TRUE CACHE INTERNAL "qb functions loaded") 
+set(QB_FUNCTIONS_LOADED TRUE CACHE INTERNAL "qb functions loaded")
