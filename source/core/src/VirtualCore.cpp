@@ -22,6 +22,7 @@
  * @ingroup Core
  */
 
+#include <climits>
 #include <ostream>
 #include <qb/core/VirtualCore.h>
 #include <qb/event.h>
@@ -42,6 +43,8 @@ using cpu_set_t = struct cpu_set {
     uint32_t count;
 };
 
+constexpr int CPU_SETSIZE = static_cast<int>(sizeof(uint32_t) * CHAR_BIT);
+
 static inline void
 CPU_ZERO(cpu_set_t *cs) {
     cs->count = 0;
@@ -49,11 +52,17 @@ CPU_ZERO(cpu_set_t *cs) {
 
 static inline void
 CPU_SET(int num, cpu_set_t *cs) {
+    if (num < 0 || num >= CPU_SETSIZE) {
+        return;
+    }
     cs->count |= (1 << num);
 }
 
 static inline int
 CPU_ISSET(int num, cpu_set_t *cs) {
+    if (num < 0 || num >= CPU_SETSIZE) {
+        return 0;
+    }
     return (cs->count & (1 << num));
 }
 
@@ -63,7 +72,6 @@ CPU_ISSET(int num, cpu_set_t *cs) {
 
 static int
 pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
-    thread_port_t mach_thread;
     // C++23: Use std::cmp_less for safe mixed-signed comparisons (or use unsigned types)
     // Here we use size_t to match the unsigned nature of cpu_size and hardware_concurrency
     size_t core = 0;
@@ -74,10 +82,9 @@ pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
     }
     if (core >= std::thread::hardware_concurrency())
         return -1;
-    thread_affinity_policy_data_t policy = {static_cast<integer_t>(core)};
-    mach_thread                          = pthread_mach_thread_np(thread);
-    const auto ret = thread_policy_set(mach_thread, THREAD_AFFINITY_POLICY,
-                                       (thread_policy_t) &policy, 1);
+    thread_affinity_policy_data_t policy      = {static_cast<integer_t>(core)};
+    thread_port_t                 mach_thread = pthread_mach_thread_np(thread);
+    const auto                    ret = thread_policy_set(mach_thread, THREAD_AFFINITY_POLICY, reinterpret_cast<thread_policy_t>(&policy), 1);
     return !(ret == KERN_SUCCESS || ret == KERN_NOT_SUPPORTED);
 }
 #endif
@@ -95,8 +102,7 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     // Seed the pool after the last statically-registered service id. The
     // atomic load is relaxed because every writer publishes through the
     // magic-static acquire edge of `Actor::registerIndex<Tag>()` (2.3).
-    _ids.init(static_cast<ServiceId>(
-        _nb_service.load(std::memory_order_relaxed) + 1));
+    _ids.init(static_cast<ServiceId>(_nb_service.load(std::memory_order_relaxed) + 1));
 }
 
 VirtualCore::~VirtualCore() noexcept = default;
@@ -118,7 +124,7 @@ VirtualCore::__generate_id__() noexcept {
 
 // Event Management
 void
-VirtualCore::unregisterEvents(ActorId const id) noexcept {
+VirtualCore::unregisterEvents(ActorId const id) const noexcept {
     _router.unsubscribe(id);
 }
 
@@ -149,8 +155,7 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
         event->state.alive = 0;
         _router.route(*event, [this](auto &event) {
             if (!event.getDestination().is_broadcast())
-                LOG_WARN(*this << " failed to send event[" << event.getID()
-                               << "] sent from " << event.getSource());
+                LOG_WARN(*this << " failed to send event[" << event.getID() << "] sent from " << event.getSource());
         });
         ++_metrics._nb_event_received;
         _metrics._nb_bucket_received += event->bucket_size;
@@ -166,9 +171,7 @@ VirtualCore::__receive__() {
     _mono_pipe->reset();
     // global_core_events
     _mail_box.dequeue(
-        [this](EventBucket *buffer, std::size_t const nb_events) {
-            __receive_events__(std::span<EventBucket>{buffer, nb_events});
-        },
+        [this](EventBucket *buffer, std::size_t const nb_events) { __receive_events__(std::span<EventBucket>{buffer, nb_events}); },
         _event_buffer->data(), MaxRingEvents);
 }
 
@@ -212,14 +215,13 @@ namespace {
 // tuning without forcing recompiles of downstream code.
 constexpr std::uint32_t kFlushSpinAttempts  = 64;  // `spin_loop_pause` phase.
 constexpr std::uint32_t kFlushYieldAttempts = 512; // total budget per event.
-static_assert(kFlushSpinAttempts < kFlushYieldAttempts,
-              "spin phase must precede yield phase");
+static_assert(kFlushSpinAttempts < kFlushYieldAttempts, "spin phase must precede yield phase");
 } // namespace
 
 bool
 VirtualCore::__flush_all__() noexcept {
-    bool         any_work  = false;
-    std::size_t  pipe_idx  = 0;
+    bool        any_work = false;
+    std::size_t pipe_idx = 0;
     for (auto &pipe : _pipes) {
         // Skip the self-core pipe (local delivery bypasses the mailbox layer)
         // and any empty outbound pipe.
@@ -229,9 +231,9 @@ VirtualCore::__flush_all__() noexcept {
         }
         any_work = true;
 
-        auto *const base = pipe.data();
-        auto       *cur  = pipe.begin();
-        auto *const end  = pipe.end();
+        auto *const base    = pipe.data();
+        auto       *cur     = pipe.begin();
+        auto *const end     = pipe.end();
         bool        partial = false;
 
         while (cur < end) {
@@ -258,8 +260,7 @@ VirtualCore::__flush_all__() noexcept {
 
             // QoS-guaranteed event: bounded backoff.
             bool sent = false;
-            for (std::uint32_t attempt = 1; attempt <= kFlushYieldAttempts;
-                 ++attempt) {
+            for (std::uint32_t attempt = 1; attempt <= kFlushYieldAttempts; ++attempt) {
                 ++_metrics._nb_event_sent_try;
                 if (try_send(event)) {
                     sent = true;
@@ -307,8 +308,7 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
     auto is_real_core = [](CoreId c) noexcept {
         return c < static_cast<CoreId>(qb::MaxCores);
     };
-    if (!affinity_cores.empty() &&
-        std::any_of(affinity_cores.begin(), affinity_cores.end(), is_real_core)) {
+    if (!affinity_cores.empty() && std::any_of(affinity_cores.begin(), affinity_cores.end(), is_real_core)) {
 #if defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
         cpu_set_t cpuset;
 
@@ -334,9 +334,8 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
             LOG_WARN("set thread affinity failed: " << strerror(errno));
 #elif defined(_WIN32) || defined(_WIN64)
 #ifdef _MSC_VER
-        constexpr auto kAffinityBits =
-            static_cast<CoreId>(sizeof(DWORD_PTR) * 8u);
-        DWORD_PTR mask = 0u;
+        constexpr auto kAffinityBits = static_cast<CoreId>(sizeof(DWORD_PTR) * 8u);
+        DWORD_PTR      mask          = 0u;
         for (const auto core : affinity_cores)
             if (is_real_core(core) && core < kAffinityBits)
                 mask |= static_cast<DWORD_PTR>(1u) << core;
@@ -359,9 +358,9 @@ bool
 VirtualCore::__init__actors__() const {
     std::vector<Actor *> actors_to_init;
     actors_to_init.reserve(_actors.size());
-    for (const auto &[_, actor] : _actors)
+    for (const auto &actor : _actors | std::views::values)
         actors_to_init.push_back(actor.get());
-    return !std::any_of(actors_to_init.begin(), actors_to_init.end(), [](auto *actor) {
+    return !std::ranges::any_of(actors_to_init, [](auto *actor) {
         auto ret = !actor->onInit();
         if (ret)
             LOG_CRIT(*actor << " failed to init");
@@ -371,39 +370,36 @@ VirtualCore::__init__actors__() const {
 
 void
 VirtualCore::__workflow__() {
-    LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actors.size())
-                   << " actor(s)");
+    LOG_INFO(*this << " Init Success " << static_cast<uint32_t>(_actors.size()) << " actor(s)");
     while (likely(true)) {
         _metrics._nanotimer = static_cast<uint64_t>(qb::unix_nanos(qb::wall_now()));
 
-        // Poll for pending signal (async-signal-safe: volatile sig_atomic_t read)
+        // Poll for pending signal (signal-handler-safe lock-free atomic read)
         // OR for a C++20 cooperative cancellation request coming from the
         // engine's `std::stop_source` (finding 2.17 — jthread/stop_token).
         // The stop_token path is checked only when no signal is already pending
         // so the existing signum semantics are preserved: we synthesise a
         // virtual SIGINT to reuse the same shutdown plumbing (SignalEvent
         // broadcast + actors' `onSignal` / `kill()` chain).
-        const bool signal_pending = (Main::_signal_pending != 0);
-        const bool stop_requested =
-            _stop_token.stop_possible() && _stop_token.stop_requested();
+        const auto pending_signal = Main::_signal_pending.load(std::memory_order_relaxed);
+        const bool signal_pending = (pending_signal != 0);
+        const bool stop_requested = _stop_token.stop_possible() && _stop_token.stop_requested();
         if ((signal_pending || stop_requested) && !_signal_consumed) {
             _signal_consumed = true;
             SignalEvent sig_event;
-            fill_event<SignalEvent>(sig_event, BroadcastId(_index),
-                                   BroadcastId(_index));
-            sig_event.signum = signal_pending ? Main::_signal_pending : SIGINT;
-            auto &pipe = __getPipe__(_index);
+            fill_event<SignalEvent>(sig_event, BroadcastId(_index), BroadcastId(_index));
+            sig_event.signum = signal_pending ? pending_signal : SIGINT;
+            auto &pipe       = __getPipe__(_index);
             pipe.recycle(sig_event, sig_event.bucket_size);
         }
 
-        if (io::async::listener::current.has_coro_scheduler() ||
-            io::async::listener::current.size()) {
+        if (io::async::listener::current.has_coro_scheduler() || io::async::listener::current.size()) {
             // Hot path: call `listener::run` directly — no `async::run` wrapper
             // (avoids redundant checks; metrics match `nb_invoked_event()` contract).
             io::async::listener::current.run(EVRUN_NOWAIT);
             _metrics._nb_event_io = io::async::listener::current.nb_invoked_event();
         }
-        
+
         // send core events
         __flush_all__();
         // receive core events
@@ -428,8 +424,7 @@ VirtualCore::__workflow__() {
                 // a killed actor must not get another tick, matching the
                 // event-kill path which skips the whole callback phase. The
                 // empty() fast-path keeps the common (nothing killed) case free.
-                if (likely(_actor_to_remove.empty()) ||
-                    !_actor_to_remove.count(entry.id))
+                if (likely(_actor_to_remove.empty()) || !_actor_to_remove.count(entry.id))
                     entry.cb->onCallback();
             }
         }
@@ -500,9 +495,8 @@ VirtualCore::removeActor(ActorId const id) noexcept {
     if (it != _actors.end()) {
         auto &actor = it->second;
         if (actor->has_active_coroutines()) {
-            LOG_WARN("Actor " << id << " destroyed with "
-                     << actor->active_coroutine_count()
-                     << " active coroutines - coroutines must not access actor state!");
+            LOG_WARN("Actor " << id << " destroyed with " << actor->active_coroutine_count()
+                              << " active coroutines - coroutines must not access actor state!");
         }
         LOG_INFO("Delete " << *actor);
         _actors.erase(it);
@@ -526,8 +520,7 @@ VirtualCore::__unregisterCallback(ActorId const id) noexcept {
     if (it != _actor_callbacks.end()) {
         _actor_callbacks.erase(it);
         // Keep the flat callback snapshot in sync (2.6).
-        auto vit = std::find_if(_callback_list.begin(), _callback_list.end(),
-                                [id](CallbackEntry const &e) { return e.id == id; });
+        auto vit = std::ranges::find_if(_callback_list, [id](CallbackEntry const &e) { return e.id == id; });
         if (vit != _callback_list.end()) {
             *vit = _callback_list.back();
             _callback_list.pop_back();
@@ -596,20 +589,18 @@ VirtualCore::time() const noexcept {
 }
 
 std::atomic<ServiceId>    VirtualCore::_nb_service{0};
-thread_local VirtualCore *VirtualCore::_handler    = nullptr;
+thread_local VirtualCore *VirtualCore::_handler = nullptr;
 } // namespace qb
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &
 qb::operator<<(qb::io::log::stream &os, qb::VirtualCore const &core) {
-    os << "VirtualCore(" << core.getIndex() << ").id(" << std::this_thread::get_id()
-       << ")";
+    os << "VirtualCore(" << core.getIndex() << ").id(" << std::this_thread::get_id() << ")";
     return os;
 }
 #endif
 
 std::ostream &
 qb::operator<<(std::ostream &os, qb::VirtualCore const &core) {
-    os << "VirtualCore(" << core.getIndex() << ").id(" << std::this_thread::get_id()
-       << ")";
+    os << "VirtualCore(" << core.getIndex() << ").id(" << std::this_thread::get_id() << ")";
     return os;
 }

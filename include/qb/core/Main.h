@@ -29,6 +29,7 @@
 
 #ifndef QB_MAIN_H
 #define QB_MAIN_H
+#include <atomic>
 #include <condition_variable>
 #include <csignal>
 #include <qb/system/container/unordered_map.h>
@@ -157,7 +158,7 @@ public:
          *         `false` otherwise.
          * @see valid()
          */
-        explicit           operator bool() const noexcept;
+        explicit operator bool() const noexcept;
 
         /*!
          * @brief Get the list of ActorIds created by this ActorBuilder instance.
@@ -174,8 +175,8 @@ private:
     CoreIdSet    _affinity;
     qb::duration _latency;
 
-    qb::unordered_set<ServiceId>                  _registered_services;
-    std::vector<std::unique_ptr<IActorFactory>>   _actor_factories;
+    qb::unordered_set<ServiceId>                _registered_services;
+    std::vector<std::unique_ptr<IActorFactory>> _actor_factories;
     //        CoreSet _restricted_communication; future use
 
 public:
@@ -188,7 +189,7 @@ public:
     /** @brief Destructor. Cleans up actor factories. */
     ~CoreInitializer() noexcept;
 
-    /** 
+    /**
      * @brief Clears all registered actor factories for this initializer.
      * @details This removes any pending actor creation tasks that were added via `addActor()` or `builder()`
      *          but before the engine was started. Useful if re-configuration is needed before `Main::start()`.
@@ -253,21 +254,21 @@ public:
      */
     CoreInitializer &setLatency(qb::duration latency = qb::duration::zero()) noexcept;
 
-    /** 
+    /**
      * @brief Gets the CoreId associated with this initializer.
      * @return The `CoreId` (unsigned short) of the VirtualCore this initializer configures.
      */
-    [[nodiscard]] CoreId           getIndex() const noexcept;
-    /** 
+    [[nodiscard]] CoreId getIndex() const noexcept;
+    /**
      * @brief Gets the currently configured CPU affinity set for this core.
      * @return Const reference to a `CoreIdSet` representing the CPU cores this VirtualCore may run on.
      */
     [[nodiscard]] CoreIdSet const &getAffinity() const noexcept;
-    /** 
+    /**
      * @brief Gets the currently configured maximum event loop latency (in ns) for this core.
      * @return `qb::duration` latency value. See `setLatency()` for interpretation.
      */
-    [[nodiscard]] qb::duration     getLatency() const noexcept;
+    [[nodiscard]] qb::duration getLatency() const noexcept;
 };
 
 /**
@@ -276,7 +277,7 @@ public:
  * @details
  * This container maps core identifiers to their respective initializer objects,
  * providing a way to store and access configuration for all VirtualCores in the system.
- * 
+ *
  * @ingroup Engine
  */
 using CoreInitializerMap = qb::unordered_map<CoreId, CoreInitializer>;
@@ -293,8 +294,7 @@ using CoreInitializerMap = qb::unordered_map<CoreId, CoreInitializer>;
 class SharedCoreCommunication : nocopy {
     friend class VirtualCore;
     friend class Main;
-    constexpr static const uint64_t MaxRingEvents =
-        (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
+    constexpr static const uint64_t MaxRingEvents = (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
     //////// Types
     class Mailbox : public lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0> {
         const qb::duration      _latency;
@@ -350,13 +350,12 @@ class SharedCoreCommunication : nocopy {
         }
     };
 
-    const CoreSet                                _core_set;
-    std::vector<std::unique_ptr<Mailbox>>         _mail_boxes;
+    const CoreSet                         _core_set;
+    std::vector<std::unique_ptr<Mailbox>> _mail_boxes;
 
 public:
     SharedCoreCommunication() = delete;
-    explicit SharedCoreCommunication(
-        CoreInitializerMap const &core_initializers) noexcept;
+    explicit SharedCoreCommunication(CoreInitializerMap const &core_initializers) noexcept;
 
     ~SharedCoreCommunication() noexcept;
 
@@ -398,21 +397,21 @@ public:
  * This structure encapsulates the parameters needed when spawning a new VirtualCore.
  * It contains the core's ID, reference to its initializer, the shared communication
  * infrastructure, and synchronization primitives to coordinate startup.
- * 
+ *
  * @ingroup Engine
  */
 struct CoreSpawnerParameter {
     /** @brief The CoreId of the VirtualCore being spawned */
-    const CoreId             id;
-    
+    const CoreId id;
+
     /** @brief Reference to the CoreInitializer for this core */
-    CoreInitializer         &initializer;
-    
+    CoreInitializer &initializer;
+
     /** @brief Reference to the shared communication infrastructure */
     SharedCoreCommunication &shared_com;
-    
+
     /** @brief Atomic counter for synchronizing core startup */
-    std::atomic<uint64_t>   &sync_start;
+    std::atomic<uint64_t> &sync_start;
 
     /**
      * @brief C++20 stop token wired to the engine's `std::stop_source`.
@@ -422,7 +421,7 @@ struct CoreSpawnerParameter {
      * cancellation channel (e.g. when `Main` is destroyed without any POSIX
      * signal being delivered).
      */
-    std::stop_token          stop_token;
+    std::stop_token stop_token;
 };
 
 /*!
@@ -437,18 +436,16 @@ struct CoreSpawnerParameter {
  */
 class Main {
     friend class VirtualCore;
-    constexpr static const uint64_t MaxRingEvents =
-        (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
+    constexpr static const uint64_t MaxRingEvents = (((std::numeric_limits<uint16_t>::max)()) / QB_LOCKFREE_EVENT_BUCKET_BYTES);
     //////// Types
     using Mailbox = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
 
-    static volatile std::sig_atomic_t _signal_pending;
+    static std::atomic<std::sig_atomic_t> _signal_pending;
 
     std::atomic<uint64_t> _sync_start;
     static void           onSignal(int signal) noexcept;
     static void           start_thread(CoreSpawnerParameter const &params) noexcept;
-    static bool           __wait__all__cores__ready(std::size_t            nb_core,
-                                                    std::atomic<uint64_t> &sync_start) noexcept;
+    static bool           __wait__all__cores__ready(std::size_t nb_core, std::atomic<uint64_t> &sync_start) noexcept;
 
 private:
     /**
@@ -460,8 +457,8 @@ private:
      * without requiring a POSIX signal. The destructor of `std::jthread`
      * additionally joins the worker, making RAII-based shutdown automatic.
      */
-    std::stop_source           _stop_source;
-    std::vector<std::jthread>  _cores;
+    std::stop_source          _stop_source;
+    std::vector<std::jthread> _cores;
     // Core Factory
     CoreInitializerMap                       _core_initializers;
     std::unique_ptr<SharedCoreCommunication> _shared_com;
@@ -603,7 +600,7 @@ public:
  * Provides a concise alternative name for the main engine class.
  * This is provided for naming consistency with other lowercase aliases
  * in the framework.
- * 
+ *
  * @ingroup Engine
  */
 using engine = Main;

@@ -1,123 +1,146 @@
-# Github CI
-name: CMake on multiple platforms
+name: cmake
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop, c++23, experimental-c++23]
   pull_request:
-    branches: [ main ]
+    branches: [main, develop, c++23, experimental-c++23]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cmake-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  build-test:
+    name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
 
     strategy:
-      # Keep fail-fast disabled to collect failures from every platform simultaneously.
       fail-fast: false
-
-      # Each include entry is a fully-specified job; no cartesian explosion needed.
       matrix:
         include:
-          - os: ubuntu-latest
+          - name: ubuntu-gcc-release
+            os: ubuntu-latest
             c_compiler: gcc
             cpp_compiler: g++
             build_type: Release
 
-          - os: ubuntu-latest
+          - name: ubuntu-clang-release
+            os: ubuntu-latest
             c_compiler: clang
             cpp_compiler: clang++
             build_type: Release
 
-          - os: macos-latest
-            c_compiler: gcc
-            cpp_compiler: g++
-            build_type: Release
-
-          - os: macos-latest
+          - name: macos-clang-release
+            os: macos-latest
             c_compiler: clang
             cpp_compiler: clang++
             build_type: Release
 
-          - os: windows-latest
-            # MSVC is auto-detected by the Visual Studio generator; no explicit compiler flag needed.
+          - name: windows-msvc-release
+            os: windows-latest
             build_type: Release
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      # ── Linux ────────────────────────────────────────────────────────────────
       - name: Install dependencies (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libssl-dev libargon2-dev zlib1g-dev
+          sudo apt-get install -y \
+            clang \
+            libargon2-dev \
+            libssl-dev \
+            ninja-build \
+            pkg-config \
+            zlib1g-dev
+          if apt-cache show libngtcp2-crypto-ossl-dev >/dev/null 2>&1; then
+            sudo apt-get install -y libngtcp2-dev libngtcp2-crypto-ossl-dev
+          else
+            echo "::notice::libngtcp2-crypto-ossl-dev is not available through apt on this ubuntu-latest image; using Linuxbrew libngtcp2 for QUIC auto-detection."
+            if ! command -v brew >/dev/null 2>&1; then
+              eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+            fi
+            brew install libngtcp2
+            export CMAKE_PREFIX_PATH="$(brew --prefix);$(brew --prefix libngtcp2);$(brew --prefix openssl@3)"
+            export PKG_CONFIG_PATH="$(brew --prefix libngtcp2)/lib/pkgconfig:$(brew --prefix openssl@3)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+            export LD_LIBRARY_PATH="$(brew --prefix libngtcp2)/lib:$(brew --prefix openssl@3)/lib:${LD_LIBRARY_PATH:-}"
+            echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" >> "$GITHUB_ENV"
+            echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
+            echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+            pkg-config --exists libngtcp2_crypto_ossl
+          fi
 
-      # ── macOS ────────────────────────────────────────────────────────────────
       - name: Install dependencies (macOS)
-        if: matrix.os == 'macos-latest'
+        if: runner.os == 'macOS'
         run: |
-          brew install openssl@3 argon2
-          # Export Homebrew prefix so all cmake find_* commands resolve Homebrew packages.
-          # On Apple Silicon this is /opt/homebrew; on Intel Macs it is /usr/local.
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix)" >> "$GITHUB_ENV"
+          brew install argon2 libngtcp2 ninja openssl@3 zlib
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix);$(brew --prefix libngtcp2);$(brew --prefix openssl@3);$(brew --prefix zlib)" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix libngtcp2)/lib/pkgconfig:$(brew --prefix openssl@3)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
 
-      # ── Windows ──────────────────────────────────────────────────────────────
       - name: Install dependencies (Windows)
-        if: matrix.os == 'windows-latest'
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # vcpkg is pre-installed on GitHub Actions Windows runners.
-          # The toolchain file makes find_package() / find_path() / find_library()
-          # automatically search vcpkg's installed tree.
-          vcpkg install openssl:x64-windows argon2:x64-windows zlib:x64-windows
+          vcpkg install openssl:x64-windows argon2:x64-windows "ngtcp2[openssl]:x64-windows" zlib:x64-windows
           echo "VCPKG_TOOLCHAIN=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
 
-      # ── Shared ───────────────────────────────────────────────────────────────
-      - name: Set reusable strings
-        id: strings
+      - name: Set build parameters
+        id: build
         shell: bash
         run: |
-          echo "build-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
-          # Logical CPU count — each platform exposes it differently.
-          if   [ "$RUNNER_OS" = "Windows" ]; then echo "jobs=$NUMBER_OF_PROCESSORS"
-          elif [ "$RUNNER_OS" = "macOS"   ]; then echo "jobs=$(sysctl -n hw.logicalcpu)"
-          else                                    echo "jobs=$(nproc)"
-          fi >> "$GITHUB_OUTPUT"
+          echo "dir=${{ github.workspace }}/build/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "jobs=${NUMBER_OF_PROCESSORS}" >> "$GITHUB_OUTPUT"
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            echo "jobs=$(sysctl -n hw.logicalcpu)" >> "$GITHUB_OUTPUT"
+          else
+            echo "jobs=$(nproc)" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Configure CMake
+      - name: Configure
         shell: bash
         run: |
-          CMAKE_ARGS=(
-            "-B" "${{ steps.strings.outputs.build-dir }}"
-            "-DCMAKE_BUILD_TYPE=${{ matrix.build_type }}"
-            "-DQB_BUILD_TESTS=ON"
-            "-S" "${{ github.workspace }}"
+          args=(
+            -S "${{ github.workspace }}"
+            -B "${{ steps.build.outputs.dir }}"
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+            -DQB_BUILD_TESTS=ON
+            -DQB_BUILD_EXAMPLES=ON
+            -DQB_BUILD_BENCHMARKS=ON
+            -DQB_ENABLE_NATIVE_ARCH=OFF
           )
 
-          # On POSIX hosts, pick the compiler explicitly.
-          # On Windows, the Visual Studio generator detects MSVC automatically.
           if [ "$RUNNER_OS" != "Windows" ]; then
-            CMAKE_ARGS+=( "-DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}" )
-            CMAKE_ARGS+=( "-DCMAKE_C_COMPILER=${{ matrix.c_compiler }}" )
+            args+=(
+              -G Ninja
+              -DCMAKE_C_COMPILER=${{ matrix.c_compiler }}
+              -DCMAKE_CXX_COMPILER=${{ matrix.cpp_compiler }}
+            )
           fi
 
-          # Inject the vcpkg toolchain on Windows so find_package/find_library
-          # resolve into the vcpkg installed tree.
-          if [ -n "${VCPKG_TOOLCHAIN}" ]; then
-            CMAKE_ARGS+=( "-DCMAKE_TOOLCHAIN_FILE=${VCPKG_TOOLCHAIN}" )
-            CMAKE_ARGS+=( "-DVCPKG_TARGET_TRIPLET=x64-windows" )
+          if [ -n "${VCPKG_TOOLCHAIN:-}" ]; then
+            args+=(
+              -DCMAKE_TOOLCHAIN_FILE="${VCPKG_TOOLCHAIN}"
+              -DVCPKG_TARGET_TRIPLET=x64-windows
+            )
           fi
 
-          cmake "${CMAKE_ARGS[@]}"
+          cmake "${args[@]}"
 
       - name: Build
         run: >
-          cmake --build ${{ steps.strings.outputs.build-dir }}
+          cmake --build "${{ steps.build.outputs.dir }}"
           --config ${{ matrix.build_type }}
-          --parallel ${{ steps.strings.outputs.jobs }}
+          --parallel ${{ steps.build.outputs.jobs }}
 
       - name: Test
-        working-directory: ${{ steps.strings.outputs.build-dir }}
+        working-directory: ${{ steps.build.outputs.dir }}
         run: ctest --build-config ${{ matrix.build_type }} --output-on-failure --parallel 4

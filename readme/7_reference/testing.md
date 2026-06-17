@@ -96,7 +96,7 @@ Without the corresponding library these suites are not configured at all — the
 
 ### Running under sanitizers
 
-To build and run the suite instrumented, configure with a sanitizer preset rather than a plain Debug build: `cmake --preset sanitize` for AddressSanitizer + UndefinedBehaviorSanitizer, or `cmake --preset sanitize-thread` for ThreadSanitizer. The `QB_SANITIZE` flag (default empty) applies its sanitizer list to every qb, qbm, and test target plus the link step, regardless of `CMAKE_BUILD_TYPE`. See `QB_SANITIZE` in [CMake options](./cmake_options.md).
+To build and run the suite instrumented, configure with a sanitizer preset rather than a plain Debug build: `cmake --preset sanitize` for AddressSanitizer + UndefinedBehaviorSanitizer, or `cmake --preset sanitize-thread` for ThreadSanitizer. The `QB_SANITIZE` flag (default empty) applies its sanitizer list to every qb, qbm, and test target plus the link step, regardless of `CMAKE_BUILD_TYPE`. The GitHub Actions `sanitize` and `sanitize-thread` workflows run these presets on Ubuntu with Clang. See `QB_SANITIZE` in [CMake options](./cmake_options.md).
 
 ## Running the tests
 
@@ -257,7 +257,7 @@ The instrumentation flags (`-g -fprofile-arcs -ftest-coverage`, plus `--coverage
 - **Optional suites are absent or skipped, depending on the dependency.** Crypto and compression suites are not configured without OpenSSL / zlib — those targets do not exist at all, so they cannot pass. QUIC is gated differently: `test-quic.cpp` is always built, but its cases `GTEST_SKIP()` when libngtcp2 was not found (`QB_HAS_QUIC` undefined), so they show as skipped. Either way, an absent or skipped suite means a missing dependency, not a passing run. Confirm which features were enabled at configure time before reading a green result as full coverage.
 - **Coverage is narrow.** `QB_BUILD_COVERAGE` works only on Debug, non-Windows, with lcov + gcov present, and the GCC/gcov toolchain. It is not a general-purpose option across all build types.
 - **Coroutine tests must clean up the per-thread state.** Async coroutine fixtures call `qb::io::async::init()` in `SetUp` and reset state in `TearDown`. The minimum is `qb::io::async::listener::current.clear()` (`qb/source/io/tests/coroutine/test-coroutine-channel.cpp:32-34`); fixtures that spawn coroutines drain the scheduler first — `run_for(5ms)` then `reset_coro_scheduler()` then `clear()` — to avoid leaking suspended coroutine frames across tests (`qb/source/io/tests/coroutine/test-coroutine-scope.cpp:314-319`). Follow the existing fixture pattern in the file you are adding to.
-- **CI runs Release only.** The CI workflow builds Release and does not exercise Debug, sanitizers, or coverage, and does not install libngtcp2 (so QUIC is auto-disabled on CI). Run sanitizer presets and coverage locally — do not assume CI exercised them.
+- **CI coverage is split across workflows.** The cross-platform CMake workflow builds Release. Dedicated Ubuntu workflows run ASan/UBSan, TSan, coverage, changed-file format checks, and changed-translation-unit clang-tidy. The Linux jobs install the ngtcp2 OpenSSL helper through apt when the runner image provides it, otherwise through the preinstalled GitHub Actions Linuxbrew environment, so QUIC remains auto-detected by CMake without forcing `QB_WITH_QUIC=ON`.
 
 ## See also
 

@@ -130,6 +130,14 @@
         {
             "name": "sanitize",
             "configurePreset": "sanitize"
+        },
+        {
+            "name": "sanitize-thread",
+            "configurePreset": "sanitize-thread"
+        },
+        {
+            "name": "coverage",
+            "configurePreset": "coverage"
         }
     ],
     "testPresets": [
@@ -164,6 +172,28 @@
             "execution": {
                 "timeout": 600,
                 "jobs": 1
+            }
+        },
+        {
+            "name": "sanitize-thread",
+            "configurePreset": "sanitize-thread",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 900,
+                "jobs": 1
+            }
+        },
+        {
+            "name": "coverage",
+            "configurePreset": "coverage",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "timeout": 600,
+                "jobs": 4
             }
         }
     ]

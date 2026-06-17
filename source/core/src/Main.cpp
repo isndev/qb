@@ -24,7 +24,6 @@
 
 #include <csignal>
 #include <iostream>
-#include <string>
 #include <qb/core/Main.h>
 #include <qb/core/VirtualCore.h>
 #include <qb/io/async/listener.h>
@@ -38,8 +37,7 @@ CoreInitializer::CoreInitializer(CoreId const index)
     // sufficient here — every writer (see `Actor::registerIndex<Tag>()`) has
     // already published its value through the associated magic-static
     // acquire edge before this constructor runs.
-    , _next_id(static_cast<ServiceId>(
-          VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1))
+    , _next_id(static_cast<ServiceId>(VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1))
     , _affinity{index}
     , _latency{} {}
 
@@ -49,8 +47,7 @@ CoreInitializer::~CoreInitializer() noexcept {
 
 void
 CoreInitializer::clear() noexcept {
-    _next_id = static_cast<ServiceId>(
-        VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1);
+    _next_id = static_cast<ServiceId>(VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1);
     _affinity.clear();
     _actor_factories.clear();
     _registered_services.clear();
@@ -100,7 +97,8 @@ bool
 CoreInitializer::ActorBuilder::valid() const noexcept {
     return _valid;
 }
-CoreInitializer::ActorBuilder::operator bool() const noexcept {
+CoreInitializer::ActorBuilder::
+operator bool() const noexcept {
     return valid();
 }
 CoreInitializer::ActorBuilder::ActorIdList
@@ -112,20 +110,18 @@ CoreInitializer::ActorBuilder::idList() const noexcept {
 static auto
 set_from_core_initializers(CoreInitializerMap const &core_initializers) {
     CoreIdSet core_ids;
-    for (const auto &[index, _] : core_initializers)
+    for (const auto &index : core_initializers | std::views::keys)
         core_ids.insert(index);
     return core_ids;
 }
 
 // SharedCoreCommunication
-SharedCoreCommunication::SharedCoreCommunication(
-    CoreInitializerMap const &core_initializers) noexcept
+SharedCoreCommunication::SharedCoreCommunication(CoreInitializerMap const &core_initializers) noexcept
     : _core_set(set_from_core_initializers(core_initializers))
     , _mail_boxes(_core_set.getSize()) {
     for (const auto &[index, initializer] : core_initializers) {
-        const auto nb_producers = _core_set.getNbCore();
-        _mail_boxes[_core_set.resolve(index)] =
-            std::make_unique<Mailbox>(nb_producers, initializer.getLatency());
+        const auto nb_producers               = _core_set.getNbCore();
+        _mail_boxes[_core_set.resolve(index)] = std::make_unique<Mailbox>(nb_producers, initializer.getLatency());
     }
 }
 
@@ -136,9 +132,7 @@ SharedCoreCommunication::send(Event const &event) const noexcept {
     const CoreId source_index = _core_set.resolve(event.source.index());
     const CoreId dest_index   = _core_set.resolve(event.dest.index());
 
-    if (static_cast<bool>(_mail_boxes[dest_index]->enqueue(
-            source_index, reinterpret_cast<const EventBucket *>(&event),
-            event.bucket_size))) {
+    if (static_cast<bool>(_mail_boxes[dest_index]->enqueue(source_index, reinterpret_cast<const EventBucket *>(&event), event.bucket_size))) {
         _mail_boxes[dest_index]->notify();
         return true;
     }
@@ -157,11 +151,13 @@ SharedCoreCommunication::getNbCore() const noexcept {
 }
 // !SharedCoreCommunication
 
-volatile std::sig_atomic_t    Main::_signal_pending = 0;
+static_assert(std::atomic<std::sig_atomic_t>::is_always_lock_free, "Main signal flag must stay lock-free to remain signal-handler-safe");
+
+std::atomic<std::sig_atomic_t> Main::_signal_pending{0};
 
 void
 Main::onSignal(int const signum) noexcept {
-    _signal_pending = signum;
+    _signal_pending.store(signum, std::memory_order_relaxed);
 }
 
 Main::Main() noexcept
@@ -195,24 +191,17 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
         auto &core_factory = initializer._actor_factories;
         if (!core.__init__(initializer.getAffinity())) {
             LOG_CRIT(core << " Init Failed");
-            params.sync_start.store(VirtualCore::Error::BadInit,
-                                    std::memory_order_release);
+            params.sync_start.store(VirtualCore::Error::BadInit, std::memory_order_release);
         } else if (core_factory.empty()) {
             LOG_CRIT(core << " Started with 0 Actor");
-            params.sync_start.store(VirtualCore::Error::NoActor,
-                                    std::memory_order_release);
-        } else if (std::any_of(core_factory.begin(), core_factory.end(),
-                               [&core](auto const &it) {
-                                   return !core.appendActor(
-                                       std::unique_ptr<Actor>(it->create())).is_valid();
-                               })) {
+            params.sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
+        } else if (std::ranges::any_of(
+                       core_factory, [&core](auto const &it) { return !core.appendActor(std::unique_ptr<Actor>(it->create())).is_valid(); })) {
             LOG_CRIT("Actor at " << core << " failed to init");
-            params.sync_start.store(VirtualCore::Error::BadActorInit,
-                                    std::memory_order_release);
+            params.sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
         } else if (!core.__init__actors__()) {
             LOG_CRIT("Actor at " << core << " failed to init");
-            params.sync_start.store(VirtualCore::Error::BadActorInit,
-                                    std::memory_order_release);
+            params.sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
         }
         initializer.clear();
         if (!__wait__all__cores__ready(params.shared_com.getNbCore(), params.sync_start))
@@ -220,15 +209,13 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
         core.__workflow__();
     } catch (const std::exception &e) {
         LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
-        params.sync_start.store(VirtualCore::Error::ExceptionThrown,
-                                std::memory_order_release);
+        params.sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
         initializer.clear();
     }
 }
 
 bool
-Main::__wait__all__cores__ready(std::size_t const      nb_core,
-                                std::atomic<uint64_t> &sync_start) noexcept {
+Main::__wait__all__cores__ready(std::size_t const nb_core, std::atomic<uint64_t> &sync_start) noexcept {
     sync_start.fetch_add(1, std::memory_order_acq_rel);
     uint64_t ret = 0;
     do {
@@ -240,14 +227,14 @@ Main::__wait__all__cores__ready(std::size_t const      nb_core,
 
 void
 Main::setLatency(qb::duration const latency) {
-    for (auto &[_, initializer] : _core_initializers)
+    for (auto &initializer : _core_initializers | std::views::values)
         initializer.setLatency(latency);
 }
 
 qb::CoreIdSet
 Main::usedCoreSet() const {
     qb::CoreIdSet ret;
-    for (const auto &[index, _] : _core_initializers)
+    for (const auto &index : _core_initializers | std::views::keys)
         ret.emplace(index);
     return ret;
 }
@@ -263,12 +250,12 @@ Main::start(bool async) noexcept {
         return;
     }
 
-    _is_running      = true;
-    _signal_pending  = 0;
+    _is_running = true;
+    _signal_pending.store(0, std::memory_order_relaxed);
     _shared_com = std::make_unique<SharedCoreCommunication>(_core_initializers);
     _cores.resize(_core_initializers.size());
 
-    auto i = 0u;
+    auto       i          = 0u;
     const auto stop_token = _stop_source.get_token();
     for (auto &it : _core_initializers) {
         if (!async && i == (_core_initializers.size() - 1)) {
@@ -284,10 +271,7 @@ Main::start(bool async) noexcept {
             // request_stop() asynchronously at any moment during `~Main()`
             // or `stop()` without fearing lifetime issues.
             _cores[i] = std::jthread(
-                [params = CoreSpawnerParameter{it.first, it.second, *_shared_com,
-                                               _sync_start, stop_token}] {
-                    start_thread(params);
-                });
+                [params = CoreSpawnerParameter{it.first, it.second, *_shared_com, _sync_start, stop_token}] { start_thread(params); });
         }
         ++i;
     }
@@ -304,8 +288,7 @@ Main::start(bool async) noexcept {
     if (hasError()) {
         _is_running = false;
         LOG_CRIT("[Main] Init Failed");
-        std::cerr << "CRITICAL: Core Init Failed -> show logs to have more details"
-                  << std::endl;
+        std::cerr << "CRITICAL: Core Init Failed -> show logs to have more details" << std::endl;
     }
 }
 
@@ -316,13 +299,10 @@ Main::hasError() const noexcept {
 
 void
 Main::stop() noexcept {
-    // `stop()` is documented to be callable from a POSIX signal handler,
-    // therefore only async-signal-safe operations are performed here. The
-    // `std::stop_source` broadcast is left to `~Main()` / `join()` where
-    // normal thread-synchronization primitives are safe. Worker loops poll
-    // `_signal_pending` on every iteration, so this write is observed within
-    // the configured mailbox latency.
-    _signal_pending = SIGINT;
+    // This path is documented as signal-handler-safe. C++ permits plain
+    // lock-free atomic operations in signal handlers; the static_assert above
+    // keeps that contract explicit.
+    _signal_pending.store(SIGINT, std::memory_order_relaxed);
 }
 
 void
@@ -340,8 +320,7 @@ Main::join() {
 CoreInitializer &
 Main::core(CoreId const index) {
     if (_is_running)
-        throw std::runtime_error(
-            "Cannot access to CoreInitializers while engine is running");
+        throw std::runtime_error("Cannot access to CoreInitializers while engine is running");
     const auto &it = _core_initializers.find(index);
     if (it != _core_initializers.cend())
         return it->second;
@@ -350,9 +329,7 @@ Main::core(CoreId const index) {
     // single source of truth (see `qb/include/qb/core/ActorId.h`), so no
     // magic number ever shows up at a call site (finding 2.12).
     if (index >= static_cast<CoreId>(qb::MaxCores))
-        throw std::range_error(
-            "Max core id managed by qb is " +
-            std::to_string(qb::MaxCores - 1));
+        throw std::range_error("Max core id managed by qb is " + std::to_string(qb::MaxCores - 1));
     return _core_initializers.emplace(index, index).first->second;
 }
 
@@ -369,7 +346,7 @@ install_signal(int signum, void (*handler)(int)) noexcept {
 #if defined(_WIN32) || defined(_WIN64)
     std::signal(signum, handler);
 #else
-    struct sigaction sa {};
+    struct sigaction sa{};
     sa.sa_handler = handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = (handler == SIG_DFL || handler == SIG_IGN) ? 0 : SA_RESTART;
