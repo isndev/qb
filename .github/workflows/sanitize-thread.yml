@@ -31,7 +31,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          ./scripts/ci-install-linux-dependencies.sh --llvm-clang --quic
+          ./scripts/ci-install-linux-dependencies.sh --llvm-clang --google-test --quic
           "clang-${LLVM_VERSION}" --version
 
       - name: Configure
@@ -41,6 +41,7 @@ jobs:
           -DCMAKE_CXX_COMPILER=clang++-${LLVM_VERSION}
           -DQB_CXX_STANDARD=20
           -DQB_BUILD_EXAMPLES=OFF
+          -DQB_USE_SYSTEM_GTEST=ON
           -DQB_ENABLE_NATIVE_ARCH=OFF
           -DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE}"
 

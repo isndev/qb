@@ -24,6 +24,7 @@
 
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -33,8 +34,10 @@
 #include <thread>
 
 struct FakeActor {
-    int nb_events = 0;
-    int fd_test   = 0;
+    int           nb_events          = 0;
+    int           fd_test            = 0;
+    std::intmax_t expected_file_size = -1;
+    std::intmax_t observed_file_size = -1;
 
     bool
     is_alive() {
@@ -57,10 +60,13 @@ struct FakeActor {
 
     void
     on(qb::io::async::event::file const &event) {
+        observed_file_size = static_cast<std::intmax_t>(event.attr.st_size);
+        if (expected_file_size >= 0 && observed_file_size != expected_file_size)
+            return;
 #ifdef _WIN32
-        EXPECT_EQ(event.attr.st_size, 7);
+        EXPECT_EQ(observed_file_size, 7);
 #else
-        EXPECT_EQ(event.attr.st_size, 5);
+        EXPECT_EQ(observed_file_size, 5);
 #endif // _WIN32
         ++nb_events;
     }
@@ -106,12 +112,22 @@ TEST(KernelEvents, Timer) {
 }
 
 TEST(KernelEvents, File) {
-    // Remove any leftover file from a previous run so the watcher can
-    // detect a creation event (not a stale modification event).
     std::remove("./test.file");
+
+#ifndef _WIN32
+    {
+        std::ofstream ofs("./test.file", std::ios::binary);
+        ofs << "old\n";
+    }
+#endif
 
     qb::io::async::listener handler;
     FakeActor               actor;
+#ifdef _WIN32
+    actor.expected_file_size = 7;
+#else
+    actor.expected_file_size = 5;
+#endif
 
     handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", 0).start();
 
@@ -134,9 +150,18 @@ TEST(KernelEvents, File) {
 #endif
     });
 
+#ifndef _WIN32
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (std::chrono::steady_clock::now() < deadline && !actor.nb_events) {
+        handler.run(EVRUN_NOWAIT);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+#else
     for (auto i = 0; i < 10 && !actor.nb_events; ++i)
         handler.run(EVRUN_ONCE);
+#endif
     EXPECT_EQ(actor.nb_events, 1);
+    EXPECT_EQ(actor.observed_file_size, actor.expected_file_size);
     t.join();
 }
 
@@ -149,8 +174,7 @@ TEST(KernelEvents, BasicIO) {
 
     actor.fd_test = f.native_handle();
 
-    handler.registerEvent<qb::io::async::event::io>(actor, f.native_handle(), EV_READ)
-        .start();
+    handler.registerEvent<qb::io::async::event::io>(actor, f.native_handle(), EV_READ).start();
 
     for (auto i = 0; i < 10 && !actor.nb_events; ++i)
         handler.run(EVRUN_ONCE);

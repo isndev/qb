@@ -27,7 +27,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          ./scripts/ci-install-linux-dependencies.sh --gcc-14 --coverage --quic
+          ./scripts/ci-install-linux-dependencies.sh --gcc-14 --coverage --google-test --quic
           gcc-14 --version
 
       - name: Configure
@@ -37,6 +37,7 @@ jobs:
           -DCMAKE_CXX_COMPILER=g++-14
           -DQB_CXX_STANDARD=20
           -DQB_BUILD_EXAMPLES=OFF
+          -DQB_USE_SYSTEM_GTEST=ON
           -DQB_ENABLE_NATIVE_ARCH=OFF
           -DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE}"
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
 
 LLVM_VERSION="${LLVM_VERSION:-22}"
 
@@ -7,6 +8,8 @@ install_gcc=false
 install_llvm_clang=false
 install_llvm_format=false
 install_coverage=false
+install_google_test=false
+install_google_benchmark=false
 install_quic=false
 
 usage() {
@@ -18,6 +21,9 @@ Options:
   --llvm-clang    Install clang/clang++ from apt.llvm.org using LLVM_VERSION.
   --llvm-format   Install clang-format from apt.llvm.org using LLVM_VERSION.
   --coverage      Install gcovr/lcov.
+  --google-test   Install system GoogleTest/GoogleMock packages.
+  --google-benchmark
+                  Install system Google Benchmark package.
   --quic          Install libngtcp2 and the available crypto helper.
 EOF
 }
@@ -35,6 +41,12 @@ while (($#)); do
       ;;
     --coverage)
       install_coverage=true
+      ;;
+    --google-test)
+      install_google_test=true
+      ;;
+    --google-benchmark)
+      install_google_benchmark=true
       ;;
     --quic)
       install_quic=true
@@ -60,6 +72,15 @@ notice() {
   fi
 }
 
+if [[ "${EUID}" -eq 0 ]]; then
+  SUDO=()
+elif command -v sudo >/dev/null 2>&1; then
+  SUDO=(sudo)
+else
+  echo "This script needs root privileges or sudo." >&2
+  exit 1
+fi
+
 export_env() {
   local key="$1"
   local value="$2"
@@ -75,14 +96,14 @@ apt_has_package() {
 install_llvm_repo() {
   wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh
   chmod +x /tmp/llvm.sh
-  sudo /tmp/llvm.sh "${LLVM_VERSION}"
+  "${SUDO[@]}" /tmp/llvm.sh "${LLVM_VERSION}"
 }
 
 install_ngtcp2() {
   local crypto_backend=""
 
   if apt_has_package libngtcp2-dev; then
-    sudo apt-get install -y libngtcp2-dev
+    "${SUDO[@]}" apt-get install -y libngtcp2-dev
   else
     notice "libngtcp2-dev is not available on this runner image; QUIC will stay auto-disabled."
     export_env QB_CI_NGTCP2_CRYPTO_BACKEND none
@@ -90,10 +111,10 @@ install_ngtcp2() {
   fi
 
   if apt_has_package libngtcp2-crypto-ossl-dev; then
-    sudo apt-get install -y libngtcp2-crypto-ossl-dev
+    "${SUDO[@]}" apt-get install -y libngtcp2-crypto-ossl-dev
     crypto_backend="ossl"
   elif apt_has_package libngtcp2-crypto-gnutls-dev; then
-    sudo apt-get install -y libngtcp2-crypto-gnutls-dev
+    "${SUDO[@]}" apt-get install -y libngtcp2-crypto-gnutls-dev
     crypto_backend="gnutls"
     notice "Installed libngtcp2 GnuTLS helper. qb's current native QUIC backend uses ngtcp2 OpenSSL APIs, so QUIC may remain auto-disabled until a GnuTLS backend is implemented."
   else
@@ -104,16 +125,19 @@ install_ngtcp2() {
   export_env QB_CI_NGTCP2_CRYPTO_BACKEND "${crypto_backend}"
 }
 
-sudo apt-get update
+"${SUDO[@]}" apt-get update
 
 packages=(
   ca-certificates
+  cmake
   gnupg
   libargon2-dev
+  lsb-release
   libssl-dev
   ninja-build
   openssl
   pkg-config
+  software-properties-common
   wget
   zlib1g-dev
 )
@@ -126,14 +150,22 @@ if [[ "${install_coverage}" == true ]]; then
   packages+=(gcovr lcov)
 fi
 
-sudo apt-get install -y "${packages[@]}"
+if [[ "${install_google_test}" == true ]]; then
+  packages+=(libgtest-dev libgmock-dev)
+fi
+
+if [[ "${install_google_benchmark}" == true ]]; then
+  packages+=(libbenchmark-dev)
+fi
+
+"${SUDO[@]}" apt-get install -y "${packages[@]}"
 
 if [[ "${install_llvm_clang}" == true || "${install_llvm_format}" == true ]]; then
   install_llvm_repo
   llvm_packages=()
   [[ "${install_llvm_clang}" == true ]] && llvm_packages+=("clang-${LLVM_VERSION}")
   [[ "${install_llvm_format}" == true ]] && llvm_packages+=("clang-format-${LLVM_VERSION}")
-  sudo apt-get install -y "${llvm_packages[@]}"
+  "${SUDO[@]}" apt-get install -y "${llvm_packages[@]}"
 fi
 
 if [[ "${install_quic}" == true ]]; then
