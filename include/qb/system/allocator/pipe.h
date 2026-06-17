@@ -59,12 +59,12 @@ class base_pipe : std::allocator<T> {
     constexpr static const std::size_t _SIZE = 4096; /**< Initial buffer size */
 
 protected:
-    std::size_t _begin;    /**< Index of first valid element */
-    std::size_t _end;      /**< Index just after the last valid element */
-    bool _flag_front;      /**< Indicates if the last allocation was at the beginning */
-    std::size_t _capacity; /**< Total buffer capacity */
-    std::size_t _factor;   /**< Buffer expansion factor */
-    T          *_data;     /**< Buffer data */
+    std::size_t _begin;      /**< Index of first valid element */
+    std::size_t _end;        /**< Index just after the last valid element */
+    bool        _flag_front; /**< Indicates if the last allocation was at the beginning */
+    std::size_t _capacity;   /**< Total buffer capacity */
+    std::size_t _factor;     /**< Buffer expansion factor */
+    T          *_data;       /**< Buffer data */
 
 public:
     /**
@@ -123,7 +123,8 @@ public:
     /**
      * @brief Copy assignment operator
      */
-    base_pipe &operator=(base_pipe const &rhs) {
+    base_pipe &
+    operator=(base_pipe const &rhs) {
         if (this != &rhs) {
             reset();
             std::memcpy(allocate_back(rhs.size()), rhs.begin(), rhs.size() * sizeof(T));
@@ -371,7 +372,8 @@ public:
                 throw std::bad_alloc();
 
             const auto new_data = base_type::allocate(new_capacity);
-            std::memcpy(new_data, _data + _begin, nb_item * sizeof(T));
+            if (nb_item > 0)
+                std::memcpy(new_data, _data + _begin, nb_item * sizeof(T));
             if (_capacity)
                 base_type::deallocate(_data, _capacity);
 
@@ -395,8 +397,7 @@ public:
     inline U &
     allocate_back(_Init &&...init) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
-        return *(new (reinterpret_cast<U *>(allocate_back(BUCKET_SIZE)))
-                     U(std::forward<_Init>(init)...));
+        return *(new (reinterpret_cast<U *>(allocate_back(BUCKET_SIZE))) U(std::forward<_Init>(init)...));
     }
 
     /**
@@ -412,8 +413,7 @@ public:
     inline U &
     allocate_size(std::size_t const size, _Init &&...init) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
-        return *(new (reinterpret_cast<U *>(allocate_back(size + BUCKET_SIZE)))
-                     U(std::forward<_Init>(init)...));
+        return *(new (reinterpret_cast<U *>(allocate_back(size + BUCKET_SIZE))) U(std::forward<_Init>(init)...));
     }
 
     /**
@@ -447,8 +447,7 @@ public:
     inline U &
     allocate(_Init &&...init) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
-        return *(new (reinterpret_cast<U *>(allocate(BUCKET_SIZE)))
-                     U(std::forward<_Init>(init)...));
+        return *(new (reinterpret_cast<U *>(allocate(BUCKET_SIZE))) U(std::forward<_Init>(init)...));
     }
 
     /**
@@ -462,8 +461,7 @@ public:
     inline U &
     recycle_back(U const &data) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
-        return *reinterpret_cast<U *>(
-            std::memcpy(allocate_back(BUCKET_SIZE), &data, sizeof(U)));
+        return *reinterpret_cast<U *>(std::memcpy(allocate_back(BUCKET_SIZE), &data, sizeof(U)));
     }
 
     /**
@@ -477,8 +475,7 @@ public:
     template <typename U>
     inline U &
     recycle_back(U const &data, std::size_t const size) {
-        return *reinterpret_cast<U *>(
-            std::memcpy(allocate_back(size), &data, size * sizeof(T)));
+        return *reinterpret_cast<U *>(std::memcpy(allocate_back(size), &data, size * sizeof(T)));
     }
 
     /**
@@ -492,8 +489,7 @@ public:
     inline U &
     recycle(U const &data) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
-        return *reinterpret_cast<U *>(
-            std::memcpy(allocate(BUCKET_SIZE), &data, sizeof(U)));
+        return *reinterpret_cast<U *>(std::memcpy(allocate(BUCKET_SIZE), &data, sizeof(U)));
     }
 
     /**
@@ -507,8 +503,7 @@ public:
     template <typename U>
     inline U &
     recycle(U const &data, std::size_t const size) {
-        return *reinterpret_cast<U *>(
-            std::memcpy(allocate(size), &data, size * sizeof(T)));
+        return *reinterpret_cast<U *>(std::memcpy(allocate(size), &data, size * sizeof(T)));
     }
 
     /**
@@ -570,11 +565,9 @@ public:
         // if a future member pushed sizeof(pipe) past it, only the first cache
         // line would be swapped, leaving `_data` half-exchanged (double-free /
         // leak). Guard the invariant at compile time.
-        static_assert(sizeof(pipe) <= sizeof(CacheLine),
-                      "pipe<T>::swap byte-swaps a single CacheLine; the pipe "
-                      "object must fit within one cache line");
-        std::swap(*reinterpret_cast<CacheLine *>(this),
-                  *reinterpret_cast<CacheLine *>(&rhs));
+        static_assert(sizeof(pipe) <= sizeof(CacheLine), "pipe<T>::swap byte-swaps a single CacheLine; the pipe "
+                                                         "object must fit within one cache line");
+        std::swap(*reinterpret_cast<CacheLine *>(this), *reinterpret_cast<CacheLine *>(&rhs));
     }
 
     /**
@@ -634,10 +627,10 @@ public:
 template <>
 class pipe<char> : public base_pipe<char> {
 public:
-    pipe() = default;
-    pipe(pipe const &) = default;
-    pipe(pipe &&) noexcept = default;
-    pipe &operator=(pipe const &) = default;
+    pipe()                            = default;
+    pipe(pipe const &)                = default;
+    pipe(pipe &&) noexcept            = default;
+    pipe &operator=(pipe const &)     = default;
     pipe &operator=(pipe &&) noexcept = default;
 
     /**
@@ -704,13 +697,11 @@ public:
     template <typename T>
     pipe &
     put(std::vector<T> const &vec) {
-        static_assert(sizeof(T) == 1,
-                      "pipe<char>::put(std::vector<T>) copies vec.size() BYTES; "
-                      "for multi-byte element types this silently truncates the "
-                      "data. Use put(reinterpret_cast<const char*>(vec.data()), "
-                      "vec.size() * sizeof(T)) explicitly instead.");
-        memcpy(allocate_back(vec.size()), reinterpret_cast<const char *>(vec.data()),
-               vec.size());
+        static_assert(sizeof(T) == 1, "pipe<char>::put(std::vector<T>) copies vec.size() BYTES; "
+                                      "for multi-byte element types this silently truncates the "
+                                      "data. Use put(reinterpret_cast<const char*>(vec.data()), "
+                                      "vec.size() * sizeof(T)) explicitly instead.");
+        memcpy(allocate_back(vec.size()), reinterpret_cast<const char *>(vec.data()), vec.size());
         return *this;
     }
 
@@ -725,13 +716,11 @@ public:
     template <typename T, std::size_t _Size>
     pipe &
     put(std::array<T, _Size> const &arr) {
-        static_assert(sizeof(T) == 1,
-                      "pipe<char>::put(std::array<T,N>) copies N BYTES; for "
-                      "multi-byte element types this silently truncates the "
-                      "data. Use put(reinterpret_cast<const char*>(arr.data()), "
-                      "N * sizeof(T)) explicitly instead.");
-        memcpy(allocate_back(arr.size()), reinterpret_cast<const char *>(arr.data()),
-               arr.size());
+        static_assert(sizeof(T) == 1, "pipe<char>::put(std::array<T,N>) copies N BYTES; for "
+                                      "multi-byte element types this silently truncates the "
+                                      "data. Use put(reinterpret_cast<const char*>(arr.data()), "
+                                      "N * sizeof(T)) explicitly instead.");
+        memcpy(allocate_back(arr.size()), reinterpret_cast<const char *>(arr.data()), arr.size());
         return *this;
     }
 
@@ -839,7 +828,7 @@ pipe<char> &pipe<char>::put<pipe<char>>(pipe<char> const &rhs);
  * @brief Stream output operator for pipe<char>
  */
 template <typename stream>
-    requires (!std::is_same_v<stream, qb::allocator::pipe<char>>)
+requires(!std::is_same_v<stream, qb::allocator::pipe<char>>)
 stream &
 operator<<(stream &os, qb::allocator::pipe<char> const &p) {
     os << std::string_view(p.begin(), p.size());

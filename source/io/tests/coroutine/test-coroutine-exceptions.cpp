@@ -36,14 +36,27 @@ using namespace std::chrono_literals;
 
 class CoroutineExceptionTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    
-    void TearDown() override {
+
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
+
+task<void>
+parallel_throwing_task(std::atomic<int> *total_caught) {
+    try {
+        co_await sleep(5ms);
+        throw std::runtime_error("parallel throw");
+    } catch (...) {
+        total_caught->fetch_add(1);
+    }
+    co_return;
+}
 
 // =============================================================================
 // BASIC EXCEPTION PROPAGATION
@@ -58,8 +71,8 @@ TEST_F(CoroutineExceptionTests, ExceptionPropagatesFromInnerCoroutine) {
     std::atomic<bool> after_catch{false};
 
     auto caught_ptr = &caught;
-    auto after_ptr = &after_catch;
-    
+    auto after_ptr  = &after_catch;
+
     auto coro_fn = [caught_ptr, after_ptr]() -> task<void> {
         try {
             auto inner_fn = []() -> task<void> {
@@ -69,7 +82,7 @@ TEST_F(CoroutineExceptionTests, ExceptionPropagatesFromInnerCoroutine) {
             };
             auto inner = inner_fn();
             co_await inner;
-        } catch (const std::runtime_error& e) {
+        } catch (const std::runtime_error &e) {
             if (std::string(e.what()) == "test exception") {
                 caught_ptr->store(true);
             }
@@ -81,9 +94,9 @@ TEST_F(CoroutineExceptionTests, ExceptionPropagatesFromInnerCoroutine) {
 
     coro_scheduler().spawn(std::move(t));
     run_for(50ms);
-    
+
     EXPECT_TRUE(caught.load());
-    EXPECT_TRUE(after_catch.load());  // Execution continues after catch
+    EXPECT_TRUE(after_catch.load()); // Execution continues after catch
 }
 
 /**
@@ -92,18 +105,18 @@ TEST_F(CoroutineExceptionTests, ExceptionPropagatesFromInnerCoroutine) {
  */
 TEST_F(CoroutineExceptionTests, ExceptionBeforeSuspension) {
     std::atomic<bool> caught{false};
-    auto caught_ptr = &caught;
-    
+    auto              caught_ptr = &caught;
+
     auto coro_fn = [caught_ptr]() -> task<void> {
         try {
             auto inner_fn = []() -> task<void> {
                 throw std::logic_error("immediate throw");
-                co_await sleep(1ms);  // Never reached
+                co_await sleep(1ms); // Never reached
                 co_return;
             };
             auto inner = inner_fn();
             co_await inner;
-        } catch (const std::logic_error&) {
+        } catch (const std::logic_error &) {
             caught_ptr->store(true);
         }
         co_return;
@@ -112,7 +125,7 @@ TEST_F(CoroutineExceptionTests, ExceptionBeforeSuspension) {
 
     coro_scheduler().spawn(std::move(t));
     run_for(50ms);
-    
+
     EXPECT_TRUE(caught.load());
 }
 
@@ -122,8 +135,8 @@ TEST_F(CoroutineExceptionTests, ExceptionBeforeSuspension) {
  */
 TEST_F(CoroutineExceptionTests, ExceptionAfterSuspension) {
     std::atomic<bool> caught{false};
-    auto caught_ptr = &caught;
-    
+    auto              caught_ptr = &caught;
+
     auto coro_fn = [caught_ptr]() -> task<void> {
         try {
             auto inner_fn = []() -> task<void> {
@@ -133,7 +146,7 @@ TEST_F(CoroutineExceptionTests, ExceptionAfterSuspension) {
             };
             auto inner = inner_fn();
             co_await inner;
-        } catch (const std::invalid_argument&) {
+        } catch (const std::invalid_argument &) {
             caught_ptr->store(true);
         }
         co_return;
@@ -142,7 +155,7 @@ TEST_F(CoroutineExceptionTests, ExceptionAfterSuspension) {
 
     coro_scheduler().spawn(std::move(t));
     run_for(50ms);
-    
+
     EXPECT_TRUE(caught.load());
 }
 
@@ -156,8 +169,8 @@ TEST_F(CoroutineExceptionTests, ExceptionAfterSuspension) {
  */
 TEST_F(CoroutineExceptionTests, DifferentExceptionTypes) {
     std::atomic<int> caught_types{0};
-    auto types_ptr = &caught_types;
-    
+    auto             types_ptr = &caught_types;
+
     auto coro_fn = [types_ptr]() -> task<void> {
         // Test std::runtime_error
         try {
@@ -166,10 +179,10 @@ TEST_F(CoroutineExceptionTests, DifferentExceptionTypes) {
                 co_return;
             };
             co_await fn1();
-        } catch (const std::runtime_error&) {
+        } catch (const std::runtime_error &) {
             types_ptr->fetch_add(1);
         }
-        
+
         // Test std::logic_error
         try {
             auto fn2 = []() -> task<void> {
@@ -177,10 +190,10 @@ TEST_F(CoroutineExceptionTests, DifferentExceptionTypes) {
                 co_return;
             };
             co_await fn2();
-        } catch (const std::logic_error&) {
+        } catch (const std::logic_error &) {
             types_ptr->fetch_add(10);
         }
-        
+
         // Test custom exception
         struct CustomException : std::exception {};
         try {
@@ -189,17 +202,17 @@ TEST_F(CoroutineExceptionTests, DifferentExceptionTypes) {
                 co_return;
             };
             co_await fn3();
-        } catch (const CustomException&) {
+        } catch (const CustomException &) {
             types_ptr->fetch_add(100);
         }
-        
+
         co_return;
     };
     auto t = coro_fn();
 
     coro_scheduler().spawn(std::move(t));
     run_for(50ms);
-    
+
     // All three exception types should be caught: 1 + 10 + 100 = 111
     EXPECT_EQ(caught_types.load(), 111);
 }
@@ -214,33 +227,33 @@ TEST_F(CoroutineExceptionTests, DifferentExceptionTypes) {
  */
 TEST_F(CoroutineExceptionTests, ExceptionThroughMultipleLayers) {
     std::atomic<int> depth_caught{0};
-    auto depth_ptr = &depth_caught;
-    
+    auto             depth_ptr = &depth_caught;
+
     auto level3_fn = []() -> task<void> {
         co_await sleep(1ms);
         throw std::runtime_error("from level 3");
         co_return;
     };
-    
+
     auto level2_fn = [&level3_fn]() -> task<void> {
-        co_await level3_fn();  // Exception propagates through
+        co_await level3_fn(); // Exception propagates through
         co_return;
     };
-    
+
     auto level1_fn = [&level2_fn, depth_ptr]() -> task<void> {
         try {
             co_await level2_fn();
-        } catch (const std::runtime_error& e) {
+        } catch (const std::runtime_error &e) {
             if (std::string(e.what()) == "from level 3") {
                 depth_ptr->store(3);
             }
         }
         co_return;
     };
-    
+
     coro_scheduler().spawn(level1_fn());
     run_for(50ms);
-    
+
     EXPECT_EQ(depth_caught.load(), 3);
 }
 
@@ -250,35 +263,35 @@ TEST_F(CoroutineExceptionTests, ExceptionThroughMultipleLayers) {
  */
 TEST_F(CoroutineExceptionTests, RethrowInCoroutine) {
     std::atomic<int> catch_count{0};
-    auto count_ptr = &catch_count;
-    
+    auto             count_ptr = &catch_count;
+
     auto thrower_fn = []() -> task<void> {
         throw std::runtime_error("original");
         co_return;
     };
-    
+
     auto rethrow_fn = [&thrower_fn, count_ptr]() -> task<void> {
         try {
             co_await thrower_fn();
         } catch (...) {
             count_ptr->fetch_add(1);
-            throw;  // Rethrow
+            throw; // Rethrow
         }
         co_return;
     };
-    
+
     auto catcher_fn = [&rethrow_fn, count_ptr]() -> task<void> {
         try {
             co_await rethrow_fn();
-        } catch (const std::runtime_error&) {
+        } catch (const std::runtime_error &) {
             count_ptr->fetch_add(10);
         }
         co_return;
     };
-    
+
     coro_scheduler().spawn(catcher_fn());
     run_for(50ms);
-    
+
     // Should catch twice: inner(1) + outer(10) = 11
     EXPECT_EQ(catch_count.load(), 11);
 }
@@ -293,31 +306,31 @@ TEST_F(CoroutineExceptionTests, RethrowInCoroutine) {
  */
 TEST_F(CoroutineExceptionTests, ExceptionFromValueReturningCoroutine) {
     std::atomic<bool> caught{false};
-    std::atomic<int> fallback_value{0};
-    auto caught_ptr = &caught;
-    auto fallback_ptr = &fallback_value;
-    
+    std::atomic<int>  fallback_value{0};
+    auto              caught_ptr   = &caught;
+    auto              fallback_ptr = &fallback_value;
+
     auto thrower_fn = []() -> task<int> {
         co_await sleep(1ms);
         throw std::runtime_error("no value");
-        co_return 42;  // Never reached
+        co_return 42; // Never reached
     };
-    
+
     auto handler_fn = [&thrower_fn, caught_ptr, fallback_ptr]() -> task<void> {
         int result = 0;
         try {
             result = co_await thrower_fn();
-        } catch (const std::runtime_error&) {
+        } catch (const std::runtime_error &) {
             caught_ptr->store(true);
-            result = -1;  // Fallback value
+            result = -1; // Fallback value
         }
         fallback_ptr->store(result);
         co_return;
     };
-    
+
     coro_scheduler().spawn(handler_fn());
     run_for(50ms);
-    
+
     EXPECT_TRUE(caught.load());
     EXPECT_EQ(fallback_value.load(), -1);
 }
@@ -332,14 +345,14 @@ TEST_F(CoroutineExceptionTests, ExceptionFromValueReturningCoroutine) {
  */
 TEST_F(CoroutineExceptionTests, SchedulerStableAfterException) {
     std::atomic<int> completed_count{0};
-    auto count_ptr = &completed_count;
-    
+    auto             count_ptr = &completed_count;
+
     // First coroutine throws
     auto thrower_fn = []() -> task<void> {
         throw std::runtime_error("error");
         co_return;
     };
-    
+
     auto catcher_fn = [&thrower_fn, count_ptr]() -> task<void> {
         try {
             co_await thrower_fn();
@@ -348,21 +361,21 @@ TEST_F(CoroutineExceptionTests, SchedulerStableAfterException) {
         }
         co_return;
     };
-    
+
     // Second coroutine succeeds
     auto normal_fn = [count_ptr]() -> task<void> {
         co_await sleep(10ms);
         count_ptr->fetch_add(10);
         co_return;
     };
-    
+
     coro_scheduler().spawn(catcher_fn());
     coro_scheduler().spawn(normal_fn());
     run_for(50ms);
-    
+
     // Both should complete: 1 + 10 = 11
     EXPECT_EQ(completed_count.load(), 11);
-    
+
     // Scheduler should be clean
     EXPECT_EQ(coro_scheduler().active_count(), 0);
 }
@@ -373,28 +386,15 @@ TEST_F(CoroutineExceptionTests, SchedulerStableAfterException) {
  */
 TEST_F(CoroutineExceptionTests, MultipleExceptionsInParallel) {
     std::atomic<int> total_caught{0};
-    auto total_ptr = &total_caught;
-    
+    auto             total_ptr = &total_caught;
+
     // Spawn 5 coroutines that all throw
     for (int i = 0; i < 5; ++i) {
-        auto fn = [total_ptr]() -> task<void> {
-            try {
-                auto thrower = []() -> task<void> {
-                    co_await sleep(5ms);
-                    throw std::runtime_error("parallel throw");
-                    co_return;
-                };
-                co_await thrower();
-            } catch (...) {
-                total_ptr->fetch_add(1);
-            }
-            co_return;
-        };
-        coro_scheduler().spawn(fn());
+        coro_scheduler().spawn(parallel_throwing_task(total_ptr));
     }
-    
+
     run_for(50ms);
-    
+
     // All 5 should have caught their exceptions
     EXPECT_EQ(total_caught.load(), 5);
 }
@@ -403,7 +403,8 @@ TEST_F(CoroutineExceptionTests, MultipleExceptionsInParallel) {
 // MAIN
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     qb::io::async::init();
     return RUN_ALL_TESTS();

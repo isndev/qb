@@ -39,6 +39,7 @@ jobs:
           -DQB_BUILD_EXAMPLES=OFF
           -DQB_USE_SYSTEM_GTEST=ON
           -DQB_ENABLE_NATIVE_ARCH=OFF
+          -DGCOV_PATH="${GCOV_PATH}"
           -DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE}"
 
       - name: Build

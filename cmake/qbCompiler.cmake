@@ -339,6 +339,30 @@ if(QB_SANITIZE)
 endif()
 
 # -----------------------------------------------------------------------------
+# Coverage instrumentation
+# -----------------------------------------------------------------------------
+# Coverage must be applied per target. Setting global CMAKE_*_FLAGS after the
+# source tree has already created targets does not retrofit existing targets.
+set(QB_COVERAGE_COMPILE_OPTS "")
+set(QB_COVERAGE_LINK_OPTS "")
+if(QB_BUILD_COVERAGE)
+    if(WIN32)
+        qb_warning_message("QB_BUILD_COVERAGE is not supported on Windows")
+    elseif(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+        qb_warning_message("QB_BUILD_COVERAGE is intended for Debug builds")
+    elseif(QB_COMPILER_GCC OR QB_COMPILER_CLANG)
+        list(APPEND QB_COVERAGE_COMPILE_OPTS
+            "-g"
+            "-O0"
+            "-fprofile-arcs"
+            "-ftest-coverage"
+        )
+        list(APPEND QB_COVERAGE_LINK_OPTS "--coverage")
+        qb_status_message("Coverage instrumentation enabled")
+    endif()
+endif()
+
+# -----------------------------------------------------------------------------
 # Thread Support
 # -----------------------------------------------------------------------------
 find_package(Threads REQUIRED)
@@ -373,6 +397,10 @@ function(qb_apply_compiler_flags target)
         target_compile_options(${target} PRIVATE ${QB_SANITIZE_COMPILE_OPTS})
     endif()
 
+    if(QB_COVERAGE_COMPILE_OPTS)
+        target_compile_options(${target} PRIVATE ${QB_COVERAGE_COMPILE_OPTS})
+    endif()
+
     # Link threads if needed
     if(CMAKE_USE_PTHREADS_INIT)
         target_link_libraries(${target} PRIVATE Threads::Threads)
@@ -383,6 +411,10 @@ function(qb_apply_linker_flags target)
     # Sanitizer runtime must be on the link line of every instrumented target.
     if(QB_SANITIZE_LINK_OPTS)
         target_link_options(${target} PRIVATE ${QB_SANITIZE_LINK_OPTS})
+    endif()
+
+    if(QB_COVERAGE_LINK_OPTS)
+        target_link_options(${target} PRIVATE ${QB_COVERAGE_LINK_OPTS})
     endif()
 
     if(QB_COMPILER_MSVC)
@@ -556,7 +588,8 @@ foreach(_v
     QB_COMPILER_MSVC QB_COMPILER_GCC QB_COMPILER_CLANG QB_COMPILER_INTEL QB_COMPILER_NAME
     QB_CXX_FLAGS_BASE QB_CXX_FLAGS_DEBUG QB_CXX_FLAGS_RELEASE
     QB_CXX_FLAGS_RELWITHDEBINFO QB_CXX_FLAGS_MINSIZEREL
-    QB_SANITIZE_COMPILE_OPTS QB_SANITIZE_LINK_OPTS)
+    QB_SANITIZE_COMPILE_OPTS QB_SANITIZE_LINK_OPTS
+    QB_COVERAGE_COMPILE_OPTS QB_COVERAGE_LINK_OPTS)
     set(${_v} "${${_v}}" CACHE INTERNAL "")
 endforeach()
 
