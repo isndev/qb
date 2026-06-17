@@ -30,8 +30,6 @@ set(QB_CONFIG_INCLUDED TRUE)
 
 # Include CMake built-in modules
 include(CMakeParseArguments)
-include(GNUInstallDirs)
-include(CheckCXXCompilerFlag)
 
 # -----------------------------------------------------------------------------
 # Framework Information
@@ -121,53 +119,6 @@ if(QB_DEBUG_MEMORY AND NOT QB_SANITIZE)
 endif()
 
 # -----------------------------------------------------------------------------
-# Platform Detection
-# -----------------------------------------------------------------------------
-if(WIN32)
-    set(QB_PLATFORM "Windows")
-    set(QB_PLATFORM_WINDOWS TRUE)
-elseif(APPLE)
-    set(QB_PLATFORM "macOS")
-    set(QB_PLATFORM_MACOS TRUE)
-elseif(UNIX)
-    set(QB_PLATFORM "Linux")
-    set(QB_PLATFORM_LINUX TRUE)
-else()
-    set(QB_PLATFORM "Unknown")
-    message(WARNING "Unknown platform detected")
-endif()
-
-# Architecture detection
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(QB_ARCH "x64")
-    set(QB_ARCH_64 TRUE)
-else()
-    set(QB_ARCH "x86")
-    set(QB_ARCH_32 TRUE)
-endif()
-
-# ARM detection
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|aarch64|ARM64)")
-    set(QB_ARCH_ARM TRUE)
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
-        set(QB_ARCH_ARM64 TRUE)
-    else()
-        set(QB_ARCH_ARM32 TRUE)
-    endif()
-endif()
-
-# Publish platform/arch flags as CACHE INTERNAL so they are visible in EVERY scope,
-# including sibling subdirectories such as qbm/* (loaded from the top-level project).
-# qb's helper functions (qb_apply_linker_flags, etc.) run in those foreign scopes and
-# would otherwise see these as empty. See the same rationale for QB_CXX_FLAGS_* and
-# QB_COMPILE_DEFINITIONS in qbCompiler/qbDependencies.
-foreach(_v
-    QB_PLATFORM QB_PLATFORM_WINDOWS QB_PLATFORM_MACOS QB_PLATFORM_LINUX
-    QB_ARCH QB_ARCH_64 QB_ARCH_32 QB_ARCH_ARM QB_ARCH_ARM64 QB_ARCH_ARM32)
-    set(${_v} "${${_v}}" CACHE INTERNAL "")
-endforeach()
-
-# -----------------------------------------------------------------------------
 # Build Type Configuration
 # -----------------------------------------------------------------------------
 if(NOT CMAKE_BUILD_TYPE)
@@ -186,7 +137,13 @@ endif()
 # -----------------------------------------------------------------------------
 # Compiler Configuration
 # -----------------------------------------------------------------------------
-set(CMAKE_CXX_STANDARD 23)
+set(QB_CXX_STANDARD 23 CACHE STRING "C++ standard required by qb targets")
+set_property(CACHE QB_CXX_STANDARD PROPERTY STRINGS 23)
+if(NOT QB_CXX_STANDARD STREQUAL "23")
+    message(FATAL_ERROR "qb requires C++23; set QB_CXX_STANDARD=23")
+endif()
+
+set(CMAKE_CXX_STANDARD ${QB_CXX_STANDARD})
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -195,15 +152,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # any consumer's shared library) without "recompile with -fPIC" link errors on
 # Linux. Negligible cost on modern targets even for fully-static builds.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-# Enable colored output if supported
-if(NOT WIN32)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        add_compile_options(-fcolor-diagnostics)
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-        add_compile_options(-fdiagnostics-color=always)
-    endif()
-endif()
 
 # -----------------------------------------------------------------------------
 # Library Configuration
@@ -254,65 +202,131 @@ foreach(config ${CMAKE_CONFIGURATION_TYPES})
 endforeach()
 
 # -----------------------------------------------------------------------------
-# Definitions and Preprocessor Macros
+# Post-project Configuration
 # -----------------------------------------------------------------------------
-set(QB_COMPILE_DEFINITIONS)
+# Must run after project() has enabled CXX: GNUInstallDirs needs a known target
+# architecture, CMAKE_SIZEOF_VOID_P is only reliable after language enablement,
+# and compiler-specific color flags need CMAKE_CXX_COMPILER_ID.
+macro(qb_initialize_project_configuration)
+    include(GNUInstallDirs)
 
-# Framework version
-list(APPEND QB_COMPILE_DEFINITIONS
-    "QB_VERSION_MAJOR=${QB_FRAMEWORK_VERSION_MAJOR}"
-    "QB_VERSION_MINOR=${QB_FRAMEWORK_VERSION_MINOR}"
-    "QB_VERSION_PATCH=${QB_FRAMEWORK_VERSION_PATCH}"
-    "QB_VERSION=\"${QB_FRAMEWORK_VERSION}\""
-)
-
-# Platform definitions
-if(QB_PLATFORM_WINDOWS)
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_PLATFORM_WINDOWS=1")
-elseif(QB_PLATFORM_MACOS)
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_PLATFORM_MACOS=1")
-elseif(QB_PLATFORM_LINUX)
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_PLATFORM_LINUX=1")
-endif()
-
-# Architecture definitions
-if(QB_ARCH_64)
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_ARCH_64=1")
-else()
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_ARCH_32=1")
-endif()
-
-if(QB_ARCH_ARM)
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_ARCH_ARM=1")
-    if(QB_ARCH_ARM64)
-        list(APPEND QB_COMPILE_DEFINITIONS "QB_ARCH_ARM64=1")
+    # Platform detection
+    set(QB_PLATFORM_WINDOWS FALSE)
+    set(QB_PLATFORM_MACOS FALSE)
+    set(QB_PLATFORM_LINUX FALSE)
+    if(WIN32)
+        set(QB_PLATFORM "Windows")
+        set(QB_PLATFORM_WINDOWS TRUE)
+    elseif(APPLE)
+        set(QB_PLATFORM "macOS")
+        set(QB_PLATFORM_MACOS TRUE)
+    elseif(UNIX)
+        set(QB_PLATFORM "Linux")
+        set(QB_PLATFORM_LINUX TRUE)
+    else()
+        set(QB_PLATFORM "Unknown")
+        message(WARNING "Unknown platform detected")
     endif()
-endif()
 
-# Feature definitions
-if(QB_WITH_LOGGING)
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_WITH_LOGGING=1")
-endif()
+    # Architecture detection
+    set(QB_ARCH_64 FALSE)
+    set(QB_ARCH_32 FALSE)
+    set(QB_ARCH_ARM FALSE)
+    set(QB_ARCH_ARM64 FALSE)
+    set(QB_ARCH_ARM32 FALSE)
+    set(_qb_system_processor "${CMAKE_SYSTEM_PROCESSOR}")
+    if(APPLE AND CMAKE_OSX_ARCHITECTURES)
+        list(GET CMAKE_OSX_ARCHITECTURES 0 _qb_system_processor)
+    endif()
 
-if(QB_WITH_SSL)
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_WITH_SSL=1")
-endif()
+    if(_qb_system_processor MATCHES "^(arm64|aarch64|ARM64)$")
+        set(QB_ARCH_ARM TRUE)
+        set(QB_ARCH_ARM64 TRUE)
+    elseif(_qb_system_processor MATCHES "^(arm|armv[0-9].*|aarch32|ARM)$")
+        set(QB_ARCH_ARM TRUE)
+        set(QB_ARCH_ARM32 TRUE)
+    endif()
 
-if(QB_WITH_COMPRESSION)
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_WITH_COMPRESSION=1")
-endif()
+    if(QB_ARCH_ARM64)
+        set(QB_ARCH "arm64")
+        set(QB_ARCH_64 TRUE)
+    elseif(QB_ARCH_ARM32)
+        set(QB_ARCH "arm")
+        set(QB_ARCH_32 TRUE)
+    elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(QB_ARCH "x64")
+        set(QB_ARCH_64 TRUE)
+    else()
+        set(QB_ARCH "x86")
+        set(QB_ARCH_32 TRUE)
+    endif()
 
-if(QB_DEBUG_MEMORY)
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_DEBUG_MEMORY=1")
-endif()
+    # Publish platform/arch flags as CACHE INTERNAL so they are visible in EVERY
+    # scope, including sibling qbm/* directories loaded by the top-level project.
+    foreach(_v
+        QB_PLATFORM QB_PLATFORM_WINDOWS QB_PLATFORM_MACOS QB_PLATFORM_LINUX
+        QB_ARCH QB_ARCH_64 QB_ARCH_32 QB_ARCH_ARM QB_ARCH_ARM64 QB_ARCH_ARM32)
+        set(${_v} "${${_v}}" CACHE INTERNAL "")
+    endforeach()
 
-if(QB_DEBUG_ACTOR)
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_DEBUG_ACTOR=1")
-endif()
+    # Enable colored output if supported
+    if(NOT WIN32)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+            add_compile_options(-fcolor-diagnostics)
+        elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+            add_compile_options(-fdiagnostics-color=always)
+        endif()
+    endif()
 
-if(QB_STDOUT_LOGGING)
-    list(APPEND QB_COMPILE_DEFINITIONS "QB_STDOUT_LOGGING=1")
-endif()
+    # Definitions and preprocessor macros
+    set(QB_COMPILE_DEFINITIONS)
+    list(APPEND QB_COMPILE_DEFINITIONS
+        "QB_VERSION_MAJOR=${QB_FRAMEWORK_VERSION_MAJOR}"
+        "QB_VERSION_MINOR=${QB_FRAMEWORK_VERSION_MINOR}"
+        "QB_VERSION_PATCH=${QB_FRAMEWORK_VERSION_PATCH}"
+        "QB_VERSION=\"${QB_FRAMEWORK_VERSION}\""
+    )
+
+    if(QB_PLATFORM_WINDOWS)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_PLATFORM_WINDOWS=1")
+    elseif(QB_PLATFORM_MACOS)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_PLATFORM_MACOS=1")
+    elseif(QB_PLATFORM_LINUX)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_PLATFORM_LINUX=1")
+    endif()
+
+    if(QB_ARCH_64)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_ARCH_64=1")
+    else()
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_ARCH_32=1")
+    endif()
+
+    if(QB_ARCH_ARM)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_ARCH_ARM=1")
+        if(QB_ARCH_ARM64)
+            list(APPEND QB_COMPILE_DEFINITIONS "QB_ARCH_ARM64=1")
+        endif()
+    endif()
+
+    if(QB_WITH_LOGGING)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_WITH_LOGGING=1")
+    endif()
+    if(QB_WITH_SSL)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_WITH_SSL=1")
+    endif()
+    if(QB_WITH_COMPRESSION)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_WITH_COMPRESSION=1")
+    endif()
+    if(QB_DEBUG_MEMORY)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_DEBUG_MEMORY=1")
+    endif()
+    if(QB_DEBUG_ACTOR)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_DEBUG_ACTOR=1")
+    endif()
+    if(QB_STDOUT_LOGGING)
+        list(APPEND QB_COMPILE_DEFINITIONS "QB_STDOUT_LOGGING=1")
+    endif()
+endmacro()
 
 # -----------------------------------------------------------------------------
 # Internal State Variables

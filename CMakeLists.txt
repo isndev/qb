@@ -43,6 +43,8 @@ project(${QB_FRAMEWORK_NAME}
         DESCRIPTION "${QB_FRAMEWORK_DESCRIPTION}"
 )
 
+qb_initialize_project_configuration()
+
 if(QB_BUILD_TESTS)
     include(CTest)
     enable_testing()
