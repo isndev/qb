@@ -38,6 +38,27 @@ get_openssl_error() {
     return std::string(err_buf);
 }
 
+static void
+validate_symmetric_parameters(const EVP_CIPHER                 *cipher,
+                              const std::vector<unsigned char> &key,
+                              const std::vector<unsigned char> &iv, bool is_aead) {
+    const auto expected_key_size = static_cast<size_t>(EVP_CIPHER_key_length(cipher));
+    const auto expected_iv_size  = static_cast<size_t>(EVP_CIPHER_iv_length(cipher));
+
+    if (key.size() != expected_key_size) {
+        throw std::invalid_argument("Invalid key size for symmetric algorithm");
+    }
+
+    if (expected_iv_size == 0) {
+        return;
+    }
+
+    if ((!is_aead && iv.size() != expected_iv_size) ||
+        (is_aead && iv.size() < expected_iv_size)) {
+        throw std::invalid_argument("Invalid IV size for symmetric algorithm");
+    }
+}
+
 // Convert algorithm enum to EVP_MD
 const EVP_MD *
 crypto::get_evp_md(DigestAlgorithm algorithm) {
@@ -176,6 +197,8 @@ crypto::encrypt(const std::vector<unsigned char> &plaintext,
             throw std::runtime_error("Unknown symmetric algorithm");
     }
 
+    validate_symmetric_parameters(cipher, key, iv, is_aead);
+
     // Create context
     EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
     if (!ctx) {
@@ -288,6 +311,8 @@ crypto::decrypt(const std::vector<unsigned char> &ciphertext,
         default:
             throw std::runtime_error("Unknown symmetric algorithm");
     }
+
+    validate_symmetric_parameters(cipher, key, iv, is_aead);
 
     // Check if there's enough data for ciphertext + tag
     if (is_aead && ciphertext.size() < static_cast<size_t>(tag_len)) {

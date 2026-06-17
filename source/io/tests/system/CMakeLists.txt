@@ -65,6 +65,7 @@ endforeach ()
 # establish baselines and measure perf deltas from QB_IO_PLAN.md)
 # -----------------------------------------------------------------------------
 add_executable(${PROJECT_NAME}-bench-io-plan bench-io-plan.cpp)
+_qb_apply_target_properties(${PROJECT_NAME}-bench-io-plan)
 target_link_libraries(${PROJECT_NAME}-bench-io-plan PRIVATE ${PROJECT_NAME})
 set_target_properties(${PROJECT_NAME}-bench-io-plan PROPERTIES
         FOLDER "Benches/IO"

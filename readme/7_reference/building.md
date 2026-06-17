@@ -70,7 +70,12 @@ ctest --preset debug
 
 ### Build and test presets
 
-`buildPresets`: `debug`, `release`, `dev`, `sanitize` (`CMakePresets.json:117-134`). `testPresets`: `debug`, `dev` (both `timeout=300`, `jobs=4`), and `sanitize` (`timeout=600`, `jobs=1`, because sanitized runs are slower and must not race) (`CMakePresets.json:135-169`). All three test presets set `outputOnFailure`.
+`buildPresets`: `debug`, `release`, `dev`, `sanitize`, `sanitize-thread`, and `coverage`.
+`testPresets`: `debug`, `dev` (both `timeout=300`, `jobs=4`), `sanitize`
+(`timeout=600`, `jobs=1`), `sanitize-thread` (`timeout=900`, `jobs=1`), and
+`coverage` (`timeout=600`, `jobs=4`). Sanitized presets run serially because
+instrumented async tests are slower and should not compete for scheduler/timing
+resources. Every test preset sets `outputOnFailure`.
 
 ## Manual configuration
 
@@ -218,6 +223,10 @@ The two supported integration modes — embed via `add_subdirectory(qb)` or cons
 - **`CMAKE_BUILD_TYPE` ignored.** With multi-config generators (Visual Studio, Ninja Multi-Config), the configuration is chosen at build time via `--config`, not at configure time.
 - **Sanitizers and profiling collide.** `QB_SANITIZE` and `QB_WITH_PROFILING` intercept the same hooks; enabling both emits a warning. Pick one.
 - **Network needed on first configure for a from-source fallback.** When a fetchable dependency is absent from the system, the first configure clones it from GitHub. For air-gapped builds, pre-populate `_deps` or force system packages — see [cmake_dependencies.md](./cmake_dependencies.md#offline-and-ci-builds).
+- **CI quality gates are split by concern.** The default CMake workflow remains the
+  cross-platform Release matrix. Dedicated GitHub Actions workflows cover ASan/UBSan
+  (`sanitize`), TSan (`sanitize-thread`), coverage, clang-format on changed C++
+  files, and clang-tidy on changed translation units.
 
 ## See also
 

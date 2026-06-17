@@ -24,26 +24,23 @@
  */
 
 #include <gtest/gtest.h>
-#include <qb/io/tcp/listener.h>
-#include <qb/io/udp/socket.h>
-#include <qb/io/protocol/json.h>
+#include <limits>
 #include <qb/io/async.h>
 #include <qb/io/async/coroutine.h>
 #include <qb/io/async/tcp/connector.h>
+#include <qb/io/protocol/json.h>
 #include <qb/io/stream.h>
+#include <qb/io/tcp/listener.h>
 #include <qb/io/transport/udp.h>
+#include <qb/io/udp/socket.h>
 #include <qb/uuid.h>
-#include <limits>
 #include <set>
 #include <thread>
-#include <vector>
 #include <unordered_set>
-
-constexpr const unsigned short port = 64322;
+#include <vector>
 
 TEST(URI, Resolving) {
-    qb::io::uri u1{
-        "https://www.example.com/section1/section2/action?query1=value1&query2=value2"};
+    qb::io::uri u1{"https://www.example.com/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u1.scheme() == "https");
     EXPECT_TRUE(u1.host() == "www.example.com");
     EXPECT_TRUE(u1.path() == "/section1/section2/action");
@@ -58,32 +55,28 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u2.u_port() == 8080);
     EXPECT_TRUE(u2.query("query1") == "value1");
     EXPECT_TRUE(u2.query("query2") == "value2");
-    qb::io::uri u3{
-        "https://localhost/section1/section2/action?query1=value1&query2=value2"};
+    qb::io::uri u3{"https://localhost/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u3.scheme() == "https");
     EXPECT_TRUE(u3.host() == "localhost");
     EXPECT_TRUE(u3.path() == "/section1/section2/action");
     EXPECT_TRUE(u3.u_port() == 443);
     EXPECT_TRUE(u3.query("query1") == "value1");
     EXPECT_TRUE(u3.query("query2") == "value2");
-    qb::io::uri u4{
-        "https://localhost:8080/section1/section2/action?query1=value1&query2=value2"};
+    qb::io::uri u4{"https://localhost:8080/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u4.scheme() == "https");
     EXPECT_TRUE(u4.host() == "localhost");
     EXPECT_TRUE(u4.path() == "/section1/section2/action");
     EXPECT_TRUE(u4.u_port() == 8080);
     EXPECT_TRUE(u4.query("query1") == "value1");
     EXPECT_TRUE(u4.query("query2") == "value2");
-    qb::io::uri u5{
-        "https://127.0.0.1/section1/section2/action?query1=value1&query2=value2"};
+    qb::io::uri u5{"https://127.0.0.1/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u5.scheme() == "https");
     EXPECT_TRUE(u5.host() == "127.0.0.1");
     EXPECT_TRUE(u5.path() == "/section1/section2/action");
     EXPECT_TRUE(u5.u_port() == 443);
     EXPECT_TRUE(u5.query("query1") == "value1");
     EXPECT_TRUE(u5.query("query2") == "value2");
-    qb::io::uri u6{
-        "https://127.0.0.1:8080/section1/section2/action?query1=value1&query2=value2"};
+    qb::io::uri u6{"https://127.0.0.1:8080/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u6.scheme() == "https");
     EXPECT_TRUE(u6.host() == "127.0.0.1");
     EXPECT_TRUE(u6.path() == "/section1/section2/action");
@@ -98,8 +91,7 @@ TEST(URI, Resolving) {
     EXPECT_TRUE(u7.query("query1") == "value1");
     EXPECT_TRUE(u7.query("query2") == "value2");
     EXPECT_TRUE(u7.af() == AF_INET6);
-    qb::io::uri u8{
-        "https://[::1]:8080/section1/section2/action?query1=value1&query2=value2"};
+    qb::io::uri u8{"https://[::1]:8080/section1/section2/action?query1=value1&query2=value2"};
     EXPECT_TRUE(u8.scheme() == "https");
     EXPECT_TRUE(u8.host() == "::1");
     EXPECT_TRUE(u8.path() == "/section1/section2/action");
@@ -193,14 +185,14 @@ TEST(URI, Resolving) {
 TEST(INET_TCP, Blocking) {
     std::thread tlistener([]() {
         qb::io::tcp::listener listener;
-        EXPECT_FALSE(listener.listen_v4(port) != qb::io::SocketStatus::Done);
+        EXPECT_FALSE(listener.listen_v4(0) != qb::io::SocketStatus::Done);
         EXPECT_TRUE(listener.is_open());
-        EXPECT_EQ(listener.local_endpoint().port(), port);
+        const auto port = listener.local_endpoint().port();
+        EXPECT_NE(port, 0);
 
-        std::thread tsender([]() {
+        std::thread tsender([port]() {
             qb::io::tcp::socket sock;
-            EXPECT_FALSE(sock.connect_v4("127.0.0.1", port) !=
-                         qb::io::SocketStatus::Done);
+            EXPECT_FALSE(sock.connect_v4("127.0.0.1", port) != qb::io::SocketStatus::Done);
             EXPECT_TRUE(sock.is_open());
             EXPECT_EQ(sock.peer_endpoint().port(), port);
 
@@ -227,11 +219,12 @@ TEST(INET_TCP, Blocking) {
 TEST(INET_TCP, NonBlocking) {
     std::thread tlistener([]() {
         qb::io::tcp::listener listener;
-        EXPECT_FALSE(listener.listen_v6(port) != qb::io::SocketStatus::Done);
+        EXPECT_FALSE(listener.listen_v6(0) != qb::io::SocketStatus::Done);
         EXPECT_TRUE(listener.is_open());
-        EXPECT_EQ(listener.local_endpoint().port(), port);
+        const auto port = listener.local_endpoint().port();
+        EXPECT_NE(port, 0);
 
-        std::thread tsender([]() {
+        std::thread tsender([port]() {
             qb::io::tcp::socket sock;
             EXPECT_FALSE(sock.connect_v6("::1", port) != qb::io::SocketStatus::Done);
             EXPECT_TRUE(sock.is_open());
@@ -263,19 +256,20 @@ TEST(INET_TCP, NonBlocking) {
 TEST(INET_UDP, Blocking) {
     std::thread tlistener([]() {
         qb::io::udp::socket listener;
-        EXPECT_FALSE(listener.bind_v4(port) != qb::io::SocketStatus::Done);
+        EXPECT_FALSE(listener.bind_v4(0) != qb::io::SocketStatus::Done);
         EXPECT_TRUE(listener.is_open());
-        EXPECT_EQ(listener.local_endpoint().port(), port);
+        const auto port = listener.local_endpoint().port();
+        EXPECT_NE(port, 0);
 
-        std::thread tsender([]() {
+        std::thread tsender([port]() {
             qb::io::udp::socket sock;
 
             sock.init();
             EXPECT_TRUE(sock.is_open());
 
             const char msg[] = "Hello Test !";
-            EXPECT_FALSE(sock.write(msg, sizeof(msg),
-                                    qb::io::endpoint().as_in("127.0.0.1", port)) <= 0);
+            EXPECT_FALSE(
+                sock.write(msg, sizeof(msg), qb::io::endpoint().as_in("127.0.0.1", port)) <= 0);
             sock.close();
         });
 
@@ -295,12 +289,13 @@ TEST(INET_UDP, Blocking) {
 TEST(INET_UDP, NonBlocking) {
     std::thread tlistener([]() {
         qb::io::udp::socket listener;
-        EXPECT_FALSE(listener.bind_v6(port) != qb::io::SocketStatus::Done);
+        EXPECT_FALSE(listener.bind_v6(0) != qb::io::SocketStatus::Done);
         EXPECT_TRUE(listener.is_open());
-        EXPECT_EQ(listener.local_endpoint().port(), port);
+        const auto port = listener.local_endpoint().port();
+        EXPECT_NE(port, 0);
         listener.set_nonblocking(true);
 
-        std::thread tsender([]() {
+        std::thread tsender([port]() {
             qb::io::udp::socket sock;
 
             sock.init(AF_INET6);
@@ -309,8 +304,7 @@ TEST(INET_UDP, NonBlocking) {
 
             const char msg[] = "Hello Test !";
             std::this_thread::sleep_for(std::chrono::seconds(3));
-            EXPECT_FALSE(sock.write(msg, sizeof(msg),
-                                    qb::io::endpoint().as_in("::1", port)) <= 0);
+            EXPECT_FALSE(sock.write(msg, sizeof(msg), qb::io::endpoint().as_in("::1", port)) <= 0);
             sock.close();
         });
 
@@ -344,7 +338,7 @@ TEST(UNIX_TCP, Blocking) {
             EXPECT_TRUE(sock.is_open());
 
             const char msg[] = "Hello Test !";
-            char       buffer[512];
+            char buffer[512];
             *buffer = 0;
 
             EXPECT_FALSE(sock.read(buffer, sock.write(msg, sizeof(msg))) <= 0);
@@ -416,8 +410,8 @@ TEST(UNIX_UDP, Blocking) {
             EXPECT_TRUE(sock.is_open());
 
             const char msg[] = "Hello Test !";
-            EXPECT_FALSE(sock.write(msg, sizeof(msg),
-                                    qb::io::endpoint().as_un(UNIX_SOCK_PATH)) <= 0);
+            EXPECT_FALSE(sock.write(msg, sizeof(msg), qb::io::endpoint().as_un(UNIX_SOCK_PATH)) <=
+                         0);
             sock.close();
         });
 
@@ -452,8 +446,8 @@ TEST(UNIX_UDP, NonBlocking) {
 
             const char msg[] = "Hello Test !";
             std::this_thread::sleep_for(std::chrono::seconds(3));
-            EXPECT_FALSE(sock.write(msg, sizeof(msg),
-                                    qb::io::endpoint().as_un(UNIX_SOCK_PATH)) <= 0);
+            EXPECT_FALSE(sock.write(msg, sizeof(msg), qb::io::endpoint().as_un(UNIX_SOCK_PATH)) <=
+                         0);
             sock.close();
         });
 
@@ -493,12 +487,12 @@ TEST(SocketUtils, UUIDThreadSafety) {
         });
     }
 
-    for (auto &th : threads)
+    for (auto& th : threads)
         th.join();
 
     std::set<std::string> all_uuids;
-    for (auto &vec : results)
-        for (auto &u : vec)
+    for (auto& vec : results)
+        for (auto& u : vec)
             all_uuids.insert(uuids::to_string(u));
 
     EXPECT_EQ(all_uuids.size(), static_cast<std::size_t>(num_threads * uuids_per_thread));
@@ -631,8 +625,7 @@ TEST(CORO_TCP, ConnectAwaiter) {
             auto test_task = [&completed]() -> qb::io::async::task<void> {
                 // Test basic connection using coroutine awaiter
                 auto socket = co_await qb::io::async::tcp::connect(
-                    qb::io::uri{std::string{"tcp://127.0.0.1:"} + std::to_string(test_port)}
-                );
+                    qb::io::uri{std::string{"tcp://127.0.0.1:"} + std::to_string(test_port)});
 
                 // Connection should succeed
                 EXPECT_TRUE(socket.has_value());
@@ -673,9 +666,8 @@ TEST(CORO_TCP, ConnectAwaiterTimeout) {
     auto test_task = [&completed]() -> qb::io::async::task<void> {
         // Try to connect to a port that should be closed, with 100ms timeout
         auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{"tcp://127.0.0.1:1"},  // Port 1 is unlikely to be open
-            100ms
-        );
+            qb::io::uri{"tcp://127.0.0.1:1"}, // Port 1 is unlikely to be open
+            100ms);
 
         // Connection should fail (timeout or refused)
         EXPECT_FALSE(socket.has_value());
@@ -731,8 +723,7 @@ TEST(CORO_TCP, DISABLED_ConnectAwaiterWithExistingSocket) {
                 // Connect using the existing socket
                 connected_socket = co_await qb::io::async::tcp::connect_with_socket(
                     std::move(existing_socket),
-                    qb::io::uri{std::string{"tcp://127.0.0.1:"} + std::to_string(test_port)}
-                );
+                    qb::io::uri{std::string{"tcp://127.0.0.1:"} + std::to_string(test_port)});
 
                 completed = true;
             };
@@ -1090,16 +1081,16 @@ TEST(StreamLimits, PublishRejectsWhenLimitExceeded) {
     s.set_max_write_buffer_size(20);
 
     const char data[] = "1234567890";
-    auto *result1 = s.publish(data, 10);
+    auto* result1 = s.publish(data, 10);
     EXPECT_NE(result1, nullptr);
     EXPECT_EQ(s.pendingWrite(), 10u);
 
-    auto *result2 = s.publish(data, 10);
+    auto* result2 = s.publish(data, 10);
     EXPECT_NE(result2, nullptr);
     EXPECT_EQ(s.pendingWrite(), 20u);
 
     // This should be rejected — would exceed the 20-byte limit
-    auto *result3 = s.publish(data, 1);
+    auto* result3 = s.publish(data, 1);
     EXPECT_EQ(result3, nullptr);
     EXPECT_EQ(s.pendingWrite(), 20u);
 }
@@ -1109,7 +1100,7 @@ TEST(StreamLimits, PublishAcceptsExactLimit) {
     s.set_max_write_buffer_size(10);
 
     const char data[] = "1234567890";
-    auto *result = s.publish(data, 10);
+    auto* result = s.publish(data, 10);
     EXPECT_NE(result, nullptr);
     EXPECT_EQ(s.pendingWrite(), 10u);
 }
@@ -1179,7 +1170,7 @@ TEST(URIRobustness, EncodeDecodeRoundtrip) {
         "%already%20encoded",
     };
 
-    for (const auto &original : test_cases) {
+    for (const auto& original : test_cases) {
         auto encoded = qb::io::uri::encode(original);
         auto decoded = qb::io::uri::decode(encoded);
         EXPECT_EQ(decoded, original) << "Roundtrip failed for: " << original;
@@ -1209,7 +1200,8 @@ TEST(URIRobustness, ParseQueryKeyOnly) {
 TEST(URIRobustness, LongURIStress) {
     std::string long_query;
     for (int i = 0; i < 200; ++i) {
-        if (i > 0) long_query += "&";
+        if (i > 0)
+            long_query += "&";
         long_query += "key" + std::to_string(i) + "=value" + std::to_string(i);
     }
     qb::io::uri u{"http://host/path?" + long_query};

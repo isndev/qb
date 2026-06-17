@@ -1,0 +1,80 @@
+name: format-check
+
+on:
+  push:
+    branches: [main, develop, c++23, experimental-c++23]
+  pull_request:
+    branches: [main, develop, c++23, experimental-c++23]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: format-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: Collect changed C++ files
+        id: changed
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          zero_sha="0000000000000000000000000000000000000000"
+          if [ -n "${PR_BASE_SHA:-}" ]; then
+            range="${PR_BASE_SHA}...${HEAD_SHA}"
+          elif [ -n "${BEFORE_SHA:-}" ] && [ "${BEFORE_SHA}" != "${zero_sha}" ]; then
+            range="${BEFORE_SHA}...${HEAD_SHA}"
+          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            range="HEAD^...HEAD"
+          else
+            range="HEAD"
+          fi
+
+          files="$(
+            git diff --name-only --diff-filter=ACMRT "${range}" -- \
+              '*.h' '*.hh' '*.hpp' '*.hxx' \
+              '*.c' '*.cc' '*.cpp' '*.cxx' \
+              '*.ipp' '*.tpp' |
+            grep -Ev '^(build|modules)/' || true
+          )"
+
+          {
+            echo "files<<EOF"
+            echo "${files}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Check formatting
+        if: steps.changed.outputs.files != ''
+        shell: bash
+        env:
+          CHANGED_FILES: ${{ steps.changed.outputs.files }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            [ -n "${file}" ] || continue
+            clang-format --dry-run --Werror "${file}"
+          done <<< "${CHANGED_FILES}"
+
+      - name: Nothing to check
+        if: steps.changed.outputs.files == ''
+        run: echo "No changed C++ files matched the format-check scope."

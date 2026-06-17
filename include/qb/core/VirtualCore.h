@@ -88,7 +88,7 @@ class VirtualCore {
      * (no happens-before needed: writes are published under the magic static
      * acquire edge).
      */
-    static std::atomic<ServiceId>    _nb_service;
+    static std::atomic<ServiceId> _nb_service;
     /**
      * @brief Access the `Tag → ServiceId` registration map (lazy singleton).
      * @details
@@ -132,8 +132,7 @@ public:
     // clean ready-count (each core fetch_add(1)). That separation only holds
     // while the largest possible clean count — bounded by the number of cores,
     // i.e. MaxCores — stays strictly below the first error sentinel (BadInit).
-    static_assert(static_cast<uint64_t>(qb::MaxCores) <
-                      static_cast<uint64_t>(BadInit),
+    static_assert(static_cast<uint64_t>(qb::MaxCores) < static_cast<uint64_t>(BadInit),
                   "startup-barrier sentinel space (Error::BadInit) must exceed "
                   "MaxCores so a clean ready-count is never mistaken for an error");
 
@@ -143,10 +142,10 @@ private:
     friend class Service;
     friend class CoreInitializer;
     friend class Main;
-    template <typename> friend class RefActorHandle;
+    template <typename>
+    friend class RefActorHandle;
     ////////////
-    constexpr static const uint64_t MaxRingEvents =
-        ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_EVENT_BUCKET_BYTES;
+    constexpr static const uint64_t MaxRingEvents = ((std::numeric_limits<uint16_t>::max)() + 1) / QB_LOCKFREE_EVENT_BUCKET_BYTES;
     // Types
     using Mailbox         = SharedCoreCommunication::Mailbox;
     using EventBuffer     = std::array<EventBucket, MaxRingEvents>;
@@ -178,9 +177,9 @@ private:
         static constexpr std::size_t kWords = (kBits + 63u) / 64u;   // 1024 × 64-bit words.
 
     private:
-        std::array<std::uint64_t, kWords> _bits{}; ///< Bit = 1 → SID free, bit = 0 → SID taken.
-        std::size_t                        _next_word = 0; ///< Scan cursor for fast `acquire()`.
-        std::size_t                        _count     = 0; ///< Cached population count.
+        std::array<std::uint64_t, kWords> _bits{};        ///< Bit = 1 → SID free, bit = 0 → SID taken.
+        std::size_t                       _next_word = 0; ///< Scan cursor for fast `acquire()`.
+        std::size_t                       _count     = 0; ///< Cached population count.
 
     public:
         /**
@@ -213,7 +212,7 @@ private:
                 if (auto word = _bits[w]; word) {
                     const auto bit = static_cast<std::size_t>(std::countr_zero(word));
                     _bits[w]       = word & (word - 1u); // Clear lowest set bit.
-                    _next_word     = w;                   // Remember for next acquire.
+                    _next_word     = w;                  // Remember for next acquire.
                     --_count;
                     return static_cast<ServiceId>(w * 64u + bit);
                 }
@@ -229,8 +228,8 @@ private:
         release(ServiceId sid) noexcept {
             if (sid >= kBits)
                 return;
-            const std::size_t w    = static_cast<std::size_t>(sid) / 64u;
-            const std::uint64_t m  = std::uint64_t{1} << (static_cast<std::size_t>(sid) % 64u);
+            const std::size_t   w = static_cast<std::size_t>(sid) / 64u;
+            const std::uint64_t m = std::uint64_t{1} << (static_cast<std::size_t>(sid) % 64u);
             if (!(_bits[w] & m)) {
                 _bits[w] |= m;
                 ++_count;
@@ -239,8 +238,14 @@ private:
             }
         }
 
-        [[nodiscard]] bool        empty() const noexcept { return _count == 0; }
-        [[nodiscard]] std::size_t size()  const noexcept { return _count; }
+        [[nodiscard]] bool
+        empty() const noexcept {
+            return _count == 0;
+        }
+        [[nodiscard]] std::size_t
+        size() const noexcept {
+            return _count;
+        }
     };
     using AvailableIdList = ServiceIdPool;
 
@@ -279,7 +284,7 @@ private:
         ActorId    id;
     };
     std::vector<CallbackEntry> _callback_list;
-    RemoveActorList _actor_to_remove;
+    RemoveActorList            _actor_to_remove;
     // --- loop
 
     /**
@@ -294,7 +299,7 @@ private:
      * is allowed to park itself on `mailbox.wait()`.
      */
     struct Metrics {
-        std::uint64_t _spin_credit       = 0; ///< Remaining lock-free polls before blocking wait.
+        std::uint64_t _spin_credit        = 0; ///< Remaining lock-free polls before blocking wait.
         std::uint64_t _nb_event_io        = 0;
         std::uint64_t _nb_event_received  = 0;
         std::uint64_t _nb_bucket_received = 0;
@@ -306,9 +311,9 @@ private:
         /**
          * @brief Any evidence of work performed or attempted during this iteration?
          */
-        [[nodiscard]] bool had_activity() const noexcept {
-            return (_nb_event_sent + _nb_event_received + _nb_event_io +
-                    _nb_event_sent_try) != 0;
+        [[nodiscard]] bool
+        had_activity() const noexcept {
+            return (_nb_event_sent + _nb_event_received + _nb_event_io + _nb_event_sent_try) != 0;
         }
 
         /**
@@ -318,17 +323,17 @@ private:
          * leftover credit), so a busy loop always stays on the lock-free fast path.
          * `_nanotimer` is intentionally preserved across iterations.
          */
-        void carry_over() noexcept {
-            const auto activity = _nb_event_sent + _nb_event_received + _nb_event_io +
-                                  _nb_event_sent_try;
-            const auto ts  = _nanotimer;
-            const auto credit = _spin_credit + activity;
-            *this = {};
-            _spin_credit = credit;
-            _nanotimer   = ts;
+        void
+        carry_over() noexcept {
+            const auto activity = _nb_event_sent + _nb_event_received + _nb_event_io + _nb_event_sent_try;
+            const auto ts       = _nanotimer;
+            const auto credit   = _spin_credit + activity;
+            *this               = {};
+            _spin_credit        = credit;
+            _nanotimer          = ts;
         }
     } _metrics;
-    bool            _signal_consumed = false;
+    bool _signal_consumed = false;
     /**
      * @brief Optional C++20 cancellation token wired from `qb::Main::_stop_source`.
      * @details
@@ -363,7 +368,7 @@ private:
     void registerEvent(_Actor &actor) noexcept;
     template <typename _Event, typename _Actor>
     void unregisterEvent(_Actor &actor) noexcept;
-    void unregisterEvents(ActorId id) noexcept;
+    void unregisterEvents(ActorId id) const noexcept;
     /*!
      * @brief Get or create a pipe to a specific core
      * @param core Target core ID

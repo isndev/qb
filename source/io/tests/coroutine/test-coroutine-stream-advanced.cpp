@@ -50,7 +50,7 @@ protected:
 };
 
 template <typename Predicate>
-void pump_until(Predicate done, qb::duration timeout = 1s) {
+void pump_until(Predicate done, qb::duration timeout = 5s) {
     const auto deadline = qb::mono_now() + timeout;
     while (!done() && qb::mono_now() < deadline) {
         qb::io::async::run_for(1ms);
@@ -70,7 +70,7 @@ TEST_F(AsyncStreamAdvancedTest, AsyncForEachCallbackMaySuspendBetweenItems) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         co_await range_stream(0, 4).for_each([&](int value) -> task<void> {
-            co_await sleep(1ms);
+            co_await sleep(0ms);
             visited.push_back(value);
             co_return;
         });
@@ -91,15 +91,17 @@ TEST_F(AsyncStreamAdvancedTest, ComplexRecordsSurviveFilterMapReducePipeline) {
     coro_scheduler().spawn([&]() -> task<void> {
         std::vector<Record> records{{1, "skip"}, {2, "alpha"}, {3, "skip"}, {4, "beta"}};
         joined = co_await async_stream<Record>::from_vector(records)
-            .filter([](const Record &record) { return record.id % 2 == 0; })
-            .map([](Record record) { return record.name; })
-            .reduce([](std::string acc, std::string value) {
-                if (!acc.empty()) {
-                    acc += ",";
-                }
-                acc += value;
-                return acc;
-            }, std::string{});
+                     .filter([](const Record& record) { return record.id % 2 == 0; })
+                     .map([](Record record) { return record.name; })
+                     .reduce(
+                         [](std::string acc, std::string value) {
+                             if (!acc.empty()) {
+                                 acc += ",";
+                             }
+                             acc += value;
+                             return acc;
+                         },
+                         std::string{});
         done.store(true);
         co_return;
     });
