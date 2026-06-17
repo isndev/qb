@@ -87,17 +87,17 @@ namespace qb::io::async::tcp {
  */
 template <typename Socket_, typename Func_>
 class connector : public std::enable_shared_from_this<connector<Socket_, Func_>> {
-    Func_        func_;    /**< Callback function to call when connection completes */
-    Socket_      socket_;  /**< Socket for the connection */
-    uri          remote_;  /**< URI of the remote endpoint */
+    Func_   func_;   /**< Callback function to call when connection completes */
+    Socket_ socket_; /**< Socket for the connection */
+    uri     remote_; /**< URI of the remote endpoint */
     /** Absolute libev time `ev_time() + timeout` when `timeout > 0`; else `0` (no deadline). */
     const double deadline_;
     /** When false, disable TLS peer verification on a secure socket (opt-out). */
-    bool         verify_peer_{true};
+    bool verify_peer_{true};
 
-    bool                     completed_{false};
-    bool                     deadline_armed_{false};
-    IRegisteredKernelEvent * io_iface_{nullptr};
+    bool                       completed_{false};
+    bool                       deadline_armed_{false};
+    IRegisteredKernelEvent    *io_iface_{nullptr};
     std::shared_ptr<connector> self_hold_;
 
     /**
@@ -106,7 +106,8 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
      */
     [[nodiscard]] bool
     mark_completed_once() noexcept {
-        if (completed_) return false;
+        if (completed_)
+            return false;
         completed_ = true;
         return true;
     }
@@ -121,33 +122,39 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
         func_(std::move(s));
     }
 
-    enum class finalize_result {
-        done,
-        pending,
-        failed
-    };
-
     void
+    deliver_failure() {
+        socket_.disconnect();
+        if (mark_completed_once())
+            deliver(Socket_{});
+    }
+
+    enum class finalize_result { done, pending, failed };
+
+    [[nodiscard]] bool
     arm_io(int events) {
+        if (!socket_.is_open() || socket_.native_handle() < 0)
+            return false;
+
         if (!self_hold_)
             self_hold_ = this->shared_from_this();
 
         if (io_iface_)
-            return;
+            return true;
 
-        auto &io_ev = listener::current.registerEvent<event::io>(
-            *this, socket_.native_handle(), events);
-        io_iface_ = io_ev._interface;
+        auto &io_ev = listener::current.registerEvent<event::io>(*this, socket_.native_handle(), events);
+        io_iface_   = io_ev._interface;
         io_ev.start();
+        return true;
     }
 
     void
     arm_deadline() {
         if (deadline_ <= 0. || deadline_armed_)
             return;
-        deadline_armed_ = true;
-        const double remain = deadline_ - ev_time();
-        std::weak_ptr<connector> w = this->shared_from_this();
+        deadline_armed_                 = true;
+        const double             remain = deadline_ - ev_time();
+        std::weak_ptr<connector> w      = this->shared_from_this();
         qb::io::async::callback(
             [w]() {
                 if (auto self = w.lock())
@@ -158,7 +165,9 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_>>
 
     [[nodiscard]] finalize_result
     finalize_transport_connect() noexcept {
-        if constexpr (requires(Socket_ &s) { { s.handshake_status() } -> std::same_as<int>; }) {
+        if constexpr (requires(Socket_ &s) {
+                          { s.handshake_status() } -> std::same_as<int>;
+                      }) {
             const auto status = socket_.handshake_status();
             if (status > 0)
                 return finalize_result::done;
@@ -195,8 +204,7 @@ public:
      * @param timeout_sec Same semantics as the other constructor
      * @param verify_peer When false, disables TLS peer verification (secure sockets only).
      */
-    connector(Func_ &&func, Socket_ &&existing, uri remote, double timeout_sec,
-              bool verify_peer = true)
+    connector(Func_ &&func, Socket_ &&existing, uri remote, double timeout_sec, bool verify_peer = true)
         : func_(std::forward<Func_>(func))
         , socket_(std::move(existing))
         , remote_(std::move(remote))
@@ -226,29 +234,25 @@ public:
                     deliver(std::move(socket_));
                     break;
                 case finalize_result::pending:
-                    arm_io(EV_READ | EV_WRITE);
-                    arm_deadline();
+                    if (arm_io(EV_READ | EV_WRITE)) {
+                        arm_deadline();
+                    } else {
+                        deliver_failure();
+                    }
                     break;
                 case finalize_result::failed:
-                    if (!mark_completed_once())
-                        return;
-                    socket_.disconnect();
                     LOG_DEBUG("Failed to finalize direct connect to " << remote_.source());
-                    deliver(Socket_{});
+                    deliver_failure();
             }
             return;
         }
-        if (socket_no_error(qb::io::socket::get_last_errno())) {
-            arm_io(EV_WRITE);
+        if (socket_no_error(qb::io::socket::get_last_errno()) && arm_io(EV_WRITE)) {
             arm_deadline();
             return;
         }
 
-        socket_.disconnect();
-        LOG_DEBUG("Failed to connect to "
-                  << remote_.source() << " err=" << qb::io::socket::get_last_errno());
-        if (mark_completed_once())
-            deliver(Socket_{});
+        LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << qb::io::socket::get_last_errno());
+        deliver_failure();
     }
 
     /**
@@ -258,8 +262,7 @@ public:
     void
     on(event::io const &event) {
         int err = 0;
-        if (!(event._revents & (EV_READ | EV_WRITE)) ||
-            socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)) {
+        if (!(event._revents & (EV_READ | EV_WRITE)) || socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)) {
             socket_.disconnect();
             err = 1;
         }
@@ -329,10 +332,8 @@ public:
  */
 template <typename Socket_, typename Func_>
 void
-connect(uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero(),
-        bool verify_peer = true) {
-    auto op = std::make_shared<connector<Socket_, Func_>>(
-        std::forward<Func_>(func), remote, qb::detail::to_ev_seconds(timeout), verify_peer);
+connect(uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
+    auto op = std::make_shared<connector<Socket_, Func_>>(std::forward<Func_>(func), remote, qb::detail::to_ev_seconds(timeout), verify_peer);
     LOG_DEBUG("Connector: Initializing for " << remote.source());
     op->run();
 }
@@ -352,11 +353,9 @@ connect(uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::ze
  */
 template <typename Socket_, typename Func_>
 void
-connect(Socket_&& existing_socket, uri const &remote, Func_ &&func,
-        qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
-    auto op = std::make_shared<connector<Socket_, Func_>>(
-        std::forward<Func_>(func), std::move(existing_socket), remote,
-        qb::detail::to_ev_seconds(timeout), verify_peer);
+connect(Socket_ &&existing_socket, uri const &remote, Func_ &&func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
+    auto op = std::make_shared<connector<Socket_, Func_>>(std::forward<Func_>(func), std::move(existing_socket), remote,
+                                                          qb::detail::to_ev_seconds(timeout), verify_peer);
     LOG_DEBUG("Connector: Initializing with existing socket for " << remote.source());
     op->run();
 }
@@ -401,49 +400,55 @@ connect(Socket_&& existing_socket, uri const &remote, Func_ &&func,
 template <typename Socket_>
 class connect_awaiter {
     struct state_t {
-        std::optional<Socket_> result;
-        std::coroutine_handle<> handle{};
-        ::qb::io::async::CoroutineScheduler* scheduler{nullptr};
-        bool ready{false};
-        bool active{true};
+        std::optional<Socket_>               result;
+        std::coroutine_handle<>              handle{};
+        ::qb::io::async::CoroutineScheduler *scheduler{nullptr};
+        bool                                 ready{false};
+        bool                                 active{true};
     };
 
-    uri _remote;
-    qb::duration _timeout;
-    bool _verify_peer{true};
+    uri                      _remote;
+    qb::duration             _timeout;
+    bool                     _verify_peer{true};
     std::shared_ptr<state_t> _state{std::make_shared<state_t>()};
 
 public:
-    explicit connect_awaiter(uri remote,
-                             qb::duration timeout = qb::duration::zero(),
-                             bool verify_peer = true)
+    explicit connect_awaiter(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)
         : _remote(std::move(remote))
         , _timeout(timeout)
         , _verify_peer(verify_peer) {}
 
-    [[nodiscard]] bool await_ready() const noexcept { return _state->ready; }
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        return _state->ready;
+    }
 
-    void await_suspend(std::coroutine_handle<> h) {
-        _state->handle = h;
+    void
+    await_suspend(std::coroutine_handle<> h) {
+        _state->handle    = h;
         _state->scheduler = ::qb::io::async::CoroutineScheduler::current_ptr();
         if (!_state->scheduler)
             _state->scheduler = &::qb::io::async::CoroutineScheduler::current();
 
         auto state = _state;
-        ::qb::io::async::tcp::connect<Socket_>(_remote, [state](Socket_&& socket) {
-            if (!state->active)
-                return;
-            if (socket.is_open()) {
-                state->result = std::move(socket);
-            }
-            state->ready = true;
-            if (state->scheduler && state->handle) {
-                state->scheduler->schedule_resume(state->handle);
-            }
-        }, _timeout, _verify_peer);
+        ::qb::io::async::tcp::connect<Socket_>(
+            _remote,
+            [state](Socket_ &&socket) {
+                if (!state->active)
+                    return;
+                if (socket.is_open()) {
+                    state->result = std::move(socket);
+                }
+                state->ready = true;
+                if (state->scheduler && state->handle) {
+                    state->scheduler->schedule_resume(state->handle);
+                }
+            },
+            _timeout, _verify_peer);
     }
 
-    [[nodiscard]] std::optional<Socket_> await_resume() {
+    [[nodiscard]] std::optional<Socket_>
+    await_resume() {
         _state->active = false;
         _state->handle = {};
         return std::move(_state->result);
@@ -464,9 +469,8 @@ public:
  * @return connect_awaiter with appropriate socket type
  */
 template <typename Transport = qb::io::transport::tcp>
-[[nodiscard]] auto connect(uri remote,
-                           qb::duration timeout = qb::duration::zero(),
-                           bool verify_peer = true) {
+[[nodiscard]] auto
+connect(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
     using socket_type = typename Transport::transport_io_type;
     return connect_awaiter<socket_type>{std::move(remote), timeout, verify_peer};
 }
@@ -479,47 +483,55 @@ template <typename Transport = qb::io::transport::tcp>
 template <typename Socket_>
 class connect_with_socket_awaiter {
     struct state_t {
-        std::optional<Socket_> result;
-        std::coroutine_handle<> handle{};
-        ::qb::io::async::CoroutineScheduler* scheduler{nullptr};
-        bool ready{false};
-        bool active{true};
+        std::optional<Socket_>               result;
+        std::coroutine_handle<>              handle{};
+        ::qb::io::async::CoroutineScheduler *scheduler{nullptr};
+        bool                                 ready{false};
+        bool                                 active{true};
     };
 
-    Socket_ _socket;
-    uri _remote;
-    qb::duration _timeout;
+    Socket_                  _socket;
+    uri                      _remote;
+    qb::duration             _timeout;
     std::shared_ptr<state_t> _state{std::make_shared<state_t>()};
 
 public:
-    connect_with_socket_awaiter(Socket_&& sock, uri remote, qb::duration timeout)
+    connect_with_socket_awaiter(Socket_ &&sock, uri remote, qb::duration timeout)
         : _socket(std::move(sock))
         , _remote(std::move(remote))
         , _timeout(timeout) {}
 
-    [[nodiscard]] bool await_ready() const noexcept { return _state->ready; }
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        return _state->ready;
+    }
 
-    void await_suspend(std::coroutine_handle<> h) {
-        _state->handle = h;
+    void
+    await_suspend(std::coroutine_handle<> h) {
+        _state->handle    = h;
         _state->scheduler = ::qb::io::async::CoroutineScheduler::current_ptr();
         if (!_state->scheduler)
             _state->scheduler = &::qb::io::async::CoroutineScheduler::current();
 
         auto state = _state;
-        ::qb::io::async::tcp::connect<Socket_>(std::move(_socket), _remote, [state](Socket_&& socket) {
-            if (!state->active)
-                return;
-            if (socket.is_open()) {
-                state->result = std::move(socket);
-            }
-            state->ready = true;
-            if (state->scheduler && state->handle) {
-                state->scheduler->schedule_resume(state->handle);
-            }
-        }, _timeout);
+        ::qb::io::async::tcp::connect<Socket_>(
+            std::move(_socket), _remote,
+            [state](Socket_ &&socket) {
+                if (!state->active)
+                    return;
+                if (socket.is_open()) {
+                    state->result = std::move(socket);
+                }
+                state->ready = true;
+                if (state->scheduler && state->handle) {
+                    state->scheduler->schedule_resume(state->handle);
+                }
+            },
+            _timeout);
     }
 
-    [[nodiscard]] std::optional<Socket_> await_resume() {
+    [[nodiscard]] std::optional<Socket_>
+    await_resume() {
         _state->active = false;
         _state->handle = {};
         return std::move(_state->result);
@@ -540,9 +552,8 @@ public:
  * @param timeout Connection timeout (default: 0ms = no timeout)
  */
 template <typename Transport = qb::io::transport::tcp>
-[[nodiscard]] auto connect_with_socket(typename Transport::transport_io_type&& existing_socket,
-                                         uri remote,
-                                         qb::duration timeout = qb::duration::zero()) {
+[[nodiscard]] auto
+connect_with_socket(typename Transport::transport_io_type &&existing_socket, uri remote, qb::duration timeout = qb::duration::zero()) {
     using socket_type = typename Transport::transport_io_type;
     return connect_with_socket_awaiter<socket_type>{std::move(existing_socket), std::move(remote), timeout};
 }

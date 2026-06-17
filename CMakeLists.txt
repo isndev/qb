@@ -125,10 +125,11 @@ endif()
 # -----------------------------------------------------------------------------
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
     include("${QB_CMAKE_DIR}/CodeCoverage.cmake")
-    APPEND_COVERAGE_COMPILER_FLAGS()
-    
+
     find_program(LCOV_PATH lcov)
-    find_program(GCOV_PATH gcov)
+    if(NOT GCOV_PATH)
+        find_program(GCOV_PATH gcov)
+    endif()
     
     if(LCOV_PATH AND GCOV_PATH)
         qb_status_message("Code coverage enabled")
@@ -145,6 +146,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
             NAME qb-coverage
             EXECUTABLE ctest
             DEPENDENCIES qb-core
+            LCOV_ARGS --ignore-errors mismatch --ignore-errors unused
         )
         
         SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(

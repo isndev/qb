@@ -175,3 +175,7 @@ fi
 if command -v openssl >/dev/null 2>&1; then
   export_env OPENSSL_EXECUTABLE "$(command -v openssl)"
 fi
+
+if [[ "${install_coverage}" == true ]]; then
+  export_env GCOV_PATH "$(command -v gcov-14 || command -v gcov)"
+fi
