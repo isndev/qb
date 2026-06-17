@@ -43,7 +43,7 @@ using std::clamp;
  * @param hi The upper bound of the range.
  * @return The value `v` clamped to the range [`lo`, `hi`]. If `v < lo`, returns `lo`.
  *         If `v > hi`, returns `hi`. Otherwise, returns `v`.
- * @note This is a compatibility implementation of `std::clamp` for C++ versions prior to C++17.
+ * @note This is a compatibility implementation of `std::clamp` for C++ versions prior to C++20.
  *       Asserts that `!(hi < lo)`.
  */
 template <typename _Ty>

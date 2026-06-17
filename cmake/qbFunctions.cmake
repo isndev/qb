@@ -45,8 +45,8 @@ endfunction()
 function(_qb_apply_target_usage_properties target)
     _qb_target_usage_scope(${target} _qb_usage_scope)
 
-    # Propagate the C++23 requirement as a usage requirement so consumers linking
-    # qb/qbm targets compile at the framework-required language level. The
+    # Propagate qb's C++ standard requirement as a usage requirement so consumers
+    # linking qb/qbm targets compile at the framework-required language level. The
     # CXX_STANDARD target property below is not transitive.
     target_compile_features(${target} ${_qb_usage_scope} cxx_std_${QB_CXX_STANDARD})
 

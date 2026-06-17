@@ -202,7 +202,7 @@ public:
         registerEvent<ResourceReportEvent>(*this);
 
         // Create several resource actors
-        // C++23: Using auto for type deduction
+        // Modern C++: using auto for type deduction
         for (auto i = 0; i < 3; ++i) {
             auto actor = addRefActor<ResourceActor>();
             _resource_actors.push_back(actor->id());
@@ -219,7 +219,7 @@ public:
     schedulePhase1() {
         const int bytes_per_resource = 1024; // 1KB
 
-        // C++23: Using auto for type deduction
+        // Modern C++: using auto for type deduction
         for (auto i = 0; i < _num_allocations; ++i) {
             qb::ActorId target = _resource_actors[i % _resource_actors.size()];
 
@@ -241,7 +241,7 @@ public:
     void
     schedulePhase2() {
         // Release every third resource
-        // C++23: Using auto for type deduction
+        // Modern C++: using auto for type deduction
         for (auto i = 0; i < _num_allocations; i += 3) {
             qb::ActorId target = _resource_actors[i % _resource_actors.size()];
             to(target).push<ReleaseResourceEvent>(i / 3);

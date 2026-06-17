@@ -3,7 +3,7 @@
  * @brief Main header for coroutine support in qb-io
  *
  * This header includes all coroutine-related functionality for the
- * QB async I/O framework. It provides C++23 coroutine integration
+ * QB async I/O framework. It provides C++20 coroutine integration
  * with the libev event loop.
  *
  * QUICK START:
@@ -201,7 +201,7 @@
  * @brief Main header for coroutine support in qb-io
  *
  * This header includes all coroutine-related functionality for the
- * QB async I/O framework. It provides C++23 coroutine integration
+ * QB async I/O framework. It provides C++20 coroutine integration
  * with the libev event loop.
  *
  * Include order (do not reorder):
@@ -238,13 +238,13 @@
  * @namespace qb::io::async
  * @brief Async I/O and coroutine support
  *
- * The qb::io::async namespace provides C++23 coroutine integration
+ * The qb::io::async namespace provides C++20 coroutine integration
  * with the libev event loop, enabling linear async code without callbacks.
  */
 
 /**
  * @defgroup Coroutine Coroutine Support
- * @brief C++23 coroutines for QB async I/O
+ * @brief C++20 coroutines for QB async I/O
  *
  * This module provides coroutine support for the QB framework,
  * enabling `co_await`, `co_return`, and `co_yield` in async operations.

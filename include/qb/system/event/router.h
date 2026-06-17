@@ -76,7 +76,7 @@ protected:
     template <typename _Handler, typename _Event>
     inline void
     invoke(_Handler &handler, _Event &event) const {
-        // C++23: Use concept directly instead of trait with ::value
+        // C++20: use concept directly instead of trait with ::value
         if constexpr (qb::has_is_alive<_Event>) {
             if (handler.is_alive())
                 handler.on(event);
@@ -98,7 +98,7 @@ protected:
     inline void
     dispose(_Event &event) const noexcept {
         if constexpr (!std::is_trivially_destructible_v<_Event>) {
-            // C++23: Use concept directly instead of trait with ::value
+            // C++20: use concept directly instead of trait with ::value
             if constexpr (qb::has_is_alive<_Event>) {
                 if (!event.is_alive())
                     event.~_Event();
@@ -183,7 +183,7 @@ public:
     template <bool _CleanEvent = true>
     void
     route(_RawEvent &event) noexcept {
-        // C++23: Use concept directly
+        // C++20: use concept directly
         if constexpr (qb::has_is_broadcast<_HandlerId>) {
             if (event.getDestination().is_broadcast()) {
                 for (auto &it : _subscribed_handlers)

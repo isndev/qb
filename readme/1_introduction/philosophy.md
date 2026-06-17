@@ -2,13 +2,13 @@
 
 > **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-This page explains the design principles behind qb — share-nothing actor isolation, asynchronous-by-default I/O, a layered and modular architecture, explicit modern C++23, and lock-free inter-core messaging — and the rationale for each choice.
+This page explains the design principles behind qb — share-nothing actor isolation, asynchronous-by-default I/O, a layered and modular architecture, explicit modern C++20/23, and lock-free inter-core messaging — and the rationale for each choice.
 
 **Prerequisites:** none — **See also:** [What qb is](./overview.md) · [Core concepts](../2_core_concepts/README.md) · [Threading model](../2_core_concepts/concurrency.md)
 
 ## Summary
 
-qb is built on a small set of decisions that reinforce one another. Actors own their state and never share memory, so data races are structurally absent rather than defended against. I/O is non-blocking by default, so a worker thread spends its time computing instead of waiting on syscalls. The framework is two composable libraries — `qb-io` (the asynchronous runtime) and `qb-core` (the actor engine) — so you can adopt only what you need. The public API is modern, explicit C++23 with CRTP-based static polymorphism and a `std::chrono` time vocabulary, so abstractions cost little at runtime and lifetimes are clear. Inter-core messages move over lock-free queues, so adding cores adds throughput without adding locks.
+qb is built on a small set of decisions that reinforce one another. Actors own their state and never share memory, so data races are structurally absent rather than defended against. I/O is non-blocking by default, so a worker thread spends its time computing instead of waiting on syscalls. The framework is two composable libraries — `qb-io` (the asynchronous runtime) and `qb-core` (the actor engine) — so you can adopt only what you need. The public API is modern, explicit C++20 with CRTP-based static polymorphism and a `std::chrono` time vocabulary, so abstractions cost little at runtime and lifetimes are clear. Inter-core messages move over lock-free queues, so adding cores adds throughput without adding locks.
 
 Each principle below states the choice, then the reason it was made.
 
@@ -39,7 +39,7 @@ A blocking I/O call halts the calling thread until the operation completes. Unde
 
 **Why async by default.** Throughput and tail latency under load depend on keeping cores busy with work rather than parked in a blocking syscall. An event-driven loop lets one thread service many connections and timers, so the cost of a slow or idle peer is a suspended operation, not a stranded thread.
 
-For sequential-looking async code, `qb-io` integrates C++20/23 coroutines with the same loop: `co_await` suspends a coroutine until an awaited event is ready and resumes it on the loop thread, without spawning a thread per logical task. See [coroutines](../3_qb_io/coroutines.md).
+For sequential-looking async code, `qb-io` integrates C++20 coroutines with the same loop: `co_await` suspends a coroutine until an awaited event is ready and resumes it on the loop thread, without spawning a thread per logical task. See [coroutines](../3_qb_io/coroutines.md).
 
 **See:** [Asynchronous I/O model](../2_core_concepts/async_io.md) · [The async system](../3_qb_io/async_system.md)
 
@@ -59,9 +59,9 @@ Within that structure, extension points are explicit rather than hidden:
 
 **See:** [qb-io overview](../3_qb_io/README.md) · [qb-core overview](../4_qb_core/README.md) · [Protocols](../3_qb_io/protocols.md)
 
-## Explicit, modern C++23
+## Explicit, modern C++20/23
 
-qb targets C++23 and uses the language directly rather than hiding it behind a runtime. The design favors abstractions that the compiler can resolve, and lifetimes that the type system can express.
+qb targets C++20 by default, supports C++23 explicitly, and uses the language directly rather than hiding it behind a runtime. The design favors abstractions that the compiler can resolve, and lifetimes that the type system can express.
 
 - **Static polymorphism via CRTP.** I/O building blocks are assembled with the Curiously Recurring Template Pattern — the `qb::io::use<>` helper composes transport, protocol, and handler behavior into a derived type at compile time. Dispatch is resolved statically, so the high-level API carries little or no virtual-call overhead on the hot path.
 - **RAII lifetimes.** Resources are tied to object lifetime, so cleanup is deterministic and tied to scope rather than manual bookkeeping.
@@ -89,7 +89,7 @@ This page describes the rationale; for the mechanism — how cores are scheduled
 
 ## How the principles fit together
 
-The choices are mutually reinforcing rather than independent. Share-nothing isolation is what makes lock-free messaging sufficient: because actors never share memory, the only cross-thread traffic is the message queue, and a lock-free queue is enough to carry it. Asynchronous-by-default I/O is what keeps a worker thread productive between messages, so the per-core sequential model does not become a per-core bottleneck. The layered architecture lets each of these be adopted at the level you need, and modern C++23 is the medium that makes the abstractions cheap and the lifetimes clear. Taken together, they aim at one outcome: concurrent systems that are correct by construction and fast by design.
+The choices are mutually reinforcing rather than independent. Share-nothing isolation is what makes lock-free messaging sufficient: because actors never share memory, the only cross-thread traffic is the message queue, and a lock-free queue is enough to carry it. Asynchronous-by-default I/O is what keeps a worker thread productive between messages, so the per-core sequential model does not become a per-core bottleneck. The layered architecture lets each of these be adopted at the level you need, and modern C++20/23 is the medium that makes the abstractions cheap and the lifetimes clear. Taken together, they aim at one outcome: concurrent systems that are correct by construction and fast by design.
 
 ## See also
 

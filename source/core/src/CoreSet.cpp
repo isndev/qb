@@ -32,7 +32,7 @@ CoreSet::CoreSet(CoreIdSet const &set) noexcept
     : _raw_set(set)
     , _nb_core(set.size())
     , _size([&set]() {
-        // C++23: Find maximum ID using auto for proper type deduction
+        // Modern C++: find maximum ID using auto for proper type deduction
         for (auto i = static_cast<int>(MaxCores) - 1; i >= 0; --i) {
             if (set.contains(static_cast<CoreId>(i))) {
                 return static_cast<std::size_t>(i + 1);

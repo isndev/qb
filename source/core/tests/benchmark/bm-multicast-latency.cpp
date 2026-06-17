@@ -52,7 +52,7 @@ BM_Multicast_Latency(benchmark::State &state) {
         qb::Main main;
 
         qb::ActorIdList ids = {};
-        for (auto i = 0uz; i < static_cast<std::size_t>(nb_actor); ++i) {
+        for (std::size_t i = 0; i < static_cast<std::size_t>(nb_actor); ++i) {
             const auto coreid =
                 qb::bench::multicast_consumer_core_for_index(i, nb_core);
             ids.push_back(main.addActor<ConsumerActor<Event>>(coreid));

@@ -25,27 +25,38 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: ubuntu-gcc-release
+          - name: ubuntu-gcc-cxx20-release
             os: ubuntu-latest
             c_compiler: gcc
             cpp_compiler: g++
             build_type: Release
+            cxx_standard: 20
 
-          - name: ubuntu-clang-release
+          - name: ubuntu-clang-cxx20-release
             os: ubuntu-latest
             c_compiler: clang
             cpp_compiler: clang++
             build_type: Release
+            cxx_standard: 20
 
-          - name: macos-clang-release
+          - name: macos-clang-cxx20-release
             os: macos-latest
             c_compiler: clang
             cpp_compiler: clang++
             build_type: Release
+            cxx_standard: 20
 
-          - name: windows-msvc-release
+          - name: windows-msvc-cxx20-release
             os: windows-latest
             build_type: Release
+            cxx_standard: 20
+
+          - name: ubuntu-clang-cxx23-release
+            os: ubuntu-latest
+            c_compiler: clang
+            cpp_compiler: clang++
+            build_type: Release
+            cxx_standard: 23
 
     steps:
       - uses: actions/checkout@v6
@@ -114,6 +125,7 @@ jobs:
             -S "${{ github.workspace }}"
             -B "${{ steps.build.outputs.dir }}"
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+            -DQB_CXX_STANDARD=${{ matrix.cxx_standard }}
             -DQB_BUILD_TESTS=ON
             -DQB_BUILD_EXAMPLES=ON
             -DQB_BUILD_BENCHMARKS=ON

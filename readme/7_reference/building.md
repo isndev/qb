@@ -1,7 +1,7 @@
-<!-- Verified-against: qb 2.0.0 (c++23) -->
+<!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
 # Building from source
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 A reference for configuring, building, testing, and installing the qb framework from source with CMake: requirements, presets, options, generators, and install layout.
 
@@ -13,7 +13,7 @@ This page is the contributor-facing build reference. If you only want to *add qb
 
 | Requirement | Detail | Source |
 |---|---|---|
-| C++ compiler | C++23-capable: GCC, Clang, Apple Clang, or MSVC. The standard is set to `CMAKE_CXX_STANDARD 23` with `CMAKE_CXX_STANDARD_REQUIRED ON` and `CMAKE_CXX_EXTENSIONS OFF`. | `qb/cmake/qbConfig.cmake:189-191` |
+| C++ compiler | C++20-capable: GCC, Clang, Apple Clang, or MSVC. qb sets `QB_CXX_STANDARD=20` by default, accepts `QB_CXX_STANDARD=23`, and keeps `CMAKE_CXX_STANDARD_REQUIRED=ON` with extensions off. | `qb/cmake/qbConfig.cmake` |
 | CMake | 3.24 or newer. 3.24 is the floor because dependency resolution uses the `FetchContent` + `find_package` integration (`FIND_PACKAGE_ARGS`). | `qb/CMakeLists.txt:31`, `qb/CMakePresets.json:3-7` |
 | Threads | A POSIX threads (pthreads) implementation is required on non-Windows platforms; configuration fails with a fatal error if it is missing. | `qb/cmake/qbCompiler.cmake:344-347` |
 | Git | Needed on the configure machine only when a fetchable dependency (GoogleTest, Google Benchmark, zlib) is absent from the system and is built from source. | see [cmake_dependencies.md](./cmake_dependencies.md) |
@@ -45,7 +45,7 @@ git submodule update --init --recursive
 
 ## CMake presets
 
-`qb/CMakePresets.json` (schema version 3) ships configure, build, and test presets. Presets are the supported way to get a known-good configuration without memorizing option combinations. All configure presets inherit a hidden `base` preset that sets `CMAKE_CXX_STANDARD=23`, `QB_BUILD_TESTS=ON`, and `QB_BUILD_EXAMPLES=ON`, and writes the build tree to `build/<presetName>`.
+`qb/CMakePresets.json` (schema version 3) ships configure, build, and test presets. Presets are the supported way to get a known-good configuration without memorizing option combinations. All configure presets inherit a hidden `base` preset that sets `QB_CXX_STANDARD=20`, `QB_BUILD_TESTS=ON`, and `QB_BUILD_EXAMPLES=ON`, and writes the build tree to `build/<presetName>`. C++23 validation is available through the `debug-cxx23` and `dev-cxx23` presets.
 
 ```bash
 cmake --preset debug        # configure
@@ -58,7 +58,7 @@ ctest --preset debug
 | Preset | Build type | Key cache variables | Source |
 |---|---|---|---|
 | `debug` | `Debug` | inherits `base` | `CMakePresets.json:20-27` |
-| `release` | `Release` | `QB_BUILD_TESTS=OFF` | `CMakePresets.json:28-37` |
+| `release` | `Release` | tests enabled, optimized codegen | `CMakePresets.json` |
 | `relwithdebinfo` | `RelWithDebInfo` | inherits `base` | `CMakePresets.json:38-46` |
 | `dev` | `Debug` | `QB_BUILD_TESTS=ON`, `QB_BUILD_BENCHMARKS=ON`, `QB_BUILD_EXAMPLES=ON` | `CMakePresets.json:47-58` |
 | `sanitize` | `Debug` | `QB_SANITIZE=address,undefined` | `CMakePresets.json:59-68` |
@@ -70,10 +70,11 @@ ctest --preset debug
 
 ### Build and test presets
 
-`buildPresets`: `debug`, `release`, `dev`, `sanitize`, `sanitize-thread`, and `coverage`.
-`testPresets`: `debug`, `dev` (both `timeout=300`, `jobs=4`), `sanitize`
-(`timeout=600`, `jobs=1`), `sanitize-thread` (`timeout=900`, `jobs=1`), and
-`coverage` (`timeout=600`, `jobs=4`). Sanitized presets run serially because
+`buildPresets`: `debug`, `dev`, `debug-cxx23`, `dev-cxx23`, `relwithdebinfo`, `release`,
+`sanitize`, `sanitize-thread`, `coverage`, `coverage-html`, `coverage-xml`, `release-lto`,
+`release-native`, and `release-portable`.
+`testPresets`: `debug`, `dev`, `debug-cxx23`, `dev-cxx23`, `relwithdebinfo`, `release`, `sanitize`,
+`sanitize-thread`, and `coverage`. Sanitized presets run serially because
 instrumented async tests are slower and should not compete for scheduler/timing
 resources. Every test preset sets `outputOnFailure`.
 
@@ -212,7 +213,7 @@ The two supported integration modes — embed via `add_subdirectory(qb)` or cons
 
 ## Platform notes
 
-- **Linux:** POSIX sockets. Use GCC or Clang with solid C++23 support. Install optional dependency headers when enabling features (`libssl-dev`, `libargon2-dev`, `zlib1g-dev` on Debian/Ubuntu; `openssl-devel`, `zlib-devel` on Fedora/RHEL). qb links `dl` and `rt` (`qb/cmake/qbDependencies.cmake`).
+- **Linux:** POSIX sockets. Use GCC or Clang with solid C++20 support. Install optional dependency headers when enabling features (`libssl-dev`, `libargon2-dev`, `zlib1g-dev` on Debian/Ubuntu; `openssl-devel`, `zlib-devel` on Fedora/RHEL). Install libngtcp2 packages when QUIC is required. qb links `dl` and `rt` (`qb/cmake/qbDependencies.cmake`).
 - **macOS:** POSIX sockets. Recent Xcode / Apple Clang. Homebrew supplies optional dependencies (`brew install openssl argon2 zlib`); point CMake at them with `CMAKE_PREFIX_PATH` when needed. On Apple Silicon, native-arch tuning uses `-mcpu=native` because `-march=native` is rejected (`qbCompiler.cmake:236-246`); qb links the `Foundation` framework.
 - **Windows:** Winsock2. Use a Visual Studio 2022 (or newer) MSVC toolset that supports `/std:c++23`. For optional features, put OpenSSL/zlib development libraries on `CMAKE_PREFIX_PATH` (or set `OPENSSL_ROOT_DIR`); CI uses vcpkg. qb links `ws2_32` and `mswsock`.
 

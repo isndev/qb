@@ -68,17 +68,19 @@ unlikely(bool expr) noexcept {
  * @def QB_ASSUME(cond)
  * @brief Optimiser-only assumption that `cond` holds at this program point.
  *
- * Uses the standard C++23 `[[assume]]` attribute when available, falling back
- * to vendor-specific built-ins (`__builtin_assume` on Clang, `__assume` on
- * MSVC, `__builtin_unreachable()` gated on `!(cond)` on GCC < 13) to remain
- * portable across compilers that have not yet shipped the attribute.
+ * Uses the standard C++23 `[[assume]]` attribute in C++23 mode when available, falling back to
+ * vendor-specific built-ins (`__builtin_assume` on Clang, `__assume` on MSVC,
+ * `__builtin_unreachable()` gated on `!(cond)` on GCC < 13) to remain portable across compilers
+ * that have not yet shipped the attribute.
  *
  * Unlike an `assert`, the expression MUST NOT have side effects: it is not
  * evaluated at runtime. Use `QB_ASSUME` on hot paths to help the optimiser
  * eliminate dead branches (e.g. default-case unreachable after a router
  * lookup, range invariants).
  */
-#if defined(__has_cpp_attribute)
+#if defined(__has_cpp_attribute) && \
+    ((defined(__cplusplus) && __cplusplus >= 202302L) || \
+     (defined(_MSVC_LANG) && _MSVC_LANG >= 202302L))
 #  if __has_cpp_attribute(assume) >= 202207L
 #    define QB_ASSUME(cond) [[assume(cond)]]
 #  endif

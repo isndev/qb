@@ -16,7 +16,8 @@ is broad, so entries are grouped rather than exhaustive.
 
 ### Added
 
-- C++23 baseline across the framework (`CMAKE_CXX_STANDARD 23`, extensions off).
+- C++20 baseline across the framework (`QB_CXX_STANDARD=20` by default, `QB_CXX_STANDARD=23`
+  supported, extensions off).
 - A canonical `std::chrono` time vocabulary: `qb::duration` (nanosecond span), `qb::mono_time`
   (steady-clock instants), and `qb::wall_time` (system-clock instants), with helpers in
   `qb/include/qb/system/timestamp.h`.

@@ -909,8 +909,7 @@ TEST_F(StreamTest, StreamPerformance) {
 
     // Create random data
     std::vector<char> data(file_size);
-    // C++23: Using 'uz' suffix for size_t literals
-    for (auto i = 0uz; i < file_size; ++i) {
+    for (std::size_t i = 0; i < file_size; ++i) {
         data[i] = static_cast<char>(rand() % 256);
     }
 
@@ -1021,8 +1020,7 @@ TEST_F(StreamTest, StreamComposition) {
 
     // Create a transform that converts lowercase to uppercase
     auto uppercase_transform = [](char *data, size_t size) {
-        // C++23: Using 'uz' suffix for size_t literals
-        for (auto i = 0uz; i < size; ++i) {
+        for (std::size_t i = 0; i < size; ++i) {
             if (data[i] >= 'a' && data[i] <= 'z') {
                 data[i] = data[i] - 'a' + 'A';
             }

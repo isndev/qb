@@ -109,7 +109,7 @@ namespace inet {
 // (
 // ((uint32_t)(b3) << 16) & 0x00ff0000 ) | ( ((uint32_t)(b2) << 8) & 0x0000ff00 ) | (
 // (uint32_t)(b1) & 0x000000ff ) )
-static const socket_type invalid_socket = static_cast<socket_type>(-1);  // C++23: modern cast
+static const socket_type invalid_socket = static_cast<socket_type>(-1);  // Modern C++: modern cast
 
 QB__NS_INLINE
 namespace ip {

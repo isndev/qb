@@ -280,7 +280,7 @@ spawn_async([this](auto ctx) -> qb::io::async::task<void> {
 
 `Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is shared per `VirtualCore` and established when the core's listener is created, so `spawn_async` requires no setup beyond running inside the engine. <!-- src: qb/include/qb/core/Actor.h:1042,1050; qb/include/qb/core/Actor.tpp:231 -->
 
-For the awaitables themselves (`sleep`, timeouts, channels, `when_all`/`when_any`/`race`), see [Reference: C++23 coroutines](../3_qb_io/coroutines.md).
+For the awaitables themselves (`sleep`, timeouts, channels, `when_all`/`when_any`/`race`), see [Reference: C++20 coroutines](../3_qb_io/coroutines.md).
 
 ## Periodic work: `qb::ICallback`
 
@@ -331,6 +331,6 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
 
 - [Network actors](./network_actors.md) — combining `qb::Actor` with `qb::io::use<T>` clients, servers, and sessions.
 - [Reference: `qb-io` async system](../3_qb_io/async_system.md) — the listener, timers, and watchers in full.
-- [Reference: C++23 coroutines](../3_qb_io/coroutines.md) — `task<T>`, awaiters, and combinators.
+- [Reference: C++20 coroutines](../3_qb_io/coroutines.md) — `task<T>`, awaiters, and combinators.
 - [Reference: `qb::Actor`](../4_qb_core/actor.md) — `qb::ICallback` registration and the periodic-callback lifecycle.
 - [Reference: time utilities](../3_qb_io/utilities.md) — `qb::duration`, `qb::mono_time`, `qb::wall_time`.

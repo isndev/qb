@@ -167,8 +167,7 @@ TEST_F(CryptoBasicTest, PBKDF2KeyDerivation) {
 
     // Test derivation for cryptographic use
     std::vector<unsigned char> derived_key_bytes(32);
-    // C++23: Using 'uz' suffix for size_t literals
-    for (auto i = 0uz; i < 32uz && i < key2.length(); ++i) {
+    for (std::size_t i = 0; i < 32u && i < key2.length(); ++i) {
         derived_key_bytes[i] = static_cast<unsigned char>(key2[i]);
     }
 
@@ -193,8 +192,7 @@ TEST_F(CryptoBasicTest, PBKDF2KeyDerivation) {
         // Derive the key again - should be identical
         std::string key2_repeat = qb::crypto::pbkdf2(password, salt, 1000, 32);
         std::vector<unsigned char> derived_key_repeat(32);
-        // C++23: Using 'uz' suffix for size_t literals
-        for (auto i = 0uz; i < 32uz && i < key2_repeat.length(); ++i) {
+        for (std::size_t i = 0; i < 32u && i < key2_repeat.length(); ++i) {
             derived_key_repeat[i] = static_cast<unsigned char>(key2_repeat[i]);
         }
 

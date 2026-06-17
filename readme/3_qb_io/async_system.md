@@ -2,13 +2,13 @@
 
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-`qb::io::async` is the single-threaded, libev-backed event loop that drives every non-blocking operation in `qb-io`: socket readiness, timers, scheduled callbacks, file-system watching, and the C++23 coroutine scheduler.
+`qb::io::async` is the single-threaded, libev-backed event loop that drives every non-blocking operation in `qb-io`: socket readiness, timers, scheduled callbacks, file-system watching, and the C++20 coroutine scheduler.
 
-**Prerequisites:** [QB-IO overview](./README.md), [Time model](./utilities.md) — **See also:** [C++23 coroutines](./coroutines.md), [Transports](./transports.md), [Protocols](./protocols.md), [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.md)
+**Prerequisites:** [QB-IO overview](./README.md), [Time model](./utilities.md) — **See also:** [C++20 coroutines](./coroutines.md), [Transports](./transports.md), [Protocols](./protocols.md), [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.md)
 
 ## Summary
 
-The `qb::io::async` namespace provides an event-driven asynchronous model built on a single `listener` per thread. It integrates with the `qb-core` actor runtime — each `VirtualCore` owns one `listener` — but is fully usable standalone in any C++23 program. Two programming models share the same loop: event-driven handlers (`on(Event&&)`) and native coroutines (`co_await`). Neither runs concurrently with the other within a thread; the loop dispatches them sequentially. This page covers the loop itself, the callback and timer utilities, and the file watcher. For the coroutine model, see [C++23 coroutines](./coroutines.md).
+The `qb::io::async` namespace provides an event-driven asynchronous model built on a single `listener` per thread. It integrates with the `qb-core` actor runtime — each `VirtualCore` owns one `listener` — but is fully usable standalone in any C++20 program. Two programming models share the same loop: event-driven handlers (`on(Event&&)`) and native coroutines (`co_await`). Neither runs concurrently with the other within a thread; the loop dispatches them sequentially. This page covers the loop itself, the callback and timer utilities, and the file watcher. For the coroutine model, see [C++20 coroutines](./coroutines.md).
 
 Every timed API on this page takes `qb::duration` (a `std::chrono::nanoseconds` span) or any `std::chrono::duration`. Raw `double`-seconds arguments are not part of the public surface.
 
@@ -293,7 +293,7 @@ See [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.m
 
 ## See also
 
-- [C++23 coroutines](./coroutines.md) — the `co_await` model layered on this loop, plus `sleep`, combinators, channels, and the scheduler.
+- [C++20 coroutines](./coroutines.md) — the `co_await` model layered on this loop, plus `sleep`, combinators, channels, and the scheduler.
 - [Transports](./transports.md) — the socket and file transports that ride on `async::input`/`output`/`io`.
 - [Protocols](./protocols.md) — the `IProtocol` framing the watcher and I/O bases drive.
 - [Async, lifecycle, and allocation invariants](../7_reference/io_invariants.md) — registration, dispatch, and allocation guarantees in reference form.

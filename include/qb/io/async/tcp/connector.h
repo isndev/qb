@@ -6,10 +6,10 @@
  * It defines the connector class template which handles the async connection
  * process and a connect function for initiating asynchronous connections.
  *
- * C++23 Coroutine Support:
+ * C++20 Coroutine Support:
  * ========================
  *
- * This file also provides C++23 coroutine awaiters for async TCP connections,
+ * This file also provides C++20 coroutine awaiters for async TCP connections,
  * enabling `co_await` style programming:
  *
  * @code
@@ -362,7 +362,7 @@ connect(Socket_&& existing_socket, uri const &remote, Func_ &&func,
 }
 
 // =============================================================================
-// C++23 Coroutine Support
+// C++20 Coroutine Support
 // =============================================================================
 
 #ifdef __cpp_impl_coroutine
@@ -374,7 +374,7 @@ connect(Socket_&& existing_socket, uri const &remote, Func_ &&func,
 
 /**
  * @defgroup CoroutineTCP Coroutine TCP Connectors
- * @brief C++23 coroutine awaiters for TCP connections
+ * @brief C++20 coroutine awaiters for TCP connections
  *
  * These classes enable `co_await` style programming for TCP connections,
  * wrapping the callback-based connector with a modern coroutine interface.
@@ -394,7 +394,7 @@ connect(Socket_&& existing_socket, uri const &remote, Func_ &&func,
  * @ingroup CoroutineTCP
  * @tparam Socket_ The socket type
  *
- * This awaiter wraps the callback-based tcp::connect with a C++23 coroutine
+ * This awaiter wraps the callback-based tcp::connect with a C++20 coroutine
  * interface. It suspends the coroutine until connection completes and resumes
  * with std::optional<Socket_>.
  */

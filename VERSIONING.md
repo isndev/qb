@@ -1,4 +1,4 @@
-<!-- Verified-against: qb 2.0.0 (c++23 branch) -->
+<!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
 # Versioning and compatibility
 
 qb follows [Semantic Versioning 2.0.0](https://semver.org/). The current version is **2.0.0**, defined in
@@ -48,6 +48,7 @@ one is introduced.
 
 ## C++ standard and toolchains
 
-qb requires C++23 (`CMAKE_CXX_STANDARD 23`, extensions off) and CMake 3.24. Supported compilers and
-platforms are listed in [INSTALL.md](./INSTALL.md). A change to the minimum required standard or toolchain
-is treated as a breaking change and reserved for a major release.
+qb requires C++20 by default (`QB_CXX_STANDARD=20`, extensions off) and also supports
+`QB_CXX_STANDARD=23` for newer standard-library implementations. CMake 3.24 is the minimum. Supported
+compilers and platforms are listed in [INSTALL.md](./INSTALL.md). A change to the minimum required
+standard or toolchain is treated as a breaking change and reserved for a major release.

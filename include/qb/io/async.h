@@ -50,7 +50,7 @@
 #include "async/udp/client.h"
 #include "async/udp/server.h"
 #include "async/quic.h"
-#include "async/coroutine.h"  // C++23 coroutine support
+#include "async/coroutine.h"  // C++20 coroutine support
 #include "config.h"
 
 #include "transport/accept.h"

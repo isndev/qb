@@ -63,7 +63,7 @@ TEST(CompressionLevels, GzipLevels) {
     test_data.reserve(500000);
 
     // Add some repetitive text
-    // C++23: Using auto for type deduction
+    // Modern C++: using auto for type deduction
     for (auto i = 0; i < 1000; ++i) {
         test_data += "This is a test string that will be repeated many times to create "
                      "compressible data. ";
@@ -199,13 +199,13 @@ TEST(CompressionLevels, DeflateLevels) {
     test_data.reserve(500000);
 
     // Add some repetitive text with patterns
-    // C++23: Using auto for type deduction
+    // Modern C++: using auto for type deduction
     for (auto i = 0; i < 1000; ++i) {
         test_data += "Pattern " + std::to_string(i % 20) + " repeats multiple times. ";
     }
 
     // Add binary-like data
-    // C++23: Using auto for type deduction
+    // Modern C++: using auto for type deduction
     for (auto i = 0; i < 10000; ++i) {
         test_data.push_back(static_cast<char>(i % 256));
     }
@@ -331,7 +331,7 @@ TEST(CompressionLevels, DataTypeCompression) {
 
     // Text data (natural language)
     text_data.reserve(100000);
-    // C++23: Using auto for type deduction
+    // Modern C++: using auto for type deduction
     for (auto i = 0; i < 100; ++i) {
         text_data += "This is a sample text that contains natural language. "
                      "Natural language typically has patterns and redundancy "
@@ -340,14 +340,14 @@ TEST(CompressionLevels, DataTypeCompression) {
 
     // Binary data (random bytes)
     binary_data.reserve(100000);
-    // C++23: Using auto for type deduction
+    // Modern C++: using auto for type deduction
     for (auto i = 0; i < 100000; ++i) {
         binary_data.push_back(static_cast<char>(rand() % 256));
     }
 
     // Pattern data (repetitive)
     pattern_data.reserve(100000);
-    // C++23: Using auto for type deduction
+    // Modern C++: using auto for type deduction
     for (auto i = 0; i < 10000; ++i) {
         pattern_data += "ABCDEFG";
         pattern_data += std::to_string(i % 10);

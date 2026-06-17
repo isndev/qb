@@ -16,10 +16,10 @@
  */
 
 /*!
- * @mainpage QB Actor Framework: High-Performance C++23 Concurrent Systems
+ * @mainpage QB Actor Framework: High-Performance C++20/23 Concurrent Systems
  * @image html template/static/logo.svg width=250px
  *
- * Welcome to the official documentation for the **QB Actor Framework** — a modern **C++23**
+ * Welcome to the official documentation for the **QB Actor Framework** — a modern **C++20/23**
  * toolkit for crafting powerful, scalable, and maintainable concurrent and distributed
  * applications.
  *
@@ -42,7 +42,7 @@
  * | **Event System** | Type-safe, zero-copy inter-actor messaging (`qb::Event`) |
  * | **Multi-Core Engine** | Lock-free MPSC scheduling across `qb::VirtualCore` threads |
  * | **Async I/O** | Integrated non-blocking I/O (TCP, UDP, SSL, files) via `qb-io` |
- * | **C++23 Coroutines** | `actor.spawn_async()` for co-routine-based async flows |
+ * | **C++20 Coroutines** | `actor.spawn_async()` for co-routine-based async flows |
  * | **Service Actors** | Singleton actors per core with automatic discovery |
  * | **CPU Affinity** | Fine-grained thread-to-core pinning via `CoreInitializer` |
  * | **Graceful Shutdown** | Stop-token + signal-based clean teardown (`qb::Main::stop()`) |
@@ -79,7 +79,7 @@
  *      - @subpage qb_io_readme_md "QB-IO Overview"
  *      - @subpage qb_io_features_md "QB-IO Features"
  *      - @subpage qb_io_async_system_md "QB-IO Async Engine"
- *      - @subpage qb_io_coroutines_md "QB-IO C++23 Coroutines"
+ *      - @subpage qb_io_coroutines_md "QB-IO C++20 Coroutines"
  *      - @subpage qb_io_transports_md "QB-IO Transports"
  *      - @subpage qb_io_protocols_md "QB-IO Protocols"
  *      - @subpage qb_io_ssl_transport_md "QB-IO SSL/TLS"

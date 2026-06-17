@@ -10,7 +10,7 @@ This page catalogs the capabilities of `qb-core` — the actor runtime built on 
 
 ## Summary
 
-`qb-core` provides the actor model on top of the `qb-io` asynchronous event loop: a base [`qb::Actor`](./actor.md) class, a typed event system, a multi-threaded engine ([`qb::Main`](./engine.md) plus one [`qb::VirtualCore`](./engine.md) worker thread per core), lock-free inter-core messaging, and C++23 coroutine integration. Each capability below is a one-line entry pointing at its owning page; the owning page holds the authoritative signatures and contracts.
+`qb-core` provides the actor model on top of the `qb-io` asynchronous event loop: a base [`qb::Actor`](./actor.md) class, a typed event system, a multi-threaded engine ([`qb::Main`](./engine.md) plus one [`qb::VirtualCore`](./engine.md) worker thread per core), lock-free inter-core messaging, and C++20 coroutine integration. Each capability below is a one-line entry pointing at its owning page; the owning page holds the authoritative signatures and contracts.
 
 The public surface is reachable through three umbrella headers: `<qb/actor.h>` (actor and pipe), `<qb/main.h>` (engine), and `<qb/event.h>` (event base and system events).
 
@@ -100,9 +100,9 @@ Owned by [Engine — `qb::Main` and `VirtualCore`](./engine.md). See also [Core 
 
 ---
 
-## C++23 coroutine integration
+## C++20 coroutine integration
 
-Owned by [Common actor patterns and utilities](./patterns.md#6-c23-coroutine-pattern--spawn_async). The coroutine runtime itself is documented under [qb-io: C++23 coroutines](../3_qb_io/coroutines.md).
+Owned by [Common actor patterns and utilities](./patterns.md#6-c23-coroutine-pattern--spawn_async). The coroutine runtime itself is documented under [qb-io: C++20 coroutines](../3_qb_io/coroutines.md).
 
 | Capability | API | One-line summary |
 |---|---|---|

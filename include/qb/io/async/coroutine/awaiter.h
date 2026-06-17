@@ -2,7 +2,7 @@
  * @file qb/io/async/coroutine/awaiter.h
  * @brief Coroutine awaiters for libev integration
  *
- * This file defines awaiter types that integrate C++23 coroutines
+ * This file defines awaiter types that integrate C++20 coroutines
  * with the libev event loop. Awaiters allow coroutines to suspend
  * on I/O operations and resume when those operations complete.
  *

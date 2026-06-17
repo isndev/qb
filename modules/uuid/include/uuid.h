@@ -208,8 +208,7 @@ namespace uuids
          void process_block() 
          {
             uint32_t w[80];
-            // C++23: Using 'uz' suffix for size_t literals
-            for (auto i = 0uz; i < 16uz; ++i) {
+            for (std::size_t i = 0; i < 16; ++i) {
                w[i] = (m_block[i * 4 + 0] << 24);
                w[i] |= (m_block[i * 4 + 1] << 16);
                w[i] |= (m_block[i * 4 + 2] << 8);
@@ -396,8 +395,7 @@ namespace uuids
 
       constexpr bool is_nil() const noexcept
       {
-         // C++23: Using 'uz' suffix for size_t literals
-         for (auto i = 0uz; i < data.size(); ++i) if (data[i] != 0) return false;
+         for (std::size_t i = 0; i < data.size(); ++i) if (data[i] != 0) return false;
          return true;
       }
 

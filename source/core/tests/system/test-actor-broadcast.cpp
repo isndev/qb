@@ -114,7 +114,7 @@ TEST(BroadcastActor, ShouldReceiveBroadcastsByAllReceivers) {
     qb::Main main;
 
     // Add receiver actors
-    // C++23: Using auto for type deduction
+    // Modern C++: using auto for type deduction
     for (auto i = 0; i < num_receivers; ++i) {
         main.addActor<ReceiverActor>(0);
     }
@@ -147,7 +147,7 @@ TEST(BroadcastActor, ShouldHandleZeroBroadcasts) {
     qb::Main main;
 
     // Add receiver actors
-    // C++23: Using auto for type deduction
+    // Modern C++: using auto for type deduction
     for (auto i = 0; i < num_receivers; ++i) {
         main.addActor<ReceiverActor>(0);
     }
