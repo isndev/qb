@@ -19,7 +19,7 @@
 # qb IO Coroutine Tests - CMake Configuration
 #
 # This file configures the test build system for the qb IO coroutine component.
-# It includes comprehensive tests for C++23 coroutine integration with libev.
+# It includes comprehensive tests for C++20 coroutine integration with libev.
 #
 # Debug options (configure with -DQB_DEBUG_CORO_LIFECYCLE=ON):
 #   QB_DEBUG_CORO_LIFECYCLE  - [sched] and [listener] traces (destructor, suspend, clear, reset)

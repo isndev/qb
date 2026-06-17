@@ -35,7 +35,7 @@ Pipe::push(_Args &&...args) const noexcept {
     data.id     = data.template type_to_id<T>();
     data.dest   = dest;
     data.source = source;
-    // C++23: Use service_event_type concept
+    // C++20: use service_event_type concept
     if constexpr (service_event_type<T>) {
         data.forward = source;
         std::swap(data.id, data.service_event_id);
@@ -56,7 +56,7 @@ Pipe::allocated_push(std::size_t size, _Args &&...args) const noexcept {
     data.id     = data.template type_to_id<T>();
     data.dest   = dest;
     data.source = source;
-    // C++23: Use service_event_type concept
+    // C++20: use service_event_type concept
     if constexpr (service_event_type<T>) {
         data.forward = source;
         std::swap(data.id, data.service_event_id);

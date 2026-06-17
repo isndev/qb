@@ -280,7 +280,7 @@ namespace qb::io {
 namespace internal {
 /**
  * @brief Netlink request structure for communicating with the kernel
- * C++23: Modernized using using alias instead of typedef struct
+ * Modern C++: modernized using using alias instead of typedef struct
  */
 using netlink_request = struct {
     struct nlmsghdr header;
@@ -289,7 +289,7 @@ using netlink_request = struct {
 
 /**
  * @brief Session information for netlink communication
- * C++23: Modernized using using alias instead of typedef struct
+ * Modern C++: modernized using using alias instead of typedef struct
  */
 using netlink_session = struct {
     int                sock_fd;
@@ -1087,8 +1087,8 @@ error:
 
     return NULL;
 }
-using getifaddrs_impl_fptr = int (*)(struct ifaddrs **);   // C++23: using alias
-using freeifaddrs_impl_fptr = void (*)(struct ifaddrs *); // C++23: using alias
+using getifaddrs_impl_fptr = int (*)(struct ifaddrs **);   // Modern C++: using alias
+using freeifaddrs_impl_fptr = void (*)(struct ifaddrs *); // Modern C++: using alias
 
 static getifaddrs_impl_fptr  getifaddrs_impl  = NULL;
 static freeifaddrs_impl_fptr freeifaddrs_impl = NULL;

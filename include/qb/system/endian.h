@@ -4,7 +4,7 @@
  *
  * This file provides utilities for detecting the system's native endianness
  * and converting values between different byte orders (little endian and big endian).
- * It leverages C++20 std::endian and C++23 std::byteswap when available, with
+ * It leverages C++20 std::endian and qb::byteswap, with
  * portable fallbacks for other compilers.
  *
  * @author qb - C++ Actor Framework
@@ -28,6 +28,7 @@
 #include <bit>
 #include <cstdint>
 #include <type_traits>
+#include <qb/utility/compat.h>
 
 namespace qb::endian {
 
@@ -76,8 +77,7 @@ is_big_endian() noexcept {
 /**
  * @brief Swaps the byte order of a value
  *
- * Uses C++23 std::byteswap for integral types.
- * Falls back to a manual reversal for enum types.
+ * Uses qb::byteswap for integral and enum types.
  *
  * @tparam T The type of value to byte-swap (must be arithmetic or enum and trivially copyable)
  * @param value The value to byte-swap
@@ -91,10 +91,10 @@ byteswap(T value) noexcept {
     static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
 
     if constexpr (std::is_integral_v<T>) {
-        return std::byteswap(value);
+        return qb::byteswap(value);
     } else if constexpr (std::is_enum_v<T>) {
         using U = std::underlying_type_t<T>;
-        return static_cast<T>(std::byteswap(static_cast<U>(value)));
+        return static_cast<T>(qb::byteswap(static_cast<U>(value)));
     } else {
         T              result;
         const uint8_t *src = reinterpret_cast<const uint8_t *>(&value);

@@ -6,7 +6,7 @@ An index of every `qb-io` capability — async engine, coroutines, transports, p
 
 **Prerequisites:** none — **See also:** [qb-io overview](./README.md), [the asynchronous engine](./async_system.md), [io invariants reference](../7_reference/io_invariants.md)
 
-`qb-io` is the C++23 asynchronous runtime under the qb actor framework. It is also usable standalone: the event loop, transports, protocols, and utilities have no dependency on `qb-core`. This page is a map. Each entry names the type or namespace, states what it does in one line, and links to the page that documents it in full. Where a capability is optional, the entry names the compile-time feature macro that gates it and the CMake option that defines that macro.
+`qb-io` is the C++20 asynchronous runtime with optional C++23 support under the qb actor framework. It is also usable standalone: the event loop, transports, protocols, and utilities have no dependency on `qb-core`. This page is a map. Each entry names the type or namespace, states what it does in one line, and links to the page that documents it in full. Where a capability is optional, the entry names the compile-time feature macro that gates it and the CMake option that defines that macro.
 
 ## Optional feature gates
 
@@ -35,7 +35,7 @@ The event loop and its callback-driven building blocks. One `listener` runs per 
 
 → [The asynchronous engine](./async_system.md)
 
-## 2. C++23 coroutines (`qb::io::async` coroutine layer)
+## 2. C++20 coroutines (`qb::io::async` coroutine layer)
 
 A coroutine runtime layered on the same `listener`. Callbacks and coroutines share one single-threaded execution model and interoperate freely; only one coroutine runs at a time per thread, and another can run only at a `co_await` suspension point.
 
@@ -50,7 +50,7 @@ A coroutine runtime layered on the same `listener`. Callbacks and coroutines sha
 - **Async streams (`async_stream<T>`)** — a lazy functional pipeline with `map` / `filter` / `take` / `skip`, terminal consumers, `merge_streams`, `zip`, and `interval`.
 - **Retry (`with_retry`, `with_retry_until`, `make_retryable`)** — retry an operation under a `retry_policy` with a configurable `backoff_strategy`.
 
-→ [C++23 coroutines](./coroutines.md)
+→ [C++20 coroutines](./coroutines.md)
 
 ## 3. Networking
 
@@ -125,6 +125,6 @@ Cross-cutting helpers usable from any qb-io or qb-core code.
 
 - [qb-io overview and reading order](./README.md)
 - [The asynchronous engine](./async_system.md) — the event loop every entry on this page sits on
-- [C++23 coroutines](./coroutines.md)
+- [C++20 coroutines](./coroutines.md)
 - [io invariants reference](../7_reference/io_invariants.md) — required reading before writing a custom protocol, transport, or async component
 - [Building from source](../7_reference/building.md) — the optional-feature gates and CMake options in full

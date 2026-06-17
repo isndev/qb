@@ -131,7 +131,7 @@ public:
          */
         void
         invoke() final {
-            // C++23: Use concept directly
+            // C++20: use concept directly
             if constexpr (qb::has_is_alive<_Actor>) {
                 if (likely(_actor.is_alive()))
                     _actor.on(_event);

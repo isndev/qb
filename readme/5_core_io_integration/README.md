@@ -35,6 +35,6 @@ This section breaks the integration into two task pages and a set of worked exam
 ## See also
 
 - [Reference: `qb-io` async system](../3_qb_io/async_system.md) — the listener, timers, and watchers in full.
-- [Reference: C++23 coroutines](../3_qb_io/coroutines.md) — `task<T>`, awaiters, and combinators used by `spawn_async`.
+- [Reference: C++20 coroutines](../3_qb_io/coroutines.md) — `task<T>`, awaiters, and combinators used by `spawn_async`.
 - [Reference: `qb::Actor`](../4_qb_core/actor.md) — actor lifecycle, `qb::ICallback` registration, and the messaging API the callbacks reach back through.
 - [Reference: time utilities](../3_qb_io/utilities.md) — `qb::duration`, `qb::mono_time`, and `qb::wall_time`, the canonical span and time-point types every timeout argument uses.

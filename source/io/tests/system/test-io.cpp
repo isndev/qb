@@ -600,7 +600,7 @@ TEST(UDPTransport, SmallReadLimitAcceptsSmallDatagram) {
     EXPECT_EQ(std::string_view(receiver.in().begin(), receiver.pendingRead()), "hello");
 }
 
-// Coroutine-based async TCP connection tests (C++23)
+// Coroutine-based async TCP connection tests (C++20)
 //
 
 TEST(CORO_TCP, ConnectAwaiter) {

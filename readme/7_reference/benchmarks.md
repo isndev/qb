@@ -1,4 +1,4 @@
-<!-- Verified-against: qb 2.0.0 (c++23) -->
+<!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
 # Benchmarks
 
 > **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)

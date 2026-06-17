@@ -124,7 +124,7 @@ void on(RequestEvent &ev) {
 }
 ```
 
-The coroutine layer itself — `task<T>`, awaiters, channels, scopes, generators — is documented in [C++23 coroutines](../3_qb_io/coroutines.md). Note that those primitives run on a single-threaded scheduler, which is why they need no internal locking.
+The coroutine layer itself — `task<T>`, awaiters, channels, scopes, generators — is documented in [C++20 coroutines](../3_qb_io/coroutines.md). Note that those primitives run on a single-threaded scheduler, which is why they need no internal locking.
 
 ## Can I call a blocking third-party library from an actor?
 
@@ -170,7 +170,7 @@ Continuous integration builds and tests every change on:
 | macOS (`macos-latest`) | Apple Clang, GCC | libc++ |
 | Windows (`windows-latest`) | MSVC | MSVC STL |
 
-You need a C++23-capable compiler from one of those families, CMake 3.24 or newer, and — on non-Windows platforms — a POSIX threads (pthreads) implementation. Supported architectures are x86_64 and ARM64, including Apple Silicon. The full matrix and prerequisites are in [INSTALL.md](../../INSTALL.md).
+You need a C++20-capable compiler from one of those families, CMake 3.24 or newer, and — on non-Windows platforms — a POSIX threads (pthreads) implementation. Supported architectures are x86_64 and ARM64, including Apple Silicon. The full matrix and prerequisites are in [INSTALL.md](../../INSTALL.md).
 
 ## Where is the authoritative API reference?
 
@@ -180,6 +180,6 @@ The header files under `qb/include/qb/` are ground truth for every signature, te
 
 - [Error handling and resilience](../6_guides/error_handling.md) — the fail-stop boundary and supervision patterns in full
 - [Messaging](../4_qb_core/messaging.md) — `push`/`send`/`broadcast`, event payloads, and ordering
-- [C++23 coroutines](../3_qb_io/coroutines.md) — the coroutine layer `spawn_async` runs on
+- [C++20 coroutines](../3_qb_io/coroutines.md) — the coroutine layer `spawn_async` runs on
 - [The threading model](../2_core_concepts/threading_model.md) — why no mutexes are needed in actor code
 - [SECURITY.md](../../SECURITY.md) · [SUPPORT.md](../../SUPPORT.md) · [CONTRIBUTING.md](../../CONTRIBUTING.md) · [INSTALL.md](../../INSTALL.md)

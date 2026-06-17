@@ -4,7 +4,7 @@
 
 Five techniques for non-trivial systems: defining a custom wire protocol, scaling actors across cores, running coroutines safely inside actors, structuring shared logic as service actors, and composing the qbm modules with your own actors.
 
-**Prerequisites:** [Writing actors with `qb::Actor`](../4_qb_core/actor.md), [The engine: `qb::Main` and `VirtualCore`](../4_qb_core/engine.md), [Building network actors](../5_core_io_integration/network_actors.md) — **See also:** [Actor patterns](../4_qb_core/patterns.md), [C++23 coroutines](../3_qb_io/coroutines.md), [Framing messages with protocols](../3_qb_io/protocols.md), [Performance tuning](./performance_tuning.md)
+**Prerequisites:** [Writing actors with `qb::Actor`](../4_qb_core/actor.md), [The engine: `qb::Main` and `VirtualCore`](../4_qb_core/engine.md), [Building network actors](../5_core_io_integration/network_actors.md) — **See also:** [Actor patterns](../4_qb_core/patterns.md), [C++20 coroutines](../3_qb_io/coroutines.md), [Framing messages with protocols](../3_qb_io/protocols.md), [Performance tuning](./performance_tuning.md)
 
 ## Summary
 
@@ -232,7 +232,7 @@ engine.core(1).setAffinity(qb::CoreIdSet{2});      // pin core-1 worker to CPU 2
 
 ## Coroutine patterns inside actors
 
-`spawn_async()` is the only supported way to run a C++23 coroutine inside an actor. It launches the coroutine in an *isolated context* on the actor's own `VirtualCore` and returns immediately; the actor keeps processing other events while the coroutine is suspended at a `co_await`. The coroutine layer itself — `task<T>`, awaiters, `sleep`, channels, scopes — is owned by [C++23 coroutines](../3_qb_io/coroutines.md). This section covers the actor-safety contract, which is specific to `spawn_async`.
+`spawn_async()` is the only supported way to run a C++20 coroutine inside an actor. It launches the coroutine in an *isolated context* on the actor's own `VirtualCore` and returns immediately; the actor keeps processing other events while the coroutine is suspended at a `co_await`. The coroutine layer itself — `task<T>`, awaiters, `sleep`, channels, scopes — is owned by [C++20 coroutines](../3_qb_io/coroutines.md). This section covers the actor-safety contract, which is specific to `spawn_async`.
 
 ### The isolation rule
 
@@ -348,7 +348,7 @@ target_link_libraries(my_app
 )
 ```
 
-Header-only qbm modules require C++23 on the consumer; this is enforced automatically through `target_compile_features(... cxx_std_23)` on the module's `INTERFACE`.
+Header-only qbm modules require the selected qb standard on the consumer; this is enforced automatically through `target_compile_features(... cxx_std_${QB_CXX_STANDARD})` on the module's `INTERFACE`.
 
 ### Runtime composition pattern
 
@@ -372,7 +372,7 @@ The example applications under `examples/qbm/` (HTTP servers with routing and mi
 
 - [Framing messages with protocols](../3_qb_io/protocols.md) — the `AProtocol` contract and the built-in framers.
 - [The engine: `qb::Main` and `VirtualCore`](../4_qb_core/engine.md) — placement, affinity, latency, and shutdown in depth.
-- [C++23 coroutines](../3_qb_io/coroutines.md) — `task<T>`, awaiters, channels, scopes, and combinators.
+- [C++20 coroutines](../3_qb_io/coroutines.md) — `task<T>`, awaiters, channels, scopes, and combinators.
 - [Actor patterns](../4_qb_core/patterns.md) — service registries, supervision, request/response, and `require<>` discovery.
 - [Building network actors](../5_core_io_integration/network_actors.md) — the `qb::io::use<>` mixins that attach transports and protocols to actors.
 - [Performance tuning](./performance_tuning.md) and [Resource management](./resource_management.md) — when to apply these techniques and how to measure their effect.

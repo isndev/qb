@@ -44,7 +44,7 @@ class ring_buffer;
 
 namespace detail {
 /**
- * @brief Iterator for ring_buffer (uses C++23 deducing this for const/non-const)
+ * @brief Iterator for ring_buffer
  *
  * @tparam T The type of elements in the buffer
  * @tparam N The capacity of the buffer
@@ -53,7 +53,6 @@ namespace detail {
  */
 template <typename T, size_t N, bool C, bool Overwrite>
 class ring_buffer_iterator {
-    // C++23: Use conditional_t with concepts-style approach
     using buffer_t = std::conditional_t<!C,
                                       ring_buffer<T, N, Overwrite> *,
                                       ring_buffer<T, N, Overwrite> const *>;
@@ -61,9 +60,9 @@ class ring_buffer_iterator {
 public:
     using self_type         = ring_buffer_iterator<T, N, C, Overwrite>;
     using value_type        = T;
-    using reference         = T &;
+    using reference         = std::conditional_t<C, T const &, T &>;
     using const_reference   = T const &;
-    using pointer           = T *;
+    using pointer           = std::conditional_t<C, T const *, T *>;
     using const_pointer     = T const *;
     using size_type         = size_t;
     using difference_type   = ptrdiff_t;
@@ -98,22 +97,20 @@ public:
 
     /**
      * @brief Dereference operator
-     * C++23: Single method handles both const and non-const using deducing this
      *
      * @return Reference to the current element (const or non-const based on iterator type)
      */
-    [[nodiscard]] auto &operator*(this auto &&self) noexcept {
-        return (*self.source_)[self.index_];
+    [[nodiscard]] reference operator*() const noexcept {
+        return (*source_)[index_];
     }
 
     /**
      * @brief Arrow operator
-     * C++23: Single method handles both const and non-const using deducing this
      *
      * @return Pointer to the current element (const or non-const based on iterator type)
      */
-    [[nodiscard]] auto operator->(this auto &&self) noexcept {
-        return &((*self.source_)[self.index_]);
+    [[nodiscard]] pointer operator->() const noexcept {
+        return &((*source_)[index_]);
     }
 
     /**
@@ -518,7 +515,7 @@ private:
     }
 
     /// Storage for elements with proper alignment
-    /// C++23: std::aligned_storage is deprecated, using alignas with std::byte array
+    /// C++23 deprecates std::aligned_storage; use alignas with a std::byte array.
     alignas(T) std::byte elements_[sizeof(T) * N]{};
     size_type head_{}; ///< Index where the next element will be inserted
     size_type tail_{}; ///< Index of the oldest element

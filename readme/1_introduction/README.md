@@ -8,14 +8,14 @@ The starting point for understanding what qb is, the problems it addresses, and 
 
 ## Summary
 
-qb is a C++23 framework for building concurrent and distributed systems on the actor model, composed of two libraries: an actor engine (`qb-core`) layered on a standalone non-blocking asynchronous I/O runtime (`qb-io`). This section orients newcomers and evaluators before they reach the hands-on material. Read it to decide whether qb fits your problem and to understand the reasoning behind its architecture.
+qb is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor model, composed of two libraries: an actor engine (`qb-core`) layered on a standalone non-blocking asynchronous I/O runtime (`qb-io`). This section orients newcomers and evaluators before they reach the hands-on material. Read it to decide whether qb fits your problem and to understand the reasoning behind its architecture.
 
 ## Pages in this section
 
 | Page | What it covers |
 |---|---|
 | [What qb is](./overview.md) | The two-library structure (`qb-io` and `qb-core`), the problem qb addresses, who it is for, a first actor, and when to use — or not use — it. |
-| [Design philosophy](./philosophy.md) | The principles behind qb: share-nothing actor isolation, asynchronous-by-default I/O, the layered and modular split, explicit modern C++23, and lock-free inter-core messaging, each with its rationale. |
+| [Design philosophy](./philosophy.md) | The principles behind qb: share-nothing actor isolation, asynchronous-by-default I/O, the layered and modular split, explicit modern C++20/23, and lock-free inter-core messaging, each with its rationale. |
 
 ## Suggested reading order
 

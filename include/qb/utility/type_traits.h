@@ -8,7 +8,7 @@
  * - Detection of container properties (e.g., `is_container`, `is_sequence_container`).
  * - Iterator category detection and value type extraction (`is_map_iterator`, `iterator_type`).
  * - CRTP (Curiously Recurring Template Pattern) base helper (`qb::crtp`).
- * - C++23 Concepts for detecting member types and functions (e.g., `has_is_alive`, `has_disconnect`).
+ * - C++20 concepts for detecting member types and functions (e.g., `has_is_alive`, `has_disconnect`).
  * - Helper aliases for `std::move` and `std::forward` (`qb::mv`, `qb::fwd`).
  * - Utilities for variadic template expansion (`qb::indexes_tuple`, `qb::expand`).
  *
@@ -174,32 +174,38 @@ concept has_size_method = requires(T t) {
  * to the derived class type `T`. This is the core mechanism of CRTP, enabling static polymorphism
  * and code reuse by allowing base classes to access members of their derived classes.
  *
- * C++23: Uses explicit object parameter (deducing this) to handle const/non-const in one method.
- *
  * @tparam T The derived class type that inherits from `crtp<T>`.
  */
 template <typename T>
 struct crtp {
     /**
      * @brief Access the derived class instance
-     * C++23: Single method with deducing-this handles both const and non-const.
-     * Preserves const-ness: const crtp<T> → const T&, non-const → T&.
+     * @details Ref-qualified overloads preserve constness and value category in
+     * both C++20 and C++23.
      *
      * @return Reference to the derived class
      */
-    [[nodiscard]] inline auto &&impl(this auto &&self) noexcept {
-        using Self = std::remove_reference_t<decltype(self)>;
-        if constexpr (std::is_const_v<Self>)
-            return static_cast<const T &>(self);
-        else
-            return static_cast<T &>(self);
+    [[nodiscard]] inline T &impl() & noexcept {
+        return static_cast<T &>(*this);
+    }
+
+    [[nodiscard]] inline const T &impl() const & noexcept {
+        return static_cast<const T &>(*this);
+    }
+
+    [[nodiscard]] inline T &&impl() && noexcept {
+        return static_cast<T &&>(*this);
+    }
+
+    [[nodiscard]] inline const T &&impl() const && noexcept {
+        return static_cast<const T &&>(*this);
     }
 };
 
 /**
  * @brief Type trait to check if a type `T` is a container.
  * @ingroup TypeTraits
- * @details C++23: Uses the container concept instead of complex SFINAE.
+ * @details C++20: uses the container concept instead of complex SFINAE.
  *          A type `T` is considered a container if it satisfies qb::container concept.
  *          Specializations exist for C-style arrays, `std::valarray`, `std::pair`, and `std::tuple`.
  * @tparam T The type to check.
@@ -260,7 +266,7 @@ struct is_container<std::tuple<Args...>> : std::true_type {};
  */
 template <typename T, bool cond>
 struct remove_reference_if {
-    /** @brief Resulting type (unchanged if condition is false) - C++23: using alias */
+    /** @brief Resulting type (unchanged if condition is false) - Modern C++: using alias */
     using type = T;
     /** @brief Whether reference was removed */
     constexpr static bool value = false;
@@ -273,7 +279,7 @@ struct remove_reference_if {
  */
 template <typename T>
 struct remove_reference_if<T, true> {
-    /** @brief Resulting type with reference removed - C++23: using _t alias */
+    /** @brief Resulting type with reference removed - Modern C++: using _t alias */
     using type = std::remove_reference_t<T>;
     /** @brief Whether reference was removed */
     constexpr static bool value = true;
@@ -283,7 +289,7 @@ struct remove_reference_if<T, true> {
  * @struct is_mappish
  * @ingroup TypeTraits
  * @brief Type trait to check if a type `T` is map-like.
- * @details C++23: Uses associative_container concept.
+ * @details C++20: uses associative_container concept.
  *          A type is considered map-like if it satisfies qb::associative_container.
  * @tparam T The type to check.
  * @return `std::true_type` if `T` is map-like, `std::false_type` otherwise.
@@ -339,7 +345,7 @@ struct is_inserter : std::false_type {};
  */
 template <typename T>
 struct is_inserter<
-    // C++23: Use _v suffix and _t alias
+    // Modern C++: use _v suffix and _t alias
     T, std::enable_if_t<!std::is_void_v<typename T::container_type>>>
     : std::true_type {};
 
@@ -375,9 +381,9 @@ struct iterator_type {
  * @tparam Iter Iterator type
  */
 template <typename Iter>
-// C++23: Use _t alias and _v suffix
+// Modern C++: use _t alias and _v suffix
 struct iterator_type<Iter, std::enable_if_t<is_inserter_v<Iter>>> {
-    /** @brief The value type of the underlying container - C++23: using _t alias */
+    /** @brief The value type of the underlying container - Modern C++: using _t alias */
     using type = std::decay_t<typename Iter::container_type::value_type>;
 };
 
@@ -400,7 +406,7 @@ struct is_terator : std::false_type {};
  * @tparam Iter Iterator type
  */
 template <typename Iter>
-// C++23: Use _t alias and _v suffix
+// Modern C++: use _t alias and _v suffix
 struct is_terator<Iter, std::enable_if_t<is_inserter_v<Iter>>>
     : std::true_type {};
 
@@ -412,11 +418,11 @@ struct is_terator<Iter, std::enable_if_t<is_inserter_v<Iter>>>
  * @tparam Iter Iterator type
  */
 template <typename Iter>
-// C++23: Use _t alias
+// Modern C++: use _t alias
 struct is_terator<Iter,
                   std::enable_if_t<!std::is_void_v<
                       typename std::iterator_traits<Iter>::value_type>>>
-    // C++23: Use _v suffix
+    // Modern C++: use _v suffix
     : std::integral_constant<bool, !std::is_convertible_v<Iter, std::string_view>> {
 };
 
@@ -482,7 +488,7 @@ struct has_push_back : std::false_type {};
  */
 template <typename T>
 struct has_push_back<
-    // C++23: Use _t alias
+    // Modern C++: use _t alias
     T, std::enable_if_t<std::is_void_v<decltype(std::declval<T>().push_back(
            std::declval<typename T::value_type>()))>>> : std::true_type {};
 
@@ -503,7 +509,7 @@ struct has_insert : std::false_type {};
  */
 template <typename T>
 struct has_insert<
-    // C++23: Use _t alias
+    // Modern C++: use _t alias
     T, std::enable_if_t<std::is_same_v<
            decltype(std::declval<T>().insert(std::declval<typename T::const_iterator>(),
                                              std::declval<typename T::value_type>())),
@@ -535,7 +541,7 @@ inline constexpr bool has_insert_v = has_insert<T>::value;
 template <typename T>
 struct is_sequence_container
     : std::integral_constant<
-          // C++23: Use _v suffix and _t alias
+          // Modern C++: use _v suffix and _t alias
           bool, has_push_back_v<T> &&
                     !std::is_same_v<std::decay_t<T>, std::string>> {};
 
@@ -548,7 +554,7 @@ struct is_sequence_container
  */
 template <typename T>
 struct is_associative_container
-    // C++23: Use _v suffix
+    // Modern C++: use _v suffix
     : std::integral_constant<bool, has_insert_v<T> && !has_push_back_v<T>> {};
 
 /**
@@ -586,7 +592,7 @@ struct nth_type<num, T, Y...> : nth_type<num - 1, Y...> {};
  */
 template <typename T, typename... Y>
 struct nth_type<0, T, Y...> {
-    using type = T; ///< The type at the specified index - C++23: using alias
+    using type = T; ///< The type at the specified index - Modern C++: using alias
 };
 
 /**
@@ -634,7 +640,7 @@ struct index_builder<num, indexes_tuple<Indexes...>>
  */
 template <size_t... Indexes>
 struct index_builder<0, indexes_tuple<Indexes...>> {
-    using type = indexes_tuple<Indexes...>; ///< The final tuple type with all indices - C++23: using alias
+    using type = indexes_tuple<Indexes...>; ///< The final tuple type with all indices - Modern C++: using alias
     enum { size = sizeof...(Indexes) };     ///< Size of the index sequence
 };
 

@@ -284,7 +284,7 @@
 #if QB__HAS_UDS
 #include <afunix.h>
 #endif
-using socket_type = SOCKET;  // C++23: using alias
+using socket_type = SOCKET;  // Modern C++: using alias
 typedef int socklen_t;       // Note: socklen_t is a POSIX type, kept for compatibility
 #define FD_TO_SOCKET(fd) _get_osfhandle(fd)
 #define OPEN_FD_FROM_SOCKET(sock) _open_osfhandle(sock, 0)
@@ -366,7 +366,7 @@ typedef int socklen_t;       // Note: socklen_t is a POSIX type, kept for compat
  * @details int on Unix systems, SOCKET (unsigned integer) on Windows
  * @ingroup IO
  */
-using socket_type = int;  // C++23: using alias
+using socket_type = int;  // Modern C++: using alias
 /**
  * @def FD_TO_SOCKET(fd)
  * @brief Converts a file descriptor to a socket handle

@@ -975,7 +975,7 @@ public:
 
     /**
      * @name Coroutine Support
-     * C++23 coroutine integration for async I/O operations.
+     * C++20 coroutine integration for async I/O operations.
      * @{
      */
 
@@ -1362,7 +1362,7 @@ concept reference_wrapper_type =
  * @struct actor_factory_param
  * @brief Utility struct for processing actor factory constructor arguments
  * @details
- * C++23: Uses concepts and explicit specializations instead of nested std::conditional_t.
+ * C++20: uses concepts and explicit specializations instead of nested std::conditional_t.
  * Handles reference wrappers, string literals, and other types for actor constructors.
  *
  * @tparam T The original parameter type to process
@@ -1377,7 +1377,7 @@ struct actor_factory_param {
     static constexpr bool is_ref_wrapper = reference_wrapper_type<no_ref>;
 
     /** @brief The resulting type after transformation */
-    // C++23: Using constexpr if chain in the using declaration is not possible,
+    // Modern C++: using constexpr if chain in the using declaration is not possible,
     // so we keep the std::conditional_t structure but with cleaner concept-based checks
     using type = std::conditional_t<
         is_ref_wrapper,
@@ -1408,7 +1408,7 @@ struct actor_factory_param {
 /**
  * @brief Utility function for forwarding and transforming arguments to actor factory
  * @details
- * C++23: Uses string_literal concept for cleaner type checking.
+ * C++20: uses string_literal concept for cleaner type checking.
  *
  * @tparam T The type of the argument to forward
  * @param val The value to forward
@@ -1417,7 +1417,7 @@ struct actor_factory_param {
  */
 template <typename T>
 [[nodiscard]] inline auto actor_factory_forward(T&& val) {
-    // C++23: Use concept for direct type checking instead of std::is_same_v
+    // C++20: use concept for direct type checking instead of std::is_same_v
     if constexpr (string_literal<T>) {
         return std::string(std::forward<T>(val)); // copy literal to std::string
     } else {
@@ -1485,7 +1485,7 @@ public:
     }
 
     [[nodiscard]] bool isService() const final {
-        // C++23: Use concept instead of std::is_base_of_v
+        // C++20: use concept instead of std::is_base_of_v
         return service_type<_Actor>;
     }
 

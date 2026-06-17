@@ -678,8 +678,7 @@ std::string uri::decode(std::string_view input) noexcept {
     std::string result;
     result.reserve(input.size());
     
-    // C++23: Using 'uz' suffix for size_t literals
-    for (auto i = 0uz; i < input.size(); ++i) {
+    for (std::size_t i = 0; i < input.size(); ++i) {
         char c = input[i];
 
         if (c == '%' && i + 2 < input.size()) {
@@ -711,8 +710,7 @@ std::string uri::encode(std::string_view input) noexcept {
     std::string encoded;
     encoded.reserve(input.size() * 3); // Worst case: each char becomes %XX
     
-    // C++23: Using 'uz' suffix for size_t literals
-    for (auto i = 0uz; i < input.size(); ++i) {
+    for (std::size_t i = 0; i < input.size(); ++i) {
         unsigned char c = static_cast<unsigned char>(input[i]);
 
         if (is_unreserved(c)) {
@@ -877,8 +875,7 @@ bool uri::normalize_path(std::string &path) noexcept {
         result = "/";
     }
     
-    // C++23: Using 'uz' suffix for size_t literals
-    for (auto i = 0uz; i < normalized.size(); ++i) {
+    for (std::size_t i = 0; i < normalized.size(); ++i) {
         result += normalized[i];
         if (i < normalized.size() - 1) {
             result += "/";

@@ -8,7 +8,7 @@ The narrative guide to the qb actor framework, organized into seven sections for
 
 ## About this guide
 
-qb is a C++23 framework for concurrent and distributed systems built on the actor model. It pairs share-nothing actors with a non-blocking asynchronous I/O engine (`qb-io`) and native C++20/23 coroutines: `qb-core` is the actor engine, and `qb-io` is the runtime it stands on. This guide explains the model, the two libraries, and how to build with them.
+qb is a C++20-first framework with optional C++23 support for concurrent and distributed systems built on the actor model. It pairs share-nothing actors with a non-blocking asynchronous I/O engine (`qb-io`) and native C++20 coroutines: `qb-core` is the actor engine, and `qb-io` is the runtime it stands on. This guide explains the model, the two libraries, and how to build with them.
 
 The sections below progress from concepts to reference. New readers should follow them in order; experienced readers can jump to the section that matches the task at hand. Each section opens with its own index page that links to the pages within it.
 

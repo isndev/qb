@@ -281,7 +281,7 @@ TEST(ActorLifecycle, ShouldCallLifecycleHooksInCorrectOrder) {
     main.start(false);
 
     // Wait for test to complete (with timeout)
-    // C++23: Using auto for type deduction
+    // Modern C++: using auto for type deduction
     for (auto i = 0; i < 50 && !g_test_complete; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }

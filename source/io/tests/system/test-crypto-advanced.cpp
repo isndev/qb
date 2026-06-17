@@ -61,8 +61,7 @@ TEST_F(CryptoAdvancedTest, HKDF) {
     // Convert hex to binary
     auto hex_to_bytes = [](const std::string &hex) {
         std::vector<unsigned char> bytes;
-        // C++23: Using 'uz' suffix for size_t literals
-        for (auto i = 0uz; i < hex.length(); i += 2) {
+        for (std::size_t i = 0; i < hex.length(); i += 2) {
             std::string byteString = hex.substr(i, 2);
             bytes.push_back(
                 static_cast<unsigned char>(std::stoi(byteString, nullptr, 16)));
@@ -422,8 +421,7 @@ TEST_F(CryptoAdvancedTest, UniqueIV) {
     }
 
     // Check that all IVs are unique
-    // C++23: Using 'uz' suffix for size_t literals
-    for (auto i = 0uz; i < ivs.size(); i++) {
+    for (std::size_t i = 0; i < ivs.size(); i++) {
         for (auto j = i + 1; j < ivs.size(); j++) {
             EXPECT_NE(ivs[i], ivs[j]);
         }
@@ -508,8 +506,7 @@ TEST_F(CryptoAdvancedTest, HKDFWithDifferentDigests) {
     }
 
     // Compare each result with each other - they should be different
-    // C++23: Using 'uz' suffix for size_t literals
-    for (auto i = 0uz; i < results.size(); i++) {
+    for (std::size_t i = 0; i < results.size(); i++) {
         for (auto j = i + 1; j < results.size(); j++) {
             EXPECT_NE(results[i], results[j]);
         }

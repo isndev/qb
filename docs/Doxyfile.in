@@ -21,7 +21,7 @@ DOXYFILE_ENCODING      = UTF-8
 
 PROJECT_NAME           = "@QB_PREFIX@"
 PROJECT_NUMBER         = "@QB_VERSION@"
-PROJECT_BRIEF          = "C++17 Actor Framework"
+PROJECT_BRIEF          = "C++20/23 Actor Framework"
 PROJECT_LOGO           = "@DOXYGEN_INPUT_DIR@/template/static/logo.svg"
 
 OUTPUT_DIRECTORY       = "@CMAKE_SOURCE_DIR@/build/docs"

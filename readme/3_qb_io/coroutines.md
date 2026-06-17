@@ -1,4 +1,4 @@
-# C++23 coroutines
+# C++20 coroutines
 
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
@@ -19,8 +19,8 @@ Include the whole layer with one header:
 `<qb/io/async.h>` pulls it in transitively, so any program that already uses the async runtime has the coroutine API available. The TCP connect awaiter lives in `<qb/io/async/tcp/connector.h>` (guarded by `__cpp_impl_coroutine`) and is reached through `<qb/io/async.h>`.
 <!-- src: qb/include/qb/io/async/coroutine.h, qb/include/qb/io/async.h:53 -->
 
-The framework targets C++23; coroutine support requires a compiler with working C++20 coroutines.
-<!-- src: qb/README.md (C++23 requirement); connector.h gated on __cpp_impl_coroutine -->
+The framework targets C++20 by default; coroutine support requires a compiler with working C++20 coroutines.
+<!-- src: qb/README.md (C++20 requirement); connector.h gated on __cpp_impl_coroutine -->
 
 Every timed coroutine API on this page takes a `qb::duration` (a `std::chrono::nanoseconds` span; any `std::chrono::duration` converts implicitly). Deadlines that need an absolute point use `std::chrono::steady_clock::time_point` (the type behind `qb::mono_time`). Raw `double`-seconds arguments are not part of this surface.
 <!-- src: qb/include/qb/io/async/coroutine/awaiter.h:262, cancellation.h:560 -->

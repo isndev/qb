@@ -2,17 +2,17 @@
 
 > **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-qb is a C++23 framework for building concurrent and distributed systems on the actor model, composed of two libraries: an actor engine (`qb-core`) layered on a standalone non-blocking asynchronous I/O runtime (`qb-io`).
+qb is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor model, composed of two libraries: an actor engine (`qb-core`) layered on a standalone non-blocking asynchronous I/O runtime (`qb-io`).
 
 **Prerequisites:** none — **See also:** [Design philosophy](./philosophy.md) · [Core concepts](../2_core_concepts/README.md) · [Getting started](../6_guides/getting_started.md)
 
 ## Summary
 
-qb pairs share-nothing actors with a non-blocking I/O engine and native C++20/23 coroutines. Application code expresses *what* should happen on each message; the runtime owns scheduling, multicore distribution, and non-blocking I/O. Each actor owns its state and communicates only by passing events, which the engine delivers in order and processes one at a time per actor — so whole classes of data races and deadlocks cannot occur by construction.
+qb pairs share-nothing actors with a non-blocking I/O engine and native C++20 coroutines. Application code expresses *what* should happen on each message; the runtime owns scheduling, multicore distribution, and non-blocking I/O. Each actor owns its state and communicates only by passing events, which the engine delivers in order and processes one at a time per actor — so whole classes of data races and deadlocks cannot occur by construction.
 
 The framework ships as two libraries that compose:
 
-- **`qb-io`** — the asynchronous runtime: a libev-based event loop, non-blocking TCP, UDP, and SSL/TLS transports, an extensible protocol layer, C++20/23 coroutines, timers, filesystem watching, and shared utilities (canonical time vocabulary, lock-free queues, cryptography, compression, containers). It is usable on its own, with no dependency on the actor engine.
+- **`qb-io`** — the asynchronous runtime: a libev-based event loop, non-blocking TCP, UDP, and SSL/TLS transports, an extensible protocol layer, C++20 coroutines, timers, filesystem watching, and shared utilities (canonical time vocabulary, lock-free queues, cryptography, compression, containers). It is usable on its own, with no dependency on the actor engine.
 - **`qb-core`** — the actor engine built on `qb-io`: lightweight actors, a type-safe event system with ordered delivery, multicore scheduling with optional CPU affinity, and lock-free inter-core message passing.
 
 Higher-level application protocols (HTTP/1.1 and HTTP/2, WebSocket, PostgreSQL, Redis) are provided as optional [qbm modules](../../README.md#module-ecosystem) built on this foundation, not as part of the core distribution.
@@ -42,7 +42,7 @@ The result is code where each actor's message handler can be written and reasone
 
 qb targets C++ engineers building servers, network services, simulations, real-time pipelines, and other systems where concurrency and I/O are central. It assumes you are comfortable with:
 
-- Modern C++ on a **C++23** baseline. The build sets the standard to C++23 with compiler extensions off, and propagates that requirement to consumers, so code that links `qb::core` or `qb::io` must also compile as C++23. Coroutines and `std::optional` appear where the API exposes them.
+- Modern C++ on a **C++20** baseline, with an opt-in C++23 path. The build sets `QB_CXX_STANDARD=20` by default, keeps compiler extensions off, and propagates the selected standard to consumers. Coroutines and `std::optional` appear where the API exposes them.
 - Core concurrency concepts — threads, asynchronous operations, and the failure modes (data races, deadlocks) that the actor model is designed to prevent.
 - TCP/UDP network programming at a basic level.
 - CMake for integrating and building dependencies.
@@ -123,7 +123,7 @@ qb fits when most of the following hold:
 - You want to **scale across cores** from the same code, by placing actors on cores rather than rewriting around threads.
 - You prefer **message passing over shared state** as the concurrency model, and want the language to make data races structurally unlikely.
 - You need **non-blocking I/O** with predictable latency under load.
-- A **C++23** toolchain is acceptable across your build matrix.
+- A **C++20** toolchain is available across your build matrix, with C++23 available where you want the newer path.
 
 ## When not to use qb
 
@@ -131,7 +131,7 @@ qb is not the right tool when:
 
 - The work is a **single-threaded, synchronous program** with no concurrency or I/O concurrency. The actor runtime adds machinery you would not use.
 - The work is **CPU-bound, embarrassingly parallel batch computation** (for example, numerical kernels) better served by a data-parallel or task-graph library than by a message-passing runtime.
-- You **cannot adopt C++23**. The framework requires it and will not compile under an older standard.
+- You **cannot adopt C++20**. The framework does not support C++17 as a minimum anymore.
 - You need **blocking, request-per-thread I/O** semantics and do not want an event loop. qb is built around non-blocking I/O; forcing a blocking style works against the design.
 - Your platform or compiler is outside the [supported matrix](../../README.md#platform-support).
 

@@ -1,4 +1,4 @@
-<!-- Verified-against: qb 2.0.0 (c++23 branch) -->
+<!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
 # Installation
 
 How to add qb to a project and build it from source. For the day-to-day build-command reference see
@@ -17,7 +17,8 @@ Continuous integration builds and tests every change on the following matrix:
 
 Requirements:
 
-- A **C++23**-capable compiler from the families above.
+- A **C++20**-capable compiler from the families above. C++23 is supported by configuring with
+  `-DQB_CXX_STANDARD=23`.
 - **CMake 3.24** or newer (required for the `FetchContent` `FIND_PACKAGE_ARGS` resolution qb uses).
 - A POSIX threads implementation (pthreads) on non-Windows platforms.
 
@@ -51,6 +52,10 @@ brew install openssl argon2 zlib
 # Windows (vcpkg) — as used in CI
 vcpkg install openssl:x64-windows argon2:x64-windows zlib:x64-windows
 ```
+
+Install `libngtcp2` as well when you want QUIC/HTTP3 auto-detection to enable that transport. On
+Ubuntu CI this is `libngtcp2-dev` plus an OpenSSL crypto backend package when the image provides one;
+on macOS use `brew install libngtcp2`.
 
 If OpenSSL is not found, `QB_WITH_SSL` is forced off and the SSL/QUIC features are disabled rather than
 failing the build.

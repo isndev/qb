@@ -65,7 +65,7 @@ run_mpsc_fan_in(std::size_t const nb_producers, std::uint64_t const total,
     enqueue_failures = 0;
     qb::lockfree::mpsc::ringbuffer<EventBucket, MailboxCap, 0> queue(nb_producers);
 
-    const std::size_t batch_cap = std::max<std::size_t>(1uz, dequeue_batch);
+    const std::size_t batch_cap = std::max<std::size_t>(1u, dequeue_batch);
     auto              batch_buf = std::make_unique<EventBucket[]>(batch_cap);
 
     std::atomic<std::uint64_t> fail_sum{0};
@@ -120,7 +120,7 @@ BM_MpscMailbox_FanInDrain(benchmark::State &state) {
     const auto total          = static_cast<std::uint64_t>(state.range(1));
     const auto dequeue_batch  = static_cast<std::size_t>(state.range(2));
 
-    if (nb_producers == 0uz || total == 0ull) {
+    if (nb_producers == 0u || total == 0ull) {
         state.SkipWithError("invalid range: producers or total is zero");
         return;
     }

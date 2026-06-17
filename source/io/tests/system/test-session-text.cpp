@@ -282,7 +282,7 @@ TEST(Session, COMMAND_OVER_SECURE_TCP) {
 
     std::thread tc([]() {
         async::init();
-        for (auto i = 0uz; i < NB_CLIENTS; ++i) {
+        for (std::size_t i = 0; i < NB_CLIENTS; ++i) {
             msg_count_client_side = 0;
             TestSecureClient client;
             // Self-signed test certificate on 127.0.0.1: opt out of the
@@ -328,7 +328,7 @@ TEST(Session, COMMAND_OVER_SECURE_UTCP) {
     server.start();
     std::thread tc([]() {
         async::init();
-        for (auto i = 0uz; i < NB_CLIENTS; ++i) {
+        for (std::size_t i = 0; i < NB_CLIENTS; ++i) {
             msg_count_client_side = 0;
             TestSecureClient client;
             // Self-signed test certificate over a Unix-domain socket: opt out
@@ -445,7 +445,7 @@ TEST(Session, BINARY16_OVER_TCP) {
         }
         client.start();
 
-        for (auto i = 0uz; i < BIN_ITERATIONS; ++i) {
+        for (std::size_t i = 0; i < BIN_ITERATIONS; ++i) {
             uint16_t len = htons(static_cast<uint16_t>(sizeof(STRING_MESSAGE) - 1));
             client.publish(std::string_view(reinterpret_cast<const char *>(&len), sizeof(len)),
                            std::string_view(STRING_MESSAGE, sizeof(STRING_MESSAGE) - 1));
@@ -605,7 +605,7 @@ TEST(Session, DISABLED_COMMAND_OVER_UDP) {
     std::thread tc([]() {
         async::init();
 
-        for (auto i = 0uz; i < 5uz; ++i) {
+        for (std::size_t i = 0; i < 5u; ++i) {
             msg_count_client_side = 0;
             TestUDPClient client;
             client.transport().init();

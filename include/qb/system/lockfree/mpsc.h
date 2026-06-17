@@ -390,8 +390,7 @@ public:
     size_t
     dequeue(T *ret, size_t size) {
         const size_t save_size = size;
-        // C++23: Using 'uz' suffix for size_t literals
-        for (auto i = 0uz; i < _nb_producer; ++i) {
+        for (std::size_t i = 0; i < _nb_producer; ++i) {
             // Advance ret by the amount taken so each producer appends after
             // the previous one's items instead of overwriting them (silent
             // data loss: items consumed from the ring but lost in the output).
@@ -417,8 +416,7 @@ public:
     size_t
     dequeue(Func const &func, T *ret, size_t const size) {
         size_t nb_consume = 0;
-        // C++23: Using 'uz' suffix for size_t literals
-        for (auto i = 0uz; i < _nb_producer; ++i) {
+        for (std::size_t i = 0; i < _nb_producer; ++i) {
             nb_consume += _producers[i]._ringbuffer.dequeue(func, ret, size);
         }
         return nb_consume;
@@ -435,8 +433,7 @@ public:
     size_t
     consume_all(Func const &func) {
         size_t nb_consume = 0;
-        // C++23: Using 'uz' suffix for size_t literals
-        for (auto i = 0uz; i < _nb_producer; ++i) {
+        for (std::size_t i = 0; i < _nb_producer; ++i) {
             nb_consume += _producers[i]._ringbuffer.consume_all(func);
         }
         return nb_consume;

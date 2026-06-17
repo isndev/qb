@@ -21,7 +21,7 @@ Test sources live under each component's `tests/` directory. The two libraries a
 | `qb/source/core/tests/unit/` | Focused unit tests for single components (event router, the canonical time vocabulary, string utilities). |
 | `qb/source/core/tests/system/` | End-to-end actor-runtime tests that spin up a real `qb::Main` engine across one or more cores. |
 | `qb/source/io/tests/system/` | qb-io integration tests: URI parsing, TCP/UDP/Unix sockets, asynchronous I/O, plus optional crypto and compression suites. |
-| `qb/source/io/tests/coroutine/` | Tests for the C++23 coroutine runtime layered on libev (`task<T>`, generators, channels, scopes). |
+| `qb/source/io/tests/coroutine/` | Tests for the C++20 coroutine runtime layered on libev (`task<T>`, generators, channels, scopes). |
 
 <!-- src: qb/source/core/tests, qb/source/io/tests -->
 

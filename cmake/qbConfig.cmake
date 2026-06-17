@@ -137,10 +137,11 @@ endif()
 # -----------------------------------------------------------------------------
 # Compiler Configuration
 # -----------------------------------------------------------------------------
-set(QB_CXX_STANDARD 23 CACHE STRING "C++ standard required by qb targets")
-set_property(CACHE QB_CXX_STANDARD PROPERTY STRINGS 23)
-if(NOT QB_CXX_STANDARD STREQUAL "23")
-    message(FATAL_ERROR "qb requires C++23; set QB_CXX_STANDARD=23")
+set(QB_CXX_STANDARD 20 CACHE STRING "C++ standard required by qb targets")
+set_property(CACHE QB_CXX_STANDARD PROPERTY STRINGS 20 23)
+set(_QB_SUPPORTED_CXX_STANDARDS 20 23)
+if(NOT QB_CXX_STANDARD IN_LIST _QB_SUPPORTED_CXX_STANDARDS)
+    message(FATAL_ERROR "qb supports QB_CXX_STANDARD=20 or 23")
 endif()
 
 set(CMAKE_CXX_STANDARD ${QB_CXX_STANDARD})

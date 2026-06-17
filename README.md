@@ -1,14 +1,14 @@
-<!-- Verified-against: qb 2.0.0 (c++23 branch) -->
+<!-- Verified-against: qb 2.0.0 (C++20 default, C++23 supported) -->
 # qb Actor Framework
 
 <p align="center"><img src="./resources/logo.svg" width="180px" alt="qb Actor Framework logo" /></p>
 
-qb is a C++23 framework for building concurrent and distributed systems on the actor model. It pairs
-share-nothing actors with a non-blocking asynchronous I/O engine and native C++20/23 coroutines, so
+qb is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor model. It pairs
+share-nothing actors with a non-blocking asynchronous I/O engine and native C++20 coroutines, so
 application code expresses *what* should happen on each message while the runtime handles scheduling,
 multicore distribution, and non-blocking I/O.
 
-[![C++23](https://img.shields.io/badge/C%2B%2B-23-blue.svg)](https://en.cppreference.com/w/cpp/23)
+[![C++20/23](https://img.shields.io/badge/C%2B%2B-20%2F23-blue.svg)](https://en.cppreference.com/w/cpp/20)
 [![CMake](https://img.shields.io/badge/CMake-3.24+-blue.svg)](https://cmake.org/)
 [![Platforms](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](#platform-support)
 [![Architectures](https://img.shields.io/badge/Arch-x86__64%20%7C%20ARM64-lightgrey.svg)](#platform-support)
@@ -90,7 +90,7 @@ messages, which the engine delivers in order and processes one at a time per act
   sequential-looking async flows that compile to state machines, not threads.
 - **Multicore from the same code.** Place actors on specific cores; messages move between cores over
   lock-free queues. See [the threading model](./readme/2_core_concepts/threading_model.md).
-- **Modern, explicit C++23.** Clean CRTP-based APIs, RAII lifetimes, and a `std::chrono` time vocabulary
+- **Modern, explicit C++20/23.** Clean CRTP-based APIs, RAII lifetimes, and a `std::chrono` time vocabulary
   (`qb::duration`, `qb::mono_time`, `qb::wall_time`).
 
 ## Architecture
@@ -135,8 +135,8 @@ target_link_libraries(my_app PRIVATE qbm::http)
 
 ### Requirements
 
-- A C++23 compiler — CI builds with GCC and Clang on Linux, Apple Clang and GCC on macOS, and MSVC on
-  Windows (see [Platform support](#platform-support)).
+- A C++20 compiler by default. C++23 is supported with `-DQB_CXX_STANDARD=23` for validating newer
+  standard-library paths.
 - CMake **3.24** or newer.
 - libev and stduuid ship bundled and need no installation. GoogleTest and Google Benchmark are fetched
   automatically when tests or benchmarks are enabled.

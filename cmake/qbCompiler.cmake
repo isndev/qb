@@ -427,7 +427,7 @@ endfunction()
 # Feature Detection
 # -----------------------------------------------------------------------------
 function(qb_check_cpp_features)
-    # Check for C++17 features (guaranteed in C++23)
+    # Check for C++17 features (guaranteed by the C++20 baseline)
     check_cxx_source_compiles(
         "#include <optional>
          int main() { std::optional<int> opt; return 0; }"

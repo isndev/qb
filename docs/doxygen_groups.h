@@ -10,7 +10,7 @@
 //--------------------------------------------------------------------------------------------------
 /**
  * @defgroup QB QB Actor Framework
- * @brief The QB Actor Framework is a modern **C++23** library for building high-performance,
+ * @brief The QB Actor Framework is a modern **C++20/23** library for building high-performance,
  * concurrent, and distributed systems based on the Actor Model.
  *
  * It combines an efficient actor engine (`qb-core`) with a robust asynchronous I/O library
@@ -158,15 +158,15 @@
  * The async system supports two complementary programming models that share
  * the same single-threaded event loop:
  * - **Event-driven callbacks** — override `on(event::X&&)` methods.
- * - **C++23 coroutines** — use `co_await` with `task<T>`, sleep(), and awaiters.
+ * - **C++20 coroutines** — use `co_await` with `task<T>`, sleep(), and awaiters.
  *
  * @see Coroutine
  */
 
 /**
- * @defgroup Coroutine C++23 Coroutine Support
+ * @defgroup Coroutine C++20 Coroutine Support
  * @ingroup Async
- * @brief First-class C++23 coroutine infrastructure for `qb-io`.
+ * @brief First-class C++20 coroutine infrastructure for `qb-io`.
  *
  * Provides a complete coroutine ecosystem layered on top of the `listener`/libev
  * event loop. All coroutines on a thread share a single `CoroutineScheduler` and

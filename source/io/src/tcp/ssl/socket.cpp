@@ -64,8 +64,7 @@ static time_t asn1_time_to_time_t(const ASN1_TIME *time) {
 static std::string asn1_integer_to_hex_string(const ASN1_INTEGER *bs) {
     if (!bs) return "";
     std::ostringstream oss;
-    // C++23: Using auto with uz suffix for proper type deduction
-    for (auto i = 0uz; i < static_cast<std::size_t>(bs->length); ++i) {
+    for (int i = 0; i < bs->length; ++i) {
         oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(bs->data[i]);
     }
     return oss.str();
@@ -126,8 +125,7 @@ get_certificate(SSL *ssl) {
 
         GENERAL_NAMES *sans = static_cast<GENERAL_NAMES*>(X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
         if (sans) {
-            // C++23: Using auto with uz suffix for proper type deduction
-            for (auto i = 0uz; i < static_cast<std::size_t>(sk_GENERAL_NAME_num(sans)); ++i) {
+            for (int i = 0, count = sk_GENERAL_NAME_num(sans); i < count; ++i) {
                 GENERAL_NAME *san = sk_GENERAL_NAME_value(sans, i);
                 std::string san_str;
                 if (san->type == GEN_DNS) {
@@ -1019,8 +1017,7 @@ socket::get_peer_certificate_chain() const noexcept {
         return chain_info;
     }
 
-    // C++23: Using auto with uz suffix for proper type deduction
-    for (auto i = 0uz; i < static_cast<std::size_t>(sk_X509_num(cert_stack)); ++i) {
+    for (int i = 0, count = sk_X509_num(cert_stack); i < count; ++i) {
         X509 *cert = sk_X509_value(cert_stack, i);
         if (cert) {
             qb::io::ssl::Certificate cert_details;
@@ -1047,8 +1044,7 @@ socket::get_peer_certificate_chain() const noexcept {
 
             GENERAL_NAMES *sans = static_cast<GENERAL_NAMES*>(X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
             if (sans) {
-                // C++23: Using auto with uz suffix for proper type deduction
-                for (auto j = 0uz; j < static_cast<std::size_t>(sk_GENERAL_NAME_num(sans)); ++j) {
+                for (int j = 0, count = sk_GENERAL_NAME_num(sans); j < count; ++j) {
                     GENERAL_NAME *san_entry = sk_GENERAL_NAME_value(sans, j);
                     std::string san_str_entry;
                     if (san_entry->type == GEN_DNS) {

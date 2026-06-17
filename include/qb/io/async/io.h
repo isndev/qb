@@ -38,7 +38,7 @@
 #include "listener.h"
 #include "protocol.h"
 
-// C++23: Member check macros replaced by traits in qb/utility/type_traits.h
+// Modern C++: member check macros replaced by traits in qb/utility/type_traits.h
 // - qb::has_type_Protocol<T>
 // - qb::has_flush<C, Args...> / qb::has_flush_r<C, Ret, Args...>
 

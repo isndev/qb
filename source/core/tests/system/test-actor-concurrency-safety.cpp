@@ -116,7 +116,7 @@ public:
     on(const QueryCountersEvent &event) {
         // Copy all counter values to a vector
         std::vector<int> values(NUM_COUNTERS);
-        // C++23: Using auto for type deduction
+        // Modern C++: using auto for type deduction
         for (auto i = 0; i < NUM_COUNTERS; ++i) {
             values[i] = _counters[i];
         }
@@ -215,7 +215,7 @@ public:
         // Create worker actors - chaque worker fait exactement NUM_OPERATIONS /
         // NUM_WORKERS opérations
         const int ops_per_worker = NUM_OPERATIONS / NUM_WORKERS;
-        // C++23: Using auto for type deduction
+        // Modern C++: using auto for type deduction
         for (auto i = 0; i < NUM_WORKERS; ++i) {
             // Pass coordinator ID to workers so they can notify when done
             addRefActor<WorkerActor>(_counter_actor_id, id(), i, ops_per_worker);

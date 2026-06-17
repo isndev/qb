@@ -2,7 +2,7 @@
 
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
 
-`qb-core` is the C++23 actor runtime layered on `qb-io`: it owns the `qb::Main` engine, the per-thread `qb::VirtualCore` workers, the `qb::Actor` base class, and the event-passing layer that connects them.
+`qb-core` is the C++20-first actor runtime layered on `qb-io`: it owns the `qb::Main` engine, the per-thread `qb::VirtualCore` workers, the `qb::Actor` base class, and the event-passing layer that connects them.
 
 **Prerequisites:** [The actor model](../2_core_concepts/actor_model.md), [The event system](../2_core_concepts/event_system.md), [qb-io module overview](../3_qb_io/README.md) — **See also:** [Core and IO integration](../5_core_io_integration/README.md), [Patterns cookbook](../6_guides/patterns_cookbook.md)
 
@@ -47,7 +47,7 @@ Key design points, each documented on the linked page:
   thread and needs no atomic — see [writing actors](./actor.md).
 - Actors on the **same** core exchange events through a per-actor pipe; actors on **different**
   cores exchange them through per-core lock-free MPSC mailboxes — see [messaging](./messaging.md).
-- Actors may run C++23 coroutines through `spawn_async`, returning results to themselves through a
+- Actors may run C++20 coroutines through `spawn_async`, returning results to themselves through a
   capture-by-value `qb::CoroContext` — see [actor patterns](./patterns.md) and
   [qb-io coroutines](../3_qb_io/coroutines.md).
 

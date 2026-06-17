@@ -125,8 +125,8 @@ typedef intptr_t ssize_t;
       (defined(_MSVC_LANG) && (_MSVC_LANG > 201402L))))
 #ifndef QB__HAS_CXX17
 #define QB__HAS_CXX17 1
-#endif // C++17 features macro
-#endif // C++17 features check
+#endif // C++20 features macro
+#endif // C++20 features check
 #if !defined(QB__HAS_CXX17)
 #define QB__HAS_CXX17 0
 #endif

@@ -1,6 +1,6 @@
 /**
  * @file qb/io/async/coroutine/task.h
- * @brief C++23 coroutine task type for QB async I/O
+ * @brief C++20 coroutine task type for QB async I/O
  *
  * This file defines the task<T> class template, the primary coroutine type
  * for the QB framework. It integrates with libev for suspend/resume operations

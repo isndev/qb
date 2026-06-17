@@ -38,7 +38,7 @@
 #include <sys/sysctl.h>
 #include <sys/types.h>
 
-// C++23: Use using alias instead of typedef struct
+// Modern C++: use using alias instead of typedef struct
 using cpu_set_t = struct cpu_set {
     uint32_t count;
 };
@@ -72,7 +72,7 @@ CPU_ISSET(int num, cpu_set_t *cs) {
 
 static int
 pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
-    // C++23: Use std::cmp_less for safe mixed-signed comparisons (or use unsigned types)
+    // Modern C++: use std::cmp_less for safe mixed-signed comparisons (or use unsigned types)
     // Here we use size_t to match the unsigned nature of cpu_size and hardware_concurrency
     size_t core = 0;
 

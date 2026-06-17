@@ -60,6 +60,7 @@ jobs:
           cmake --preset sanitize-thread -G Ninja
           -DCMAKE_C_COMPILER=clang
           -DCMAKE_CXX_COMPILER=clang++
+          -DQB_CXX_STANDARD=20
           -DQB_BUILD_EXAMPLES=OFF
           -DQB_ENABLE_NATIVE_ARCH=OFF
 

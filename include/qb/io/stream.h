@@ -145,7 +145,7 @@ public:
      * @brief Read data from the input stream into the internal buffer
      * @return Number of bytes read, or negative value on error
      *
-     * C++23: Using requires clause instead of std::enable_if_t for cleaner syntax.
+     * C++20: using requires clause instead of std::enable_if_t for cleaner syntax.
      * This method is only available when the underlying IO type has a compatible read method.
      */
     [[nodiscard]] int
@@ -208,12 +208,12 @@ public:
      *
      * Resets the input buffer and closes or disconnects the underlying
      * transport, depending on the available methods.
-     * C++23: Using qb::has_disconnect concept instead of trait.
+     * C++20: using qb::has_disconnect concept instead of trait.
      */
     void
     close() noexcept {
         _in_buffer.reset();
-        // C++23: Use concept directly
+        // C++20: use concept directly
         if constexpr (qb::has_disconnect<_IO_>)
             _in.disconnect();
         _in.close();
@@ -302,7 +302,7 @@ public:
      * @brief Write data from the output buffer to the stream
      * @return Number of bytes written, or negative value on error
      *
-     * C++23: Using requires clause instead of std::enable_if_t for cleaner syntax.
+     * C++20: using requires clause instead of std::enable_if_t for cleaner syntax.
      */
     [[nodiscard]] int
     write() noexcept
@@ -346,7 +346,7 @@ public:
      *
      * Resets the output buffer and closes or disconnects the underlying
      * transport, depending on the available methods.
-     * C++23: Using qb::has_disconnect concept instead of trait.
+     * C++20: using qb::has_disconnect concept instead of trait.
      */
     void
     close() noexcept {
@@ -435,7 +435,7 @@ public:
      * @brief Write data from the output buffer to the transport (bidirectional version)
      * @return Number of bytes written on success, error code on failure
      *
-     * C++23: Using requires clause instead of std::enable_if_t for cleaner syntax.
+     * C++20: using requires clause instead of std::enable_if_t for cleaner syntax.
      * This method is enabled only if the IO type has a compatible write method.
      * Note that this implementation uses the input IO object (_in) for writing,
      * which is suitable for bidirectional transports like sockets.
