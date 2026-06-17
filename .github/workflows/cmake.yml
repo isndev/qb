@@ -20,6 +20,8 @@ jobs:
   build-test:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    env:
+      LLVM_VERSION: "22"
 
     strategy:
       fail-fast: false
@@ -27,15 +29,15 @@ jobs:
         include:
           - name: ubuntu-gcc-cxx20-release
             os: ubuntu-latest
-            c_compiler: gcc
-            cpp_compiler: g++
+            c_compiler: gcc-14
+            cpp_compiler: g++-14
             build_type: Release
             cxx_standard: 20
 
           - name: ubuntu-clang-cxx20-release
             os: ubuntu-latest
-            c_compiler: clang
-            cpp_compiler: clang++
+            c_compiler: clang-22
+            cpp_compiler: clang++-22
             build_type: Release
             cxx_standard: 20
 
@@ -53,8 +55,8 @@ jobs:
 
           - name: ubuntu-clang-cxx23-release
             os: ubuntu-latest
-            c_compiler: clang
-            cpp_compiler: clang++
+            c_compiler: clang-22
+            cpp_compiler: clang++-22
             build_type: Release
             cxx_standard: 23
 
@@ -68,28 +70,26 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            clang \
+            ca-certificates \
+            g++-14 \
+            gcc-14 \
+            gnupg \
             libargon2-dev \
             libssl-dev \
             ninja-build \
+            openssl \
             pkg-config \
+            wget \
             zlib1g-dev
-          if apt-cache show libngtcp2-crypto-ossl-dev >/dev/null 2>&1; then
-            sudo apt-get install -y libngtcp2-dev libngtcp2-crypto-ossl-dev
-          else
-            echo "::notice::libngtcp2-crypto-ossl-dev is not available through apt on this ubuntu-latest image; using Linuxbrew libngtcp2 for QUIC auto-detection."
-            if ! command -v brew >/dev/null 2>&1; then
-              eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-            fi
-            brew install libngtcp2
-            export CMAKE_PREFIX_PATH="$(brew --prefix);$(brew --prefix libngtcp2);$(brew --prefix openssl@3)"
-            export PKG_CONFIG_PATH="$(brew --prefix libngtcp2)/lib/pkgconfig:$(brew --prefix openssl@3)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
-            export LD_LIBRARY_PATH="$(brew --prefix libngtcp2)/lib:$(brew --prefix openssl@3)/lib:${LD_LIBRARY_PATH:-}"
-            echo "CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}" >> "$GITHUB_ENV"
-            echo "PKG_CONFIG_PATH=${PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
-            echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
-            pkg-config --exists libngtcp2_crypto_ossl
-          fi
+          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "${LLVM_VERSION}"
+          sudo apt-get install -y "clang-${LLVM_VERSION}"
+          sudo apt-get install -y libngtcp2-dev libngtcp2-crypto-ossl-dev
+          export OPENSSL_EXECUTABLE="$(command -v openssl)"
+          echo "OPENSSL_EXECUTABLE=${OPENSSL_EXECUTABLE}" >> "$GITHUB_ENV"
+          gcc-14 --version
+          "clang-${LLVM_VERSION}" --version
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
@@ -97,6 +97,7 @@ jobs:
           brew install argon2 libngtcp2 ninja openssl@3 zlib
           echo "CMAKE_PREFIX_PATH=$(brew --prefix);$(brew --prefix libngtcp2);$(brew --prefix openssl@3);$(brew --prefix zlib)" >> "$GITHUB_ENV"
           echo "PKG_CONFIG_PATH=$(brew --prefix libngtcp2)/lib/pkgconfig:$(brew --prefix openssl@3)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
+          echo "OPENSSL_EXECUTABLE=$(brew --prefix openssl@3)/bin/openssl" >> "$GITHUB_ENV"
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
@@ -145,6 +146,10 @@ jobs:
               -DCMAKE_TOOLCHAIN_FILE="${VCPKG_TOOLCHAIN}"
               -DVCPKG_TARGET_TRIPLET=x64-windows
             )
+          fi
+
+          if [ -n "${OPENSSL_EXECUTABLE:-}" ]; then
+            args+=(-DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE}")
           fi
 
           cmake "${args[@]}"

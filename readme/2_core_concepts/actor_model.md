@@ -142,7 +142,7 @@ Key invariants, each grounded in the source:
 - **`kill()` only flags.** It sets the internal `_alive` flag to `false` and asks the `VirtualCore` to schedule removal. The actor stops receiving *new* events but may still drain events already queued; `~Actor()` runs later, under `VirtualCore` control, not at the point of the `kill()` call. `kill()` is `const noexcept` — handlers can call it even through a const `this`.
 - **The destructor is the RAII boundary.** It runs after the actor has terminated and the engine removes it. Member objects with their own destructors are cleaned up here; this is the natural place to release anything not covered by RAII members.
 
-The full lifecycle walkthrough, the `is_alive()` semantics, and graceful-shutdown patterns are owned by [qb-core: the Actor API](../4_qb_core/actor.md). A runnable end-to-end lifecycle example is [`examples/core/example4_lifecycle.cpp`](../../../examples/core/example4_lifecycle.cpp).
+The full lifecycle walkthrough, the `is_alive()` semantics, and graceful-shutdown patterns are owned by [qb-core: the Actor API](../4_qb_core/actor.md). Runnable lifecycle coverage lives in [`test-actor-lifecycle-hooks.cpp`](../../source/core/tests/system/test-actor-lifecycle-hooks.cpp).
 
 ### Default system events
 

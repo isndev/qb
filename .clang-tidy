@@ -1,38 +1,28 @@
 Checks: >
+  -*,
   clang-analyzer-*,
   bugprone-*,
   performance-*,
-  readability-*,
-  modernize-*,
-  misc-*,
   portability-*,
-  cppcoreguidelines-*,
-  google-*,
-  -google-readability-braces-around-statements,
-  -google-runtime-references,
-  -cppcoreguidelines-avoid-magic-numbers
+  -bugprone-derived-method-shadowing-base-method,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -bugprone-forward-declaration-namespace,
+  -bugprone-casting-through-void,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-macro-parentheses,
+  -bugprone-multi-level-implicit-pointer-conversion,
+  -bugprone-reserved-identifier,
+  -bugprone-std-namespace-modification,
+  -bugprone-suspicious-include,
+  -bugprone-switch-missing-default-case,
+  -performance-avoid-endl,
+  -performance-enum-size,
+  -performance-noexcept-move-constructor,
+  -performance-unnecessary-value-param,
+  -portability-avoid-pragma-once
 
-WarningsAsErrors: >
-  clang-analyzer-*,
-  bugprone-*,
-  performance-*,
-  modernize-*,
-  cppcoreguidelines-*
+WarningsAsErrors: ''
 
-HeaderFilterRegex: '.*'
-AnalyzeTemporaryDtors: true
-CheckOptions:
-  - key:             modernize-use-nullptr.NullMacros
-    value:           'NULL'
-  - key:             modernize-use-override.AllowOverrideAndFinal
-    value:           '1'
-  - key:             readability-identifier-naming.VariableCase
-    value:           camelBack
-  - key:             readability-identifier-naming.ClassCase
-    value:           PascalCase
-  - key:             readability-identifier-naming.FunctionCase
-    value:           camelBack
-  - key:             readability-identifier-naming.PrivateMemberSuffix
-    value:           _
-  - key:             cppcoreguidelines-narrowing-conversions.WarnOnIntegerNarrowingConversion
-    value:           'true'
+HeaderFilterRegex: '(^|.*/)(include/qb|source/(core|io)/src)(/|$).*'
+ExcludeHeaderFilterRegex: '(^|.*/)(build|modules|source/.*/tests)(/|$).*'

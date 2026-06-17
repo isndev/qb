@@ -36,6 +36,7 @@
 #include <cstdint>
 #include <qb/system/container/unordered_set.h>
 #include <qb/utility/type_traits.h>
+#include <thread>
 #include <vector>
 
 // include from qb
@@ -105,8 +106,7 @@ public:
      * @details Convenience factory for the common case where cores are allocated
      *          starting from index 0 up to the hardware thread count.
      */
-    [[nodiscard]] static CoreSet
-    build(uint32_t nb_core = std::thread::hardware_concurrency()) noexcept;
+    [[nodiscard]] static CoreSet build(uint32_t nb_core = std::thread::hardware_concurrency()) noexcept;
 
     /*!
      * @brief Resolve a logical `CoreId` to its dense mailbox index.
