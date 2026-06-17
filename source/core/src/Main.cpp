@@ -168,7 +168,7 @@ Main::Main() noexcept
 Main::~Main() noexcept {
     if (_is_running) {
         // Ensure every worker receives a stop request before the engine object
-        // is torn down. `std::jthread` destructors will then request_stop() and
+        // is torn down. `qb::jthread` destructors will then request_stop() and
         // join automatically, but requesting here shortens the shutdown path
         // for workers that are currently parking on a high-latency mailbox.
         _stop_source.request_stop();
@@ -180,8 +180,8 @@ void
 Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     auto       &initializer = params.initializer;
     VirtualCore core(initializer.getIndex(), params.shared_com);
-    // Wire the engine-wide `std::stop_token` so `__workflow__` can observe
-    // cooperative cancellation requests issued via `std::stop_source`.
+    // Wire the engine-wide `qb::stop_token` so `__workflow__` can observe
+    // cooperative cancellation requests issued via `qb::stop_source`.
     core.__set_stop_token__(params.stop_token);
     VirtualCore::_handler = &core;
     io::async::init();
@@ -265,12 +265,12 @@ Main::start(bool async) noexcept {
             // (from destruction or a signal-free stop path) cancels it too.
             start_thread({it.first, it.second, *_shared_com, _sync_start, stop_token});
         } else {
-            // C++20: `std::jthread` auto-joins on destruction. The worker is
+            // C++20: `qb::jthread` auto-joins on destruction. The worker is
             // spawned with the stop_token captured by value so the lifetime
             // of the token is tied to each thread — `Main::_stop_source` can
             // request_stop() asynchronously at any moment during `~Main()`
             // or `stop()` without fearing lifetime issues.
-            _cores[i] = std::jthread(
+            _cores[i] = qb::jthread(
                 [params = CoreSpawnerParameter{it.first, it.second, *_shared_com, _sync_start, stop_token}] { start_thread(params); });
         }
         ++i;
@@ -307,7 +307,7 @@ Main::stop() noexcept {
 
 void
 Main::join() {
-    // C++20: `std::jthread::join()` may be invoked explicitly; if the caller
+    // C++20: `qb::jthread::join()` may be invoked explicitly; if the caller
     // skips this, the destructor of each element in `_cores` will request
     // a stop and join automatically. We still expose `join()` for users who
     // explicitly want to block until all workers terminate.

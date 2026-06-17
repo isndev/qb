@@ -108,7 +108,7 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
 VirtualCore::~VirtualCore() noexcept = default;
 
 void
-VirtualCore::__set_stop_token__(std::stop_token token) noexcept {
+VirtualCore::__set_stop_token__(qb::stop_token token) noexcept {
     _stop_token = std::move(token);
 }
 

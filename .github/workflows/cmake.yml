@@ -68,26 +68,7 @@ jobs:
       - name: Install dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            ca-certificates \
-            g++-14 \
-            gcc-14 \
-            gnupg \
-            libargon2-dev \
-            libssl-dev \
-            ninja-build \
-            openssl \
-            pkg-config \
-            wget \
-            zlib1g-dev
-          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh "${LLVM_VERSION}"
-          sudo apt-get install -y "clang-${LLVM_VERSION}"
-          sudo apt-get install -y libngtcp2-dev libngtcp2-crypto-ossl-dev
-          export OPENSSL_EXECUTABLE="$(command -v openssl)"
-          echo "OPENSSL_EXECUTABLE=${OPENSSL_EXECUTABLE}" >> "$GITHUB_ENV"
+          ./scripts/ci-install-linux-dependencies.sh --gcc-14 --llvm-clang --quic
           gcc-14 --version
           "clang-${LLVM_VERSION}" --version
 

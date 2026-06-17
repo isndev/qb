@@ -6,11 +6,14 @@
 
 #include <bit>
 #include <climits>
+#include <atomic>
 #include <cstdlib>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -18,6 +21,9 @@
 #if defined(__has_include)
 #if __has_include(<expected>)
 #include <expected>
+#endif
+#if __has_include(<stop_token>)
+#include <stop_token>
 #endif
 #endif
 
@@ -31,7 +37,160 @@
 #define QB_COMPAT_HAS_STD_EXPECTED 0
 #endif
 
+#if !defined(QB_COMPAT_FORCE_THREAD_FALLBACK) && defined(__cpp_lib_jthread) && __cpp_lib_jthread >= 201911L
+#define QB_COMPAT_HAS_STD_JTHREAD 1
+#else
+#define QB_COMPAT_HAS_STD_JTHREAD 0
+#endif
+
 namespace qb {
+
+#if QB_COMPAT_HAS_STD_JTHREAD
+
+using std::jthread;
+using std::stop_source;
+using std::stop_token;
+
+#else
+
+namespace detail {
+struct stop_state {
+    std::atomic<bool> requested{false};
+};
+} // namespace detail
+
+class stop_token {
+    std::shared_ptr<detail::stop_state const> _state;
+
+    explicit stop_token(std::shared_ptr<detail::stop_state const> state) noexcept
+        : _state(std::move(state)) {}
+
+    friend class stop_source;
+
+public:
+    stop_token() noexcept = default;
+
+    [[nodiscard]] bool
+    stop_possible() const noexcept {
+        return static_cast<bool>(_state);
+    }
+
+    [[nodiscard]] bool
+    stop_requested() const noexcept {
+        return _state && _state->requested.load(std::memory_order_acquire);
+    }
+};
+
+class stop_source {
+    std::shared_ptr<detail::stop_state> _state = std::make_shared<detail::stop_state>();
+
+public:
+    stop_source() = default;
+
+    [[nodiscard]] stop_token
+    get_token() const noexcept {
+        return stop_token{_state};
+    }
+
+    [[nodiscard]] bool
+    stop_possible() const noexcept {
+        return static_cast<bool>(_state);
+    }
+
+    [[nodiscard]] bool
+    stop_requested() const noexcept {
+        return _state && _state->requested.load(std::memory_order_acquire);
+    }
+
+    bool
+    request_stop() noexcept {
+        return _state && !_state->requested.exchange(true, std::memory_order_acq_rel);
+    }
+};
+
+class jthread {
+    stop_source _stop_source;
+    std::thread _thread;
+
+public:
+    jthread() noexcept                  = default;
+    jthread(jthread const &)            = delete;
+    jthread &operator=(jthread const &) = delete;
+
+    template <typename F, typename... Args>
+    explicit jthread(F &&f, Args &&...args)
+        : _thread(make_thread(std::forward<F>(f), std::forward<Args>(args)...)) {}
+
+    jthread(jthread &&) noexcept = default;
+    jthread &
+    operator=(jthread &&rhs) noexcept {
+        if (this != &rhs) {
+            if (joinable()) {
+                request_stop();
+                join();
+            }
+            _thread      = std::move(rhs._thread);
+            _stop_source = std::move(rhs._stop_source);
+        }
+        return *this;
+    }
+
+    ~jthread() {
+        if (joinable()) {
+            request_stop();
+            join();
+        }
+    }
+
+    [[nodiscard]] bool
+    joinable() const noexcept {
+        return _thread.joinable();
+    }
+
+    void
+    join() {
+        _thread.join();
+    }
+
+    void
+    detach() {
+        _thread.detach();
+    }
+
+    [[nodiscard]] std::thread::id
+    get_id() const noexcept {
+        return _thread.get_id();
+    }
+
+    [[nodiscard]] stop_source
+    get_stop_source() noexcept {
+        return _stop_source;
+    }
+
+    [[nodiscard]] stop_token
+    get_stop_token() const noexcept {
+        return _stop_source.get_token();
+    }
+
+    bool
+    request_stop() noexcept {
+        return _stop_source.request_stop();
+    }
+
+private:
+    template <typename F, typename... Args>
+    std::thread
+    make_thread(F &&f, Args &&...args) {
+        using Fn = std::decay_t<F>;
+        if constexpr (std::is_invocable_v<Fn, stop_token, std::decay_t<Args>...>) {
+            return std::thread(std::forward<F>(f), _stop_source.get_token(), std::forward<Args>(args)...);
+        } else {
+            return std::thread(std::forward<F>(f), std::forward<Args>(args)...);
+        }
+    }
+};
+
+#endif
 
 template <typename E>
 [[nodiscard]] constexpr std::underlying_type_t<E>

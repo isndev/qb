@@ -8,7 +8,7 @@ qb runs one `VirtualCore` worker thread per engine core, each owning its actors 
 
 ## Summary
 
-The qb engine is a fixed set of worker threads. [`qb::Main`](../4_qb_core/engine.md) (aliased `qb::engine`) spawns one [`qb::VirtualCore`](../4_qb_core/engine.md) per configured core, each running in its own `std::jthread`. A `VirtualCore` owns a set of actors, runs a single event loop over them, and exchanges cross-core events through a per-core lock-free mailbox.
+The qb engine is a fixed set of worker threads. [`qb::Main`](../4_qb_core/engine.md) (aliased `qb::engine`) spawns one [`qb::VirtualCore`](../4_qb_core/engine.md) per configured core, each running in its own `qb::jthread` (`std::jthread` when the standard library provides it, qb's C++20 fallback otherwise). A `VirtualCore` owns a set of actors, runs a single event loop over them, and exchanges cross-core events through a per-core lock-free mailbox.
 
 This page describes the mechanism: how a `VirtualCore` maps to a thread, how to pin that thread to a CPU with `CoreInitializer::setAffinity`, how cross-core events move over multi-producer/single-consumer (MPSC) queues, and how the idle-latency knob (`setLatency`, a [`qb::duration`](../7_reference/api_overview.md)) trades CPU for wake-up responsiveness. It then states precisely what is real multithreading versus single-thread-per-core.
 
@@ -18,7 +18,7 @@ The *programming model* that follows from this design — actors that need no lo
 
 ### VirtualCore: one worker thread, pinned by intent
 
-A `VirtualCore` is a worker thread that owns a set of actors and runs the event loop dispatching their events, callbacks, and inter-core message flushing. The engine starts one `std::jthread` per configured core (`source/core/src/Main.cpp:286`); with `start(false)` the calling thread runs the last core in the engine's internal registration order (unspecified; do not rely on which core) instead of a new one being spawned (`source/core/src/Main.cpp:273`).
+A `VirtualCore` is a worker thread that owns a set of actors and runs the event loop dispatching their events, callbacks, and inter-core message flushing. The engine starts one `qb::jthread` per configured core (`source/core/src/Main.cpp:286`); with `start(false)` the calling thread runs the last core in the engine's internal registration order (unspecified; do not rely on which core) instead of a new one being spawned (`source/core/src/Main.cpp:273`).
 
 A `VirtualCore` is identified by a logical [`CoreId`](../7_reference/glossary.md) — `using CoreId = uint16_t` (`include/qb/core/ActorId.h:51`). Logical core ids are an engine-internal numbering chosen by you when you call `engine.core(id)`; they are *not* required to equal physical CPU numbers. The upper bound is `qb::MaxCores == 256` (`include/qb/core/ActorId.h:80`); `engine.core(index)` throws `std::range_error` for `index >= MaxCores` (`source/core/src/Main.cpp:352`).
 
@@ -109,7 +109,7 @@ int main() {
     if (!listener.is_valid())
         return 1;
 
-    engine.start();   // spawn one std::jthread per registered core, then run
+    engine.start();   // spawn one qb::jthread per registered core, then run
     engine.join();    // block until every actor on every core has terminated
     return engine.hasError() ? 1 : 0;
 }
