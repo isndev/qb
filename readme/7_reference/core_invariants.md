@@ -14,12 +14,12 @@ This page consolidates the invariants you must respect (the contract you owe the
 
 ## Thread model: one VirtualCore, one worker thread
 
-- Every `qb::VirtualCore` runs on its own `std::jthread` for the life of the engine. `qb::Main::start(bool async = true)` spawns one worker per registered core (`source/core/src/Main.cpp:256`); the threads are joined by `Main::join()` or by `~Main()`, whose `std::jthread` members auto-join (`source/core/src/Main.cpp:172`).
+- Every `qb::VirtualCore` runs on its own `qb::jthread` for the life of the engine. `qb::jthread` aliases `std::jthread` when available and falls back to qb's C++20 implementation otherwise. `qb::Main::start(bool async = true)` spawns one worker per registered core (`source/core/src/Main.cpp:256`); the threads are joined by `Main::join()` or by `~Main()`, whose `qb::jthread` members auto-join (`source/core/src/Main.cpp:172`).
 - The active worker is identified by a `thread_local` pointer, `VirtualCore::_handler`, installed by `Main::start_thread` before any actor is instantiated on that worker and never reassigned for the worker's lifetime (`source/core/src/Main.cpp:190`).
 - **Actors never migrate between cores.** An actor created on core *N* lives, receives events, and is destroyed on core *N*. Its `this` pointer is only dereferenceable on that one thread. A `VirtualCore` owns its actors exclusively; the actor maps and the service-id pool perform no synchronization (`include/qb/core/VirtualCore.h:172`).
 - Cross-actor APIs (`to()`, `push<>()`, `send<>()`, `broadcast<>()`, `qb::Pipe`) never touch the destination actor directly. They enqueue an event into the destination core's mailbox; that core's worker dequeues and dispatches it **on its own thread**.
 
-The consequence is that `qb-core` carries no `std::mutex` on the message path. The atomics that exist are confined to cross-thread service-id registration and the engine-wide `std::stop_source` used for shutdown (`source/core/src/Main.cpp:172`). See [Memory ordering](#memory-ordering-cheat-sheet) for the full accounting.
+The consequence is that `qb-core` carries no `std::mutex` on the message path. The atomics that exist are confined to cross-thread service-id registration and the engine-wide `qb::stop_source` used for shutdown (`source/core/src/Main.cpp:172`). See [Memory ordering](#memory-ordering-cheat-sheet) for the full accounting.
 
 ## Actor lifecycle
 
@@ -108,7 +108,7 @@ Termination is guaranteed in bounded time: after a partial flush the workflow dr
 ## CPU affinity and shutdown
 
 - `qb::CoreInitializer::setAffinity(CoreIdSet)` pins a worker's thread, best-effort. A logical `CoreId` need not map to a physical CPU, so a failed `pthread_setaffinity_np` / `SetThreadAffinityMask` only warns and never fails `VirtualCore` init (`source/core/src/VirtualCore.cpp:302`). Core ids `>= qb::MaxCores`, including the `qb::NoAffinity` sentinel, are filtered out before pinning — pass a set containing only `qb::NoAffinity` to opt out of pinning explicitly.
-- Shutdown has three triggers wired to the same plumbing (`source/core/src/Main.cpp:172`): a POSIX signal (`SIGINT` / `SIGTERM` via `sigaction`), `Main::stop()` setting a `volatile sig_atomic_t` that the workflow polls, and the C++20 `std::stop_source` (`request_stop()` on `~Main` or programmatically). A worker that observes any of them synthesizes a virtual `SIGINT` and broadcasts a `SignalEvent`, so existing shutdown handlers keep working on platforms with or without POSIX signals.
+- Shutdown has three triggers wired to the same plumbing (`source/core/src/Main.cpp:172`): a POSIX signal (`SIGINT` / `SIGTERM` via `sigaction`), `Main::stop()` setting a `volatile sig_atomic_t` that the workflow polls, and the C++20 `qb::stop_source` (`request_stop()` on `~Main` or programmatically). A worker that observes any of them synthesizes a virtual `SIGINT` and broadcasts a `SignalEvent`, so existing shutdown handlers keep working on platforms with or without POSIX signals.
 
 ## Memory ordering cheat-sheet
 
@@ -118,7 +118,7 @@ Termination is guaranteed in bounded time: after a partial flush the workflow dr
 | `Actor` member fields | plain read/write | same |
 | `VirtualCore` actor maps / callback list | plain read/write | mutated only on the owning worker thread (`include/qb/core/VirtualCore.h:172`) |
 | `Main` signal flag | `volatile std::sig_atomic_t` | async-signal-safe poll in the worker loop |
-| `Main::_stop_source` / `_stop_token` | `std::stop_*` | standard library supplies the ordering (request_stop releases, poll acquires) |
+| `Main::_stop_source` / `_stop_token` | `qb::stop_*` | standard library ordering when backed by `std::stop_*`; acquire/release atomic ordering in qb's fallback |
 | Service-id registration | atomic + magic-static + mutex | one-time cross-thread publish (`include/qb/core/Actor.tpp:153`) |
 | Inter-core mailbox | lock-free MPSC ring buffer | own internal acquire/release (see [lock-free primitives](./lockfree_primitives.md)) |
 

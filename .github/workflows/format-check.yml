@@ -29,12 +29,7 @@ jobs:
 
       - name: Install LLVM tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ca-certificates gnupg wget
-          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          chmod +x /tmp/llvm.sh
-          sudo /tmp/llvm.sh "${LLVM_VERSION}"
-          sudo apt-get install -y "clang-format-${LLVM_VERSION}"
+          ./scripts/ci-install-linux-dependencies.sh --llvm-format
           "clang-format-${LLVM_VERSION}" --version
 
       - name: Collect changed C++ files

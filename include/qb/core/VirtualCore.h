@@ -32,7 +32,6 @@
 #include <cstdint>
 #include <mutex>
 #include <span>
-#include <stop_token>
 #include <thread>
 #include <vector>
 
@@ -58,6 +57,7 @@
 #include <qb/system/event/router.h>
 #include <qb/system/lockfree/mpsc.h>
 #include <qb/system/timestamp.h>
+#include <qb/utility/compat.h>
 #include "Actor.h"
 #include "Event.h"
 #include "ICallback.h"
@@ -338,11 +338,11 @@ private:
      * @brief Optional C++20 cancellation token wired from `qb::Main::_stop_source`.
      * @details
      * When a cancellation is requested (either via `~Main()` or an explicit
-     * `std::stop_source::request_stop()`), the workflow synthesises a virtual
+     * `qb::stop_source::request_stop()`), the workflow synthesises a virtual
      * `SIGINT` in the next iteration, providing a signal-free shutdown path
      * that also works on platforms without a POSIX signal mechanism.
      */
-    std::stop_token _stop_token;
+    qb::stop_token _stop_token;
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
@@ -350,12 +350,12 @@ private:
 
     /**
      * @brief Install a cancellation token for this VirtualCore.
-     * @param token The `std::stop_token` produced by the owning `Main`
-     *              instance's `std::stop_source`.
+     * @param token The `qb::stop_token` produced by the owning `Main`
+     *              instance's `qb::stop_source`.
      * @details Must be called by the worker thread function before entering
      *          `__workflow__`. The token is polled once per iteration.
      */
-    void __set_stop_token__(std::stop_token token) noexcept;
+    void __set_stop_token__(qb::stop_token token) noexcept;
 
     /*!
      * @brief Generate a new actor ID
