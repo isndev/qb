@@ -5,7 +5,8 @@ name: doc-lint
 
 on:
   push:
-    branches: [ main, develop ]
+    branches:
+      - 'c\+\+23'
     paths:
       - 'README.md'
       - 'readme/**'
@@ -18,7 +19,8 @@ on:
       - 'CODE_OF_CONDUCT.md'
       - 'scripts/doc-lint.sh'
   pull_request:
-    branches: [ main ]
+    branches:
+      - 'c\+\+23'
     paths:
       - 'README.md'
       - 'readme/**'

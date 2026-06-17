@@ -2,9 +2,11 @@ name: coverage
 
 on:
   push:
-    branches: [main, develop, c++23, experimental-c++23]
+    branches:
+      - 'c\+\+23'
   pull_request:
-    branches: [main, develop, c++23, experimental-c++23]
+    branches:
+      - 'c\+\+23'
   workflow_dispatch:
 
 permissions:
