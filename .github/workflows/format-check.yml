@@ -19,16 +19,23 @@ concurrency:
 jobs:
   format-check:
     runs-on: ubuntu-latest
+    env:
+      LLVM_VERSION: "22"
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Install clang-format
+      - name: Install LLVM tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang-format
+          sudo apt-get install -y ca-certificates gnupg wget
+          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh "${LLVM_VERSION}"
+          sudo apt-get install -y "clang-format-${LLVM_VERSION}"
+          "clang-format-${LLVM_VERSION}" --version
 
       - name: Collect changed C++ files
         id: changed
@@ -74,7 +81,7 @@ jobs:
           set -euo pipefail
           while IFS= read -r file; do
             [ -n "${file}" ] || continue
-            clang-format --dry-run --Werror "${file}"
+            "clang-format-${LLVM_VERSION}" --dry-run --Werror "${file}"
           done <<< "${CHANGED_FILES}"
 
       - name: Nothing to check
