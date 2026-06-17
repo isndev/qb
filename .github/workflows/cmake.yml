@@ -68,24 +68,20 @@ jobs:
       - name: Install dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: |
-          ./scripts/ci-install-linux-dependencies.sh --gcc-14 --llvm-clang --quic
+          ./scripts/ci-install-linux-dependencies.sh --gcc-14 --llvm-clang --google-test --google-benchmark --quic
           gcc-14 --version
           "clang-${LLVM_VERSION}" --version
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew install argon2 libngtcp2 ninja openssl@3 zlib
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix);$(brew --prefix libngtcp2);$(brew --prefix openssl@3);$(brew --prefix zlib)" >> "$GITHUB_ENV"
-          echo "PKG_CONFIG_PATH=$(brew --prefix libngtcp2)/lib/pkgconfig:$(brew --prefix openssl@3)/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
-          echo "OPENSSL_EXECUTABLE=$(brew --prefix openssl@3)/bin/openssl" >> "$GITHUB_ENV"
+          ./scripts/ci-install-macos-dependencies.sh --google-test --google-benchmark --quic
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          vcpkg install openssl:x64-windows argon2:x64-windows "ngtcp2[openssl]:x64-windows" zlib:x64-windows
-          echo "VCPKG_TOOLCHAIN=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
+          ./scripts/ci-install-windows-dependencies.ps1 -GoogleTest -GoogleBenchmark -Quic
 
       - name: Set build parameters
         id: build
@@ -111,6 +107,8 @@ jobs:
             -DQB_BUILD_TESTS=ON
             -DQB_BUILD_EXAMPLES=ON
             -DQB_BUILD_BENCHMARKS=ON
+            -DQB_USE_SYSTEM_GTEST=ON
+            -DQB_USE_SYSTEM_BENCHMARK=ON
             -DQB_ENABLE_NATIVE_ARCH=OFF
           )
 
