@@ -1,7 +1,7 @@
 ---
 BasedOnStyle: LLVM
 Language: Cpp
-Standard: c++17
+Standard: Latest
 
 ### Indentation
 IndentWidth: 4
@@ -9,21 +9,31 @@ UseTab: Never
 AccessModifierOffset: -4
 IndentCaseLabels: true
 IndentPPDirectives: None
+LambdaBodyIndentation: Signature
+IndentRequiresClause: false
+RequiresExpressionIndentation: OuterScope
 
 ### Column limit
-ColumnLimit: 89
+ColumnLimit: 144
 
 ### Braces and blocks
 BreakBeforeBraces: Attach
+BreakAfterOpenBracketBracedList: true
+BreakBeforeCloseBracketBracedList: true
 AllowShortBlocksOnASingleLine: false
 AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
 AllowShortCaseLabelsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Inline
+AllowShortCompoundRequirementOnASingleLine: true
+BreakBeforeBinaryOperators: NonAssignment
 
 ### Functions, templates, constructors
 AllowShortFunctionsOnASingleLine: Empty
 AlwaysBreakTemplateDeclarations: Yes
 AlwaysBreakAfterReturnType: AllDefinitions
+BreakBeforeConceptDeclarations: Always
+RequiresClausePosition: OwnLine
 BreakConstructorInitializers: BeforeComma
 BreakInheritanceList: BeforeComma
 SpaceBeforeParens: ControlStatements
