@@ -132,14 +132,14 @@ not have to pass them by hand. Configure with `cmake --preset <name>`:
 | Preset | Option highlights |
 |---|---|
 | `debug` | `CMAKE_BUILD_TYPE=Debug`, tests and examples on. |
-| `release` | `CMAKE_BUILD_TYPE=Release`, `QB_BUILD_TESTS=OFF`. |
+| `release` | `CMAKE_BUILD_TYPE=Release`; inherits `base`, so `QB_BUILD_TESTS=ON`. For a tests-off release, pass `-DQB_BUILD_TESTS=OFF` manually. |
 | `relwithdebinfo` | `CMAKE_BUILD_TYPE=RelWithDebInfo`. |
 | `dev` | Debug with `QB_BUILD_TESTS=ON`, `QB_BUILD_BENCHMARKS=ON`, `QB_BUILD_EXAMPLES=ON`. |
 | `sanitize` | Debug with `QB_SANITIZE=address,undefined`. |
 | `sanitize-thread` | Debug with `QB_SANITIZE=thread`. |
 | `coverage` | Debug with `QB_BUILD_COVERAGE=ON`. |
 | `release-lto` | Release with `QB_ENABLE_LTO=ON`. |
-| `release-native` | Release with `QB_ENABLE_NATIVE_ARCH=ON` (explicit; native is the default). |
+| `release-native` | Release with `QB_ENABLE_NATIVE_ARCH=ON` — the only preset that turns native arch back ON (the `base` preset all presets inherit pins it OFF). |
 | `release-portable` | Release with `QB_ENABLE_NATIVE_ARCH=OFF` for distributable binaries. |
 
 ```bash

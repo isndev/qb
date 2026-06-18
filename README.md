@@ -184,7 +184,7 @@ Continuous integration builds and tests every change on:
 | OS | Compilers | Standard library |
 |---|---|---|
 | Linux (`ubuntu-latest`) | GCC, Clang | libstdc++ |
-| macOS (`macos-latest`) | Apple Clang, GCC | libc++ |
+| macOS (`macos-latest`) | Apple Clang | libc++ |
 | Windows (`windows-latest`) | MSVC | MSVC STL |
 
 Supported architectures: x86_64 and ARM64 (including Apple Silicon).

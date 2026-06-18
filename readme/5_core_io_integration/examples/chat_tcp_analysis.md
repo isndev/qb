@@ -27,7 +27,7 @@ examples/core_io/chat_tcp/
 
 <!-- src: examples/core_io/chat_tcp/CMakeLists.txt -->
 
-> **A note on the source.** The example predates the DoS-hardening change that made `io_handler::registerSession()` return a nullable pointer rather than a reference (qb-io commit *protocol-switch UAF guard, DoS and fail-closed hardening*). This page documents the current framework contract and flags where the checked-in example uses the older signature.
+> **A note on the source.** `io_handler::registerSession()` returns a nullable pointer (`ChatSession*`) — the DoS-hardening contract that returns `nullptr` when a session cap or ID collision closes the incoming socket. The checked-in example already uses this form, binding `auto* session` and null-checking before use. This page documents that contract.
 
 ## Architecture
 
@@ -234,20 +234,23 @@ Moving the socket into `NewSessionEvent` is what lets the connection travel from
 
 > `io_handler` is the session-pool half of the server stack. `qb::io::use<T>::tcp::server<Session>` bundles an acceptor *and* an `io_handler` in one actor; this example keeps them separate (`AcceptActor` + `ServerActor`) so acceptance and session I/O run on different cores.
 
-On a `NewSessionEvent`, the actor adopts the socket into a fresh session. The current framework contract is shown below; the checked-in example uses the older reference-returning form (see the API-drift note that follows):
+On a `NewSessionEvent`, the actor adopts the socket into a fresh session, binding the nullable pointer and null-checking it before use:
 
 ```cpp
-// current-API pattern; cf. examples/core_io/chat_tcp/server/ServerActor.cpp (older signature)
+// src: examples/core_io/chat_tcp/server/ServerActor.cpp
 void ServerActor::on(NewSessionEvent& evt) {
     auto* session = registerSession(std::move(evt.socket));
-    if (session)                                      // nullptr when the session cap is reached
-        qb::io::cout() << "New session registered: " << session->id() << std::endl;
+    if (!session) {                                   // nullptr when the session cap is reached
+        qb::io::cout() << "Session rejected (session limit reached)" << std::endl;
+        return;
+    }
+    qb::io::cout() << "New session registered: " << session->id() << std::endl;
 }
 ```
 
 `registerSession()` checks the session cap first, then constructs the `ChatSession`, inserts it into the map keyed by the session's `qb::uuid`, moves the socket into it, calls the session's `start()`, and returns a `ChatSession*`. It returns `nullptr` when a configured session cap is hit (default: unlimited — `QB_DEFAULT_MAX_SESSIONS` is `0`) or on an ID collision, closing the incoming socket in either case; the caller must null-check. <!-- src: qb/include/qb/io/async/io_handler.h:209 -->
 
-> **API drift.** The checked-in example binds `auto& session = registerSession(...)`, matching an earlier signature that returned a reference. Against current qb-io the return type is `ChatSession*`, so the null-checked pointer form above is the correct pattern to copy. See `qb/include/qb/io/async/io_handler.h`.
+> **Always null-check.** The return type is `ChatSession*`, not a reference, so the null-checked pointer form above is the pattern to follow — the checked-in example does exactly this, returning early when `registerSession()` hands back `nullptr`. See `qb/include/qb/io/async/io_handler.h`.
 
 `ServerActor` is the bridge between sessions and the room. Sessions call back into it (`server().handleAuth(...)`, `handleChat(...)`, `handleDisconnect(...)`), and it translates those into events for `ChatRoomActor`:
 
@@ -513,7 +516,7 @@ The connect deadline and the reconnect delay are both fixed at five seconds; the
 
 ## Pitfalls
 
-- **`registerSession()` returns a nullable pointer.** Treat it as `ChatSession*` and null-check it; the cap-exceeded and collision paths return `nullptr` after closing the incoming socket. The checked-in example's reference binding reflects the older API.
+- **`registerSession()` returns a nullable pointer.** Treat it as `ChatSession*` and null-check it; the cap-exceeded and collision paths return `nullptr` after closing the incoming socket. The checked-in example binds `auto* session` and returns early on `nullptr` — copy that shape.
 - **One `AcceptActor` binds one URI.** Multiple ports mean multiple `AcceptActor`s. Do not expect a single actor to accept a list of addresses.
 - **`transport().listen()` is the low-level call.** It returns `int` (`0` == success) and does not arm the watcher; call `start()` afterward. The mixin's higher-level `bool listen(...)` auto-arms — choose one, not both.
 - **No `Protocol::end` here.** Length-prefixed framing means `*this << msg;` sends a complete message. A trailing `<< Protocol::end` belongs to delimiter-based protocols, not this one.

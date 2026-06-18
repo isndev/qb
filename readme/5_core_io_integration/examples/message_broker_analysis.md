@@ -27,7 +27,7 @@ examples/core_io/message_broker/
 
 <!-- src: examples/core_io/message_broker/CMakeLists.txt -->
 
-> **A note on the source.** The example predates the DoS-hardening change that made `io_handler::registerSession()` return a nullable pointer rather than a reference (see [Network-enabled actors](../network_actors.md)). The checked-in `ServerActor::on(NewSessionEvent&)` binds the result to `auto& session`, which matches the older signature. This page documents the current framework contract and notes where the example diverges.
+> **A note on the source.** `io_handler::registerSession()` returns a nullable pointer (`BrokerSession*`) — the DoS-hardening contract that hands back `nullptr` at the session cap, closing the incoming socket instead of allocating (see [Network-enabled actors](../network_actors.md)). The checked-in `ServerActor::on(NewSessionEvent&)` binds `auto* session` and returns early when it is `nullptr`. This page documents that contract.
 
 ## Architecture
 
@@ -303,18 +303,16 @@ bool ServerActor::onInit() {
 }
 
 void ServerActor::on(NewSessionEvent &evt) {
-    auto &session = registerSession(std::move(evt.socket));   // see note below
-    qb::io::cout() << "New broker session registered: " << session.id() << std::endl;
+    auto *session = registerSession(std::move(evt.socket));
+    if (!session) {                                           // session limit reached, socket already closed
+        qb::io::cout() << "Broker session rejected (session limit reached)" << std::endl;
+        return;
+    }
+    qb::io::cout() << "New broker session registered: " << session->id() << std::endl;
 }
 ```
 
-> **Framework contract vs. the example.** In current qb, `registerSession()` returns `BrokerSession *` and yields `nullptr` when the session cap (`set_max_sessions()`, default unlimited) is reached, closing the incoming socket instead of allocating. The checked-in example binds `auto& session` and dereferences it unconditionally, which matches the older reference-returning signature. New code should write:
->
-> ```cpp
-> if (auto *session = registerSession(std::move(evt.socket)))
->     qb::io::cout() << "New broker session: " << session->id() << std::endl;
-> // else: session limit reached, socket already closed
-> ```
+> **Framework contract.** `registerSession()` returns `BrokerSession *` and yields `nullptr` when the session cap (`set_max_sessions()`, default unlimited) is reached, closing the incoming socket instead of allocating. The checked-in example binds `auto* session` and returns early on `nullptr`, exactly as new code should — never dereference the result without a null-check.
 
 The `handle*` methods are called by a `BrokerSession` (same core, plain method calls) and forward typed events to the `TopicManagerActor`. `handlePublish` is the one that preserves zero-copy ownership end to end:
 
@@ -594,7 +592,7 @@ Subscribe two clients to `news`, publish from a third, and both subscribers rece
 
 ## Pitfalls
 
-- **`registerSession()` is nullable now.** The current contract returns `BrokerSession *` and yields `nullptr` at the session cap. Do not copy the example's `auto& session = registerSession(...)`; check the pointer and let the framework close the rejected socket. See [Network-enabled actors](../network_actors.md).
+- **`registerSession()` is nullable.** The contract returns `BrokerSession *` and yields `nullptr` at the session cap. Bind `auto* session`, null-check it, and let the framework close the rejected socket — the checked-in example returns early on `nullptr`, so copy that shape. See [Network-enabled actors](../network_actors.md).
 - **Views must outlive their use.** Every `string_view` in an event references a payload owned by a `MessageContainer` *in the same event*. The construction order in `SubscribeEvent`/`PublishEvent` guarantees the container exists first. Reordering the members, or taking a view of a temporary `Message`, would dangle.
 - **Topic conversion is the one copy.** `std::string_view` carries the topic to `TopicManagerActor`, but a `std::map<std::string, ...>` key forces one `std::string` construction per lookup. That copy is intrinsic to keying a map on a string; the views save the copies *before* that point, not the key itself.
 - **The fan-out shares payloads, not socket writes.** Sharing the `MessageContainer` removes per-subscriber heap churn inside the broker. Each subscriber still incurs one serialization and one socket write in `ServerActor`. Do not expect the optimization to reduce per-client network work.

@@ -164,6 +164,8 @@ void broadcast(_Args &&...args) const noexcept;
 broadcast<SystemShutdownNotice>();
 ```
 
+> Because `broadcast` fans out via `send`, it inherits `send`'s lifetime contract on every remote core: the event **should be trivially destructible**. A non-trivially-destructible event (one carrying `std::string`, `std::vector`, or a smart pointer) is reclaimed on the early cross-core publish path without running its destructor, so its owned heap memory leaks on each remote core (see [`send`](#send--unordered-trivially-destructible-only) above). There is no compile-time guard for this on `broadcast` — the `fill_event` `static_assert` fires only for `EventQOS0`-derived events. Broadcast a trivially-destructible event (ideally derive from `qb::EventQOS0`) and keep bulk data behind a `std::shared_ptr`.
+
 To target a single core instead of the whole system, push to a `qb::BroadcastId`:
 
 ```cpp
@@ -228,11 +230,11 @@ template <typename _Event, typename... _Args>
 qb::Pipe pipe = getPipe(processor_id);
 auto blob = std::make_shared<std::vector<std::byte>>(1024 * 1024); // 1 MB
 // ... fill blob ...
-std::size_t hint = sizeof(BlobEvent) + blob->size();
+std::size_t hint = blob->size();   // EXTRA payload bytes only; sizeof(BlobEvent) is added by the framework
 auto &ev = pipe.allocated_push<BlobEvent>(hint, blob);
 ```
 
-If `size` is smaller than `sizeof(_Event)`, the framework silently uses `sizeof(_Event)`.
+The `size` argument is the **extra payload bytes beyond the event itself** — `allocated_push` adds `sizeof(_Event)` to it internally (`size += sizeof(T)`, `qb/core/Pipe.tpp`), it does not clamp `size` up to `sizeof(_Event)`. So pass `blob->size()`, not `sizeof(BlobEvent) + blob->size()`; passing the latter double-counts one event's worth of space. A hint of `0` still allocates at least one event's worth (the event always fits).
 
 > **Size the event small, not the payload.** The hint helps the *source pipe* reserve space, but the real ceiling is the destination mailbox. An event's total in-pipe footprint must fit the mailbox ring — about 1023 buckets (≈64 KiB) with the default bucket size. A larger event cannot be enqueued cross-core and will stall, stuck in the source pipe. Put bulk data on the heap behind a `std::shared_ptr` member and keep the event struct itself small; do not size `allocated_push` to the payload bytes. (`qb/core/Pipe.h`.)
 
