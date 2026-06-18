@@ -24,7 +24,7 @@ The framework ships as two libraries that compose:
   an extensible protocol layer, C++20 coroutines, timers, filesystem watching, and utilities (time,
   crypto, compression, containers).
 
-Higher-level protocols (HTTP/1.1 and HTTP/2, WebSocket, PostgreSQL, Redis) are provided as optional
+Higher-level protocols (HTTP/1.1, HTTP/2, and HTTP/3, WebSocket, PostgreSQL, Redis) are provided as optional
 [qbm modules](#module-ecosystem) built on this foundation.
 
 ## Quick start
@@ -118,7 +118,7 @@ submodule and discovered by CMake:
 
 | Module | Provides |
 |---|---|
-| [qbm-http](https://github.com/isndev/qbm-http) | HTTP/1.1, plus HTTP/2 and HTTP/3 on SSL-enabled builds, routing, middleware, authentication, and WebSocket (RFC 6455) |
+| [qbm-http](https://github.com/isndev/qbm-http) | HTTP/1.1, plus HTTP/2 on SSL-enabled builds and HTTP/3 on QUIC builds, routing, middleware, authentication, and WebSocket (RFC 6455) |
 | [qbm-pgsql](https://github.com/isndev/qbm-pgsql) | Asynchronous PostgreSQL client with prepared statements and transactions |
 | [qbm-redis](https://github.com/isndev/qbm-redis) | Asynchronous Redis client covering the full command surface |
 
