@@ -70,9 +70,10 @@ CI enforces formatting on changed C++ files and runs clang-tidy on changed C++ t
 those checks small and clean in each pull request; broad formatting sweeps should be submitted separately
 from behavioral changes.
 
-Match the conventions of the surrounding code: the framework is CRTP-based and largely header-only, uses
-the `qb::` namespace, and expresses time with the `qb::duration` / `qb::mono_time` / `qb::wall_time`
-vocabulary (never the removed `qb::Timestamp` / `qb::Duration`).
+Match the conventions of the surrounding code: the framework is CRTP- and template-heavy (`qb::core` and
+`qb::io` build as compiled libraries), uses the `qb::` namespace, and expresses time with the
+`qb::duration` / `qb::mono_time` / `qb::wall_time` vocabulary (never the removed `qb::Timestamp` /
+`qb::Duration`).
 
 ## Testing
 

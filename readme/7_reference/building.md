@@ -45,7 +45,7 @@ git submodule update --init --recursive
 
 ## CMake presets
 
-`qb/CMakePresets.json` (schema version 3) ships configure, build, and test presets. Presets are the supported way to get a known-good configuration without memorizing option combinations. All configure presets inherit a hidden `base` preset that sets `QB_CXX_STANDARD=20`, `QB_BUILD_TESTS=ON`, and `QB_BUILD_EXAMPLES=ON`, and writes the build tree to `build/<presetName>`. C++23 validation is available through the `debug-cxx23` and `dev-cxx23` presets.
+`qb/CMakePresets.json` (schema version 3) ships configure, build, and test presets. Presets are the supported way to get a known-good configuration without memorizing option combinations. All configure presets inherit a hidden `base` preset that sets `QB_CXX_STANDARD=20`, `QB_BUILD_TESTS=ON`, `QB_BUILD_EXAMPLES=ON`, `QB_BUILD_BENCHMARKS=OFF`, `QB_WITH_QUIC=AUTO`, and — note these two, which differ from the standalone option defaults — `QB_INSTALL=OFF` (presets do not generate install rules) and `QB_ENABLE_NATIVE_ARCH=OFF` (presets produce portable, non-host-tuned binaries). It writes the build tree to `build/<presetName>` (`CMakePresets.json:9-25`). C++23 validation is available through the `debug-cxx23` and `dev-cxx23` presets.
 
 ```bash
 cmake --preset debug        # configure
@@ -65,7 +65,7 @@ ctest --preset debug
 | `sanitize-thread` | `Debug` | `QB_SANITIZE=thread` | `CMakePresets.json:69-78` |
 | `coverage` | `Debug` | `QB_BUILD_COVERAGE=ON` | `CMakePresets.json:79-88` |
 | `release-lto` | `Release` | inherits `release` + `QB_ENABLE_LTO=ON` | `CMakePresets.json:89-97` |
-| `release-native` | `Release` | inherits `release` + `QB_ENABLE_NATIVE_ARCH=ON` (explicit; this is already the default) | `CMakePresets.json:98-106` |
+| `release-native` | `Release` | inherits `release` + `QB_ENABLE_NATIVE_ARCH=ON` (the only preset that turns native arch back ON — `base` pins it OFF) | `CMakePresets.json:98-106` |
 | `release-portable` | `Release` | inherits `release` + `QB_ENABLE_NATIVE_ARCH=OFF` (portable, distributable binaries) | `CMakePresets.json:107-115` |
 
 ### Build and test presets

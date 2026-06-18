@@ -10,7 +10,7 @@ Beyond sockets and the event loop, `qb-io` ships a set of standalone utilities â
 
 ## Summary
 
-These utilities live in headers under `qb/include/qb/`. Most are header-only and have no third-party dependency. Two slices are gated on optional libraries resolved at configure time:
+These utilities live in headers under `qb/include/qb/`. Several are header-only with no third-party dependency: the time vocabulary, `qb::string<N>`, the flat-map/icase-map containers, `qb::uuid`, JSON, and endian helpers. The crypto/JWT, compression, and URI slices are *declared* in headers but *defined* in compiled translation units that ship inside the `qb::io` library (`source/io/src/{crypto*.cpp,compression.cpp,uri.cpp}`), so using them requires linking `qb::io` (and, for crypto/compression, the OpenSSL/zlib dependency) â€” there is no header-only inline path for these three. Two slices are additionally gated on optional libraries resolved at configure time:
 
 | Slice | Header | Namespace | Build gate |
 |---|---|---|---|

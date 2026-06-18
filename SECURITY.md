@@ -37,8 +37,9 @@ Please give us reasonable time to investigate and release a fix before any publi
 ## Scope
 
 In scope: memory-safety defects, denial-of-service vectors, authentication or cryptographic weaknesses, and
-input-handling flaws in the qb framework (qb-core, qb-io, and the bundled modules under `qb/modules`).
+input-handling flaws in qb's own code (qb-core, qb-io) and in how qb integrates and configures the bundled
+third-party components under `qb/modules` (libev, nanolog, nlohmann/json, ska_hash, stduuid).
 
-Out of scope: vulnerabilities in third-party dependencies (report those upstream), and issues that require
-a misconfiguration explicitly warned against in the documentation. Findings in the optional qbm modules
-belong to their respective repositories.
+Out of scope: defects in the upstream third-party projects themselves (libev, nlohmann/json, stduuid, …) —
+report those to their maintainers; and issues that require a misconfiguration explicitly warned against in
+the documentation. Findings in the optional qbm modules belong to their respective repositories.

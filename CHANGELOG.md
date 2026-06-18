@@ -36,8 +36,9 @@ is broad, so entries are grouped rather than exhaustive.
 
 ### Removed
 
-- `qb::Timestamp` and `qb::Duration`. Replace with `qb::wall_time` / `qb::mono_time` and `qb::duration`
-  respectively. See the [migration guide](./readme/6_guides/migration_guide.md).
+- `qb::Timestamp`, `qb::Duration`, and `qb::TimePoint`. Replace `qb::Duration` with `qb::duration`, and
+  `qb::Timestamp` / `qb::TimePoint` with `qb::mono_time` or `qb::wall_time` depending on use (a monotonic
+  anchor vs. a calendar instant). See the [migration guide](./readme/6_guides/migration_guide.md).
 
 ### Fixed
 

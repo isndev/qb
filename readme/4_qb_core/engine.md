@@ -4,7 +4,7 @@
 
 `qb::Main` is the runtime that launches one worker thread per logical core, places actors onto those workers, and drives event processing until shutdown; `qb::VirtualCore` is the per-thread worker it manages on your behalf.
 
-**Prerequisites:** [Core concepts: concurrency and parallelism](../2_core_concepts/concurrency.md), [Your first actor](./actor.md) — **See also:** [The actor model](./actor.md), [Event messaging](./messaging.md), [Reference and service actors](./patterns.md)
+**Prerequisites:** [Core concepts: concurrency and parallelism](../2_core_concepts/concurrency.md), [Writing actors with qb::Actor](./actor.md) — **See also:** [The actor model](../2_core_concepts/actor_model.md), [Event messaging](./messaging.md), [Reference and service actors](./patterns.md)
 
 ---
 
@@ -94,7 +94,7 @@ int main() {
 
 `addActor<T>(index, args...)` is a convenience for `core(index).addActor<T>(args...)`. It records the actor's construction against the chosen core and reserves its `qb::ActorId` immediately; the actor object itself is constructed, and its `onInit()` is run, later when `start()` spins up the worker. The returned id is `qb::ActorId::NotFound` only when reservation fails at registration time — a second `ServiceActor` of a type already registered on that core, or the per-core actor count reaching its limit. `NotFound` is the default-constructed, invalid id; test it with `is_valid()` (`qb/include/qb/core/Main.tpp`, `qb/include/qb/core/ActorId.h`).
 
-A returned valid id does not by itself prove the actor's `onInit()` will succeed: an `onInit()` that returns `false` or throws fails the whole core at startup and is surfaced through `hasError()` as `BadActorInit`, not by changing the already-returned id (`qb/source/core/src/Main.cpp`). Always check `hasError()` after `join()` (see [step 5](#5-check-for-errors)).
+A returned valid id does not by itself prove the actor's `onInit()` will succeed: an `onInit()` that returns `false` fails the core with `BadActorInit`; an `onInit()` that throws is caught by the engine and surfaced as `ExceptionThrown`. Either way the failure is reported through `hasError()`, not by changing the already-returned id (`qb/source/core/src/Main.cpp`). Always check `hasError()` after `join()` (see [step 5](#5-check-for-errors)).
 
 ```cpp
 // Single actor; verify the returned id before relying on it.
@@ -200,8 +200,8 @@ After `join()` (or after a synchronous `start(false)` returns), `hasError()` rep
 enum VirtualCore::Error : uint64_t {
     BadInit         = (1u << 9u),   // a VirtualCore failed to initialize, or no core was registered
     NoActor         = (1u << 10u),  // a registered core started with zero actors
-    BadActorInit    = (1u << 11u),  // an actor's onInit() returned false or threw
-    ExceptionThrown = (1u << 12u),  // an unhandled exception escaped a handler on the core
+    BadActorInit    = (1u << 11u),  // an actor's onInit() returned false
+    ExceptionThrown = (1u << 12u),  // an unhandled exception escaped a handler on the core, or onInit() threw
 };
 ```
 
@@ -209,8 +209,8 @@ enum VirtualCore::Error : uint64_t {
 engine.join();
 if (engine.hasError()) {
     // Likely causes: an actor's onInit() returned false (BadActorInit),
-    // a registered core had no actors (NoActor), or a handler threw
-    // (ExceptionThrown). All three are surfaced through hasError().
+    // a registered core had no actors (NoActor), or a handler or onInit()
+    // threw (ExceptionThrown). All are surfaced through hasError().
     return 1;
 }
 ```
@@ -327,7 +327,7 @@ int main() {
 
 ## See also
 
-- [The actor model](./actor.md) — the unit of computation the engine schedules.
+- [Writing actors with qb::Actor](./actor.md) — the unit of computation the engine schedules.
 - [Reference and service actors](./patterns.md) — `addRefActor`, `addRefHandle`, and per-core singletons.
 - [Event messaging](./messaging.md) — `push`, `broadcast`, and the cross-core pipeline in depth.
 - [Core concepts: concurrency and parallelism](../2_core_concepts/concurrency.md) — the engine's threading model at a higher level.

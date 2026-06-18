@@ -311,7 +311,10 @@ send<FireForgetSignal>(monitor_id);
 ### broadcast: every actor on every core
 
 `broadcast<E>(args...)` sends one event to every actor on every core. To target a single core, push
-to a `qb::BroadcastId(core_id)` instead.
+to a `qb::BroadcastId(core_id)` instead. Because `broadcast` fans out via `send` on every remote
+core, the event **should be trivially destructible**: a non-trivially-destructible event leaks its
+heap members on each remote core (same contract as `send`). Keep bulk data behind a `std::shared_ptr`
+and prefer deriving from `qb::EventQOS0` so the requirement is caught at compile time.
 
 ```cpp
 broadcast<SystemAlertEvent>("disk full");
@@ -358,15 +361,17 @@ the pipe API.
 ```cpp
 auto blob = std::make_shared<std::vector<char>>(256 * 1024);
 qb::Pipe pipe = getPipe(processor_id);
-pipe.allocated_push<BlobEvent>(sizeof(BlobEvent) + blob->size(), blob);
+// The hint is the EXTRA payload bytes; the framework adds sizeof(BlobEvent) itself.
+pipe.allocated_push<BlobEvent>(blob->size(), blob);
 ```
 
 ## Periodic work: qb::ICallback
 
 An actor that needs to run code once per event-loop iteration also inherits `qb::ICallback` and
 overrides `onCallback()`. Activate it by calling `registerCallback(*this)` from `onInit()`, and stop
-it with `unregisterCallback()`. The runtime calls `onCallback()` after the actor's event queue is
-drained and before outgoing pipes are flushed.
+it with `unregisterCallback()`. The runtime calls `onCallback()` once per loop iteration, after the
+core has flushed its outgoing pipes and dispatched that iteration's received events; events a callback
+pushes are flushed on the next iteration.
 
 ```cpp
 // src: derived from examples/core/example4_lifecycle.cpp

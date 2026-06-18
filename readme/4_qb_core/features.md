@@ -53,13 +53,12 @@ Owned by [Event messaging between actors](./messaging.md).
 | Event subscription | `registerEvent<E>(*this)` / `unregisterEvent<E>(*this)` | Subscribe (typically in `onInit()`) or unsubscribe an actor from an event type at runtime. |
 | Type-safe dispatch | `void on(E&)` / `void on(E const&)` | The handler invoked for each registered event type; a non-const reference is required to use `reply()` or `forward()`. |
 
-Quality-of-service levels:
+Quality-of-service levels. QoS is a **binary backpressure policy**, not a priority ordering — there is no High/Medium/Low dispatch. Events drain in FIFO order regardless of QoS; the only place `state.qos` is read is the cross-core flush, where it is a binary gate:
 
-| Type | Priority | Notes |
+| Type | `state.qos` | Behavior on cross-core backpressure |
 |---|---|---|
-| `qb::Event` (alias `qb::EventQOS2`) | High | Default base type; processed before lower QoS levels. |
-| `qb::EventQOS1` | Medium | Alias of `qb::Event`; processed after QOS2 and before QOS0. |
-| `qb::EventQOS0` | Low | Distinct subclass that sets `state.qos = 0`; processed last. |
+| `qb::Event` (aliases `qb::EventQOS2`, `qb::EventQOS1`) | `2` (default) | Guaranteed delivery: bounded spin-then-yield retry until the slot drains. `EventQOS1` is the same type as `EventQOS2` (`using ... = Event`) with no behavioral difference. |
+| `qb::EventQOS0` | `0` | Best-effort: dropped after a single failed `try_send`, never retried. Distinct subclass that sets `state.qos = 0`. |
 
 Sending methods:
 
@@ -67,7 +66,7 @@ Sending methods:
 |---|---|---|---|
 | `push<E>(dest, args...)` | Ordered per source/dest pair | None; supports non-trivially-destructible events | Default, recommended. |
 | `send<E>(dest, args...)` | Unordered | Event type **must be trivially destructible** | Low-latency fire-and-forget. |
-| `broadcast<E>(args...)` | N/A | None | Deliver to every actor on every core. |
+| `broadcast<E>(args...)` | N/A | Event **should be trivially destructible** for cross-core delivery (fans out via `send`) | Deliver to every actor on every core. |
 | `push<E>(qb::BroadcastId(core), args...)` | Ordered | None | Deliver to every actor on one core. |
 | `reply(event)` | N/A | Non-const `Event&` | Return a received event to its source by swapping dest/source. |
 | `forward(dest, event)` | N/A | Non-const `Event&` | Re-route a received event to a new destination, preserving its source. |
@@ -102,7 +101,7 @@ Owned by [Engine — `qb::Main` and `VirtualCore`](./engine.md). See also [Core 
 
 ## C++20 coroutine integration
 
-Owned by [Common actor patterns and utilities](./patterns.md#6-c23-coroutine-pattern--spawn_async). The coroutine runtime itself is documented under [qb-io: C++20 coroutines](../3_qb_io/coroutines.md).
+Owned by [Common actor patterns and utilities](./patterns.md#coroutines-for-async-io). The coroutine runtime itself is documented under [qb-io: C++20 coroutines](../3_qb_io/coroutines.md).
 
 | Capability | API | One-line summary |
 |---|---|---|

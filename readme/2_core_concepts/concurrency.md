@@ -1,6 +1,6 @@
 # Concurrency in qb
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported) @ b87d39a
 
 qb makes the actor the unit of concurrency: each actor owns its state, runs on exactly one worker thread, and processes its mailbox one event at a time, so application code never reaches for a mutex.
 
@@ -72,9 +72,9 @@ Ordering is *pairwise*. `push()` orders messages along one source→destination 
 
 ## Parallelism across cores
 
-The [`qb::Main`](../4_qb_core/engine.md) engine turns the single-core model into a multicore one. It spawns one `std::jthread` per `VirtualCore`, each running its own [`qb-io` event loop](./async_io.md), and distributes actors across them. You assign an actor to a core when you add it:
+The [`qb::Main`](../4_qb_core/engine.md) engine turns the single-core model into a multicore one. It spawns one `qb::jthread` per `VirtualCore` (`std::jthread` when the standard library provides it, qb's C++20 fallback otherwise), each running its own [`qb-io` event loop](./async_io.md), and distributes actors across them. You assign an actor to a core when you add it:
 
-<!-- src: examples/core/example3_multicore.cpp -->
+<!-- src: examples/core/example3_multicore.cpp (adapted) -->
 ```cpp
 #include <qb/actor.h>
 #include <qb/main.h>
@@ -136,9 +136,9 @@ int main() {
 
 `addActor<T>(core, args...)` returns the new actor's `ActorId` (`include/qb/core/Main.h:533`), which you pass to `push()` to address it from anywhere in the system. The dispatcher's `push<WorkEvent>` calls cross thread boundaries transparently: the framework places each event into the destination core's mailbox, and the destination core delivers it to the right `on()` handler during its own loop. From the handler's point of view there is no difference between a same-core and a cross-core message.
 
-By default `start()` is asynchronous: it returns once all cores report ready, and you call `join()` later to block until shutdown. (`source/core/src/Main.cpp:256`)
+By default `start()` is asynchronous: it returns once all cores report ready, and you call `join()` later to block until shutdown. (`source/core/src/Main.cpp:280`)
 
-> All actors and per-core configuration must be set up **before** `Main::start()`. `Main::core()` throws `std::runtime_error` once the engine is running. (`source/core/src/Main.cpp:341`)
+> All actors and per-core configuration must be set up **before** `Main::start()`. `Main::core()` throws `std::runtime_error` once the engine is running. (`source/core/src/Main.cpp:323`)
 
 ## Two threading surfaces: lock-free internals, single-thread-per-core code
 
@@ -155,7 +155,7 @@ The practical rule: trust the model. Write your handlers as if single-threaded �
 A `VirtualCore`'s idle behavior is configurable per core, before the engine starts, through its [`CoreInitializer`](../4_qb_core/engine.md) (obtained from `Main::core(id)`):
 
 - **Idle latency** — `engine.core(id).setLatency(qb::duration)`. The default, `qb::duration::zero()`, is low-latency busy-spin: the core spins at 100% CPU on its assigned core to process events with minimal delay. A value greater than zero lets the core sleep for up to that duration when idle, lowering CPU usage at the cost of a potential worst-case latency before a new event is picked up. (`include/qb/core/Main.h:254`)
-- **CPU affinity** — `engine.core(id).setAffinity(qb::CoreIdSet{…})`. Pins the `VirtualCore` thread to a set of physical CPUs, which can help cache locality and reduce thread migration. Affinity is best-effort: a logical qb `CoreId` need not map to a physical CPU, so a failed pin warns and never fails startup. (`source/core/src/VirtualCore.cpp:302`)
+- **CPU affinity** — `engine.core(id).setAffinity(qb::CoreIdSet{…})`. Pins the `VirtualCore` thread to a set of physical CPUs, which can help cache locality and reduce thread migration. Affinity is best-effort: a logical qb `CoreId` need not map to a physical CPU, so a failed pin warns and never fails startup. (`source/core/src/VirtualCore.cpp:303`)
 
 Both calls return the `CoreInitializer` for chaining and must run before `start()`. See [Performance tuning](../6_guides/performance_tuning.md) for guidance on choosing values.
 
@@ -167,7 +167,7 @@ Both calls return the `CoreInitializer` for chaining and must run before `start(
 - **Blocking inside a handler or `onCallback()`.** Both run on the `VirtualCore` event-loop thread. A blocking call (a synchronous syscall, a sleep, a long computation) stalls that core and every actor on it. Use [`qb-io`](./async_io.md)'s non-blocking operations instead. (`include/qb/core/ICallback.h:16`)
 - **Using `send()` where order matters.** `send()` gives no ordering guarantee even same-core, same-destination, and rejects non-trivially-destructible events. Default to `push()`. (`include/qb/core/Actor.h:728`)
 - **Touching another core's actor state directly.** Holding a raw pointer to an actor on another core and calling its methods bypasses the model and races. Address it by `ActorId` and `push()`. (`include/qb/core/VirtualCore.h:172`)
-- **Configuring cores after `start()`.** Affinity, latency, and actor placement must be set before the engine runs; `Main::core()` throws once started. (`source/core/src/Main.cpp:341`)
+- **Configuring cores after `start()`.** Affinity, latency, and actor placement must be set before the engine runs; `Main::core()` throws once started. (`source/core/src/Main.cpp:323`)
 
 ## See also
 
