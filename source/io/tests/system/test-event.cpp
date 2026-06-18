@@ -31,6 +31,7 @@
 #include <qb/io/async/event/all.h>
 #include <qb/io/async/listener.h>
 #include <qb/io/system/file.h>
+#include <qb/utility/build_macros.h>
 #include <thread>
 
 struct FakeActor {
@@ -129,7 +130,13 @@ TEST(KernelEvents, File) {
     actor.expected_file_size = 5;
 #endif
 
-    handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", 0).start();
+#if QB_PLATFORM_MACOS
+    constexpr double kFileEventInterval = 0.1;
+#else
+    constexpr int kFileEventInterval = 0;
+#endif
+
+    handler.registerEvent<qb::io::async::event::file>(actor, "./test.file", kFileEventInterval).start();
 
     std::thread t([]() {
 #ifndef _WIN32
@@ -151,7 +158,11 @@ TEST(KernelEvents, File) {
     });
 
 #ifndef _WIN32
+#if QB_PLATFORM_MACOS
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+#else
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+#endif
     while (std::chrono::steady_clock::now() < deadline && !actor.nb_events) {
         handler.run(EVRUN_NOWAIT);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

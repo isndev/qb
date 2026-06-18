@@ -23,6 +23,7 @@
 #include <gtest/gtest.h>
 #include <iostream>
 #include <qb/io/crypto.h>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -538,6 +539,233 @@ TEST_F(CryptoBasicTest, ErrorHandling) {
         // If the basic encryption operation fails, the test should fail
         FAIL() << "Exception during encryption operation: " << e.what();
     }
+}
+
+TEST_F(CryptoBasicTest, StreamHashesMatchStringHashes) {
+    std::istringstream md5_stream(test_string);
+    std::istringstream sha1_stream(test_string);
+    std::istringstream sha256_stream(test_string);
+    std::istringstream sha512_stream(test_string);
+
+    EXPECT_EQ(qb::crypto::md5(md5_stream), qb::crypto::md5(test_string));
+    EXPECT_EQ(qb::crypto::sha1(sha1_stream), qb::crypto::sha1(test_string));
+    EXPECT_EQ(qb::crypto::sha256(sha256_stream), qb::crypto::sha256(test_string));
+    EXPECT_EQ(qb::crypto::sha512(sha512_stream), qb::crypto::sha512(test_string));
+
+    std::istringstream iter_stream(test_string);
+    EXPECT_EQ(qb::crypto::sha256(iter_stream, 3), qb::crypto::sha256(test_string, 3));
+}
+
+TEST_F(CryptoBasicTest, IteratedStringAndStreamHashesCoverAllDigestOverloads) {
+    std::istringstream md5_stream(test_string);
+    std::istringstream sha1_stream(test_string);
+    std::istringstream sha256_stream(test_string);
+    std::istringstream sha512_stream(test_string);
+
+    EXPECT_EQ(qb::crypto::md5(md5_stream, 3), qb::crypto::md5(test_string, 3));
+    EXPECT_EQ(qb::crypto::sha1(sha1_stream, 3), qb::crypto::sha1(test_string, 3));
+    EXPECT_EQ(qb::crypto::sha256(sha256_stream, 3),
+              qb::crypto::sha256(test_string, 3));
+    EXPECT_EQ(qb::crypto::sha512(sha512_stream, 3),
+              qb::crypto::sha512(test_string, 3));
+
+    EXPECT_NE(qb::crypto::md5(test_string, 3), qb::crypto::md5(test_string));
+    EXPECT_NE(qb::crypto::sha1(test_string, 3), qb::crypto::sha1(test_string));
+    EXPECT_NE(qb::crypto::sha256(test_string, 3), qb::crypto::sha256(test_string));
+    EXPECT_NE(qb::crypto::sha512(test_string, 3), qb::crypto::sha512(test_string));
+}
+
+TEST_F(CryptoBasicTest, HexEncodingAndParsingContracts) {
+    const std::string binary{"Hello\x00\xff", 7};
+    const std::string upper_hex =
+        qb::crypto::to_hex_string(binary, qb::crypto::range_hex_upper);
+    const std::string lower_hex =
+        qb::crypto::to_hex_string(binary, qb::crypto::range_hex_lower);
+
+    EXPECT_EQ(upper_hex, "48656C6C6F00FF");
+    EXPECT_EQ(lower_hex, "48656c6c6f00ff");
+    EXPECT_EQ(qb::crypto::hex_to_string(upper_hex), binary);
+    EXPECT_EQ(qb::crypto::hex_to_string(lower_hex), binary);
+
+    EXPECT_EQ(qb::crypto::hex_value('0'), 0);
+    EXPECT_EQ(qb::crypto::hex_value('9'), 9);
+    EXPECT_EQ(qb::crypto::hex_value('A'), 10);
+    EXPECT_EQ(qb::crypto::hex_value('F'), 15);
+    EXPECT_EQ(qb::crypto::hex_value('a'), 10);
+    EXPECT_EQ(qb::crypto::hex_value('f'), 15);
+    EXPECT_EQ(qb::crypto::hex_value('g'), -1);
+    EXPECT_EQ(qb::crypto::hex_value(':'), -1);
+
+    EXPECT_TRUE(qb::crypto::hex_to_string("F").empty());
+    EXPECT_TRUE(qb::crypto::hex_to_string("GG").empty());
+    EXPECT_TRUE(qb::crypto::hex_to_string("00xz").empty());
+}
+
+TEST_F(CryptoBasicTest, Base64ClassHandlesBinaryPayloads) {
+    const std::string binary{"\x00qb\x00crypto\xff", 11};
+
+    const std::string encoded = qb::crypto::base64::encode(binary);
+    EXPECT_FALSE(encoded.empty());
+    EXPECT_EQ(qb::crypto::base64::decode(encoded), binary);
+
+    const auto decoded_vector = qb::crypto::base64_decode(encoded);
+    ASSERT_EQ(decoded_vector.size(), binary.size());
+    EXPECT_EQ(std::string(decoded_vector.begin(), decoded_vector.end()), binary);
+
+    EXPECT_TRUE(qb::crypto::base64::decode("%%%").empty());
+}
+
+TEST_F(CryptoBasicTest, PBKDF2RejectsInvalidKeySizes) {
+    EXPECT_TRUE(qb::crypto::pbkdf2("password", "salt", 1000, 0).empty());
+    EXPECT_TRUE(qb::crypto::pbkdf2("password", "salt", 1000, -1).empty());
+
+    const std::string key = qb::crypto::pbkdf2("password", "salt", 1, 8);
+    ASSERT_EQ(key.size(), 8u);
+    EXPECT_EQ(key, qb::crypto::pbkdf2("password", "salt", 1, 8));
+}
+
+TEST_F(CryptoBasicTest, HmacSha256MatchesKnownVector) {
+    const std::vector<unsigned char> key = {'k', 'e', 'y'};
+    const std::string data = "The quick brown fox jumps over the lazy dog";
+
+    const auto mac = qb::crypto::hmac_sha256(key, data);
+    EXPECT_EQ(qb::crypto::to_hex_string(std::string(mac.begin(), mac.end()),
+                                        qb::crypto::range_hex_lower),
+              "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8");
+}
+
+TEST_F(CryptoBasicTest, SecureRandomStringValidatesRangeAndLength) {
+    EXPECT_EQ(qb::crypto::generate_secure_random_string(0), "");
+    EXPECT_THROW(qb::crypto::generate_secure_random_string(1, ""), std::invalid_argument);
+
+    std::string too_large_range(257, 'x');
+    EXPECT_THROW(qb::crypto::generate_secure_random_string(1, too_large_range),
+                 std::invalid_argument);
+
+    const std::string random = qb::crypto::generate_secure_random_string(64, "ab");
+    ASSERT_EQ(random.size(), 64u);
+    for (const char c : random) {
+        EXPECT_TRUE(c == 'a' || c == 'b');
+    }
+}
+
+TEST_F(CryptoBasicTest, ConstantTimeCompareContracts) {
+    const std::vector<unsigned char> a = {1, 2, 3, 4};
+    const std::vector<unsigned char> b = {1, 2, 3, 4};
+    const std::vector<unsigned char> c = {1, 2, 3, 5};
+    const std::vector<unsigned char> d = {1, 2, 3};
+
+    EXPECT_TRUE(qb::crypto::constant_time_compare(a, b));
+    EXPECT_FALSE(qb::crypto::constant_time_compare(a, c));
+    EXPECT_FALSE(qb::crypto::constant_time_compare(a, d));
+    EXPECT_TRUE(qb::crypto::constant_time_compare({}, {}));
+}
+
+TEST_F(CryptoBasicTest, ModernSymmetricAlgorithmsRoundTripAndRejectBadInputs) {
+    struct AlgorithmCase {
+        qb::crypto::SymmetricAlgorithm algorithm;
+        std::size_t                    expected_key_size;
+        std::size_t                    expected_iv_size;
+        bool                           aead;
+    };
+
+    const std::vector<AlgorithmCase> cases = {
+        {qb::crypto::SymmetricAlgorithm::AES_128_CBC, 16, 16, false},
+        {qb::crypto::SymmetricAlgorithm::AES_192_CBC, 24, 16, false},
+        {qb::crypto::SymmetricAlgorithm::AES_256_CBC, 32, 16, false},
+        {qb::crypto::SymmetricAlgorithm::AES_128_GCM, 16, 12, true},
+        {qb::crypto::SymmetricAlgorithm::AES_192_GCM, 24, 12, true},
+        {qb::crypto::SymmetricAlgorithm::AES_256_GCM, 32, 12, true},
+        {qb::crypto::SymmetricAlgorithm::CHACHA20_POLY1305, 32, 12, true},
+    };
+
+    const std::vector<unsigned char> aad = {'q', 'b', '-', 'a', 'a', 'd'};
+
+    for (const auto &entry : cases) {
+        auto key = qb::crypto::generate_key(entry.algorithm);
+        auto iv  = qb::crypto::generate_iv(entry.algorithm);
+
+        EXPECT_EQ(key.size(), entry.expected_key_size);
+        EXPECT_EQ(iv.size(), entry.expected_iv_size);
+
+        const auto encrypted =
+            qb::crypto::encrypt(test_data, key, iv, entry.algorithm, aad);
+        ASSERT_FALSE(encrypted.empty());
+
+        const auto decrypted =
+            qb::crypto::decrypt(encrypted, key, iv, entry.algorithm, aad);
+        EXPECT_EQ(decrypted, test_data);
+
+        auto bad_key = key;
+        bad_key.pop_back();
+        EXPECT_THROW(qb::crypto::encrypt(test_data, bad_key, iv, entry.algorithm),
+                     std::invalid_argument);
+        EXPECT_THROW(qb::crypto::decrypt(encrypted, bad_key, iv, entry.algorithm),
+                     std::invalid_argument);
+
+        auto bad_iv = iv;
+        bad_iv.pop_back();
+        EXPECT_THROW(qb::crypto::encrypt(test_data, key, bad_iv, entry.algorithm),
+                     std::invalid_argument);
+        EXPECT_THROW(qb::crypto::decrypt(encrypted, key, bad_iv, entry.algorithm),
+                     std::invalid_argument);
+
+        if (entry.aead) {
+            auto tampered = encrypted;
+            tampered.back() ^= 0x01;
+            EXPECT_TRUE(
+                qb::crypto::decrypt(tampered, key, iv, entry.algorithm, aad).empty());
+
+            std::vector<unsigned char> too_short(8, 0x42);
+            EXPECT_THROW(qb::crypto::decrypt(too_short, key, iv, entry.algorithm),
+                         std::runtime_error);
+        }
+    }
+
+    const auto invalid_algorithm =
+        static_cast<qb::crypto::SymmetricAlgorithm>(255);
+    EXPECT_THROW(qb::crypto::generate_key(invalid_algorithm), std::runtime_error);
+    EXPECT_THROW(qb::crypto::generate_iv(invalid_algorithm), std::runtime_error);
+    EXPECT_THROW(qb::crypto::encrypt(test_data, {}, {}, invalid_algorithm),
+                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::decrypt(test_data, {}, {}, invalid_algorithm),
+                 std::runtime_error);
+}
+
+TEST_F(CryptoBasicTest, ModernDigestAndHmacAlgorithms) {
+    struct DigestCase {
+        qb::crypto::DigestAlgorithm algorithm;
+        std::size_t                 expected_size;
+    };
+
+    const std::vector<DigestCase> cases = {
+        {qb::crypto::DigestAlgorithm::MD5, 16},
+        {qb::crypto::DigestAlgorithm::SHA1, 20},
+        {qb::crypto::DigestAlgorithm::SHA224, 28},
+        {qb::crypto::DigestAlgorithm::SHA256, 32},
+        {qb::crypto::DigestAlgorithm::SHA384, 48},
+        {qb::crypto::DigestAlgorithm::SHA512, 64},
+        {qb::crypto::DigestAlgorithm::BLAKE2B512, 64},
+        {qb::crypto::DigestAlgorithm::BLAKE2S256, 32},
+    };
+
+    const std::vector<unsigned char> hmac_key = {'s', 'e', 'c', 'r', 'e', 't'};
+
+    for (const auto &entry : cases) {
+        ASSERT_NE(qb::crypto::get_evp_md(entry.algorithm), nullptr);
+
+        const auto digest = qb::crypto::hash(test_data, entry.algorithm);
+        EXPECT_EQ(digest.size(), entry.expected_size);
+
+        const auto mac = qb::crypto::hmac(test_data, hmac_key, entry.algorithm);
+        EXPECT_EQ(mac.size(), entry.expected_size);
+    }
+
+    const auto invalid_digest = static_cast<qb::crypto::DigestAlgorithm>(255);
+    EXPECT_EQ(qb::crypto::get_evp_md(invalid_digest), nullptr);
+    EXPECT_THROW(qb::crypto::hash(test_data, invalid_digest), std::runtime_error);
+    EXPECT_THROW(qb::crypto::hmac(test_data, hmac_key, invalid_digest),
+                 std::runtime_error);
 }
 
 } // namespace

@@ -61,6 +61,74 @@ TEST_F(CryptoAsymmetricTest, Ed25519KeyGeneration) {
     EXPECT_EQ(pub_bytes.size(), 32);  // Ed25519 public keys are 32 bytes
 }
 
+TEST_F(CryptoAsymmetricTest, RSAKeyGenerationSignVerifyAndErrorContracts) {
+    EXPECT_THROW(qb::crypto::generate_rsa_keypair(1024), std::runtime_error);
+
+    auto [private_key, public_key] = qb::crypto::generate_rsa_keypair(2048);
+    EXPECT_NE(private_key.find("PRIVATE KEY"), std::string::npos);
+    EXPECT_NE(public_key.find("PUBLIC KEY"), std::string::npos);
+
+    const auto signature =
+        qb::crypto::rsa_sign(test_data, private_key, qb::crypto::DigestAlgorithm::SHA256);
+    ASSERT_FALSE(signature.empty());
+    EXPECT_TRUE(qb::crypto::rsa_verify(test_data, signature, public_key,
+                                       qb::crypto::DigestAlgorithm::SHA256));
+
+    auto modified_data = test_data;
+    modified_data[0] ^= 0x40;
+    EXPECT_FALSE(qb::crypto::rsa_verify(modified_data, signature, public_key,
+                                        qb::crypto::DigestAlgorithm::SHA256));
+
+    auto modified_signature = signature;
+    modified_signature[0] ^= 0x20;
+    EXPECT_FALSE(qb::crypto::rsa_verify(test_data, modified_signature, public_key,
+                                        qb::crypto::DigestAlgorithm::SHA256));
+
+    const auto invalid_digest = static_cast<qb::crypto::DigestAlgorithm>(255);
+    EXPECT_THROW(qb::crypto::rsa_sign(test_data, private_key, invalid_digest),
+                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::rsa_verify(test_data, signature, public_key, invalid_digest),
+                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::rsa_sign(test_data, "not a pem"),
+                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::rsa_verify(test_data, signature, "not a pem"),
+                 std::runtime_error);
+}
+
+TEST_F(CryptoAsymmetricTest, ECKeyGenerationSignVerifyAndErrorContracts) {
+    EXPECT_THROW(qb::crypto::generate_ec_keypair("not-a-curve"), std::runtime_error);
+
+    auto [private_key, public_key] = qb::crypto::generate_ec_keypair("prime256v1");
+    EXPECT_NE(private_key.find("PRIVATE KEY"), std::string::npos);
+    EXPECT_NE(public_key.find("PUBLIC KEY"), std::string::npos);
+
+    const auto signature =
+        qb::crypto::ec_sign(test_data, private_key, qb::crypto::DigestAlgorithm::SHA256);
+    ASSERT_FALSE(signature.empty());
+    EXPECT_TRUE(qb::crypto::ec_verify(test_data, signature, public_key,
+                                      qb::crypto::DigestAlgorithm::SHA256));
+
+    auto [wrong_private_key, wrong_public_key] =
+        qb::crypto::generate_ec_keypair("prime256v1");
+    (void) wrong_private_key;
+    EXPECT_FALSE(qb::crypto::ec_verify(test_data, signature, wrong_public_key,
+                                       qb::crypto::DigestAlgorithm::SHA256));
+
+    auto modified_signature = signature;
+    modified_signature.back() ^= 0x01;
+    EXPECT_FALSE(qb::crypto::ec_verify(test_data, modified_signature, public_key,
+                                       qb::crypto::DigestAlgorithm::SHA256));
+
+    const auto invalid_digest = static_cast<qb::crypto::DigestAlgorithm>(255);
+    EXPECT_THROW(qb::crypto::ec_sign(test_data, private_key, invalid_digest),
+                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::ec_verify(test_data, signature, public_key, invalid_digest),
+                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::ec_sign(test_data, "not a pem"), std::runtime_error);
+    EXPECT_THROW(qb::crypto::ec_verify(test_data, signature, "not a pem"),
+                 std::runtime_error);
+}
+
 // Tests for Ed25519 signing and verification with PEM keys
 TEST_F(CryptoAsymmetricTest, Ed25519SignAndVerify) {
     // Generate key pair
@@ -112,6 +180,24 @@ TEST_F(CryptoAsymmetricTest, Ed25519RawKeySignAndVerify) {
     EXPECT_FALSE(valid);
 }
 
+TEST_F(CryptoAsymmetricTest, RawKeyInputsRejectInvalidSizes) {
+    const std::vector<unsigned char> too_short(31, 0x42);
+    const std::vector<unsigned char> too_long(33, 0x42);
+    const std::vector<unsigned char> empty;
+
+    EXPECT_THROW(qb::crypto::ed25519_sign(test_data, too_short), std::runtime_error);
+    EXPECT_THROW(qb::crypto::ed25519_verify(test_data, empty, too_short),
+                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::ed25519_verify(test_data, empty, too_long),
+                 std::runtime_error);
+
+    auto [x_private, x_public] = qb::crypto::generate_x25519_keypair_bytes();
+    EXPECT_THROW(qb::crypto::x25519_key_exchange(too_short, x_public),
+                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::x25519_key_exchange(x_private, too_short),
+                 std::runtime_error);
+}
+
 // Tests for X25519 key exchange
 TEST_F(CryptoAsymmetricTest, X25519KeyExchange) {
     // Generate two key pairs
@@ -127,6 +213,20 @@ TEST_F(CryptoAsymmetricTest, X25519KeyExchange) {
 
     // Check that both shared secrets are identical
     EXPECT_EQ(alice_shared, bob_shared);
+}
+
+TEST_F(CryptoAsymmetricTest, X25519PemRejectsIncompatiblePeerKey) {
+    auto [x_private, x_public] = qb::crypto::generate_x25519_keypair();
+    auto [ed_private, ed_public] = qb::crypto::generate_ed25519_keypair();
+    (void) x_public;
+    (void) ed_private;
+
+    EXPECT_THROW(qb::crypto::x25519_key_exchange("not a pem", ed_public),
+                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::x25519_key_exchange(x_private, "not a pem"),
+                 std::runtime_error);
+    EXPECT_THROW(qb::crypto::x25519_key_exchange(x_private, ed_public),
+                 std::runtime_error);
 }
 
 // Tests for X25519 key exchange with raw key bytes

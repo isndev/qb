@@ -29,6 +29,7 @@ public:
     int close_calls = 0;
     int close_connection_calls = 0;
     std::uint64_t closed_connection_id = 0;
+    std::uint64_t last_open_connection_id = 0;
     int send_stream_data_calls = 0;
     std::uint64_t sent_connection_id = 0;
     std::uint64_t sent_stream_id = 0;
@@ -38,6 +39,8 @@ public:
     std::uint64_t extended_stream_id = 0;
     std::uint64_t extended_bytes = 0;
     int send_datagram_calls = 0;
+    std::uint64_t sent_datagram_connection_id = 0;
+    std::size_t sent_datagram_bytes = 0;
     int reset_stream_calls = 0;
     int stop_stream_calls = 0;
     std::uint64_t reset_stream_id = 0;
@@ -47,6 +50,7 @@ public:
     std::uint64_t close_code = 0;
     std::string close_reason;
     bool close_on_send_stream_data = false;
+    int timeout_calls = 0;
     std::vector<qb::io::quic::backend_event> queued_events;
     std::vector<qb::io::quic::packet> queued_packets;
 
@@ -78,7 +82,7 @@ public:
     }
 
     void on_udp_datagram(qb::io::quic::packet_view) override {}
-    void on_timeout(std::chrono::steady_clock::time_point) override {}
+    void on_timeout(std::chrono::steady_clock::time_point) override { ++timeout_calls; }
 
     std::chrono::steady_clock::time_point next_timeout() const override {
         return std::chrono::steady_clock::time_point::max();
@@ -102,8 +106,9 @@ public:
         return open_stream(0, direction);
     }
 
-    std::uint64_t open_stream(std::uint64_t,
+    std::uint64_t open_stream(std::uint64_t connection_id,
                               qb::io::quic::stream_direction direction) override {
+        last_open_connection_id = connection_id;
         if (direction == qb::io::quic::stream_direction::bidirectional)
             ++open_bidi_calls;
         else
@@ -133,8 +138,10 @@ public:
         extended_bytes += bytes;
     }
 
-    void send_datagram(std::uint64_t, std::span<const std::byte>) override {
+    void send_datagram(std::uint64_t connection_id, std::span<const std::byte> data) override {
         ++send_datagram_calls;
+        sent_datagram_connection_id = connection_id;
+        sent_datagram_bytes += data.size();
     }
 
     void reset_stream(std::uint64_t, std::uint64_t stream_id,
@@ -189,13 +196,21 @@ public:
     int connected = 0;
     int closed = 0;
     int stream_started = 0;
+    int stream_data = 0;
+    int stream_acked = 0;
     int stream_closed = 0;
+    int datagrams = 0;
+    std::string received;
+    std::string datagram_received;
     qb::io::quic::stream_close_reason last_stream_close_reason =
         qb::io::quic::stream_close_reason::none;
     qb::io::quic::disconnect_reason last_close_reason =
         qb::io::quic::disconnect_reason::none;
     std::uint64_t last_error_code = 0;
     std::string last_reason_phrase;
+    qb::io::quic::stream_direction last_stream_direction =
+        qb::io::quic::stream_direction::bidirectional;
+    qb::io::quic::stream_origin last_stream_origin = qb::io::quic::stream_origin::local;
 
     CallbackQuicClient() = default;
 
@@ -209,10 +224,26 @@ public:
         last_error_code = ev.error_code;
         last_reason_phrase = ev.reason_phrase;
     }
-    void on(qb::io::async::quic::event::stream_started const&) { ++stream_started; }
+    void on(qb::io::async::quic::event::stream_started const& ev) {
+        ++stream_started;
+        last_stream_direction = ev.direction;
+        last_stream_origin = ev.origin;
+    }
+    void on(qb::io::async::quic::event::stream_data const& ev) {
+        ++stream_data;
+        received.append(ev.payload.data(), ev.payload.size());
+    }
+    void on(qb::io::async::quic::event::stream_data_acked const& ev) {
+        ++stream_acked;
+        last_error_code = ev.bytes;
+    }
     void on(qb::io::async::quic::event::stream_closed const& ev) {
         ++stream_closed;
         last_stream_close_reason = ev.reason;
+    }
+    void on(qb::io::async::quic::event::datagram const& ev) {
+        ++datagrams;
+        datagram_received.append(ev.payload.data(), ev.payload.size());
     }
 };
 
@@ -231,6 +262,9 @@ public:
     std::uint64_t acked_bytes = 0;
     std::string received;
     std::string datagram_received;
+    qb::io::quic::stream_direction last_stream_direction =
+        qb::io::quic::stream_direction::bidirectional;
+    qb::io::quic::stream_origin last_stream_origin = qb::io::quic::stream_origin::local;
 
     CallbackQuicServer() = default;
 
@@ -238,7 +272,11 @@ public:
         : server(std::move(backend)) {}
 
     void on(qb::io::async::quic::event::connected const&) { ++connected; }
-    void on(qb::io::async::quic::event::stream_started const&) { ++stream_started; }
+    void on(qb::io::async::quic::event::stream_started const& ev) {
+        ++stream_started;
+        last_stream_direction = ev.direction;
+        last_stream_origin = ev.origin;
+    }
     void on(qb::io::async::quic::event::stream_data const& ev) {
         received.append(ev.payload.data(), ev.payload.size());
     }
@@ -445,6 +483,113 @@ TEST(QuicEndpointTest, DispatchesBackendEventsToDerivedCallbacks) {
     EXPECT_EQ(client.last_error_code, 42u);
 }
 
+TEST(QuicEndpointTest, BaseEndpointAcceptsAllBackendEventsAsNoopCallbacks) {
+    auto *raw_backend = new FakeQuicBackend;
+    qb::io::async::quic::endpoint endpoint{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::connected, 3, 0, 0, "h3", {}});
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::stream_started, 3, 0, 0, {}, {}});
+
+    qb::io::quic::backend_event data;
+    data.type = qb::io::quic::backend_event::kind::stream_data;
+    data.connection_id = 3;
+    data.stream_id = 0;
+    data.payload = {std::byte{'o'}, std::byte{'k'}};
+    raw_backend->queued_events.push_back(std::move(data));
+
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::stream_data_acked, 3, 0, 2, {}, {}});
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::stream_closed, 3, 0, 9, {}, {},
+        qb::io::quic::disconnect_reason::none,
+        qb::io::quic::stream_close_reason::finished});
+
+    qb::io::quic::backend_event datagram;
+    datagram.type = qb::io::quic::backend_event::kind::datagram;
+    datagram.connection_id = 3;
+    datagram.payload = {std::byte{'d'}};
+    raw_backend->queued_events.push_back(std::move(datagram));
+
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::connection_closed, 3, 0, 0, "closed", {},
+        qb::io::quic::disconnect_reason::application_close});
+
+    endpoint.poll();
+
+    EXPECT_FALSE(endpoint.is_open());
+    EXPECT_EQ(endpoint.current_state(), qb::io::async::quic::endpoint::state::closed);
+}
+
+TEST(QuicEndpointTest, StreamStartedEventsExposeDirectionAndOriginForClientRole) {
+    auto *raw_backend = new FakeQuicBackend;
+    CallbackQuicClient client{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(client.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::stream_started, 9, 0, 0, {}, {}});
+    client.poll();
+    EXPECT_EQ(client.last_stream_direction, qb::io::quic::stream_direction::bidirectional);
+    EXPECT_EQ(client.last_stream_origin, qb::io::quic::stream_origin::local);
+
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::stream_started, 9, 1, 0, {}, {}});
+    client.poll();
+    EXPECT_EQ(client.last_stream_direction, qb::io::quic::stream_direction::bidirectional);
+    EXPECT_EQ(client.last_stream_origin, qb::io::quic::stream_origin::remote);
+
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::stream_started, 9, 2, 0, {}, {}});
+    client.poll();
+    EXPECT_EQ(client.last_stream_direction, qb::io::quic::stream_direction::unidirectional);
+    EXPECT_EQ(client.last_stream_origin, qb::io::quic::stream_origin::local);
+
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::stream_started, 9, 3, 0, {}, {}});
+    client.poll();
+    EXPECT_EQ(client.last_stream_direction, qb::io::quic::stream_direction::unidirectional);
+    EXPECT_EQ(client.last_stream_origin, qb::io::quic::stream_origin::remote);
+}
+
+TEST(QuicEndpointTest, ConnectorWithoutStreamSessionDispatchesAllEventKinds) {
+    auto *raw_backend = new FakeQuicBackend;
+    CallbackQuicClient client{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(client.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+
+    qb::io::quic::backend_event data;
+    data.type = qb::io::quic::backend_event::kind::stream_data;
+    data.connection_id = 9;
+    data.stream_id = 4;
+    data.payload = {std::byte{'p'}, std::byte{'i'}, std::byte{'n'}, std::byte{'g'}};
+    raw_backend->queued_events.push_back(std::move(data));
+
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::stream_data_acked, 9, 4, 123, {}, {}});
+
+    qb::io::quic::backend_event datagram;
+    datagram.type = qb::io::quic::backend_event::kind::datagram;
+    datagram.connection_id = 9;
+    datagram.payload = {std::byte{'d'}, std::byte{'g'}};
+    raw_backend->queued_events.push_back(std::move(datagram));
+
+    client.poll();
+
+    EXPECT_EQ(client.stream_data, 1);
+    EXPECT_EQ(client.received, "ping");
+    EXPECT_EQ(client.stream_acked, 1);
+    EXPECT_EQ(client.last_error_code, 123u);
+    EXPECT_EQ(client.datagrams, 1);
+    EXPECT_EQ(client.datagram_received, "dg");
+}
+
 TEST(QuicEndpointTest, PreservesTypedBackendCloseReason) {
     auto *raw_backend = new FakeQuicBackend;
     CallbackQuicClient client{
@@ -465,6 +610,64 @@ TEST(QuicEndpointTest, PreservesTypedBackendCloseReason) {
     EXPECT_EQ(client.last_close_reason, qb::io::quic::disconnect_reason::idle_timeout);
     EXPECT_EQ(client.last_error_code, 7u);
     EXPECT_EQ(client.last_reason_phrase, "idle");
+}
+
+TEST(QuicEndpointTest, EndpointNoBackendOperationsAreStableNoops) {
+    qb::io::async::quic::endpoint endpoint;
+
+    EXPECT_EQ(endpoint.backend(), nullptr);
+    EXPECT_FALSE(endpoint.is_open());
+    EXPECT_EQ(endpoint.current_state(), qb::io::async::quic::endpoint::state::idle);
+
+    endpoint.poll();
+    endpoint.extend_stream_credit(1, 2, 3);
+    endpoint.close_connection(1, 2, "ignored");
+    endpoint.close(7, "closed");
+
+    EXPECT_FALSE(endpoint.is_open());
+    EXPECT_EQ(endpoint.current_state(), qb::io::async::quic::endpoint::state::closed);
+}
+
+TEST(QuicEndpointTest, InvalidRemoteUriFailsBeforeStartingBackend) {
+    auto *raw_backend = new FakeQuicBackend;
+    qb::io::async::quic::endpoint endpoint{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    EXPECT_FALSE(endpoint.connect(qb::io::uri{"quic:///missing-host"}));
+    EXPECT_FALSE(endpoint.is_open());
+    EXPECT_EQ(raw_backend->configure_calls, 0);
+    EXPECT_EQ(raw_backend->start_client_calls, 0);
+}
+
+TEST(QuicEndpointTest, ListenReturnsFalseWhenBindPortIsUnavailable) {
+    qb::io::udp::socket occupied;
+    ASSERT_EQ(occupied.bind_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    const auto port = occupied.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    auto *raw_backend = new FakeQuicBackend;
+    qb::io::async::quic::endpoint endpoint{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    EXPECT_FALSE(endpoint.listen(
+        qb::io::uri{"quic://127.0.0.1:" + std::to_string(port)}, "cert.pem", "key.pem"));
+    EXPECT_FALSE(endpoint.is_open());
+    EXPECT_EQ(raw_backend->configure_calls, 0);
+    EXPECT_EQ(raw_backend->start_server_calls, 0);
+}
+
+TEST(QuicEndpointTest, ExplicitTlsConnectFillsServerNameWhenMissing) {
+    auto *raw_backend = new FakeQuicBackend;
+    qb::io::async::quic::endpoint endpoint{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    qb::io::quic::tls_config tls;
+    tls.verify_peer = false;
+
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}, tls, {"qb"}));
+    EXPECT_EQ(raw_backend->last_tls.server_name, "127.0.0.1");
+    ASSERT_EQ(raw_backend->last_alpn.size(), 1u);
+    EXPECT_EQ(raw_backend->last_alpn.front(), "qb");
 }
 
 TEST(QuicEndpointTest, UdpTxBudgetKeepsPendingPacketsForNextPoll) {
@@ -550,6 +753,40 @@ TEST(QuicEndpointTest, DatagramSendCanTargetExplicitConnection) {
     endpoint.send_datagram(42, "datagram");
 
     EXPECT_EQ(raw_backend->send_datagram_calls, 1);
+    EXPECT_EQ(raw_backend->sent_datagram_connection_id, 42u);
+    EXPECT_EQ(raw_backend->sent_datagram_bytes, 8u);
+}
+
+TEST(QuicEndpointTest, EndpointMutationOverloadsDelegateToBackend) {
+    auto *raw_backend = new FakeQuicBackend;
+    qb::io::async::quic::endpoint endpoint{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+
+    endpoint.send_stream_data(5, "abc", true);
+    endpoint.send_stream_data(7, 8, "de", false);
+
+    std::array<std::byte, 3> datagram{std::byte{'x'}, std::byte{'y'}, std::byte{'z'}};
+    endpoint.send_datagram(std::span<const std::byte>{datagram});
+    endpoint.send_datagram(99, std::span<const std::byte>{datagram});
+
+    endpoint.extend_stream_credit(1, 2, 0);
+    EXPECT_EQ(raw_backend->extend_stream_credit_calls, 0);
+
+    endpoint.extend_stream_credit(1, 2, 4);
+
+    EXPECT_EQ(raw_backend->send_stream_data_calls, 2);
+    EXPECT_EQ(raw_backend->sent_connection_id, 7u);
+    EXPECT_EQ(raw_backend->sent_stream_id, 8u);
+    EXPECT_EQ(raw_backend->sent_stream_bytes, 5u);
+    EXPECT_FALSE(raw_backend->sent_stream_fin);
+    EXPECT_EQ(raw_backend->send_datagram_calls, 2);
+    EXPECT_EQ(raw_backend->sent_datagram_connection_id, 99u);
+    EXPECT_EQ(raw_backend->sent_datagram_bytes, 6u);
+    EXPECT_EQ(raw_backend->extend_stream_credit_calls, 1);
+    EXPECT_EQ(raw_backend->extended_stream_id, 2u);
+    EXPECT_EQ(raw_backend->extended_bytes, 4u);
 }
 
 TEST(QuicEndpointTest, LocalStreamSessionCanPublishAndFlush) {
@@ -599,6 +836,69 @@ TEST(QuicEndpointTest, ConnectorLocalStreamSessionCanPublishAndFlush) {
     EXPECT_EQ(session->pendingWrite(), 0u);
 }
 
+TEST(QuicEndpointTest, ConnectorStreamSessionConvenienceOverloadsUseExplicitConnection) {
+    auto *raw_backend = new FakeQuicBackend;
+    SessionQuicClient client{std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(client.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+
+    auto *session = client.open_bidirectional_stream_session(42);
+    ASSERT_NE(session, nullptr);
+    EXPECT_EQ(raw_backend->last_open_connection_id, 42u);
+    EXPECT_EQ(session->connection_id(), 42u);
+    EXPECT_EQ(session->id(), 0u);
+    EXPECT_EQ(client.stream_session(session->id()), session);
+    EXPECT_EQ(client.stream_session(42, session->id()), session);
+
+    session->publish(std::string_view{"client", 6});
+    EXPECT_TRUE(client.flush_stream_session(42, session->id()));
+    EXPECT_EQ(raw_backend->send_stream_data_calls, 1);
+    EXPECT_EQ(raw_backend->sent_connection_id, 42u);
+    EXPECT_EQ(raw_backend->sent_stream_id, session->id());
+    EXPECT_EQ(raw_backend->sent_stream_bytes, 6u);
+    EXPECT_FALSE(raw_backend->sent_stream_fin);
+
+    EXPECT_TRUE(client.finish_stream_session(session->id()));
+    EXPECT_EQ(raw_backend->send_stream_data_calls, 2);
+    EXPECT_EQ(raw_backend->sent_connection_id, 42u);
+    EXPECT_EQ(raw_backend->sent_stream_id, session->id());
+    EXPECT_TRUE(raw_backend->sent_stream_fin);
+
+    EXPECT_FALSE(client.flush_stream_session(99, session->id()));
+    EXPECT_FALSE(client.finish_stream_session(99, session->id()));
+}
+
+TEST(QuicEndpointTest, ServerStreamSessionConvenienceOverloadsUseExplicitConnection) {
+    auto *raw_backend = new FakeQuicBackend;
+    CallbackQuicServer server{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
+
+    auto *session = server.open_unidirectional_stream_session(77);
+    ASSERT_NE(session, nullptr);
+    EXPECT_EQ(raw_backend->last_open_connection_id, 77u);
+    EXPECT_EQ(raw_backend->open_uni_calls, 1);
+    EXPECT_EQ(session->connection_id(), 77u);
+    EXPECT_EQ(session->id(), 2u);
+    EXPECT_EQ(server.stream_session(session->id()), session);
+    EXPECT_EQ(server.stream_session(77, session->id()), session);
+
+    session->publish(std::string_view{"server", 6});
+    server.flush_stream_session(*session);
+    EXPECT_EQ(raw_backend->send_stream_data_calls, 1);
+    EXPECT_EQ(raw_backend->sent_connection_id, 77u);
+    EXPECT_EQ(raw_backend->sent_stream_id, session->id());
+    EXPECT_EQ(raw_backend->sent_stream_bytes, 6u);
+    EXPECT_FALSE(raw_backend->sent_stream_fin);
+
+    server.finish_stream_session(*session);
+    EXPECT_EQ(raw_backend->send_stream_data_calls, 2);
+    EXPECT_EQ(raw_backend->sent_connection_id, 77u);
+    EXPECT_EQ(raw_backend->sent_stream_id, session->id());
+    EXPECT_TRUE(raw_backend->sent_stream_fin);
+}
+
 TEST(QuicEndpointTest, FinishLocalStreamSessionFlushesAndSendsFin) {
     auto *raw_backend = new FakeQuicBackend;
     CallbackQuicServer server{
@@ -640,6 +940,45 @@ TEST(QuicEndpointTest, FlushMissingStreamSessionReturnsFalse) {
 
     EXPECT_FALSE(server.flush_stream_session(777, 888));
     EXPECT_EQ(raw_backend->send_stream_data_calls, 0);
+}
+
+TEST(QuicEndpointTest, AmbiguousStreamIdLookupReturnsNullUntilConnectionIsSpecified) {
+    auto *raw_backend = new FakeQuicBackend;
+    CallbackQuicServer server{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
+
+    auto *first = server.register_stream_session(1, 10);
+    auto *second = server.register_stream_session(2, 10);
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+
+    EXPECT_EQ(server.stream_session(10), nullptr);
+    EXPECT_EQ(server.stream_session(1, 10), first);
+    EXPECT_EQ(server.stream_session(2, 10), second);
+    EXPECT_FALSE(server.flush_stream_session(10));
+    EXPECT_TRUE(server.flush_stream_session(1, 10));
+
+    const auto &const_server = server;
+    EXPECT_EQ(const_server.sessions().size(), 2u);
+    EXPECT_EQ(const_server.session_count(), 2u);
+}
+
+TEST(QuicEndpointTest, ExistingSessionLookupAndSessionCapRejection) {
+    auto *raw_backend = new FakeQuicBackend;
+    CallbackQuicServer server{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
+
+    auto *first = server.register_stream_session(3, 12);
+    ASSERT_NE(first, nullptr);
+
+    EXPECT_EQ(server.register_stream_session(3, 12), first);
+    server.set_max_sessions(1);
+    EXPECT_EQ(server.register_stream_session(3, 13), nullptr);
+    EXPECT_EQ(server.max_sessions(), 1u);
 }
 
 TEST(QuicEndpointTest, CloseConnectionDelegatesWithoutClosingEndpoint) {

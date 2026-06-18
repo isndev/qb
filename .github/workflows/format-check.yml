@@ -29,7 +29,7 @@ jobs:
 
       - name: Install LLVM tools
         run: |
-          ./scripts/ci-install-linux-dependencies.sh --llvm-format
+          ./scripts/ci-install-linux-dependencies.sh --profile format-check
           "clang-format-${LLVM_VERSION}" --version
 
       - name: Collect changed C++ files

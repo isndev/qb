@@ -22,8 +22,11 @@
 #include <gtest/gtest.h>
 #include <qb/io/crypto.h>
 #include <qb/io/crypto_jwt.h>
-#include <thread>
+#include <algorithm>
 #include <fstream>
+#include <thread>
+#include <tuple>
+#include <vector>
 
 using namespace qb;
 
@@ -37,6 +40,17 @@ std::string read_file(const std::string& path) {
     std::stringstream buffer;
     buffer << file.rdbuf();
     return buffer.str();
+}
+
+std::string to_base64url(const std::string &data) {
+    std::string encoded = crypto::base64::encode(data);
+    std::replace(encoded.begin(), encoded.end(), '+', '-');
+    std::replace(encoded.begin(), encoded.end(), '/', '_');
+    const auto padding = encoded.find('=');
+    if (padding != std::string::npos) {
+        encoded.erase(padding);
+    }
+    return encoded;
 }
 
 // Test basic JWT creation and verification with HMAC
@@ -357,6 +371,178 @@ TEST(CryptoJWT, CustomClaimValidation) {
     auto result3 = jwt::verify(token, verify_options);
     ASSERT_FALSE(result3.is_valid());
     ASSERT_EQ(result3.error, jwt::ValidationError::CLAIM_MISMATCH);
+}
+
+TEST(CryptoJWT, AlgorithmMappingCoversAllPublicValues) {
+    const std::vector<std::pair<jwt::Algorithm, std::string>> algorithms = {
+        {jwt::Algorithm::HS256, "HS256"}, {jwt::Algorithm::HS384, "HS384"},
+        {jwt::Algorithm::HS512, "HS512"}, {jwt::Algorithm::RS256, "RS256"},
+        {jwt::Algorithm::RS384, "RS384"}, {jwt::Algorithm::RS512, "RS512"},
+        {jwt::Algorithm::ES256, "ES256"}, {jwt::Algorithm::ES384, "ES384"},
+        {jwt::Algorithm::ES512, "ES512"}, {jwt::Algorithm::EdDSA, "EdDSA"},
+    };
+
+    for (const auto &[algorithm, name] : algorithms) {
+        EXPECT_EQ(jwt::algorithm_to_string(algorithm), name);
+        ASSERT_TRUE(jwt::algorithm_from_string(name).has_value());
+        EXPECT_EQ(jwt::algorithm_from_string(name).value(), algorithm);
+    }
+
+    EXPECT_EQ(jwt::algorithm_to_string(static_cast<jwt::Algorithm>(255)), "unknown");
+    EXPECT_FALSE(jwt::algorithm_from_string("none").has_value());
+}
+
+TEST(CryptoJWT, HmacSha384AndSha512Tokens) {
+    const std::map<std::string, std::string> payload = {{"scope", "extended"}};
+
+    for (const auto algorithm : {jwt::Algorithm::HS384, jwt::Algorithm::HS512}) {
+        jwt::CreateOptions create_options;
+        create_options.algorithm    = algorithm;
+        create_options.key          = "strong-shared-secret";
+        create_options.type         = "JWT";
+        create_options.content_type = "application/json";
+        create_options.key_id       = "key-1";
+        create_options.header_claims = {{"tenant", "qb"}};
+
+        const std::string token = jwt::create(payload, create_options);
+        const auto        decoded = jwt::decode(token);
+        EXPECT_NE(decoded.header.find("\"cty\":\"application/json\""),
+                  std::string::npos);
+        EXPECT_NE(decoded.header.find("\"kid\":\"key-1\""), std::string::npos);
+        EXPECT_NE(decoded.header.find("\"tenant\":\"qb\""), std::string::npos);
+
+        jwt::VerifyOptions verify_options;
+        verify_options.algorithm = algorithm;
+        verify_options.key       = "strong-shared-secret";
+
+        const auto result = jwt::verify(token, verify_options);
+        ASSERT_TRUE(result.is_valid());
+        EXPECT_EQ(result.payload.at("scope"), "extended");
+    }
+}
+
+TEST(CryptoJWT, RsaAndEcdsaSha384Sha512Tokens) {
+    const std::map<std::string, std::string> payload = {{"user_id", "12345"}};
+
+    auto [rsa_private_key, rsa_public_key] = crypto::generate_rsa_keypair(2048);
+    for (const auto algorithm : {jwt::Algorithm::RS384, jwt::Algorithm::RS512}) {
+        jwt::CreateOptions create_options;
+        create_options.algorithm = algorithm;
+        create_options.key       = rsa_private_key;
+        const std::string token  = jwt::create(payload, create_options);
+
+        jwt::VerifyOptions verify_options;
+        verify_options.algorithm = algorithm;
+        verify_options.key       = rsa_public_key;
+        EXPECT_TRUE(jwt::verify(token, verify_options).is_valid());
+    }
+
+    const std::vector<std::tuple<jwt::Algorithm, std::string>> ec_cases = {
+        {jwt::Algorithm::ES384, "secp384r1"},
+        {jwt::Algorithm::ES512, "secp521r1"},
+    };
+    for (const auto &[algorithm, curve] : ec_cases) {
+        auto [ec_private_key, ec_public_key] = crypto::generate_ec_keypair(curve);
+
+        jwt::CreateOptions create_options;
+        create_options.algorithm = algorithm;
+        create_options.key       = ec_private_key;
+        const std::string token  = jwt::create(payload, create_options);
+
+        jwt::VerifyOptions verify_options;
+        verify_options.algorithm = algorithm;
+        verify_options.key       = ec_public_key;
+        EXPECT_TRUE(jwt::verify(token, verify_options).is_valid());
+    }
+}
+
+TEST(CryptoJWT, DecodeAndVerifyRejectMalformedTokens) {
+    EXPECT_THROW(jwt::decode("one.two"), std::runtime_error);
+    EXPECT_THROW(jwt::decode("a.b.c"), std::runtime_error);
+
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm = jwt::Algorithm::HS256;
+    verify_options.key       = "secret";
+
+    EXPECT_EQ(jwt::verify("one.two", verify_options).error,
+              jwt::ValidationError::INVALID_FORMAT);
+    EXPECT_EQ(jwt::verify("a.b.c", verify_options).error,
+              jwt::ValidationError::INVALID_FORMAT);
+
+    const std::string missing_alg =
+        to_base64url("{}") + "." + to_base64url("{}") + ".signature";
+    EXPECT_EQ(jwt::verify(missing_alg, verify_options).error,
+              jwt::ValidationError::INVALID_FORMAT);
+
+    const std::string wrong_alg =
+        to_base64url("{\"alg\":\"HS512\"}") + "." + to_base64url("{}") + ".signature";
+    EXPECT_EQ(jwt::verify(wrong_alg, verify_options).error,
+              jwt::ValidationError::INVALID_SIGNATURE);
+
+    const std::string invalid_payload =
+        to_base64url("{\"alg\":\"HS256\"}") + ".a.signature";
+    EXPECT_EQ(jwt::verify(invalid_payload, verify_options).error,
+              jwt::ValidationError::INVALID_FORMAT);
+}
+
+TEST(CryptoJWT, StandardClaimMismatchErrors) {
+    const std::map<std::string, std::string> payload = {{"user_id", "12345"}};
+
+    jwt::CreateOptions create_options;
+    create_options.algorithm = jwt::Algorithm::HS256;
+    create_options.key       = "secret";
+    const std::string token = jwt::create_token(
+        payload, "issuer", "subject", "audience", std::chrono::hours(1),
+        std::chrono::seconds(0), "jwt-id", create_options);
+
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm = jwt::Algorithm::HS256;
+    verify_options.key       = "secret";
+
+    verify_options.verify_issuer = true;
+    verify_options.issuer        = "wrong";
+    EXPECT_EQ(jwt::verify(token, verify_options).error,
+              jwt::ValidationError::INVALID_ISSUER);
+
+    verify_options.verify_issuer  = false;
+    verify_options.verify_audience = true;
+    verify_options.audience        = "wrong";
+    EXPECT_EQ(jwt::verify(token, verify_options).error,
+              jwt::ValidationError::INVALID_AUDIENCE);
+
+    verify_options.verify_audience = false;
+    verify_options.verify_subject  = true;
+    verify_options.subject         = "wrong";
+    EXPECT_EQ(jwt::verify(token, verify_options).error,
+              jwt::ValidationError::INVALID_SUBJECT);
+
+    verify_options.verify_subject = false;
+    verify_options.verify_jti     = true;
+    verify_options.jti            = "wrong";
+    EXPECT_EQ(jwt::verify(token, verify_options).error,
+              jwt::ValidationError::CLAIM_MISMATCH);
+}
+
+TEST(CryptoJWT, NumericDateClaimsRejectMalformedValues) {
+    jwt::CreateOptions create_options;
+    create_options.algorithm = jwt::Algorithm::HS256;
+    create_options.key       = "secret";
+
+    const std::string bad_exp =
+        jwt::create({{"exp", "not-a-number"}}, create_options);
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm = jwt::Algorithm::HS256;
+    verify_options.key       = "secret";
+    verify_options.verify_expiration = true;
+    EXPECT_EQ(jwt::verify(bad_exp, verify_options).error,
+              jwt::ValidationError::INVALID_FORMAT);
+
+    const std::string bad_nbf =
+        jwt::create({{"nbf", "123x"}}, create_options);
+    verify_options.verify_expiration = false;
+    verify_options.verify_not_before = true;
+    EXPECT_EQ(jwt::verify(bad_nbf, verify_options).error,
+              jwt::ValidationError::INVALID_FORMAT);
 }
 
 int main(int argc, char **argv) {

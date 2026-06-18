@@ -68,20 +68,20 @@ jobs:
       - name: Install dependencies (Ubuntu)
         if: runner.os == 'Linux'
         run: |
-          ./scripts/ci-install-linux-dependencies.sh --gcc-14 --llvm-clang --google-test --google-benchmark --quic
+          ./scripts/ci-install-linux-dependencies.sh --profile build
           gcc-14 --version
           "clang-${LLVM_VERSION}" --version
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          ./scripts/ci-install-macos-dependencies.sh --google-test --google-benchmark --quic
+          ./scripts/ci-install-macos-dependencies.sh --profile build
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          ./scripts/ci-install-windows-dependencies.ps1 -GoogleTest -GoogleBenchmark -Quic
+          ./scripts/ci-install-windows-dependencies.ps1 -Profile build
 
       - name: Set build parameters
         id: build

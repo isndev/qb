@@ -22,7 +22,9 @@
  */
 
 #include <array>
+#include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -35,6 +37,7 @@
 #include <qb/io/transport/file.h>
 #include <qb/io/udp/socket.h>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -74,7 +77,119 @@ protected:
     }
 };
 
+namespace {
+
+class ScriptedStreamTransport {
+    std::string              _read_data;
+    std::size_t              _read_offset = 0u;
+    std::vector<std::size_t> _write_limits;
+    std::size_t              _write_index = 0u;
+    bool                     _fail_reads  = false;
+
+public:
+    std::string written;
+    bool        disconnected = false;
+    bool        closed       = false;
+
+    ScriptedStreamTransport() = default;
+
+    explicit ScriptedStreamTransport(std::string read_data,
+                                     std::vector<std::size_t> write_limits = {},
+                                     bool fail_reads = false)
+        : _read_data(std::move(read_data))
+        , _write_limits(std::move(write_limits))
+        , _fail_reads(fail_reads) {}
+
+    int read(char *data, std::size_t size) noexcept {
+        if (_fail_reads)
+            return -1;
+        if (_read_offset >= _read_data.size())
+            return 0;
+
+        const auto available = _read_data.size() - _read_offset;
+        const auto count     = std::min(size, available);
+        std::memcpy(data, _read_data.data() + _read_offset, count);
+        _read_offset += count;
+        return static_cast<int>(count);
+    }
+
+    int write(const char *data, std::size_t size) noexcept {
+        auto count = size;
+        if (_write_index < _write_limits.size())
+            count = std::min(count, _write_limits[_write_index++]);
+        written.append(data, count);
+        return static_cast<int>(count);
+    }
+
+    void disconnect() noexcept { disconnected = true; }
+    void close() noexcept { closed = true; }
+};
+
+} // namespace
+
 // ----------------------- File Stream Tests -----------------------
+
+TEST(StreamTemplates, InputReadLimitsFailuresAndConstAccess) {
+    qb::io::istream<ScriptedStreamTransport> limited;
+    limited.set_max_read_buffer_size(4u);
+    EXPECT_EQ(limited.read(), qb::io::ErrBufferLimitExceeded);
+    EXPECT_EQ(limited.pendingRead(), 0u);
+
+    qb::io::istream<ScriptedStreamTransport> failing;
+    failing.transport() = ScriptedStreamTransport{"", {}, true};
+    EXPECT_EQ(failing.read(), -1);
+    EXPECT_EQ(failing.pendingRead(), 0u);
+
+    qb::io::istream<ScriptedStreamTransport> input;
+    input.transport() = ScriptedStreamTransport{"payload"};
+    ASSERT_EQ(input.read(), 7);
+    EXPECT_EQ(input.pendingRead(), 7u);
+    input.eof();
+    EXPECT_EQ(input.pendingRead(), 7u);
+    input.flush(input.pendingRead());
+    input.eof();
+    EXPECT_EQ(input.pendingRead(), 0u);
+
+    const auto &const_input = input;
+    EXPECT_FALSE(const_input.transport().closed);
+}
+
+TEST(StreamTemplates, OutputPartialFullAndRejectedPublishes) {
+    qb::io::ostream<ScriptedStreamTransport> output;
+    output.transport() = ScriptedStreamTransport{"", {3u}};
+
+    ASSERT_NE(output.publish("abcdef", 6u), nullptr);
+    EXPECT_EQ(output.pendingWrite(), 6u);
+    EXPECT_EQ(output.write(), 3);
+    EXPECT_EQ(output.pendingWrite(), 3u);
+    EXPECT_EQ(output.write(), 3);
+    EXPECT_EQ(output.pendingWrite(), 0u);
+    EXPECT_EQ(output.transport().written, "abcdef");
+
+    const auto &const_output = output;
+    EXPECT_EQ(const_output.transport().written, "abcdef");
+}
+
+TEST(StreamTemplates, BidirectionalStreamPartialWritesAndWriteLimit) {
+    qb::io::stream<ScriptedStreamTransport> stream;
+    stream.transport() = ScriptedStreamTransport{"", {2u}};
+
+    ASSERT_NE(stream.publish("wxyz", 4u), nullptr);
+    EXPECT_EQ(stream.write(), 2);
+    EXPECT_EQ(stream.pendingWrite(), 2u);
+    EXPECT_EQ(stream.write(), 2);
+    EXPECT_EQ(stream.pendingWrite(), 0u);
+    EXPECT_EQ(stream.transport().written, "wxyz");
+
+    stream.set_max_write_buffer_size(3u);
+    EXPECT_EQ(stream.max_write_buffer_size(), 3u);
+    EXPECT_EQ(stream.publish("abcd", 4u), nullptr);
+    EXPECT_EQ(stream.pendingWrite(), 0u);
+
+    stream.close();
+    EXPECT_TRUE(stream.transport().disconnected);
+    EXPECT_TRUE(stream.transport().closed);
+}
 
 // Test file input stream
 TEST_F(StreamTest, FileInputStream) {

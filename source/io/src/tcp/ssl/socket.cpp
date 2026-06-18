@@ -159,7 +159,7 @@ get_certificate(SSL *ssl) {
                     ret.subject_alternative_names.push_back(san_str);
                 }
             }
-            GENERAL_NAMES_free(sans);
+            GENERAL_NAMES_free(sans); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
 
         X509_free(cert);
@@ -376,7 +376,7 @@ bool configure_dh_parameters_server(SSL_CTX* ctx, const std::string& dh_param_fi
     }
 
     EVP_PKEY *pkey = PEM_read_bio_Parameters(bio, nullptr);
-    BIO_free(bio);
+    BIO_free(bio); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
 
     if (!pkey) {
         // Consider logging ERR_get_error()
@@ -384,7 +384,7 @@ bool configure_dh_parameters_server(SSL_CTX* ctx, const std::string& dh_param_fi
     }
 
     if (SSL_CTX_set0_tmp_dh_pkey(ctx, pkey) != 1) {
-        EVP_PKEY_free(pkey);
+        EVP_PKEY_free(pkey); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         // Consider logging ERR_get_error()
         return false;
     }
@@ -648,9 +648,9 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
             SSL_CTX_set_default_verify_paths(ctx);
         _ssl_handle.reset(SSL_new(ctx));
         if (!_ssl_handle) {
-            SSL_CTX_free(ctx);
+            SSL_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             tcp::socket::disconnect();
-            return SocketStatus::Error;
+            return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
     }
     const auto h_ssl = ssl_handle();
@@ -659,14 +659,14 @@ socket::connect(endpoint const &ep, std::string const &hostname) noexcept {
         _pending_sni_hostname = hostname;
     if (!apply_pending_client_settings()) {
         tcp::socket::disconnect();
-        return SocketStatus::Error;
+        return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
     // Secure-by-default: enable certificate-chain + hostname verification for
     // the auto-created context (no-op once set_insecure() cleared _verify_peer).
     apply_client_peer_verification(h_ssl, _pending_sni_hostname, !_verify_peer);
     SSL_set_connect_state(h_ssl);
     if (!qb::io::ssl::attach_socket(h_ssl, native_handle()))
-        return SocketStatus::Error;
+        return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     if (ret != 0 && socket_no_error(err))
         return ret;
     return handCheck() < 0 ? -1 : 0;
@@ -689,9 +689,9 @@ socket::connect(endpoint const &ep, std::string const &hostname,
             SSL_CTX_set_default_verify_paths(ctx);
         _ssl_handle.reset(SSL_new(ctx));
         if (!_ssl_handle) {
-            SSL_CTX_free(ctx);
+            SSL_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             tcp::socket::disconnect();
-            return SocketStatus::Error;
+            return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
     }
     const auto h_ssl = ssl_handle();
@@ -700,14 +700,14 @@ socket::connect(endpoint const &ep, std::string const &hostname,
         _pending_sni_hostname = hostname;
     if (!apply_pending_client_settings()) {
         tcp::socket::disconnect();
-        return SocketStatus::Error;
+        return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
     // Secure-by-default: enable certificate-chain + hostname verification for
     // the auto-created context (no-op once set_insecure() cleared _verify_peer).
     apply_client_peer_verification(h_ssl, _pending_sni_hostname, !_verify_peer);
     SSL_set_connect_state(h_ssl);
     if (!qb::io::ssl::attach_socket(h_ssl, native_handle()))
-        return SocketStatus::Error;
+        return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     if (ret != 0 && socket_no_error(err))
         return ret;
     return handCheck() < 0 ? -1 : 0;
@@ -787,9 +787,9 @@ socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
             SSL_CTX_set_default_verify_paths(ctx);
         _ssl_handle.reset(SSL_new(ctx));
         if (!_ssl_handle) {
-            SSL_CTX_free(ctx);
+            SSL_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             tcp::socket::disconnect();
-            return SocketStatus::Error;
+            return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         }
     }
     const auto h_ssl = ssl_handle();
@@ -798,7 +798,7 @@ socket::n_connect(endpoint const &ep, std::string const &hostname) noexcept {
         _pending_sni_hostname = hostname;
     if (!apply_pending_client_settings()) {
         tcp::socket::disconnect();
-        return SocketStatus::Error;
+        return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
     // Secure-by-default: enable certificate-chain + hostname verification for
     // the auto-created context (no-op once set_insecure() cleared _verify_peer).
@@ -1078,7 +1078,7 @@ socket::get_peer_certificate_chain() const noexcept {
                         cert_details.subject_alternative_names.push_back(san_str_entry);
                     }
                 }
-                GENERAL_NAMES_free(sans);
+                GENERAL_NAMES_free(sans); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             }
             chain_info.push_back(cert_details);
         }

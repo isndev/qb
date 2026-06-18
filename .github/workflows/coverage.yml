@@ -27,7 +27,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          ./scripts/ci-install-linux-dependencies.sh --gcc-14 --coverage --google-test --quic
+          ./scripts/ci-install-linux-dependencies.sh --profile coverage
           gcc-14 --version
 
       - name: Configure

@@ -13,6 +13,7 @@
 #include <qb/io/config.h>
 #include <qb/io/async/event/all.h>
 #include <qb/io/async/protocol.h>
+#include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 
 namespace qb::io::async {

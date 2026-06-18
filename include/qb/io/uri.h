@@ -263,7 +263,7 @@ public:
      * @brief Conversion table for hexadecimal characters
      * Used for decoding %XX sequences to characters
      */
-    static const char tbl[256];
+    static const signed char tbl[256];
 
     /**
      * @brief Decodes a sequence of URI-encoded characters
@@ -279,7 +279,9 @@ public:
     static std::string
     decode(_IT begin, _IT end) {
         std::string out;
-        char        c, v1, v2{};
+        char c;
+        int  v1 = 0;
+        int  v2 = 0;
 
         while (begin != end) {
             c = *(begin++);

@@ -33,9 +33,14 @@ set(CORE_TESTS
         test-io.cpp
         test-event-combined.cpp
         test-connection-timeout.cpp
+        test-buffered-io.cpp
         test-file-operations.cpp
         test-stream-operations.cpp
         test-async-io.cpp
+        test-cpu.cpp
+        test-tcp-socket.cpp
+        test-udp-socket.cpp
+        test-uri-json.cpp
         test-session-text.cpp
         test-session-json.cpp
         test-io-plan.cpp
@@ -84,6 +89,7 @@ if(QB_HAS_SSL)
             test-crypto-advanced.cpp
             test-crypto-asymmetric.cpp
             test-crypto-jwt.cpp
+            test-ssl-socket.cpp
     )
 
     # Generate targets for each crypto test
