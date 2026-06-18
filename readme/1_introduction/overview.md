@@ -1,6 +1,6 @@
 # What qb is
 
-> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 qb is a C++20-first framework with optional C++23 support for building concurrent and distributed systems on the actor model, composed of two libraries: an actor engine (`qb-core`) layered on a standalone non-blocking asynchronous I/O runtime (`qb-io`).
 

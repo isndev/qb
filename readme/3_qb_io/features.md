@@ -1,6 +1,6 @@
 # qb-io feature catalog
 
-> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 An index of every `qb-io` capability — async engine, coroutines, transports, protocols, TLS, QUIC, crypto, compression, and utilities — with one-line summaries that link to the detail page that owns each topic.
 

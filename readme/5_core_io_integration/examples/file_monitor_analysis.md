@@ -1,6 +1,6 @@
 # File-monitor example: annotated walkthrough
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 A guided reading of `examples/core_io/file_monitor`, which wraps `qb::io::async::directory_watcher` inside an actor so file-system attribute changes arrive as ordinary typed events on a `VirtualCore`.
 

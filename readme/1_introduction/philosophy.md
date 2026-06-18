@@ -1,6 +1,6 @@
 # Design philosophy
 
-> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Evaluator · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 This page explains the design principles behind qb — share-nothing actor isolation, asynchronous-by-default I/O, a layered and modular architecture, explicit modern C++20/23, and lock-free inter-core messaging — and the rationale for each choice.
 

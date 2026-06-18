@@ -1,6 +1,6 @@
 # Native QUIC and HTTP/3 transport
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 `qb-io` exposes QUIC as an optional asynchronous I/O family built on libngtcp2 and OpenSSL: a reactor-driven endpoint owns one UDP socket, drives the ngtcp2 backend, routes packets by connection id, and dispatches typed lifecycle events for connections, streams, and datagrams.
 

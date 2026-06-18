@@ -1,6 +1,6 @@
 # qb-io invariants: threading, lifetime, and ownership
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 The rules the asynchronous stack assumes — one event loop per thread, where
 callbacks run, when objects may be destroyed, and who owns each socket — with

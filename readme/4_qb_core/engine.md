@@ -1,6 +1,6 @@
 # The engine: `qb::Main` and `VirtualCore`
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 `qb::Main` is the runtime that launches one worker thread per logical core, places actors onto those workers, and drives event processing until shutdown; `qb::VirtualCore` is the per-thread worker it manages on your behalf.
 
