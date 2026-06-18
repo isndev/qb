@@ -208,7 +208,7 @@ epoll_modify (EV_P_ int fd, int oev, int nev)
       return;
     }
   else
-    assert (("libev: I/O watcher with invalid fd found in epoll_ctl", errno != EBADF && errno != ELOOP && errno != EINVAL));
+    EV_ASSERT_MSG (errno != EBADF && errno != ELOOP && errno != EINVAL, "libev: I/O watcher with invalid fd found in epoll_ctl");
 
   fd_kill (EV_A_ fd);
 
@@ -246,8 +246,15 @@ epoll_poll (EV_P_ ev_tstamp timeout)
 
       int fd = (uint32_t)ev->data.u64; /* mask out the lower 32 bits */
 #if EV_VERIFY >= 2
-      assert (("libev: epoll event fd out of range", fd >= 0 && fd < anfdmax));
+      EV_ASSERT_MSG (fd >= 0 && fd < anfdmax, "libev: epoll event fd out of range");
 #endif
+      /* the kernel only ever returns fds we registered, which stay < anfdmax
+       * (anfds is never shrunk), so this never trips in correct operation; the
+       * guard hardens the unconditional anfds[fd] indexing below against a
+       * corrupted/foreign event, mirroring the kqueue backend. */
+      if (ecb_expect_false (fd < 0 || fd >= anfdmax))
+        continue;
+
       int want = anfds [fd].events;
       int got  = (ev->events & (EPOLLOUT | EPOLLERR | EPOLLHUP) ? EV_WRITE : 0)
                | (ev->events & (EPOLLIN  | EPOLLERR | EPOLLHUP | EPOLLRDHUP) ? EV_READ  : 0);
@@ -308,7 +315,7 @@ epoll_poll (EV_P_ ev_tstamp timeout)
     {
       int fd = epoll_eperms [i];
 #if EV_VERIFY >= 2
-      assert (("libev: epoll_eperms fd out of range", fd >= 0 && fd < anfdmax));
+      EV_ASSERT_MSG (fd >= 0 && fd < anfdmax, "libev: epoll_eperms fd out of range");
 #endif
       unsigned char events = anfds [fd].events & (EV_READ | EV_WRITE);
 

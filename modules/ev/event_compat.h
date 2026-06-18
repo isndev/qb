@@ -25,9 +25,8 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifdef __cplusplus
-extern "C" {
-#endif
+#ifndef EVENT_COMPAT_H_
+#define EVENT_COMPAT_H_
 
 #ifdef _WIN32
 # define WIN32_LEAN_AND_MEAN
@@ -42,6 +41,16 @@ typedef unsigned short u_short;
 #endif
 
 #include <stdarg.h>
+
+#ifdef EV_EVENT_H
+# include EV_EVENT_H
+#else
+# include "event.h"
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Fix so that ppl dont have to run with <sys/queue.h> */
 #ifndef TAILQ_ENTRY
@@ -224,3 +233,5 @@ int evtag_unmarshal_timeval(struct evbuffer *evbuf, uint32_t need_tag,
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* EVENT_COMPAT_H_ */

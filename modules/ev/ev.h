@@ -100,19 +100,19 @@ EV_CPP(extern "C" {)
 #endif
 
 #ifndef EV_PREPARE_ENABLE
-# define EV_PREPARE_ENABLE 0//EV_FEATURE_WATCHERS
+# define EV_PREPARE_ENABLE 0 /* EV_FEATURE_WATCHERS */
 #endif
 
 #ifndef EV_CHECK_ENABLE
-# define EV_CHECK_ENABLE 0//EV_FEATURE_WATCHERS
+# define EV_CHECK_ENABLE 0 /* EV_FEATURE_WATCHERS */
 #endif
 
 #ifndef EV_IDLE_ENABLE
-# define EV_IDLE_ENABLE 0//EV_FEATURE_WATCHERS
+# define EV_IDLE_ENABLE 0 /* EV_FEATURE_WATCHERS */
 #endif
 
 #ifndef EV_FORK_ENABLE
-# define EV_FORK_ENABLE 0//EV_FEATURE_WATCHERS
+# define EV_FORK_ENABLE 0 /* EV_FEATURE_WATCHERS */
 #endif
 
 #ifndef EV_CLEANUP_ENABLE
@@ -127,16 +127,16 @@ EV_CPP(extern "C" {)
 # ifdef _WIN32
 #  define EV_CHILD_ENABLE 0
 # else
-#  define EV_CHILD_ENABLE 0//EV_FEATURE_WATCHERS
+#  define EV_CHILD_ENABLE 0 /* EV_FEATURE_WATCHERS */
 #endif
 #endif
 
 #ifndef EV_ASYNC_ENABLE
-# define EV_ASYNC_ENABLE 0//EV_FEATURE_WATCHERS
+# define EV_ASYNC_ENABLE 0 /* EV_FEATURE_WATCHERS */
 #endif
 
 #ifndef EV_EMBED_ENABLE
-# define EV_EMBED_ENABLE 0//EV_FEATURE_WATCHERS
+# define EV_EMBED_ENABLE 0 /* EV_FEATURE_WATCHERS */
 #endif
 
 #ifndef EV_WALK_ENABLE
@@ -157,6 +157,7 @@ EV_CPP(extern "C" {)
 #endif
 typedef EV_TSTAMP_T ev_tstamp;
 
+#include <stddef.h> /* for offsetof */
 #include <string.h> /* for memmove */
 
 #ifndef EV_ATOMIC_T
@@ -196,7 +197,7 @@ struct ev_loop;
 #endif
 
 /* EV_INLINE is used for functions in header files */
-#if __STDC_VERSION__ >= 199901L || __GNUC__ >= 3
+#if defined(__cplusplus) || (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || (defined(__GNUC__) && __GNUC__ >= 3)
 # define EV_INLINE static inline
 #else
 # define EV_INLINE static
@@ -316,6 +317,44 @@ typedef struct ev_watcher_time
 {
   EV_WATCHER_TIME (ev_watcher_time)
 } ev_watcher_time;
+
+EV_INLINE int *
+ev_watcher_active_ (void *w) EV_NOEXCEPT
+{
+  return (int *)(void *)((char *)w + offsetof (ev_watcher, active));
+}
+
+EV_INLINE const int *
+ev_watcher_active_const_ (const void *w) EV_NOEXCEPT
+{
+  return (const int *)(const void *)((const char *)w + offsetof (ev_watcher, active));
+}
+
+EV_INLINE int *
+ev_watcher_pending_ (void *w) EV_NOEXCEPT
+{
+  return (int *)(void *)((char *)w + offsetof (ev_watcher, pending));
+}
+
+EV_INLINE const int *
+ev_watcher_pending_const_ (const void *w) EV_NOEXCEPT
+{
+  return (const int *)(const void *)((const char *)w + offsetof (ev_watcher, pending));
+}
+
+#if EV_MINPRI != EV_MAXPRI
+EV_INLINE int *
+ev_watcher_priority_ (void *w) EV_NOEXCEPT
+{
+  return (int *)(void *)((char *)w + offsetof (ev_watcher, priority));
+}
+
+EV_INLINE const int *
+ev_watcher_priority_const_ (const void *w) EV_NOEXCEPT
+{
+  return (const int *)(const void *)((const char *)w + offsetof (ev_watcher, priority));
+}
+#endif
 
 /* invoked when fd is either EV_READable or EV_WRITEable */
 /* revent EV_READ, EV_WRITE */
@@ -656,9 +695,9 @@ EV_API_DECL void ev_unref (EV_P) EV_NOEXCEPT;
 
 /*
  * One-shot: register temporary I/O and/or a timer, invoke cb once, then tear down.
- * - fd >= 0: watch that fd for (events & EV_READ|EV_WRITE); fd < 0 skips I/O.
+ * - fd >= 0 and (events & EV_READ|EV_WRITE): watch that fd; otherwise skip I/O.
  * - timeout >= 0.: one-shot timer after that delay; timeout < 0. skips the timer (no "wait forever" here).
- * - If cb is NULL, or both I/O and timer are skipped (fd < 0 and timeout < 0.), the call does nothing.
+ * - If cb is NULL, or both I/O and timer are skipped, the call does nothing.
  */
 EV_API_DECL void ev_once (EV_P_ int fd, int events, ev_tstamp timeout, void (*cb)(int revents, void *arg), void *arg) EV_NOEXCEPT;
 
@@ -694,8 +733,8 @@ EV_API_DECL void ev_resume  (EV_P) EV_NOEXCEPT;
 /* these may evaluate ev multiple times, and the other arguments at most once */
 /* either use ev_init + ev_TYPE_set, or the ev_TYPE_init macro, below, to first initialise a watcher */
 #define ev_init(ev,cb_) do {			\
-  ((ev_watcher *)(void *)(ev))->active  =	\
-  ((ev_watcher *)(void *)(ev))->pending = 0;	\
+  *ev_watcher_active_ (ev)  =			\
+  *ev_watcher_pending_ (ev) = 0;		\
   ev_set_priority ((ev), 0);			\
   ev_set_cb ((ev), cb_);			\
 } while (0)
@@ -711,7 +750,7 @@ EV_API_DECL int ev_win32_socket_fd (uintptr_t handle) EV_NOEXCEPT;
 #ifdef __cplusplus
 #define ev_timer_set(ev,after_,repeat_)      do { (ev)->at = (after_); (ev)->repeat = (repeat_); } while (0)
 #else
-#define ev_timer_set(ev,after_,repeat_)      do { ((ev_watcher_time *)(ev))->at = (after_); (ev)->repeat = (repeat_); } while (0)
+#define ev_timer_set(ev,after_,repeat_)      do { (ev)->at = (after_); (ev)->repeat = (repeat_); } while (0)
 #endif
 #define ev_periodic_set(ev,ofs_,ival_,rcb_)  do { (ev)->offset = (ofs_); (ev)->interval = (ival_); (ev)->reschedule_cb = (rcb_); } while (0)
 #define ev_signal_set(ev,signum_)            do { (ev)->signum = (signum_); } while (0)
@@ -742,25 +781,25 @@ EV_API_DECL int ev_win32_socket_fd (uintptr_t handle) EV_NOEXCEPT;
 #define ev_cleanup_init(ev,cb)               do { ev_init ((ev), (cb)); ev_cleanup_set ((ev)); } while (0)
 #define ev_async_init(ev,cb)                 do { ev_init ((ev), (cb)); ev_async_set ((ev)); } while (0)
 
-#define ev_is_pending(ev)                    (0 + ((ev_watcher *)(void *)(ev))->pending) /* ro, true when watcher is waiting for callback invocation */
-#define ev_is_active(ev)                     (0 + ((ev_watcher *)(void *)(ev))->active) /* ro, true when the watcher has been started */
+#define ev_is_pending(ev)                    (0 + *ev_watcher_pending_const_ (ev)) /* ro, true when watcher is waiting for callback invocation */
+#define ev_is_active(ev)                     (0 + *ev_watcher_active_const_ (ev)) /* ro, true when the watcher has been started */
 
 #define ev_cb_(ev)                           (ev)->cb /* rw */
-#define ev_cb(ev)                            (memmove (&ev_cb_ (ev), &((ev_watcher *)(ev))->cb, sizeof (ev_cb_ (ev))), (ev)->cb)
+#define ev_cb(ev)                            (memmove (&ev_cb_ (ev), (const char *)(const void *)(ev) + offsetof (ev_watcher, cb), sizeof (ev_cb_ (ev))), (ev)->cb)
 
 #if EV_MINPRI == EV_MAXPRI
 # define ev_priority(ev)                     ((ev), EV_MINPRI)
 # define ev_set_priority(ev,pri)             ((ev), (pri))
 #else
-# define ev_priority(ev)                     (+(((ev_watcher *)(void *)(ev))->priority))
-# define ev_set_priority(ev,pri)             (   (ev_watcher *)(void *)(ev))->priority = (pri)
+# define ev_priority(ev)                     (+*ev_watcher_priority_const_ (ev))
+# define ev_set_priority(ev,pri)             (*ev_watcher_priority_ (ev) = (pri))
 #endif
 
-#define ev_periodic_at(ev)                   (+((ev_watcher_time *)(ev))->at)
+#define ev_periodic_at(ev)                   (+(ev)->at)
 
 #ifndef ev_set_cb
 /* memmove is used here to avoid strict aliasing violations, and hopefully is optimized out by any reasonable compiler */
-# define ev_set_cb(ev,cb_)                   (ev_cb_ (ev) = (cb_), memmove (&((ev_watcher *)(ev))->cb, &ev_cb_ (ev), sizeof (ev_cb_ (ev))))
+# define ev_set_cb(ev,cb_)                   (ev_cb_ (ev) = (cb_), memmove ((char *)(void *)(ev) + offsetof (ev_watcher, cb), &ev_cb_ (ev), sizeof (ev_cb_ (ev))))
 #endif
 
 /* stopping (enabling, adding) a watcher does nothing if it is already running */
@@ -876,4 +915,3 @@ EV_API_DECL void ev_async_send     (EV_P_ ev_async *w) EV_NOEXCEPT;
 EV_CPP(})
 
 #endif
-

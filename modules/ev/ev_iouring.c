@@ -48,6 +48,23 @@
 # define IORING_SETUP_SINGLE_ISSUER (1U << 12)
 #endif
 
+/* CQ-overflow handling flags (stable UAPI, but define defensively for old headers). */
+#ifndef IORING_SQ_CQ_OVERFLOW
+# define IORING_SQ_CQ_OVERFLOW (1U << 1)
+#endif
+#ifndef IORING_ENTER_GETEVENTS
+# define IORING_ENTER_GETEVENTS (1U << 0)
+#endif
+
+/* NOTE: multishot POLL_ADD (IORING_POLL_ADD_MULTI, kernel 5.13+) was evaluated as
+ * an optimisation to drop the one-shot re-arm SQE per event. It is intentionally
+ * NOT used: multishot is level-triggered and re-armed by the kernel, so a
+ * persistently-ready fd (e.g. a writable socket) delivers completions
+ * continuously, which violates libev's "one event per loop iteration, re-arm
+ * only if still wanted" contract that qb-io depends on (it broke partial-write/
+ * EOS accounting and hung TCP sessions in testing). The one-shot + fd_reify
+ * re-arm path below matches the epoll backend's semantics exactly. */
+
 #ifndef ECANCELED
 # define ECANCELED 125 /* Linux asm-generic/errno.h */
 #endif
@@ -106,6 +123,7 @@ static int iouring_validate_ptr_offsets(const struct io_uring_params *p,
   if ((uint64_t)p->sq_off.head + u > (uint64_t)sq_sz
       || (uint64_t)p->sq_off.tail + u > (uint64_t)sq_sz
       || (uint64_t)p->sq_off.ring_mask + u > (uint64_t)sq_sz
+      || (uint64_t)p->sq_off.flags + u > (uint64_t)sq_sz
       || (uint64_t)p->sq_off.array + (uint64_t)p->sq_entries * u > (uint64_t)sq_sz)
     return -1;
 
@@ -127,6 +145,38 @@ static inline int sys_io_uring_enter(int fd, unsigned to_submit, unsigned min_co
   return syscall(__NR_io_uring_enter, fd, to_submit, min_complete, flags, sig, sigsz);
 }
 
+static void iouring_account_consumed(EV_P_ unsigned consumed) {
+  if (consumed >= iouring_to_submit)
+    iouring_to_submit = 0;
+  else
+    iouring_to_submit -= consumed;
+}
+
+static int iouring_enter_submit(EV_P_ unsigned to_submit, const char *context) {
+  for (;;) {
+    int r;
+
+    EV_RELEASE_CB;
+    r = sys_io_uring_enter(iouring_fd, to_submit, 0, 0, 0, 0);
+    EV_ACQUIRE_CB;
+
+    if (r < 0 && errno == EINTR)
+      continue;
+
+    if (r < 0)
+      ev_syserr(context);
+
+    if (ecb_expect_false(r == 0 && to_submit != 0)) {
+      errno = EIO;
+      ev_syserr("(libev) io_uring_enter consumed no pending SQEs");
+    }
+
+    iouring_account_consumed(EV_A_ (unsigned)r);
+    ECB_MEMORY_FENCE_ACQUIRE;
+    return r;
+  }
+}
+
 /* Peek one SQE slot; does not flush. Caller must ensure kernel has consumed SQEs if full. */
 static struct io_uring_sqe *iouring_sqe_try(EV_P) {
   unsigned tail = *iouring_sq_tail;
@@ -137,24 +187,11 @@ static struct io_uring_sqe *iouring_sqe_try(EV_P) {
 
 /* Push pending SQEs to the kernel so the SQ ring frees slots (single-threaded libev loop). */
 static void iouring_sq_flush(EV_P) {
-  for (;;) {
-    unsigned n = iouring_to_submit;
-    if (!n)
-      return;
-    EV_RELEASE_CB;
-    int r = sys_io_uring_enter(iouring_fd, n, 0, 0, 0, 0);
-    EV_ACQUIRE_CB;
-    if (r < 0 && errno == EINTR)
-      continue;
-    if (r < 0)
-      ev_syserr("(libev) io_uring_enter (flush sq)");
-    if (iouring_to_submit >= n)
-      iouring_to_submit -= n;
-    else
-      iouring_to_submit = 0;
-    ECB_MEMORY_FENCE_ACQUIRE;
+  unsigned n = iouring_to_submit;
+  if (!n)
     return;
-  }
+
+  (void)iouring_enter_submit(EV_A_ n, "(libev) io_uring_enter (flush sq)");
 }
 
 static struct io_uring_sqe *iouring_get_sqe(EV_P) {
@@ -201,6 +238,8 @@ static void iouring_modify(EV_P_ int fd, int oev, int nev)
 {
   if (oev) {
     struct io_uring_sqe *sqe = iouring_get_sqe(EV_A);
+    if (ecb_expect_false(!sqe))
+      return;
 
     memset(sqe, 0, sizeof(*sqe));
     sqe->opcode = IORING_OP_POLL_REMOVE;
@@ -213,6 +252,8 @@ static void iouring_modify(EV_P_ int fd, int oev, int nev)
 
   if (nev) {
     struct io_uring_sqe *sqe = iouring_get_sqe(EV_A);
+    if (ecb_expect_false(!sqe))
+      return;
 
     memset(sqe, 0, sizeof(*sqe));
     sqe->opcode = IORING_OP_POLL_ADD;
@@ -224,103 +265,10 @@ static void iouring_modify(EV_P_ int fd, int oev, int nev)
   }
 }
 
-static void iouring_poll(EV_P_ ev_tstamp timeout)
+/* Drain all currently-visible CQEs into the libev pending queue, advancing the
+ * CQ head. Bounded by IOURING_CQ_DRAIN_BUDGET to keep one iteration fair. */
+static void iouring_cq_drain(EV_P)
 {
-  if (timeout >= 0.) {
-    ev_tstamp tfd_to = mn_now + timeout;
-
-    if (tfd_to < iouring_tfd_to) {
-      struct itimerspec its;
-      iouring_tfd_to = tfd_to;
-      EV_TS_SET(its.it_interval, 0.);
-      EV_TS_SET(its.it_value, tfd_to);
-      if (ecb_expect_false(timerfd_settime(iouring_tfd, TFD_TIMER_ABSTIME, &its, 0) < 0))
-        ev_syserr("(libev) io_uring timerfd_settime");
-    }
-  }
-
-  unsigned to_sub = iouring_to_submit;
-  /* Must sleep until a CQ event (POLL_ADD one-shots, timerfd, other fds). */
-  int blocking = (timeout < 0.) || (timeout > 0.);
-
-  EV_RELEASE_CB;
-  int ret = 0;
-
-  if (to_sub > 0) {
-    ret = sys_io_uring_enter(iouring_fd, to_sub, 0, 0, 0, 0);
-    if (ret < 0 && errno == EINTR) {
-      EV_ACQUIRE_CB;
-      return;
-    }
-    if (ret < 0) {
-      EV_ACQUIRE_CB;
-      ev_syserr("(libev) io_uring_enter (submit)");
-    }
-    if (iouring_to_submit >= to_sub)
-      iouring_to_submit -= to_sub;
-    else
-      iouring_to_submit = 0;
-    ECB_MEMORY_FENCE_ACQUIRE;
-  }
-
-  /* Wait for completion traffic on the ring fd (avoids GETEVENTS with min_complete
-   * when nothing is in flight, which can misbehave). Skip sleep if CQ already has work. */
-  if (blocking) {
-    ECB_MEMORY_FENCE_ACQUIRE;
-    if (*iouring_cq_head == *iouring_cq_tail) {
-      struct pollfd pfd;
-      int pms;
-      double msd;
-
-      pfd.fd = iouring_fd;
-      pfd.events = (short)(POLLIN | POLLERR | POLLHUP);
-      pfd.revents = 0;
-      if (timeout < 0.)
-        pms = -1;
-      else {
-        /* Prefer deadline from timerfd arm (absolute) so poll matches sub-ms timer wakeups. */
-        if (iouring_tfd_to < EV_TSTAMP_HUGE) {
-          if (iouring_tfd_to > mn_now) {
-            msd = (iouring_tfd_to - mn_now) * 1000. + 0.9999;
-            if (msd >= (double)INT_MAX)
-              pms = INT_MAX;
-            else if (msd <= 0.)
-              pms = 0;
-            else
-              pms = (int)msd;
-          } else
-            pms = 0; /* timer already elapsed; poll once without sleeping */
-        } else {
-          msd = EV_TS_TO_MSEC(timeout);
-          if (msd >= (double)INT_MAX)
-            pms = INT_MAX;
-          else if (msd <= 0.)
-            pms = 0;
-          else
-            pms = (int)msd;
-        }
-      }
-      for (;;) {
-        ret = poll(&pfd, 1, pms);
-        if (ret < 0 && errno == EINTR) {
-          EV_ACQUIRE_CB;
-          return;
-        }
-        if (ret < 0) {
-          EV_ACQUIRE_CB;
-          ev_syserr("(libev) poll (io_uring fd)");
-        }
-        if (ecb_expect_false(pfd.revents & (POLLERR | POLLNVAL | POLLHUP))) {
-          EV_ACQUIRE_CB;
-          ev_syserr("(libev) io_uring fd poll error");
-        }
-        break;
-      }
-    }
-  }
-
-  EV_ACQUIRE_CB;
-
   ECB_MEMORY_FENCE_ACQUIRE;
   unsigned head = *iouring_cq_head;
   unsigned mask = *iouring_cq_ring_mask;
@@ -336,7 +284,7 @@ static void iouring_poll(EV_P_ ev_tstamp timeout)
     if (ecb_expect_false(++drained > IOURING_CQ_DRAIN_BUDGET))
       break;
 
-    struct io_uring_cqe *cqe = &((struct io_uring_cqe *)((char *)iouring_cq_ring + iouring_cq_cqes))[head & mask];
+    struct io_uring_cqe *cqe = &((struct io_uring_cqe *)(void *)((char *)iouring_cq_ring + iouring_cq_cqes))[head & mask];
     uint64_t user_data = cqe->user_data;
 
     if (user_data == USERDATA_REMOVE || user_data == 0) goto skip;
@@ -388,6 +336,112 @@ static void iouring_poll(EV_P_ ev_tstamp timeout)
 
   ECB_MEMORY_FENCE_RELEASE;
   *iouring_cq_head = head;
+}
+
+static void iouring_poll(EV_P_ ev_tstamp timeout)
+{
+  if (timeout >= 0.) {
+    ev_tstamp tfd_to = mn_now + timeout;
+
+    if (tfd_to < iouring_tfd_to) {
+      struct itimerspec its;
+      iouring_tfd_to = tfd_to;
+      EV_TS_SET(its.it_interval, 0.);
+      EV_TS_SET(its.it_value, tfd_to);
+      if (ecb_expect_false(timerfd_settime(iouring_tfd, TFD_TIMER_ABSTIME, &its, 0) < 0))
+        ev_syserr("(libev) io_uring timerfd_settime");
+    }
+  }
+
+  /* Must sleep until a CQ event (POLL_ADD one-shots, timerfd, other fds). */
+  int blocking = (timeout < 0.) || (timeout > 0.);
+
+  int ret = 0;
+
+  while (iouring_to_submit > 0)
+    (void)iouring_enter_submit(EV_A_ iouring_to_submit, "(libev) io_uring_enter (submit)");
+
+  /* Wait for completion traffic on the ring fd (avoids GETEVENTS with min_complete
+   * when nothing is in flight, which can misbehave). Skip sleep if CQ already has work. */
+  if (blocking) {
+    ECB_MEMORY_FENCE_ACQUIRE;
+    if (*iouring_cq_head == *iouring_cq_tail) {
+      struct pollfd pfd;
+      int pms;
+      double msd;
+
+      pfd.fd = iouring_fd;
+      pfd.events = (short)(POLLIN | POLLERR | POLLHUP);
+      pfd.revents = 0;
+      if (timeout < 0.)
+        pms = -1;
+      else {
+        /* Prefer deadline from timerfd arm (absolute) so poll matches sub-ms timer wakeups. */
+        if (iouring_tfd_to < EV_TSTAMP_HUGE) {
+          if (iouring_tfd_to > mn_now) {
+            msd = (iouring_tfd_to - mn_now) * 1000. + 0.9999;
+            if (msd >= (double)INT_MAX)
+              pms = INT_MAX;
+            else if (msd <= 0.)
+              pms = 0;
+            else
+              pms = (int)msd;
+          } else
+            pms = 0; /* timer already elapsed; poll once without sleeping */
+        } else {
+          msd = EV_TS_TO_MSEC(timeout);
+          if (msd >= (double)INT_MAX)
+            pms = INT_MAX;
+          else if (msd <= 0.)
+            pms = 0;
+          else
+            pms = (int)msd;
+        }
+      }
+      for (;;) {
+        EV_RELEASE_CB;
+        ret = poll(&pfd, 1, pms);
+        EV_ACQUIRE_CB;
+        if (ret < 0 && errno == EINTR) {
+          return;
+        }
+        if (ret < 0) {
+          ev_syserr("(libev) poll (io_uring fd)");
+        }
+        if (ecb_expect_false(pfd.revents & (POLLERR | POLLNVAL | POLLHUP))) {
+          ev_syserr("(libev) io_uring fd poll error");
+        }
+        break;
+      }
+    }
+  }
+
+  iouring_cq_drain (EV_A);
+
+  /* If the CQ ring overflowed (more completions than ring slots — easy to hit
+   * with many ready fds), modern kernels (IORING_FEAT_NODROP) park the surplus
+   * in a kernel-side backlog and raise IORING_SQ_CQ_OVERFLOW. That backlog is
+   * only migrated into the visible ring by an io_uring_enter(GETEVENTS); our
+   * normal wakeup uses poll(2) on the ring fd and never enters for completions,
+   * so without this flush an overflow could silently stall fds. */
+  ECB_MEMORY_FENCE_ACQUIRE;
+  if (ecb_expect_false (*iouring_sq_flags & IORING_SQ_CQ_OVERFLOW))
+    {
+      for (;;)
+        {
+          int r;
+          /* release the loop lock around the syscall, like every other
+           * io_uring_enter in this backend (release_cb/acquire_cb contract). */
+          EV_RELEASE_CB;
+          r = sys_io_uring_enter (iouring_fd, 0, 0, IORING_ENTER_GETEVENTS, 0, 0);
+          EV_ACQUIRE_CB;
+          if (r < 0 && errno == EINTR)
+            continue;
+          break;
+        }
+
+      iouring_cq_drain (EV_A);
+    }
 }
 
 inline_size int iouring_init(EV_P_ int flags)
@@ -443,14 +497,15 @@ inline_size int iouring_init(EV_P_ int flags)
     return 0;
   }
 
-  iouring_sq_head         = (unsigned *)((char *)iouring_sq_ring + p.sq_off.head);
-  iouring_sq_tail         = (unsigned *)((char *)iouring_sq_ring + p.sq_off.tail);
-  iouring_sq_ring_mask    = (unsigned *)((char *)iouring_sq_ring + p.sq_off.ring_mask);
-  iouring_sq_array        = (unsigned *)((char *)iouring_sq_ring + p.sq_off.array);
+  iouring_sq_head         = (unsigned *)(void *)((char *)iouring_sq_ring + p.sq_off.head);
+  iouring_sq_tail         = (unsigned *)(void *)((char *)iouring_sq_ring + p.sq_off.tail);
+  iouring_sq_ring_mask    = (unsigned *)(void *)((char *)iouring_sq_ring + p.sq_off.ring_mask);
+  iouring_sq_array        = (unsigned *)(void *)((char *)iouring_sq_ring + p.sq_off.array);
+  iouring_sq_flags        = (unsigned *)(void *)((char *)iouring_sq_ring + p.sq_off.flags);
 
-  iouring_cq_head         = (unsigned *)((char *)iouring_cq_ring + p.cq_off.head);
-  iouring_cq_tail         = (unsigned *)((char *)iouring_cq_ring + p.cq_off.tail);
-  iouring_cq_ring_mask    = (unsigned *)((char *)iouring_cq_ring + p.cq_off.ring_mask);
+  iouring_cq_head         = (unsigned *)(void *)((char *)iouring_cq_ring + p.cq_off.head);
+  iouring_cq_tail         = (unsigned *)(void *)((char *)iouring_cq_ring + p.cq_off.tail);
+  iouring_cq_ring_mask    = (unsigned *)(void *)((char *)iouring_cq_ring + p.cq_off.ring_mask);
   iouring_cq_cqes         = p.cq_off.cqes;
 
   iouring_tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);

@@ -98,7 +98,7 @@ kqueue_poll (EV_P_ ev_tstamp timeout)
     {
       ev_free (kqueue_events);
       kqueue_eventmax = array_nextsize (sizeof (struct kevent), kqueue_eventmax, kqueue_changecnt);
-      kqueue_events = (struct kevent *)ev_malloc (sizeof (struct kevent) * kqueue_eventmax);
+      kqueue_events = (struct kevent *)ev_malloc ((long)((size_t)sizeof (struct kevent) * (size_t)kqueue_eventmax));
     }
 
   EV_RELEASE_CB;
@@ -129,17 +129,17 @@ kqueue_poll (EV_P_ ev_tstamp timeout)
 
   for (i = 0; i < res; ++i)
     {
-      int fd = kqueue_events [i].ident;
+      int fd = (int)kqueue_events [i].ident;
 
 #if EV_VERIFY >= 2
-      assert (("libev: kqueue event fd out of range", fd >= 0 && fd < anfdmax));
+      EV_ASSERT_MSG (fd >= 0 && fd < anfdmax, "libev: kqueue event fd out of range");
 #endif
       if (ecb_expect_false (fd < 0 || fd >= anfdmax))
         continue;
 
       if (ecb_expect_false (kqueue_events [i].flags & EV_ERROR))
         {
-          int err = kqueue_events [i].data;
+          int err = (int)kqueue_events [i].data;
 
           /* we are only interested in errors for fds that we are interested in :) */
           if (anfds [fd].events)
@@ -152,13 +152,13 @@ kqueue_poll (EV_P_ ev_tstamp timeout)
                     kqueue_modify (EV_A_ fd, 0, anfds [fd].events);
                   else
                     {
-                      assert (("libev: kqueue found invalid fd", 0));
+                      EV_ASSERT_MSG (0, "libev: kqueue found invalid fd");
                       fd_kill (EV_A_ fd);
                     }
                 }
               else /* on all other errors, we error out on the fd */
                 {
-                  assert (("libev: kqueue found invalid fd", 0));
+                  EV_ASSERT_MSG (0, "libev: kqueue found invalid fd");
                   fd_kill (EV_A_ fd);
                 }
             }
@@ -177,7 +177,7 @@ kqueue_poll (EV_P_ ev_tstamp timeout)
     {
       ev_free (kqueue_events);
       kqueue_eventmax = array_nextsize (sizeof (struct kevent), kqueue_eventmax, kqueue_eventmax + 1);
-      kqueue_events = (struct kevent *)ev_malloc (sizeof (struct kevent) * kqueue_eventmax);
+      kqueue_events = (struct kevent *)ev_malloc ((long)((size_t)sizeof (struct kevent) * (size_t)kqueue_eventmax));
     }
 }
 
@@ -186,6 +186,7 @@ int
 kqueue_init (EV_P_ int flags)
 {
   int kq;
+  (void) flags;
 
   /* initialize the kernel queue */
   kqueue_fd_pid = getpid ();
@@ -201,7 +202,7 @@ kqueue_init (EV_P_ int flags)
   backend_poll    = kqueue_poll;
 
   kqueue_eventmax = 64; /* initial number of events receivable per poll */
-  kqueue_events = (struct kevent *)ev_malloc (sizeof (struct kevent) * kqueue_eventmax);
+  kqueue_events = (struct kevent *)ev_malloc ((long)((size_t)sizeof (struct kevent) * (size_t)kqueue_eventmax));
 
   kqueue_changes   = 0;
   kqueue_changemax = 0;
@@ -253,4 +254,3 @@ kqueue_fork (EV_P)
 
 /* sys/event.h defines EV_ERROR */
 #undef EV_ERROR
-

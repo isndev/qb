@@ -78,7 +78,7 @@ port_associate_and_check (EV_P_ int fd, int ev)
     {
       if (errno == EBADFD)
         {
-          assert (("libev: port_associate found invalid fd", errno != EBADFD));
+          EV_ASSERT_MSG (errno != EBADFD, "libev: port_associate found invalid fd");
           fd_kill (EV_A_ fd);
         }
       else
@@ -163,7 +163,7 @@ port_init (EV_P_ int flags)
 
   backend_fd = (uintptr_t)(unsigned)portfd;
 
-  assert (("libev: PORT_SOURCE_FD must not be zero", PORT_SOURCE_FD));
+  EV_ASSERT_MSG (PORT_SOURCE_FD, "libev: PORT_SOURCE_FD must not be zero");
 
   fcntl (portfd, F_SETFD, FD_CLOEXEC); /* not sure if necessary, hopefully doesn't hurt */
 
