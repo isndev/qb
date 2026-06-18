@@ -30,6 +30,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 #include <qb/io/tcp/ssl/listener.h>
@@ -116,6 +117,98 @@ drive_server_handshake(qb::io::tcp::ssl::socket &socket) {
         std::this_thread::sleep_for(1ms);
     }
     ASSERT_TRUE(socket.handshake_complete());
+}
+
+class thread_join_guard {
+    std::thread          &_thread;
+    std::function<void()> _before_join;
+
+public:
+    template <typename Fn>
+    thread_join_guard(std::thread &thread, Fn &&before_join)
+        : _thread(thread)
+        , _before_join(std::forward<Fn>(before_join)) {}
+
+    thread_join_guard(const thread_join_guard &)            = delete;
+    thread_join_guard &operator=(const thread_join_guard &) = delete;
+
+    ~thread_join_guard() {
+        if (_thread.joinable()) {
+            if (_before_join) {
+                _before_join();
+            }
+            _thread.join();
+        }
+    }
+};
+
+::testing::AssertionResult
+read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size,
+             std::chrono::milliseconds timeout = 2s) {
+    auto       *out      = static_cast<char *>(data);
+    std::size_t received = 0;
+    const auto  deadline = std::chrono::steady_clock::now() + timeout;
+    int         last     = 0;
+
+    while (received < size && std::chrono::steady_clock::now() < deadline) {
+        const int ret = socket.read(out + received, size - received);
+        last          = ret;
+        if (ret > 0) {
+            received += static_cast<std::size_t>(ret);
+            continue;
+        }
+        if (ret < 0) {
+            return ::testing::AssertionFailure()
+                   << "SSL read failed after " << received << "/" << size << " bytes";
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+
+    if (received == size) {
+        return ::testing::AssertionSuccess();
+    }
+    return ::testing::AssertionFailure()
+           << "timed out waiting for " << size << " SSL bytes; received " << received
+           << ", last read result=" << last;
+}
+
+::testing::AssertionResult
+write_exactly(qb::io::tcp::ssl::socket &socket, const void *data, std::size_t size,
+              std::chrono::milliseconds timeout = 2s) {
+    const auto *in       = static_cast<const char *>(data);
+    std::size_t written  = 0;
+    const auto  deadline = std::chrono::steady_clock::now() + timeout;
+    int         last     = 0;
+
+    while (written < size && std::chrono::steady_clock::now() < deadline) {
+        const int ret = socket.write(in + written, size - written);
+        last          = ret;
+        if (ret > 0) {
+            written += static_cast<std::size_t>(ret);
+            continue;
+        }
+        if (ret < 0) {
+            return ::testing::AssertionFailure()
+                   << "SSL write failed after " << written << "/" << size << " bytes";
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+
+    if (written == size) {
+        return ::testing::AssertionSuccess();
+    }
+    return ::testing::AssertionFailure()
+           << "timed out writing " << size << " SSL bytes; wrote " << written
+           << ", last write result=" << last;
+}
+
+bool
+record_thread_failure(::testing::AssertionResult result) {
+    if (result) {
+        return true;
+    }
+    ADD_FAILURE() << result.message();
+    return false;
 }
 
 } // namespace
@@ -437,28 +530,24 @@ TEST(SSLSocket, LoopbackHandshakeExposesNegotiatedState) {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
         ASSERT_EQ(listener.accept(server_socket), 0);
-        for (int i = 0; i < 200 && !server_socket.handshake_complete(); ++i) {
-            const int status = server_socket.handshake_status();
-            ASSERT_GE(status, 0);
-            if (status == 1) {
-                break;
-            }
-            std::this_thread::sleep_for(1ms);
-        }
-        ASSERT_TRUE(server_socket.handshake_complete());
+        drive_server_handshake(server_socket);
         EXPECT_FALSE(server_socket.get_negotiated_cipher_suite().empty());
         EXPECT_FALSE(server_socket.get_negotiated_tls_version().empty());
         EXPECT_EQ(server_socket.get_alpn_selected_protocol(), "h2");
         EXPECT_TRUE(server_socket.get_peer_certificate_details().subject.empty());
 
         char buffer[64] = {};
-        const int read = server_socket.read(buffer, sizeof(buffer));
-        ASSERT_GT(read, 0);
-        EXPECT_EQ(std::string_view(buffer, static_cast<std::size_t>(read)), "ping");
-        ASSERT_EQ(server_socket.write("pong", 4), 4);
+        if (!record_thread_failure(read_exactly(server_socket, buffer, 4))) {
+            return;
+        }
+        EXPECT_EQ(std::string_view(buffer, 4), "ping");
+        if (!record_thread_failure(write_exactly(server_socket, "pong", 4))) {
+            return;
+        }
         server_ok = true;
         std::this_thread::sleep_for(50ms);
     });
+    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
 
     while (!server_ready.load()) {
         std::this_thread::sleep_for(1ms);
@@ -496,14 +585,12 @@ TEST(SSLSocket, LoopbackHandshakeExposesNegotiatedState) {
     qb::io::ssl::free_session(session);
     EXPECT_FALSE(session.is_valid());
 
-    ASSERT_EQ(client.write("ping", 4), 4);
+    ASSERT_TRUE(write_exactly(client, "ping", 4));
     char reply[64] = {};
-    const int read = client.read(reply, sizeof(reply));
-    ASSERT_EQ(read, 4);
-    EXPECT_EQ(std::string_view(reply, static_cast<std::size_t>(read)), "pong");
+    ASSERT_TRUE(read_exactly(client, reply, 4));
+    EXPECT_EQ(std::string_view(reply, 4), "pong");
     EXPECT_FALSE(client.request_client_post_handshake_auth());
 
-    server_thread.join();
     EXPECT_TRUE(server_ok.load());
 }
 
@@ -533,12 +620,17 @@ TEST(SSLSocket, BlockingUriAndEndpointTimeoutConnectVariantsReachLoopbackServer)
             drive_server_handshake(server_socket);
 
             char marker = 0;
-            ASSERT_EQ(server_socket.read(&marker, sizeof(marker)), 1);
+            if (!record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)))) {
+                return;
+            }
             const char reply = static_cast<char>(marker + 1);
-            ASSERT_EQ(server_socket.write(&reply, sizeof(reply)), 1);
+            if (!record_thread_failure(write_exactly(server_socket, &reply, sizeof(reply)))) {
+                return;
+            }
             ++server_count;
         }
     });
+    thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
 
     while (!server_ready.load()) {
         std::this_thread::sleep_for(1ms);
@@ -546,9 +638,9 @@ TEST(SSLSocket, BlockingUriAndEndpointTimeoutConnectVariantsReachLoopbackServer)
 
     auto exchange_marker = [](qb::io::tcp::ssl::socket &client, char marker) {
         ASSERT_TRUE(client.handshake_complete());
-        ASSERT_EQ(client.write(&marker, sizeof(marker)), 1);
+        ASSERT_TRUE(write_exactly(client, &marker, sizeof(marker)));
         char reply = 0;
-        ASSERT_EQ(client.read(&reply, sizeof(reply)), 1);
+        ASSERT_TRUE(read_exactly(client, &reply, sizeof(reply)));
         EXPECT_EQ(reply, static_cast<char>(marker + 1));
         client.disconnect();
     };
@@ -573,7 +665,6 @@ TEST(SSLSocket, BlockingUriAndEndpointTimeoutConnectVariantsReachLoopbackServer)
               0);
     exchange_marker(endpoint_timeout_client, 'c');
 
-    server_thread.join();
     EXPECT_EQ(server_count.load(), expected_connections);
 }
 
@@ -597,21 +688,25 @@ TEST(SSLSocket, IPv6AndUnixConnectVariantsCompleteHandshake) {
             ASSERT_EQ(listener.accept(server_socket), 0);
             drive_server_handshake(server_socket);
             char marker = 0;
-            ASSERT_EQ(server_socket.read(&marker, sizeof(marker)), 1);
+            if (!record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)))) {
+                return;
+            }
             EXPECT_EQ(marker, 'v');
-            ASSERT_EQ(server_socket.write("6", 1), 1);
+            if (!record_thread_failure(write_exactly(server_socket, "6", 1))) {
+                return;
+            }
         });
+        thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
 
         qb::io::tcp::ssl::socket client;
         client.set_insecure();
         ASSERT_EQ(client.connect_v6("::1", port), 0);
         ASSERT_TRUE(client.handshake_complete());
-        ASSERT_EQ(client.write("v", 1), 1);
+        ASSERT_TRUE(write_exactly(client, "v", 1));
         char reply = 0;
-        ASSERT_EQ(client.read(&reply, sizeof(reply)), 1);
+        ASSERT_TRUE(read_exactly(client, &reply, sizeof(reply)));
         EXPECT_EQ(reply, '6');
         client.disconnect();
-        server_thread.join();
     }
 
 #ifndef _WIN32
@@ -632,21 +727,25 @@ TEST(SSLSocket, IPv6AndUnixConnectVariantsCompleteHandshake) {
             ASSERT_EQ(listener.accept(server_socket), 0);
             drive_server_handshake(server_socket);
             char marker = 0;
-            ASSERT_EQ(server_socket.read(&marker, sizeof(marker)), 1);
+            if (!record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)))) {
+                return;
+            }
             EXPECT_EQ(marker, 'u');
-            ASSERT_EQ(server_socket.write("s", 1), 1);
+            if (!record_thread_failure(write_exactly(server_socket, "s", 1))) {
+                return;
+            }
         });
+        thread_join_guard server_join(server_thread, [&] { listener.disconnect(); });
 
         qb::io::tcp::ssl::socket client;
         client.set_insecure();
         ASSERT_EQ(client.connect(uri, 1s), 0);
         ASSERT_TRUE(client.handshake_complete());
-        ASSERT_EQ(client.write("u", 1), 1);
+        ASSERT_TRUE(write_exactly(client, "u", 1));
         char reply = 0;
-        ASSERT_EQ(client.read(&reply, sizeof(reply)), 1);
+        ASSERT_TRUE(read_exactly(client, &reply, sizeof(reply)));
         EXPECT_EQ(reply, 's');
         client.disconnect();
-        server_thread.join();
         listener.disconnect();
         std::remove(path.c_str());
     }
