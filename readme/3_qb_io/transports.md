@@ -1,6 +1,6 @@
 # TCP and UDP transports and sockets
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 Transports bind the buffered stream abstractions to concrete sockets, turning a raw `tcp::socket` or `udp::socket` into a read/write/buffer unit that the asynchronous I/O layer and protocols build on.
 

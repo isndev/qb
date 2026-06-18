@@ -1,6 +1,6 @@
 # Production readiness checklist
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 A pre-deployment checklist for qb services: how to build a portable binary, configure TLS, cap resource use, wire logging and signal handling, run the test suite, and decide what to monitor.
 

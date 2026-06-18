@@ -1,6 +1,6 @@
 # Testing the framework
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 How the qb test suite is organized, how to build and run it with CTest and GoogleTest, and how the coverage option is wired.
 

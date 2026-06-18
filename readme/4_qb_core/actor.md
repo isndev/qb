@@ -1,6 +1,6 @@
 # Writing actors with qb::Actor
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 How to define an actor, initialize it, handle events, send messages, manage its lifecycle, run periodic work, and expose it as a per-core service.
 

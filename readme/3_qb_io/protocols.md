@@ -1,6 +1,6 @@
 # Framing messages with protocols
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 A protocol is the pluggable framing strategy that turns a continuous byte stream into discrete application messages: it decides where one message ends and hands each complete message to the I/O component's handler.
 

@@ -1,6 +1,6 @@
 # Error handling and resilience
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 How qb propagates, contains, and reports failure: the exception policy, the `VirtualCore` fail-stop boundary, supervision patterns you build yourself, asynchronous I/O error events, and the `async::callback` lifetime rules.
 

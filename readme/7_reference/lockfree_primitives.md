@@ -1,6 +1,6 @@
 # Lock-free primitives
 
-> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Contributor · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 The lock-free building blocks under `qb/system/lockfree` — SPSC and MPSC ring buffers, an unbounded MPSC queue, and a spinlock — that back the engine's inter-core message path, plus the threading contract you must honor to use them directly.
 

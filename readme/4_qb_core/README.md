@@ -1,6 +1,6 @@
 # qb-core: the actor engine
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 `qb-core` is the C++20-first actor runtime layered on `qb-io`: it owns the `qb::Main` engine, the per-thread `qb::VirtualCore` workers, the `qb::Actor` base class, and the event-passing layer that connects them.
 

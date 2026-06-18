@@ -1,6 +1,6 @@
 # The async runtime: event loop, timers, and callbacks
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 `qb::io::async` is the single-threaded, libev-backed event loop that drives every non-blocking operation in `qb-io`: socket readiness, timers, scheduled callbacks, file-system watching, and the C++20 coroutine scheduler.
 

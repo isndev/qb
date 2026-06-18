@@ -1,6 +1,6 @@
 # Patterns cookbook
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 Task-oriented recipes for the interactions you reach for most often: one-shot and periodic timers, request/reply, broadcast fan-out, multi-stage pipelines, and graceful shutdown — each a complete, compilable snippet.
 

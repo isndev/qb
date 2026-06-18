@@ -1,6 +1,6 @@
 # Asynchronous operations inside actors
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (c++23)
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 2.0.0 (C++20 default, C++23 supported)
 
 How an actor uses the `qb-io` event loop — deferred callbacks, inactivity timers, and coroutines — to perform time-based and I/O-bound work without blocking its `VirtualCore`.
 
