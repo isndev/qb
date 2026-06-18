@@ -39,10 +39,12 @@ using namespace std::chrono_literals;
 
 class CoroutineWhenAll : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
@@ -70,12 +72,12 @@ TEST_F(CoroutineWhenAll, WhenAllMixedTypes) {
     };
 
     auto all_done_ptr = &all_done;
-    auto coro_fn = [all_done_ptr, &task1, &task2]() -> task<void> {
+    auto coro_fn      = [all_done_ptr, &task1, &task2]() -> task<void> {
         auto t1 = task1();
         auto t2 = task2();
 
         // Wait for both
-        int r1 = co_await t1;
+        int         r1 = co_await t1;
         std::string r2 = co_await t2;
 
         EXPECT_EQ(r1, 42);
@@ -108,11 +110,7 @@ TEST_F(CoroutineWhenAll, WhenAllHelper) {
     };
 
     auto coro_fn = [&worker]() -> task<void> {
-        auto [r1, r2, r3] = co_await when_all(
-            worker(10, 30),
-            worker(20, 20),
-            worker(30, 10)
-        );
+        auto [r1, r2, r3] = co_await when_all(worker(10, 30), worker(20, 20), worker(30, 10));
 
         EXPECT_EQ(r1, 10);
         EXPECT_EQ(r2, 20);
@@ -131,12 +129,12 @@ TEST_F(CoroutineWhenAll, WhenAllHelper) {
  * @brief Wait for multiple void coroutines
  */
 TEST_F(CoroutineWhenAll, WhenAllVoidTasks) {
-    constexpr int count = 5;
-    std::atomic<int> completed{0};
+    constexpr int     count = 5;
+    std::atomic<int>  completed{0};
     std::atomic<bool> all_done{false};
 
     auto completed_ptr = &completed;
-    auto all_done_ptr = &all_done;
+    auto all_done_ptr  = &all_done;
 
     auto worker_fn = [completed_ptr](int delay_ms) -> task<void> {
         co_await sleep(std::chrono::milliseconds(delay_ms));
@@ -172,7 +170,7 @@ TEST_F(CoroutineWhenAll, WhenAllVoidTasks) {
  * @brief Wait for vector of coroutines
  */
 TEST_F(CoroutineWhenAll, WhenAllVector) {
-    constexpr int count = 10;
+    constexpr int    count = 10;
     std::atomic<int> sum{0};
 
     auto worker_fn = [&sum](int value) -> task<int> {
@@ -220,10 +218,12 @@ TEST_F(CoroutineWhenAll, WhenAllEmpty) {
 
 class CoroutineWhenAny : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
@@ -242,11 +242,7 @@ TEST_F(CoroutineWhenAny, WhenAnyBasic) {
     };
 
     auto coro_fn = [&done, &worker]() -> task<void> {
-        auto [index, value] = co_await when_any(
-            worker(100, 1),
-            worker(50, 2),
-            worker(200, 3)
-        );
+        auto [index, value] = co_await when_any(worker(100, 1), worker(50, 2), worker(200, 3));
 
         // Second task (50ms) should win
         EXPECT_EQ(index, 1u);
@@ -266,7 +262,7 @@ TEST_F(CoroutineWhenAny, WhenAnyBasic) {
  * @brief Race with vector of coroutines
  */
 TEST_F(CoroutineWhenAny, WhenAnyVector) {
-    constexpr int count = 10;
+    constexpr int    count = 10;
     std::atomic<int> winner_index{-1};
 
     auto worker_fn = [](int index, int delay_ms) -> task<int> {
@@ -301,10 +297,12 @@ TEST_F(CoroutineWhenAny, WhenAnyVector) {
 
 class CoroutineRace : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
@@ -321,13 +319,9 @@ TEST_F(CoroutineRace, RaceBasic) {
     };
 
     auto coro_fn = [&worker]() -> task<void> {
-        auto [index, value] = co_await race(
-            worker(100, 1),
-            worker(30, 2),
-            worker(200, 3)
-        );
+        auto [index, value] = co_await race(worker(100, 1), worker(30, 2), worker(200, 3));
 
-        EXPECT_EQ(index, 1u);  // 30ms wins
+        EXPECT_EQ(index, 1u); // 30ms wins
         EXPECT_EQ(std::any_cast<int>(value), 2);
     };
 
@@ -342,10 +336,12 @@ TEST_F(CoroutineRace, RaceBasic) {
 
 class CoroutineTimeout : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
@@ -357,7 +353,7 @@ protected:
  */
 TEST_F(CoroutineTimeout, WithTimeoutSuccess) {
     std::atomic<bool> done{false};
-    auto done_ptr = &done;
+    auto              done_ptr = &done;
 
     auto coro_fn = [done_ptr]() -> task<void> {
         auto result = co_await coro_with_timeout(
@@ -365,8 +361,7 @@ TEST_F(CoroutineTimeout, WithTimeoutSuccess) {
                 co_await sleep(50ms);
                 co_return 42;
             }(),
-            100ms
-        );
+            100ms);
 
         EXPECT_EQ(result, 42);
         *done_ptr = true;
@@ -385,7 +380,7 @@ TEST_F(CoroutineTimeout, WithTimeoutSuccess) {
  */
 TEST_F(CoroutineTimeout, WithTimeoutTimeout) {
     std::atomic<bool> caught{false};
-    auto caught_ptr = &caught;
+    auto              caught_ptr = &caught;
 
     auto coro_fn = [caught_ptr]() -> task<void> {
         try {
@@ -394,9 +389,8 @@ TEST_F(CoroutineTimeout, WithTimeoutTimeout) {
                     co_await sleep(100ms);
                     co_return 42;
                 }(),
-                50ms
-            );
-        } catch (const timeout_error&) {
+                50ms);
+        } catch (const timeout_error &) {
             *caught_ptr = true;
         }
     };
@@ -414,16 +408,14 @@ TEST_F(CoroutineTimeout, WithTimeoutTimeout) {
  */
 TEST_F(CoroutineTimeout, WithTimeoutVoidSuccess) {
     std::atomic<bool> done{false};
-    auto done_ptr = &done;
+    auto              done_ptr = &done;
 
     auto coro_fn = [done_ptr]() -> task<void> {
-        co_await coro_with_timeout(
-            [done_ptr]() -> task<void> {
-                co_await sleep(30ms);
-                *done_ptr = true;
-            }(),
-            100ms
-        );
+        auto op = [done_ptr]() -> task<void> {
+            co_await sleep(30ms);
+            *done_ptr = true;
+        };
+        co_await coro_with_timeout(op(), 100ms);
     };
 
     auto t = coro_fn();
@@ -439,7 +431,7 @@ TEST_F(CoroutineTimeout, WithTimeoutVoidSuccess) {
  */
 TEST_F(CoroutineTimeout, WithTimeoutVoidTimeout) {
     std::atomic<bool> caught{false};
-    auto caught_ptr = &caught;
+    auto              caught_ptr = &caught;
 
     auto coro_fn = [caught_ptr]() -> task<void> {
         try {
@@ -447,9 +439,8 @@ TEST_F(CoroutineTimeout, WithTimeoutVoidTimeout) {
                 []() -> task<void> {
                     co_await sleep(100ms);
                 }(),
-                50ms
-            );
-        } catch (const timeout_error&) {
+                50ms);
+        } catch (const timeout_error &) {
             *caught_ptr = true;
         }
     };
@@ -467,7 +458,7 @@ TEST_F(CoroutineTimeout, WithTimeoutVoidTimeout) {
  */
 TEST_F(CoroutineRace, RaceVector) {
     std::atomic<int> winner{-1};
-    auto worker = [](int id, int delay_ms) -> task<int> {
+    auto             worker = [](int id, int delay_ms) -> task<int> {
         co_await sleep(std::chrono::milliseconds(delay_ms));
         co_return id;
     };
@@ -478,7 +469,7 @@ TEST_F(CoroutineRace, RaceVector) {
         tasks.push_back(worker(2, 30));
         tasks.push_back(worker(3, 50));
         auto [index, value] = co_await race(std::move(tasks));
-        winner = std::any_cast<int>(value);
+        winner              = std::any_cast<int>(value);
         EXPECT_EQ(index, 1u);
         EXPECT_EQ(winner, 2);
     };
@@ -494,14 +485,14 @@ TEST_F(CoroutineRace, RaceVector) {
  */
 TEST_F(CoroutineWhenAny, WhenAnyResultIndexAndValue) {
     std::atomic<bool> done{false};
-    auto worker = [](int v) -> task<int> {
+    auto              worker = [](int v) -> task<int> {
         co_await sleep(20ms);
         co_return v;
     };
 
     auto coro_fn = [&worker, &done]() -> task<void> {
         auto result = co_await when_any(worker(10), worker(30), worker(20));
-        int val = std::any_cast<int>(result.value);
+        int  val    = std::any_cast<int>(result.value);
         EXPECT_TRUE(val == 10 || val == 20 || val == 30);
         EXPECT_LT(result.index, 3u);
         done = true;
@@ -520,8 +511,12 @@ TEST_F(CoroutineWhenAny, WhenAnyResultIndexAndValue) {
 
 class CoroutineLifetime : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override {
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
         qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
@@ -592,7 +587,7 @@ TEST_F(CoroutineLifetime, WhenAnyAllImmediate) {
  */
 TEST_F(CoroutineLifetime, WhenAllLargeCount) {
     std::atomic<bool> done{false};
-    constexpr int N = 20;
+    constexpr int     N = 20;
 
     auto worker = [](int v) -> task<int> {
         co_await sleep(10ms);
@@ -603,12 +598,14 @@ TEST_F(CoroutineLifetime, WhenAllLargeCount) {
     auto coro_fn = [&]() -> task<void> {
         std::vector<task<int>> tasks;
         tasks.reserve(N);
-        for (int i = 0; i < N; ++i) tasks.push_back(worker(i));
+        for (int i = 0; i < N; ++i)
+            tasks.push_back(worker(i));
         auto results = co_await when_all(std::move(tasks));
         EXPECT_EQ(static_cast<int>(results.size()), N);
         int expected_sum = N * (N - 1) / 2;
-        int actual_sum = 0;
-        for (auto v : results) actual_sum += v;
+        int actual_sum   = 0;
+        for (auto v : results)
+            actual_sum += v;
         EXPECT_EQ(actual_sum, expected_sum);
         done = true;
     };
@@ -632,8 +629,7 @@ TEST_F(CoroutineLifetime, WithTimeoutWinnerBeforeDeadline) {
                 co_await sleep(10ms);
                 co_return 99;
             }(),
-            200ms
-        );
+            200ms);
         EXPECT_EQ(result, 99);
         done = true;
     };
@@ -658,10 +654,9 @@ TEST_F(CoroutineLifetime, WithTimeoutFiresBeforeOperation) {
                     co_await sleep(500ms);
                     co_return 1;
                 }(),
-                20ms
-            );
+                20ms);
             ADD_FAILURE() << "Expected timeout_error";
-        } catch (const timeout_error&) {
+        } catch (const timeout_error &) {
             timed_out = true;
         }
     };
@@ -681,14 +676,15 @@ TEST_F(CoroutineLifetime, WhenAnyVectorFirstWins) {
     std::atomic<int>  count{0};
 
     auto make_task = [&count](int ms) -> task<int> {
-        if (ms > 0) co_await sleep(std::chrono::milliseconds(ms));
+        if (ms > 0)
+            co_await sleep(std::chrono::milliseconds(ms));
         ++count;
         co_return ms;
     };
 
     auto coro_fn = [&]() -> task<void> {
         std::vector<task<int>> tasks;
-        tasks.push_back(make_task(0));   // instant winner
+        tasks.push_back(make_task(0)); // instant winner
         tasks.push_back(make_task(50));
         tasks.push_back(make_task(80));
         // Vector overload returns std::pair<size_t, std::any>
@@ -710,17 +706,27 @@ TEST_F(CoroutineLifetime, WhenAnyVectorFirstWins) {
 
 class WhenAnyResultTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(WhenAnyResultTests, GetExtractsTypedValue) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         auto result = co_await when_any(
-            []() -> task<int> { co_return 42; }(),
-            []() -> task<std::string> { co_await sleep(1s); co_return "slow"; }()
-        );
+            []() -> task<int> {
+                co_return 42;
+            }(),
+            []() -> task<std::string> {
+                co_await sleep(1s);
+                co_return "slow";
+            }());
         auto val = result.get<int>();
         EXPECT_EQ(val, 42);
         EXPECT_EQ(result.index, 0u);
@@ -734,9 +740,14 @@ TEST_F(WhenAnyResultTests, HasExceptionReflectsState) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         auto result = co_await when_any(
-            []() -> task<int> { throw std::runtime_error("boom"); co_return 0; }(),
-            []() -> task<int> { co_await sleep(1s); co_return 99; }()
-        );
+            []() -> task<int> {
+                throw std::runtime_error("boom");
+                co_return 0;
+            }(),
+            []() -> task<int> {
+                co_await sleep(1s);
+                co_return 99;
+            }());
         EXPECT_TRUE(result.has_exception());
         EXPECT_THROW(result.get<int>(), std::runtime_error);
         done = true;
@@ -749,9 +760,13 @@ TEST_F(WhenAnyResultTests, HasExceptionFalseOnSuccess) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         auto result = co_await when_any(
-            []() -> task<int> { co_return 1; }(),
-            []() -> task<int> { co_await sleep(1s); co_return 2; }()
-        );
+            []() -> task<int> {
+                co_return 1;
+            }(),
+            []() -> task<int> {
+                co_await sleep(1s);
+                co_return 2;
+            }());
         EXPECT_FALSE(result.has_exception());
         done = true;
     });
@@ -763,9 +778,13 @@ TEST_F(WhenAnyResultTests, StructuredBindingDecomposition) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         auto result = co_await when_any(
-            []() -> task<int> { co_return 7; }(),
-            []() -> task<int> { co_await sleep(1s); co_return 0; }()
-        );
+            []() -> task<int> {
+                co_return 7;
+            }(),
+            []() -> task<int> {
+                co_await sleep(1s);
+                co_return 0;
+            }());
         auto [idx, val] = result;
         EXPECT_EQ(idx, 0u);
         EXPECT_EQ(std::any_cast<int>(val), 7);
@@ -780,11 +799,15 @@ TEST_F(WhenAnyResultTests, WhenAllWithExceptionPropagation) {
     coro_scheduler().spawn([&]() -> task<void> {
         try {
             co_await when_all(
-                []() -> task<int> { co_return 1; }(),
-                []() -> task<int> { throw std::runtime_error("fail"); co_return 0; }()
-            );
+                []() -> task<int> {
+                    co_return 1;
+                }(),
+                []() -> task<int> {
+                    throw std::runtime_error("fail");
+                    co_return 0;
+                }());
             ADD_FAILURE() << "Should have thrown";
-        } catch (const std::runtime_error& e) {
+        } catch (const std::runtime_error &e) {
             EXPECT_STREQ(e.what(), "fail");
         }
         done = true;
@@ -797,7 +820,8 @@ TEST_F(WhenAnyResultTests, WhenAllWithExceptionPropagation) {
 // Main Entry Point
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     qb::io::async::init();
     return RUN_ALL_TESTS();

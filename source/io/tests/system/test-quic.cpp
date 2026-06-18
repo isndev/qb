@@ -254,14 +254,50 @@ public:
     using Base::Base;
 };
 
+class EchoQuicStreamSession
+    : public qb::io::use<EchoQuicStreamSession>::quic::session {
+public:
+    using Base = qb::io::use<EchoQuicStreamSession>::quic::session;
+    using Base::Base;
+
+    int messages = 0;
+    std::string received;
+};
+
+class EchoQuicProtocol : public qb::io::async::AProtocol<EchoQuicStreamSession> {
+public:
+    explicit EchoQuicProtocol(EchoQuicStreamSession& session) noexcept
+        : AProtocol(session) {}
+
+    std::size_t getMessageSize() noexcept final;
+    void onMessage(std::size_t size) noexcept final;
+    void reset() noexcept final {}
+};
+
+std::size_t
+EchoQuicProtocol::getMessageSize() noexcept {
+    return _io.pendingRead() >= 4 ? 4 : 0;
+}
+
+void
+EchoQuicProtocol::onMessage(std::size_t size) noexcept {
+    _io.received.append(_io.in().begin(), size);
+    ++_io.messages;
+    _io.publish("ack!", std::size_t{4});
+}
+
 class CallbackQuicServer
     : public qb::io::async::quic::server<CallbackQuicServer, DummyQuicStreamSession> {
 public:
     int connected = 0;
+    int closed = 0;
     int stream_started = 0;
+    int stream_sessions = 0;
     std::uint64_t acked_bytes = 0;
     std::string received;
     std::string datagram_received;
+    qb::io::quic::disconnect_reason last_close_reason =
+        qb::io::quic::disconnect_reason::none;
     qb::io::quic::stream_direction last_stream_direction =
         qb::io::quic::stream_direction::bidirectional;
     qb::io::quic::stream_origin last_stream_origin = qb::io::quic::stream_origin::local;
@@ -272,6 +308,10 @@ public:
         : server(std::move(backend)) {}
 
     void on(qb::io::async::quic::event::connected const&) { ++connected; }
+    void on(qb::io::async::quic::event::connection_closed const& ev) {
+        ++closed;
+        last_close_reason = ev.reason;
+    }
     void on(qb::io::async::quic::event::stream_started const& ev) {
         ++stream_started;
         last_stream_direction = ev.direction;
@@ -286,6 +326,22 @@ public:
     void on(qb::io::async::quic::event::datagram const& ev) {
         datagram_received.append(ev.payload.data(), ev.payload.size());
     }
+    void on(DummyQuicStreamSession&) { ++stream_sessions; }
+};
+
+class EchoQuicServer
+    : public qb::io::async::quic::server<EchoQuicServer, EchoQuicStreamSession> {
+public:
+    using server::server;
+
+    int sessions = 0;
+    int stream_data_events = 0;
+
+    void on(EchoQuicStreamSession& session) {
+        ++sessions;
+        session.switch_protocol<EchoQuicProtocol>(session);
+    }
+    void on(qb::io::async::quic::event::stream_data const&) { ++stream_data_events; }
 };
 
 class SessionQuicClient
@@ -293,6 +349,24 @@ class SessionQuicClient
 public:
     using connector::connector;
 };
+
+#ifdef QB_HAS_QUIC
+std::array<std::byte, 4>
+quic_payload() {
+    return {std::byte{'q'}, std::byte{'u'}, std::byte{'i'}, std::byte{'c'}};
+}
+
+void
+deliver_quic_packets(qb::io::quic::backend& from, qb::io::quic::backend& to) {
+    for (auto& packet : from.drain_packets()) {
+        qb::io::quic::packet_view view{
+            packet.remote,
+            packet.local,
+            std::span<const std::byte>{packet.payload.data(), packet.payload.size()}};
+        to.on_udp_datagram(view);
+    }
+}
+#endif
 
 } // namespace
 
@@ -325,6 +399,334 @@ TEST(QuicEndpointTest, UsesNativeBackendWhenNoBackendIsInjected) {
         std::runtime_error);
     EXPECT_FALSE(endpoint.is_open());
     EXPECT_EQ(endpoint.current_state(), qb::io::async::quic::endpoint::state::idle);
+#endif
+}
+
+TEST(QuicNativeBackendTest, RejectsInvalidAlpnBeforeOpeningNativeResources) {
+#ifndef QB_HAS_QUIC
+    GTEST_SKIP() << "QUIC support is disabled";
+#else
+    auto backend = qb::io::quic::make_native_backend();
+    qb::io::quic::tls_config tls;
+    tls.verify_peer = false;
+    const qb::io::endpoint local{"127.0.0.1", 0};
+    const qb::io::endpoint remote{"127.0.0.1", 4433};
+
+    EXPECT_THROW(backend->start_client(local, remote, {}, tls), std::invalid_argument);
+    EXPECT_THROW(backend->start_client(local, remote, {""}, tls), std::invalid_argument);
+    EXPECT_THROW(
+        backend->start_client(local, remote, {std::string(256, 'x')}, tls),
+        std::invalid_argument);
+#endif
+}
+
+TEST(QuicNativeBackendTest, ValidatesServerTlsConfiguration) {
+#ifndef QB_HAS_QUIC
+    GTEST_SKIP() << "QUIC support is disabled";
+#else
+    auto backend = qb::io::quic::make_native_backend();
+    const qb::io::endpoint local{"127.0.0.1", 0};
+
+    qb::io::quic::tls_config missing_files;
+    EXPECT_THROW(
+        backend->start_server(local, {"h3"}, missing_files),
+        std::invalid_argument);
+
+    qb::io::quic::tls_config unreadable_files;
+    unreadable_files.certificate_file = ssl_resource_path("missing-cert.pem");
+    unreadable_files.private_key_file = ssl_resource_path("missing-key.pem");
+    EXPECT_THROW(
+        backend->start_server(local, {"h3"}, unreadable_files),
+        std::runtime_error);
+#endif
+}
+
+TEST(QuicNativeBackendTest, PreConnectionOperationsAreStableAndReportFailures) {
+#ifndef QB_HAS_QUIC
+    GTEST_SKIP() << "QUIC support is disabled";
+#else
+    auto backend = qb::io::quic::make_native_backend();
+    const qb::io::endpoint local{"127.0.0.1", 0};
+    const qb::io::endpoint remote{"127.0.0.1", 4433};
+    auto payload = quic_payload();
+
+    EXPECT_FALSE(backend->wants_write());
+    EXPECT_EQ(backend->next_timeout(), std::chrono::steady_clock::time_point::max());
+    EXPECT_TRUE(backend->drain_packets().empty());
+    EXPECT_TRUE(backend->drain_events().empty());
+    EXPECT_EQ(backend->current_stats().active_connections, 0u);
+    EXPECT_THROW(
+        {
+            auto stream_id =
+                backend->open_stream(qb::io::quic::stream_direction::bidirectional);
+            (void)stream_id;
+        },
+        std::runtime_error);
+
+    qb::io::quic::packet_view datagram{
+        remote, local, std::span<const std::byte>{payload.data(), payload.size()}};
+    backend->on_udp_datagram(datagram);
+    backend->on_timeout(std::chrono::steady_clock::now());
+    backend->extend_stream_credit(0, 4, 0);
+    backend->extend_stream_credit(0, 4, 64);
+
+    backend->reset_stream(0, 7, 11);
+    backend->stop_stream(0, 8, 12);
+    auto events = backend->drain_events();
+    ASSERT_EQ(events.size(), 2u);
+    EXPECT_EQ(events[0].type, qb::io::quic::backend_event::kind::stream_closed);
+    EXPECT_EQ(events[0].stream_id, 7u);
+    EXPECT_EQ(events[0].stream_reason, qb::io::quic::stream_close_reason::reset);
+    EXPECT_EQ(events[1].type, qb::io::quic::backend_event::kind::stream_closed);
+    EXPECT_EQ(events[1].stream_id, 8u);
+    EXPECT_EQ(events[1].stream_reason, qb::io::quic::stream_close_reason::stop_sending);
+
+    backend->close_connection(42, 99, "closed before connect");
+    events = backend->drain_events();
+    ASSERT_EQ(events.size(), 1u);
+    EXPECT_EQ(events.front().type, qb::io::quic::backend_event::kind::connection_closed);
+    EXPECT_EQ(events.front().error_code, 99u);
+    EXPECT_EQ(events.front().connection_reason,
+              qb::io::quic::disconnect_reason::application_close);
+#endif
+}
+
+TEST(QuicNativeBackendTest, EnforcesPreConnectionSendQueueLimits) {
+#ifndef QB_HAS_QUIC
+    GTEST_SKIP() << "QUIC support is disabled";
+#else
+    auto payload = quic_payload();
+
+    {
+        auto backend = qb::io::quic::make_native_backend();
+        qb::io::quic::settings settings;
+        settings.max_pending_stream_frames = 0;
+        settings.max_pending_stream_bytes = 3;
+        backend->configure(settings);
+        backend->send_stream_data(0, 1, std::span<const std::byte>{payload}, false);
+
+        auto events = backend->drain_events();
+        ASSERT_EQ(events.size(), 1u);
+        EXPECT_EQ(events.front().connection_reason,
+                  qb::io::quic::disconnect_reason::buffer_overflow);
+        EXPECT_NE(events.front().text.find("byte queue"), std::string::npos);
+    }
+
+    {
+        auto backend = qb::io::quic::make_native_backend();
+        qb::io::quic::settings settings;
+        settings.max_pending_stream_frames = 0;
+        settings.max_pending_stream_bytes = 64;
+        backend->configure(settings);
+        backend->send_stream_data(0, 1, std::span<const std::byte>{payload}, false);
+        EXPECT_TRUE(backend->wants_write());
+
+        settings.max_pending_stream_frames = 1;
+        backend->configure(settings);
+        backend->send_stream_data(0, 1, std::span<const std::byte>{payload}, false);
+
+        auto events = backend->drain_events();
+        ASSERT_EQ(events.size(), 1u);
+        EXPECT_EQ(events.front().connection_reason,
+                  qb::io::quic::disconnect_reason::buffer_overflow);
+        EXPECT_NE(events.front().text.find("frame queue"), std::string::npos);
+    }
+
+    {
+        auto backend = qb::io::quic::make_native_backend();
+        backend->send_datagram(0, {});
+        EXPECT_TRUE(backend->drain_events().empty());
+
+        backend->send_datagram(0, std::span<const std::byte>{payload});
+        auto events = backend->drain_events();
+        ASSERT_EQ(events.size(), 1u);
+        EXPECT_EQ(events.front().connection_reason,
+                  qb::io::quic::disconnect_reason::protocol_error);
+    }
+
+    {
+        auto backend = qb::io::quic::make_native_backend();
+        qb::io::quic::settings settings;
+        settings.enable_datagrams = true;
+        settings.max_datagram_frame_size = 3;
+        backend->configure(settings);
+        backend->send_datagram(0, std::span<const std::byte>{payload});
+
+        auto events = backend->drain_events();
+        ASSERT_EQ(events.size(), 1u);
+        EXPECT_EQ(events.front().connection_reason,
+                  qb::io::quic::disconnect_reason::buffer_overflow);
+        EXPECT_NE(events.front().text.find("configured maximum"), std::string::npos);
+    }
+
+    {
+        auto backend = qb::io::quic::make_native_backend();
+        qb::io::quic::settings settings;
+        settings.enable_datagrams = true;
+        settings.max_datagram_frame_size = 64;
+        settings.max_pending_datagram_frames = 1;
+        backend->configure(settings);
+        backend->send_datagram(0, std::span<const std::byte>{payload});
+        backend->send_datagram(0, std::span<const std::byte>{payload});
+
+        auto events = backend->drain_events();
+        ASSERT_EQ(events.size(), 1u);
+        EXPECT_EQ(events.front().connection_reason,
+                  qb::io::quic::disconnect_reason::buffer_overflow);
+        EXPECT_NE(events.front().text.find("frame queue"), std::string::npos);
+    }
+
+    {
+        auto backend = qb::io::quic::make_native_backend();
+        qb::io::quic::settings settings;
+        settings.enable_datagrams = true;
+        settings.max_datagram_frame_size = 64;
+        settings.max_pending_datagram_frames = 0;
+        settings.max_pending_datagram_bytes = 3;
+        backend->configure(settings);
+        backend->send_datagram(0, std::span<const std::byte>{payload});
+
+        auto events = backend->drain_events();
+        ASSERT_EQ(events.size(), 1u);
+        EXPECT_EQ(events.front().connection_reason,
+                  qb::io::quic::disconnect_reason::buffer_overflow);
+        EXPECT_NE(events.front().text.find("byte queue"), std::string::npos);
+    }
+
+#endif
+}
+
+TEST(QuicNativeBackendTest, ServerParentNoConnectionPathsRemainOpen) {
+#ifndef QB_HAS_QUIC
+    GTEST_SKIP() << "QUIC support is disabled";
+#else
+    if (!std::filesystem::exists(ssl_resource_path("cert.pem")) ||
+        !std::filesystem::exists(ssl_resource_path("key.pem")))
+        GTEST_SKIP() << "Test SSL certificates are not available";
+
+    auto backend = qb::io::quic::make_native_backend();
+    const qb::io::endpoint local{"127.0.0.1", 0};
+    qb::io::quic::tls_config tls;
+    tls.certificate_file = ssl_resource_path("cert.pem");
+    tls.private_key_file = ssl_resource_path("key.pem");
+    backend->start_server(local, {"h3"}, tls);
+
+    auto payload = quic_payload();
+    qb::io::quic::packet_view empty_datagram{
+        local, local, std::span<const std::byte>{}};
+    qb::io::quic::packet_view malformed_datagram{
+        local, local, std::span<const std::byte>{payload.data(), payload.size()}};
+
+    backend->on_udp_datagram(empty_datagram);
+    backend->on_udp_datagram(malformed_datagram);
+    backend->on_timeout(std::chrono::steady_clock::now());
+    EXPECT_EQ(backend->next_timeout(), std::chrono::steady_clock::time_point::max());
+    EXPECT_FALSE(backend->wants_write());
+    EXPECT_TRUE(backend->drain_packets().empty());
+    EXPECT_TRUE(backend->drain_events().empty());
+    EXPECT_EQ(backend->current_stats().active_connections, 0u);
+
+    backend->send_stream_data(99, 1, std::span<const std::byte>{payload}, false);
+    backend->send_datagram(99, std::span<const std::byte>{payload});
+    backend->extend_stream_credit(99, 1, 8);
+    backend->reset_stream(99, 1, 2);
+    backend->stop_stream(99, 1, 3);
+    backend->close_connection(99, 4, "missing");
+    EXPECT_TRUE(backend->drain_events().empty());
+    EXPECT_THROW(
+        {
+            auto stream_id =
+                backend->open_stream(99, qb::io::quic::stream_direction::bidirectional);
+            (void)stream_id;
+        },
+        std::runtime_error);
+
+    backend->close(5, "server closed");
+    auto events = backend->drain_events();
+    ASSERT_EQ(events.size(), 1u);
+    EXPECT_EQ(events.front().connection_reason,
+              qb::io::quic::disconnect_reason::application_close);
+    EXPECT_EQ(events.front().error_code, 5u);
+#endif
+}
+
+TEST(QuicNativeBackendTest, DirectBackendsRouteServerChildOperations) {
+#ifndef QB_HAS_QUIC
+    GTEST_SKIP() << "QUIC support is disabled";
+#else
+    if (!std::filesystem::exists(ssl_resource_path("cert.pem")) ||
+        !std::filesystem::exists(ssl_resource_path("key.pem")))
+        GTEST_SKIP() << "Test SSL certificates are not available";
+
+    qb::io::quic::settings settings;
+    settings.enable_datagrams = true;
+    settings.max_datagram_frame_size = 1200;
+
+    auto server = qb::io::quic::make_native_backend();
+    auto client = qb::io::quic::make_native_backend();
+    server->configure(settings);
+    client->configure(settings);
+
+    const qb::io::endpoint server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint client_endpoint{"127.0.0.1", 54321};
+
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(server_endpoint, {"h3"}, server_tls);
+
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
+
+    bool client_connected = false;
+    std::uint64_t server_connection_id = 0;
+    auto const deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while ((!client_connected || server_connection_id == 0) &&
+           std::chrono::steady_clock::now() < deadline) {
+        deliver_quic_packets(*client, *server);
+        deliver_quic_packets(*server, *client);
+
+        for (auto const& event : client->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::connected)
+                client_connected = true;
+        }
+        for (auto const& event : server->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::connected)
+                server_connection_id = event.connection_id;
+        }
+    }
+
+    ASSERT_TRUE(client_connected);
+    ASSERT_NE(server_connection_id, 0u);
+    EXPECT_EQ(server->current_stats().active_connections, 1u);
+
+    auto explicit_stream =
+        server->open_stream(server_connection_id,
+                            qb::io::quic::stream_direction::bidirectional);
+    auto implicit_stream =
+        server->open_stream(0, qb::io::quic::stream_direction::unidirectional);
+    EXPECT_NE(explicit_stream, implicit_stream);
+
+    auto payload = quic_payload();
+    server->send_stream_data(
+        server_connection_id, explicit_stream, std::span<const std::byte>{payload}, false);
+    server->send_datagram(server_connection_id, std::span<const std::byte>{payload});
+    server->reset_stream(server_connection_id, explicit_stream, 17);
+    server->stop_stream(server_connection_id, implicit_stream, 18);
+    server->extend_stream_credit(server_connection_id, explicit_stream, 32);
+
+    server->close_connection(server_connection_id, 19, "server child closed");
+    auto events = server->drain_events();
+    auto closed = std::find_if(events.begin(), events.end(), [](auto const& event) {
+        return event.type == qb::io::quic::backend_event::kind::connection_closed;
+    });
+    ASSERT_NE(closed, events.end());
+    EXPECT_EQ(closed->connection_id, server_connection_id);
+    EXPECT_EQ(closed->error_code, 19u);
+    EXPECT_EQ(closed->connection_reason,
+              qb::io::quic::disconnect_reason::application_close);
 #endif
 }
 
@@ -979,6 +1381,121 @@ TEST(QuicEndpointTest, ExistingSessionLookupAndSessionCapRejection) {
     server.set_max_sessions(1);
     EXPECT_EQ(server.register_stream_session(3, 13), nullptr);
     EXPECT_EQ(server.max_sessions(), 1u);
+}
+
+TEST(QuicEndpointTest, ConnectionCloseClearsOnlyMatchingServerSessions) {
+    auto *raw_backend = new FakeQuicBackend;
+    CallbackQuicServer server{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
+
+    auto *first = server.register_stream_session(1, 10);
+    auto *second = server.register_stream_session(2, 10);
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(server.stream_sessions, 2);
+
+    raw_backend->stats.active_connections = 1;
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::connection_closed, 1, 0, 55,
+        "first closed", {}, qb::io::quic::disconnect_reason::application_close});
+
+    server.poll();
+
+    EXPECT_TRUE(server.is_open());
+    EXPECT_EQ(server.current_state(), qb::io::async::quic::endpoint::state::connected);
+    EXPECT_EQ(server.closed, 1);
+    EXPECT_EQ(server.last_close_reason,
+              qb::io::quic::disconnect_reason::application_close);
+    EXPECT_EQ(server.stream_session(1, 10), nullptr);
+    EXPECT_EQ(server.stream_session(2, 10), second);
+    EXPECT_EQ(server.session_count(), 1u);
+}
+
+TEST(QuicEndpointTest, ConnectionCloseWithoutRemainingServerConnectionsKeepsListenerOpen) {
+    auto *raw_backend = new FakeQuicBackend;
+    CallbackQuicServer server{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
+    ASSERT_NE(server.register_stream_session(7, 11), nullptr);
+
+    raw_backend->stats.active_connections = 0;
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::connection_closed, 7, 0, 0,
+        "last client closed", {}, qb::io::quic::disconnect_reason::idle_timeout});
+
+    server.poll();
+
+    EXPECT_TRUE(server.is_open());
+    EXPECT_EQ(server.current_state(), qb::io::async::quic::endpoint::state::listening);
+    EXPECT_EQ(server.closed, 1);
+    EXPECT_EQ(server.last_close_reason, qb::io::quic::disconnect_reason::idle_timeout);
+    EXPECT_EQ(server.session_count(), 0u);
+}
+
+TEST(QuicEndpointTest, RemoteStreamDataFeedsSessionExtendsCreditAndFlushesResponse) {
+    auto *raw_backend = new FakeQuicBackend;
+    EchoQuicServer server{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
+
+    qb::io::quic::backend_event data;
+    data.type = qb::io::quic::backend_event::kind::stream_data;
+    data.connection_id = 9;
+    data.stream_id = 1;
+    data.payload = {std::byte{'p'}, std::byte{'i'}, std::byte{'n'}, std::byte{'g'}};
+    raw_backend->queued_events.push_back(std::move(data));
+
+    server.poll();
+
+    auto *session = server.stream_session(9, 1);
+    ASSERT_NE(session, nullptr);
+    EXPECT_EQ(server.sessions, 1);
+    EXPECT_EQ(server.stream_data_events, 1);
+    EXPECT_EQ(session->messages, 1);
+    EXPECT_EQ(session->received, "ping");
+    EXPECT_EQ(session->pendingRead(), 0u);
+    EXPECT_EQ(session->pendingWrite(), 0u);
+
+    EXPECT_EQ(raw_backend->extend_stream_credit_calls, 1);
+    EXPECT_EQ(raw_backend->extended_stream_id, 1u);
+    EXPECT_EQ(raw_backend->extended_bytes, 4u);
+    EXPECT_EQ(raw_backend->send_stream_data_calls, 1);
+    EXPECT_EQ(raw_backend->sent_connection_id, 9u);
+    EXPECT_EQ(raw_backend->sent_stream_id, 1u);
+    EXPECT_EQ(raw_backend->sent_stream_bytes, 4u);
+}
+
+TEST(QuicEndpointTest, RemoteStreamFinIsDeliveredAndThenSessionIsUnregistered) {
+    auto *raw_backend = new FakeQuicBackend;
+    EchoQuicServer server{
+        std::unique_ptr<qb::io::quic::backend>(raw_backend)};
+
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
+
+    qb::io::quic::backend_event data;
+    data.type = qb::io::quic::backend_event::kind::stream_data;
+    data.connection_id = 9;
+    data.stream_id = 1;
+    data.payload = {std::byte{'d'}, std::byte{'o'}, std::byte{'n'}, std::byte{'e'}};
+    data.error_code = 1;
+    raw_backend->queued_events.push_back(std::move(data));
+
+    raw_backend->queued_events.push_back({
+        qb::io::quic::backend_event::kind::stream_closed, 9, 1, 0, {}, {},
+        qb::io::quic::disconnect_reason::none,
+        qb::io::quic::stream_close_reason::finished});
+
+    server.poll();
+
+    EXPECT_EQ(server.stream_data_events, 1);
+    EXPECT_EQ(server.stream_session(9, 1), nullptr);
+    EXPECT_EQ(server.session_count(), 0u);
+    EXPECT_EQ(raw_backend->extend_stream_credit_calls, 1);
+    EXPECT_EQ(raw_backend->send_stream_data_calls, 1);
 }
 
 TEST(QuicEndpointTest, CloseConnectionDelegatesWithoutClosingEndpoint) {

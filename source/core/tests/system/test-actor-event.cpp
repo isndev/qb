@@ -53,9 +53,7 @@ struct TestEvent : public qb::Event {
     checkSum() const {
         auto ret = true;
         if (has_extra_data) {
-            ret = !memcmp(_data,
-                          reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent),
-                          sizeof(_data));
+            ret = !memcmp(_data, reinterpret_cast<const uint8_t *>(this) + sizeof(TestEvent), sizeof(_data));
         }
 
         return std::accumulate(std::begin(_data), std::end(_data), 0u) == _sum && ret;
@@ -174,8 +172,7 @@ struct AllocatedPipePushActor : public BaseActorSender<AllocatedPipePushActor> {
     doSend() {
         auto &e          = getPipe(_to).allocated_push<TestEvent>(32);
         e.has_extra_data = true;
-        memcpy(reinterpret_cast<uint8_t *>(&e) + sizeof(TestEvent), e._data,
-               sizeof(e._data));
+        memcpy(reinterpret_cast<uint8_t *>(&e) + sizeof(TestEvent), e._data, sizeof(e._data));
     }
 };
 
@@ -205,8 +202,7 @@ protected:
     void
     SetUp() final {
         for (auto i = 0u; i < MAX_ACTORS; ++i) {
-            main.addActor<ActorSender>(0, MAX_EVENTS,
-                                       main.addActor<TestActorReceiver>(0, MAX_EVENTS));
+            main.addActor<ActorSender>(0, MAX_EVENTS, main.addActor<TestActorReceiver>(0, MAX_EVENTS));
         }
     }
     void
@@ -225,9 +221,7 @@ protected:
     SetUp() final {
         for (auto i = 0u; i < max_core; ++i) {
             for (auto j = 0u; j < MAX_ACTORS; ++j) {
-                main.addActor<ActorSender>(
-                    i, MAX_EVENTS,
-                    main.addActor<TestActorReceiver>(((i + 1) % max_core), MAX_EVENTS));
+                main.addActor<ActorSender>(i, MAX_EVENTS, main.addActor<TestActorReceiver>(((i + 1) % max_core), MAX_EVENTS));
             }
         }
     }
@@ -248,9 +242,7 @@ protected:
         for (auto i = 0u; i < max_core; ++i) {
             for (auto j = 0u; j < MAX_ACTORS; ++j) {
                 main.core(((i + 1) % max_core)).setLatency(std::chrono::nanoseconds(100));
-                main.addActor<ActorSender>(
-                    i, MAX_EVENTS,
-                    main.addActor<TestActorReceiver>(((i + 1) % max_core), MAX_EVENTS));
+                main.addActor<ActorSender>(i, MAX_EVENTS, main.addActor<TestActorReceiver>(((i + 1) % max_core), MAX_EVENTS));
             }
         }
     }
@@ -285,8 +277,7 @@ protected:
     void
     SetUp() final {
         for (auto i = 0u; i < max_core; ++i) {
-            main.addActor<ActorSender>(i, MAX_EVENTS,
-                                       qb::BroadcastId((i + 1) % max_core));
+            main.addActor<ActorSender>(i, MAX_EVENTS, qb::BroadcastId((i + 1) % max_core));
             for (auto j = 0u; j < MAX_ACTORS; ++j) {
                 main.addActor<TestActorReceiver>(((i + 1) % max_core), MAX_EVENTS);
             }
@@ -296,9 +287,7 @@ protected:
     TearDown() final {}
 };
 
-typedef testing::Types<BasicPushActor, BasicSendActor, EventBuilderPushActor,
-                       PipePushActor, AllocatedPipePushActor>
-    Implementations;
+typedef testing::Types<BasicPushActor, BasicSendActor, EventBuilderPushActor, PipePushActor, AllocatedPipePushActor> Implementations;
 
 TYPED_TEST_SUITE(ActorEventMono, Implementations);
 TYPED_TEST_SUITE(ActorEventBroadcastMono, Implementations);
@@ -345,6 +334,14 @@ class TestSendReply final : public qb::Actor {
     const qb::ActorId _to;
     uint32_t          counter = 0;
 
+    void
+    finishIfDone() {
+        if (counter < 2u)
+            return;
+        push<qb::KillEvent>(qb::BroadcastId(_to.index()));
+        kill();
+    }
+
 public:
     explicit TestSendReply(qb::ActorId const to)
         : _to(to) {}
@@ -374,14 +371,14 @@ public:
     on(TestEvent &event) {
         ++counter;
         EXPECT_TRUE(event.checkSum());
+        finishIfDone();
     }
 
     void
     on(EventForward &event) {
         ++counter;
         EXPECT_TRUE(event.checkSum());
-        push<qb::KillEvent>(qb::BroadcastId(_to.index()));
-        kill();
+        finishIfDone();
     }
 };
 

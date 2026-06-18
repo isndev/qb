@@ -952,7 +952,8 @@ public:
      */
     [[nodiscard]] bool
     has_pending_data() const noexcept {
-        return _protocol && _protocol->ok() && Derived.pendingRead() > 0;
+        return _protocol && _protocol->ok() &&
+               static_cast<_Derived const &>(*this).pendingRead() > 0;
     }
 
     /**
@@ -2166,7 +2167,8 @@ public:
      */
     [[nodiscard]] bool
     has_pending_read() const noexcept {
-        return _protocol && _protocol->ok() && Derived.pendingRead() > 0;
+        return _protocol && _protocol->ok() &&
+               static_cast<_Derived const &>(*this).pendingRead() > 0;
     }
 
     /**

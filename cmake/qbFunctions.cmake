@@ -354,6 +354,8 @@ function(qb_add_test)
     add_test(NAME ${TEST_NAME} 
              COMMAND ${TEST_NAME}
              WORKING_DIRECTORY "${TEST_BINARY_DIR}")
+
+    set_property(GLOBAL APPEND PROPERTY QB_TEST_TARGETS ${TEST_NAME})
     
     # Set test properties for better CTest integration
     set_tests_properties(${TEST_NAME} PROPERTIES

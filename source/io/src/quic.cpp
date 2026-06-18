@@ -30,6 +30,12 @@ namespace qb::io::quic {
 #ifdef QB_HAS_QUIC
 namespace {
 
+#if defined(NGTCP2_CALLBACKS_V3) && NGTCP2_CALLBACKS_VERSION >= NGTCP2_CALLBACKS_V3
+#define QB_IO_NGTCP2_HAS_CALLBACKS_V3 1
+#else
+#define QB_IO_NGTCP2_HAS_CALLBACKS_V3 0
+#endif
+
 std::vector<unsigned char>
 make_wire_alpn(std::vector<std::string> const& protocols) {
     std::vector<unsigned char> out;
@@ -76,8 +82,8 @@ cid_key(ngtcp2_cid const& cid) {
 }
 
 int
-new_connection_id_cb(ngtcp2_conn *, ngtcp2_cid *cid,
-                     ngtcp2_stateless_reset_token *token, size_t cidlen, void *) {
+fill_new_connection_id(ngtcp2_cid *cid, uint8_t *token, size_t tokenlen,
+                       size_t cidlen) {
     uint8_t cidbuf[NGTCP2_MAX_CIDLEN];
     // Fail closed on CSPRNG failure: a predictable connection ID is a
     // linkability problem, and — critically — a predictable stateless reset
@@ -87,10 +93,24 @@ new_connection_id_cb(ngtcp2_conn *, ngtcp2_cid *cid,
     if (!fill_random(cidbuf, cidlen))
         return NGTCP2_ERR_CALLBACK_FAILURE;
     ngtcp2_cid_init(cid, cidbuf, cidlen);
-    if (!fill_random(token->data, sizeof(token->data)))
+    if (!fill_random(token, tokenlen))
         return NGTCP2_ERR_CALLBACK_FAILURE;
     return 0;
 }
+
+#if QB_IO_NGTCP2_HAS_CALLBACKS_V3
+int
+new_connection_id_cb(ngtcp2_conn *, ngtcp2_cid *cid,
+                     ngtcp2_stateless_reset_token *token, size_t cidlen, void *) {
+    return fill_new_connection_id(cid, token->data, sizeof(token->data), cidlen);
+}
+#else
+int
+new_connection_id_cb(ngtcp2_conn *, ngtcp2_cid *cid, uint8_t *token,
+                     size_t cidlen, void *) {
+    return fill_new_connection_id(cid, token, NGTCP2_STATELESS_RESET_TOKENLEN, cidlen);
+}
+#endif
 
 int
 alpn_select_cb(SSL *, const unsigned char **out, unsigned char *outlen,
@@ -817,11 +837,19 @@ private:
         callbacks.decrypt = ngtcp2_crypto_decrypt_cb;
         callbacks.hp_mask = ngtcp2_crypto_hp_mask_cb;
         callbacks.rand = rand_cb;
+#if QB_IO_NGTCP2_HAS_CALLBACKS_V3
         callbacks.get_new_connection_id2 = new_connection_id_cb;
+#else
+        callbacks.get_new_connection_id = new_connection_id_cb;
+#endif
         callbacks.update_key = ngtcp2_crypto_update_key_cb;
         callbacks.delete_crypto_aead_ctx = ngtcp2_crypto_delete_crypto_aead_ctx_cb;
         callbacks.delete_crypto_cipher_ctx = ngtcp2_crypto_delete_crypto_cipher_ctx_cb;
+#if QB_IO_NGTCP2_HAS_CALLBACKS_V3
         callbacks.get_path_challenge_data2 = ngtcp2_crypto_get_path_challenge_data2_cb;
+#else
+        callbacks.get_path_challenge_data = ngtcp2_crypto_get_path_challenge_data_cb;
+#endif
         callbacks.recv_stream_data = recv_stream_data_cb;
         callbacks.acked_stream_data_offset = acked_stream_data_offset_cb;
         callbacks.stream_open = stream_open_cb;
@@ -1310,6 +1338,7 @@ private:
 };
 
 } // namespace
+#undef QB_IO_NGTCP2_HAS_CALLBACKS_V3
 #endif
 
 backend_info

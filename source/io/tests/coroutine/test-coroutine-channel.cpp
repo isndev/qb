@@ -37,10 +37,12 @@ using namespace std::chrono_literals;
 
 class ChannelBasicTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -50,7 +52,7 @@ protected:
  * @brief Basic producer-consumer pattern
  */
 TEST_F(ChannelBasicTests, BufferedSendReceive) {
-    channel<int> ch(5);
+    channel<int>     ch(5);
     std::atomic<int> received{0};
 
     auto producer = [&ch]() -> task<void> {
@@ -63,7 +65,8 @@ TEST_F(ChannelBasicTests, BufferedSendReceive) {
     auto consumer = [&ch, &received]() -> task<void> {
         while (true) {
             auto val = co_await ch.recv();
-            if (!val) break;
+            if (!val)
+                break;
             received += *val;
         }
     };
@@ -73,7 +76,7 @@ TEST_F(ChannelBasicTests, BufferedSendReceive) {
 
     run_for(100ms);
 
-    EXPECT_EQ(received, 15);  // 1+2+3+4+5
+    EXPECT_EQ(received, 15); // 1+2+3+4+5
 }
 
 /**
@@ -86,14 +89,14 @@ TEST_F(ChannelBasicTests, BufferedSendReceive) {
  *        the unguarded code reports heap-use-after-free here.
  */
 TEST_F(ChannelBasicTests, DestroyChannelWhileRecvParkedNoUAF) {
-    auto ch = std::make_unique<channel<int>>(4);
-    bool done = false;
+    auto ch        = std::make_unique<channel<int>>(4);
+    bool done      = false;
     bool got_value = true; // must become false (nullopt) once the channel is gone
 
     coro_scheduler().spawn([&]() -> task<void> {
-        auto r = co_await ch->recv(); // parks: buffer empty, channel open
+        auto r    = co_await ch->recv(); // parks: buffer empty, channel open
         got_value = r.has_value();
-        done = true;
+        done      = true;
     });
 
     run_for(10ms); // let the receiver park
@@ -114,8 +117,8 @@ TEST_F(ChannelBasicTests, DestroyChannelWhileSendForParkedNoUAF) {
 
     coro_scheduler().spawn([&]() -> task<void> {
         bool ok = co_await ch->send_for(2, 200ms); // parks: buffer full, channel open
-        sent = ok;
-        done = true;
+        sent    = ok;
+        done    = true;
     });
 
     run_for(10ms); // let the sender park
@@ -129,14 +132,14 @@ TEST_F(ChannelBasicTests, DestroyChannelWhileSendForParkedNoUAF) {
 }
 
 TEST_F(ChannelBasicTests, DestroyChannelWhileSendParkedNoUAF) {
-    auto ch = std::make_unique<channel<int>>(0);
-    bool done = false;
+    auto ch           = std::make_unique<channel<int>>(0);
+    bool done         = false;
     bool threw_closed = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
         try {
             co_await ch->send(7); // parks: unbuffered channel with no receiver
-        } catch (channel_closed const&) {
+        } catch (channel_closed const &) {
             threw_closed = true;
         }
         done = true;
@@ -161,20 +164,22 @@ TEST_F(ChannelBasicTests, TrySendBuffered) {
 
     EXPECT_TRUE(ch.try_send(1));
     EXPECT_TRUE(ch.try_send(2));
-    EXPECT_FALSE(ch.try_send(3));  // Buffer full
+    EXPECT_FALSE(ch.try_send(3)); // Buffer full
 
     EXPECT_EQ(ch.size(), 2);
 }
 
 TEST_F(ChannelBasicTests, TrySendCopyAndMoveWakePendingReceivers) {
-    channel<std::string> ch(0);
+    channel<std::string>     ch(0);
     std::vector<std::string> received;
 
     auto receiver = [&]() -> task<void> {
         auto first = co_await ch.recv();
-        if (first) received.push_back(*first);
+        if (first)
+            received.push_back(*first);
         auto second = co_await ch.recv();
-        if (second) received.push_back(*second);
+        if (second)
+            received.push_back(*second);
     };
 
     coro_scheduler().spawn(receiver());
@@ -195,8 +200,8 @@ TEST_F(ChannelBasicTests, TrySendCopyAndMoveWakePendingReceivers) {
 
 TEST_F(ChannelBasicTests, TrySendReportsClosedAndFullForCopyAndMove) {
     channel<std::string> ch(1);
-    const std::string copied_first = "first";
-    const std::string copied_second = "second";
+    const std::string    copied_first  = "first";
+    const std::string    copied_second = "second";
 
     EXPECT_TRUE(ch.try_send(copied_first));
     EXPECT_FALSE(ch.try_send(copied_second));
@@ -263,10 +268,12 @@ TEST_F(ChannelBasicTests, ChannelClose) {
 
 class ChannelEdgeCases : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -295,15 +302,38 @@ TEST_F(ChannelEdgeCases, SendToClosed) {
     EXPECT_FALSE(ch.try_send(2));
 }
 
+TEST_F(ChannelEdgeCases, AwaitedSendToClosedChannelThrows) {
+    channel<int> ch(1);
+    ch.close();
+
+    bool done         = false;
+    bool threw_closed = false;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await ch.send(42);
+        } catch (channel_closed const &) {
+            threw_closed = true;
+        }
+        done = true;
+    });
+
+    run_for(20ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_TRUE(threw_closed);
+    EXPECT_TRUE(ch.empty());
+}
+
 /**
  * @test Unbuffered rendezvous sender-first
  * @brief sender parks first on channel(0), receiver arrives later and must wake it
  */
 TEST_F(ChannelEdgeCases, UnbufferedSenderFirstRendezvous) {
-    channel<int> ch(0);
+    channel<int>      ch(0);
     std::atomic<bool> sender_done{false};
     std::atomic<bool> receiver_done{false};
-    std::atomic<int> received{-1};
+    std::atomic<int>  received{-1};
 
     auto sender = [&]() -> task<void> {
         co_await ch.send(7);
@@ -312,7 +342,8 @@ TEST_F(ChannelEdgeCases, UnbufferedSenderFirstRendezvous) {
 
     auto receiver = [&]() -> task<void> {
         auto v = co_await ch.recv();
-        if (v) received = *v;
+        if (v)
+            received = *v;
         receiver_done = true;
     };
 
@@ -336,10 +367,12 @@ TEST_F(ChannelEdgeCases, UnbufferedSenderFirstRendezvous) {
 
 class ChannelFastPathTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -349,7 +382,7 @@ protected:
  * @brief Multiple sends with capacity; fast path should complete without suspending
  */
 TEST_F(ChannelFastPathTests, SendWhenBufferHasSpace) {
-    channel<int> ch(20);
+    channel<int>     ch(20);
     std::atomic<int> sent{0};
 
     auto producer = [&ch, &sent]() -> task<void> {
@@ -378,17 +411,18 @@ TEST_F(ChannelFastPathTests, RecvWhenBufferHasData) {
     }
 
     std::atomic<int> sum{0};
-    auto consumer = [&ch, &sum]() -> task<void> {
+    auto             consumer = [&ch, &sum]() -> task<void> {
         for (int i = 0; i < 5; ++i) {
             auto v = co_await ch.recv();
-            if (v) sum += *v;
+            if (v)
+                sum += *v;
         }
     };
 
     coro_scheduler().spawn(consumer());
     run_for(50ms);
 
-    EXPECT_EQ(sum, 15);  // 1+2+3+4+5
+    EXPECT_EQ(sum, 15); // 1+2+3+4+5
 }
 
 // =============================================================================
@@ -399,8 +433,12 @@ TEST_F(ChannelFastPathTests, RecvWhenBufferHasData) {
 
 class PipelineTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override {
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
         qb::io::async::listener::current.clear();
     }
 };
@@ -414,19 +452,21 @@ protected:
 TEST_F(PipelineTests, BasicTransform) {
     auto [in, out] = make_pipeline<int, int>([](int v) { return v * 10; }, 8);
 
-    std::atomic<int> sum{0};
+    std::atomic<int>  sum{0};
     std::atomic<bool> done{false};
 
     // Producer + consumer coroutines share the channels by raw pointer; the
     // channels are kept alive because in/out unique_ptrs live in this scope.
     auto producer = [&in]() -> task<void> {
-        for (int i = 1; i <= 5; ++i) co_await in->send(i);
+        for (int i = 1; i <= 5; ++i)
+            co_await in->send(i);
         in->close();
     };
     auto consumer = [&out, &sum, &done]() -> task<void> {
         while (true) {
             auto v = co_await out->recv();
-            if (!v) break;
+            if (!v)
+                break;
             sum += *v;
         }
         done = true;
@@ -437,7 +477,7 @@ TEST_F(PipelineTests, BasicTransform) {
     run_for(200ms);
 
     EXPECT_TRUE(done);
-    EXPECT_EQ(sum.load(), (1 + 2 + 3 + 4 + 5) * 10);  // 150
+    EXPECT_EQ(sum.load(), (1 + 2 + 3 + 4 + 5) * 10); // 150
 }
 
 /**
@@ -445,21 +485,21 @@ TEST_F(PipelineTests, BasicTransform) {
  * @brief Type-changing transform (int→string) to verify template instantiation.
  */
 TEST_F(PipelineTests, TypeChangingTransform) {
-    auto [in, out] = make_pipeline<int, std::string>([](int v) {
-        return "item" + std::to_string(v);
-    }, 4);
+    auto [in, out] = make_pipeline<int, std::string>([](int v) { return "item" + std::to_string(v); }, 4);
 
     std::atomic<int>  received{0};
     std::atomic<bool> done{false};
 
     auto producer = [&in]() -> task<void> {
-        for (int i = 0; i < 3; ++i) co_await in->send(i);
+        for (int i = 0; i < 3; ++i)
+            co_await in->send(i);
         in->close();
     };
     auto consumer = [&out, &received, &done]() -> task<void> {
         while (true) {
             auto v = co_await out->recv();
-            if (!v) break;
+            if (!v)
+                break;
             ++received;
         }
         done = true;
@@ -487,7 +527,8 @@ TEST_F(PipelineTests, ClosePropagates) {
         int count = 0;
         while (true) {
             auto v = co_await out->recv();
-            if (!v) break;
+            if (!v)
+                break;
             ++count;
         }
         EXPECT_EQ(count, 2);
@@ -509,26 +550,84 @@ TEST_F(PipelineTests, ClosePropagates) {
     EXPECT_TRUE(out->is_closed());
 }
 
+TEST_F(PipelineTests, TransformFilterAndCollectComposeChannels) {
+    channel<int> source(4);
+    channel<int> doubled(4);
+    channel<int> filtered(4);
+
+    std::vector<int> collected;
+    bool             collector_done = false;
+
+    coro_scheduler().spawn(transform<int, int>(source, doubled, [](int value) { return value * 2; }));
+    coro_scheduler().spawn(filter<int>(doubled, filtered, [](int value) { return value >= 6; }));
+    coro_scheduler().spawn([&]() -> task<void> {
+        collected      = co_await collect(filtered);
+        collector_done = true;
+    });
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        for (int value : {1, 2, 3, 4})
+            co_await source.send(value);
+        source.close();
+    });
+
+    run_for(300ms);
+
+    EXPECT_TRUE(collector_done);
+    EXPECT_EQ(collected, (std::vector<int>{6, 8}));
+    EXPECT_TRUE(doubled.is_closed());
+    EXPECT_TRUE(filtered.is_closed());
+}
+
+TEST_F(PipelineTests, CollectReturnsBufferedValuesUntilChannelCloses) {
+    channel<std::string>     ch(4);
+    std::vector<std::string> collected;
+    bool                     done = false;
+
+    ASSERT_TRUE(ch.try_send("alpha"));
+    ASSERT_TRUE(ch.try_send("beta"));
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        collected = co_await collect(ch);
+        done      = true;
+    });
+
+    run_for(10ms);
+    EXPECT_FALSE(done);
+
+    ch.close();
+    run_for(100ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_EQ(collected, (std::vector<std::string>{"alpha", "beta"}));
+}
+
 // =============================================================================
 // TEST SUITE: channel select()
 // =============================================================================
 
 class ChannelSelectTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(ChannelSelectTests, FastPath_ValueAlreadyInBuffer) {
-    channel<int>    ch_a(4), ch_b(4);
-    select_result   result;
-    bool done = false;
+    channel<int>  ch_a(4), ch_b(4);
+    select_result result;
+    bool          done = false;
 
     ch_a.try_send(42);
 
     auto reader = [&ch_a, &ch_b, &result, &done]() -> task<void> {
         result = co_await select(ch_a, ch_b);
-        done = true;
+        done   = true;
     };
 
     coro_scheduler().spawn(reader());
@@ -541,11 +640,11 @@ TEST_F(ChannelSelectTests, FastPath_ValueAlreadyInBuffer) {
 TEST_F(ChannelSelectTests, SlowPath_FirstSenderWins) {
     channel<int>  ch_a(1), ch_b(1);
     select_result result;
-    bool done = false;
+    bool          done = false;
 
     auto reader = [&ch_a, &ch_b, &result, &done]() -> task<void> {
         result = co_await select(ch_a, ch_b);
-        done = true;
+        done   = true;
     };
     coro_scheduler().spawn(reader());
 
@@ -563,20 +662,64 @@ TEST_F(ChannelSelectTests, SlowPath_FirstSenderWins) {
 
     run_for(100ms);
     EXPECT_TRUE(done);
-    EXPECT_EQ(result.index, 1u);  // ch_b won
+    EXPECT_EQ(result.index, 1u); // ch_b won
     EXPECT_EQ(result.get<int>(), 99);
+}
+
+TEST_F(ChannelSelectTests, StaleSelectWaiterIsSkippedByLaterSend) {
+    channel<int>       ch_a(0), ch_b(0);
+    select_result      result;
+    bool               select_done       = false;
+    bool               stale_sender_done = false;
+    bool               receiver_done     = false;
+    std::optional<int> received;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        result      = co_await select(ch_a, ch_b);
+        select_done = true;
+    });
+
+    run_for(10ms);
+
+    coro_scheduler().spawn([&]() -> task<void> { co_await ch_b.send(99); });
+
+    run_for(30ms);
+
+    ASSERT_TRUE(select_done);
+    EXPECT_EQ(result.index, 1u);
+    EXPECT_EQ(result.get<int>(), 99);
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        co_await ch_a.send(77);
+        stale_sender_done = true;
+    });
+
+    run_for(20ms);
+    EXPECT_FALSE(stale_sender_done);
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        received      = co_await ch_a.recv();
+        receiver_done = true;
+    });
+
+    run_for(50ms);
+
+    EXPECT_TRUE(stale_sender_done);
+    EXPECT_TRUE(receiver_done);
+    ASSERT_TRUE(received.has_value());
+    EXPECT_EQ(*received, 77);
 }
 
 TEST_F(ChannelSelectTests, ClosedChannel_ResolvedAsClosed) {
     channel<int>  ch_a(1), ch_b(1);
     select_result result;
-    bool done = false;
+    bool          done = false;
 
     ch_a.close();
 
     auto reader = [&ch_a, &ch_b, &result, &done]() -> task<void> {
         result = co_await select(ch_a, ch_b);
-        done = true;
+        done   = true;
     };
     coro_scheduler().spawn(reader());
     run_for(10ms);
@@ -586,14 +729,14 @@ TEST_F(ChannelSelectTests, ClosedChannel_ResolvedAsClosed) {
 }
 
 TEST_F(ChannelSelectTests, VectorSelect_PicksFirstReady) {
-    channel<int> ch0(1), ch1(1), ch2(1);
-    std::vector<channel<int>*> channels = {&ch0, &ch1, &ch2};
-    select_result result;
-    bool done = false;
+    channel<int>                ch0(1), ch1(1), ch2(1);
+    std::vector<channel<int> *> channels = {&ch0, &ch1, &ch2};
+    select_result               result;
+    bool                        done = false;
 
     auto reader = [&channels, &result, &done]() -> task<void> {
         result = co_await select(channels);
-        done = true;
+        done   = true;
     };
     coro_scheduler().spawn(reader());
 
@@ -611,7 +754,7 @@ TEST_F(ChannelSelectTests, VectorSelect_PicksFirstReady) {
 
 TEST_F(ChannelSelectTests, RegisterSelectWaiterResolvesBufferedAndClosedChannels) {
     channel<int> buffered(2);
-    auto buffered_state = std::make_shared<channel_select_state>();
+    auto         buffered_state = std::make_shared<channel_select_state>();
 
     EXPECT_TRUE(buffered.try_send(42));
     buffered.register_select_waiter(buffered_state, 3);
@@ -623,7 +766,7 @@ TEST_F(ChannelSelectTests, RegisterSelectWaiterResolvesBufferedAndClosedChannels
     EXPECT_TRUE(buffered.empty());
 
     channel<int> closed(1);
-    auto closed_state = std::make_shared<channel_select_state>();
+    auto         closed_state = std::make_shared<channel_select_state>();
 
     closed.close();
     closed.register_select_waiter(closed_state, 1);
@@ -639,13 +782,13 @@ TEST_F(ChannelSelectTests, VectorSelectFastPathPrefersBufferedDataOverClosedChan
     ch0.close();
     EXPECT_TRUE(ch1.try_send(77));
 
-    std::vector<channel<int>*> channels = {&ch0, &ch1, &ch2};
-    select_result result;
-    bool done = false;
+    std::vector<channel<int> *> channels = {&ch0, &ch1, &ch2};
+    select_result               result;
+    bool                        done = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
         result = co_await select(channels);
-        done = true;
+        done   = true;
     });
 
     run_for(20ms);
@@ -660,13 +803,13 @@ TEST_F(ChannelSelectTests, VectorSelectFastPathReportsClosedEmptyChannel) {
     channel<int> ch0(1), ch1(1);
     ch1.close();
 
-    std::vector<channel<int>*> channels = {&ch0, &ch1};
-    select_result result;
-    bool done = false;
+    std::vector<channel<int> *> channels = {&ch0, &ch1};
+    select_result               result;
+    bool                        done = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
         result = co_await select(channels);
-        done = true;
+        done   = true;
     });
 
     run_for(20ms);
@@ -678,7 +821,7 @@ TEST_F(ChannelSelectTests, VectorSelectFastPathReportsClosedEmptyChannel) {
 }
 
 TEST_F(ChannelSelectTests, SelectInLoop_DrainsMultipleChannels) {
-    channel<int>  ch_a(4), ch_b(4);
+    channel<int>     ch_a(4), ch_b(4);
     std::vector<int> received;
 
     auto producer = [&ch_a, &ch_b]() -> task<void> {
@@ -705,10 +848,16 @@ TEST_F(ChannelSelectTests, SelectInLoop_DrainsMultipleChannels) {
                 }
             } else if (a_open) {
                 auto v = co_await ch_a.recv();
-                if (!v) a_open = false; else received.push_back(*v);
+                if (!v)
+                    a_open = false;
+                else
+                    received.push_back(*v);
             } else {
                 auto v = co_await ch_b.recv();
-                if (!v) b_open = false; else received.push_back(*v);
+                if (!v)
+                    b_open = false;
+                else
+                    received.push_back(*v);
             }
         }
     };
@@ -726,14 +875,20 @@ TEST_F(ChannelSelectTests, SelectInLoop_DrainsMultipleChannels) {
 
 class ChannelTimeoutTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(ChannelTimeoutTests, RecvFor_ValueArrivesBeforeTimeout) {
     channel<int>       ch(1);
     std::optional<int> result;
-    bool done = false;
+    bool               done = false;
 
     auto sender = [&ch]() -> task<void> {
         co_await sleep(10ms);
@@ -757,7 +912,7 @@ TEST_F(ChannelTimeoutTests, RecvFor_ValueArrivesBeforeTimeout) {
 TEST_F(ChannelTimeoutTests, RecvFor_TimesOutWhenNoValue) {
     channel<int>       ch(1);
     std::optional<int> result{999};
-    bool done = false;
+    bool               done = false;
 
     auto recver = [&ch, &result, &done]() -> task<void> {
         result = co_await ch.recv_for(20ms);
@@ -772,10 +927,10 @@ TEST_F(ChannelTimeoutTests, RecvFor_TimesOutWhenNoValue) {
 }
 
 TEST_F(ChannelTimeoutTests, RecvFor_BufferedFastPath) {
-    channel<int>       ch(4);
+    channel<int> ch(4);
     ch.try_send(55);
     std::optional<int> result;
-    bool done = false;
+    bool               done = false;
 
     auto recver = [&ch, &result, &done]() -> task<void> {
         result = co_await ch.recv_for(50ms);
@@ -790,10 +945,10 @@ TEST_F(ChannelTimeoutTests, RecvFor_BufferedFastPath) {
 }
 
 TEST_F(ChannelTimeoutTests, RecvFor_ClosedChannelReturnsNullopt) {
-    channel<int>       ch(1);
+    channel<int> ch(1);
     ch.close();
     std::optional<int> result{999};
-    bool done = false;
+    bool               done = false;
 
     auto recver = [&ch, &result, &done]() -> task<void> {
         result = co_await ch.recv_for(50ms);
@@ -806,14 +961,71 @@ TEST_F(ChannelTimeoutTests, RecvFor_ClosedChannelReturnsNullopt) {
     EXPECT_FALSE(result.has_value());
 }
 
+TEST_F(ChannelTimeoutTests, SendForClosedChannelReturnsFalseWithoutParking) {
+    channel<int> ch(1);
+    ch.close();
+
+    bool done = false;
+    bool sent = true;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        sent = co_await ch.send_for(1, 100ms);
+        done = true;
+    });
+
+    run_for(20ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_FALSE(sent);
+    EXPECT_TRUE(ch.empty());
+}
+
+TEST_F(ChannelTimeoutTests, SendForTimeoutLeavesStaleWaiterThatIsSkipped) {
+    channel<int> ch(1);
+    ASSERT_TRUE(ch.try_send(1));
+
+    bool timed_sender_done  = false;
+    bool timed_sender_sent  = true;
+    bool second_sender_done = false;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        timed_sender_sent = co_await ch.send_for(2, 20ms);
+        timed_sender_done = true;
+    });
+
+    run_for(80ms);
+
+    EXPECT_TRUE(timed_sender_done);
+    EXPECT_FALSE(timed_sender_sent);
+
+    auto first = ch.try_recv();
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(*first, 1);
+
+    coro_scheduler().spawn([&]() -> task<void> { second_sender_done = co_await ch.send_for(3, 100ms); });
+
+    run_for(80ms);
+
+    EXPECT_TRUE(second_sender_done);
+    auto second = ch.try_recv();
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*second, 3);
+}
+
 // =============================================================================
 // TEST SUITE: Channel Advanced APIs
 // =============================================================================
 
 class ChannelAdvancedTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(ChannelAdvancedTests, ChannelRangeIteratesBufferedItems) {
@@ -833,7 +1045,7 @@ TEST_F(ChannelAdvancedTests, ChannelRangeIteratesBufferedItems) {
 }
 
 TEST_F(ChannelAdvancedTests, ChannelRangeEmptyChannel) {
-    channel<int> ch(10);
+    channel<int>     ch(10);
     std::vector<int> collected;
     for (auto val : channel_range(ch)) {
         collected.push_back(val);
@@ -877,11 +1089,13 @@ TEST_F(ChannelAdvancedTests, SendForSuccessPath) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         channel<int> ch(1);
-        bool sent = co_await ch.send_for(42, 100ms);
+        bool         sent = co_await ch.send_for(42, 100ms);
         EXPECT_TRUE(sent);
         auto v = ch.try_recv();
         EXPECT_TRUE(v.has_value());
-        if (v.has_value()) EXPECT_EQ(*v, 42);
+        if (v.has_value()) {
+            EXPECT_EQ(*v, 42);
+        }
         done = true;
     });
     run_for(500ms);
@@ -893,10 +1107,10 @@ TEST_F(ChannelAdvancedTests, SendForResumesWhenBufferedBackpressureIsReleased) {
     ASSERT_TRUE(ch.try_send(1));
 
     bool sender_done = false;
-    bool sent = false;
+    bool sent        = false;
 
     coro_scheduler().spawn([&]() -> task<void> {
-        sent = co_await ch.send_for(2, 200ms);
+        sent        = co_await ch.send_for(2, 200ms);
         sender_done = true;
     });
 
@@ -943,7 +1157,8 @@ TEST_F(ChannelAdvancedTests, RecvDrainsBufferOnClose) {
 // Main Entry Point
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     qb::io::async::init();
     return RUN_ALL_TESTS();

@@ -93,8 +93,7 @@ TEST_F(FileSystemTest, BasicFileOperations) {
 
     // Verify file contents
     std::ifstream check_file(write_file);
-    std::string   read_content((std::istreambuf_iterator<char>(check_file)),
-                               std::istreambuf_iterator<char>());
+    std::string   read_content((std::istreambuf_iterator<char>(check_file)), std::istreambuf_iterator<char>());
     EXPECT_EQ(read_content, write_content);
 }
 
@@ -222,8 +221,7 @@ TEST_F(FileSystemTest, PipeToFile) {
 
     // Verify file contents
     std::ifstream check_file(output_file);
-    std::string   read_content((std::istreambuf_iterator<char>(check_file)),
-                               std::istreambuf_iterator<char>());
+    std::string   read_content((std::istreambuf_iterator<char>(check_file)), std::istreambuf_iterator<char>());
     EXPECT_EQ(read_content, pipe_content);
 }
 
@@ -451,8 +449,7 @@ TEST_F(FileSystemTest, FileAccessModes) {
 
     // Verify file contents (should contain both writes)
     std::ifstream check_file(write_file);
-    std::string   content((std::istreambuf_iterator<char>(check_file)),
-                          std::istreambuf_iterator<char>());
+    std::string   content((std::istreambuf_iterator<char>(check_file)), std::istreambuf_iterator<char>());
     EXPECT_EQ(content, "test_append");
 }
 
@@ -571,8 +568,7 @@ TEST_F(FileSystemTest, FileToPipeAdvanced) {
     EXPECT_EQ(bytes_read, 0);
 
     // Verify the pipe has the complete content
-    std::string small_pipe_content(small_pipe.cbegin(),
-                                   small_pipe.cbegin() + small_pipe.size());
+    std::string small_pipe_content(small_pipe.cbegin(), small_pipe.cbegin() + small_pipe.size());
     EXPECT_EQ(small_pipe_content, small_content);
 
     // Test read after EOF
@@ -612,16 +608,14 @@ TEST_F(FileSystemTest, PipeToFileAdvanced) {
 
     // Verify file contains the concatenated content without gaps
     std::ifstream check_file(gap_file);
-    std::string   content((std::istreambuf_iterator<char>(check_file)),
-                          std::istreambuf_iterator<char>());
+    std::string   content((std::istreambuf_iterator<char>(check_file)), std::istreambuf_iterator<char>());
     EXPECT_EQ(content, " segment.Second segment.");
 
     // Test with a pipe containing binary data (including zeros)
     qb::allocator::pipe<char> binary_pipe;
 
     // Create binary data with some zero bytes
-    std::vector<char> binary_data = {'B', 'I', 'N', 0,   'A', 'R',
-                                     'Y', 0,   'D', 'A', 'T', 'A'};
+    std::vector<char> binary_data = {'B', 'I', 'N', 0, 'A', 'R', 'Y', 0, 'D', 'A', 'T', 'A'};
     char             *bin_buf     = binary_pipe.allocate_back(binary_data.size());
     std::memcpy(bin_buf, binary_data.data(), binary_data.size());
 
@@ -717,8 +711,7 @@ TEST_F(FileSystemTest, RoundTripOperations) {
             break;
         }
 
-        if (!std::equal(source_buffer.begin(), source_buffer.begin() + source.gcount(),
-                        dest_buffer.begin())) {
+        if (!std::equal(source_buffer.begin(), source_buffer.begin() + source.gcount(), dest_buffer.begin())) {
             files_identical = false;
             break;
         }
@@ -737,8 +730,7 @@ TEST_F(FileSystemTest, VeryLargeFileTransfer) {
     // Create a large file with repeating pattern
     std::string large_file = test_dir + "/very_large.dat";
 
-    // Use a relatively small size that will still test performance
-    // but won't be excessive for CI environments
+    // Use a relatively small size that won't be excessive for CI environments.
     const size_t large_size = 2 * 1024 * 1024; // 2 MB
 
     // Use a unique pattern that's easy to verify
@@ -768,9 +760,6 @@ TEST_F(FileSystemTest, VeryLargeFileTransfer) {
     qb::allocator::pipe<char> pipe;
     qb::io::sys::file_to_pipe f2p(pipe);
 
-    // Time the operation
-    auto start_time = std::chrono::high_resolution_clock::now();
-
     // Open and read the file
     EXPECT_TRUE(f2p.open(large_file));
 
@@ -790,28 +779,15 @@ TEST_F(FileSystemTest, VeryLargeFileTransfer) {
         }
     }
 
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto read_duration =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time)
-            .count();
-
     // Verify we read the whole file
     EXPECT_EQ(total_bytes, actual_size);
-
-    // Log performance metrics (using read_ops instead of asserting it's > 1)
-    std::cout << "Read " << total_bytes << " bytes in " << read_duration << "ms with "
-              << read_ops << " read operations ("
-              << (total_bytes / (read_duration ? read_duration : 1)) << " bytes/ms)"
-              << std::endl;
+    EXPECT_GT(read_ops, 0);
 
     // Now write to a new file
     std::string               output_file = test_dir + "/very_large_output.dat";
     qb::io::sys::pipe_to_file p2f(pipe);
 
     EXPECT_TRUE(p2f.open(output_file));
-
-    // Time the write operation
-    start_time = std::chrono::high_resolution_clock::now();
 
     // Try writing in multiple operations, though it may complete in one
     size_t total_written = 0;
@@ -830,19 +806,9 @@ TEST_F(FileSystemTest, VeryLargeFileTransfer) {
         }
     }
 
-    end_time = std::chrono::high_resolution_clock::now();
-    auto write_duration =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time)
-            .count();
-
     // Verify we wrote the whole file
     EXPECT_EQ(total_written, actual_size);
-
-    // Log performance metrics (using write_ops instead of asserting it's > 1)
-    std::cout << "Wrote " << total_written << " bytes in " << write_duration
-              << "ms with " << write_ops << " write operations ("
-              << (total_written / (write_duration ? write_duration : 1)) << " bytes/ms)"
-              << std::endl;
+    EXPECT_GT(write_ops, 0);
 
     // Verify output file size matches input
     EXPECT_EQ(std::filesystem::file_size(output_file), actual_size);

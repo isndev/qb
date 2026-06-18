@@ -36,10 +36,12 @@ using namespace std::chrono_literals;
 
 class CancellationTokenTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
@@ -82,11 +84,9 @@ TEST_F(CancellationTokenTests, TokenCopySharesState) {
  */
 TEST_F(CancellationTokenTests, CancellationCallback) {
     cancellation_token token;
-    std::atomic<bool> callback_invoked{false};
+    std::atomic<bool>  callback_invoked{false};
 
-    token.on_cancel([&callback_invoked]() {
-        callback_invoked = true;
-    });
+    token.on_cancel([&callback_invoked]() { callback_invoked = true; });
 
     EXPECT_FALSE(callback_invoked);
 
@@ -105,9 +105,7 @@ TEST_F(CancellationTokenTests, CallbackImmediateIfCancelled) {
 
     std::atomic<bool> callback_invoked{false};
 
-    token.on_cancel([&callback_invoked]() {
-        callback_invoked = true;
-    });
+    token.on_cancel([&callback_invoked]() { callback_invoked = true; });
 
     EXPECT_TRUE(callback_invoked);
 }
@@ -134,10 +132,12 @@ TEST_F(CancellationTokenTests, ThrowIfCancelled) {
 
 class CancellationCoroutineTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
@@ -149,8 +149,8 @@ protected:
  */
 TEST_F(CancellationCoroutineTests, CancelStopsLoop) {
     cancellation_token token;
-    std::atomic<bool> started{false};
-    std::atomic<bool> cancelled{false};
+    std::atomic<bool>  started{false};
+    std::atomic<bool>  cancelled{false};
 
     auto worker = [&token, &started, &cancelled]() -> task<void> {
         started = true;
@@ -184,14 +184,14 @@ TEST_F(CancellationCoroutineTests, CancelStopsLoop) {
  */
 TEST_F(CancellationCoroutineTests, CheckCancelledAwaiter) {
     cancellation_token token;
-    std::atomic<bool> caught{false};
+    std::atomic<bool>  caught{false};
 
     auto worker = [&token, &caught]() -> task<void> {
         try {
             co_await sleep(10ms);
             co_await check_cancelled(token);
             co_await sleep(100ms);
-        } catch (const cancelled_error&) {
+        } catch (const cancelled_error &) {
             caught = true;
         }
     };
@@ -212,12 +212,12 @@ TEST_F(CancellationCoroutineTests, CheckCancelledAwaiter) {
  */
 TEST_F(CancellationCoroutineTests, CancellableSleep) {
     cancellation_token token;
-    std::atomic<bool> done{false};
+    std::atomic<bool>  done{false};
 
     auto worker = [&token, &done]() -> task<void> {
         try {
             co_await cancellable_sleep(500ms, token);
-        } catch (const cancelled_error&) {
+        } catch (const cancelled_error &) {
             done = true;
         }
     };
@@ -226,12 +226,12 @@ TEST_F(CancellationCoroutineTests, CancellableSleep) {
     coro_scheduler().spawn(std::move(t));
 
     run_for(100ms);
-    EXPECT_FALSE(done);  // Should still be sleeping
+    EXPECT_FALSE(done); // Should still be sleeping
 
     token.cancel();
 
     run_for(100ms);
-    EXPECT_TRUE(done);  // Cancelled and threw
+    EXPECT_TRUE(done); // Cancelled and threw
 }
 
 /**
@@ -240,12 +240,12 @@ TEST_F(CancellationCoroutineTests, CancellableSleep) {
  */
 TEST_F(CancellationCoroutineTests, CancellableSleepWakesImmediatelyOnCancel) {
     cancellation_token token;
-    std::atomic<bool> done{false};
+    std::atomic<bool>  done{false};
 
     auto worker = [&token, &done]() -> task<void> {
         try {
             co_await cancellable_sleep(1000ms, token);
-        } catch (const cancelled_error&) {
+        } catch (const cancelled_error &) {
             done = true;
         }
     };
@@ -264,8 +264,8 @@ TEST_F(CancellationCoroutineTests, CancellableSleepWakesImmediatelyOnCancel) {
  */
 TEST_F(CancellationCoroutineTests, MakeCancellableWrapper) {
     cancellation_token token;
-    std::atomic<bool> started{false};
-    std::atomic<bool> done{false};
+    std::atomic<bool>  started{false};
+    std::atomic<bool>  done{false};
 
     auto inner = [&started, &done]() -> task<int> {
         started = true;
@@ -277,8 +277,8 @@ TEST_F(CancellationCoroutineTests, MakeCancellableWrapper) {
     auto wrapper = [&token, &inner]() -> task<void> {
         try {
             auto result = co_await make_cancellable(inner(), token, true);
-            (void)result;
-        } catch (const cancelled_error&) {
+            (void) result;
+        } catch (const cancelled_error &) {
             // Expected
         }
     };
@@ -302,10 +302,12 @@ TEST_F(CancellationCoroutineTests, MakeCancellableWrapper) {
 
 class CancellationEdgeCases : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
@@ -317,11 +319,9 @@ protected:
  */
 TEST_F(CancellationEdgeCases, CancelIdempotent) {
     cancellation_token token;
-    std::atomic<int> callback_count{0};
+    std::atomic<int>   callback_count{0};
 
-    token.on_cancel([&callback_count]() {
-        callback_count++;
-    });
+    token.on_cancel([&callback_count]() { callback_count++; });
 
     token.cancel();
     token.cancel();
@@ -337,10 +337,12 @@ TEST_F(CancellationEdgeCases, CancelIdempotent) {
 
 class WithDeadlineTests : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
@@ -352,7 +354,7 @@ protected:
  */
 TEST_F(WithDeadlineTests, WithDeadlineSuccess) {
     std::atomic<bool> done{false};
-    auto deadline = std::chrono::steady_clock::now() + 200ms;
+    auto              deadline = std::chrono::steady_clock::now() + 200ms;
 
     auto coro_fn = [deadline, &done]() -> task<void> {
         int result = co_await with_deadline(
@@ -360,8 +362,7 @@ TEST_F(WithDeadlineTests, WithDeadlineSuccess) {
                 co_await sleep(20ms);
                 co_return 42;
             }(),
-            deadline
-        );
+            deadline);
         EXPECT_EQ(result, 42);
         done = true;
     };
@@ -377,17 +378,16 @@ TEST_F(WithDeadlineTests, WithDeadlineSuccess) {
  */
 TEST_F(WithDeadlineTests, WithDeadlineAlreadyPassed) {
     std::atomic<bool> caught{false};
-    auto deadline = std::chrono::steady_clock::now() - 10ms;
+    auto              deadline = std::chrono::steady_clock::now() - 10ms;
 
     auto coro_fn = [deadline, &caught]() -> task<void> {
         try {
-            (void)co_await with_deadline(
+            (void) co_await with_deadline(
                 []() -> task<int> {
                     co_return 1;
                 }(),
-                deadline
-            );
-        } catch (const timeout_error&) {
+                deadline);
+        } catch (const timeout_error &) {
             caught = true;
         }
     };
@@ -405,19 +405,18 @@ TEST_F(WithDeadlineTests, WithDeadlineAlreadyPassed) {
  */
 TEST_F(WithDeadlineTests, WithDeadlineTimesOut) {
     std::atomic<bool> caught{false};
-    auto deadline = std::chrono::steady_clock::now() + 30ms;
+    auto              deadline = std::chrono::steady_clock::now() + 30ms;
 
     auto coro_fn = [deadline, &caught]() -> task<void> {
         try {
-            (void)co_await with_deadline(
+            (void) co_await with_deadline(
                 []() -> task<int> {
-                    co_await sleep(500ms);   // much longer than deadline
+                    co_await sleep(500ms); // much longer than deadline
                     co_return 1;
                 }(),
-                deadline
-            );
+                deadline);
             ADD_FAILURE() << "Expected timeout_error";
-        } catch (const timeout_error&) {
+        } catch (const timeout_error &) {
             caught = true;
         }
     };
@@ -440,18 +439,16 @@ TEST_F(WithDeadlineTests, WithDeadlineRepeated) {
         // 3 success, 3 timeout
         for (int i = 0; i < 6; ++i) {
             bool should_timeout = (i % 2 != 0);
-            auto dl = std::chrono::steady_clock::now() +
-                      (should_timeout ? 10ms : 200ms);
+            auto dl             = std::chrono::steady_clock::now() + (should_timeout ? 10ms : 200ms);
+            auto op             = [should_timeout]() -> task<int> {
+                if (should_timeout)
+                    co_await sleep(500ms);
+                co_return 1;
+            };
             try {
-                (void)co_await with_deadline(
-                    [should_timeout]() -> task<int> {
-                        if (should_timeout) co_await sleep(500ms);
-                        co_return 1;
-                    }(),
-                    dl
-                );
+                (void) co_await with_deadline(op(), dl);
                 ++successes;
-            } catch (const timeout_error&) {
+            } catch (const timeout_error &) {
                 ++timeouts;
             }
         }
@@ -470,22 +467,22 @@ TEST_F(WithDeadlineTests, WithDeadlineRepeated) {
  *        without waiting 500ms. The coroutine never reaches the sleep.
  */
 TEST_F(CancellationCoroutineTests, CancellableSleepPreCancelled) {
-    std::atomic<bool> caught{false};
+    std::atomic<bool>  caught{false};
     cancellation_token token;
-    token.cancel();  // cancel BEFORE sleep
+    token.cancel(); // cancel BEFORE sleep
 
     auto coro_fn = [&]() -> task<void> {
         try {
             co_await cancellable_sleep(500ms, token);
             // If we reach here, the sleep completed without throwing — fail.
             ADD_FAILURE() << "Expected cancelled_error";
-        } catch (const cancelled_error&) {
+        } catch (const cancelled_error &) {
             caught = true;
         }
     };
 
     coro_scheduler().spawn(coro_fn());
-    run_for(50ms);  // must complete well before 500ms
+    run_for(50ms); // must complete well before 500ms
     EXPECT_TRUE(caught);
 }
 
@@ -496,23 +493,21 @@ TEST_F(CancellationCoroutineTests, CancellableSleepPreCancelled) {
  *        safe for reuse without leaking state between calls.
  */
 TEST_F(CancellationCoroutineTests, MakeCancellableMultipleSequential) {
-    std::atomic<int> completed{0};
-    std::atomic<int> cancelled_count{0};
+    std::atomic<int>   completed{0};
+    std::atomic<int>   cancelled_count{0};
     cancellation_token token;
 
     auto coro_fn = [&]() -> task<void> {
         for (int i = 0; i < 4; ++i) {
+            auto op = [i]() -> task<int> {
+                co_await sleep(20ms);
+                co_return i;
+            };
             try {
-                int v = co_await make_cancellable(
-                    [i]() -> task<int> {
-                        co_await sleep(20ms);
-                        co_return i;
-                    }(),
-                    token
-                );
-                (void)v;
+                int v = co_await make_cancellable(op(), token);
+                (void) v;
                 ++completed;
-            } catch (const cancelled_error&) {
+            } catch (const cancelled_error &) {
                 ++cancelled_count;
             }
         }
@@ -540,22 +535,29 @@ TEST_F(CancellationCoroutineTests, MakeCancellableMultipleSequential) {
 
 class CancellationAdvancedTests : public ::testing::Test {
 protected:
-    void SetUp() override { qb::io::async::init(); }
-    void TearDown() override { qb::io::async::listener::current.clear(); }
+    void
+    SetUp() override {
+        qb::io::async::init();
+    }
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
 };
 
 TEST_F(CancellationAdvancedTests, YieldOrCancelYieldsAndThrows) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         cancellation_token token;
-        int iterations = 0;
+        int                iterations = 0;
         try {
             for (int i = 0; i < 100; ++i) {
                 ++iterations;
-                if (i == 3) token.cancel();
+                if (i == 3)
+                    token.cancel();
                 co_await yield_or_cancel(token);
             }
-        } catch (const cancelled_error&) {
+        } catch (const cancelled_error &) {
         }
         EXPECT_EQ(iterations, 4);
         done = true;
@@ -568,7 +570,7 @@ TEST_F(CancellationAdvancedTests, YieldOrCancelYieldsWithoutCancel) {
     bool done = false;
     coro_scheduler().spawn([&]() -> task<void> {
         cancellation_token token;
-        int iterations = 0;
+        int                iterations = 0;
         for (int i = 0; i < 5; ++i) {
             ++iterations;
             co_await yield_or_cancel(token);
@@ -594,7 +596,7 @@ TEST_F(CancellationAdvancedTests, WithDeadlineAlreadyCancelledToken) {
                 }(),
                 deadline, token);
             ADD_FAILURE() << "Should throw";
-        } catch (const cancelled_error&) {
+        } catch (const cancelled_error &) {
         }
         done = true;
     });
@@ -606,7 +608,8 @@ TEST_F(CancellationAdvancedTests, WithDeadlineAlreadyCancelledToken) {
 // Main Entry Point
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     qb::io::async::init();
     return RUN_ALL_TESTS();
