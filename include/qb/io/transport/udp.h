@@ -173,25 +173,47 @@ public:
             // this nested class yet.
             if (proxy._last_pushed_offset == kNoPendingMessage) {
                 proxy._last_pushed_offset = out_buffer.size();
-                auto &m = out_buffer.template allocate_back<pushed_message>();
-                m.ident = proxy._remote_dest;
-                m.size  = 0;
+                auto &m                   = out_buffer.template allocate_size<pushed_message>(
+                    message_padding_size(0));
+                m.ident                   = proxy._remote_dest;
+                m.size                    = 0;
+                m.storage_size            = message_storage_size(0);
             }
+
+            auto *p = reinterpret_cast<udp::pushed_message *>(
+                out_buffer.begin() + proxy._last_pushed_offset);
+            const auto previous_payload = p->size;
+            const auto previous_storage = p->storage_size;
+            const auto previous_padding = previous_storage - sizeof(pushed_message) - previous_payload;
+            if (previous_padding)
+                out_buffer.free_back(previous_padding);
+
             const auto start_size = out_buffer.size();
             out_buffer << std::forward<T>(data);
-            const auto added = static_cast<std::size_t>(out_buffer.size() - start_size);
-            auto p = reinterpret_cast<udp::pushed_message *>(
-                out_buffer.begin() + proxy._last_pushed_offset);
-            p->size += added;
-
-            const auto max_write = proxy.max_write_buffer_size();
-            if (p->size > io::udp::socket::MaxDatagramSize ||
+            const auto added       = static_cast<std::size_t>(out_buffer.size() - start_size);
+            const auto new_payload = previous_payload + added;
+            const auto new_padding = message_padding_size(new_payload);
+            const auto max_write   = proxy.max_write_buffer_size();
+            if (new_payload > io::udp::socket::MaxDatagramSize ||
                 (max_write != static_cast<std::size_t>(-1) &&
-                 out_buffer.size() > max_write)) {
+                 out_buffer.size() + new_padding > max_write)) {
                 out_buffer.free_back(added);
-                p->size -= added;
+                if (previous_padding)
+                    out_buffer.allocate_back(previous_padding);
+                p = reinterpret_cast<udp::pushed_message *>(
+                    out_buffer.begin() + proxy._last_pushed_offset);
+                p->size         = previous_payload;
+                p->storage_size = previous_storage;
                 qb::io::socket::set_last_errno(EMSGSIZE);
+                return *this;
             }
+
+            if (new_padding)
+                out_buffer.allocate_back(new_padding);
+            p = reinterpret_cast<udp::pushed_message *>(
+                out_buffer.begin() + proxy._last_pushed_offset);
+            p->size         = new_payload;
+            p->storage_size = message_storage_size(new_payload);
             return *this;
         }
 
@@ -227,9 +249,26 @@ private:
      *       caller.
      */
     struct pushed_message {
-        udp::identity ident;     /**< Destination identity. */
-        std::size_t   size = 0;  /**< Size of the payload (excluding this header). */
+        udp::identity ident;            /**< Destination identity. */
+        std::size_t   size         = 0; /**< Size of the payload (excluding this header). */
+        std::size_t   storage_size = 0; /**< Header + payload + alignment padding. */
     };
+
+    static constexpr std::size_t
+    align_message_storage(std::size_t const size) noexcept {
+        constexpr auto alignment = alignof(pushed_message);
+        return ((size + alignment - 1u) / alignment) * alignment;
+    }
+
+    static constexpr std::size_t
+    message_storage_size(std::size_t const payload_size) noexcept {
+        return align_message_storage(sizeof(pushed_message) + payload_size);
+    }
+
+    static constexpr std::size_t
+    message_padding_size(std::size_t const payload_size) noexcept {
+        return message_storage_size(payload_size) - sizeof(pushed_message) - payload_size;
+    }
 
     /**
      * @brief Sentinel offset meaning "no datagram currently under construction".
@@ -281,9 +320,11 @@ public:
     out() {
         if (_last_pushed_offset == kNoPendingMessage) {
             _last_pushed_offset = _out_buffer.size();
-            auto &m             = _out_buffer.allocate_back<pushed_message>();
+            auto &m             = _out_buffer.allocate_size<pushed_message>(
+                message_padding_size(0));
             m.ident             = _remote_dest;
             m.size              = 0;
+            m.storage_size      = message_storage_size(0);
         }
 
         return _out;
@@ -363,8 +404,8 @@ public:
         if (!_out_buffer.size())
             return 0;
 
-        auto      &msg       = *reinterpret_cast<pushed_message *>(_out_buffer.begin());
-        auto      *begin     = _out_buffer.begin() + sizeof(pushed_message);
+        auto &msg   = *reinterpret_cast<pushed_message *>(_out_buffer.begin());
+        auto *begin = _out_buffer.begin() + sizeof(pushed_message);
 
         if (msg.size > io::udp::socket::MaxDatagramSize) {
             qb::io::socket::set_last_errno(EMSGSIZE);
@@ -376,7 +417,7 @@ public:
 
         if (qb::likely(ret >= 0)) {
             // UDP is all-or-nothing: the whole pushed_message is consumed on success.
-            _out_buffer.free_front(msg.size + sizeof(pushed_message));
+            _out_buffer.free_front(msg.storage_size);
             if (_out_buffer.size()) {
                 _out_buffer.reorder();
                 _last_pushed_offset = kNoPendingMessage;
@@ -422,23 +463,27 @@ public:
         }
 
         const auto max_write = this->max_write_buffer_size();
-        const auto required  = sizeof(pushed_message) + size;
+        const auto required  = message_storage_size(size);
         if (max_write != static_cast<std::size_t>(-1) &&
             (required > max_write || _out_buffer.size() > max_write - required)) {
             qb::io::socket::set_last_errno(EMSGSIZE);
             return nullptr;
         }
 
-        auto &m = _out_buffer.allocate_back<pushed_message>();
-        m.ident = to;
-        m.size  = size;
+        auto &m = _out_buffer.allocate_size<pushed_message>(
+            required - sizeof(pushed_message));
+        m.ident        = to;
+        m.size         = size;
+        m.storage_size = required;
         // A fresh pushed_message header has just been appended as a stand-alone
         // datagram; the stream-style builder should start a new one on its next
         // append rather than coalescing with this one.
         _last_pushed_offset = kNoPendingMessage;
 
-        return static_cast<char *>(
-            std::memcpy(_out_buffer.allocate_back(size), data, size));
+        auto *payload = reinterpret_cast<char *>(&m) + sizeof(pushed_message);
+        if (size)
+            std::memcpy(payload, data, size);
+        return payload;
     }
 };
 
