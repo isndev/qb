@@ -228,7 +228,7 @@ Disconnection reasons are typed by `qb::io::async::event::disconnect_reason` (`q
 | `message_too_large` | `-2` | DoS guard: an incoming message exceeded `max_message_size()`. |
 | `buffer_overflow` | `-3` | DoS guard: a read or write buffer exceeded its configured maximum. |
 
-Positive codes above `1` are reserved for application use. (For example, `qbm-http` defines its own positive reason codes.)
+Positive codes are available for application-specific use; the standard meaning of `0`/`1` shown above holds only at the qb-io transport layer, and a module may reassign them within its own context. (For example, `qbm-http`'s `DisconnectedReason` enum uses `0`–`5`: `ByUser = 0`, `ByTimeout = 1`, `ResponseTransmitted = 2`, `ServerError = 3`, `ByProtocolError = 4`, `Undefined = 5`.)
 
 ## Pitfalls
 

@@ -220,7 +220,7 @@ public:
 
 Copying a `MessageContainer` shares the underlying `broker::Message`; it does not duplicate the payload string. Because the payload lives behind a stable `shared_ptr`, a `std::string_view` taken from `payload()` stays valid as long as any copy of the container is alive. The events below exploit exactly that.
 
-> **A note on atomics.** The container uses the `std::atomic_load`/`std::atomic_store` free-function overloads for `std::shared_ptr`. These are deprecated in C++20 in favor of `std::atomic<std::shared_ptr<T>>`, but remain valid; the example compiles against the c++23 toolchain. Inside one `TopicManagerActor` the broadcast container is never mutated after construction, so the synchronization that matters is the reference-count traffic when copies are made on, and destroyed on, different cores — which `shared_ptr` handles regardless.
+> **A note on atomics.** The container uses the `std::atomic_load`/`std::atomic_store` free-function overloads for `std::shared_ptr`. These are deprecated in C++20 in favor of `std::atomic<std::shared_ptr<T>>`, but remain valid under the C++23 toolchain (only deprecated, not removed). Inside one `TopicManagerActor` the broadcast container is never mutated after construction, so the synchronization that matters is the reference-count traffic when copies are made on, and destroyed on, different cores — which `shared_ptr` handles regardless.
 
 ## Event types
 
