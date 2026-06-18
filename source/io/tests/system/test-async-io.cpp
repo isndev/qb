@@ -1878,6 +1878,80 @@ TEST_F(AsyncIOTest, ConnectorToRefusedPort) {
     EXPECT_TRUE(socket_invalid);
 }
 
+TEST_F(AsyncIOTest, ConnectorSucceedsWithFreshAndExistingSocket) {
+    constexpr int expected_connections = 2;
+
+    qb::io::tcp::listener listener;
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    std::thread server_thread([&] {
+        for (int i = 0; i < expected_connections; ++i) {
+            qb::io::tcp::socket accepted;
+            ASSERT_EQ(listener.accept(accepted), SocketStatus::Done);
+            char marker = 0;
+            accepted.set_nonblocking(false);
+            ASSERT_EQ(accepted.read(&marker, sizeof(marker)), 1);
+            ASSERT_EQ(accepted.write(&marker, sizeof(marker)), 1);
+            accepted.disconnect();
+        }
+    });
+
+    auto run_until = [](std::atomic<bool> &done) {
+        for (int i = 0; i < 200 && !done.load(); ++i) {
+            async::run(EVRUN_ONCE);
+            std::this_thread::sleep_for(5ms);
+        }
+    };
+
+    std::atomic<bool> fresh_done{false};
+    bool              fresh_connected = false;
+    async::tcp::connect<qb::io::tcp::socket>(
+        uri{"tcp://127.0.0.1:" + std::to_string(port)},
+        [&](qb::io::tcp::socket &&sock) {
+            fresh_connected = sock.is_open();
+            if (sock.is_open()) {
+                ASSERT_EQ(sock.write("a", 1), 1);
+                char reply = 0;
+                sock.set_nonblocking(false);
+                ASSERT_EQ(sock.read(&reply, sizeof(reply)), 1);
+                EXPECT_EQ(reply, 'a');
+                sock.disconnect();
+            }
+            fresh_done = true;
+        },
+        1s);
+    run_until(fresh_done);
+    EXPECT_TRUE(fresh_done.load());
+    EXPECT_TRUE(fresh_connected);
+
+    std::atomic<bool> existing_done{false};
+    bool              existing_connected = false;
+    qb::io::tcp::socket existing_socket;
+    async::tcp::connect<qb::io::tcp::socket>(
+        std::move(existing_socket),
+        uri{"tcp://127.0.0.1:" + std::to_string(port)},
+        [&](qb::io::tcp::socket &&sock) {
+            existing_connected = sock.is_open();
+            if (sock.is_open()) {
+                ASSERT_EQ(sock.write("b", 1), 1);
+                char reply = 0;
+                sock.set_nonblocking(false);
+                ASSERT_EQ(sock.read(&reply, sizeof(reply)), 1);
+                EXPECT_EQ(reply, 'b');
+                sock.disconnect();
+            }
+            existing_done = true;
+        },
+        1s);
+    run_until(existing_done);
+    EXPECT_TRUE(existing_done.load());
+    EXPECT_TRUE(existing_connected);
+
+    server_thread.join();
+}
+
 // ---------------------------------------------------------------------------
 // Async connector with timeout to unreachable address
 // ---------------------------------------------------------------------------

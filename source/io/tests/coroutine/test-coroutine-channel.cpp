@@ -128,6 +128,30 @@ TEST_F(ChannelBasicTests, DestroyChannelWhileSendForParkedNoUAF) {
     EXPECT_FALSE(sent); // resolved to false, no use-after-free
 }
 
+TEST_F(ChannelBasicTests, DestroyChannelWhileSendParkedNoUAF) {
+    auto ch = std::make_unique<channel<int>>(0);
+    bool done = false;
+    bool threw_closed = false;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        try {
+            co_await ch->send(7); // parks: unbuffered channel with no receiver
+        } catch (channel_closed const&) {
+            threw_closed = true;
+        }
+        done = true;
+    });
+
+    run_for(10ms);
+    EXPECT_FALSE(done);
+
+    ch.reset();
+
+    run_for(50ms);
+    EXPECT_TRUE(done);
+    EXPECT_TRUE(threw_closed);
+}
+
 /**
  * @test Try send on buffered channel
  * @brief Non-blocking send when buffer has space
@@ -140,6 +164,48 @@ TEST_F(ChannelBasicTests, TrySendBuffered) {
     EXPECT_FALSE(ch.try_send(3));  // Buffer full
 
     EXPECT_EQ(ch.size(), 2);
+}
+
+TEST_F(ChannelBasicTests, TrySendCopyAndMoveWakePendingReceivers) {
+    channel<std::string> ch(0);
+    std::vector<std::string> received;
+
+    auto receiver = [&]() -> task<void> {
+        auto first = co_await ch.recv();
+        if (first) received.push_back(*first);
+        auto second = co_await ch.recv();
+        if (second) received.push_back(*second);
+    };
+
+    coro_scheduler().spawn(receiver());
+    run_for(10ms);
+
+    const std::string copied = "copy-path";
+    EXPECT_TRUE(ch.try_send(copied));
+    run_for(10ms);
+
+    std::string moved = "move-path";
+    EXPECT_TRUE(ch.try_send(std::move(moved)));
+    run_for(50ms);
+
+    ASSERT_EQ(received.size(), 2u);
+    EXPECT_EQ(received[0], "copy-path");
+    EXPECT_EQ(received[1], "move-path");
+}
+
+TEST_F(ChannelBasicTests, TrySendReportsClosedAndFullForCopyAndMove) {
+    channel<std::string> ch(1);
+    const std::string copied_first = "first";
+    const std::string copied_second = "second";
+
+    EXPECT_TRUE(ch.try_send(copied_first));
+    EXPECT_FALSE(ch.try_send(copied_second));
+    EXPECT_FALSE(ch.try_send(std::string{"third"}));
+
+    ch.close();
+
+    EXPECT_FALSE(ch.try_send(copied_second));
+    EXPECT_FALSE(ch.try_send(std::string{"closed-move"}));
 }
 
 /**
@@ -543,6 +609,74 @@ TEST_F(ChannelSelectTests, VectorSelect_PicksFirstReady) {
     EXPECT_EQ(result.get<int>(), 7);
 }
 
+TEST_F(ChannelSelectTests, RegisterSelectWaiterResolvesBufferedAndClosedChannels) {
+    channel<int> buffered(2);
+    auto buffered_state = std::make_shared<channel_select_state>();
+
+    EXPECT_TRUE(buffered.try_send(42));
+    buffered.register_select_waiter(buffered_state, 3);
+
+    EXPECT_TRUE(buffered_state->resolved);
+    EXPECT_FALSE(buffered_state->closed);
+    EXPECT_EQ(buffered_state->winner, 3u);
+    EXPECT_EQ(std::any_cast<int>(buffered_state->value), 42);
+    EXPECT_TRUE(buffered.empty());
+
+    channel<int> closed(1);
+    auto closed_state = std::make_shared<channel_select_state>();
+
+    closed.close();
+    closed.register_select_waiter(closed_state, 1);
+
+    EXPECT_TRUE(closed_state->resolved);
+    EXPECT_TRUE(closed_state->closed);
+    EXPECT_EQ(closed_state->winner, 1u);
+    EXPECT_FALSE(closed_state->value.has_value());
+}
+
+TEST_F(ChannelSelectTests, VectorSelectFastPathPrefersBufferedDataOverClosedChannels) {
+    channel<int> ch0(1), ch1(1), ch2(1);
+    ch0.close();
+    EXPECT_TRUE(ch1.try_send(77));
+
+    std::vector<channel<int>*> channels = {&ch0, &ch1, &ch2};
+    select_result result;
+    bool done = false;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        result = co_await select(channels);
+        done = true;
+    });
+
+    run_for(20ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_FALSE(result.closed);
+    EXPECT_EQ(result.index, 1u);
+    EXPECT_EQ(result.get<int>(), 77);
+}
+
+TEST_F(ChannelSelectTests, VectorSelectFastPathReportsClosedEmptyChannel) {
+    channel<int> ch0(1), ch1(1);
+    ch1.close();
+
+    std::vector<channel<int>*> channels = {&ch0, &ch1};
+    select_result result;
+    bool done = false;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        result = co_await select(channels);
+        done = true;
+    });
+
+    run_for(20ms);
+
+    EXPECT_TRUE(done);
+    EXPECT_TRUE(result.closed);
+    EXPECT_EQ(result.index, 1u);
+    EXPECT_FALSE(result.value.has_value());
+}
+
 TEST_F(ChannelSelectTests, SelectInLoop_DrainsMultipleChannels) {
     channel<int>  ch_a(4), ch_b(4);
     std::vector<int> received;
@@ -752,6 +886,34 @@ TEST_F(ChannelAdvancedTests, SendForSuccessPath) {
     });
     run_for(500ms);
     EXPECT_TRUE(done);
+}
+
+TEST_F(ChannelAdvancedTests, SendForResumesWhenBufferedBackpressureIsReleased) {
+    channel<int> ch(1);
+    ASSERT_TRUE(ch.try_send(1));
+
+    bool sender_done = false;
+    bool sent = false;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        sent = co_await ch.send_for(2, 200ms);
+        sender_done = true;
+    });
+
+    run_for(10ms);
+    EXPECT_FALSE(sender_done);
+
+    auto first = ch.try_recv();
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(*first, 1);
+
+    run_for(50ms);
+
+    EXPECT_TRUE(sender_done);
+    EXPECT_TRUE(sent);
+    auto second = ch.try_recv();
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(*second, 2);
 }
 
 TEST_F(ChannelAdvancedTests, RecvDrainsBufferOnClose) {

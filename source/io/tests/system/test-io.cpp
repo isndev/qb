@@ -35,6 +35,7 @@
 #include <qb/io/udp/socket.h>
 #include <qb/uuid.h>
 #include <set>
+#include <stdexcept>
 #include <thread>
 #include <unordered_set>
 #include <vector>
@@ -1297,4 +1298,34 @@ TEST(JsonProtocol, MsgpackDepthGuard) {
     std::string over_mp(kMax + 1, char(0x91));
     over_mp.push_back(char(0xc0));
     EXPECT_FALSE(msgpack_depth_within(over_mp.data(), over_mp.size(), kMax));
+}
+
+TEST(JsonProtocol, MsgpackDepthSaxScalarCallbacksAndErrors) {
+    qb::protocol::detail::msgpack_depth_sax scalar_sax(1);
+    nlohmann::json::string_t                text   = "qb";
+    nlohmann::json::binary_t                binary(
+        std::vector<std::uint8_t>{std::uint8_t{1}, std::uint8_t{2}});
+
+    EXPECT_TRUE(scalar_sax.null());
+    EXPECT_TRUE(scalar_sax.boolean(true));
+    EXPECT_TRUE(scalar_sax.number_integer(-42));
+    EXPECT_TRUE(scalar_sax.number_unsigned(42));
+    EXPECT_TRUE(scalar_sax.number_float(1.25, text));
+    EXPECT_TRUE(scalar_sax.string(text));
+    EXPECT_TRUE(scalar_sax.binary(binary));
+    EXPECT_TRUE(scalar_sax.key(text));
+
+    qb::protocol::detail::msgpack_depth_sax object_sax(1);
+    EXPECT_TRUE(object_sax.start_object(0));
+    EXPECT_FALSE(object_sax.start_array(0));
+    EXPECT_TRUE(object_sax.end_array());
+    EXPECT_TRUE(object_sax.end_object());
+
+    qb::protocol::detail::msgpack_depth_sax array_sax(1);
+    EXPECT_TRUE(array_sax.start_array(0));
+    EXPECT_FALSE(array_sax.start_object(0));
+    EXPECT_TRUE(array_sax.end_object());
+    EXPECT_TRUE(array_sax.end_array());
+
+    EXPECT_FALSE(scalar_sax.parse_error(0, "x", std::runtime_error("parse error")));
 }

@@ -32,7 +32,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          ./scripts/ci-install-linux-dependencies.sh --llvm-clang --google-test --quic
+          ./scripts/ci-install-linux-dependencies.sh --profile sanitize
           "clang-${LLVM_VERSION}" --version
 
       - name: Configure

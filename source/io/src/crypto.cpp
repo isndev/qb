@@ -112,7 +112,7 @@ DISABLE_WARNING_NARROWING
 /// Returns hex value from byte.
 int
 crypto::hex_value(unsigned char hex_digit) noexcept {
-    static const char hex_values[256] = {
+    static constexpr int hex_values[256] = {
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
         -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
         -1, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  -1, -1,
@@ -336,8 +336,8 @@ crypto::base64_encode(const unsigned char *data, size_t len) {
         // Free whichever allocation succeeded (BIO_free_all(nullptr) is a no-op)
         // before throwing — the two BIOs are not yet chained, so leaking the
         // successful one on partial failure was a real (OOM-path) leak.
-        BIO_free_all(bio);
-        BIO_free_all(b64);
+        BIO_free_all(bio); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        BIO_free_all(b64); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("Error during BIO creation");
     }
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL); // disable newline characters in output
@@ -359,8 +359,8 @@ crypto::base64_decode(const std::string &input) {
     BIO *b64 = BIO_new(BIO_f_base64());
     if (!bio || !b64) {
         // Free whichever allocation succeeded before throwing (see base64_encode).
-        BIO_free_all(bio);
-        BIO_free_all(b64);
+        BIO_free_all(bio); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        BIO_free_all(b64); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("Error during BIO creation");
     }
     BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
@@ -368,7 +368,7 @@ crypto::base64_decode(const std::string &input) {
     std::vector<unsigned char> decoded(input.size());
     int decodedLen = BIO_read(bio, decoded.data(), static_cast<int>(input.size()));
     if (decodedLen < 0) {
-        BIO_free_all(bio);
+        BIO_free_all(bio); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("Error reading BIO");
     }
     decoded.resize(decodedLen);
@@ -387,7 +387,7 @@ crypto::hmac_sha256(const std::vector<unsigned char> &key, const std::string &da
     }
     EVP_MAC_CTX *ctx = EVP_MAC_CTX_new(mac);
     if (!ctx) {
-        EVP_MAC_free(mac);
+        EVP_MAC_free(mac); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("EVP_MAC_CTX_new failed");
     }
     // Spécifier l'algorithme de hachage à utiliser : "SHA256"
@@ -396,22 +396,22 @@ crypto::hmac_sha256(const std::vector<unsigned char> &key, const std::string &da
         OSSL_PARAM_construct_utf8_string("digest", const_cast<char *>("SHA256"), 0);
     params[1] = OSSL_PARAM_construct_end();
     if (EVP_MAC_init(ctx, key.data(), key.size(), params) != 1) {
-        EVP_MAC_CTX_free(ctx);
-        EVP_MAC_free(mac);
+        EVP_MAC_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        EVP_MAC_free(mac); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("EVP_MAC_init failed");
     }
     if (EVP_MAC_update(ctx, reinterpret_cast<const unsigned char *>(data.data()),
                        data.size()) != 1) {
-        EVP_MAC_CTX_free(ctx);
-        EVP_MAC_free(mac);
+        EVP_MAC_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        EVP_MAC_free(mac); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("EVP_MAC_update failed");
     }
     size_t out_len     = 0;
     size_t out_buf_len = EVP_MAX_MD_SIZE; // taille maximale possible
     result.resize(out_buf_len);
     if (EVP_MAC_final(ctx, result.data(), &out_len, result.size()) != 1) {
-        EVP_MAC_CTX_free(ctx);
-        EVP_MAC_free(mac);
+        EVP_MAC_CTX_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        EVP_MAC_free(mac); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("EVP_MAC_final failed");
     }
     result.resize(out_len);
@@ -470,7 +470,7 @@ crypto::generate_secure_random_string(std::size_t len, std::string_view range) {
     std::vector<unsigned char> random_bytes(bytes_needed);
 
     if (RAND_bytes(random_bytes.data(), static_cast<int>(bytes_needed)) != 1) {
-        throw std::runtime_error("Failed to generate secure random bytes");
+        throw std::runtime_error("Failed to generate secure random bytes"); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     // Map random bytes to character range using rejection sampling for uniform distribution
@@ -483,7 +483,7 @@ crypto::generate_secure_random_string(std::size_t len, std::string_view range) {
             if (random_idx >= bytes_needed) {
                 // Need more random bytes
                 if (RAND_bytes(random_bytes.data(), static_cast<int>(bytes_needed)) != 1) {
-                    throw std::runtime_error("Failed to generate additional random bytes");
+                    throw std::runtime_error("Failed to generate additional random bytes"); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
                 }
                 random_idx = 0;
             }

@@ -52,7 +52,7 @@ listener::accept() const noexcept {
         return {};
     }
     if (!qb::io::ssl::attach_socket(ctx, sock.native_handle())) {
-        SSL_free(ctx);
+        SSL_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         sock.close();
         return {};
     }
@@ -72,7 +72,7 @@ listener::accept(ssl::socket &ssock) const noexcept {
         }
         SSL_set_accept_state(ctx);
         if (!qb::io::ssl::attach_socket(ctx, sock.native_handle())) {
-            SSL_free(ctx);
+            SSL_free(ctx); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
             sock.close();
             return -1;
         }

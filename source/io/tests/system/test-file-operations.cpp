@@ -26,6 +26,7 @@
 #include <gtest/gtest.h>
 #include <qb/io/system/file.h>
 #include <qb/system/allocator/pipe.h>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -119,6 +120,26 @@ TEST_F(FileSystemTest, ConstructorOverloads) {
     file3.close();
 }
 
+TEST_F(FileSystemTest, FileMoveTransfersDescriptorOwnership) {
+    qb::io::sys::file source(test_file, O_RDONLY);
+    ASSERT_TRUE(source.is_open());
+    const int original_handle = source.native_handle();
+
+    qb::io::sys::file moved(std::move(source));
+    EXPECT_TRUE(moved.is_open());
+    EXPECT_FALSE(source.is_open());
+    EXPECT_EQ(moved.native_handle(), original_handle);
+
+    qb::io::sys::file assigned;
+    assigned = std::move(moved);
+    EXPECT_TRUE(assigned.is_open());
+    EXPECT_FALSE(moved.is_open());
+    EXPECT_EQ(assigned.native_handle(), original_handle);
+
+    char buffer[8] = {};
+    EXPECT_GT(assigned.read(buffer, sizeof(buffer)), 0);
+}
+
 // Test file_to_pipe operations
 TEST_F(FileSystemTest, FileToPipe) {
     // Create a pipe to receive data
@@ -153,6 +174,19 @@ TEST_F(FileSystemTest, FileToPipe) {
     // Check pipe contents
     std::string pipe_content(pipe.cbegin(), pipe.cbegin() + pipe.size());
     EXPECT_EQ(pipe_content, test_content);
+}
+
+TEST_F(FileSystemTest, FileToPipeRejectsDirectoriesAndClosedReadsAreNoops) {
+    qb::allocator::pipe<char> pipe;
+    qb::io::sys::file_to_pipe f2p(pipe);
+
+    EXPECT_FALSE(f2p.open(test_dir));
+    EXPECT_FALSE(f2p.is_open());
+    EXPECT_EQ(f2p.expected_size(), 0u);
+    EXPECT_EQ(f2p.read(), 0);
+    EXPECT_EQ(f2p.read_all(), 0);
+    EXPECT_TRUE(f2p.eof());
+    EXPECT_TRUE(pipe.empty());
 }
 
 // Test pipe_to_file operations
@@ -191,6 +225,45 @@ TEST_F(FileSystemTest, PipeToFile) {
     std::string   read_content((std::istreambuf_iterator<char>(check_file)),
                                std::istreambuf_iterator<char>());
     EXPECT_EQ(read_content, pipe_content);
+}
+
+TEST_F(FileSystemTest, PipeToFileClosedWriteAndEmptyPipeContracts) {
+    qb::allocator::pipe<char> pipe;
+    qb::io::sys::pipe_to_file p2f(pipe);
+
+    EXPECT_FALSE(p2f.is_open());
+    EXPECT_EQ(p2f.write(), -1);
+    EXPECT_EQ(p2f.write_all(), -1);
+    EXPECT_EQ(p2f.written_bytes(), 0u);
+    EXPECT_TRUE(p2f.eos());
+
+    const std::string output_file = test_dir + "/empty-pipe.txt";
+    ASSERT_TRUE(p2f.open(output_file));
+    EXPECT_TRUE(p2f.eos());
+    EXPECT_EQ(p2f.write(), 0);
+    EXPECT_EQ(p2f.write_all(), 0);
+    EXPECT_EQ(std::filesystem::file_size(output_file), 0u);
+}
+
+TEST_F(FileSystemTest, CharPipeTypedPutAndStreamOutput) {
+    qb::allocator::pipe<char> source;
+    source.put<char>('q');
+    source.put<unsigned char>(static_cast<unsigned char>('b'));
+    source.put<const char *>("");
+    source.put<std::string>(std::string("-"));
+    source.put<std::string_view>(std::string_view("io"));
+
+    qb::allocator::pipe<char> copied;
+    copied.put<qb::allocator::pipe<char>>(source);
+    copied.put("", 0);
+    copied.write("", 0);
+
+    std::ostringstream out;
+    out << copied;
+
+    EXPECT_EQ(source.view(), "qb-io");
+    EXPECT_EQ(copied.str(), "qb-io");
+    EXPECT_EQ(out.str(), "qb-io");
 }
 
 // Test error handling

@@ -210,7 +210,7 @@ function(SETUP_TARGET_FOR_COVERAGE_GCOVR_XML)
 
     set(options NONE)
     set(oneValueArgs NAME)
-    set(multiValueArgs EXECUTABLE EXECUTABLE_ARGS DEPENDENCIES)
+    set(multiValueArgs EXECUTABLE EXECUTABLE_ARGS DEPENDENCIES GCOVR_ARGS)
     cmake_parse_arguments(Coverage "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     if(NOT Python_FOUND)
@@ -224,17 +224,17 @@ function(SETUP_TARGET_FOR_COVERAGE_GCOVR_XML)
     # Combine excludes to several -e arguments
     set(GCOVR_EXCLUDES "")
     foreach(EXCLUDE ${COVERAGE_GCOVR_EXCLUDES})
-        string(REPLACE "*" "\\*" EXCLUDE_REPLACED ${EXCLUDE})
         list(APPEND GCOVR_EXCLUDES "-e")
-        list(APPEND GCOVR_EXCLUDES "${EXCLUDE_REPLACED}")
+        list(APPEND GCOVR_EXCLUDES "${EXCLUDE}")
     endforeach()
     add_custom_target(${Coverage_NAME}
             # Run tests
             ${Coverage_EXECUTABLE} ${Coverage_EXECUTABLE_ARGS}
 
             # Running gcovr
-            COMMAND ${GCOVR_PATH} --xml
+            COMMAND ${GCOVR_PATH} ${Coverage_GCOVR_ARGS} --xml
             -r ${PROJECT_SOURCE_DIR} ${GCOVR_EXCLUDES}
+            --gcov-executable=${GCOV_PATH}
             --object-directory=${PROJECT_BINARY_DIR}
             -o ${Coverage_NAME}.xml
             WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
@@ -264,7 +264,7 @@ function(SETUP_TARGET_FOR_COVERAGE_GCOVR_HTML)
 
     set(options NONE)
     set(oneValueArgs NAME)
-    set(multiValueArgs EXECUTABLE EXECUTABLE_ARGS DEPENDENCIES)
+    set(multiValueArgs EXECUTABLE EXECUTABLE_ARGS DEPENDENCIES GCOVR_ARGS)
     cmake_parse_arguments(Coverage "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     if(NOT Python_FOUND)
@@ -278,9 +278,8 @@ function(SETUP_TARGET_FOR_COVERAGE_GCOVR_HTML)
     # Combine excludes to several -e arguments
     set(GCOVR_EXCLUDES "")
     foreach(EXCLUDE ${COVERAGE_GCOVR_EXCLUDES})
-        string(REPLACE "*" "\\*" EXCLUDE_REPLACED ${EXCLUDE})
         list(APPEND GCOVR_EXCLUDES "-e")
-        list(APPEND GCOVR_EXCLUDES "${EXCLUDE_REPLACED}")
+        list(APPEND GCOVR_EXCLUDES "${EXCLUDE}")
     endforeach()
 
     add_custom_target(${Coverage_NAME}
@@ -291,8 +290,9 @@ function(SETUP_TARGET_FOR_COVERAGE_GCOVR_HTML)
             COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_BINARY_DIR}/${Coverage_NAME}
 
             # Running gcovr
-            COMMAND ${Python_EXECUTABLE} ${GCOVR_PATH} --html --html-details
+            COMMAND ${Python_EXECUTABLE} ${GCOVR_PATH} ${Coverage_GCOVR_ARGS} --html --html-details
             -r ${PROJECT_SOURCE_DIR} ${GCOVR_EXCLUDES}
+            --gcov-executable=${GCOV_PATH}
             --object-directory=${PROJECT_BINARY_DIR}
             -o ${Coverage_NAME}/index.html
             WORKING_DIRECTORY ${PROJECT_BINARY_DIR}

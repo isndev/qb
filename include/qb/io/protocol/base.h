@@ -185,7 +185,7 @@ public:
         const auto &buffer = this->_io.in();
         auto        i      = buffer.begin() + _offset;
 
-        if ((buffer.end() - i) < _SizeBytes)
+        if (static_cast<std::size_t>(buffer.end() - i) < _SizeBytes)
             return 0;
 
         const auto end = buffer.end() - _SizeBytes + 1;

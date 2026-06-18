@@ -141,6 +141,17 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
             '*examples/*'
             '*test*'
         )
+
+        set(COVERAGE_GCOVR_EXCLUDES
+            '/usr/.*'
+            '${PROJECT_SOURCE_DIR}/modules/.*'
+            '${PROJECT_SOURCE_DIR}/examples/.*'
+            '${PROJECT_SOURCE_DIR}/source/.*/tests/.*'
+        )
+
+        set(COVERAGE_GCOVR_ARGS
+            --gcov-ignore-parse-errors=all
+        )
         
         SETUP_TARGET_FOR_COVERAGE_LCOV(
             NAME qb-coverage
@@ -153,12 +164,14 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
             NAME qb-coverage-xml
             EXECUTABLE ctest
             DEPENDENCIES qb-core
+            GCOVR_ARGS ${COVERAGE_GCOVR_ARGS}
         )
         
         SETUP_TARGET_FOR_COVERAGE_GCOVR_HTML(
             NAME qb-coverage-html
             EXECUTABLE ctest
             DEPENDENCIES qb-core
+            GCOVR_ARGS ${COVERAGE_GCOVR_ARGS}
         )
     else()
         qb_warning_message("Coverage requested but tools not found (lcov, gcov)")

@@ -12,11 +12,44 @@ install_google_test=false
 install_google_benchmark=false
 install_quic=false
 
+apply_profile() {
+  case "$1" in
+    build)
+      install_gcc=true
+      install_llvm_clang=true
+      install_google_test=true
+      install_google_benchmark=true
+      install_quic=true
+      ;;
+    sanitize|sanitize-thread)
+      install_llvm_clang=true
+      install_google_test=true
+      install_quic=true
+      ;;
+    coverage)
+      install_gcc=true
+      install_coverage=true
+      install_google_test=true
+      install_quic=true
+      ;;
+    format|format-check)
+      install_llvm_format=true
+      ;;
+    *)
+      echo "Unknown profile: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+}
+
 usage() {
   cat <<'EOF'
 Usage: ci-install-linux-dependencies.sh [options]
 
 Options:
+  --profile <name> Select a CI dependency profile:
+                   build, sanitize, sanitize-thread, coverage, format-check.
   --gcc-14        Install GCC/G++ 14.
   --llvm-clang    Install clang/clang++ from apt.llvm.org using LLVM_VERSION.
   --llvm-format   Install clang-format from apt.llvm.org using LLVM_VERSION.
@@ -30,6 +63,18 @@ EOF
 
 while (($#)); do
   case "$1" in
+    --profile)
+      if [[ $# -lt 2 ]]; then
+        echo "--profile requires a value" >&2
+        usage >&2
+        exit 2
+      fi
+      apply_profile "$2"
+      shift
+      ;;
+    --profile=*)
+      apply_profile "${1#*=}"
+      ;;
     --gcc-14)
       install_gcc=true
       ;;

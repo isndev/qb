@@ -27,6 +27,7 @@
 #include <qb/io/crypto.h>
 #include <qb/system/allocator/pipe.h>
 #include <thread>
+#include <vector>
 
 TEST(Compression, Gzip) {
     auto compressor   = qb::compression::builtin::make_compressor("gzip");
@@ -225,5 +226,196 @@ TEST(Compression, TruncatedStreamRejected) {
     std::string truncated = compressed.substr(0, compressed.size() - 8);
     qb::allocator::pipe<char> out;
     EXPECT_THROW(qb::gzip::uncompress(out, truncated.c_str(), truncated.size()),
+                 std::runtime_error);
+}
+
+TEST(Compression, BuiltinFactoriesAndAlgorithms) {
+    namespace builtin = qb::compression::builtin;
+
+    EXPECT_TRUE(builtin::supported());
+    EXPECT_TRUE(builtin::algorithm::supported("gzip"));
+    EXPECT_TRUE(builtin::algorithm::supported("GZIP"));
+    EXPECT_TRUE(builtin::algorithm::supported("DefLate"));
+    EXPECT_FALSE(builtin::algorithm::supported("br"));
+
+    const auto compressors = builtin::get_compress_factories();
+    const auto decompressors = builtin::get_decompress_factories();
+    ASSERT_GE(compressors.size(), 2u);
+    ASSERT_GE(decompressors.size(), 2u);
+
+    auto gzip_factory = builtin::get_compress_factory("GzIp");
+    ASSERT_NE(gzip_factory, nullptr);
+    EXPECT_EQ(gzip_factory->algorithm(), "gzip");
+    ASSERT_NE(gzip_factory->make_compressor(), nullptr);
+
+    auto deflate_factory = builtin::get_decompress_factory("DEFLATE");
+    ASSERT_NE(deflate_factory, nullptr);
+    EXPECT_EQ(deflate_factory->algorithm(), "deflate");
+    EXPECT_EQ(deflate_factory->weight(), 500u);
+    ASSERT_NE(deflate_factory->make_decompressor(), nullptr);
+
+    EXPECT_EQ(builtin::make_compressor("missing"), nullptr);
+    EXPECT_EQ(builtin::make_decompressor("missing"), nullptr);
+    EXPECT_EQ(builtin::get_compress_factory("missing"), nullptr);
+    EXPECT_EQ(builtin::get_decompress_factory("missing"), nullptr);
+
+    auto custom_compress =
+        qb::compression::make_compress_factory("custom", [] { return nullptr; });
+    ASSERT_NE(custom_compress, nullptr);
+    EXPECT_EQ(custom_compress->algorithm(), "custom");
+    EXPECT_EQ(custom_compress->make_compressor(), nullptr);
+
+    auto custom_decompress =
+        qb::compression::make_decompress_factory("custom", 7u, [] { return nullptr; });
+    ASSERT_NE(custom_decompress, nullptr);
+    EXPECT_EQ(custom_decompress->algorithm(), "custom");
+    EXPECT_EQ(custom_decompress->weight(), 7u);
+    EXPECT_EQ(custom_decompress->make_decompressor(), nullptr);
+}
+
+TEST(Compression, ProvidersHandleStreamingResetAndFinishedState) {
+    namespace builtin = qb::compression::builtin;
+
+    const std::string input =
+        "qb compression streaming reset contract " + std::string(4096, 'x');
+    std::vector<uint8_t> compressed(input.size() + 256);
+    std::vector<uint8_t> restored(input.size() + 16);
+
+    auto compressor = builtin::make_compressor("gzip");
+    ASSERT_NE(compressor, nullptr);
+    EXPECT_EQ(compressor->algorithm(), "gzip");
+
+    std::size_t processed = 123u;
+    bool        done      = true;
+    EXPECT_EQ(compressor->compress(reinterpret_cast<const uint8_t *>(input.data()), 0,
+                                   compressed.data(), compressed.size(),
+                                   qb::compression::has_more, processed, done),
+              0u);
+    EXPECT_EQ(processed, 0u);
+    EXPECT_FALSE(done);
+
+    processed = 0u;
+    done      = false;
+    const auto tiny_output = compressor->compress(
+        reinterpret_cast<const uint8_t *>(input.data()), input.size(), compressed.data(),
+        1, qb::compression::is_last, processed, done);
+    EXPECT_LE(tiny_output, 1u);
+    EXPECT_FALSE(done);
+
+    compressor->reset();
+    processed = 0u;
+    done      = false;
+    const auto compressed_size = compressor->compress(
+        reinterpret_cast<const uint8_t *>(input.data()), input.size(), compressed.data(),
+        compressed.size(), qb::compression::is_last, processed, done);
+    EXPECT_TRUE(done);
+    EXPECT_EQ(processed, input.size());
+    ASSERT_GT(compressed_size, 0u);
+
+    processed = 99u;
+    done      = false;
+    EXPECT_EQ(compressor->compress(reinterpret_cast<const uint8_t *>(input.data()),
+                                   input.size(), compressed.data(), compressed.size(),
+                                   qb::compression::is_last, processed, done),
+              0u);
+    EXPECT_EQ(processed, 0u);
+    EXPECT_TRUE(done);
+
+    auto decompressor = builtin::make_decompressor("gzip");
+    ASSERT_NE(decompressor, nullptr);
+    EXPECT_EQ(decompressor->algorithm(), "gzip");
+
+    processed = 42u;
+    done      = true;
+    EXPECT_EQ(decompressor->decompress(compressed.data(), 0, restored.data(),
+                                       restored.size(), qb::compression::is_last,
+                                       processed, done),
+              0u);
+    EXPECT_EQ(processed, 0u);
+    EXPECT_FALSE(done);
+
+    processed = 0u;
+    done      = false;
+    const auto partial = decompressor->decompress(
+        compressed.data(), compressed_size, restored.data(), 1,
+        qb::compression::is_last, processed, done);
+    EXPECT_LE(partial, 1u);
+    EXPECT_FALSE(done);
+
+    decompressor->reset();
+    processed = 0u;
+    done      = false;
+    const auto restored_size = decompressor->decompress(
+        compressed.data(), compressed_size, restored.data(), restored.size(),
+        qb::compression::is_last, processed, done);
+    EXPECT_TRUE(done);
+    EXPECT_EQ(processed, compressed_size);
+    EXPECT_EQ(restored_size, input.size());
+    EXPECT_EQ(std::string(reinterpret_cast<char *>(restored.data()), restored_size),
+              input);
+
+    processed = 1u;
+    done      = false;
+    EXPECT_EQ(decompressor->decompress(compressed.data(), compressed_size,
+                                       restored.data(), restored.size(),
+                                       qb::compression::is_last, processed, done),
+              0u);
+    EXPECT_EQ(processed, 0u);
+    EXPECT_TRUE(done);
+}
+
+TEST(Compression, ErrorAndDetectionContracts) {
+    namespace builtin = qb::compression::builtin;
+
+    EXPECT_THROW(builtin::make_gzip_compressor(-42, Z_DEFLATED, Z_DEFAULT_STRATEGY, 8),
+                 std::runtime_error);
+    EXPECT_THROW(builtin::make_deflate_compressor(Z_DEFAULT_COMPRESSION, 0,
+                                                  Z_DEFAULT_STRATEGY, 8),
+                 std::runtime_error);
+
+    std::string generic_output;
+    EXPECT_THROW(qb::compression::compress(generic_output, "qb", 2,
+                                           Z_DEFAULT_COMPRESSION, 0),
+                 std::runtime_error);
+    EXPECT_THROW(qb::compression::uncompress(generic_output, "qb", 2, 0, 0),
+                 std::runtime_error);
+
+    const std::string input = "detect compression headers";
+    const auto        gzip  = qb::gzip::compress(input.data(), input.size());
+    const auto        zlib  = qb::deflate::compress(input.data(), input.size());
+
+    EXPECT_TRUE(qb::gzip::is_compressed(gzip.data(), gzip.size()));
+    EXPECT_TRUE(qb::gzip::is_compressed(zlib.data(), zlib.size()));
+    EXPECT_TRUE(qb::gzip::is_compressed("\x78\x01x", 3));
+    EXPECT_TRUE(qb::gzip::is_compressed("\x78\xDAx", 3));
+    EXPECT_TRUE(qb::gzip::is_compressed("\x78\x5Ex", 3));
+    EXPECT_FALSE(qb::gzip::is_compressed(input.data(), input.size()));
+    EXPECT_FALSE(qb::gzip::is_compressed("", 0));
+
+    qb::allocator::pipe<char> empty_output;
+    EXPECT_EQ(qb::gzip::uncompress(empty_output, "", 0), 0u);
+    EXPECT_EQ(empty_output.size(), 0u);
+
+    qb::allocator::pipe<char> invalid_gzip_output;
+    EXPECT_THROW(qb::gzip::uncompress(invalid_gzip_output, input.data(), input.size()),
+                 std::runtime_error);
+
+    qb::allocator::pipe<char> too_small_budget_output;
+    EXPECT_THROW(qb::gzip::uncompress(too_small_budget_output, gzip.data(), gzip.size(), 1),
+                 std::runtime_error);
+
+    qb::allocator::pipe<char> invalid_deflate_output;
+    EXPECT_THROW(
+        qb::deflate::uncompress(invalid_deflate_output, input.data(), input.size()),
+        std::runtime_error);
+
+    auto decompressor = builtin::make_decompressor("gzip");
+    ASSERT_NE(decompressor, nullptr);
+    std::vector<uint8_t> out(64);
+    std::size_t          processed = 0u;
+    bool                 done      = false;
+    EXPECT_THROW(decompressor->decompress(reinterpret_cast<const uint8_t *>(input.data()),
+                                          input.size(), out.data(), out.size(),
+                                          qb::compression::is_last, processed, done),
                  std::runtime_error);
 }
