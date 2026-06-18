@@ -213,3 +213,60 @@ endif ()
 # SSL resources are automatically copied by qb_setup_test_resources()
 # which is called in qb/CMakeLists.txt. Tests will find them in their working directory.
 # Note: Generated SSL certificates (generate_ssl_certs target) are handled separately above.
+
+# -----------------------------------------------------------------------------
+# Per-backend libev event-loop test matrix  (OPT-IN — disabled by default)
+# -----------------------------------------------------------------------------
+# Re-runs the I/O-heavy, backend-sensitive tests under additional libev backends by
+# forcing QB_EV_BACKEND (resolved by qb::io::async::listener). This is OFF by
+# default on purpose: the normal suite above already runs every test once on the
+# auto-selected backend (the one that actually ships: kqueue on macOS, epoll on
+# Linux, wepoll on Windows), and the cross-backend PERFORMANCE comparison lives in
+# the `qb-io-benchmark-ev-backends` benchmark. So the dev pipeline shouldn't pay to
+# re-run the suite on extra backends every build — but the capability is here when
+# you need it (CI backend matrix, or debugging a backend-specific bug).
+#
+# Enable by setting QB_IO_EV_TEST_BACKENDS to a ';'-separated list, e.g.:
+#   cmake -DQB_IO_EV_TEST_BACKENDS="select;poll"                       # macOS/Linux alternatives
+#   cmake -DQB_IO_EV_TEST_BACKENDS="select;poll;iouring;linuxaio"      # native Linux host
+#
+# Valid values (pick the ones available on your host):
+#   select   - everywhere    (capped at FD_SETSIZE, ~1024)
+#   poll     - Linux, macOS  (not Windows)
+#   epoll    - Linux (default there); Windows = wepoll
+#   kqueue   - macOS / BSD   (default on macOS)
+#   iouring  - Linux 5.13+   (native host, or docker --security-opt seccomp=unconfined)
+#   linuxaio - Linux
+# (No need to list the default backend — it is already covered by the normal run.)
+if(QB_IO_EV_TEST_BACKENDS)
+    # SSL-cert-free, loop-heavy tests (avoid cert working-dir coupling in the matrix).
+    set(QB_IO_BACKEND_SENSITIVE_TESTS
+            test-io
+            test-async-io-bases
+            test-connection-timeout
+            test-session-json
+    )
+
+    foreach (_qb_t ${QB_IO_BACKEND_SENSITIVE_TESTS})
+        set(_qb_tgt ${PROJECT_NAME}-gtest-${_qb_t})
+        if (TARGET ${_qb_tgt})
+            # Localhost network tests: the base (auto) run and every backend variant
+            # exercise the SAME binary, often on the same ports. A shared RESOURCE_LOCK
+            # stops ctest from scheduling two variants of one test concurrently under
+            # `--parallel` (which caused port/accept flakes). Distinct tests still run
+            # in parallel.
+            set(_qb_lock "evmx_${_qb_t}")
+            set_tests_properties(${_qb_tgt} PROPERTIES RESOURCE_LOCK "${_qb_lock}")
+            foreach (_qb_be ${QB_IO_EV_TEST_BACKENDS})
+                add_test(NAME ${_qb_tgt}-ev-${_qb_be} COMMAND ${_qb_tgt})
+                set_tests_properties(${_qb_tgt}-ev-${_qb_be} PROPERTIES
+                        ENVIRONMENT "QB_EV_BACKEND=${_qb_be}"
+                        WORKING_DIRECTORY "$<TARGET_FILE_DIR:${_qb_tgt}>"
+                        RESOURCE_LOCK "${_qb_lock}"
+                        LABELS "qb-tests;ev-backend;ev-backend-${_qb_be}")
+            endforeach ()
+        endif ()
+    endforeach ()
+
+    qb_status_message("Per-backend ev test matrix ENABLED: [${QB_IO_EV_TEST_BACKENDS}]")
+endif()
