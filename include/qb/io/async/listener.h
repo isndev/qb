@@ -30,6 +30,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <qb/io.h> /* LOG_INFO and qb logging conventions */
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 #include <thread>
@@ -37,6 +38,8 @@
 #include "event/base.h"
 #include "coroutine/scheduler.h"
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #if defined(QB_DEBUG_CORO_LIFECYCLE) && QB_DEBUG_CORO_LIFECYCLE
 // Standard C++20 __VA_OPT__ elides the comma when no trailing args are passed
@@ -261,15 +264,98 @@ private:
         return true;
     }
 
+    /**
+     * @brief Resolve the libev backend flags from the `QB_EV_BACKEND` environment
+     *        variable, falling back to `EVFLAG_AUTO`.
+     *
+     * Accepts: select, poll, epoll, kqueue, port, linuxaio, iouring (alias io_uring),
+     * auto. Forcing a specific backend is primarily a testing/benchmarking aid so the
+     * whole suite can be exercised on each backend (otherwise io_uring/linuxaio are
+     * never auto-selected — `EV_RECOMMEND_*` defaults are 0). The selection is
+     * **safe**: an unknown name, a not-compiled-in backend, or a backend that fails
+     * to initialise at runtime (e.g. io_uring blocked by a container seccomp policy)
+     * all degrade to `EVFLAG_AUTO` with a one-line stderr notice — never a throw.
+     */
+    [[nodiscard]] static unsigned int
+    _resolve_backend_flags() noexcept {
+        const char *env = std::getenv("QB_EV_BACKEND");
+        if (!env || !*env)
+            return EVFLAG_AUTO;
+
+        static const struct {
+            const char  *name;
+            unsigned int flag;
+        } table[] = {
+            {"select", EVBACKEND_SELECT},     {"poll", EVBACKEND_POLL},
+            {"epoll", EVBACKEND_EPOLL},       {"kqueue", EVBACKEND_KQUEUE},
+            {"port", EVBACKEND_PORT},         {"linuxaio", EVBACKEND_LINUXAIO},
+            {"iouring", EVBACKEND_IOURING},   {"io_uring", EVBACKEND_IOURING},
+            {"auto", EVFLAG_AUTO},
+        };
+
+        unsigned int req = 0;
+        bool         known = false;
+        for (auto const &e : table)
+            if (std::strcmp(env, e.name) == 0) { req = e.flag; known = true; break; }
+
+        if (!known) {
+            LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' unknown; using auto");
+            return EVFLAG_AUTO;
+        }
+        if (req == EVFLAG_AUTO)
+            return EVFLAG_AUTO;
+        if (!(ev_supported_backends() & req)) {
+            LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' not built into libev; using auto");
+            return EVFLAG_AUTO;
+        }
+        /* Probe: a backend can be compiled in yet fail at runtime (io_uring under a
+         * restrictive seccomp profile, kqueue on some sandboxes, ...). Create and
+         * immediately destroy a throwaway loop so the real loop below never throws. */
+        if (struct ev_loop *probe = ev_loop_new(req)) {
+            ev_loop_destroy(probe);
+            return req;
+        }
+        LOG_INFO("[qb-io] QB_EV_BACKEND='" << env << "' unavailable at runtime; using auto");
+        return EVFLAG_AUTO;
+    }
+
 public:
     /**
      * @brief Constructor
      *
-     * Creates a new listener with a dynamic event loop using automatic detection
-     * of the best available backend (e.g., epoll, kqueue, select) via libev's EVFLAG_AUTO.
+     * Creates a new listener with a dynamic event loop. The backend is normally
+     * auto-detected (libev's `EVFLAG_AUTO`: e.g. epoll/io_uring on Linux, kqueue/
+     * select on macOS). It can be pinned for testing/benchmarking via the
+     * `QB_EV_BACKEND` environment variable (see `_resolve_backend_flags()`).
      */
     listener()
-        : _loop(EVFLAG_AUTO) {}
+        : _loop(_resolve_backend_flags()) {}
+
+    /**
+     * @brief libev backend actually in use by this listener's loop.
+     * @return One of the `EVBACKEND_*` values (e.g. `EVBACKEND_EPOLL`).
+     */
+    [[nodiscard]] inline unsigned int
+    backend() const noexcept {
+        return _loop.backend();
+    }
+
+    /**
+     * @brief Human-readable name of the backend actually in use.
+     */
+    [[nodiscard]] static const char *
+    backend_name(unsigned int b) noexcept {
+        switch (b) {
+        case EVBACKEND_SELECT:   return "select";
+        case EVBACKEND_POLL:     return "poll";
+        case EVBACKEND_EPOLL:    return "epoll";
+        case EVBACKEND_KQUEUE:   return "kqueue";
+        case EVBACKEND_PORT:     return "port";
+        case EVBACKEND_LINUXAIO: return "linuxaio";
+        case EVBACKEND_IOURING:  return "iouring";
+        default:                 return "unknown";
+        }
+    }
 
     /**
      * @brief Clear all registered events from this listener.

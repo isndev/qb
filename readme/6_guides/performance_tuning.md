@@ -123,6 +123,35 @@ There is no published latency-versus-CPU table. Pick a starting value from your 
 
 > All affinity, latency, and placement calls must happen **before** `Main::start()`. Once the engine is running, `Main::core(id)` throws `std::runtime_error` ("Cannot access to CoreInitializers while engine is running").
 
+### Event-loop backend selection
+
+Each `listener` (one per thread/`VirtualCore`) runs a libev loop whose backend is auto-selected (`EVFLAG_AUTO`). The vendored libev recommends the best scalable backend per platform, falling back to `select` only as a last resort:
+
+| Platform | auto-selected backend | last-resort fallback |
+|----------|-----------------------|----------------------|
+| Linux    | `epoll`               | `select`             |
+| macOS    | `kqueue`              | `select`             |
+| Windows  | `wepoll` (epoll on IOCP) | `select`          |
+
+`select` is never the default: it is O(number of fds) per poll and capped at `FD_SETSIZE` (~1024), so it cannot scale to a real connection count. `epoll`/`kqueue`/`wepoll` report only the *ready* fds, staying flat as idle connections grow.
+
+For testing, benchmarking, or debugging a backend-specific issue, force a backend with the `QB_EV_BACKEND` environment variable (read once when the thread's `listener` is constructed):
+
+```sh
+QB_EV_BACKEND=epoll   ./my_app      # select | poll | epoll | kqueue | iouring | linuxaio | auto
+```
+
+Selection is safe: an unknown name, a backend not compiled in, or one that fails to initialise at runtime (e.g. `io_uring` blocked by a container's seccomp policy) all degrade to `auto` with a one-line log notice — never a crash. `io_uring` and `linuxaio` are compiled on Linux but **not** auto-selected (they are not faster than `epoll` for readiness-driven loops); force them explicitly to evaluate them.
+
+To find the best backend on a given machine, run the cross-backend stress benchmark — it sweeps every compiled backend in one run and prints a side-by-side comparison (build with `-DQB_BUILD_BENCHMARKS=ON`):
+
+```sh
+./qb-io-benchmark-ev-backends                 # all available backends
+# On a native Linux host (or: docker run --security-opt seccomp=unconfined) io_uring joins the sweep.
+```
+
+The same `QB_EV_BACKEND` values can be wired into CI test coverage via the opt-in CMake matrix `-DQB_IO_EV_TEST_BACKENDS="select;poll;…"` (see `source/io/tests/system/CMakeLists.txt`).
+
 ### Messaging cost
 
 The mechanics and the ordering contract are owned by [Event messaging](./../4_qb_core/messaging.md); this section is only the performance lens.

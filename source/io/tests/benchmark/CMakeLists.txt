@@ -30,6 +30,7 @@
 # Async listener, callback, and broadcast scratch hot paths
 set(ASYNC_BENCHMARKS
         bm-io-plan.cpp
+        bm-ev-backends.cpp
 )
 
 # Coroutine scheduler, frame, await, and timer workloads
