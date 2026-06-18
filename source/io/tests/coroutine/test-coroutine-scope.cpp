@@ -744,7 +744,9 @@ TEST_F(ScopeAdvancedTests, CaptureResult) {
         }(), result));
         co_await scope.join_all();
         EXPECT_TRUE(result.has_value());
-        if (result.has_value()) EXPECT_EQ(*result, 42);
+        if (result.has_value()) {
+            EXPECT_EQ(*result, 42);
+        }
         done = true;
     });
     run_for(200ms);

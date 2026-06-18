@@ -56,8 +56,11 @@ function(_qb_apply_target_usage_properties target)
     target_include_directories(${target}
         ${_qb_usage_scope}
             "$<BUILD_INTERFACE:${QB_INCLUDE_DIR}>"
-            "$<BUILD_INTERFACE:${QB_MODULES_DIR}>"
             "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
+    )
+    target_include_directories(${target}
+        SYSTEM ${_qb_usage_scope}
+            "$<BUILD_INTERFACE:${QB_MODULES_DIR}>"
     )
 
     if(QB_COMPILE_DEFINITIONS)
@@ -392,6 +395,9 @@ function(qb_add_benchmark)
     
     # Apply common properties
     _qb_apply_target_properties(${BENCH_NAME})
+    target_compile_options(${BENCH_NAME} PRIVATE
+        $<$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang>:-Wno-c2y-extensions>
+    )
     
     if(TARGET benchmark::benchmark)
         target_link_libraries(${BENCH_NAME} PRIVATE benchmark::benchmark)
