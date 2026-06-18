@@ -222,6 +222,12 @@ if(BUILD_STATIC_LIBS)
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   )
 
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    target_compile_options(ev PRIVATE
+      -Wno-unused-result
+    )
+  endif()
+
   target_link_libraries(ev PUBLIC ${PLATFORM_LIBS})
 
   set_target_properties(ev PROPERTIES

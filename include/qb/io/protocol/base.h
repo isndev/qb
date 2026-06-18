@@ -31,6 +31,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include <qb/system/allocator/pipe.h>
+#include "../config.h"
 #include "../async/protocol.h"
 
 namespace qb::protocol::base {
@@ -53,9 +54,8 @@ class byte_terminated : public io::async::AProtocol<_IO_> {
     std::size_t _offset = 0u; /**< Position to resume delimiter search */
 
 public:
-    static constexpr std::size_t delimiter_size =
-        1;                                /**< Delimiter size (1 byte) */
-    static constexpr char end = _EndByte; /**< End character */
+    static constexpr std::size_t delimiter_size = 1;        /**< Delimiter size (1 byte) */
+    static constexpr char        end            = _EndByte; /**< End character */
 
     /**
      * @brief Default constructor (deleted)
@@ -134,15 +134,13 @@ public:
  */
 template <typename _IO_, typename _Trait>
 class bytes_terminated : public io::async::AProtocol<_IO_> {
-    static constexpr std::size_t _SizeBytes =
-        sizeof(_Trait::_EndBytes) - 1; /**< Size of the termination sequence */
+    static constexpr std::size_t _SizeBytes = sizeof(_Trait::_EndBytes) - 1; /**< Size of the termination sequence */
     static_assert(_SizeBytes > 0, "Delimiter sequence must not be empty");
-    std::size_t _offset = 0u;          /**< Position to resume delimiter search */
+    std::size_t _offset = 0u; /**< Position to resume delimiter search */
 
 public:
-    static constexpr std::size_t delimiter_size =
-        _SizeBytes;                                /**< Delimiter size */
-    static constexpr auto end = _Trait::_EndBytes; /**< End sequence */
+    static constexpr std::size_t delimiter_size = _SizeBytes;        /**< Delimiter size */
+    static constexpr auto        end            = _Trait::_EndBytes; /**< End sequence */
 
     /**
      * @brief Default constructor (deleted)
@@ -227,7 +225,7 @@ public:
 template <typename _IO_, typename _Size = uint16_t>
 class size_as_header : public io::async::AProtocol<_IO_> {
     static constexpr std::size_t SIZEOF = sizeof(_Size); /**< Header size */
-    _Size _size = 0u; /**< Size of the message being analyzed */
+    _Size                        _size  = 0u;            /**< Size of the message being analyzed */
 
 public:
     /**

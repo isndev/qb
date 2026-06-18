@@ -59,6 +59,13 @@ struct TestEvent : public qb::Event {
     }
 };
 
+static void
+copyAllocatedPayload(TestEvent &event) {
+    auto *payload = reinterpret_cast<uint8_t *>(&event) + sizeof(TestEvent);
+    for (std::size_t i = 0; i < sizeof(event._data); ++i)
+        payload[i] = event._data[i];
+}
+
 struct MyTag {};
 
 template <typename Derived>
@@ -117,8 +124,7 @@ struct AllocatedPipePushActor : public BaseActorSender<AllocatedPipePushActor> {
     doSend() {
         auto &e          = getPipe(_to).allocated_push<TestEvent>(32);
         e.has_extra_data = true;
-        memcpy(reinterpret_cast<uint8_t *>(&e) + sizeof(TestEvent), e._data,
-               sizeof(e._data));
+        copyAllocatedPayload(e);
     }
 };
 
