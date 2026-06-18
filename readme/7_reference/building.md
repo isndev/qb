@@ -91,7 +91,7 @@ cmake -DCMAKE_BUILD_TYPE=Debug -DQB_BUILD_TESTS=ON \
       -DQB_WITH_SSL=OFF -DQB_WITH_COMPRESSION=OFF -B build
 ```
 
-If `CMAKE_BUILD_TYPE` is not set, qb defaults it to `Release` (`qb/cmake/qbConfig.cmake:173-175`). qb also enables `CMAKE_EXPORT_COMPILE_COMMANDS` by default (for clangd / IDE tooling) unless a parent project already set it (`qbConfig.cmake:182-184`).
+If `CMAKE_BUILD_TYPE` is not set, qb defaults it to `Release` (`qb/cmake/qbConfig.cmake:125`). qb also enables `CMAKE_EXPORT_COMPILE_COMMANDS` by default (for clangd / IDE tooling) unless a parent project already set it (`qbConfig.cmake:133-134`).
 
 ## Build options
 
@@ -101,43 +101,43 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 
 | Option | Type / default | Effect |
 |---|---|---|
-| `CMAKE_BUILD_TYPE` | `Debug` \| `Release` \| `RelWithDebInfo` \| `MinSizeRel`; default `Release` | Standard CMake build configuration (`qbConfig.cmake:173-178`). |
-| `BUILD_SHARED_LIBS` / `QB_BUILD_SHARED_LIBS` | bool; `QB_BUILD_SHARED_LIBS` defaults to the value of `BUILD_SHARED_LIBS` (itself `OFF` unless set) | Build `qb-io`/`qb-core` (and modules) as shared objects instead of static. Setting `BUILD_SHARED_LIBS=ON` switches qb to shared; `QB_BUILD_SHARED_LIBS` is an explicit qb-only override (`qbConfig.cmake:82-84`). The whole tree is built position-independent regardless (`CMAKE_POSITION_INDEPENDENT_CODE ON`, `qbConfig.cmake:197`). |
-| `QB_BUILD_TESTS` | bool; `ON` | Build the unit and system tests (GoogleTest). Gates GoogleTest resolution (`qbConfig.cmake:61`). |
-| `QB_BUILD_BENCHMARKS` | bool; `OFF` | Build performance benchmarks (Google Benchmark) (`qbConfig.cmake:63`). |
-| `QB_BUILD_EXAMPLES` | bool; `ON` | Build the example applications (`qbConfig.cmake:62`). |
-| `QB_BUILD_DOCS` | bool; `OFF` | Add the Doxygen documentation subdirectory (`qbConfig.cmake:81`, `CMakeLists.txt:162-164`). |
-| `QB_INSTALL` | bool; `ON` | Generate installation rules (`cmake --install`) (`qbConfig.cmake:85`, `CMakeLists.txt:169`). |
+| `CMAKE_BUILD_TYPE` | `Debug` \| `Release` \| `RelWithDebInfo` \| `MinSizeRel`; default `Release` | Standard CMake build configuration (`qbConfig.cmake:125`). |
+| `BUILD_SHARED_LIBS` / `QB_BUILD_SHARED_LIBS` | bool; `QB_BUILD_SHARED_LIBS` defaults to the value of `BUILD_SHARED_LIBS` (itself `OFF` unless set) | Build `qb-io`/`qb-core` (and modules) as shared objects instead of static. Setting `BUILD_SHARED_LIBS=ON` switches qb to shared; `QB_BUILD_SHARED_LIBS` is an explicit qb-only override (`qbConfig.cmake:82`). The whole tree is built position-independent regardless (`CMAKE_POSITION_INDEPENDENT_CODE ON`, `qbConfig.cmake:155`). |
+| `QB_BUILD_TESTS` | bool; `ON` | Build the unit and system tests (GoogleTest). Gates GoogleTest resolution (`qbConfig.cmake:59`). |
+| `QB_BUILD_BENCHMARKS` | bool; `OFF` | Build performance benchmarks (Google Benchmark) (`qbConfig.cmake:61`). |
+| `QB_BUILD_EXAMPLES` | bool; `ON` | Build the example applications (`qbConfig.cmake:60`). |
+| `QB_BUILD_DOCS` | bool; `OFF` | Add the Doxygen documentation subdirectory (`qbConfig.cmake:79`, `CMakeLists.txt:162-164`). |
+| `QB_INSTALL` | bool; `ON` | Generate installation rules (`cmake --install`) (`qbConfig.cmake:83`, `CMakeLists.txt:169`). |
 | `CMAKE_INSTALL_PREFIX` | path | Standard install root. |
 
 ### Optional features
 
 | Option | Type / default | Effect |
 |---|---|---|
-| `QB_WITH_SSL` | bool; `ON` | SSL/TLS and crypto in `qb-io` via OpenSSL. Forced `OFF` (with the feature disabled rather than a build failure) when OpenSSL is not found. Argon2 password hashing is enabled when libargon2 is also present (`qbConfig.cmake:101`). |
-| `QB_WITH_COMPRESSION` | bool; `ON` | Compression in `qb-io` via zlib — system first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` (`qbConfig.cmake:102`). |
-| `QB_WITH_QUIC` | `AUTO` \| `ON` \| `OFF`; `AUTO` | QUIC transport via libngtcp2. `AUTO` enables it iff libngtcp2 is found (quiet when absent); `ON` requires it (warns if missing); `OFF` disables it. Requires `QB_WITH_SSL` (`qbConfig.cmake:105-106`). |
-| `QB_WITH_LOGGING` | bool; `ON` | Logging subsystem (nanolog); defines `QB_WITH_LOGGING=1` (`qbConfig.cmake:100,293-295`). |
-| `QB_STDOUT_LOGGING` | bool; `OFF` | Stdout logging fallback; defines `QB_STDOUT_LOGGING=1` (`qbConfig.cmake:112,313-315`). |
-| `QB_WITH_PROFILING` | bool; `OFF` | Link gperftools (tcmalloc/profiler) when found. Incompatible with `QB_SANITIZE` (`qbConfig.cmake:107`). |
+| `QB_WITH_SSL` | bool; `ON` | SSL/TLS and crypto in `qb-io` via OpenSSL. Forced `OFF` (with the feature disabled rather than a build failure) when OpenSSL is not found. Argon2 password hashing is enabled when libargon2 is also present (`qbConfig.cmake:99`). |
+| `QB_WITH_COMPRESSION` | bool; `ON` | Compression in `qb-io` via zlib — system first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` (`qbConfig.cmake:100`). |
+| `QB_WITH_QUIC` | `AUTO` \| `ON` \| `OFF`; `AUTO` | QUIC transport via libngtcp2. `AUTO` enables it iff libngtcp2 is found (quiet when absent); `ON` requires it (warns if missing); `OFF` disables it. Requires `QB_WITH_SSL` (`qbConfig.cmake:103-105`). |
+| `QB_WITH_LOGGING` | bool; `ON` | Logging subsystem (nanolog); defines `QB_WITH_LOGGING=1` (`qbConfig.cmake:98,313`). |
+| `QB_STDOUT_LOGGING` | bool; `OFF` | Stdout logging fallback; defines `QB_STDOUT_LOGGING=1` (`qbConfig.cmake:110,328`). |
+| `QB_WITH_PROFILING` | bool; `OFF` | Link gperftools (tcmalloc/profiler) when found. Incompatible with `QB_SANITIZE` (`qbConfig.cmake:105`). |
 
 ### Performance
 
 | Option | Type / default | Effect |
 |---|---|---|
-| `QB_ENABLE_OPTIMIZATIONS` | bool; `ON` | Extra Release optimization flags — `-funroll-loops`, `-ftree-vectorize`, `-ffunction-sections`/`-fdata-sections` on GCC/Clang, `/Ot`/`/Gy` on MSVC (`qbConfig.cmake:88`, `qbCompiler.cmake`). |
-| `QB_ENABLE_NATIVE_ARCH` | bool; `ON` | Tune codegen for the build-host CPU: `-march=native`, falling back to `-mcpu=native` (validated per compiler; `/arch:AVX2` on MSVC). **Turn `OFF` for portable / distributable binaries** — see the `release-portable` preset (`qbConfig.cmake:93`, `qbCompiler.cmake:234-248`). |
-| `QB_ENABLE_LTO` | bool; `OFF` | Link-time optimization for Release (`-flto`, or `/GL` + `/LTCG` on MSVC) (`qbConfig.cmake:89`, `qbCompiler.cmake:266-281`). |
-| `QB_ENABLE_FAST_MATH` | bool; `OFF` | `-ffast-math` / `/fp:fast`. Breaks IEEE-754 compliance (`qbConfig.cmake:94`, `qbCompiler.cmake:210,225-227`). |
+| `QB_ENABLE_OPTIMIZATIONS` | bool; `ON` | Extra Release optimization flags — `-funroll-loops`, `-ftree-vectorize`, `-ffunction-sections`/`-fdata-sections` on GCC/Clang, `/Ot`/`/Gy` on MSVC (`qbConfig.cmake:86`, `qbCompiler.cmake`). |
+| `QB_ENABLE_NATIVE_ARCH` | bool; `ON` | Tune codegen for the build-host CPU: `-march=native`, falling back to `-mcpu=native` (validated per compiler; `/arch:AVX2` on MSVC). **Turn `OFF` for portable / distributable binaries** — see the `release-portable` preset (`qbConfig.cmake:91`, `qbCompiler.cmake:234-248`). |
+| `QB_ENABLE_LTO` | bool; `OFF` | Link-time optimization for Release (`-flto`, or `/GL` + `/LTCG` on MSVC) (`qbConfig.cmake:87`, `qbCompiler.cmake:266-281`). |
+| `QB_ENABLE_FAST_MATH` | bool; `OFF` | `-ffast-math` / `/fp:fast`. Breaks IEEE-754 compliance (`qbConfig.cmake:92`, `qbCompiler.cmake:210,225-227`). |
 
 ### Diagnostics
 
 | Option | Type / default | Effect |
 |---|---|---|
-| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING` (`qbConfig.cmake:117`, `qbCompiler.cmake:308-339`). |
-| `QB_DEBUG_MEMORY` | bool; `OFF` | Legacy alias: when `QB_SANITIZE` is empty, turns on `QB_SANITIZE=address,undefined` (`qbConfig.cmake:110,119-121`). |
-| `QB_BUILD_COVERAGE` | bool; `OFF` | gcov/lcov coverage instrumentation. Debug and non-Windows only; sets up `qb-coverage`, `qb-coverage-xml`, and `qb-coverage-html` targets when `lcov`/`gcov` are found (`qbConfig.cmake:97`, `CMakeLists.txt:119-157`). |
-| `QB_DEBUG_ACTOR` | bool; `OFF` | Extra actor-system debug instrumentation; defines `QB_DEBUG_ACTOR=1` (`qbConfig.cmake:111,309-311`). |
+| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING` (`qbConfig.cmake:115`, `qbCompiler.cmake:308-339`). |
+| `QB_DEBUG_MEMORY` | bool; `OFF` | Legacy alias: when `QB_SANITIZE` is empty, turns on `QB_SANITIZE=address,undefined` (`qbConfig.cmake:108,117-118`). |
+| `QB_BUILD_COVERAGE` | bool; `OFF` | gcov/lcov coverage instrumentation. Debug and non-Windows only; sets up `qb-coverage`, `qb-coverage-xml`, and `qb-coverage-html` targets when `lcov`/`gcov` are found (`qbConfig.cmake:95`, `CMakeLists.txt:119-157`). |
+| `QB_DEBUG_ACTOR` | bool; `OFF` | Extra actor-system debug instrumentation; defines `QB_DEBUG_ACTOR=1` (`qbConfig.cmake:109,325`). |
 
 ### Dependency resolution
 
@@ -145,9 +145,9 @@ These three are summarized here and documented in full, with the pinned tags and
 
 | Option | Type / default | Effect |
 |---|---|---|
-| `QB_DEPS_FETCH_FALLBACK` | bool; `ON` | Build fetchable deps (GoogleTest, Google Benchmark, zlib) from source when not found on the system. `OFF` means system-only for those (`qbConfig.cmake:72`). |
-| `QB_USE_SYSTEM_GTEST` / `QB_USE_SYSTEM_BENCHMARK` | bool; `OFF` | Force `find_package(... CONFIG REQUIRED)`; never fetch (`qbConfig.cmake:74-75`). |
-| `QB_GOOGLETEST_GIT_TAG` / `QB_GOOGLEBENCHMARK_GIT_TAG` / `QB_ZLIB_GIT_TAG` | string (advanced cache); `v1.15.2` / `v1.9.2` / `v1.3.1` | Pin the fetched source revision (`qbConfig.cmake:77-80`). |
+| `QB_DEPS_FETCH_FALLBACK` | bool; `ON` | Build fetchable deps (GoogleTest, Google Benchmark, zlib) from source when not found on the system. `OFF` means system-only for those (`qbConfig.cmake:70`). |
+| `QB_USE_SYSTEM_GTEST` / `QB_USE_SYSTEM_BENCHMARK` | bool; `OFF` | Force `find_package(... CONFIG REQUIRED)`; never fetch (`qbConfig.cmake:72-73`). |
+| `QB_GOOGLETEST_GIT_TAG` / `QB_GOOGLEBENCHMARK_GIT_TAG` / `QB_ZLIB_GIT_TAG` | string (advanced cache); `v1.15.2` / `v1.9.2` / `v1.3.1` | Pin the fetched source revision (`qbConfig.cmake:75-77`). |
 
 Always check the root `CMakeLists.txt` and `qb/cmake/` for the most current and complete option list for your checkout.
 
@@ -160,7 +160,7 @@ qb does not pin a generator; it uses whatever CMake selects or you request. `cma
 - **Visual Studio** (multi-config, e.g. `-G "Visual Studio 17 2022"`): pick the configuration at build time with `cmake --build build --config Release`. With a multi-config generator, `CMAKE_BUILD_TYPE` has no effect — pass `--config`.
 - **Ninja Multi-Config**: also multi-config; select with `--config` at build time.
 
-For multi-config generators, qb routes per-configuration outputs into the same `bin`/`lib` layout described below (`qbConfig.cmake:242-254`).
+For multi-config generators, qb routes per-configuration outputs into the same `bin`/`lib` layout described below (`qbConfig.cmake:191-203`).
 
 ## Build the code and run tests
 
@@ -183,7 +183,7 @@ ctest --test-dir build --output-on-failure
 A successful build produces the two libraries and, when enabled, the example, test, and benchmark executables.
 
 - **Libraries:** `qb-io` (asynchronous I/O and utilities) and `qb-core` (the actor engine, which depends on `qb-io`). Consumers link the namespaced aliases `qb::io` and `qb::core` (`CMakeLists.txt:90-100`). Shared builds carry the platform extension (`libqb-io.so`, `libqb-io.dylib`, `qb-io.dll`).
-- **Output directories:** unless a parent project has already chosen them, runtime artifacts go under `${CMAKE_BINARY_DIR}/bin` and libraries/archives under `${CMAKE_BINARY_DIR}/lib` (`qbConfig.cmake:228-240`). When qb is embedded via `add_subdirectory`, it does not override an output tree the parent already set.
+- **Output directories:** unless a parent project has already chosen them, runtime artifacts go under `${CMAKE_BINARY_DIR}/bin` and libraries/archives under `${CMAKE_BINARY_DIR}/lib` (`qbConfig.cmake:177-188`). When qb is embedded via `add_subdirectory`, it does not override an output tree the parent already set.
 - **Coverage targets** (`QB_BUILD_COVERAGE=ON`, Debug, non-Windows): `qb-coverage`, `qb-coverage-xml`, `qb-coverage-html`.
 
 ## Install

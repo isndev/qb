@@ -12,7 +12,7 @@ Continuous integration builds and tests every change on the following matrix:
 | OS | Compilers | Standard library |
 |---|---|---|
 | Linux (`ubuntu-latest`) | GCC, Clang | libstdc++ |
-| macOS (`macos-latest`) | Apple Clang, GCC | libc++ |
+| macOS (`macos-latest`) | Apple Clang | libc++ |
 | Windows (`windows-latest`) | MSVC | MSVC STL |
 
 Requirements:

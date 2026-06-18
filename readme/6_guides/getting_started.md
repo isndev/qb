@@ -47,7 +47,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -B build
 cmake --build build --parallel
 ```
 
-The result is a buildable CMake project with qb wired in and ready to extend. Build it with the commands above, then run the executable named in the generated `CMakeLists.txt`. <!-- TODO(verify): the template's file layout and executable name live in the external qb-sample-project repository, not in this tree. --> Skip to [section 3](#3-your-first-actor) and edit the generated source to add your own actors.
+The result is a buildable CMake project with qb wired in and ready to extend. Build it with the commands above, then run the executable named in the generated `CMakeLists.txt`. Skip to [section 3](#3-your-first-actor) and edit the generated source to add your own actors.
 
 <!-- src: qb/script/qb-new-project.sh:16-31 -->
 
@@ -231,7 +231,7 @@ int main() {
 Notes on the new pieces:
 
 - **`addActor` returns `ActorId::NotFound` on failure** (for example, if a core is full). `ActorId::is_valid()` checks for that sentinel, so guard the returned IDs before using them.
-- **`qb::KillEvent` is auto-subscribed.** Every actor subscribes to `KillEvent`, `SignalEvent`, `UnregisterCallbackEvent`, and `PingEvent` at construction, so neither actor registers `KillEvent` explicitly. The default `on(const KillEvent &)` handler calls `kill()`. (To opt out of the four default subscriptions, construct with `qb::no_default_events` and register `KillEvent` yourself.)
+- **`qb::KillEvent` is auto-subscribed.** Every actor subscribes to `qb::KillEvent`, `qb::SignalEvent`, `qb::UnregisterCallbackEvent`, and `qb::PingEvent` at construction, so neither actor registers `KillEvent` explicitly. The default `on(const KillEvent &)` handler calls `kill()`. (`qb::PingEvent` is the framework's `require<>` health-check event, distinct from this example's own `PingEvent`, which is *not* auto-subscribed — that is why `PongerActor` still registers it. To opt out of the four default subscriptions, construct with `qb::no_default_events` and register `KillEvent` yourself.)
 - **`push<qb::KillEvent>(_ponger)`** sends a kill request to another actor; the receiver's default handler terminates it gracefully.
 
 Both actors run on core 0 here. To distribute them across cores, pass a different `CoreId` to `addActor`; messages cross cores over lock-free queues with no code change. See [the threading model](../2_core_concepts/threading_model.md).

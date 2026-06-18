@@ -128,7 +128,7 @@ Owned by [Common actor patterns and utilities](./patterns.md).
 
 ## Pitfalls
 
-- **`send()` is restricted to trivially destructible events.** Use `push()` for events holding `std::string`, `std::vector`, or any type with a non-trivial destructor. The trivial-destructibility constraint applies to `send()`, not to `EventQOS0` — QoS only sets dispatch priority.
+- **`send()` is restricted to trivially destructible events.** Use `push()` for events holding `std::string`, `std::vector`, or any type with a non-trivial destructor. The trivial-destructibility constraint applies to `send()`, not to `EventQOS0` — QoS is a binary cross-core backpressure policy (guaranteed vs best-effort), not a priority ordering; events drain in FIFO order regardless of QoS.
 - **`onInit()` is the only safe place to call `registerEvent<E>()`.** Returning `false` from it aborts startup and destroys the actor before it processes any message.
 - **`no_default_events` actors do not respond to `KillEvent` or signals** unless you subscribe to those events explicitly in `onInit()`.
 - **`reply()` and `forward()` consume the event.** After either call the received event object must not be used again in the handler; both require a non-const `on(E&)` handler.
