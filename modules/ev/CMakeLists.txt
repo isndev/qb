@@ -26,6 +26,16 @@ set(BUILD_STATIC_LIBS ON)
 # ev_run use MAX_BLOCKTIME2 when timerfd is active and timercnt==0, which stalls
 # epoll_wait (regression #1 on event I/O tests). Opt in with -D QB_LIBEV_USE_TIMERFD=ON.
 option(QB_LIBEV_USE_TIMERFD "Enable libev timerfd (time-jump detection; affects idle waittime)" OFF)
+option(QB_LIBEV_STRICT_WARNINGS "Build bundled libev with strict compiler warnings" ON)
+option(QB_LIBEV_WARNING_AUDIT "Enable extra noisy libev warning diagnostics for modernization audits" OFF)
+
+# The audit diagnostics layer on top of the strict baseline (the strict block
+# below is what applies them). Enabling the audit without the baseline would
+# silently apply no warnings at all, so make the dependency explicit.
+if(QB_LIBEV_WARNING_AUDIT AND NOT QB_LIBEV_STRICT_WARNINGS)
+  message(STATUS "[libev] QB_LIBEV_WARNING_AUDIT=ON forces QB_LIBEV_STRICT_WARNINGS=ON")
+  set(QB_LIBEV_STRICT_WARNINGS ON)
+endif()
 
 # ----------------------------------------------------------------------------
 # Feature Detection
@@ -222,8 +232,56 @@ if(BUILD_STATIC_LIBS)
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
   )
 
-  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+  if(QB_LIBEV_STRICT_WARNINGS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    # Keep the vendored event loop visible to modern compilers. The baseline is
+    # intentionally warning-clean enough for day-to-day builds; the audit option
+    # below enables noisier conversion/cast diagnostics for dedicated cleanups.
     target_compile_options(ev PRIVATE
+      -Wall
+      -Wextra
+      -Wpedantic
+      -Wformat=2
+      -Wundef
+      -Wshadow
+      -Wpointer-arith
+      -Wcast-align
+      -Wstrict-prototypes
+      -Wmissing-prototypes
+      -Wmissing-declarations
+      -Wvla
+    )
+
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+      target_compile_options(ev PRIVATE
+        -Walloc-zero
+        -Wduplicated-branches
+        -Wduplicated-cond
+        -Wlogical-op
+        -Wnull-dereference
+        -Wstrict-overflow=2
+      )
+    elseif(CMAKE_C_COMPILER_ID MATCHES "Clang|AppleClang")
+      target_compile_options(ev PRIVATE
+        -Wconditional-uninitialized
+        -Wextra-semi
+        -Wnewline-eof
+        -Wunreachable-code
+      )
+    endif()
+
+    if(QB_LIBEV_WARNING_AUDIT)
+      target_compile_options(ev PRIVATE
+        -Wcast-qual
+        -Wconversion
+        -Wsign-conversion
+      )
+    endif()
+  endif()
+
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang" AND NOT QB_LIBEV_WARNING_AUDIT)
+    target_compile_options(ev PRIVATE
+      -Wno-unused-parameter
+      -Wno-unused-function
       -Wno-unused-result
     )
   endif()

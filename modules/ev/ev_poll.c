@@ -100,7 +100,7 @@ poll_poll (EV_P_ ev_tstamp timeout)
   int res;
 
   EV_RELEASE_CB;
-  res = poll (polls, pollcnt, EV_TS_TO_MSEC (timeout));
+  res = poll (polls, (nfds_t)pollcnt, (int)EV_TS_TO_MSEC (timeout));
   EV_ACQUIRE_CB;
 
   if (ecb_expect_false (res < 0))
@@ -122,7 +122,7 @@ poll_poll (EV_P_ ev_tstamp timeout)
 
             if (ecb_expect_false (p->revents & POLLNVAL))
               {
-                assert (("libev: poll found invalid fd in poll set", 0));
+                EV_ASSERT_MSG (0, "libev: poll found invalid fd in poll set");
                 fd_kill (EV_A_ p->fd);
               }
             else
@@ -140,6 +140,8 @@ inline_size
 int
 poll_init (EV_P_ int flags)
 {
+  (void) flags;
+
   backend_mintime = EV_TS_CONST (1e-3);
   backend_modify  = poll_modify;
   backend_poll    = poll_poll;
@@ -157,4 +159,3 @@ poll_destroy (EV_P)
   ev_free (pollidxs);
   ev_free (polls);
 }
-

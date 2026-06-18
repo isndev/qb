@@ -41,6 +41,9 @@
 #include <stdlib.h>
 #include <assert.h>
 
+#define EV_ASSERT_MSG(expr, msg) assert ((expr) && msg)
+#define EV_CONTAINER_OF(ptr, type, member) ((type *)(void *)((char *)(ptr) - offsetof (type, member)))
+
 #ifdef EV_EVENT_H
 # include EV_EVENT_H
 #else
@@ -68,11 +71,36 @@ ev_tv_get (struct timeval *tv)
 {
   if (tv)
     {
-      ev_tstamp after = tv->tv_sec + tv->tv_usec * 1e-6;
-      return after ? after : 1e-6;
+      ev_tstamp after = (ev_tstamp)tv->tv_sec + (ev_tstamp)tv->tv_usec * 1e-6;
+      return after != 0. ? after : 1e-6;
     }
   else
     return -1.;
+}
+
+static void
+ev_tv_set (struct timeval *tv, ev_tstamp at)
+{
+  long sec = (long)at;
+  long usec = (long)((at - (ev_tstamp)sec) * 1e6);
+
+  if (usec >= 1000000L)
+    {
+      ++sec;
+      usec -= 1000000L;
+    }
+  else if (usec < 0)
+    {
+      --sec;
+      usec += 1000000L;
+    }
+
+  tv->tv_sec = (time_t)sec;
+#if !defined (_WIN32) || defined (__MINGW32__)
+  tv->tv_usec = (suseconds_t)usec;
+#else
+  tv->tv_usec = (long)usec;
+#endif
 }
 
 #define EVENT_STRINGIFY(s) # s
@@ -98,7 +126,7 @@ void *event_init (void)
   if (!ev_x_cur)
     ev_x_cur = (struct event_base *)ev_default_loop (EVFLAG_AUTO);
 #else
-  assert (("libev: multiple event bases not supported when not compiled with EV_MULTIPLICITY", !ev_x_cur));
+  EV_ASSERT_MSG (!ev_x_cur, "libev: multiple event bases not supported when not compiled with EV_MULTIPLICITY");
 
   ev_x_cur = (struct event_base *)(long)ev_default_loop (EVFLAG_AUTO);
 #endif
@@ -119,7 +147,7 @@ event_base_new (void)
 #if EV_MULTIPLICITY
   return (struct event_base *)ev_loop_new (EVFLAG_AUTO);
 #else
-  assert (("libev: multiple event bases not supported when not compiled with EV_MULTIPLICITY"));
+  EV_ASSERT_MSG (0, "libev: multiple event bases not supported when not compiled with EV_MULTIPLICITY");
   return NULL;
 #endif
 }
@@ -192,7 +220,11 @@ ev_x_cb (struct event *ev, int revents)
 static void
 ev_x_cb_sig (EV_P_ struct ev_signal *w, int revents)
 {
-  struct event *ev = (struct event *)(((char *)w) - offsetof (struct event, iosig.sig));
+#if EV_MULTIPLICITY
+  (void) loop;
+#endif
+
+  struct event *ev = EV_CONTAINER_OF (w, struct event, iosig.sig);
 
   if (revents & EV_ERROR)
     event_del (ev);
@@ -203,7 +235,11 @@ ev_x_cb_sig (EV_P_ struct ev_signal *w, int revents)
 static void
 ev_x_cb_io (EV_P_ struct ev_io *w, int revents)
 {
-  struct event *ev = (struct event *)(((char *)w) - offsetof (struct event, iosig.io));
+#if EV_MULTIPLICITY
+  (void) loop;
+#endif
+
+  struct event *ev = EV_CONTAINER_OF (w, struct event, iosig.io);
 
   if ((revents & EV_ERROR) || !(ev->ev_events & EV_PERSIST))
     event_del (ev);
@@ -214,7 +250,11 @@ ev_x_cb_io (EV_P_ struct ev_io *w, int revents)
 static void
 ev_x_cb_to (EV_P_ struct ev_timer *w, int revents)
 {
-  struct event *ev = (struct event *)(((char *)w) - offsetof (struct event, to));
+#if EV_MULTIPLICITY
+  (void) loop;
+#endif
+
+  struct event *ev = EV_CONTAINER_OF (w, struct event, to);
 
   event_del (ev);
 
@@ -226,7 +266,7 @@ void event_set (struct event *ev, int fd, short events, void (*cb)(int, short, v
   if (!ev)
     return;
 
-  assert (("libev: call event_init before event_set", ev_x_cur));
+  EV_ASSERT_MSG (ev_x_cur, "libev: call event_init before event_set");
 
   if (events & EV_SIGNAL)
     ev_init (&ev->iosig.sig, ev_x_cb_sig);
@@ -320,6 +360,8 @@ int event_del (struct event *ev)
 
 void event_active (struct event *ev, int res, short ncalls)
 {
+  (void) ncalls;
+
   if (!ev || !ev->ev_base)
     return;
 
@@ -338,6 +380,7 @@ void event_active (struct event *ev, int res, short ncalls)
 int event_pending (struct event *ev, short events, struct timeval *tv)
 {
   short revents = 0;
+  short requested = events & (EV_TIMEOUT | EV_READ | EV_WRITE | EV_SIGNAL);
 
   if (!ev || !ev->ev_base)
     return 0;
@@ -357,21 +400,22 @@ int event_pending (struct event *ev, short events, struct timeval *tv)
         revents |= ev->ev_events & (EV_READ | EV_WRITE);
     }
 
-  if (ev->ev_events & EV_TIMEOUT || ev_is_active (&ev->to) || ev_is_pending (&ev->to))
+  if (ev_is_active (&ev->to) || ev_is_pending (&ev->to))
     {
       revents |= EV_TIMEOUT;
 
-      if (tv)
+      if (tv && (requested & EV_TIMEOUT))
         {
           ev_tstamp at = ev_now (EV_A);
-          long sec = (long)at;
 
-          tv->tv_sec  = sec;
-          tv->tv_usec = (long)((at - (ev_tstamp)sec) * 1e6);
+          if (ev_is_active (&ev->to))
+            at += ev_timer_remaining (EV_A_ &ev->to);
+
+          ev_tv_set (tv, at);
         }
     }
 
-  return events & revents;
+  return requested & revents;
 }
 
 int event_priority_init (int npri)
@@ -427,6 +471,8 @@ int event_base_dispatch (struct event_base *base)
 static void
 ev_x_loopexit_cb (int revents, void *base)
 {
+  (void) revents;
+
 #if EV_MULTIPLICITY
   struct ev_loop *loop = (struct ev_loop *)base;
 
@@ -483,12 +529,13 @@ ev_x_once_cb (int revents, void *arg)
 int event_base_once (struct event_base *base, int fd, short events, void (*cb)(int, short, void *), void *arg, struct timeval *tv)
 {
   struct ev_x_once *once;
-  ev_tstamp timeout = ev_tv_get (tv);
+  short io_events = events & (EV_READ | EV_WRITE);
+  ev_tstamp timeout = tv ? ev_tv_get (tv) : ((events & EV_TIMEOUT) && !io_events ? 0. : -1.);
 
   if (!base || !cb)
     return -1;
 
-  if (fd < 0 && timeout < 0.)
+  if ((fd < 0 || !io_events) && timeout < 0.)
     return -1;
 
   once = (struct ev_x_once *)malloc (sizeof (struct ev_x_once));
@@ -503,11 +550,11 @@ int event_base_once (struct event_base *base, int fd, short events, void (*cb)(i
   {
     struct ev_loop *loop = (struct ev_loop *)base;
 
-    ev_once (EV_A_ fd, events & (EV_READ | EV_WRITE), timeout, ev_x_once_cb, (void *)once);
+    ev_once (EV_A_ fd, io_events, timeout, ev_x_once_cb, (void *)once);
   }
 #else
   (void) base;
-  ev_once (fd, events & (EV_READ | EV_WRITE), timeout, ev_x_once_cb, (void *)once);
+  ev_once (fd, io_events, timeout, ev_x_once_cb, (void *)once);
 #endif
 
   return 0;
@@ -519,4 +566,3 @@ int event_base_priority_init (struct event_base *base, int npri)
   (void) npri;
   return 0;
 }
-
