@@ -106,10 +106,12 @@
         {
             "name": "coverage",
             "displayName": "Coverage",
-            "description": "Standalone qb Debug build with GCC/gcov coverage instrumentation.",
+            "description": "Standalone qb Debug build with gcov-compatible coverage instrumentation.",
             "inherits": "debug",
             "cacheVariables": {
-                "QB_BUILD_COVERAGE": "ON"
+                "QB_BUILD_COVERAGE": "ON",
+                "QB_BUILD_EXAMPLES": "OFF",
+                "QB_BUILD_BENCHMARKS": "OFF"
             }
         },
         {
@@ -181,7 +183,7 @@
             "name": "coverage-html",
             "configurePreset": "coverage",
             "targets": [
-                "qb-coverage"
+                "qb-coverage-html"
             ]
         },
         {

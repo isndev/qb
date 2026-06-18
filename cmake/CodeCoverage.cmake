@@ -74,6 +74,16 @@ include(CMakeParseArguments)
 if(NOT GCOV_PATH AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     string(REGEX MATCH "^[0-9]+" _gcov_major "${CMAKE_CXX_COMPILER_VERSION}")
     find_program(GCOV_PATH NAMES "gcov-${_gcov_major}" gcov)
+elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "(Apple)?[Cc]lang")
+    find_program(LLVM_COV_PATH
+        NAMES llvm-cov
+        HINTS /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin
+    )
+    if(LLVM_COV_PATH AND (NOT GCOV_PATH OR GCOV_PATH MATCHES "/gcov(-[0-9]+)?$"))
+        set(GCOV_PATH "${LLVM_COV_PATH} gcov" CACHE STRING "gcov-compatible coverage command" FORCE)
+    elseif(NOT GCOV_PATH)
+        find_program(GCOV_PATH gcov)
+    endif()
 else()
     find_program(GCOV_PATH gcov)
 endif()
@@ -182,18 +192,6 @@ function(SETUP_TARGET_FOR_COVERAGE_LCOV)
             COMMENT "Resetting code coverage counters to zero.\nProcessing code coverage counters and generating report."
             )
 
-    # Show where to find the lcov info report
-    add_custom_command(TARGET ${Coverage_NAME} POST_BUILD
-            COMMAND ;
-            COMMENT "Lcov code coverage info report saved in ${Coverage_NAME}.info."
-            )
-
-    # Show info where to find the report
-    add_custom_command(TARGET ${Coverage_NAME} POST_BUILD
-            COMMAND ;
-            COMMENT "Open ./${Coverage_NAME}/index.html in your browser to view the coverage report."
-            )
-
 endfunction() # SETUP_TARGET_FOR_COVERAGE_LCOV
 
 # Defines a target for running and collection code coverage information
@@ -242,12 +240,6 @@ function(SETUP_TARGET_FOR_COVERAGE_GCOVR_XML)
             COMMENT "Running gcovr to produce Cobertura code coverage report."
             )
 
-    # Show info where to find the report
-    add_custom_command(TARGET ${Coverage_NAME} POST_BUILD
-            COMMAND ;
-            COMMENT "Cobertura code coverage report saved in ${Coverage_NAME}.xml."
-            )
-
 endfunction() # SETUP_TARGET_FOR_COVERAGE_GCOVR_XML
 
 # Defines a target for running and collection code coverage information
@@ -290,7 +282,7 @@ function(SETUP_TARGET_FOR_COVERAGE_GCOVR_HTML)
             COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_BINARY_DIR}/${Coverage_NAME}
 
             # Running gcovr
-            COMMAND ${Python_EXECUTABLE} ${GCOVR_PATH} ${Coverage_GCOVR_ARGS} --html --html-details
+            COMMAND ${GCOVR_PATH} ${Coverage_GCOVR_ARGS} --html --html-details
             -r ${PROJECT_SOURCE_DIR} ${GCOVR_EXCLUDES}
             --gcov-executable=${GCOV_PATH}
             --object-directory=${PROJECT_BINARY_DIR}
@@ -298,12 +290,6 @@ function(SETUP_TARGET_FOR_COVERAGE_GCOVR_HTML)
             WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
             DEPENDS ${Coverage_DEPENDENCIES}
             COMMENT "Running gcovr to produce HTML code coverage report."
-            )
-
-    # Show info where to find the report
-    add_custom_command(TARGET ${Coverage_NAME} POST_BUILD
-            COMMAND ;
-            COMMENT "Open ./${Coverage_NAME}/index.html in your browser to view the coverage report."
             )
 
 endfunction() # SETUP_TARGET_FOR_COVERAGE_GCOVR_HTML

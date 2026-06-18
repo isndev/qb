@@ -85,6 +85,7 @@ class ScriptedStreamTransport {
     std::vector<std::size_t> _write_limits;
     std::size_t              _write_index = 0u;
     bool                     _fail_reads  = false;
+    bool                     _fail_writes = false;
 
 public:
     std::string written;
@@ -93,14 +94,18 @@ public:
 
     ScriptedStreamTransport() = default;
 
-    explicit ScriptedStreamTransport(std::string read_data,
-                                     std::vector<std::size_t> write_limits = {},
-                                     bool fail_reads = false)
+    explicit ScriptedStreamTransport(std::string read_data, std::vector<std::size_t> write_limits = {}, bool fail_reads = false)
         : _read_data(std::move(read_data))
         , _write_limits(std::move(write_limits))
         , _fail_reads(fail_reads) {}
 
-    int read(char *data, std::size_t size) noexcept {
+    void
+    fail_writes(bool enabled = true) noexcept {
+        _fail_writes = enabled;
+    }
+
+    int
+    read(char *data, std::size_t size) noexcept {
         if (_fail_reads)
             return -1;
         if (_read_offset >= _read_data.size())
@@ -113,7 +118,10 @@ public:
         return static_cast<int>(count);
     }
 
-    int write(const char *data, std::size_t size) noexcept {
+    int
+    write(const char *data, std::size_t size) noexcept {
+        if (_fail_writes)
+            return -1;
         auto count = size;
         if (_write_index < _write_limits.size())
             count = std::min(count, _write_limits[_write_index++]);
@@ -121,8 +129,22 @@ public:
         return static_cast<int>(count);
     }
 
-    void disconnect() noexcept { disconnected = true; }
-    void close() noexcept { closed = true; }
+    void
+    disconnect() noexcept {
+        disconnected = true;
+    }
+    void
+    close() noexcept {
+        closed = true;
+    }
+};
+
+class LimitedScriptedOStream : public qb::io::ostream<ScriptedStreamTransport> {
+public:
+    void
+    set_max_write_buffer_size(std::size_t size) noexcept {
+        _max_write_buffer_size = size;
+    }
 };
 
 } // namespace
@@ -168,6 +190,26 @@ TEST(StreamTemplates, OutputPartialFullAndRejectedPublishes) {
 
     const auto &const_output = output;
     EXPECT_EQ(const_output.transport().written, "abcdef");
+
+    LimitedScriptedOStream limited;
+    limited.set_max_write_buffer_size(3u);
+    EXPECT_EQ(limited.publish("abcd", 4u), nullptr);
+    EXPECT_EQ(limited.pendingWrite(), 0u);
+
+    ASSERT_NE(limited.publish("ab", 2u), nullptr);
+    limited.set_max_write_buffer_size(1u);
+    EXPECT_EQ(limited.publish("c", 1u), nullptr);
+    EXPECT_EQ(limited.pendingWrite(), 2u);
+}
+
+TEST(StreamTemplates, OutputWriteFailureKeepsPendingData) {
+    qb::io::ostream<ScriptedStreamTransport> output;
+    output.transport().fail_writes();
+
+    ASSERT_NE(output.publish("data", 4u), nullptr);
+    EXPECT_EQ(output.write(), -1);
+    EXPECT_EQ(output.pendingWrite(), 4u);
+    EXPECT_TRUE(output.transport().written.empty());
 }
 
 TEST(StreamTemplates, BidirectionalStreamPartialWritesAndWriteLimit) {
@@ -206,13 +248,11 @@ TEST_F(StreamTest, FileInputStream) {
     int read_result = input_stream.read();
     // Si la lecture échoue, afficher un message mais ne pas faire échouer le test
     if (read_result <= 0) {
-        std::cout << "Warning: Unable to read from file, got result: " << read_result
-                  << std::endl;
+        std::cout << "Warning: Unable to read from file, got result: " << read_result << std::endl;
     } else {
         // Get the data from the buffer
         std::array<char, 100> buffer{};
-        std::memcpy(buffer.data(), input_stream.in().data(),
-                    std::min(test_content.size(), input_stream.in().size()));
+        std::memcpy(buffer.data(), input_stream.in().data(), std::min(test_content.size(), input_stream.in().size()));
 
         // Verify content
         std::string read_content(buffer.data(), test_content.size());
@@ -245,7 +285,7 @@ TEST_F(StreamTest, FileOutputStream) {
     const std::string write_content = "Testing output stream";
 
     // Add data to output buffer and write
-    std::ignore = output_stream.publish(write_content.c_str(), write_content.size());
+    std::ignore      = output_stream.publish(write_content.c_str(), write_content.size());
     int write_result = output_stream.write();
     ASSERT_GT(write_result, 0);
 
@@ -254,8 +294,7 @@ TEST_F(StreamTest, FileOutputStream) {
 
     // Verify file contents
     std::ifstream check_file(output_file);
-    std::string   read_content((std::istreambuf_iterator<char>(check_file)),
-                               std::istreambuf_iterator<char>());
+    std::string   read_content((std::istreambuf_iterator<char>(check_file)), std::istreambuf_iterator<char>());
     EXPECT_EQ(read_content, write_content);
 
     // Test writing from std::vector
@@ -270,7 +309,7 @@ TEST_F(StreamTest, FileOutputStream) {
     std::vector<char> vec_buffer(vec_content.begin(), vec_content.end());
 
     // Add data to output buffer and write
-    std::ignore = output_stream.publish(vec_buffer.data(), vec_buffer.size());
+    std::ignore  = output_stream.publish(vec_buffer.data(), vec_buffer.size());
     write_result = output_stream.write();
     ASSERT_GT(write_result, 0);
 
@@ -279,8 +318,7 @@ TEST_F(StreamTest, FileOutputStream) {
 
     // Verify file contents
     std::ifstream check_file2(output_file);
-    std::string   read_content2((std::istreambuf_iterator<char>(check_file2)),
-                                std::istreambuf_iterator<char>());
+    std::string   read_content2((std::istreambuf_iterator<char>(check_file2)), std::istreambuf_iterator<char>());
     EXPECT_EQ(read_content2, vec_content);
 }
 
@@ -302,12 +340,11 @@ TEST_F(StreamTest, FileBidirectionalStream) {
     const std::string write_content = "Bidirectional stream test";
 
     // Add data to output buffer and write
-    std::ignore = bidir_stream.publish(write_content.c_str(), write_content.size());
+    std::ignore      = bidir_stream.publish(write_content.c_str(), write_content.size());
     int write_result = bidir_stream.write();
 
     if (write_result <= 0) {
-        std::cout << "Warning: Unable to write to file, got result: " << write_result
-                  << std::endl;
+        std::cout << "Warning: Unable to write to file, got result: " << write_result << std::endl;
     } else {
         // Close and reopen to reset position
         bidir_stream.close();
@@ -323,12 +360,10 @@ TEST_F(StreamTest, FileBidirectionalStream) {
         int read_result = bidir_stream.read();
 
         if (read_result <= 0) {
-            std::cout << "Warning: Unable to read from file, got result: " << read_result
-                      << std::endl;
+            std::cout << "Warning: Unable to read from file, got result: " << read_result << std::endl;
         } else {
             std::array<char, 100> buffer{};
-            std::memcpy(buffer.data(), bidir_stream.in().data(),
-                        std::min(write_content.size(), bidir_stream.in().size()));
+            std::memcpy(buffer.data(), bidir_stream.in().data(), std::min(write_content.size(), bidir_stream.in().size()));
 
             // Verify content
             std::string read_content(buffer.data(), write_content.size());
@@ -361,12 +396,11 @@ TEST_F(StreamTest, FileTransport) {
     const std::string write_content = "Transport file test";
 
     // Add data to output buffer and write
-    std::ignore = transport.publish(write_content.c_str(), write_content.size());
+    std::ignore      = transport.publish(write_content.c_str(), write_content.size());
     int write_result = transport.write();
 
     if (write_result <= 0) {
-        std::cout << "Warning: Unable to write to transport file, got result: "
-                  << write_result << std::endl;
+        std::cout << "Warning: Unable to write to transport file, got result: " << write_result << std::endl;
     } else {
         // Flush and close
         transport.close();
@@ -374,8 +408,7 @@ TEST_F(StreamTest, FileTransport) {
 
         // Verify file contents
         std::ifstream check_file(transport_file);
-        std::string   read_content((std::istreambuf_iterator<char>(check_file)),
-                                   std::istreambuf_iterator<char>());
+        std::string   read_content((std::istreambuf_iterator<char>(check_file)), std::istreambuf_iterator<char>());
         EXPECT_EQ(read_content, write_content);
 
         // Test reading through transport
@@ -389,13 +422,11 @@ TEST_F(StreamTest, FileTransport) {
         int read_result = transport.read();
 
         if (read_result <= 0) {
-            std::cout << "Warning: Unable to read from transport file, got result: "
-                      << read_result << std::endl;
+            std::cout << "Warning: Unable to read from transport file, got result: " << read_result << std::endl;
         } else {
             // Copy data to local buffer
             std::array<char, 100> buffer{};
-            std::memcpy(buffer.data(), transport.in().data(),
-                        std::min(write_content.size(), transport.in().size()));
+            std::memcpy(buffer.data(), transport.in().data(), std::min(write_content.size(), transport.in().size()));
 
             // Verify content
             std::string transport_read(buffer.data(), write_content.size());
@@ -447,8 +478,8 @@ TEST_F(StreamTest, DISABLED_TCPStream) {
             EXPECT_EQ(received_message, expected_message);
 
             // Write back to client
-            const std::string response = "Server to client";
-            int bytes_sent = server_socket.write(response.c_str(), response.size());
+            const std::string response   = "Server to client";
+            int               bytes_sent = server_socket.write(response.c_str(), response.size());
             EXPECT_GT(bytes_sent, 0);
 
             // Close connection
@@ -477,13 +508,13 @@ TEST_F(StreamTest, DISABLED_TCPStream) {
         ASSERT_EQ(client_socket.connect_v4("127.0.0.1", tcp_port), 0);
 
         // Send data to server
-        const std::string message = "Client to server";
-        int bytes_sent            = client_socket.write(message.c_str(), message.size());
+        const std::string message    = "Client to server";
+        int               bytes_sent = client_socket.write(message.c_str(), message.size());
         EXPECT_GT(bytes_sent, 0);
 
         // Read response from server
         std::array<char, 100> buffer{};
-        int bytes_read = client_socket.read(buffer.data(), buffer.size());
+        int                   bytes_read = client_socket.read(buffer.data(), buffer.size());
         EXPECT_GT(bytes_read, 0);
 
         // Verify the response
@@ -529,17 +560,15 @@ TEST_F(StreamTest, DISABLED_UDPStream) {
 
             // Wait for data from client
             const std::string expected_message = "Client to server via UDP";
-            int               bytes_read =
-                server_socket.read(buffer.data(), buffer.size(), client_endpoint);
+            int               bytes_read       = server_socket.read(buffer.data(), buffer.size(), client_endpoint);
             EXPECT_GT(bytes_read, 0);
 
             std::string received_message(buffer.data(), bytes_read);
             EXPECT_EQ(received_message, expected_message);
 
             // Write back to client
-            const std::string response = "Server to client via UDP";
-            int               bytes_written =
-                server_socket.write(response.c_str(), response.size(), client_endpoint);
+            const std::string response      = "Server to client via UDP";
+            int               bytes_written = server_socket.write(response.c_str(), response.size(), client_endpoint);
             EXPECT_GT(bytes_written, 0);
 
             // Clean up
@@ -563,13 +592,11 @@ TEST_F(StreamTest, DISABLED_UDPStream) {
         ASSERT_TRUE(client_socket.init());
 
         // Create endpoint for server
-        qb::io::endpoint server_endpoint =
-            qb::io::endpoint().as_in("127.0.0.1", udp_port);
+        qb::io::endpoint server_endpoint = qb::io::endpoint().as_in("127.0.0.1", udp_port);
 
         // Send data to server
-        const std::string message = "Client to server via UDP";
-        int               bytes_written =
-            client_socket.write(message.c_str(), message.size(), server_endpoint);
+        const std::string message       = "Client to server via UDP";
+        int               bytes_written = client_socket.write(message.c_str(), message.size(), server_endpoint);
         EXPECT_GT(bytes_written, 0);
 
         // Read response from server
@@ -580,8 +607,7 @@ TEST_F(StreamTest, DISABLED_UDPStream) {
         // UDP is connectionless, so we need to wait a moment for the response
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-        int bytes_read =
-            client_socket.read(buffer.data(), buffer.size(), server_reply_endpoint);
+        int bytes_read = client_socket.read(buffer.data(), buffer.size(), server_reply_endpoint);
         EXPECT_GT(bytes_read, 0);
 
         std::string received_response(buffer.data(), bytes_read);
@@ -622,8 +648,8 @@ TEST_F(StreamTest, DISABLED_LargeDataTransfer) {
 
     while (total_written < buffer_size) {
         size_t current_chunk = std::min(chunk_size, buffer_size - total_written);
-        std::ignore = stream.publish(large_buffer.data() + total_written, current_chunk);
-        int bytes_written = stream.write();
+        std::ignore          = stream.publish(large_buffer.data() + total_written, current_chunk);
+        int bytes_written    = stream.write();
         EXPECT_GT(bytes_written, 0);
         total_written += current_chunk;
     }
@@ -678,8 +704,8 @@ TEST_F(StreamTest, StreamErrors) {
     }
 
     const std::string test_data = "Test data";
-    std::ignore = output_stream.publish(test_data.c_str(), test_data.size());
-    result = output_stream.write();
+    std::ignore                 = output_stream.publish(test_data.c_str(), test_data.size());
+    result                      = output_stream.write();
     EXPECT_LT(result, 0);
 }
 
@@ -756,8 +782,8 @@ TEST_F(StreamTest, DISABLED_MemoryBufferStream) {
 
     // Test writing to memory buffer
     const std::string test_data = "Testing memory buffer stream";
-    std::ignore = stream.publish(test_data.c_str(), test_data.size());
-    int write_result = stream.write();
+    std::ignore                 = stream.publish(test_data.c_str(), test_data.size());
+    int write_result            = stream.write();
     ASSERT_GT(write_result, 0);
 
     // Reset positions for reading
@@ -781,8 +807,7 @@ TEST_F(StreamTest, StreamChaining) {
     std::string source_file = test_dir + "/source_chain.txt";
     std::string dest_file   = test_dir + "/dest_chain.txt";
 
-    const std::string test_content =
-        "Testing stream chaining with non-trivial content 12345!@#$%";
+    const std::string test_content = "Testing stream chaining with non-trivial content 12345!@#$%";
 
     // Create source file
     {
@@ -801,8 +826,7 @@ TEST_F(StreamTest, StreamChaining) {
     // Read from file to input stream's buffer
     int read_result = input_stream.read();
     if (read_result <= 0) {
-        std::cout << "Warning: Failed to read from source file, got result: "
-                  << read_result << std::endl;
+        std::cout << "Warning: Failed to read from source file, got result: " << read_result << std::endl;
         // Clean up and skip the rest of the test
         return;
     }
@@ -824,8 +848,7 @@ TEST_F(StreamTest, StreamChaining) {
     // Write from output stream's buffer to file
     int write_result = output_stream.write();
     if (write_result <= 0) {
-        std::cout << "Warning: Failed to write to destination file, got result: "
-                  << write_result << std::endl;
+        std::cout << "Warning: Failed to write to destination file, got result: " << write_result << std::endl;
     }
 
     // Clean up
@@ -836,8 +859,7 @@ TEST_F(StreamTest, StreamChaining) {
 
     // Verify destination file content matches source
     std::ifstream check_file(dest_file);
-    std::string   result_content((std::istreambuf_iterator<char>(check_file)),
-                                 std::istreambuf_iterator<char>());
+    std::string   result_content((std::istreambuf_iterator<char>(check_file)), std::istreambuf_iterator<char>());
     EXPECT_EQ(result_content, test_content);
 }
 
@@ -877,8 +899,8 @@ TEST_F(StreamTest, NullStream) {
 
     // Test writing to null stream
     const std::string test_data = "This data should be discarded";
-    std::ignore = null_stream.publish(test_data.c_str(), test_data.size());
-    int written = null_stream.write();
+    std::ignore                 = null_stream.publish(test_data.c_str(), test_data.size());
+    int written                 = null_stream.write();
 
     // Should report all bytes written
     EXPECT_EQ(written, test_data.size());
@@ -918,8 +940,7 @@ TEST_F(StreamTest, DISABLED_StreamBufferManagement) {
 
     // Get the first line
     size_t line1_end = 0;
-    while (line1_end < input_stream.in().size() &&
-           input_stream.in().data()[line1_end] != '\n') {
+    while (line1_end < input_stream.in().size() && input_stream.in().data()[line1_end] != '\n') {
         line1_end++;
     }
 
@@ -935,8 +956,7 @@ TEST_F(StreamTest, DISABLED_StreamBufferManagement) {
 
     // Get second line from updated buffer
     size_t line2_end = 0;
-    while (line2_end < input_stream.in().size() &&
-           input_stream.in().data()[line2_end] != '\n') {
+    while (line2_end < input_stream.in().size() && input_stream.in().data()[line2_end] != '\n') {
         line2_end++;
     }
 
@@ -952,8 +972,7 @@ TEST_F(StreamTest, DISABLED_StreamBufferManagement) {
     ASSERT_GT(read_result, 0);
 
     // Check if buffer contains the rest of lines
-    std::string remaining(input_stream.in().data() + line2_end,
-                          input_stream.in().size() - line2_end);
+    std::string remaining(input_stream.in().data() + line2_end, input_stream.in().size() - line2_end);
     EXPECT_TRUE(remaining.find("Line 3") != std::string::npos);
     EXPECT_TRUE(remaining.find("Line 4") != std::string::npos);
     EXPECT_TRUE(remaining.find("Line 5") != std::string::npos);
@@ -1000,8 +1019,8 @@ TEST_F(StreamTest, AdvancedErrorHandling) {
     // Test error recovery - should be able to publish and write data
     // even though the input file was deleted
     const std::string recovery_data = "Data written after error";
-    std::ignore = output_stream.publish(recovery_data.c_str(), recovery_data.size());
-    int write_result = output_stream.write();
+    std::ignore                     = output_stream.publish(recovery_data.c_str(), recovery_data.size());
+    int write_result                = output_stream.write();
     EXPECT_GT(write_result, 0);
 
     // Streams own their fd via move; no manual close on the local file
@@ -1009,66 +1028,8 @@ TEST_F(StreamTest, AdvancedErrorHandling) {
 
     // Verify output file content
     std::ifstream check_file(output_file);
-    std::string   content((std::istreambuf_iterator<char>(check_file)),
-                          std::istreambuf_iterator<char>());
+    std::string   content((std::istreambuf_iterator<char>(check_file)), std::istreambuf_iterator<char>());
     EXPECT_EQ(content, recovery_data);
-}
-
-// ----------------------- Performance Tests -----------------------
-
-// Test stream performance with large data transfers
-TEST_F(StreamTest, StreamPerformance) {
-    // Create a large file (1MB)
-    std::string  large_file = test_dir + "/stream_performance.dat";
-    const size_t file_size  = 1024 * 1024; // 1MB
-
-    // Create random data
-    std::vector<char> data(file_size);
-    for (std::size_t i = 0; i < file_size; ++i) {
-        data[i] = static_cast<char>(rand() % 256);
-    }
-
-    // Write data to file
-    {
-        std::ofstream file(large_file, std::ios::binary);
-        file.write(data.data(), data.size());
-    }
-
-    // Measure read performance
-    qb::io::sys::file file;
-    ASSERT_GE(file.open(large_file, O_RDONLY), 0);
-
-    qb::io::istream<qb::io::sys::file> input_stream;
-    input_stream.transport() = std::move(file);
-
-    // Time the read operation
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-    size_t total_bytes = 0;
-    while (total_bytes < file_size) {
-        int bytes = input_stream.read();
-        if (bytes <= 0)
-            break;
-
-        total_bytes += input_stream.in().size();
-        input_stream.flush(input_stream.in().size());
-    }
-
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time)
-            .count();
-
-    // Verify we read the whole file
-    EXPECT_GE(total_bytes, file_size);
-
-    // Log performance metrics
-    std::cout << "Stream read performance: " << total_bytes << " bytes in " << duration
-              << "ms (" << (total_bytes / (duration ? duration : 1)) << " bytes/ms)"
-              << std::endl;
-
-    // Clean up
-    file.close();
 }
 
 // ----------------------- Stream Composition Tests -----------------------
@@ -1150,16 +1111,14 @@ TEST_F(StreamTest, StreamComposition) {
     input_stream.transport() = std::move(source);
 
     // Create transform stream adapter
-    TransformStream<qb::io::istream<qb::io::sys::file>> transform_stream(
-        input_stream, uppercase_transform);
+    TransformStream<qb::io::istream<qb::io::sys::file>> transform_stream(input_stream, uppercase_transform);
 
     // Read and transform
     int read_result = transform_stream.read();
     ASSERT_GT(read_result, 0);
 
     // Get transformed data
-    std::string transformed_data(transform_stream.in().data(),
-                                 transform_stream.in().size());
+    std::string transformed_data(transform_stream.in().data(), transform_stream.in().size());
     EXPECT_EQ(transformed_data, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
 
     // Write transformed data to output file
@@ -1170,8 +1129,7 @@ TEST_F(StreamTest, StreamComposition) {
     output_stream.transport() = std::move(dest);
 
     // Use the transform adapter for writing too
-    TransformStream<qb::io::ostream<qb::io::sys::file>> transform_output(
-        output_stream, uppercase_transform);
+    TransformStream<qb::io::ostream<qb::io::sys::file>> transform_output(output_stream, uppercase_transform);
 
     // Write some text that will be transformed
     transform_output.publish("testing transformation", 22);
@@ -1185,8 +1143,7 @@ TEST_F(StreamTest, StreamComposition) {
 
     // Verify output file content (should be uppercase)
     std::ifstream check_file(dest_file);
-    std::string   content((std::istreambuf_iterator<char>(check_file)),
-                          std::istreambuf_iterator<char>());
+    std::string   content((std::istreambuf_iterator<char>(check_file)), std::istreambuf_iterator<char>());
     EXPECT_EQ(content, "TESTING TRANSFORMATION");
 }
 

@@ -34,11 +34,18 @@
 #include <qb/io/transport/udp.h>
 #include <qb/io/udp/socket.h>
 #include <qb/uuid.h>
+#include <cstring>
 #include <set>
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_set>
 #include <vector>
+
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 
 TEST(URI, Resolving) {
     qb::io::uri u1{"https://www.example.com/section1/section2/action?query1=value1&query2=value2"};
@@ -269,8 +276,7 @@ TEST(INET_UDP, Blocking) {
             EXPECT_TRUE(sock.is_open());
 
             const char msg[] = "Hello Test !";
-            EXPECT_FALSE(
-                sock.write(msg, sizeof(msg), qb::io::endpoint().as_in("127.0.0.1", port)) <= 0);
+            EXPECT_FALSE(sock.write(msg, sizeof(msg), qb::io::endpoint().as_in("127.0.0.1", port)) <= 0);
             sock.close();
         });
 
@@ -324,145 +330,151 @@ TEST(INET_UDP, NonBlocking) {
 
 #ifndef _WIN32
 
-constexpr const char UNIX_SOCK_PATH[] = "./qb-io-test.sock";
+namespace {
+
+struct unix_socket_file {
+    explicit unix_socket_file(std::string_view suffix)
+        : path("/tmp/qb-io-test-" + std::to_string(::getpid()) + "-" + std::string(suffix) + ".sock") {
+        ::unlink(path.c_str());
+    }
+
+    unix_socket_file(unix_socket_file const &)            = delete;
+    unix_socket_file &operator=(unix_socket_file const &) = delete;
+
+    ~unix_socket_file() {
+        ::unlink(path.c_str());
+    }
+
+    std::string path;
+};
+
+} // namespace
 
 TEST(UNIX_TCP, Blocking) {
-    unlink(UNIX_SOCK_PATH);
-    std::thread tlistener([]() {
-        qb::io::tcp::listener listener;
-        EXPECT_FALSE(listener.listen_un(UNIX_SOCK_PATH) != qb::io::SocketStatus::Done);
-        EXPECT_TRUE(listener.is_open());
+    unix_socket_file      socket_path{"tcp-blocking"};
+    qb::io::tcp::listener listener;
+    ASSERT_EQ(listener.listen_un(socket_path.path), qb::io::SocketStatus::Done);
+    ASSERT_TRUE(listener.is_open());
 
-        std::thread tsender([]() {
-            qb::io::tcp::socket sock;
-            EXPECT_FALSE(sock.connect_un(UNIX_SOCK_PATH) != qb::io::SocketStatus::Done);
-            EXPECT_TRUE(sock.is_open());
+    std::thread tsender([path = socket_path.path]() {
+        qb::io::tcp::socket sock;
+        EXPECT_FALSE(sock.connect_un(path) != qb::io::SocketStatus::Done);
+        EXPECT_TRUE(sock.is_open());
 
-            const char msg[] = "Hello Test !";
-            char buffer[512];
-            *buffer = 0;
-
-            EXPECT_FALSE(sock.read(buffer, sock.write(msg, sizeof(msg))) <= 0);
-            EXPECT_TRUE(!strcmp(msg, buffer));
-            sock.disconnect();
-        });
-
-        qb::io::tcp::socket sock = listener.accept();
-        EXPECT_FALSE(sock.native_handle() <= 0);
-
-        char buffer[512];
+        const char msg[] = "Hello Test !";
+        char       buffer[512];
         *buffer = 0;
 
-        EXPECT_FALSE(sock.write(buffer, sock.read(buffer, 512)) <= 0);
-        EXPECT_EQ(std::string(buffer), "Hello Test !");
-        tsender.join();
+        EXPECT_FALSE(sock.read(buffer, sock.write(msg, sizeof(msg))) <= 0);
+        EXPECT_TRUE(!strcmp(msg, buffer));
+        sock.disconnect();
     });
 
-    tlistener.join();
+    qb::io::tcp::socket sock = listener.accept();
+    if (sock.native_handle() <= 0) {
+        ADD_FAILURE() << "Unix TCP accept failed";
+        tsender.join();
+        return;
+    }
+
+    char buffer[512];
+    *buffer = 0;
+
+    EXPECT_FALSE(sock.write(buffer, sock.read(buffer, 512)) <= 0);
+    EXPECT_EQ(std::string(buffer), "Hello Test !");
+    tsender.join();
 }
 
 TEST(UNIX_TCP, NonBlocking) {
-    unlink(UNIX_SOCK_PATH);
-    std::thread tlistener([]() {
-        qb::io::tcp::listener listener;
-        EXPECT_FALSE(listener.listen_un(UNIX_SOCK_PATH) != qb::io::SocketStatus::Done);
-        EXPECT_TRUE(listener.is_open());
+    unix_socket_file      socket_path{"tcp-nonblocking"};
+    qb::io::tcp::listener listener;
+    ASSERT_EQ(listener.listen_un(socket_path.path), qb::io::SocketStatus::Done);
+    ASSERT_TRUE(listener.is_open());
 
-        std::thread tsender([]() {
-            qb::io::tcp::socket sock;
-            EXPECT_FALSE(sock.connect_un(UNIX_SOCK_PATH) != qb::io::SocketStatus::Done);
-            EXPECT_TRUE(sock.is_open());
-
-            sock.set_nonblocking(true);
-
-            const char msg[] = "Hello Test !";
-            std::this_thread::sleep_for(std::chrono::seconds(3));
-            EXPECT_FALSE(sock.write(msg, sizeof(msg)) <= 0);
-            sock.disconnect();
-        });
-
+    std::thread tsender([path = socket_path.path]() {
         qb::io::tcp::socket sock;
-        EXPECT_FALSE(listener.accept(sock) != qb::io::SocketStatus::Done);
+        EXPECT_FALSE(sock.connect_un(path) != qb::io::SocketStatus::Done);
+        EXPECT_TRUE(sock.is_open());
+
         sock.set_nonblocking(true);
 
-        char buffer[512];
-        *buffer = 0;
-
-        EXPECT_FALSE(sock.read(buffer, 512) > 0);
-        EXPECT_EQ(std::string(buffer), "");
-
-        tsender.join();
+        const char msg[] = "Hello Test !";
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        EXPECT_FALSE(sock.write(msg, sizeof(msg)) <= 0);
+        sock.disconnect();
     });
 
-    tlistener.join();
+    qb::io::tcp::socket sock;
+    EXPECT_FALSE(listener.accept(sock) != qb::io::SocketStatus::Done);
+    sock.set_nonblocking(true);
+
+    char buffer[512];
+    *buffer = 0;
+
+    EXPECT_FALSE(sock.read(buffer, 512) > 0);
+    EXPECT_EQ(std::string(buffer), "");
+
+    tsender.join();
 }
 
 TEST(UNIX_UDP, Blocking) {
-    unlink(UNIX_SOCK_PATH);
-    std::thread tlistener([]() {
-        qb::io::udp::socket listener;
-        EXPECT_FALSE(listener.bind_un(UNIX_SOCK_PATH) != qb::io::SocketStatus::Done);
-        EXPECT_TRUE(listener.is_open());
+    unix_socket_file    socket_path{"udp-blocking"};
+    qb::io::udp::socket listener;
+    ASSERT_EQ(listener.bind_un(socket_path.path), qb::io::SocketStatus::Done);
+    ASSERT_TRUE(listener.is_open());
 
-        std::thread tsender([]() {
-            qb::io::udp::socket sock;
+    std::thread tsender([path = socket_path.path]() {
+        qb::io::udp::socket sock;
 
-            sock.init(AF_UNIX);
-            EXPECT_TRUE(sock.is_open());
+        sock.init(AF_UNIX);
+        EXPECT_TRUE(sock.is_open());
 
-            const char msg[] = "Hello Test !";
-            EXPECT_FALSE(sock.write(msg, sizeof(msg), qb::io::endpoint().as_un(UNIX_SOCK_PATH)) <=
-                         0);
-            sock.close();
-        });
-
-        char buffer[512];
-        *buffer = 0;
-
-        qb::io::endpoint peer;
-
-        EXPECT_FALSE(listener.read(buffer, 512, peer) <= 0);
-        EXPECT_EQ(std::string(buffer), "Hello Test !");
-        EXPECT_EQ(peer.ip(), "");
-        tsender.join();
+        const char msg[] = "Hello Test !";
+        EXPECT_FALSE(sock.write(msg, sizeof(msg), qb::io::endpoint().as_un(path.c_str())) <= 0);
+        sock.close();
     });
-    tlistener.join();
+
+    char buffer[512];
+    *buffer = 0;
+
+    qb::io::endpoint peer;
+
+    EXPECT_FALSE(listener.read(buffer, 512, peer) <= 0);
+    EXPECT_EQ(std::string(buffer), "Hello Test !");
+    EXPECT_EQ(peer.ip(), "");
+    tsender.join();
 }
 
 TEST(UNIX_UDP, NonBlocking) {
-    unlink(UNIX_SOCK_PATH);
-    std::thread tlistener([]() {
-        qb::io::udp::socket listener;
-        EXPECT_FALSE(listener.bind_un(UNIX_SOCK_PATH) != qb::io::SocketStatus::Done);
-        EXPECT_TRUE(listener.is_open());
+    unix_socket_file    socket_path{"udp-nonblocking"};
+    qb::io::udp::socket listener;
+    ASSERT_EQ(listener.bind_un(socket_path.path), qb::io::SocketStatus::Done);
+    ASSERT_TRUE(listener.is_open());
 
-        listener.set_nonblocking(true);
+    listener.set_nonblocking(true);
 
-        std::thread tsender([]() {
-            qb::io::udp::socket sock;
+    std::thread tsender([path = socket_path.path]() {
+        qb::io::udp::socket sock;
 
-            sock.init(AF_UNIX);
-            EXPECT_TRUE(sock.is_open());
-            sock.set_nonblocking(true);
+        sock.init(AF_UNIX);
+        EXPECT_TRUE(sock.is_open());
+        sock.set_nonblocking(true);
 
-            const char msg[] = "Hello Test !";
-            std::this_thread::sleep_for(std::chrono::seconds(3));
-            EXPECT_FALSE(sock.write(msg, sizeof(msg), qb::io::endpoint().as_un(UNIX_SOCK_PATH)) <=
-                         0);
-            sock.close();
-        });
-
-        char buffer[512];
-        *buffer = 0;
-
-        qb::io::endpoint peer;
-
-        EXPECT_FALSE(listener.read(buffer, 512, peer) > 0);
-        EXPECT_EQ(std::string(buffer), "");
-        EXPECT_EQ(peer.ip(), "");
-        tsender.join();
+        const char msg[] = "Hello Test !";
+        std::this_thread::sleep_for(std::chrono::seconds(3));
+        EXPECT_FALSE(sock.write(msg, sizeof(msg), qb::io::endpoint().as_un(path.c_str())) <= 0);
+        sock.close();
     });
-    tlistener.join();
+
+    char buffer[512];
+    *buffer = 0;
+
+    qb::io::endpoint peer;
+
+    EXPECT_FALSE(listener.read(buffer, 512, peer) > 0);
+    EXPECT_EQ(std::string(buffer), "");
+    EXPECT_EQ(peer.ip(), "");
+    tsender.join();
 }
 
 #endif
@@ -473,11 +485,11 @@ TEST(UNIX_UDP, NonBlocking) {
 // ---------------------------------------------------------------------------
 
 TEST(SocketUtils, UUIDThreadSafety) {
-    constexpr int num_threads = 8;
+    constexpr int num_threads      = 8;
     constexpr int uuids_per_thread = 500;
 
     std::vector<std::vector<qb::uuid>> results(num_threads);
-    std::vector<std::thread> threads;
+    std::vector<std::thread>           threads;
 
     for (int t = 0; t < num_threads; ++t) {
         threads.emplace_back([&results, t]() {
@@ -488,12 +500,12 @@ TEST(SocketUtils, UUIDThreadSafety) {
         });
     }
 
-    for (auto& th : threads)
+    for (auto &th : threads)
         th.join();
 
     std::set<std::string> all_uuids;
-    for (auto& vec : results)
-        for (auto& u : vec)
+    for (auto &vec : results)
+        for (auto &u : vec)
             all_uuids.insert(uuids::to_string(u));
 
     EXPECT_EQ(all_uuids.size(), static_cast<std::size_t>(num_threads * uuids_per_thread));
@@ -625,8 +637,7 @@ TEST(CORO_TCP, ConnectAwaiter) {
 
             auto test_task = [&completed]() -> qb::io::async::task<void> {
                 // Test basic connection using coroutine awaiter
-                auto socket = co_await qb::io::async::tcp::connect(
-                    qb::io::uri{std::string{"tcp://127.0.0.1:"} + std::to_string(test_port)});
+                auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{std::string{"tcp://127.0.0.1:"} + std::to_string(test_port)});
 
                 // Connection should succeed
                 EXPECT_TRUE(socket.has_value());
@@ -666,9 +677,8 @@ TEST(CORO_TCP, ConnectAwaiterTimeout) {
 
     auto test_task = [&completed]() -> qb::io::async::task<void> {
         // Try to connect to a port that should be closed, with 100ms timeout
-        auto socket = co_await qb::io::async::tcp::connect(
-            qb::io::uri{"tcp://127.0.0.1:1"}, // Port 1 is unlikely to be open
-            100ms);
+        auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{"tcp://127.0.0.1:1"}, // Port 1 is unlikely to be open
+                                                           100ms);
 
         // Connection should fail (timeout or refused)
         EXPECT_FALSE(socket.has_value());
@@ -712,19 +722,18 @@ TEST(CORO_TCP, DISABLED_ConnectAwaiterWithExistingSocket) {
         std::thread tconnector([]() {
             qb::io::async::init();
 
-            bool completed = false;
+            bool                               completed = false;
             std::optional<qb::io::tcp::socket> connected_socket;
 
             auto test_task = [&completed, &connected_socket]() -> qb::io::async::task<void> {
                 // Create a socket first (initialized but not connected)
                 qb::io::tcp::socket existing_socket;
-                auto status = existing_socket.init(AF_INET);
+                auto                status = existing_socket.init(AF_INET);
                 EXPECT_FALSE(status != qb::io::SocketStatus::Done);
 
                 // Connect using the existing socket
                 connected_socket = co_await qb::io::async::tcp::connect_with_socket(
-                    std::move(existing_socket),
-                    qb::io::uri{std::string{"tcp://127.0.0.1:"} + std::to_string(test_port)});
+                    std::move(existing_socket), qb::io::uri{std::string{"tcp://127.0.0.1:"} + std::to_string(test_port)});
 
                 completed = true;
             };
@@ -925,11 +934,11 @@ TEST(PipeRobustness, EmptyPipeOperations) {
 
 TEST(PipeRobustness, SwapCorrectness) {
     qb::allocator::pipe<int> a;
-    int vals_a[] = {1, 2, 3};
+    int                      vals_a[] = {1, 2, 3};
     a.put(vals_a, 3);
 
     qb::allocator::pipe<int> b;
-    int vals_b[] = {10, 20, 30, 40};
+    int                      vals_b[] = {10, 20, 30, 40};
     b.put(vals_b, 4);
 
     a.swap(b);
@@ -942,11 +951,11 @@ TEST(PipeRobustness, SwapCorrectness) {
 
 TEST(PipeRobustness, SwapBothNonEmpty) {
     qb::allocator::pipe<int> a;
-    int vals_a[] = {1, 2, 3, 4, 5};
+    int                      vals_a[] = {1, 2, 3, 4, 5};
     a.put(vals_a, 5);
 
     qb::allocator::pipe<int> b;
-    int vals_b[] = {100, 200};
+    int                      vals_b[] = {100, 200};
     b.put(vals_b, 2);
 
     a.swap(b);
@@ -991,21 +1000,21 @@ TEST(PipeRobustness, ReorderAfterFreeFront) {
 
 TEST(PipeRobustness, PutStringView) {
     qb::allocator::pipe<char> p;
-    std::string_view sv = "hello from string_view";
+    std::string_view          sv = "hello from string_view";
     p.put(sv);
     EXPECT_EQ(p.view(), sv);
 }
 
 TEST(PipeRobustness, PutCString) {
     qb::allocator::pipe<char> p;
-    const char* cstr = "c-string data";
+    const char               *cstr = "c-string data";
     p.put(cstr);
     EXPECT_EQ(p.view(), "c-string data");
 }
 
 TEST(PipeRobustness, PutStdString) {
     qb::allocator::pipe<char> p;
-    std::string s = "std::string content";
+    std::string               s = "std::string content";
     p.put(s);
     EXPECT_EQ(p.view(), s);
 }
@@ -1081,17 +1090,17 @@ TEST(StreamLimits, PublishRejectsWhenLimitExceeded) {
     qb::io::stream<qb::io::tcp::socket> s;
     s.set_max_write_buffer_size(20);
 
-    const char data[] = "1234567890";
-    auto* result1 = s.publish(data, 10);
+    const char data[]  = "1234567890";
+    auto      *result1 = s.publish(data, 10);
     EXPECT_NE(result1, nullptr);
     EXPECT_EQ(s.pendingWrite(), 10u);
 
-    auto* result2 = s.publish(data, 10);
+    auto *result2 = s.publish(data, 10);
     EXPECT_NE(result2, nullptr);
     EXPECT_EQ(s.pendingWrite(), 20u);
 
     // This should be rejected — would exceed the 20-byte limit
-    auto* result3 = s.publish(data, 1);
+    auto *result3 = s.publish(data, 1);
     EXPECT_EQ(result3, nullptr);
     EXPECT_EQ(s.pendingWrite(), 20u);
 }
@@ -1101,7 +1110,7 @@ TEST(StreamLimits, PublishAcceptsExactLimit) {
     s.set_max_write_buffer_size(10);
 
     const char data[] = "1234567890";
-    auto* result = s.publish(data, 10);
+    auto      *result = s.publish(data, 10);
     EXPECT_NE(result, nullptr);
     EXPECT_EQ(s.pendingWrite(), 10u);
 }
@@ -1122,26 +1131,26 @@ TEST(StreamLimits, SetMaxBufferSizes) {
 
 TEST(URIRobustness, DecodeIteratorTrailingPercent) {
     // Template decode breaks on truncated % — stops processing, no crash
-    std::string input1 = "abc%";
-    auto result1 = qb::io::uri::decode(input1.begin(), input1.end());
+    std::string input1  = "abc%";
+    auto        result1 = qb::io::uri::decode(input1.begin(), input1.end());
     EXPECT_EQ(result1, "abc");
 
-    std::string input2 = "%";
-    auto result2 = qb::io::uri::decode(input2.begin(), input2.end());
+    std::string input2  = "%";
+    auto        result2 = qb::io::uri::decode(input2.begin(), input2.end());
     EXPECT_EQ(result2, "");
 
-    std::string input3 = "test%2";
-    auto result3 = qb::io::uri::decode(input3.begin(), input3.end());
+    std::string input3  = "test%2";
+    auto        result3 = qb::io::uri::decode(input3.begin(), input3.end());
     EXPECT_EQ(result3, "test");
 
     // Verify no crash on empty range
     std::string empty;
-    auto result4 = qb::io::uri::decode(empty.begin(), empty.end());
+    auto        result4 = qb::io::uri::decode(empty.begin(), empty.end());
     EXPECT_EQ(result4, "");
 
     // Valid decode still works
-    std::string valid = "hello%20world";
-    auto result5 = qb::io::uri::decode(valid.begin(), valid.end());
+    std::string valid   = "hello%20world";
+    auto        result5 = qb::io::uri::decode(valid.begin(), valid.end());
     EXPECT_EQ(result5, "hello world");
 }
 
@@ -1154,8 +1163,8 @@ TEST(URIRobustness, DecodeStringViewPreservesPercent) {
 }
 
 TEST(URIRobustness, DecodeIteratorValid) {
-    std::string input = "%48%65%6C%6C%6F";
-    auto result = qb::io::uri::decode(input.begin(), input.end());
+    std::string input  = "%48%65%6C%6C%6F";
+    auto        result = qb::io::uri::decode(input.begin(), input.end());
     EXPECT_EQ(result, "Hello");
 }
 
@@ -1171,7 +1180,7 @@ TEST(URIRobustness, EncodeDecodeRoundtrip) {
         "%already%20encoded",
     };
 
-    for (const auto& original : test_cases) {
+    for (const auto &original : test_cases) {
         auto encoded = qb::io::uri::encode(original);
         auto decoded = qb::io::uri::decode(encoded);
         EXPECT_EQ(decoded, original) << "Roundtrip failed for: " << original;
@@ -1302,9 +1311,8 @@ TEST(JsonProtocol, MsgpackDepthGuard) {
 
 TEST(JsonProtocol, MsgpackDepthSaxScalarCallbacksAndErrors) {
     qb::protocol::detail::msgpack_depth_sax scalar_sax(1);
-    nlohmann::json::string_t                text   = "qb";
-    nlohmann::json::binary_t                binary(
-        std::vector<std::uint8_t>{std::uint8_t{1}, std::uint8_t{2}});
+    nlohmann::json::string_t                text = "qb";
+    nlohmann::json::binary_t                binary(std::vector<std::uint8_t>{std::uint8_t{1}, std::uint8_t{2}});
 
     EXPECT_TRUE(scalar_sax.null());
     EXPECT_TRUE(scalar_sax.boolean(true));

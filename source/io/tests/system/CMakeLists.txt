@@ -37,6 +37,7 @@ set(CORE_TESTS
         test-file-operations.cpp
         test-stream-operations.cpp
         test-async-io.cpp
+        test-async-io-bases.cpp
         test-cpu.cpp
         test-tcp-socket.cpp
         test-udp-socket.cpp
@@ -64,18 +65,6 @@ foreach (TEST_SOURCE ${CORE_TESTS})
             FOLDER "Tests/IO/System"
     )
 endforeach ()
-
-# -----------------------------------------------------------------------------
-# Micro-benchmarks (not registered with ctest on purpose — run manually to
-# establish baselines and measure perf deltas from QB_IO_PLAN.md)
-# -----------------------------------------------------------------------------
-add_executable(${PROJECT_NAME}-bench-io-plan bench-io-plan.cpp)
-_qb_apply_target_properties(${PROJECT_NAME}-bench-io-plan)
-target_link_libraries(${PROJECT_NAME}-bench-io-plan PRIVATE ${PROJECT_NAME})
-set_target_properties(${PROJECT_NAME}-bench-io-plan PROPERTIES
-        FOLDER "Benches/IO"
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/benches"
-)
 
 # -----------------------------------------------------------------------------
 # Optional feature tests
@@ -179,6 +168,7 @@ if(QB_HAS_SSL)
 
         # Make ssl-dependent tests depend on certificate generation
         add_dependencies(${PROJECT_NAME}-gtest-test-async-io generate_ssl_certs)
+        add_dependencies(${PROJECT_NAME}-gtest-test-ssl-socket generate_ssl_certs)
         add_dependencies(${PROJECT_NAME}-gtest-test-session-text generate_ssl_certs)
 
         # Tests using SSL will look for certificates in their runtime directory
@@ -195,7 +185,6 @@ if(QB_HAS_COMPRESSION)
     # Liste des tests de compression
     set(COMPRESSION_TESTS
             test-compression.cpp
-            test-compression-levels.cpp
     )
 
     # Générer les cibles pour chaque test de compression

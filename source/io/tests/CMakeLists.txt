@@ -28,3 +28,8 @@ add_subdirectory(system)
 
 # Add coroutine tests
 add_subdirectory(coroutine)
+
+# Add performance benchmarks if benchmarking is enabled
+if (QB_BUILD_BENCHMARKS)
+    add_subdirectory(benchmark)
+endif ()

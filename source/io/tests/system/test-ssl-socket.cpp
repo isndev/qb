@@ -25,6 +25,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -49,11 +50,18 @@ namespace {
 
 std::filesystem::path
 ssl_resource_path(const char *file_name) {
-    const auto runtime = std::filesystem::current_path() / "ssl" / file_name;
-    if (std::filesystem::exists(runtime)) {
-        return runtime;
+    const std::array candidates{
+        std::filesystem::current_path() / file_name,
+        std::filesystem::current_path() / "ssl" / file_name,
+        std::filesystem::path(__FILE__).parent_path() / "resources" / "ssl" / file_name,
+        std::filesystem::path("resources") / "ssl" / file_name,
+    };
+    for (auto const &candidate : candidates) {
+        if (std::filesystem::exists(candidate)) {
+            return candidate;
+        }
     }
-    return std::filesystem::path("resources") / "ssl" / file_name;
+    return candidates.front();
 }
 
 struct ssl_test_files {

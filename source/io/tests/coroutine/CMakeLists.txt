@@ -41,7 +41,6 @@ set(COROUTINE_TESTS
         test-coroutine-patterns.cpp
         test-coroutine-scheduler.cpp
         test-coroutine-awaiters.cpp
-        test-coroutine-benchmark.cpp
         test-coroutine-cancellation.cpp
         test-coroutine-channel.cpp
         test-coroutine-channel-payload.cpp

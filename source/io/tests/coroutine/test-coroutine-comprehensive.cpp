@@ -3,8 +3,8 @@
  * @brief Comprehensive coroutine behavior tests
  *
  * This file contains broad end-to-end tests for qb-io coroutine behavior, including
- * lifecycle management, timers, composition, exception handling, edge cases, real-world
- * async patterns, and performance sanity checks.
+ * lifecycle management, timers, composition, exception handling, edge cases, and
+ * real-world async patterns.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2025 qb - isndev (cpp.actor)
@@ -38,19 +38,21 @@ using namespace std::chrono_literals;
 
 class CoroutineComprehensiveTestBase : public ::testing::Test {
 protected:
-    void SetUp() override {
+    void
+    SetUp() override {
         qb::io::async::init();
     }
 
-    void TearDown() override {
+    void
+    TearDown() override {
         qb::io::async::listener::current.reset_coro_scheduler();
         qb::io::async::listener::current.clear();
     }
 };
 
 template <typename Predicate>
-bool wait_until(Predicate &&predicate, std::chrono::milliseconds timeout,
-                std::chrono::milliseconds step = 10ms) {
+bool
+wait_until(Predicate &&predicate, std::chrono::milliseconds timeout, std::chrono::milliseconds step = 10ms) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (!predicate()) {
         qb::io::async::run_for(step);
@@ -72,15 +74,16 @@ TEST_F(CoroutineLifecycle, CoroutineIsCreatedAndExecutes) {
     std::atomic<bool> executed{false};
 
     auto ptr = &executed;
-    auto fn = [ptr]() -> task<void> {
+    auto fn  = [ptr]() -> task<void> {
         ptr->store(true);
         co_return;
     };
     auto t = fn();
 
-    auto& sched = coro_scheduler();
+    auto &sched = coro_scheduler();
     sched.spawn(std::move(t));
-    for (int i = 0; i < 5 && !executed; ++i) sched.run_ready();
+    for (int i = 0; i < 5 && !executed; ++i)
+        sched.run_ready();
     run_for(10ms);
     EXPECT_TRUE(executed);
 }
@@ -92,7 +95,7 @@ TEST_F(CoroutineLifecycle, CoroutineReturnsValue) {
 
     // When
     auto ptr = &result;
-    auto fn = [ptr]() -> task<void> {
+    auto fn  = [ptr]() -> task<void> {
         auto inner_fn = []() -> task<int> {
             co_return 42;
         };
@@ -116,7 +119,7 @@ TEST_F(CoroutineLifecycle, VoidCoroutineCompletes) {
 
     // When
     auto ptr = &completed;
-    auto fn = [ptr]() -> task<void> {
+    auto fn  = [ptr]() -> task<void> {
         co_await sleep(1ms);
         ptr->store(true);
         co_return;
@@ -134,7 +137,7 @@ TEST_F(CoroutineLifecycle, VoidCoroutineCompletes) {
 TEST_F(CoroutineLifecycle, MultipleCoroutinesExecuteIndependently) {
     // Given
     std::atomic<int> counter{0};
-    constexpr int num_coroutines = 5;
+    constexpr int    num_coroutines = 5;
 
     // When
     auto ptr = &counter;
@@ -161,9 +164,9 @@ TEST_F(CoroutineLifecycle, CoroutineDestructionCancelsOperation) {
     std::atomic<bool> completed{false};
 
     {
-        auto started_ptr = &started;
+        auto started_ptr   = &started;
         auto completed_ptr = &completed;
-        auto fn = [started_ptr, completed_ptr]() -> task<void> {
+        auto fn            = [started_ptr, completed_ptr]() -> task<void> {
             started_ptr->store(true);
             co_await sleep(100ms);
             completed_ptr->store(true);
@@ -189,12 +192,12 @@ class CoroutineTimers : public CoroutineComprehensiveTestBase {};
 // Test 2.1: Sleep with duration
 TEST_F(CoroutineTimers, SleepWaitsForDuration) {
     // Given
-    auto start = std::chrono::steady_clock::now();
+    auto              start = std::chrono::steady_clock::now();
     std::atomic<bool> completed{false};
 
     // When
     auto completed_ptr = &completed;
-    auto coro_fn = [completed_ptr]() -> task<void> {
+    auto coro_fn       = [completed_ptr]() -> task<void> {
         co_await sleep(50ms);
         (*completed_ptr) = true;
     };
@@ -214,7 +217,7 @@ TEST_F(CoroutineTimers, ZeroSleepCompletesImmediately) {
     std::atomic<bool> completed{false};
 
     auto completed_ptr = &completed;
-    auto coro_fn = [completed_ptr]() -> task<void> {
+    auto coro_fn       = [completed_ptr]() -> task<void> {
         co_await sleep(0ms);
         (*completed_ptr) = true;
     };
@@ -233,7 +236,7 @@ TEST_F(CoroutineTimers, SequentialSleepsAccumulate) {
 
     // When
     auto timestamps_ptr = &timestamps;
-    auto coro_fn = [timestamps_ptr]() -> task<void> {
+    auto coro_fn        = [timestamps_ptr]() -> task<void> {
         co_await sleep(20ms);
         timestamps_ptr->push_back(std::chrono::steady_clock::now());
 
@@ -253,20 +256,20 @@ TEST_F(CoroutineTimers, SequentialSleepsAccumulate) {
 
     // Check intervals
     for (size_t i = 1; i < timestamps.size(); ++i) {
-        auto interval = timestamps[i] - timestamps[i-1];
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(interval).count();
+        auto interval = timestamps[i] - timestamps[i - 1];
+        auto ms       = std::chrono::duration_cast<std::chrono::milliseconds>(interval).count();
         EXPECT_GE(ms, 15); // Allow some tolerance
     }
 }
 
 // Test 2.4: Concurrent timers all complete
 TEST_F(CoroutineTimers, ConcurrentTimersCompleteInOrder) {
-    constexpr int num_timers = 5;
+    constexpr int    num_timers = 5;
     std::atomic<int> completed_count{0};
 
     for (int i = 0; i < num_timers; ++i) {
         auto completed_count_ptr = &completed_count;
-        auto coro_fn = [completed_count_ptr, i]() -> task<void> {
+        auto coro_fn             = [completed_count_ptr, i]() -> task<void> {
             co_await sleep(std::chrono::milliseconds((num_timers - i) * 10));
             completed_count_ptr->fetch_add(1);
         };
@@ -280,18 +283,18 @@ TEST_F(CoroutineTimers, ConcurrentTimersCompleteInOrder) {
 // Test 2.5: Timer precision
 TEST_F(CoroutineTimers, TimerPrecisionWithinTolerance) {
     // Given
-    constexpr int iterations = 10;
+    constexpr int          iterations = 10;
     std::vector<long long> actual_durations;
-    const long long expected_ms = 30;
+    const long long        expected_ms = 30;
 
     // When
     for (int i = 0; i < iterations; ++i) {
         auto start = std::chrono::steady_clock::now();
 
         auto actual_durations_ptr = &actual_durations;
-        auto coro_fn = [actual_durations_ptr, start]() -> task<void> {
+        auto coro_fn              = [actual_durations_ptr, start]() -> task<void> {
             co_await sleep(30ms);
-            auto end = std::chrono::steady_clock::now();
+            auto end      = std::chrono::steady_clock::now();
             auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
             actual_durations_ptr->push_back(duration);
         };
@@ -336,7 +339,7 @@ TEST_F(CoroutineComposition, CanAwaitAnotherCoroutine) {
 
     // When
     auto outer_completed_ptr = &outer_completed;
-    auto coro_fn = [outer_completed_ptr, &inner]() -> task<void> {
+    auto coro_fn             = [outer_completed_ptr, &inner]() -> task<void> {
         int result = co_await inner();
         EXPECT_EQ(result, 42);
         outer_completed_ptr->store(true);
@@ -371,7 +374,7 @@ TEST_F(CoroutineComposition, ChainOfThreeCoroutines) {
 
     // When
     auto counter_ptr = &counter;
-    auto coro_fn = [counter_ptr, &level2]() -> task<void> {
+    auto coro_fn     = [counter_ptr, &level2]() -> task<void> {
         co_await sleep(5ms);
         counter_ptr->fetch_add(100);
         int val = co_await level2();
@@ -392,13 +395,13 @@ TEST_F(CoroutineComposition, FireAndForgetCoroutine) {
     std::atomic<int> done_count{0};
 
     auto done_count_ptr = &done_count;
-    auto coro_fn_1 = [done_count_ptr]() -> task<void> {
+    auto coro_fn_1      = [done_count_ptr]() -> task<void> {
         co_await sleep(10ms);
         done_count_ptr->fetch_add(1);
         co_return;
     };
     auto first = coro_fn_1();
-    
+
     auto coro_fn_2 = [done_count_ptr]() -> task<void> {
         co_await sleep(30ms);
         done_count_ptr->fetch_add(1);
@@ -415,12 +418,12 @@ TEST_F(CoroutineComposition, FireAndForgetCoroutine) {
 
 // Test 3.4: Parallel coroutines with gather
 TEST_F(CoroutineComposition, MultipleParallelCoroutines) {
-    constexpr int num_tasks = 5;
+    constexpr int    num_tasks = 5;
     std::atomic<int> completed{0};
 
     for (int i = 0; i < num_tasks; ++i) {
         auto completed_ptr = &completed;
-        auto coro_fn = [completed_ptr]() -> task<void> {
+        auto coro_fn       = [completed_ptr]() -> task<void> {
             co_await sleep(20ms);
             completed_ptr->fetch_add(1);
         };
@@ -449,10 +452,10 @@ TEST_F(CoroutineExceptions, ExceptionPropagatesToAwaiter) {
 
     // When
     auto caught_ptr = &caught;
-    auto coro_fn = [caught_ptr, &throwing]() -> task<void> {
+    auto coro_fn    = [caught_ptr, &throwing]() -> task<void> {
         try {
             co_await throwing();
-        } catch (const std::runtime_error& e) {
+        } catch (const std::runtime_error &e) {
             if (std::string(e.what()) == "test error") {
                 caught_ptr->store(true);
             }
@@ -481,11 +484,11 @@ TEST_F(CoroutineExceptions, ExceptionFromInnerCoroutinePropagates) {
 
     // When
     auto caught_ptr = &caught;
-    auto coro_fn = [caught_ptr, &inner]() -> task<void> {
+    auto coro_fn    = [caught_ptr, &inner]() -> task<void> {
         try {
             int val = co_await inner();
-            (void)val;
-        } catch (const std::runtime_error& e) {
+            (void) val;
+        } catch (const std::runtime_error &e) {
             if (std::string(e.what()) == "inner error") {
                 caught_ptr->store(true);
             }
@@ -504,7 +507,7 @@ TEST_F(CoroutineExceptions, ExceptionFromInnerCoroutinePropagates) {
 // Test 4.3: Exception after multiple suspensions
 TEST_F(CoroutineExceptions, ExceptionAfterMultipleSuspensions) {
     // Given
-    std::atomic<int> steps{0};
+    std::atomic<int>  steps{0};
     std::atomic<bool> caught{false};
 
     auto unreliable = [&steps]() -> task<int> {
@@ -523,10 +526,10 @@ TEST_F(CoroutineExceptions, ExceptionAfterMultipleSuspensions) {
 
     // When
     auto caught_ptr = &caught;
-    auto coro_fn = [caught_ptr, &unreliable]() -> task<void> {
+    auto coro_fn    = [caught_ptr, &unreliable]() -> task<void> {
         try {
             co_await unreliable();
-        } catch (const std::runtime_error& e) {
+        } catch (const std::runtime_error &e) {
             caught_ptr->store(true);
         }
         co_return;
@@ -580,7 +583,7 @@ TEST_F(CoroutineEdgeCases, VeryShortTimer) {
 
     // When
     auto completed_ptr = &completed;
-    auto coro_fn = [completed_ptr]() -> task<void> {
+    auto coro_fn       = [completed_ptr]() -> task<void> {
         co_await sleep(1ms);
         (*completed_ptr) = true;
     };
@@ -596,13 +599,13 @@ TEST_F(CoroutineEdgeCases, VeryShortTimer) {
 // Test 5.2: Many concurrent coroutines
 TEST_F(CoroutineEdgeCases, ManyConcurrentCoroutines) {
     // Given
-    constexpr int num_coroutines = 100;
+    constexpr int    num_coroutines = 100;
     std::atomic<int> completed{0};
 
     // When
     for (int i = 0; i < num_coroutines; ++i) {
         auto completed_ptr = &completed;
-        auto coro_fn = [completed_ptr]() -> task<void> {
+        auto coro_fn       = [completed_ptr]() -> task<void> {
             co_await sleep(20ms);
             completed_ptr->fetch_add(1);
         };
@@ -621,7 +624,7 @@ TEST_F(CoroutineEdgeCases, RapidSpawnAndComplete) {
     std::atomic<int> counter{0};
     // Single no-suspend coroutine; multiple can stress scheduler (keep small)
     auto counter_ptr = &counter;
-    auto coro_fn = [counter_ptr]() -> task<void> {
+    auto coro_fn     = [counter_ptr]() -> task<void> {
         counter_ptr->fetch_add(1);
         co_return;
     };
@@ -638,7 +641,7 @@ TEST_F(CoroutineEdgeCases, NoSuspensionPoints) {
 
     // When
     auto result_ptr = &result;
-    auto coro_fn = [result_ptr]() -> task<void> {
+    auto coro_fn    = [result_ptr]() -> task<void> {
         int sum = 0;
         for (int i = 0; i < 1000; ++i) {
             sum += i;
@@ -659,12 +662,12 @@ TEST_F(CoroutineEdgeCases, NoSuspensionPoints) {
 // Test 5.5: Coroutine that suspends many times
 TEST_F(CoroutineEdgeCases, ManySuspensionPoints) {
     // Given
-    constexpr int num_suspensions = 50;
+    constexpr int    num_suspensions = 50;
     std::atomic<int> counter{0};
 
     // When
     auto counter_ptr = &counter;
-    auto coro_fn = [counter_ptr]() -> task<void> {
+    auto coro_fn     = [counter_ptr]() -> task<void> {
         for (int i = 0; i < num_suspensions; ++i) {
             co_await sleep(2ms);
             counter_ptr->fetch_add(1);
@@ -676,8 +679,7 @@ TEST_F(CoroutineEdgeCases, ManySuspensionPoints) {
     // Sequential 2ms timers are much coarser on Windows than on Linux/macOS.
     // Give the chain enough wall-clock budget so the test validates behavior
     // rather than host timer resolution.
-    EXPECT_TRUE(wait_until(
-        [&counter]() { return counter.load() == num_suspensions; }, 1500ms));
+    EXPECT_TRUE(wait_until([&counter]() { return counter.load() == num_suspensions; }, 1500ms));
 
     // Then
     EXPECT_EQ(counter, num_suspensions);
@@ -688,15 +690,16 @@ TEST_F(CoroutineEdgeCases, DeepCoroutineNesting) {
     std::atomic<int> result_val{0};
 
     std::function<task<int>(int)> make_coroutine = [&make_coroutine](int n) -> task<int> {
-        if (n <= 0) co_return 1;
+        if (n <= 0)
+            co_return 1;
         co_await sleep(10ms);
         auto inner = make_coroutine(n - 1);
-        int r = co_await inner;
+        int  r     = co_await inner;
         co_return r + 1;
     };
 
     auto result_val_ptr = &result_val;
-    auto coro_fn = [&make_coroutine, result_val_ptr]() -> task<void> {
+    auto coro_fn        = [&make_coroutine, result_val_ptr]() -> task<void> {
         auto t = make_coroutine(2);
         result_val_ptr->store(co_await t);
         co_return;
@@ -705,7 +708,7 @@ TEST_F(CoroutineEdgeCases, DeepCoroutineNesting) {
 
     coro_scheduler().spawn(std::move(starter));
     run_for(150ms);
-    EXPECT_GE(result_val.load(), 2);  // nested chain completes at least 2 levels
+    EXPECT_GE(result_val.load(), 2); // nested chain completes at least 2 levels
 }
 
 // =============================================================================
@@ -728,8 +731,8 @@ TEST_F(CoroutineRealWorld, OperationWithTimeout) {
 
     // When - run with timeout
     auto timeout_reached_ptr = &timeout_reached;
-    auto operation_done_ptr = &operation_done;
-    auto coro_fn = [timeout_reached_ptr, operation_done_ptr, &slow_operation]() -> task<void> {
+    auto operation_done_ptr  = &operation_done;
+    auto coro_fn             = [timeout_reached_ptr, operation_done_ptr, &slow_operation]() -> task<void> {
         // Start both timeout and operation
         auto start = std::chrono::steady_clock::now();
 
@@ -767,7 +770,7 @@ TEST_F(CoroutineRealWorld, SequentialAsyncOperations) {
         co_return "result1";
     };
 
-    auto query2 = [&operations](const std::string& prev) -> task<std::string> {
+    auto query2 = [&operations](const std::string &prev) -> task<std::string> {
         co_await sleep(10ms);
         operations.push_back("query2:" + prev);
         co_return "result2";
@@ -775,7 +778,7 @@ TEST_F(CoroutineRealWorld, SequentialAsyncOperations) {
 
     // When
     auto operations_ptr = &operations;
-    auto coro_fn = [operations_ptr, &query1, &query2]() -> task<void> {
+    auto coro_fn        = [operations_ptr, &query1, &query2]() -> task<void> {
         auto r1 = co_await query1();
         auto r2 = co_await query2(r1);
         operations_ptr->push_back("final:" + r2);
@@ -797,8 +800,8 @@ TEST_F(CoroutineRealWorld, SequentialAsyncOperations) {
 // Test 6.3: Retry logic with backoff
 TEST_F(CoroutineRealWorld, RetryWithBackoff) {
     // Given
-    constexpr int max_retries = 3;
-    std::atomic<int> attempts{0};
+    constexpr int     max_retries = 3;
+    std::atomic<int>  attempts{0};
     std::atomic<bool> succeeded{false};
 
     auto flaky_operation = [&attempts]() -> task<bool> {
@@ -810,7 +813,7 @@ TEST_F(CoroutineRealWorld, RetryWithBackoff) {
 
     // When
     auto succeeded_ptr = &succeeded;
-    auto coro_fn = [succeeded_ptr, &flaky_operation]() -> task<void> {
+    auto coro_fn       = [succeeded_ptr, &flaky_operation]() -> task<void> {
         for (int i = 0; i < max_retries; ++i) {
             if (co_await flaky_operation()) {
                 succeeded_ptr->store(true);
@@ -834,16 +837,16 @@ TEST_F(CoroutineRealWorld, RetryWithBackoff) {
 // Test 6.4: Producer-consumer pattern
 TEST_F(CoroutineRealWorld, ProducerConsumerPattern) {
     // Given
-    constexpr int num_items = 10;
-    std::vector<int> produced;
-    std::vector<int> consumed;
+    constexpr int     num_items = 10;
+    std::vector<int>  produced;
+    std::vector<int>  consumed;
     std::atomic<bool> done{false};
 
     // When
     auto produced_ptr = &produced;
     auto consumed_ptr = &consumed;
-    auto done_ptr = &done;
-    
+    auto done_ptr     = &done;
+
     auto producer_fn = [produced_ptr]() -> task<void> {
         for (int i = 0; i < num_items; ++i) {
             co_await sleep(5ms);
@@ -877,77 +880,15 @@ TEST_F(CoroutineRealWorld, ProducerConsumerPattern) {
 }
 
 // =============================================================================
-// TEST SUITE 7: Performance and Benchmarks
+// TEST SUITE 7: Load and Stability
 // =============================================================================
 
-class CoroutinePerformance : public CoroutineComprehensiveTestBase {};
+class CoroutineLoad : public CoroutineComprehensiveTestBase {};
 
-// Test 7.1: Spawn many coroutines quickly
-// Fixed: Added co_return to make it a valid coroutine
-TEST_F(CoroutinePerformance, SpawnManyCoroutines) {
+// Test 7.1: Memory stability under load
+TEST_F(CoroutineLoad, MemoryStabilityUnderLoad) {
     // Given
-    constexpr int count = 1000;
-    std::atomic<int> completed{0};
-
-    // When
-    auto start = std::chrono::steady_clock::now();
-
-    for (int i = 0; i < count; ++i) {
-        auto completed_ptr = &completed;
-        auto coro_fn = [completed_ptr]() -> task<void> {
-            completed_ptr->fetch_add(1);
-            co_return;
-        };
-        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
-    }
-
-    run_for(10ms);
-
-    auto elapsed = std::chrono::steady_clock::now() - start;
-
-    // Then
-    EXPECT_EQ(completed, count);
-
-    // Should be very fast (< 100ms for 1000 coroutines)
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    EXPECT_LT(ms, 100);
-}
-
-// Test 7.2: Coroutine vs callback overhead comparison
-TEST_F(CoroutinePerformance, CoroutineOverheadAcceptable) {
-    // Given
-    constexpr int iterations = 100;
-    std::atomic<int> counter{0};
-
-    // When - time how long it takes to run N coroutines with sleep
-    auto start = std::chrono::steady_clock::now();
-
-    for (int i = 0; i < iterations; ++i) {
-        auto counter_ptr = &counter;
-        auto coro_fn = [counter_ptr]() -> task<void> {
-            co_await sleep(1ms);
-            counter_ptr->fetch_add(1);
-        };
-        coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
-    }
-
-    run_for(200ms);
-
-    auto elapsed = std::chrono::steady_clock::now() - start;
-
-    // Then
-    EXPECT_EQ(counter, iterations);
-
-    // Should complete in reasonable time
-    // (iterations * sleep_duration + some overhead)
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-    EXPECT_LT(ms, iterations * 2 + 50);
-}
-
-// Test 7.3: Memory stability under load
-TEST_F(CoroutinePerformance, MemoryStabilityUnderLoad) {
-    // Given
-    constexpr int batches = 10;
+    constexpr int batches   = 10;
     constexpr int per_batch = 50;
 
     // When - run multiple batches of coroutines
@@ -956,15 +897,14 @@ TEST_F(CoroutinePerformance, MemoryStabilityUnderLoad) {
 
         for (int i = 0; i < per_batch; ++i) {
             auto completed_ptr = &completed;
-            auto coro_fn = [completed_ptr]() -> task<void> {
+            auto coro_fn       = [completed_ptr]() -> task<void> {
                 co_await sleep(5ms);
                 completed_ptr->fetch_add(1);
             };
             coro_scheduler().spawn(coro_fn); // owned-callable: closure dies before resume
         }
 
-        EXPECT_TRUE(wait_until([&completed]() { return completed.load() == per_batch; },
-                               300ms));
+        EXPECT_TRUE(wait_until([&completed]() { return completed.load() == per_batch; }, 300ms));
 
         // Then - each batch should complete
         EXPECT_EQ(completed, per_batch);
@@ -975,7 +915,8 @@ TEST_F(CoroutinePerformance, MemoryStabilityUnderLoad) {
 // MAIN
 // =============================================================================
 
-int main(int argc, char** argv) {
+int
+main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     qb::io::async::init();
     return RUN_ALL_TESTS();

@@ -144,33 +144,49 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
 
         set(COVERAGE_GCOVR_EXCLUDES
             '/usr/.*'
+            '${PROJECT_BINARY_DIR}/_deps/.*'
             '${PROJECT_SOURCE_DIR}/modules/.*'
             '${PROJECT_SOURCE_DIR}/examples/.*'
+            '${PROJECT_SOURCE_DIR}/source/.*/tests/benchmark/.*'
             '${PROJECT_SOURCE_DIR}/source/.*/tests/.*'
+            '.*benchmark.*'
         )
 
         set(COVERAGE_GCOVR_ARGS
             --gcov-ignore-parse-errors=all
+            --gcov-ignore-errors=source_not_found
         )
+
+        set(QB_COVERAGE_DEPENDENCIES qb-core)
+        if(QB_BUILD_TESTS)
+            get_property(QB_TEST_TARGETS GLOBAL PROPERTY QB_TEST_TARGETS)
+            if(QB_TEST_TARGETS)
+                list(APPEND QB_COVERAGE_DEPENDENCIES ${QB_TEST_TARGETS})
+                list(REMOVE_DUPLICATES QB_COVERAGE_DEPENDENCIES)
+            endif()
+        endif()
         
         SETUP_TARGET_FOR_COVERAGE_LCOV(
             NAME qb-coverage
             EXECUTABLE ctest
-            DEPENDENCIES qb-core
-            LCOV_ARGS --ignore-errors mismatch --ignore-errors unused
+            DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
+            LCOV_ARGS
+                --ignore-errors mismatch,mismatch
+                --ignore-errors unused,unused
+                --ignore-errors inconsistent,inconsistent
         )
         
         SETUP_TARGET_FOR_COVERAGE_GCOVR_XML(
             NAME qb-coverage-xml
             EXECUTABLE ctest
-            DEPENDENCIES qb-core
+            DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
             GCOVR_ARGS ${COVERAGE_GCOVR_ARGS}
         )
         
         SETUP_TARGET_FOR_COVERAGE_GCOVR_HTML(
             NAME qb-coverage-html
             EXECUTABLE ctest
-            DEPENDENCIES qb-core
+            DEPENDENCIES ${QB_COVERAGE_DEPENDENCIES}
             GCOVR_ARGS ${COVERAGE_GCOVR_ARGS}
         )
     else()
