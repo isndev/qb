@@ -118,7 +118,7 @@ submodule and discovered by CMake:
 
 | Module | Provides |
 |---|---|
-| [qbm-http](https://github.com/isndev/qbm-http) | HTTP/1.1, plus HTTP/2 on SSL-enabled builds and HTTP/3 on QUIC builds, routing, middleware, authentication, and WebSocket (RFC 6455) |
+| [qbm-http](https://github.com/isndev/qbm-http) | HTTP/1.1, routing, middleware; plus HTTP/2, WebSocket (RFC 6455), and JWT authentication on SSL-enabled builds, and HTTP/3 on QUIC builds |
 | [qbm-pgsql](https://github.com/isndev/qbm-pgsql) | Asynchronous PostgreSQL client with prepared statements and transactions |
 | [qbm-redis](https://github.com/isndev/qbm-redis) | Asynchronous Redis client covering the full command surface |
 

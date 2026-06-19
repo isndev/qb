@@ -138,8 +138,15 @@ engine.core(0)
 engine.core(1)
     .setLatency(std::chrono::nanoseconds(500'000))  // park up to 500 us when idle
     .setAffinity(qb::CoreIdSet{1, 2});
+```
 
-// Apply one default latency to every registered core at once.
+`Main::setLatency(...)` applies one latency to **every** registered core at once. It is a blanket
+overwrite (it loops every core, last-write-wins), *not* a default for cores without an explicit
+override — so do not pair it with the per-core block above or it will clobber core 0's busy-spin
+setting. Use it instead of per-core tuning, or before it:
+
+```cpp
+// Overwrites the latency on EVERY registered core (including any set above).
 engine.setLatency(std::chrono::microseconds(500));
 ```
 
